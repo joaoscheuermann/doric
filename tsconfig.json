@@ -64,9 +64,6 @@
       "path": "./packages/firecracker"
     },
     {
-      "path": "./benchmarks/mosaic"
-    },
-    {
       "path": "./bundles/git"
     }
   ]

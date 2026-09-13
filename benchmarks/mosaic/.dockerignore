@@ -1,9 +1,0 @@
-*
-!Dockerfile
-!docker-entrypoint.sh
-!project.json
-!agents/
-!agents/**
-!dist/
-!dist/mosaic-bench-acp.mjs
-!dist/mosaic-bench-host.mjs

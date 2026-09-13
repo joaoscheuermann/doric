@@ -11,7 +11,7 @@ import { createToolStorage } from 'tool';
 
 import { section } from './context.mjs';
 
-const createRecorder = (directory, logger) => {
+const createRecorder = (directory, logger, onRecord) => {
   let sequence = 0;
 
   return async (stage, data) => {
@@ -42,18 +42,29 @@ const createRecorder = (directory, logger) => {
 
     logger.info({ stage }, 'Stage recorded');
 
+    await onRecord?.(entry);
+
     return data;
   };
 };
 
 /** Measure each provider invocation, including intermediate tool-loop turns. */
-const measureProvider = (provider, stage, { logger, record, usage }) => {
+const measureProvider = (
+  provider,
+  stage,
+  { logger, record, usage, signal },
+) => {
   const call = async (operation, request) => {
     const started = Date.now();
 
     logger.info({ stage, operation, model: request.model }, 'Provider call');
 
-    const response = await provider[operation](request);
+    signal?.throwIfAborted();
+
+    const response = await provider[operation]({
+      ...request,
+      signal: signal ?? request.signal,
+    });
 
     const entry = {
       stage,
@@ -80,7 +91,7 @@ const measureProvider = (provider, stage, { logger, record, usage }) => {
 
 /** One session owns its conversation and observation ledger across submissions. */
 const createSession = (runtime, { stage, system, profile, tools = false }) => {
-  const { config, sandbox, record, core } = runtime;
+  const { config, sandbox, record, core, signal, observeTool } = runtime;
 
   const instructions = tools
     ? [
@@ -107,6 +118,8 @@ const createSession = (runtime, { stage, system, profile, tools = false }) => {
   });
 
   const onToolEvent = async (event) => {
+    await observeTool?.(event);
+
     if (event.type === 'tool.finished') {
       await record(stage + '.observation', event.record);
     }
@@ -118,6 +131,7 @@ const createSession = (runtime, { stage, system, profile, tools = false }) => {
     const response = await agent.complete(input, {
       schema,
       maxTurns: config.maxTurns,
+      signal,
       onToolEvent,
     });
 
@@ -128,25 +142,46 @@ const createSession = (runtime, { stage, system, profile, tools = false }) => {
 };
 
 /** Compose provider access, sessions and experiment evidence in one place. */
-export const createRuntime = ({ directory, sandbox, config, core }) => {
+export const createRuntime = ({
+  directory,
+  sandbox,
+  config,
+  core,
+  provider: suppliedProvider,
+  environment: suppliedEnvironment,
+  signal,
+  onRecord,
+  onToolEvent: observeTool,
+}) => {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 
-  if (!apiKey) {
+  if (!suppliedProvider && !apiKey) {
     throw new Error('OPENROUTER_API_KEY is required.');
   }
 
   const logger = pino(pretty({ sync: true, destination: 2 }));
 
-  const provider = createUnifiedProvider({
-    transport: createFetchTransport(),
-    apiKey,
-    logger,
-  });
-  const record = createRecorder(directory, logger);
+  const provider =
+    suppliedProvider ??
+    createUnifiedProvider({
+      transport: createFetchTransport(),
+      apiKey,
+      logger,
+    });
+  const record = createRecorder(directory, logger, onRecord);
   const usage = [];
-  const telemetry = { logger, record, usage };
+  const telemetry = { logger, record, usage, signal };
   const measured = (stage) => measureProvider(provider, stage, telemetry);
-  const sessionOptions = { config, sandbox, record, measured, core };
+
+  const sessionOptions = {
+    config,
+    sandbox,
+    record,
+    measured,
+    core,
+    signal,
+    observeTool,
+  };
   const agent = (options) => createSession(sessionOptions, options);
 
   const complete = ({
@@ -182,6 +217,7 @@ export const createRuntime = ({ directory, sandbox, config, core }) => {
       .filter(({ alwaysAvailable }) => alwaysAvailable)
       .map(({ skill }) => skill),
     config,
-    environment: section('Execution environment', environment),
+    environment:
+      suppliedEnvironment ?? section('Execution environment', environment),
   };
 };

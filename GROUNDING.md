@@ -204,7 +204,7 @@ an available handler name and passes that handler a shallow copy of the
 supplied state object. It owns no workflow policy, persistence, listeners,
 recovery hooks, or external side effects.
 
-`packages/mosaic` remains an independent library and benchmark subject; it is
+`packages/mosaic` remains an independent library; it is
 not part of the main Doric composition. It depends on `packages/state-machine`
 and owns the goal-workflow policy: planning and revision, scheduling, skill retrieval and
 reranking, and per-node skill/tool menu composition. Its public
@@ -507,62 +507,17 @@ adapter with no hooks is behaviorally neutral. A feedback hook may return
 `unchanged`; Mosaic then performs no hint or P1 provider call and materializes
 revision 1 as a validated plan identical to P0.
 
-`benchmarks/mosaic` is the user-approved private Nx application for the minimal
-public-benchmark comparison of MOSAIC. The former custom empirical study is
-archived at the annotated tag and GitHub release
-`mosaic-validation-v0.2-archive`; it is no longer an active repository surface.
-The application exposes only Nx-managed build, run, docker-run, typecheck,
-test, and release targets. Its generated `.mjs` files are a standalone ACP
-bundle for benchmark containers that do not contain this workspace or its
-dependencies, a local host dispatcher, and a host-side Docker launcher.
+The private benchmark applications are `benchmarks/direct` and
+`benchmarks/mosaic`, executing `scripts/direct-skills-e2e` and
+`scripts/mosaic-e2e` respectively. The previous benchmark code, composition
+instruments, campaigns, and release machinery have been removed at the user's
+request. Neither application depends on `packages/mosaic`.
 
-The same private application also owns an additive composition-evaluation
-surface under the local `composition` command. It does not change the canonical
-BenchFlow treatment described below and it is not a revival of the archived
-empirical application. Provider-free preparation, manifest, and scoring
-commands may run locally. Every composition command that can call a model is
-fail-closed behind the explicit `--yes-paid-run` flag and writes only to a
-caller-selected fresh output path. Composition evidence is diagnostic until its
-own frozen input manifest, complete task set, and treatment controls validate;
-it cannot satisfy the canonical SkillsBench evidence gate for Terminal-Bench.
-
-The external composition benchmark is SRA-Bench, with SR-Agents pinned to
-`277fd8d2bbd7d3b81a5cf4ffa6e87e18c7906e4f` and its Hugging Face dataset pinned
-to `6143f2634eb284955ce312213bac24b582d039f3`. Preparation verifies the exact
-corpus, CHAMP, and BigCodeBench byte counts and SHA-256 digests before creating
-a frozen 100-query pilot: 50 multi-skill CHAMP and 50 multi-skill BigCodeBench
-queries, selected deterministically within gold-cardinality strata. Runs are
-dataset-homogeneous and compare `no-skills`, frozen retrieval `fixed-top-k`,
-selective `mosaic`, and diagnostic `oracle` arms under one model profile. The
-selective arm receives the same frozen candidate ranking, reranks full bodies
-with the pinned default `cohere/rerank-v3.5`, and chooses at most its configured
-bundle limit. Output scoring separately measures routed candidates and selected
-bundles with Recall@K, set precision/F1, MRR, nDCG, exact match, and cardinality
-error. Append-only run output is bound to a sidecar identity covering the arm,
-model, reranker, limits, instances, corpus, and retrieval input; resume refuses
-a mismatch.
-
-The controlled planning instrument contains exactly 24 authored cases: the six
-predeclared composition classes A-F crossed with the four domains
-documents/finance, software, artifacts, and communications. Every case includes
-request-grounded P0 criteria, catalog-grounded P1 criteria, relevant skills,
-intradomain distractors, semantic roles, outputs, behaviors, dependencies, and
-tool requirements. One validated P0 is reused across `no-hints`, diagnostic
-`gold`, deterministic lexical `retrieved`, and negative-control `distractor`
-conditions. Initial planning sees only the request; revision sees only P0 and
-the condition's public skill evidence; lexical retrieval has no gold fields or
-gold-sized cutoff. A separate rubric-bound structured call maps plan text to
-semantic labels for scoring. Routing and execution are intercepted through
-`mosaic/evaluation`, so downstream tools and execution cannot confound the
-P0-to-P1 transition. Reports preserve P0, P1, observations, criterion-level
-scores, gains, regressions, provider-call events, and macro readings overall and
-by domain and composition class. Paid planning runs reserve stdout for the final
-JSON summary and emit live safe progress to stderr for run and case lifecycle,
-model calls and cache hits, structured-attempt acceptance and repair, and
-retrieval counts. Progress exposes only case, condition, and operation IDs plus
-counts and booleans; it excludes prompts, model outputs, validation diagnostics,
-credentials, and caught failures. The same-model semantic judge is an explicit
-diagnostic limitation, not hidden ground truth.
+`benchmarks/harness` owns shared local installation, catalog preparation, ACP
+transport, task-container tools, and the host multi-model provider gateway.
+Applications own separate result directories and Nx build/run targets; the
+harness exposes build/test targets. Historical ignored results are preserved
+and are not inputs to the new runners.
 
 The private `scripts/direct-skill-planning` diagnostic lab compares request-
 and P0-goal-level retrieval across direct generation and P0 revision. Judge
@@ -849,143 +804,67 @@ Only scenario `inputs/` enter the sandbox; generators and expected artifacts sta
 host-side. They add no agent tools, skills, runtime dependencies or paid runs and
 establish no comparative success rate or equal-compute claim.
 
-The SkillsBench composition condition scans a caller-verified clean checkout of
-the existing v1.1 pin into a deterministic global catalog, hashes every package,
-namespaces same-name/different-body collisions, and preserves task-to-skill gold
-associations only for offline evaluation and the diagnostic oracle. Its closed
-arms are `no-skills`, `fixed-top-k`, `mosaic-selective`, diagnostic `oracle`, and
-diagnostic `all-skills`. A frozen lexical ranker may use task text and public
-skill text only; it must not use task-to-skill golds, provenance paths, or gold
-cardinality. Runtime skill packages must be materialized into neutral catalog
-paths so original task IDs cannot leak to the model. The canonical byte checkout
-produces 232 task-local occurrences collapsed into
-209 catalog skills, catalog SHA-256
-`382379cc8b2ac56aab6d6c4559bb2e6b1d6203f5de58534532e9ad528bdefe7c`, and
-fixed-ranking SHA-256
-`0a1631e7ad74730c909194efee941d2ba981279cd8d040941d2a5039fafc9ffd`;
-preparation rejects any mismatch. This condition is a local
-preparation and treatment contract until a global-catalog mount and official
-task execution adapter are integrated with BenchFlow; it must not be described
-as a SkillComposer reproduction or as completed external evidence.
+Local benchmarks pin BenchFlow 0.6.6 with transitive Python dependencies and
+SkillsBench commit `b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`.
+The host requires Docker, Node, uv, and Git. Commands are `setup`, `list`,
+`prepare`, `oracle`, and `run`; repeated `--task` selects a subset, defaulting
+to `jax-computing-basics`. Model runs require `--yes-paid-run`. Provider-free
+oracle runs execute the official solution and verifier in Docker.
 
-The additive `docker-run` target is the portable campaign surface for native
-Linux and Docker Desktop hosts, including Windows, macOS, and WSL. It accepts
-only `campaign` commands, builds the local `mosaic-benchmark:local` Linux image
-from digest-pinned Node, uv/Python, and Docker base images, and starts it with
-the privilege required for a nested Docker daemon. BenchFlow 0.6.5 and every
-task container therefore run under Linux without mounting the host Docker
-socket or depending on host `uvx`, Python, Git, or curl. The launcher mounts
-only the benchmark `results/` directory. Before starting its daemon, the
-coordinator uses the helper from the digest-pinned Docker DinD image to enable
-cgroup v2 nesting and shared mount propagation. The launcher translates
-supported campaign and report paths beneath the results mount, inherits
-`OPENROUTER_API_KEY` by environment name rather than command value, and retains
-the nested Docker and uv caches in the `mosaic-benchmark-docker` and
-`mosaic-benchmark-uv` named volumes. The ordinary `run` target remains the local
-comparison and native campaign surface; release generation remains outside the
-portable coordinator.
+Preparation builds a global catalog from all task skill packages, deduplicates
+by name and complete resource hash, and copies resources into neutral paths.
+Task-to-skill associations remain in a host-only manifest. Both arms apply their
+existing retrieval and gating policies to this catalog plus optional core skills.
+BenchFlow uses `no-skill` to disable task-specific gold skill injection. This is
+a retrieval condition, not the official supplied-skills treatment or a
+SkillComposer reproduction. Neutral paths remove adapter-added provenance;
+the original skill content may itself contain contextual clues.
 
-The benchmark publishes two BenchFlow ACP agents: a direct agent and a MOSAIC
-agent. Both receive the same task prompt, mounted task skills, terminal tool,
-OpenRouter-backed OpenAI Completions-compatible proxy, model, and low reasoning
-effort. Both compose the shared `createUnifiedProvider`; BenchFlow selects
-OpenRouter with `openrouter/deepseek/deepseek-v4-pro` and resolves the host's
-`OPENROUTER_API_KEY`, while the agents receive only the proxy endpoint, alias,
-and ephemeral proxy credential. The adapter sends that alias to LiteLLM while
-the unified provider uses the fixed original `deepseek/deepseek-v4-pro` identifier
-for curated capability policy; it does not treat LiteLLM's compatibility-only
-model listing as an OpenRouter capability catalog. The generated adapter owns
-the fixed `low` effort for both arms and the campaign omits BenchFlow's ACP
-reasoning-effort option because the external manifest contract cannot declare
-its required config-option identifier. The persisted BenchFlow run
-configuration must record that harness-owned effort as null. The MOSAIC arm
-uses the ordinary public `mosaic` entrypoint and observes runs through
-`MosaicRunOptions.observer` with `capture: 'io'`; it does not use benchmark
-interception hooks from `mosaic/evaluation`. IO events may expose model-visible
-content and terminal inputs and outputs to the benchmark trajectory, but never
-private reasoning or credentials. The terminal is benchmark-only authority
-inside the task sandbox and does not add command execution to a product package
-or Doric host surface. Its strict input accepts an optional positive safe
-integer `max_output_chars`; the runtime clamps that request to the fixed 12 KiB
-combined stdout/stderr ceiling instead of rejecting larger requests. Commands
-run through POSIX `sh -c`; the model-facing description does not promise
-Bash-only syntax and directs agents to discover available executables. Loaded
-skill bodies identify their canonical mounted
-directory so references to bundled scripts and supporting files resolve the
-same way in both arms. Only an authentic agent-owned
-`invalid_structured_output` exhaustion becomes a scoreable ACP failure: the
-adapter writes its safe code and returns `end_turn` so the verifier runs and the
-Direct arm may continue. Other authentic Agent or Provider failures become
-JSON-RPC `-32603` with at most `{source, code}`; unknown failures carry no data.
-ACP stderr likewise writes only an authentic safe code or a fixed generic line.
-Messages, diagnostics, causes, stacks, caught objects, and thrown values never
-cross the wire or stderr.
+The standalone ACP bundle contains current flows and core tools, which execute
+inside the BenchFlow-owned task container. Runtime injection accepts a provider,
+environment description, cancellation signal, and record observer, preserving
+diagnostic defaults. Cancellation reaches provider requests and command process
+groups. ACP failures use generic errors without caught provider messages or
+credentials. Trace events contain model-visible results, retrieval stages,
+tool observations, and provider usage.
 
-The BenchFlow launcher transfers its ephemeral proxy credential through a
-mode-0600 `OPENROUTER_API_KEY_FILE`, removes credential values from the Node
-process environment, and the provider reads and unlinks that file while
-constructing the ACP app, before any prompt or terminal exists. Terminal
-subprocesses additionally drop credential-shaped environment names. The host's
-actual `OPENROUTER_API_KEY` never enters the agent container. The generated
-bundle, its published
-checksum sidecar, and both launch manifests are fixed campaign inputs. Both
-manifests pin the bundle SHA-256 literally and pin the official Node archive
-SHA-256 per supported architecture; a paid campaign repeats the free preflight
-and refuses any local, manifest, or published bundle hash mismatch.
+Benchmark runtime records are also sent through authenticated HTTP to the host's
+`events.jsonl`, with a per-prompt run ID, agent, and increasing sequence number.
+The host serializes appends and acknowledges only completed writes; publication
+failure stops execution instead of silently losing evidence. Records include
+the original request, ranked candidates and scores, gating decisions and reasons,
+model-facing stage inputs, tool observations, usage, and final result. A missing
+`run.finished` marks incomplete evidence, including abrupt container shutdown.
+ACP status updates are progress only: BenchFlow's exported trajectory does not
+preserve those records. Older runs without this journal cannot be reconstructed
+from provider usage alone.
 
-SkillsBench v1.1, pinned to commit
-`b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`, is the primary benchmark.
-A diagnostic one-task SkillsBench smoke uses `jax-computing-basics` in both
-arms because it exercises sequential command recovery without relying on the
-flaky `edit-pdf` verifier environment. Smoke evidence remains operational only.
-A diagnostic SkillsBench `pilot` action runs a predeclared, varied ten-task
-subset through both arms by using BenchFlow's repeated `--include` selection.
-The fixed set is `data-to-d3`, `earthquake-phase-association`, `edit-pdf`,
-`jax-computing-basics`, `organize-messy-files`,
-`pptx-reference-formatting`, `sec-financial-report`,
-`spring-boot-jakarta-migration`, `travel-planning`, and `xlsx-recover-data`.
-The comparator requires that exact selection in the recorded run config.
-Pilot evidence is diagnostic only: it does not replace the full 87-task
-primary campaign and cannot satisfy the SkillsBench report gate for
-Terminal-Bench.
-The Nx benchmark host may resume an existing SkillsBench pilot after a host or
-sandbox failure. Resume is not a new campaign action: it preserves the original
-`pilot` action and `campaignId`, validates the direct-child `results/` path,
-closed metadata, artifact digests, exact task selection, released ACP bundle,
-and per-arm manifest, then reuses the existing BenchFlow `jobs/` directory.
-BenchFlow may reuse scored rollouts and reruns unscored tasks; MOSAIC starts or
-resumes first, and Direct starts or resumes only after MOSAIC has no runtime
-errors. Resume accepts closed, digest-matched evidence from either arm so both
-the current MOSAIC-first order and older Direct-first campaigns remain resumable.
-Resume requires explicit paid
-confirmation, an exclusive campaign lock, and Docker capacity of at least 8
-CPUs and 8 GiB. Before and after every returned arm attempt, duplicate and
-incomplete rollout directories are preserved under `attempts/`, while `jobs/`
-retains only the newest result per task; a successful arm additionally requires
-all ten tasks. Resume never crosses adapter releases, so every rollout in a
-campaign uses the same recorded bundle and manifests. The command mirrors
-BenchFlow stdout and stderr plus explicit host stages to host stderr while
-reserving stdout for the final JSON result. Host-only resume code is built into
-a separate generated Nx dispatcher.
-Terminal-Bench 2, pinned to
-`2fd12b88aafdd04a52c298e3940bcb189f9766d6`, is a secondary confirmation only
-after a valid SkillsBench comparison report, which is an explicit input to a
-paid Terminal-Bench campaign. A comparison is valid only when both arms match
-the closed benchmark source, task manifests, model, skill policy, and adapter
-assets; their recorded BenchFlow run configuration and health artifacts must
-match the campaign contract and their recorded hashes. Every task is scored
-without runtime or verifier errors and has trusted positive usage and cost
-telemetry. The comparison's primary decision is the paired quality delta:
-MOSAIC wins when it has a higher mean public-benchmark reward than the direct
-agent. The efficiency reading is total model cost per accumulated reward unit.
-Task-level MOSAIC wins, regressions, and ties are diagnostic evidence. A
-higher-reward/lower-total-cost strict Pareto win remains a separate aspirational
-indicator, not the sole useful result. Valid evidence with a quality win exits
-zero; valid evidence without a quality win exits one; invalid evidence exits
-two. Paid smoke, pilot, and full campaigns require explicit `--yes-paid-run`;
-credentials remain runtime-only and are never persisted or logged. The free
-preflight discards release-asset probes through Node's OS-specific null device,
-so remote-asset validation is equivalent on Windows and POSIX hosts.
+A host gateway serves a per-run archive pinned by SHA-256 and authenticated
+completions, embeddings, and reranking requests restricted to configured models.
+The OpenRouter key stays on the host; the agent receives an ephemeral credential
+and removes credential-shaped environment variables before running tools.
+The Node installation is separate from task toolchains and pinned by version
+and architecture-specific SHA-256. Linux bridge networking may require an
+explicit `--host-address`.
+
+Artifacts record task selection, catalog identity, model/retrieval configuration,
+agent hash, BenchFlow results, and raw provider usage. BenchFlow's single-model
+LiteLLM usage tracking is disabled because current flows use multiple model
+roles and retrieval providers via the host gateway. Missing provider cost is
+unknown, never zero. These diagnostic runs establish neither a trusted cost
+comparison nor a model success rate or equal-compute claim.
+
+The benchmark gateway persists successful single-text float embeddings under
+`benchmarks/harness/.cache/embeddings`, shared across tasks, retries and arms.
+Cache identity includes a format version, provider endpoint and the entire
+canonical request body, including exact input, model and dimensions. Only valid
+finite vectors are stored, using atomic replacement. Missing or malformed cache
+entries are recomputed; provider errors and other operations are never cached.
+Hits return zero new tokens and cost and are marked `cache: "hit"` in gateway
+usage; summaries count them separately from provider calls. This caches returned
+vectors, not provider billing or reasoning. Concurrent cold misses across hosts
+or processes may still issue duplicate requests. Changing a model alias upstream
+does not invalidate existing vectors; deleting this cache forces recomputation.
 
 `agents/doric` receives complete singleton configuration replacements through
 `PUT /config`. It persists only provider IDs, HTTP(S) base URLs,

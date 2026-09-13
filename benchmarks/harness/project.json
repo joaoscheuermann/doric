@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "benchmark-harness",
+  "projectType": "library",
+  "sourceRoot": "benchmarks/harness/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": ["bundle-core"]
+        }
+      ],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "command": "node benchmarks/harness/src/build.mjs"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node benchmarks/harness/src/test.mjs"
+      }
+    }
+  },
+  "tags": ["benchmark", "private"]
+}

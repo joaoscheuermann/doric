@@ -1,0 +1,16 @@
+{
+  "planningModel": "deepseek/deepseek-v4.1-flash",
+  "executionModel": "deepseek/deepseek-v4.1-flash",
+  "criteriaModel": "deepseek/deepseek-v4.1-flash",
+  "judgeModel": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "executionEffort": "low",
+  "embeddingModel": "voyageai/voyage-4-large",
+  "embeddingDimensions": 1024,
+  "rerankerModel": "voyageai/rerank-2.5",
+  "retrievalK": 20,
+  "topK": 10,
+  "maxTurns": 20,
+  "maxAttempts": 2,
+  "sandbox": { "image": "task-defined" }
+}

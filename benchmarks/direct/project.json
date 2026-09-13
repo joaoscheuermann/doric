@@ -1,8 +1,8 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "name": "mosaic-benchmark",
+  "name": "direct-benchmark",
   "projectType": "application",
-  "sourceRoot": "benchmarks/mosaic/src",
+  "sourceRoot": "benchmarks/direct/src",
   "targets": {
     "build": {
       "executor": "nx:run-commands",
@@ -13,7 +13,7 @@
         }
       ],
       "options": {
-        "command": "node --check benchmarks/mosaic/src/index.mjs"
+        "command": "node --check benchmarks/direct/src/index.mjs"
       }
     },
     "run": {
@@ -21,7 +21,7 @@
       "dependsOn": ["build"],
       "cache": false,
       "options": {
-        "command": "node --env-file-if-exists=.env --conditions=@org/source --import @swc-node/register/esm-register benchmarks/mosaic/src/index.mjs",
+        "command": "node --env-file-if-exists=.env --conditions=@org/source --import @swc-node/register/esm-register benchmarks/direct/src/index.mjs",
         "forwardAllArgs": true
       }
     }
