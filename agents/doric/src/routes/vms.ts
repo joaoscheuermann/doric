@@ -1,4 +1,5 @@
 import express, { type Router } from 'express';
+
 import type { SandboxSshAccess } from 'sandbox';
 
 import { sendError } from '../lib/http.js';
@@ -28,13 +29,17 @@ export const createVmsRouter = ({
 
   router.get('/:id/ssh', async (request, response) => {
     response.set('Cache-Control', 'no-store');
+
     const vm = find(request.params.id ?? '');
+
     if (vm === undefined) {
       sendError(response, 404, 'vm_not_found', 'The VM was not found.');
+
       return;
     }
 
     const access = await ssh(vm.id);
+
     if (access === undefined) {
       sendError(
         response,
@@ -42,8 +47,10 @@ export const createVmsRouter = ({
         'vm_ssh_unavailable',
         'SSH is unavailable for this VM.',
       );
+
       return;
     }
+
     response.json({ vm, ...access });
   });
 

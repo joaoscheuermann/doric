@@ -4,6 +4,7 @@ export type MessageStorageEntry = ProviderMessage | ProviderFinished;
 
 export type MessageStorage = {
   list(): readonly ProviderMessage[];
+
   push(entry: MessageStorageEntry): number;
 };
 

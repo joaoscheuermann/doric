@@ -3,9 +3,9 @@ import type { SandboxProvisionInput, SandboxRuntime } from 'sandbox';
 import { DockerHttpError } from './classes/errors.js';
 import {
   configureDockerHost,
-  preflightDockerHost,
   type DockerHostConfig,
   type DockerHostResources,
+  preflightDockerHost,
 } from './host.js';
 import type { ContainerRef, DockerClient } from './types/docker.js';
 import { extractFirstFile, packFile } from './utils/tar.js';
@@ -17,10 +17,13 @@ export const provisionDocker = async (
   config: DockerHostConfig,
 ): Promise<SandboxRuntime> => {
   validateName(input.name);
+
   await preflightDockerHost(input.network, config);
+
   await ensureImage(client, input);
 
   const ssh = input.network.ssh;
+
   const create = (diskQuota: boolean): Promise<ContainerRef> =>
     client.createContainer(
       {
@@ -62,14 +65,15 @@ export const provisionDocker = async (
       },
       { timeoutMs: input.timeoutMs },
     );
-
   let container: ContainerRef;
+
   try {
     container = await create(true);
   } catch (cause) {
     if (!unsupportedDiskQuota(cause)) {
       throw diskQuotaError(cause, input.resources.diskMiB);
     }
+
     container = await create(false).catch((retryCause) => {
       throw diskQuotaError(retryCause, input.resources.diskMiB);
     });
@@ -85,10 +89,12 @@ export const provisionDocker = async (
         timeoutMs: input.timeoutMs,
       })
       .catch(() => undefined);
+
     throw diskQuotaError(cause, input.resources.diskMiB);
   }
 
   let host!: DockerHostResources;
+
   try {
     host =
       input.network.mode === 'disabled'
@@ -106,10 +112,12 @@ export const provisionDocker = async (
     await client
       .removeContainer(container, { force: true, volumes: true })
       .catch(() => undefined);
+
     throw cause;
   }
 
   let disposed = false;
+
   return {
     id: container.id,
     exec: (execInput) =>
@@ -119,6 +127,7 @@ export const provisionDocker = async (
       }),
     async putFile(path, bytes) {
       const index = path.lastIndexOf('/');
+
       await client.putArchive(container, {
         path: path.slice(0, index),
         archive: packFile(path.slice(index + 1), bytes),
@@ -132,14 +141,22 @@ export const provisionDocker = async (
       return host.access;
     },
     async dispose() {
-      if (disposed) return;
+      if (disposed) {
+        return;
+      }
+
       const failures: unknown[] = [];
+
       await host.dispose().catch((cause) => failures.push(cause));
+
       await client
         .removeContainer(container, { force: true, volumes: true })
         .catch((cause) => failures.push(cause));
-      if (failures.length > 0)
+
+      if (failures.length > 0) {
         throw new AggregateError(failures, 'Docker sandbox cleanup failed');
+      }
+
       disposed = true;
     },
   };
@@ -156,13 +173,14 @@ const ensureImage = async (
   ) {
     return;
   }
+
   await client.pullImage(
     { image: input.image },
     { timeoutMs: input.timeoutMs },
   );
 };
-
 const pattern = /^[A-Za-z0-9][A-Za-z0-9_.-]+$/u;
+
 const validateName = (name: string | undefined): void => {
   if (name !== undefined && !pattern.test(name)) {
     throw new Error(`Docker container name must match ${pattern}: ${name}`);

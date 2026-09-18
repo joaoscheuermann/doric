@@ -10,9 +10,9 @@ import {
   CODEX_OAUTH_CALLBACK_PATH,
   CODEX_OAUTH_CALLBACK_PORT,
   CODEX_OAUTH_FALLBACK_CALLBACK_PORT,
+  createCodexOAuth,
   createFetchTransport,
   createLocalCallbackServer,
-  createCodexOAuth,
   openBrowser,
 } from 'oauth';
 
@@ -34,7 +34,6 @@ Configuration:
   CODEX_OAUTH_OUTPUT_KEY         Optional .env output key. Defaults to CODEX_AUTHORIZATION.
 
 The script never prints the token or existing .env contents.`;
-
 const hasHelpFlag = (args) =>
   args.some((arg) => arg === '--help' || arg === '-h');
 
@@ -162,6 +161,7 @@ const writeEnvKey = async (contents, key, value) => {
     }
 
     replaced = true;
+
     return [nextLine];
   });
 
@@ -176,6 +176,7 @@ const writeEnvKey = async (contents, key, value) => {
   }
 
   const nextContents = `${nextLines.join(lineEnding)}${hasTrailingNewline ? lineEnding : ''}`;
+
   await writeFile(ENV_PATH, nextContents, 'utf8');
 };
 
@@ -205,6 +206,7 @@ const isAddressInUse = (error) =>
 
 const createCodexCallbackServer = async (env) => {
   const configuredPort = parsePort(env.CODEX_OAUTH_CALLBACK_PORT);
+
   const options = {
     host: optional(env.CODEX_OAUTH_CALLBACK_HOST) ?? CODEX_OAUTH_CALLBACK_HOST,
     port: configuredPort ?? CODEX_OAUTH_CALLBACK_PORT,
@@ -228,6 +230,7 @@ const createCodexCallbackServer = async (env) => {
 const authorize = async () => {
   const envContents = await readEnvFile();
   const env = mergedEnv(parseEnv(envContents));
+
   const outputKey = assertOutputKey(
     optional(env.CODEX_OAUTH_OUTPUT_KEY) ?? CODEX_AUTHORIZATION_ENV_KEY,
   );
@@ -245,15 +248,20 @@ const authorize = async () => {
       redirectUri: callbackServer.redirectUri,
       async browserOpener(url) {
         log(`Opening browser. If it does not open, visit:\n${url}`);
+
         await openBrowser(url);
+
         log('Waiting for authorization...');
       },
       callbackServer,
     });
 
     await codex.authorize();
+
     const credential = await codex.credential();
+
     await writeEnvKey(await readEnvFile(), outputKey, credential.authorization);
+
     log(`Saved authorization to .env key ${outputKey}.`);
   } finally {
     await callbackServer?.close();
@@ -267,6 +275,7 @@ if (hasHelpFlag(process.argv.slice(2))) {
     await authorize();
   } catch (error) {
     console.error(errorMessage(error));
+
     process.exitCode = 1;
   }
 }

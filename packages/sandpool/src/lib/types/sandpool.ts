@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+
 import type { Sandbox, SandboxSession } from 'sandbox';
 
 export type SandpoolLifecycle = 'active' | 'disposing' | 'disposed';
@@ -37,8 +38,12 @@ export type SandpoolStatus = {
 
 export type Sandpool = {
   heated(): boolean;
+
   waitUntilHeated(options?: SandpoolWaitOptions): Promise<void>;
+
   acquire(options?: SandpoolWaitOptions): Promise<SandboxLease>;
+
   status(): SandpoolStatus;
+
   dispose(): Promise<void>;
 };

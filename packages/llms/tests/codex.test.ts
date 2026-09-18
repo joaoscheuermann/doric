@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { z } from 'zod';
 
 import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
@@ -21,6 +22,7 @@ test('sends Codex ChatGPT account headers to the Codex backend', async () => {
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -37,25 +39,36 @@ test('sends Codex ChatGPT account headers to the Codex backend', async () => {
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
 
   assert.equal(provider.metadata.id, 'codex');
+
   assert.equal(
     transport.requests[0]?.url,
     'https://chatgpt.com/backend-api/codex/responses',
   );
+
   assert.equal(result.text, 'ok');
+
   assert.equal(body.model, 'gpt-5.5');
+
   assert.equal(body.stream, true);
+
   assert.equal(body.store, false);
+
   assert.deepEqual(body.reasoning, { effort: 'high' });
+
   assert.equal(body.temperature, undefined);
+
   assert.equal(body.instructions, 'You are Codex, a coding agent.');
+
   assert.equal(
     transport.requests[0]?.headers?.authorization,
     'Bearer codex-token',
   );
+
   assert.equal(
     transport.requests[0]?.headers?.['ChatGPT-Account-ID'],
     'acct_123',
   );
+
   assert.equal(transport.requests[0]?.headers?.['X-OpenAI-Fedramp'], 'true');
 });
 
@@ -75,6 +88,7 @@ test('allows overriding the Codex backend base URL', async () => {
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -108,6 +122,7 @@ test('preserves caller-provided Codex instructions', async () => {
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -143,6 +158,7 @@ test('adds a schema instruction to Codex requests while retaining text format', 
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -157,13 +173,16 @@ test('adds a schema instruction to Codex requests while retaining text format', 
     schema: z.object({ answer: z.string() }),
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   });
+
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
 
   assert.match(
     body.instructions,
     /^Follow policy\.[\s\S]*Return exactly one JSON object[\s\S]*JSON Schema/u,
   );
+
   assert.equal(body.text.format.type, 'json_schema');
+
   assert.deepEqual(body.input, [
     {
       role: 'user',
@@ -176,6 +195,7 @@ test('rejects Codex complete when the stream emits a provider error', async () =
   const transport = fakeTransport({
     streams: [['data: not-json\n\n']],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -206,6 +226,7 @@ test('rejects Codex complete refusals when structured output is required', async
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -240,6 +261,7 @@ test('maps Codex stream provider identity', async () => {
       ],
     ],
   });
+
   const provider = createCodexProvider({
     transport,
     authorization: 'Bearer codex-token',
@@ -257,8 +279,11 @@ test('maps Codex stream provider identity', async () => {
     provider: 'codex',
     model: 'gpt-5.5',
   } satisfies ProviderStreamEvent);
+
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+
   assert.equal(body.store, false);
+
   assert.equal(body.instructions, 'You are Codex, a coding agent.');
 });
 

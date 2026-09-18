@@ -6,7 +6,9 @@ export class AgentErrorObject extends Error {
 
   constructor(data: AgentError, options?: ErrorOptions) {
     super(data.message, options);
+
     this.name = 'AgentErrorObject';
+
     this.data = data;
   }
 }

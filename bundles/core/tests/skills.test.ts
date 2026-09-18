@@ -9,7 +9,10 @@ test('documents failure-preserving compound shell commands', async () => {
   );
 
   assert.match(body, /compound command/u);
+
   assert.match(body, /`set -e`/u);
+
   assert.match(body, /`&&`/u);
+
   assert.match(body, /later successful step can hide an earlier failure/u);
 });

@@ -1,10 +1,11 @@
+import type { z } from 'zod';
+
 import type {
   JsonObject,
   JsonValue,
   ToolCallRequest,
   ToolDefinition,
 } from 'tool';
-import type { z } from 'zod';
 
 export type { JsonArray, JsonObject, JsonPrimitive, JsonValue } from 'tool';
 
@@ -83,6 +84,7 @@ export type ReasoningRequest = {
 };
 
 export type StructuredOutputSchema = z.ZodType;
+
 export type StructuredOutputValue<Schema extends StructuredOutputSchema> =
   z.output<Schema>;
 

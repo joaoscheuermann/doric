@@ -95,3 +95,30 @@ npx nx test <project>
 
 The project README lists any additional build, run, typecheck, or e2e targets
 and their prerequisites.
+
+### Lint and formatting
+
+Use the official ESLint `recommended` preset for JavaScript and
+typescript-eslint `recommendedTypeChecked` plus `stylisticTypeChecked` for
+workspace `.ts`, `.mts`, and `.cts` files under `src`, `tests`, and `tools`,
+plus workspace `index` entrypoints. These files must be included in a workspace
+tsconfig. Other TypeScript files use the untyped `recommended` preset.
+These [upstream presets](https://typescript-eslint.io/users/configs/) own code
+quality and TypeScript idioms; Prettier owns formatting, with
+`eslint-config-prettier` applied last to prevent conflicting rules.
+
+Import sorting is the only additional lint policy: side effects, Node built-ins,
+external dependencies, workspace packages, then relative imports. There are no
+local spacing rules or custom complexity, nesting, or parameter-count limits.
+
+```console
+npm run lint
+npm run format:check
+npm run lint:test
+```
+
+For scoped fixes, run `npx eslint --fix <files>` and
+`npx prettier --write <files>`. Avoid formatting unrelated files.
+CI tests the lint configuration as a blocking check. Whole-workspace lint and
+formatting remain non-blocking adoption reports while existing debt is addressed;
+passing the configuration tests does not mean the workspace is lint-clean.

@@ -70,6 +70,7 @@ export const createOAuthClient = (
       now: clock,
       signal,
     });
+
     const saved = {
       ...next,
       refreshToken: next.refreshToken ?? existing.refreshToken,
@@ -159,20 +160,28 @@ const authorizationUrl = (
   verifier: string,
 ): URL => {
   const url = new URL(options.profile.authorizationEndpoint);
+
   url.searchParams.set('response_type', 'code');
+
   url.searchParams.set('client_id', options.clientId);
+
   url.searchParams.set('redirect_uri', options.redirectUri);
+
   url.searchParams.set(
     'scope',
     options.scope ?? options.profile.defaultScope ?? '',
   );
+
   for (const [key, value] of Object.entries(
     options.profile.authorizationParams ?? {},
   )) {
     url.searchParams.set(key, value);
   }
+
   url.searchParams.set('state', state);
+
   url.searchParams.set('code_challenge', challenge(verifier));
+
   url.searchParams.set('code_challenge_method', 'S256');
 
   return url;
@@ -226,6 +235,7 @@ const exchangeToken = async (
     code_verifier: request.codeVerifier,
     redirect_uri: request.redirectUri,
   });
+
   const response = await transport.request({
     method: 'POST',
     url: request.profile.tokenEndpoint,

@@ -6,8 +6,11 @@ export class OAuthErrorObject extends Error {
 
   constructor(data: OAuthError, options?: ErrorOptions) {
     super(data.message, options);
+
     this.name = 'OAuthError';
+
     this.data = data;
+
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

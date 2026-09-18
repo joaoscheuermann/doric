@@ -1,4 +1,5 @@
 import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 
 import { ToolErrorObject } from './classes/tool-error.js';
@@ -76,12 +77,14 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
 export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
   const entries = tools.map((tool) => [tool.name, tool] as const);
   const names = new Set<string>();
+
   const duplicate = entries.find(([name]) => {
     if (names.has(name)) {
       return true;
     }
 
     names.add(name);
+
     return false;
   });
 
@@ -109,6 +112,7 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
     }
 
     validatePayload(tool, parsed);
+
     return parsed;
   };
 

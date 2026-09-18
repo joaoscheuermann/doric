@@ -5,6 +5,7 @@ import type { JsonlFile, JsonlValue } from './types/jsonl.js';
 import { parseLine, serializeLine } from './utils/line.js';
 
 export { JsonlParseError } from './classes/parse-error.js';
+
 export type {
   JsonlArray,
   JsonlFile,
@@ -46,6 +47,7 @@ export function jsonl(path: string): JsonlFile {
 
 function append(state: JsonlState, value: JsonlValue): Promise<void> {
   const line = serializeLine(value);
+
   const writeLine = state.pending
     .catch(() => undefined)
     .then(() => write(state, line));
@@ -63,10 +65,12 @@ async function* read(path: string): AsyncIterable<JsonlValue> {
   try {
     for await (const line of lines) {
       lineNumber += 1;
+
       yield parseLine(path, lineNumber, line);
     }
   } finally {
     lines.close();
+
     input.destroy();
   }
 }
@@ -78,6 +82,7 @@ async function close(state: JsonlState): Promise<void> {
 
   if (output === undefined || output.destroyed) {
     state.stream = undefined;
+
     return;
   }
 
@@ -86,19 +91,26 @@ async function close(state: JsonlState): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const cleanup = () => {
       output.off('error', onError);
+
       output.off('finish', onFinish);
     };
+
     const onError = (error: Error) => {
       cleanup();
+
       reject(error);
     };
+
     const onFinish = () => {
       cleanup();
+
       resolve();
     };
 
     output.once('error', onError);
+
     output.once('finish', onFinish);
+
     output.end();
   });
 }
@@ -121,19 +133,25 @@ async function write(state: JsonlState, line: string): Promise<void> {
     const cleanup = () => {
       output.off('error', onError);
     };
+
     const onError = (error: Error) => {
       cleanup();
+
       state.stream = undefined;
+
       reject(error);
     };
 
     output.once('error', onError);
+
     output.write(line, (error: Error | null | undefined) => {
       cleanup();
 
       if (error !== null && error !== undefined) {
         state.stream = undefined;
+
         reject(error);
+
         return;
       }
 

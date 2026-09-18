@@ -2,15 +2,16 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadBundles } from 'bundle';
-import { createDockerClient } from 'docker';
 import express from 'express';
-import { createFirecrackerClient } from 'firecracker';
 import pino from 'pino';
 import pretty from 'pino-pretty';
+import { Server as SocketServer } from 'socket.io';
+
+import { loadBundles } from 'bundle';
+import { createDockerClient } from 'docker';
+import { createFirecrackerClient } from 'firecracker';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
-import { Server as SocketServer } from 'socket.io';
 
 import { createConfigService } from './lib/config-service.js';
 import { createConfigStore } from './lib/config-store.js';
@@ -39,6 +40,7 @@ let startupStage = 'bootstrap';
 async function main() {
   const host = process.env.DORIC_HOST ?? '0.0.0.0';
   const port = Number.parseInt(process.env.DORIC_PORT ?? '3000', 10);
+
   const sandboxProviderName =
     process.env.DORIC_SANDBOX_PROVIDER === 'firecracker'
       ? 'firecracker'
@@ -55,10 +57,15 @@ async function main() {
     },
     'Doric starting',
   );
+
   startupStage = 'database_client';
+
   startup.info('Initializing PostgreSQL client');
+
   const database = createDatabase(process.env.DORIC_DATABASE_URL ?? '');
+
   await database.$connect();
+
   startup.info('PostgreSQL client initialized');
 
   const app = express();
@@ -66,19 +73,22 @@ async function main() {
   const io = new SocketServer(server);
 
   startupStage = 'sandbox_pool';
+
   startup.info({ sandboxProviderName }, 'Configuring sandbox pool');
+
   const sandboxProvider =
     sandboxProviderName === 'firecracker'
       ? createFirecrackerClient()
       : createDockerClient();
-
   const vms = createVmRegistry(sandboxProviderName, sandboxProvider);
   const sandboxImage = 'node:22-bookworm';
+
   const sandboxResources = {
     cpuCount: 1,
     memoryMiB: 512,
     diskMiB: 4096,
   } as const;
+
   const poolLimits = {
     minIdle: 1,
     maxSandboxes: 10,
@@ -101,6 +111,7 @@ async function main() {
         },
       }),
   });
+
   startup.info(
     {
       sandboxProviderName,
@@ -114,10 +125,13 @@ async function main() {
   );
 
   startupStage = 'bundle_load';
+
   startup.info('Loading bundles');
+
   const bundles = await loadBundles(
     join(dirname(fileURLToPath(import.meta.url)), '..', 'bundles'),
   );
+
   startup.info(
     {
       bundleCount: bundles.length,
@@ -132,14 +146,18 @@ async function main() {
     },
     'Bundles loaded',
   );
+
   startupStage = 'configuration_activation';
+
   startup.info('Activating Doric configuration');
+
   const config = await createConfigService({
     store: createConfigStore(database),
     bundles,
     logger,
   });
   const snapshot = config.current().snapshot;
+
   startup.info(
     {
       configRevision: snapshot.revision,
@@ -149,10 +167,14 @@ async function main() {
     },
     'Doric configuration activated',
   );
+
   startupStage = 'session_reconciliation';
+
   startup.info('Reconciling persisted sessions');
+
   const sessions = createSessionStore(database);
   const interrupted = await sessions.reconcile();
+
   if (interrupted === 0) {
     startup.info({ interruptedSessionCount: interrupted }, 'Sessions ready');
   } else {
@@ -161,7 +183,9 @@ async function main() {
       'Interrupted sessions marked as failed',
     );
   }
+
   const publisher = createSessionsSocket(io, sessions);
+
   const service = createSessionService({
     store: sessions,
     config,
@@ -171,6 +195,7 @@ async function main() {
   });
 
   app.use(express.json());
+
   app.use(
     '/vms',
     createVmsRouter({
@@ -179,45 +204,68 @@ async function main() {
       ssh: service.sshForVm,
     }),
   );
+
   app.use('/config', createConfigRouter(config));
+
   app.use('/sessions', createSessionsRouter(service));
+
   app.use(handleHttpError);
+
   startup.info(
     { restEndpointCount: 11, socketNamespace: '/sessions' },
     'Network interfaces configured',
   );
 
   startupStage = 'network_binding';
+
   startup.info({ host, port }, 'Binding HTTP listener');
+
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
+
     server.listen(port, host, resolve);
   });
+
   startup.info(
     { host, port, sandboxProvider: sandboxProviderName, interrupted },
     'Doric listening',
   );
+
   startupStage = 'ready';
 
   let closing = false;
+
   const close = async () => {
-    if (closing) return;
+    if (closing) {
+      return;
+    }
+
     closing = true;
+
     const closed = new Promise<void>((resolve) =>
       server.close(() => resolve()),
     );
+
     io.close();
+
     await closed;
+
     await service.dispose();
+
     await pool.dispose();
+
     await database.$disconnect();
   };
+
   process.once('SIGINT', () => void close());
+
   process.once('SIGTERM', () => void close());
 }
 
 main().catch(() => {
   logger.fatal({ stage: startupStage }, 'Doric failed to start');
+
   logger.flush();
+
   process.exit(1);
 });

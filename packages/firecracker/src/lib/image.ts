@@ -3,8 +3,8 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   readlink,
   rename,
   rm,
@@ -42,18 +42,26 @@ export const prepareImage = async (
   pullPolicy: 'always' | 'if-not-present' = 'always',
 ): Promise<PreparedImage> => {
   validateReference(image);
+
   const cache = config.paths.cache;
+
   await mkdir(join(cache, 'locks'), { recursive: true, mode: 0o700 });
+
   await mkdir(join(cache, 'images'), { recursive: true, mode: 0o700 });
+
   await mkdir(join(cache, 'refs'), { recursive: true, mode: 0o700 });
+
   await mkdir(join(cache, 'uses'), { recursive: true, mode: 0o700 });
+
   const reference = join(
     cache,
     'refs',
     `${createHash('sha256').update(image).digest('hex')}.json`,
   );
+
   if (pullPolicy === 'if-not-present') {
     const cachedKey = await readReference(reference);
+
     if (cachedKey !== undefined) {
       const cached = await activate(
         cache,
@@ -62,13 +70,18 @@ export const prepareImage = async (
         config.cacheLimitBytes,
         signal,
       );
-      if (cached !== undefined) return cached;
+
+      if (cached !== undefined) {
+        return cached;
+      }
     }
   }
+
   const acquisition = await mkdtemp(join(cache, '.acquire-'));
 
   try {
     const layout = join(acquisition, 'oci');
+
     await run({
       file: 'skopeo',
       args: [
@@ -82,7 +95,9 @@ export const prepareImage = async (
       ],
       signal,
     });
+
     const digest = await manifestDigest(layout);
+
     const key = createHash('sha256')
       .update(`${digest}:${converterVersion}`)
       .digest('hex');
@@ -91,10 +106,13 @@ export const prepareImage = async (
     try {
       const disk = join(cache, 'images', `${key}.ext4`);
       const metadataPath = join(cache, 'images', `${key}.json`);
+
       if (!(await exists(disk)) || !(await exists(metadataPath))) {
         await convert(layout, disk, metadataPath, digest, config, signal);
       }
+
       await writeAtomic(reference, JSON.stringify({ key }));
+
       const prepared = await activate(
         cache,
         key,
@@ -102,8 +120,11 @@ export const prepareImage = async (
         config.cacheLimitBytes,
         signal,
       );
-      if (prepared === undefined)
+
+      if (prepared === undefined) {
         throw new Error('Firecracker image cache publication failed');
+      }
+
       return prepared;
     } finally {
       await lock();
@@ -124,18 +145,28 @@ const activate = async (
   const disk = join(cache, 'images', `${key}.ext4`);
   const metadataPath = join(cache, 'images', `${key}.json`);
   let marker: string | undefined;
+
   try {
-    if (!(await exists(disk)) || !(await exists(metadataPath)))
+    if (!(await exists(disk)) || !(await exists(metadataPath))) {
       return undefined;
+    }
+
     const metadata = parseMetadata(await readFile(metadataPath, 'utf8'));
     const useDirectory = join(cache, 'uses', key);
+
     await mkdir(useDirectory, { recursive: true, mode: 0o700 });
+
     marker = join(useDirectory, sandboxId);
+
     await writeFile(marker, '', { mode: 0o600 });
+
     const activeMarker = marker;
     const now = new Date();
+
     await utimes(disk, now, now);
+
     await evict(cache, limit);
+
     return {
       disk,
       digest: metadata.digest,
@@ -146,7 +177,10 @@ const activate = async (
       },
     };
   } catch (cause) {
-    if (marker !== undefined) await rm(marker, { force: true });
+    if (marker !== undefined) {
+      await rm(marker, { force: true });
+    }
+
     throw cause;
   } finally {
     await unlockLru();
@@ -155,9 +189,14 @@ const activate = async (
 
 const readReference = async (path: string): Promise<string | undefined> => {
   const raw = await readFile(path, 'utf8').catch(() => undefined);
-  if (raw === undefined) return undefined;
+
+  if (raw === undefined) {
+    return undefined;
+  }
+
   try {
     const value = JSON.parse(raw) as { readonly key?: unknown };
+
     return typeof value.key === 'string' && /^[a-f0-9]{64}$/u.test(value.key)
       ? value.key
       : undefined;
@@ -176,6 +215,7 @@ const convert = async (
 ): Promise<void> => {
   const work = `${disk}.${randomUUID()}.tmp`;
   const bundle = `${work}.bundle`;
+
   const configResult = await run({
     file: 'skopeo',
     args: ['inspect', '--config', `oci:${layout}:doric`],
@@ -189,31 +229,42 @@ const convert = async (
       args: ['unpack', '--image', `${layout}:doric`, bundle],
       signal,
     });
+
     const rootfs = join(bundle, 'rootfs');
+
     await validateTree(rootfs, rootfs);
+
     const size = await treeSize(rootfs);
+
     const diskBytes = Math.max(
       512 * 1024 ** 2,
       Math.ceil(size * 1.3 + 64 * 1024 ** 2),
     );
+
     if (diskBytes > config.cacheLimitBytes) {
       throw new Error('OCI image cannot fit in the Firecracker rootfs cache');
     }
+
     await run({
       file: 'truncate',
       args: ['-s', String(diskBytes), work],
       signal,
     });
+
     await run({
       file: 'mkfs.ext4',
       args: ['-F', '-q', '-d', rootfs, work],
       signal,
     });
+
     await chmod(work, 0o400);
+
     await rename(work, disk);
+
     await writeAtomic(metadataPath, JSON.stringify(metadata));
   } finally {
     await rm(work, { force: true });
+
     await rm(bundle, { recursive: true, force: true });
   }
 };
@@ -225,9 +276,11 @@ const manifestDigest = async (layout: string): Promise<string> => {
     manifests?: readonly { readonly digest?: unknown }[];
   };
   const digest = index.manifests?.[0]?.digest;
+
   if (typeof digest !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(digest)) {
     throw new Error('OCI copy did not produce one valid linux/amd64 manifest');
   }
+
   return digest;
 };
 
@@ -237,9 +290,11 @@ const configFrom = (raw: string, digest: string): ImageMetadata => {
     os?: unknown;
     config?: { Env?: unknown; User?: unknown };
   };
+
   if (parsed.architecture !== 'amd64' || parsed.os !== 'linux') {
     throw new Error('OCI image platform must be linux/amd64');
   }
+
   const env = Array.isArray(parsed.config?.Env)
     ? parsed.config.Env.filter(
         (value): value is string => typeof value === 'string',
@@ -247,25 +302,34 @@ const configFrom = (raw: string, digest: string): ImageMetadata => {
     : [];
   const user =
     typeof parsed.config?.User === 'string' ? parsed.config.User : '';
+
   return { digest, env, user };
 };
 
 const validateTree = async (root: string, path: string): Promise<void> => {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = join(path, entry.name);
+
     if (entry.isDirectory()) {
       await validateTree(root, child);
+
       continue;
     }
+
     if (entry.isSymbolicLink()) {
       const target = await readlink(child);
+
       const destination = target.startsWith('/')
         ? resolve(root, target.slice(1))
         : resolve(dirname(child), target);
-      if (!inside(root, destination))
+
+      if (!inside(root, destination)) {
         throw new Error('OCI image contains an escaping symbolic link');
+      }
+
       continue;
     }
+
     if (!entry.isFile()) {
       throw new Error('OCI image contains an unsupported special file');
     }
@@ -274,16 +338,23 @@ const validateTree = async (root: string, path: string): Promise<void> => {
 
 const treeSize = async (root: string): Promise<number> => {
   let total = 0;
+
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) total += await treeSize(path);
-    else if (entry.isFile()) total += (await stat(path)).size;
+
+    if (entry.isDirectory()) {
+      total += await treeSize(path);
+    } else if (entry.isFile()) {
+      total += (await stat(path)).size;
+    }
   }
+
   return total;
 };
 
 const evict = async (cache: string, limit: number): Promise<void> => {
   const directory = join(cache, 'images');
+
   const candidates = await Promise.all(
     (await readdir(directory))
       .filter((name) => name.endsWith('.ext4'))
@@ -293,19 +364,30 @@ const evict = async (cache: string, limit: number): Promise<void> => {
       })),
   );
   let total = candidates.reduce((sum, item) => sum + item.stats.size, 0);
+
   for (const item of candidates.sort(
     (left, right) => left.stats.mtimeMs - right.stats.mtimeMs,
   )) {
-    if (total <= limit) return;
+    if (total <= limit) {
+      return;
+    }
+
     const key = item.name.slice(0, -'.ext4'.length);
-    if ((await readdir(join(cache, 'uses', key)).catch(() => [])).length > 0)
+
+    if ((await readdir(join(cache, 'uses', key)).catch(() => [])).length > 0) {
       continue;
+    }
+
     await rm(join(directory, item.name), { force: true });
+
     await rm(join(directory, `${key}.json`), { force: true });
+
     total -= item.stats.size;
   }
-  if (total > limit)
+
+  if (total > limit) {
     throw new Error('Firecracker rootfs cache is full with in-use images');
+  }
 };
 
 const acquireLock = async (
@@ -313,15 +395,21 @@ const acquireLock = async (
   signal?: AbortSignal,
 ): Promise<() => Promise<void>> => {
   for (;;) {
-    if (signal?.aborted)
+    if (signal?.aborted) {
       throw Object.assign(new Error('The operation was aborted'), {
         name: 'AbortError',
       });
+    }
+
     try {
       await mkdir(path);
+
       return async () => rm(path, { recursive: true, force: true });
     } catch (cause) {
-      if (!isCode(cause, 'EEXIST')) throw cause;
+      if (!isCode(cause, 'EEXIST')) {
+        throw cause;
+      }
+
       await new Promise((resolveWait) => setTimeout(resolveWait, 50));
     }
   }
@@ -329,12 +417,15 @@ const acquireLock = async (
 
 const writeAtomic = async (path: string, value: string): Promise<void> => {
   const temporary = `${path}.${randomUUID()}.tmp`;
+
   await writeFile(temporary, value, { mode: 0o600 });
+
   await rename(temporary, path);
 };
 
 const parseMetadata = (raw: string): ImageMetadata => {
   const value = JSON.parse(raw) as Partial<ImageMetadata>;
+
   if (
     typeof value.digest !== 'string' ||
     typeof value.user !== 'string' ||
@@ -342,6 +433,7 @@ const parseMetadata = (raw: string): ImageMetadata => {
   ) {
     throw new Error('Firecracker image cache metadata is invalid');
   }
+
   return {
     digest: value.digest,
     user: value.user,
@@ -356,15 +448,19 @@ const validateReference = (image: string): void => {
     );
   }
 };
+
 const exists = async (path: string): Promise<boolean> =>
   stat(path).then(
     () => true,
     () => false,
   );
+
 const inside = (root: string, path: string): boolean => {
   const value = relative(root, path);
+
   return value === '' || (!value.startsWith(`..${sep}`) && value !== '..');
 };
+
 const isCode = (cause: unknown, code: string): boolean =>
   typeof cause === 'object' &&
   cause !== null &&

@@ -1,12 +1,12 @@
 import { posix as path } from 'node:path';
 
+import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
-import { z } from 'zod';
 
 const DEFAULT_LIMIT = 1000;
 const MAX_OUTPUT_BYTES = 50 * 1024;
-
 const description =
   'Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).';
 
@@ -28,6 +28,7 @@ export const output = z
   .strict();
 
 export type FindOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type IgnorePattern = {
@@ -63,6 +64,7 @@ const execute = async (
   }
 
   const kind = await pathKind(sandbox, workspaceRoot, searchPath.path);
+
   if (kind === 'missing') {
     return empty(`Path not found: ${searchDir}`);
   }
@@ -72,12 +74,14 @@ const execute = async (
   }
 
   const glob = compileGlob(input.pattern);
+
   if (typeof glob === 'string') {
     return empty(`Invalid glob pattern '${input.pattern}': ${glob}`);
   }
 
   const files = await listFiles(sandbox, workspaceRoot, searchPath.path);
   const ignores = await readIgnores(sandbox, workspaceRoot, searchPath.path);
+
   const visible = files.filter(
     (file) => !isIgnoredWithAncestors(searchPath.path, file, false, ignores),
   );
@@ -105,13 +109,17 @@ const collect = async (
     }
 
     totalMatched += 1;
+
     const lineBytes = relative.length + 1;
+
     if (totalBytes + lineBytes > MAX_OUTPUT_BYTES || results.length >= limit) {
       truncated = true;
+
       break;
     }
 
     totalBytes += lineBytes;
+
     results.push(relative);
   }
 
@@ -186,6 +194,7 @@ const readIgnores = async (
   }
 
   const files = lines(result.stdout).map(normalizePath).sort();
+
   const groups = await Promise.all(
     files.map(async (file) =>
       parseIgnores(path.dirname(file), await readFile(sandbox, file)),
@@ -229,24 +238,29 @@ const isIgnored = (
   ignores: readonly IgnorePattern[],
 ): boolean => {
   let ignored = false;
+
   for (const ignore of ignores) {
     const pattern = ignore.pattern.endsWith('/')
       ? ignore.pattern.slice(0, -1)
       : ignore.pattern;
+
     if (ignore.pattern.endsWith('/') && !isDirectory) {
       continue;
     }
 
     const glob = compileGlob(pattern);
+
     if (!contains(ignore.base, fullPath)) {
       continue;
     }
 
     const relative = path.relative(ignore.base, fullPath);
+
     const matched =
       glob instanceof RegExp
         ? glob.test(relative) || glob.test(path.basename(fullPath))
         : relative === pattern || path.basename(fullPath) === pattern;
+
     if (matched) {
       ignored = !ignore.negated;
     }
@@ -257,6 +271,7 @@ const isIgnored = (
 
 const compileGlob = (pattern: string): RegExp | string => {
   let source = '^';
+
   for (let index = 0; index < pattern.length; index += 1) {
     const char = pattern[index];
     const next = pattern[index + 1];
@@ -269,6 +284,7 @@ const compileGlob = (pattern: string): RegExp | string => {
 
     if (char === '*' && next === '*') {
       source += '.*';
+
       index += 1;
     } else if (char === '*') {
       source += '[^/]*';
@@ -287,6 +303,7 @@ const resolvePath = (
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
+
   const resolved = normalizePath(
     path.isAbsolute(value) ? value : path.join(root, value),
   );
@@ -342,6 +359,7 @@ const ancestors = (root: string, fullPath: string): readonly string[] => {
 
   while (contains(root, current) && current !== root) {
     values.unshift(current);
+
     current = path.dirname(current);
   }
 
@@ -356,6 +374,7 @@ const lines = (value: string): readonly string[] =>
 
 const normalizePath = (value: string): string => {
   const resolved = path.normalize(path.isAbsolute(value) ? value : `/${value}`);
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/, '');
 };
 

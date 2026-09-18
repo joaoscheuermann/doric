@@ -4,7 +4,6 @@ import Json from 'tree-sitter-json';
 import TypeScript from 'tree-sitter-typescript';
 
 import { createOkfError } from './classes/okf-error.js';
-
 import {
   hasModuleInterface,
   isTypeScript,
@@ -26,7 +25,6 @@ export const PARSER_VERSION = Object.entries(PARSER_DEPENDENCY_VERSIONS)
   .map(([name, version]) => `${name}@${version}`)
   .join('|')
   .concat('|buffer-next-power-of-two-v1');
-
 export const EXTRACTOR_VERSION = 'module-interface-v2';
 
 const INTERFACE_QUERY = `
@@ -50,6 +48,7 @@ export const parseInterface = async (
   input: ParseInput,
 ): Promise<ModuleInterface | undefined> => {
   const language = selectLanguage(input.type);
+
   const tree = (() => {
     try {
       const required = input.content.length + 1;
@@ -67,7 +66,9 @@ export const parseInterface = async (
       }
 
       const parser = new Parser();
+
       parser.setLanguage(language);
+
       return parser.parse(input.content, undefined, { bufferSize });
     } catch {
       throw createOkfError('OKF_SOURCE_PARSE_FAILED', input.source);
@@ -77,7 +78,10 @@ export const parseInterface = async (
   if (tree.rootNode.hasError) {
     throw createOkfError('OKF_SOURCE_SYNTAX_INVALID', input.source);
   }
-  if (!hasModuleInterface(input.type)) return undefined;
+
+  if (!hasModuleInterface(input.type)) {
+    return undefined;
+  }
 
   const query = new Parser.Query(language, INTERFACE_QUERY);
   const nodes = query.captures(tree.rootNode).map(({ node }) => node);
@@ -92,8 +96,17 @@ export const parseInterface = async (
 };
 
 const selectLanguage = (type: SupportedType): unknown => {
-  if (type === 'json') return Json;
-  if (type === 'tsx') return TypeScript.tsx;
-  if (isTypeScript(type)) return TypeScript.typescript;
+  if (type === 'json') {
+    return Json;
+  }
+
+  if (type === 'tsx') {
+    return TypeScript.tsx;
+  }
+
+  if (isTypeScript(type)) {
+    return TypeScript.typescript;
+  }
+
   return JavaScript;
 };

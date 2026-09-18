@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { ModelRole, type Prisma } from '../generated/prisma/client.js';
 import {
-  ConfigInputSchema,
   type ConfigInput,
+  ConfigInputSchema,
   type DoricConfig,
 } from './config.js';
 import type { Database } from './database.js';
@@ -16,6 +16,7 @@ type StoredConfig = Prisma.DoricConfigurationGetPayload<{
 
 export type ConfigStore = {
   load(): Promise<DoricConfig>;
+
   replace(config: ConfigInput): Promise<DoricConfig>;
 };
 
@@ -26,6 +27,7 @@ export const createConfigStore = (database: Database): ConfigStore => ({
       where: { id: singletonId },
       include: { providers: true, models: true },
     });
+
     return fromStored(stored);
   },
 
@@ -35,18 +37,22 @@ export const createConfigStore = (database: Database): ConfigStore => ({
         await transaction.modelConfiguration.deleteMany({
           where: { configurationId: singletonId },
         });
+
         await transaction.providerConfiguration.deleteMany({
           where: { configurationId: singletonId },
         });
+
         await transaction.providerConfiguration.createMany({
           data: config.providers.map((provider) => ({
             configurationId: singletonId,
             ...provider,
           })),
         });
+
         await transaction.modelConfiguration.createMany({
           data: modelRows(config),
         });
+
         const stored = await transaction.doricConfiguration.update({
           where: { id: singletonId },
           data: {
@@ -56,6 +62,7 @@ export const createConfigStore = (database: Database): ConfigStore => ({
           },
           include: { providers: true, models: true },
         });
+
         return fromStored(stored);
       },
       { isolationLevel: 'Serializable' },
@@ -75,8 +82,10 @@ const modelRow = (profile: ConfigInput['models']['execution']) => ({
 
 const fromStored = (stored: StoredConfig): DoricConfig => {
   const models = new Map(stored.models.map((model) => [model.role, model]));
+
   const reasoning = (role: ModelRole) => {
     const profile = required(models, role);
+
     return {
       providerId: profile.providerId,
       model: profile.model,
@@ -106,7 +115,10 @@ const required = <Value>(
   role: ModelRole,
 ): Value => {
   const value = values.get(role);
-  if (value === undefined)
+
+  if (value === undefined) {
     throw new Error(`Stored Doric model role is missing: ${role}`);
+  }
+
   return value;
 };

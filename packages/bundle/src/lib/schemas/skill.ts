@@ -17,6 +17,7 @@ export interface SkillRecord {
 }
 
 const nonEmpty = z.string().trim().min(1);
+
 const input = z
   .object({
     name: nonEmpty,
@@ -26,6 +27,7 @@ const input = z
     indexText: z.string().optional(),
   })
   .strict();
+
 const output = z
   .object({
     name: nonEmpty,

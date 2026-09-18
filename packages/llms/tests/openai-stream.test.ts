@@ -20,6 +20,7 @@ test('streams OpenAI requests without an authorization header when credentials a
       ],
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
   });
@@ -32,7 +33,9 @@ test('streams OpenAI requests without an authorization header when credentials a
   );
 
   assert.equal(events[0]?.type, 'response.started');
+
   assert.equal(events.at(-1)?.type, 'response.finished');
+
   assert.equal(
     'authorization' in (transport.requests[0]?.headers ?? {}),
     false,
@@ -84,6 +87,7 @@ test('streams OpenAI text reasoning usage finish and tool calls', async () => {
       },
     }),
   ];
+
   const provider = createOpenAiProvider({
     transport: fakeTransport({ streams: [stream] }),
     apiKey: 'sk-testSecret123',
@@ -98,6 +102,7 @@ test('streams OpenAI text reasoning usage finish and tool calls', async () => {
   );
 
   assert.equal(events[0]?.type, 'response.started');
+
   assert.deepEqual(
     events
       .filter(
@@ -107,9 +112,13 @@ test('streams OpenAI text reasoning usage finish and tool calls', async () => {
       .map((event) => event.delta),
     ['Hel', 'lo'],
   );
+
   assert.ok(events.some((event) => event.type === 'reasoning.delta'));
+
   assert.ok(events.some((event) => event.type === 'tool_call.done'));
+
   assert.ok(events.some((event) => event.type === 'usage'));
+
   const finished = events.at(-1);
 
   assert.equal(finished?.type, 'response.finished');
@@ -119,6 +128,7 @@ test('streams OpenAI text reasoning usage finish and tool calls', async () => {
   }
 
   assert.equal(finished.finish.structured, undefined);
+
   assert.deepEqual(finished.finish.replay, [
     { type: 'reasoning', encrypted_content: 'opaque' },
     {
@@ -161,6 +171,7 @@ test('keeps streamed OpenAI tool calls from completed responses without output',
       },
     }),
   ];
+
   const provider = createOpenAiProvider({
     transport: fakeTransport({ streams: [stream] }),
     apiKey: 'sk-testSecret123',
@@ -183,6 +194,7 @@ test('keeps streamed OpenAI tool calls from completed responses without output',
   assert.deepEqual(finished.finish.toolCalls, [
     { id: 'call_1', name: 'lookup', arguments: '{"q":"x"}', index: 0 },
   ]);
+
   assert.equal(finished.finish.structured, undefined);
 });
 

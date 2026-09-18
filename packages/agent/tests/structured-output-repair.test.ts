@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AgentErrorObject, type Agent } from '../src/index.js';
+import { z } from 'zod';
+
 import {
   ProviderErrorObject,
   type ProviderFinished,
@@ -9,8 +10,8 @@ import {
 } from 'llms';
 import { createMessageStorage } from 'messages';
 import type { ToolCallRequest } from 'tool';
-import { z } from 'zod';
 
+import { type Agent, AgentErrorObject } from '../src/index.js';
 import {
   call,
   collect,
@@ -24,6 +25,7 @@ import {
 const terminalDescription =
   'Submit the final structured output and end the agent run.';
 const answerSchema = z.object({ answer: z.string() });
+
 const lookupDefinition = {
   name: 'lookup',
   inputSchema: { type: 'object' as const },
@@ -44,6 +46,7 @@ const terminalName = (request: ProviderRequest<unknown>): string => {
   );
 
   assert.ok(terminal);
+
   return terminal.name;
 };
 
@@ -72,6 +75,7 @@ const invoke = async (agent: Agent, mode: Mode) => {
   const final = events.at(-1);
 
   assert.equal(final?.type, 'agent.finished');
+
   if (final?.type !== 'agent.finished') {
     assert.fail('Expected the stream to finish successfully.');
   }
@@ -141,6 +145,7 @@ for (const mode of ['complete', 'stream'] as const) {
       });
       const tools = createTools({ definitions: [lookupDefinition] });
       const messages = createMessageStorage();
+
       const agent = createAgent({
         provider: fake.provider,
         tools: tools.storage,
@@ -148,32 +153,42 @@ for (const mode of ['complete', 'stream'] as const) {
         system: '',
         model: 'fake-model',
       });
-
       const response = await invoke(agent, mode);
 
       assert.deepEqual(response.structured, { answer: 'Done' });
+
       assert.equal(fake.requests.length, 2);
+
       assert.equal(correctionFrom(fake.requests[0]), undefined);
+
       const correction = correctionFrom(fake.requests[1]);
+
       assert.ok(correction);
+
       assert.match(correction, new RegExp(terminalName(fake.requests[1])));
+
       assert.match(correction, submission.reason);
+
       assert.deepEqual(tools.calls, []);
+
       const stored = messages.list();
+
       assert.deepEqual(stored[0], {
         role: 'user',
         content: 'Return evidence.',
       });
+
       assert.deepEqual(stored.at(-1), {
         role: 'assistant',
         content: '{"answer":"Done"}',
       });
+
       assert.equal(
         stored.filter(
           ({ role, toolResultStatus }) =>
             role === 'tool' && toolResultStatus === 'incomplete',
         ).length,
-        submission.finish(fake.requests[0]!).toolCalls.length,
+        submission.finish(fake.requests[0]).toolCalls.length,
       );
     });
   }
@@ -183,20 +198,24 @@ test('correction feedback includes at most ten normalized issues without rejecte
   const schema = z.object({
     items: z.array(z.object({ count: z.number() })),
   });
+
   const rejected = {
     items: Array.from({ length: 12 }, (_, index) => ({
       count: `private-value-${index}`,
     })),
   };
+
   const accepted = {
     items: Array.from({ length: 12 }, (_, index) => ({ count: index })),
   };
+
   const fake = createProvider({
     complete: (request, index) =>
       completeFinish('', [
         call(terminalName(request), index === 0 ? rejected : accepted),
       ]),
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools({ definitions: [lookupDefinition] }).storage,
@@ -208,18 +227,25 @@ test('correction feedback includes at most ten normalized issues without rejecte
   await agent.complete('Return counts.', { schema });
 
   const correction = correctionFrom(fake.requests[1]);
+
   assert.ok(correction);
+
   assert.match(
     correction,
     /Only the following rejected paths will be applied/u,
   );
+
   assert.match(correction, /Do not encode objects or arrays as JSON strings\./);
+
   assert.match(
     correction,
-    /Field: items\.0\.count\n  Kind: invalid_type\n  Expected: number\n  Problem:/,
+    /Field: items\.0\.count\n {2}Kind: invalid_type\n {2}Expected: number\n {2}Problem:/,
   );
+
   assert.match(correction, /Field: items\.9\.count/);
+
   assert.doesNotMatch(correction, /Field: items\.10\.count/);
+
   assert.doesNotMatch(correction, /private-value/);
 });
 
@@ -236,6 +262,7 @@ test('correction feedback preserves additional diagnostic lines', async () => {
       });
     }),
   });
+
   const fake = createProvider({
     complete: (request, index) =>
       completeFinish('', [
@@ -244,6 +271,7 @@ test('correction feedback preserves additional diagnostic lines', async () => {
         }),
       ]),
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools().storage,
@@ -257,11 +285,14 @@ test('correction feedback preserves additional diagnostic lines', async () => {
   );
 
   const correction = correctionFrom(fake.requests[1]);
+
   assert.ok(correction);
+
   assert.match(
     correction,
-    /Problem: The answer is not authorized\.\n  Most similar valid answer: public-answer\n  Other valid answers: none\./u,
+    /Problem: The answer is not authorized\.\n {2}Most similar valid answer: public-answer\n {2}Other valid answers: none\./u,
   );
+
   assert.doesNotMatch(correction, /private-answer/u);
 });
 
@@ -273,6 +304,7 @@ for (const mode of ['complete', 'stream'] as const) {
         streamEvents(exhaustionFinish(request, index)),
     });
     const messages = createMessageStorage();
+
     const agent = createAgent({
       provider: fake.provider,
       tools: createTools({ definitions: [lookupDefinition] }).storage,
@@ -289,13 +321,21 @@ for (const mode of ['complete', 'stream'] as const) {
     }
 
     assert.ok(caught instanceof AgentErrorObject);
+
     assert.equal(caught.data.code, 'invalid_structured_output');
+
     assert.match(caught.data.message, /must be the only tool call/i);
+
     assert.equal(caught.data.diagnostic, undefined);
+
     assert.equal(fake.requests.length, 3);
+
     assert.equal(correctionFrom(fake.requests[0]), undefined);
+
     assert.ok(correctionFrom(fake.requests[1]));
+
     assert.ok(correctionFrom(fake.requests[2]));
+
     assert.equal(
       messages.list().filter(({ role }) => role === 'assistant').length,
       3,
@@ -305,20 +345,35 @@ for (const mode of ['complete', 'stream'] as const) {
 
 test('ordinary tool turns consume transient corrections without changing the retry budget', async () => {
   const sequence = ['first', 'second', 'third'] as const;
+
   const fake = createProvider({
     complete: (request, index) => {
-      if (index === 0) return completeFinish('Missing terminal.');
-      if (index === 1) return completeFinish('', [call(sequence[0])]);
+      if (index === 0) {
+        return completeFinish('Missing terminal.');
+      }
+
+      if (index === 1) {
+        return completeFinish('', [call(sequence[0])]);
+      }
+
       if (index === 2) {
         return completeFinish('', [malformedCall(terminalName(request))]);
       }
-      if (index === 3) return completeFinish('', [call(sequence[1])]);
+
+      if (index === 3) {
+        return completeFinish('', [call(sequence[1])]);
+      }
+
       if (index === 4) {
         return completeFinish('', [
           call(terminalName(request), { answer: 42 }),
         ]);
       }
-      if (index === 5) return completeFinish('', [call(sequence[2])]);
+
+      if (index === 5) {
+        return completeFinish('', [call(sequence[2])]);
+      }
+
       if (index === 6) {
         return completeFinish('', [
           call('lookup', { query: 'must-not-run' }),
@@ -329,6 +384,7 @@ test('ordinary tool turns consume transient corrections without changing the ret
       throw new Error('Retry budget was reset by an ordinary tool turn.');
     },
   });
+
   const tools = createTools({
     definitions: [
       lookupDefinition,
@@ -340,6 +396,7 @@ test('ordinary tool turns consume transient corrections without changing the ret
     ],
   });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: tools.storage,
@@ -356,14 +413,17 @@ test('ordinary tool turns consume transient corrections without changing the ret
   );
 
   assert.equal(fake.requests.length, 5);
+
   assert.deepEqual(
     fake.requests.map((request) => correctionFrom(request) !== undefined),
     [false, true, false, true, false],
   );
+
   assert.deepEqual(
     tools.calls.map(({ name }) => name),
     sequence.slice(0, 2),
   );
+
   assert.deepEqual(
     messages
       .list()
@@ -371,9 +431,9 @@ test('ordinary tool turns consume transient corrections without changing the ret
       .flatMap(({ toolCalls }) => toolCalls?.map(({ name }) => name) ?? []),
     [
       sequence[0],
-      terminalName(fake.requests[2]!),
+      terminalName(fake.requests[2]),
       sequence[1],
-      terminalName(fake.requests[4]!),
+      terminalName(fake.requests[4]),
     ],
   );
 });
@@ -394,6 +454,7 @@ test('stream suppresses invalid deltas and the invalid finished event', async ()
       ),
   });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools({ definitions: [lookupDefinition] }).storage,
@@ -410,10 +471,12 @@ test('stream suppresses invalid deltas and the invalid finished event', async ()
     events.filter(({ type }) => type === 'response.finished').length,
     1,
   );
+
   assert.equal(
     events.filter(({ type }) => type === 'agent.finished').length,
     1,
   );
+
   assert.equal(
     events.some(
       (event) =>
@@ -421,10 +484,12 @@ test('stream suppresses invalid deltas and the invalid finished event', async ()
     ),
     false,
   );
+
   assert.deepEqual(messages.list().at(-1), {
     role: 'assistant',
     content: '{"answer":"Done"}',
   });
+
   assert.equal(
     messages
       .list()
@@ -443,6 +508,7 @@ for (const mode of ['complete', 'stream'] as const) {
       code: 'invalid_structured_output',
       message: 'Fake provider rejected native structured output.',
     });
+
     const fake = createProvider({
       complete: () => {
         throw failure;
@@ -451,6 +517,7 @@ for (const mode of ['complete', 'stream'] as const) {
         throw failure;
       },
     });
+
     const agent = createAgent({
       provider: fake.provider,
       tools: createTools().storage,
@@ -458,17 +525,24 @@ for (const mode of ['complete', 'stream'] as const) {
       system: '',
       model: 'fake-model',
     });
+
     const operation =
       mode === 'complete'
         ? agent.complete('Return evidence.', { schema: answerSchema })
         : collect(agent.stream('Return evidence.', { schema: answerSchema }));
 
     await assert.rejects(operation, (error: unknown) => error === failure);
+
     assert.equal(fake.requests.length, 1);
+
     assert.equal(fake.requests[0]?.schema, undefined);
+
     assert.equal(fake.requests[0]?.tools?.length, 1);
+
     assert.equal(fake.requests[0]?.toolChoice, undefined);
+
     assert.equal(fake.requests[0]?.parallelToolCalls, false);
+
     assert.equal(
       fake.requests[0]?.tools?.[0]?.name,
       'submit_structured_output',
@@ -480,10 +554,14 @@ const exhaustionFinish = (
   request: ProviderRequest<unknown>,
   index: number,
 ): ProviderFinished => {
-  if (index === 0) return completeFinish('Missing terminal.');
+  if (index === 0) {
+    return completeFinish('Missing terminal.');
+  }
+
   if (index === 1) {
     return completeFinish('', [malformedCall(terminalName(request))]);
   }
+
   if (index === 2) {
     const name = terminalName(request);
 

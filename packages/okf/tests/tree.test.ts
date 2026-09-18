@@ -5,15 +5,25 @@ import { outputPath, parseDescription, renderTree } from '../src/lib/tree.js';
 
 test('maps reserved names away at every depth without collisions', () => {
   assert.equal(outputPath('index'), 'index.md.md');
+
   assert.equal(outputPath('InDeX'), 'InDeX.md.md');
+
   assert.equal(outputPath('index.md'), 'index.md.md.md');
+
   assert.equal(outputPath('INDEX.md.md'), 'INDEX.md.md.md.md');
+
   assert.equal(outputPath('folder/index'), 'folder/index.md.md');
+
   assert.equal(outputPath('folder/index.md'), 'folder/index.md.md.md');
+
   assert.equal(outputPath('folder\\INDEX'), 'folder\\INDEX.md.md');
+
   assert.equal(outputPath('log'), 'log.md.md');
+
   assert.equal(outputPath('docs/log.md'), 'docs/log.md.md.md');
+
   assert.equal(outputPath('docs/log.md.md'), 'docs/log.md.md.md.md');
+
   assert.equal(outputPath('index.ts'), 'index.ts.md');
 });
 
@@ -35,6 +45,7 @@ test('renders deterministic links to mirrored outputs without folder indexes', (
     { path: 'src/slash\\name.md', description: 'Slash name.' },
     { path: 'src/a.ts', description: 'Alpha.' },
   ];
+
   const expected = `# Project
 
 - [README.md](README.md.md) - Root readme summary.
@@ -53,12 +64,15 @@ test('renders deterministic links to mirrored outputs without folder indexes', (
 `;
 
   assert.equal(renderTree(entries), expected);
+
   assert.equal(renderTree([...entries].reverse()), expected);
+
   assert.doesNotMatch(renderTree(entries), /\]\(src\/nested\/index\.md\)/u);
 });
 
 test('parses a quoted YAML description from CRLF frontmatter', () => {
   const description = 'Explains "quoted" values at C:\\repo.\nSecond line.';
+
   const markdown = [
     '---',
     'type: "Reference"',
@@ -76,6 +90,7 @@ test('parses a quoted YAML description from CRLF frontmatter', () => {
 
 test('parses Unicode line separators and normalizes them in rendered descriptions', () => {
   const description = 'First\u2028Second\u2029Third';
+
   const markdown = [
     '---',
     `description: ${JSON.stringify(description)}`,
@@ -83,6 +98,7 @@ test('parses Unicode line separators and normalizes them in rendered description
   ].join('\n');
 
   assert.equal(parseDescription(markdown), description);
+
   assert.equal(
     renderTree([{ path: 'unicode.ts', description }]),
     '# Project\n\n- [unicode.ts](unicode.ts.md) - First Second Third\n',
@@ -115,6 +131,7 @@ test('rejects missing and non-string YAML frontmatter descriptions', () => {
       ),
     /missing description/u,
   );
+
   assert.throws(
     () => parseDescription('---\ndescription: 42\n---\n'),
     /description must be a string/u,

@@ -14,11 +14,13 @@ export type Prompts = {
 /** Loads all prompts selected by promptTarget as one required prompt set. */
 export const loadPrompts = async (target = 'default'): Promise<Prompts> => {
   const model = validatePromptTarget(target);
+
   const [summary, description, tags] = await Promise.all([
     readPrompt(['summarize', model], `summarize prompt target ${model}`),
     readPrompt(['describe', model], `describe prompt target ${model}`),
     readPrompt(['tags', model], `tags prompt target ${model}`),
   ]);
+
   return { summary, description, tags };
 };
 
@@ -44,10 +46,15 @@ export const readPrompt = async (
 
   try {
     const prompt = (await fs.readFile(file, 'utf-8')).trim();
-    if (prompt.length === 0) throw new Error('prompt is empty');
+
+    if (prompt.length === 0) {
+      throw new Error('prompt is empty');
+    }
+
     return prompt;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
     throw new Error(`Cannot load OKF ${label}: ${message}`);
   }
 };
@@ -60,14 +67,23 @@ const findPrompt = async (
 
   while (true) {
     const file = path.join(current, 'prompts', ...location, 'SYSTEM_PROMPT.md');
+
     try {
-      if ((await fs.stat(file)).isFile()) return file;
+      if ((await fs.stat(file)).isFile()) {
+        return file;
+      }
     } catch (error) {
-      if (!isMissing(error)) throw error;
+      if (!isMissing(error)) {
+        throw error;
+      }
     }
 
     const parent = path.dirname(current);
-    if (parent === current) return undefined;
+
+    if (parent === current) {
+      return undefined;
+    }
+
     current = parent;
   }
 };

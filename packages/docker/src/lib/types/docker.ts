@@ -132,45 +132,57 @@ export type ArchiveReadInput = {
 
 export interface DockerClient extends SandboxProvider {
   ping(options?: DockerRequestOptions): Promise<void>;
+
   version(options?: DockerRequestOptions): Promise<DockerVersion>;
+
   pullImage(
     input: PullImageInput,
     options?: DockerRequestOptions,
   ): Promise<void>;
+
   inspectImage(
     image: string,
     options?: DockerRequestOptions,
   ): Promise<ImageInspect | undefined>;
+
   createContainer(
     input: CreateContainerInput,
     options?: DockerRequestOptions,
   ): Promise<ContainerRef>;
+
   startContainer(
     container: ContainerRef | string,
     options?: DockerRequestOptions,
   ): Promise<void>;
+
   inspectContainer(
     container: ContainerRef | string,
     options?: DockerRequestOptions,
   ): Promise<ContainerInspect>;
+
   removeContainer(
     container: ContainerRef | string,
     options?: RemoveContainerOptions,
   ): Promise<void>;
+
   exec(container: ContainerRef | string, input: ExecInput): Promise<ExecResult>;
+
   execDetached(
     container: ContainerRef | string,
     input: ExecInput,
   ): Promise<string>;
+
   putArchive(
     container: ContainerRef | string,
     input: ArchiveWriteInput,
     options?: DockerRequestOptions,
   ): Promise<void>;
+
   getArchive(
     container: ContainerRef | string,
     input: ArchiveReadInput,
     options?: DockerRequestOptions,
   ): Promise<Uint8Array>;
 }
+
 import type { SandboxProvider } from 'sandbox';

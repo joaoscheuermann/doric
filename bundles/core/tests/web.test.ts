@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+
 import type { Sandbox } from 'sandbox';
 
 import { createTool } from '../tools/web.js';
@@ -13,7 +14,6 @@ describe('web tool', () => {
       <a class="result__snippet">A <b>short</b> snippet &amp; context.</a>
     `;
     const tool = createTool({ fetch: fakeFetch(html) })(sandbox);
-
     const result = await tool.execute({ action: 'search', query: 'docs' });
 
     assert.deepEqual(result.results, [
@@ -23,6 +23,7 @@ describe('web tool', () => {
         snippet: 'A short snippet & context.',
       },
     ]);
+
     assert.equal(result.total, 1);
   });
 
@@ -37,6 +38,7 @@ describe('web tool', () => {
       action: 'open_page',
       url: 'https://example.com/page',
     });
+
     const found = await tool.execute({
       action: 'find_in_page',
       url: 'https://example.com/page',
@@ -45,20 +47,26 @@ describe('web tool', () => {
     });
 
     assert.equal(opened.page?.title, 'Example & Page');
+
     assert.match(opened.page?.text ?? '', /Hello World/);
+
     assert.deepEqual(found.matches, [{ line: 2, text: 'Beta Needle' }]);
+
     assert.equal(found.total, 2);
+
     assert.equal(found.truncated, true);
   });
 
   test('aborts requests after the configured timeout', async () => {
     let observedAbort = false;
+
     const tool = createTool({
       requestTimeoutMs: 10,
       fetch: (_url, init) =>
         new Promise((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => {
             observedAbort = true;
+
             reject(new Error('aborted by test fetch'));
           });
         }),
@@ -70,6 +78,7 @@ describe('web tool', () => {
     });
 
     assert.equal(observedAbort, true);
+
     assert.match(result.error ?? '', /timed out after 10ms/);
   });
 });

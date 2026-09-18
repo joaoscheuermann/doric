@@ -1,5 +1,6 @@
-import type { Bundle } from 'bundle';
 import type { Logger } from 'pino';
+
+import type { Bundle } from 'bundle';
 
 import type { ConfigInput, DoricConfig } from './config.js';
 import type { ConfigStore } from './config-store.js';
@@ -7,6 +8,7 @@ import { createGeneration, type Generation } from './generation.js';
 
 export type ConfigService = {
   current(): Generation;
+
   replace(config: ConfigInput): Promise<DoricConfig>;
 };
 
@@ -39,10 +41,13 @@ export const createConfigService = async ({
   ): Promise<Value> => {
     const previous = tail;
     let release: () => void = () => undefined;
+
     tail = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     await previous;
+
     try {
       return await operation();
     } finally {
@@ -61,7 +66,9 @@ export const createConfigService = async ({
           environment,
         });
         const snapshot = await store.replace(config);
+
         active = { ...candidate, snapshot };
+
         return snapshot;
       }),
   };

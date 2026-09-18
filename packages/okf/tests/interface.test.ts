@@ -13,6 +13,7 @@ import { parseInterface } from '../src/lib/interface.js';
 const callerCannotForgeTrustedErrors = (): void => {
   // @ts-expect-error Error codes are package-owned, not caller-defined.
   new OkfError('CALLER_DEFINED', 'file.ts');
+
   // @ts-expect-error Construction is package-internal so callers cannot attach absolute sources.
   new OkfError('OKF_SUMMARY_FAILED', 'C:/private/repository/file.ts');
 };
@@ -21,20 +22,27 @@ void callerCannotForgeTrustedErrors;
 
 const tempRoot = async (context: TestContext): Promise<string> => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'okf-interface-'));
+
   context.after(() => fs.rm(root, { recursive: true, force: true }));
+
   return root;
 };
 
 test('derives type from the lowercase final extension', () => {
   assert.equal(detectType('src/FILE.TSX'), 'tsx');
+
   assert.equal(detectType('archive.tar.GZ'), 'gz');
+
   assert.equal(detectType('README'), 'no-extension');
+
   assert.equal(detectType('.env'), 'no-extension');
 });
 
 test('extracts sorted TS imports exports aliases reexports and public members', async (context) => {
   const root = await tempRoot(context);
+
   await fs.mkdir(path.join(root, 'utils'));
+
   await Promise.all([
     fs.writeFile(path.join(root, 'dep.ts'), 'export const Thing = 1;', 'utf-8'),
     fs.writeFile(
@@ -43,6 +51,7 @@ test('extracts sorted TS imports exports aliases reexports and public members', 
       'utf-8',
     ),
   ]);
+
   const content = `
 import Client, { Foo as Bar, type Shape } from './dep';
 import * as Utils from './utils';
@@ -94,15 +103,22 @@ export class Service {
       symbols: ['*', '* as Utils'],
     },
   ]);
+
   assert.deepEqual(result?.imports?.external, [
     { source: 'node:fs', symbols: [] },
     { source: 'zod', symbols: ['z'] },
   ]);
+
   assert.deepEqual(result?.exports?.classes, ['PublicService', 'Service']);
+
   assert.deepEqual(result?.exports?.functions, ['make(input: Options): Alias']);
+
   assert.deepEqual(result?.exports?.variables, ['VALUE: number']);
+
   assert.deepEqual(result?.exports?.types, ['interface Options', 'type Alias']);
+
   assert.deepEqual(result?.exports?.reexports, ['*', 'Thing as Renamed']);
+
   assert.deepEqual(result?.exports?.methods, [
     'PublicService.visible(): void',
     'Service.constructor(readonly options: Options)',
@@ -115,6 +131,7 @@ export class Service {
 
 test('extracts ESM JSX and CommonJS without non-literal calls', async (context) => {
   const root = await tempRoot(context);
+
   const content = `
 const dependency = './ignored';
 const helper = (value) => value;
@@ -137,15 +154,21 @@ export const View = () => <section>OK</section>;
   assert.deepEqual(result?.imports?.relative, [
     { source: './literal', target: null, symbols: ['default as loaded'] },
   ]);
+
   assert.equal(result?.imports?.external, undefined);
+
   assert.deepEqual(result?.exports?.functions, ['run(value)']);
+
   assert.deepEqual(result?.exports?.variables, ['View', 'count', 'extra']);
+
   assert.equal(result?.exports?.classes, undefined);
+
   assert.equal(result?.exports?.types, undefined);
 });
 
 test('extracts abstract and ambient exported classes with public members', async (context) => {
   const root = await tempRoot(context);
+
   const content = `
 export abstract class AbstractService {
   abstract run(value: string): number;
@@ -171,6 +194,7 @@ declare class HiddenService { visible(): void; }
     'AbstractService',
     'AmbientService',
   ]);
+
   assert.deepEqual(result?.exports?.methods, [
     'AbstractService.label: string',
     'AbstractService.run(value: string): number',
@@ -182,6 +206,7 @@ declare class HiddenService { visible(): void; }
 
 test('extracts TypeScript import equals export equals and type reexports', async (context) => {
   const root = await tempRoot(context);
+
   await Promise.all([
     fs.writeFile(path.join(root, 'foo.ts'), 'export class Foo {}', 'utf-8'),
     fs.writeFile(
@@ -190,6 +215,7 @@ test('extracts TypeScript import equals export equals and type reexports', async
       'utf-8',
     ),
   ]);
+
   const content = `
 import Foo = require('./foo');
 class Service { run(value: string): number { return value.length; } }
@@ -217,10 +243,13 @@ export { type Other } from './types';
       symbols: ['type Other', 'type Shape as Alias'],
     },
   ]);
+
   assert.deepEqual(result?.exports?.classes, ['Service']);
+
   assert.deepEqual(result?.exports?.methods, [
     'Service.run(value: string): number',
   ]);
+
   assert.deepEqual(result?.exports?.reexports, [
     'type Other',
     'type Shape as Alias',
@@ -229,6 +258,7 @@ export { type Other } from './types';
 
 test('extracts bracket and shorthand CommonJS exports canonically', async (context) => {
   const root = await tempRoot(context);
+
   const content = `
 class Service { run(value) { return value; } }
 function make(options) { return new Service(options); }
@@ -245,11 +275,13 @@ module.exports = { Service, make, renamed: make };
   });
 
   assert.deepEqual(result?.exports?.classes, ['PublicService', 'Service']);
+
   assert.deepEqual(result?.exports?.functions, [
     'factory(options)',
     'make(options)',
     'renamed(options)',
   ]);
+
   assert.deepEqual(result?.exports?.methods, [
     'PublicService.run(value)',
     'Service.run(value)',
@@ -258,6 +290,7 @@ module.exports = { Service, make, renamed: make };
 
 test('parses every supported grammar mapping and omits JSON interfaces', async (context) => {
   const root = await tempRoot(context);
+
   const cases = [
     ['file.ts', 'ts', 'export const value: number = 1;'],
     ['file.mts', 'mts', 'export const value: number = 1;'],
@@ -272,12 +305,14 @@ test('parses every supported grammar mapping and omits JSON interfaces', async (
 
   for (const [source, type, content] of cases) {
     const result = await parseInterface({ root, source, type, content });
+
     assert.equal(result === undefined, type === 'json', source);
   }
 });
 
 test('resolves exact files and circular imports while deduplicating symbols', async (context) => {
   const root = await tempRoot(context);
+
   await Promise.all([
     fs.writeFile(
       path.join(root, 'a.ts'),
@@ -286,12 +321,14 @@ test('resolves exact files and circular imports while deduplicating symbols', as
     ),
     fs.writeFile(path.join(root, 'b.ts'), "import { a } from './a';", 'utf-8'),
   ]);
+
   const a = await parseInterface({
     root,
     source: 'a.ts',
     type: 'ts',
     content: "import { b } from './b.ts'; import { b } from './b.ts';",
   });
+
   const b = await parseInterface({
     root,
     source: 'b.ts',
@@ -302,6 +339,7 @@ test('resolves exact files and circular imports while deduplicating symbols', as
   assert.deepEqual(a?.imports?.relative, [
     { source: './b.ts', target: 'b.ts', symbols: ['b'] },
   ]);
+
   assert.deepEqual(b?.imports?.relative, [
     { source: './a', target: 'a.ts', symbols: ['a'] },
   ]);
@@ -309,6 +347,7 @@ test('resolves exact files and circular imports while deduplicating symbols', as
 
 test('rejects strict TS JavaScript and JSON syntax errors', async (context) => {
   const root = await tempRoot(context);
+
   const cases = [
     ['bad.ts', 'ts', 'export const = 1;'],
     ['bad.js', 'js', 'const = ;'],
@@ -320,18 +359,25 @@ test('rejects strict TS JavaScript and JSON syntax errors', async (context) => {
       parseInterface({ root, source, type, content }),
       (error: unknown) => {
         assert.ok(error instanceof OkfError);
+
         assert.equal(error.code, 'OKF_SOURCE_SYNTAX_INVALID');
+
         assert.equal(error.stage, 'syntax');
+
         assert.equal(error.source, source);
+
         assert.equal(
           error.message,
           `Supported source syntax is invalid for ${source}.`,
         );
+
         assert.equal(error.hint, 'Fix the syntax error or exclude the file.');
+
         assert.equal(
           (error as Error & { readonly cause?: unknown }).cause,
           undefined,
         );
+
         return true;
       },
     );
@@ -358,6 +404,7 @@ test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) 
   const root = await tempRoot(context);
   const original = Parser.prototype.parse;
   const observed: number[] = [];
+
   context.mock.method(
     Parser.prototype,
     'parse',
@@ -368,9 +415,11 @@ test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) 
       options?: Parameters<Parser['parse']>[2],
     ) {
       observed.push(options?.bufferSize ?? 0);
+
       return original.call(this, input, oldTree, options);
     },
   );
+
   const cases = [
     ['expanded.ts', 'a'.repeat(35_770), 65_536],
     ['boundary.ts', 'a'.repeat(32_768), 65_536],
@@ -379,7 +428,9 @@ test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) 
 
   for (const [source, padding] of cases) {
     const content = `/*${padding.slice(4)}*/`;
+
     assert.equal(content.length, padding.length);
+
     await parseInterface({ root, source, type: 'ts', content });
   }
 
@@ -392,6 +443,7 @@ test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) 
 test('reports native parse failures with curated details', async (context) => {
   const root = await tempRoot(context);
   const diagnostic = 'PRIVATE_NATIVE_PARSE_DIAGNOSTIC';
+
   context.mock.method(Parser.prototype, 'parse', () => {
     throw new Error(diagnostic);
   });
@@ -405,18 +457,25 @@ test('reports native parse failures with curated details', async (context) => {
     }),
     (error: unknown) => {
       assert.ok(error instanceof OkfError);
+
       assert.equal(error.code, 'OKF_SOURCE_PARSE_FAILED');
+
       assert.equal(error.stage, 'parse');
+
       assert.equal(error.source, 'large.ts');
+
       assert.equal(error.message, 'Could not parse supported source large.ts.');
+
       assert.equal(
         error.hint,
         'Retry with a smaller file or more available memory.',
       );
+
       assert.equal(
         (error as Error & { readonly cause?: unknown }).cause,
         undefined,
       );
+
       assert.doesNotMatch(
         JSON.stringify({
           message: error.message,
@@ -425,6 +484,7 @@ test('reports native parse failures with curated details', async (context) => {
         }),
         new RegExp(diagnostic, 'u'),
       );
+
       return true;
     },
   );

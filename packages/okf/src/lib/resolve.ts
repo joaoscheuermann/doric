@@ -19,9 +19,12 @@ export const resolveImports = async (
   imports: readonly ExtractedImport[],
 ): Promise<ModuleImports | undefined> => {
   const merged = new Map<string, Set<string>>();
+
   for (const item of imports) {
     const symbols = merged.get(item.source) ?? new Set<string>();
+
     item.symbols.forEach((symbol) => symbols.add(symbol));
+
     merged.set(item.source, symbols);
   }
 
@@ -36,14 +39,19 @@ export const resolveImports = async (
       }),
     ),
   );
+
   const relative = entries
     .filter(({ source }) => source.startsWith('.'))
     .sort(importCompare);
+
   const external = entries
     .filter(({ source }) => !source.startsWith('.'))
     .sort(importCompare);
 
-  if (relative.length === 0 && external.length === 0) return undefined;
+  if (relative.length === 0 && external.length === 0) {
+    return undefined;
+  }
+
   return {
     ...(relative.length === 0 ? {} : { relative }),
     ...(external.length === 0 ? {} : { external }),
@@ -59,32 +67,49 @@ const resolveRelative = async (
     path.posix.dirname(input.source),
     specifier,
   );
-  if (!contained(input.root, base)) return null;
+
+  if (!contained(input.root, base)) {
+    return null;
+  }
+
   const extensions = SUPPORTED_EXTENSIONS.map(
     (extension) => `${base}.${extension}`,
   );
+
   const indexes = SUPPORTED_EXTENSIONS.map((extension) =>
     path.join(base, `index.${extension}`),
   );
+
   const candidates = path.extname(base)
     ? [base, ...indexes]
     : [base, ...extensions, ...indexes];
 
   for (const candidate of candidates) {
     try {
-      if (!(await fs.lstat(candidate)).isFile()) continue;
+      if (!(await fs.lstat(candidate)).isFile()) {
+        continue;
+      }
+
       const physical = await fs.realpath(candidate);
-      if (!contained(input.root, physical)) continue;
+
+      if (!contained(input.root, physical)) {
+        continue;
+      }
+
       return path.relative(input.root, candidate).split(path.sep).join('/');
     } catch (error) {
-      if (!isMissing(error)) throw error;
+      if (!isMissing(error)) {
+        throw error;
+      }
     }
   }
+
   return null;
 };
 
 const contained = (parent: string, child: string): boolean => {
   const relative = path.relative(parent, child);
+
   return (
     relative === '' ||
     (!relative.startsWith(`..${path.sep}`) &&

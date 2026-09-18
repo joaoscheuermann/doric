@@ -3,8 +3,10 @@ import { execFile } from 'node:child_process';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import test from 'node:test';
+import { promisify } from 'node:util';
+
+import pino from 'pino';
 
 import {
   createSandbox,
@@ -12,13 +14,13 @@ import {
   type SandboxSession,
   type SandboxSshAccess,
 } from 'sandbox';
-import pino from 'pino';
 import { createSandpool } from 'sandpool';
 
 import { createDockerClient, type DockerClient } from '../src/index.js';
 
 const timeoutMs = 20_000;
 const run = promisify(execFile);
+
 const network = {
   mode: 'disabled',
   ssh: true,
@@ -27,7 +29,9 @@ const network = {
 
 test.before(async () => {
   const docker = createDockerClient({ timeoutMs });
+
   await reachable(docker);
+
   const sandbox = await createSandbox({
     provider: docker,
     image: 'node:22-slim',
@@ -35,12 +39,14 @@ test.before(async () => {
     resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
     timeoutMs,
   });
+
   await sandbox.dispose();
 });
 
 test('executes, transfers bytes, filters egress, and exposes strict SSH', async () => {
   const docker = createDockerClient({ timeoutMs });
   let sandbox: SandboxSession | undefined;
+
   await reachable(docker);
 
   try {
@@ -52,6 +58,7 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
       network,
       timeoutMs,
     });
+
     const probe = succeeded(
       await sandbox.exec({
         cmd: [
@@ -63,16 +70,22 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
       }),
     );
     const parsed = JSON.parse(probe.stdout) as { version: string; cwd: string };
+
     assert.match(parsed.version, /^v\d+\./u);
+
     assert.equal(parsed.cwd, '/workspace');
 
     await sandbox.writeFile('notes/message.txt', 'hello\n');
+
     assert.equal(
       await sandbox.readFile('/workspace/notes/message.txt'),
       'hello\n',
     );
+
     const bytes = Uint8Array.from([0, 1, 2, 127, 128, 254, 255]);
+
     await sandbox.putFile('/workspace/payload.bin', bytes);
+
     assert.deepEqual(await sandbox.getFile('/workspace/payload.bin'), bytes);
 
     const publicHttps = succeeded(
@@ -85,6 +98,7 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
         timeoutMs,
       }),
     );
+
     assert.match(publicHttps.stdout, /^\d{3}\s*$/u);
 
     const metadata = succeeded(
@@ -97,11 +111,15 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
         timeoutMs: 5_000,
       }),
     );
+
     assert.doesNotMatch(metadata.stdout, /open/u);
+
     assert.match(metadata.stdout, /blocked/u);
 
     const ssh = await sandbox.ssh();
+
     assert.ok(ssh);
+
     await verifyStrictSsh(ssh);
   } finally {
     await sandbox?.dispose();
@@ -110,7 +128,9 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
 
 test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
   const docker = createDockerClient({ timeoutMs });
+
   await reachable(docker);
+
   const pool = createSandpool({
     minIdle: 1,
     maxSandboxes: 1,
@@ -127,7 +147,9 @@ test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
 
   try {
     await pool.waitUntilHeated();
+
     const first = await pool.acquire();
+
     const blocked = succeeded(
       await first.sandbox.exec({
         cmd: [
@@ -138,16 +160,24 @@ test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
         timeoutMs: 5_000,
       }),
     );
+
     assert.match(blocked.stdout, /blocked/u);
+
     await first.release();
+
     await pool.waitUntilHeated();
+
     const second = await pool.acquire();
+
     assert.notEqual(second.sandbox.id, first.sandbox.id);
+
     await second.release();
   } finally {
     await pool.dispose();
   }
+
   assert.equal(pool.status().lifecycle, 'disposed');
+
   assert.equal(pool.status().total, 0);
 });
 
@@ -164,17 +194,23 @@ async function reachable(docker: DockerClient): Promise<void> {
 
 const succeeded = (result: SandboxExecResult): SandboxExecResult => {
   assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+
   return result;
 };
 
 const verifyStrictSsh = async (ssh: SandboxSshAccess): Promise<void> => {
   const directory = await mkdtemp(join(tmpdir(), 'doric-docker-ssh-'));
+
   try {
     const key = join(directory, 'id_ed25519');
     const knownHosts = join(directory, 'known_hosts');
+
     await writeFile(key, ssh.privateKey, { mode: 0o600 });
+
     await chmod(key, 0o600);
+
     await writeFile(knownHosts, `${ssh.knownHosts}\n`, { mode: 0o600 });
+
     const result = await run(
       'ssh',
       [
@@ -196,6 +232,7 @@ const verifyStrictSsh = async (ssh: SandboxSshAccess): Promise<void> => {
       ],
       { timeout: 10_000 },
     );
+
     assert.match(result.stdout, /^v22\./u);
   } finally {
     await rm(directory, { recursive: true, force: true });

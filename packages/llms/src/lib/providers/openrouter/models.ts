@@ -1,7 +1,7 @@
 import type { Model, ProviderId } from '../../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   numberField,
   recordField,
   stringField,

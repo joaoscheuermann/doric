@@ -11,8 +11,10 @@ export const createConfigRouter = (service: ConfigService): Router => {
   router.get('/', (_request, response) =>
     response.json(service.current().snapshot),
   );
+
   router.put('/', async (request, response) => {
     const parsed = ConfigInputSchema.safeParse(request.body);
+
     if (!parsed.success) {
       sendError(
         response,
@@ -20,8 +22,10 @@ export const createConfigRouter = (service: ConfigService): Router => {
         'invalid_config',
         'The Doric configuration is invalid.',
       );
+
       return;
     }
+
     try {
       response.json(await service.replace(parsed.data));
     } catch {

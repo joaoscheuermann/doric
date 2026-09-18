@@ -1,10 +1,11 @@
+import type { Logger } from 'pino';
+
 import type { Bundle, Skill } from 'bundle';
 import {
   createFetchTransport,
   createOpenAiCompatibleProvider,
   type LlmProvider,
 } from 'llms';
-import type { Logger } from 'pino';
 import type { ToolFactory } from 'tool';
 
 import type { DoricConfig } from './config.js';
@@ -36,11 +37,17 @@ export const createGeneration = async ({
   environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
   const credentials = new Set<string>();
+
   const credential = (name: string): string => {
     const value = environment[name] ?? '';
-    if (value.length > 0) credentials.add(value);
+
+    if (value.length > 0) {
+      credentials.add(value);
+    }
+
     return value;
   };
+
   const providers = new Map(
     snapshot.configuration.providers.map((provider) => [
       provider.id,
@@ -53,10 +60,12 @@ export const createGeneration = async ({
       }),
     ]),
   );
+
   const redactions = () => {
     snapshot.configuration.providers.forEach(({ apiKeyEnv }) =>
       credential(apiKeyEnv),
     );
+
     return [...credentials];
   };
 
@@ -78,7 +87,10 @@ export const providerFor = (
   id: string,
 ): LlmProvider => {
   const provider = generation.providers.get(id);
-  if (provider === undefined)
+
+  if (provider === undefined) {
     throw new Error('Configured provider is unavailable.');
+  }
+
   return provider;
 };

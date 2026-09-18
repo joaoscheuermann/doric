@@ -1,11 +1,11 @@
 import { posix as path } from 'node:path';
 
-import type { Sandbox } from 'sandbox';
-import { defineTool } from 'tool';
 import { z } from 'zod';
 
-const HIDDEN_EXCEPTIONS = new Set(['.agents']);
+import type { Sandbox } from 'sandbox';
+import { defineTool } from 'tool';
 
+const HIDDEN_EXCEPTIONS = new Set(['.agents']);
 const description =
   'Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents.';
 
@@ -15,9 +15,10 @@ export const input = z
     exclude: z.array(z.string()).optional(),
   })
   .strict();
-
 export const output = z.string();
+
 export type TreeOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type Entry = {
@@ -59,6 +60,7 @@ const execute = async (
   }
 
   const kind = await pathKind(sandbox, workspaceRoot, root.path);
+
   if (kind === 'missing') {
     return `Error: path not found: ${displayPath}`;
   }
@@ -68,14 +70,17 @@ const execute = async (
   }
 
   const excludes = input.exclude?.map(compileGlob) ?? [];
+
   const invalid = excludes.find(
     (value): value is string => typeof value === 'string',
   );
+
   if (invalid !== undefined) {
     return invalid;
   }
 
   const rootName = path.basename(root.path);
+
   if ((excludes as RegExp[]).some((pattern) => pattern.test(rootName))) {
     return `Error: exclude pattern matches the root directory: ${rootName}`;
   }
@@ -88,6 +93,7 @@ const execute = async (
   );
   const children = groupEntries(entries);
   const lines = [root.path];
+
   appendTree(root.path, '', children, lines);
 
   return `${lines.join('\n')}\n`;
@@ -108,12 +114,16 @@ const appendTree = (
 
     if (!entry.isDirectory) {
       lines.push(`${prefix}${connector}${name}`);
+
       continue;
     }
 
     const mark = lines.length;
+
     lines.push(`${prefix}${connector}${name}/`);
+
     const childPrefix = isLast ? `${prefix}    ` : `${prefix}|   `;
+
     appendTree(entry.path, childPrefix, children, lines);
 
     if (lines.length === mark + 1) {
@@ -133,6 +143,7 @@ const visibleEntries = async (
     listPaths(sandbox, workspaceRoot, root, 'f'),
     readIgnores(sandbox, workspaceRoot, root),
   ]);
+
   const entries = [
     ...directories
       .filter((entry) => entry !== root)
@@ -155,6 +166,7 @@ const groupEntries = (
 
   for (const entry of entries) {
     const parent = path.dirname(entry.path);
+
     groups.set(parent, [...(groups.get(parent) ?? []), entry]);
   }
 
@@ -235,6 +247,7 @@ const readIgnores = async (
   }
 
   const files = lines(result.stdout).map(normalizePath).sort();
+
   const groups = await Promise.all(
     files.map(async (file) =>
       parseIgnores(
@@ -284,6 +297,7 @@ const ancestors = (root: string, fullPath: string): readonly string[] => {
 
   while (contains(root, current) && current !== root) {
     values.unshift(current);
+
     current = path.dirname(current);
   }
 
@@ -296,10 +310,12 @@ const isIgnored = (
   ignores: readonly IgnorePattern[],
 ): boolean => {
   let ignored = false;
+
   for (const ignore of ignores) {
     const pattern = ignore.pattern.endsWith('/')
       ? ignore.pattern.slice(0, -1)
       : ignore.pattern;
+
     if (ignore.pattern.endsWith('/') && !isDirectory) {
       continue;
     }
@@ -310,10 +326,12 @@ const isIgnored = (
 
     const glob = compileGlob(pattern);
     const relative = path.relative(ignore.base, fullPath);
+
     const matched =
       glob instanceof RegExp
         ? glob.test(relative) || glob.test(path.basename(fullPath))
         : relative === pattern || path.basename(fullPath) === pattern;
+
     if (matched) {
       ignored = !ignore.negated;
     }
@@ -324,6 +342,7 @@ const isIgnored = (
 
 const isExcluded = (fullPath: string, excludes: readonly RegExp[]): boolean => {
   const name = path.basename(fullPath);
+
   return excludes.some(
     (pattern) => pattern.test(name) || pattern.test(fullPath),
   );
@@ -335,6 +354,7 @@ const compileGlob = (pattern: string): RegExp | string => {
       pattern.includes('[') && !pattern.includes(']')
         ? 'unclosed character class'
         : 'unsupported character classes';
+
     return `Error: invalid exclude pattern '${pattern}': ${reason}`;
   }
 
@@ -353,6 +373,7 @@ const resolvePath = (
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
+
   const resolved = normalizePath(
     path.isAbsolute(value) ? value : path.join(root, value),
   );
@@ -410,5 +431,6 @@ const lines = (value: string): readonly string[] =>
 
 const normalizePath = (value: string): string => {
   const resolved = path.normalize(path.isAbsolute(value) ? value : `/${value}`);
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/, '');
 };

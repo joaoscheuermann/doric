@@ -32,6 +32,7 @@ export const createUnifiedRequestPreparer =
     }
 
     const needsSupport = hasTools || request.schema !== undefined;
+
     const support =
       needsSupport && upstreamModel === undefined
         ? await resolve(request.model, request.signal)
@@ -39,14 +40,17 @@ export const createUnifiedRequestPreparer =
     const profile = unifiedProfileForModel(upstreamModel ?? request.model);
 
     requireToolSupport(request, support, profile.tools);
+
     requireCompatibleChoice(request, support, profile);
 
     const structuredOutput = structuredStrategy(request, support);
+
     const normalized = normalizeParallelToolCalls(
       normalizeToolChoice(request, support),
       support,
     );
     const normalizedHasTools = (normalized.tools?.length ?? 0) > 0;
+
     const preparedRequest =
       request.parallelToolCalls === false && normalizedHasTools
         ? {
@@ -73,8 +77,13 @@ const requireToolSupport = (
   support: OpenRouterModelSupport,
   profileTools: boolean,
 ): void => {
-  if ((request.tools?.length ?? 0) === 0) return;
-  if (support.known ? support.parameters.has('tools') : profileTools) return;
+  if ((request.tools?.length ?? 0) === 0) {
+    return;
+  }
+
+  if (support.known ? support.parameters.has('tools') : profileTools) {
+    return;
+  }
 
   throw new ProviderErrorObject({
     provider: 'unified',
@@ -91,7 +100,9 @@ const requireCompatibleChoice = (
   const forced =
     request.toolChoice === 'required' || typeof request.toolChoice === 'object';
 
-  if (!forced) return;
+  if (!forced) {
+    return;
+  }
 
   if (hasReasoning(request) && !profile.forcedToolChoiceWithReasoning) {
     throw new ProviderErrorObject({
@@ -104,7 +115,6 @@ const requireCompatibleChoice = (
   const supported = support.known
     ? support.parameters.has('tool_choice')
     : profile.forcedToolChoice === 'full';
-
   const curatedRestriction =
     profile.lab !== 'unknown' && profile.forcedToolChoice !== 'full';
 
@@ -131,9 +141,18 @@ const structuredStrategy = (
   request: ProviderRequest<unknown>,
   support: OpenRouterModelSupport,
 ): 'json_schema' | 'json_object' | 'prompt' => {
-  if (request.schema === undefined) return 'json_schema';
-  if (support.parameters.has('structured_outputs')) return 'json_schema';
-  if (support.parameters.has('response_format')) return 'json_object';
+  if (request.schema === undefined) {
+    return 'json_schema';
+  }
+
+  if (support.parameters.has('structured_outputs')) {
+    return 'json_schema';
+  }
+
+  if (support.parameters.has('response_format')) {
+    return 'json_object';
+  }
+
   return 'prompt';
 };
 
@@ -141,15 +160,19 @@ const normalizeToolChoice = (
   request: ProviderRequest<unknown>,
   support: OpenRouterModelSupport,
 ): ProviderRequest<unknown> => {
-  if (!support.known || support.parameters.has('tool_choice')) return request;
+  if (!support.known || support.parameters.has('tool_choice')) {
+    return request;
+  }
 
   if (request.toolChoice === 'none') {
     const { tools: _tools, toolChoice: _choice, ...withoutTools } = request;
+
     return withoutTools;
   }
 
   if (request.toolChoice === 'auto') {
     const { toolChoice: _choice, ...withoutChoice } = request;
+
     return withoutChoice;
   }
 
@@ -168,6 +191,7 @@ const normalizeParallelToolCalls = (
   }
 
   const { parallelToolCalls: _parallel, ...withoutParallelControl } = request;
+
   return withoutParallelControl;
 };
 
