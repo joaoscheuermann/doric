@@ -255,7 +255,7 @@ test('rejects OpenRouter top-level union structured output schemas', () => {
   );
 });
 
-test('parses OpenRouter completion and redacts auth failures', async () => {
+test('parses OpenRouter completion and preserves auth failure diagnostics', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -337,7 +337,7 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
     (error: unknown) =>
       error instanceof ProviderErrorObject &&
       error.data.code === 'auth_failed' &&
-      error.data.diagnostic?.includes('sk-[redacted]') === true,
+      error.data.diagnostic?.includes('sk-testSecret123') === true,
   );
 
   await assert.rejects(
@@ -349,7 +349,7 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'auth_failed' &&
       error.data.status === 403 &&
-      error.data.diagnostic?.includes('sk-[redacted]') === true,
+      error.data.diagnostic?.includes('sk-testSecret456') === true,
   );
 });
 

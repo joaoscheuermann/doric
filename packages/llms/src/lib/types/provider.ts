@@ -90,8 +90,6 @@ export type ProviderCallFlags = {
   readonly reasoning?: boolean | ReasoningRequest;
   readonly serviceTier?: 'auto' | 'default' | 'priority';
   readonly includeUsage?: boolean;
-  /** Suppresses operational logs and omits model output from diagnostics. */
-  readonly sensitiveOutput?: boolean;
   /** Adds the structured output JSON Schema to the model's system prompt. */
   readonly includeStructuredSchemaOnSystemPrompt?: boolean;
 };
@@ -218,7 +216,6 @@ export type ProviderEmbeddingRequest = {
   readonly model: string;
   readonly input: string;
   readonly dimensions?: number;
-  readonly flags?: ProviderCallFlags;
   readonly signal?: AbortSignal;
 };
 
@@ -228,7 +225,6 @@ export type ProviderRerankRequest = {
   readonly query: string;
   readonly documents: readonly string[];
   readonly topN?: number;
-  readonly flags?: ProviderCallFlags;
   readonly signal?: AbortSignal;
 };
 

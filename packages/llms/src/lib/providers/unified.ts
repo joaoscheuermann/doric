@@ -11,15 +11,15 @@ import type {
   StructuredOutputValue,
   UsageMetadata,
 } from '../types/provider.js';
-import { parseStructuredOutput } from './common.js';
+import { parseStructuredOutput } from './structured.js';
 import { withProviderLogging } from './logging.js';
 import {
   createOpenRouterProviderCore,
   openRouterCapabilities,
   openRouterMetadata,
   type OpenRouterProviderDeps,
-  type PreparedOpenRouterRequest,
 } from './openrouter.js';
+import { createOpenRouterModelsLoader } from './openrouter/models.js';
 import { createOpenRouterCatalog } from './unified/catalog.js';
 import { createUnifiedRequestPreparer } from './unified/prepare.js';
 
@@ -42,18 +42,18 @@ export const createUnifiedProvider = (
 ): LlmProvider => {
   const maxRepairs = repairLimit(deps.maxStructuredOutputRepairs);
   const upstreamModel = normalizedUpstreamModel(deps.upstreamModel);
-  let prepareRequest = async (
-    request: ProviderRequest<unknown>,
-  ): Promise<PreparedOpenRouterRequest> => ({ request });
+  const resolveSupport = createOpenRouterCatalog(
+    createOpenRouterModelsLoader(
+      deps,
+      deps.baseUrl ?? openRouterMetadata.baseUrl,
+      unifiedMetadata.id,
+    ),
+  );
   const core = createOpenRouterProviderCore(deps, {
     metadata: unifiedMetadata,
     validateStructuredOutput: false,
-    prepare: (request) => prepareRequest(request),
+    prepare: createUnifiedRequestPreparer(resolveSupport, upstreamModel),
   });
-  const resolveSupport = createOpenRouterCatalog((signal) =>
-    core.models(signal),
-  );
-  prepareRequest = createUnifiedRequestPreparer(resolveSupport, upstreamModel);
 
   async function complete<Schema extends StructuredOutputSchema>(
     request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {

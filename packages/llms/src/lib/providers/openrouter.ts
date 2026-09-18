@@ -21,22 +21,21 @@ import type {
 } from '../types/provider.js';
 import { parseSseEvents } from '../utils/sse.js';
 import {
-  httpError,
   parseEmbedding,
   parseRerank,
   parseJsonBody,
-  parseStructuredOutput,
   requireEmbeddingInput,
   requireRerankInput,
   requireRequestInput,
   streamErrorEvent,
 } from './common.js';
+import { parseStructuredOutput } from './structured.js';
 import { authorization } from './openrouter/auth.js';
 import {
   openRouterBody,
   type OpenRouterBodyOptions,
 } from './openrouter/body.js';
-import { modelsFromResponse } from './openrouter/models.js';
+import { createOpenRouterModelsLoader } from './openrouter/models.js';
 import {
   createStreamState,
   hasProviderError,
@@ -46,6 +45,7 @@ import {
   streamToolCalls,
 } from './openrouter/parse.js';
 import { withProviderLogging } from './logging.js';
+import { requestJson, withProviderErrors } from './http.js';
 
 export { openRouterBody } from './openrouter/body.js';
 
@@ -94,12 +94,16 @@ export const createOpenRouterProvider = (
 
 /** Shared unlogged transport core used by OpenRouter policy adapters. */
 export const createOpenRouterProviderCore = (
-  deps: OpenRouterProviderDeps,
+  dependencies: OpenRouterProviderDeps,
   options: OpenRouterProviderCoreOptions = {},
 ): LlmProvider => {
-  const baseUrl = deps.baseUrl ?? openRouterMetadata.baseUrl;
   const metadata = options.metadata ?? openRouterMetadata;
   const providerId = metadata.id;
+  const deps = {
+    ...dependencies,
+    transport: withProviderErrors(dependencies.transport, providerId),
+  };
+  const baseUrl = deps.baseUrl ?? openRouterMetadata.baseUrl;
   const prepare = async (
     request: ProviderRequest<unknown>,
   ): Promise<PreparedOpenRouterRequest> =>
@@ -111,8 +115,7 @@ export const createOpenRouterProviderCore = (
     request: ProviderRequest<unknown>,
     body: Record<string, unknown>,
   ): Promise<Record<string, unknown>> => {
-    const sensitiveOutput = request.flags?.sensitiveOutput === true;
-    const response = await deps.transport.request({
+    return requestJson(deps.transport, providerId, {
       method: 'POST',
       url: `${baseUrl}/chat/completions`,
       headers: {
@@ -123,17 +126,6 @@ export const createOpenRouterProviderCore = (
       body: JSON.stringify(body),
       signal: request.signal,
     });
-
-    if (response.status >= 400) {
-      throw httpError(
-        providerId,
-        response.status,
-        response.body,
-        sensitiveOutput,
-      );
-    }
-
-    return parseJsonBody(providerId, response.body, sensitiveOutput);
   };
 
   async function complete<Schema extends StructuredOutputSchema>(
@@ -171,7 +163,6 @@ export const createOpenRouterProviderCore = (
     ): AsyncIterable<ProviderStreamEvent<Output>> {
       requireRequestInput(providerId, request);
       const prepared = await prepare(request);
-      const sensitiveOutput = prepared.request.flags?.sensitiveOutput === true;
       const body = openRouterBody(prepared.request, true, {
         ...prepared.bodyOptions,
         providerId,
@@ -203,14 +194,13 @@ export const createOpenRouterProviderCore = (
         let payload: Record<string, unknown>;
 
         try {
-          payload = parseJsonBody(providerId, event.data, sensitiveOutput);
+          payload = parseJsonBody(providerId, event.data);
         } catch {
           yield streamErrorEvent(
             providerId,
             'malformed_stream_event',
             event.data,
             undefined,
-            sensitiveOutput,
           );
           return;
         }
@@ -221,7 +211,6 @@ export const createOpenRouterProviderCore = (
             'provider_error',
             'OpenRouter stream error.',
             event.data,
-            sensitiveOutput,
           );
           return;
         }
@@ -253,7 +242,6 @@ export const createOpenRouterProviderCore = (
       request: ProviderEmbeddingRequest,
     ): Promise<ProviderEmbeddingFinished> {
       requireEmbeddingInput(providerId, request);
-      const sensitiveOutput = request.flags?.sensitiveOutput === true;
       const body = {
         model: request.model,
         input: request.input,
@@ -261,7 +249,7 @@ export const createOpenRouterProviderCore = (
           ? {}
           : { dimensions: request.dimensions }),
       };
-      const response = await deps.transport.request({
+      const response = await requestJson(deps.transport, providerId, {
         method: 'POST',
         url: `${baseUrl}/embeddings`,
         headers: {
@@ -272,34 +260,20 @@ export const createOpenRouterProviderCore = (
         body: JSON.stringify(body),
         signal: request.signal,
       });
-      if (response.status >= 400) {
-        throw httpError(
-          providerId,
-          response.status,
-          response.body,
-          sensitiveOutput,
-        );
-      }
-
-      return parseEmbedding(
-        providerId,
-        parseJsonBody(providerId, response.body, sensitiveOutput),
-        'credits',
-      );
+      return parseEmbedding(providerId, response, 'credits');
     },
 
     async rerank(
       request: ProviderRerankRequest,
     ): Promise<ProviderRerankFinished> {
       requireRerankInput(providerId, request);
-      const sensitiveOutput = request.flags?.sensitiveOutput === true;
       const body = {
         model: request.model,
         query: request.query,
         documents: request.documents,
         ...(request.topN === undefined ? {} : { top_n: request.topN }),
       };
-      const response = await deps.transport.request({
+      const response = await requestJson(deps.transport, providerId, {
         method: 'POST',
         url: `${baseUrl}/rerank`,
         headers: {
@@ -310,39 +284,10 @@ export const createOpenRouterProviderCore = (
         body: JSON.stringify(body),
         signal: request.signal,
       });
-      if (response.status >= 400) {
-        throw httpError(
-          providerId,
-          response.status,
-          response.body,
-          sensitiveOutput,
-        );
-      }
-
-      return parseRerank(
-        providerId,
-        parseJsonBody(providerId, response.body, sensitiveOutput),
-        'credits',
-      );
+      return parseRerank(providerId, response, 'credits');
     },
 
-    async models(signal?: AbortSignal): Promise<readonly Model[]> {
-      const response = await deps.transport.request({
-        method: 'GET',
-        url: `${baseUrl}/models`,
-        headers: {
-          authorization: await authorization(deps.apiKey),
-          accept: 'application/json',
-        },
-        signal,
-      });
-
-      if (response.status >= 400) {
-        throw httpError(providerId, response.status, response.body);
-      }
-
-      return modelsFromResponse(parseJsonBody(providerId, response.body));
-    },
+    models: createOpenRouterModelsLoader(deps, baseUrl, providerId),
 
     async validateModel(model: string, signal?: AbortSignal): Promise<Model> {
       const found = (await this.models(signal)).find(

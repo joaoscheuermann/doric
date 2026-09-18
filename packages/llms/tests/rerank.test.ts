@@ -77,7 +77,6 @@ for (const fixture of compatibleProviders()) {
       documents: ['Berlin is in Germany.', 'Paris is in France.'],
       topN: 2,
       signal: controller.signal,
-      flags: { sensitiveOutput: true },
     });
     const request = fixture.transport.requests[0];
 

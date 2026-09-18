@@ -366,7 +366,6 @@ test('builds a concept with three isolated schema-less calls', async (context) =
   const fake = createProvider((_system, input, index, request) => {
     assert.equal(request.schema, undefined);
     assert.equal(request.temperature, 0);
-    assert.equal(request.flags?.sensitiveOutput, true);
     assert.equal(
       request.flags?.includeStructuredSchemaOnSystemPrompt,
       undefined,
@@ -979,10 +978,12 @@ test('reports setup prompt syntax and cache failures with curated details', asyn
     (error: unknown) =>
       okfFailure(error, 'OKF_SOURCE_SYNTAX_INVALID', 'syntax', 'broken.ts'),
   );
-  await fs.rm(path.join(base, 'broken.ts'));
-  await fs.mkdir(conceptPath(base, 'guide.md'), { recursive: true });
+
+  const cacheRoot = await tempRoot(context);
+  await fs.writeFile(path.join(cacheRoot, 'guide.md'), '# Guide\n');
+  await fs.mkdir(conceptPath(cacheRoot, 'guide.md'), { recursive: true });
   await assert.rejects(
-    generate({ provider: fake.provider, model: 'fake' }, base),
+    generate({ provider: fake.provider, model: 'fake' }, cacheRoot),
     (error: unknown) =>
       okfFailure(error, 'OKF_CACHE_READ_FAILED', 'cache', 'guide.md'),
   );

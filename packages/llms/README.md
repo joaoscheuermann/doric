@@ -192,10 +192,24 @@ const provider = createOpenRouterProvider({
 ```
 
 Every provider requires a Pino logger and creates a child bound to
-`{ component: 'llms', provider }`. Operational events contain only safe counts,
-model identifiers, finish reasons, and token usage. Set
-`flags.sensitiveOutput: true` on completion, stream, embedding, or rerank calls
-to suppress all operational events for that call.
+`{ component: 'llms', provider }`. Operational events contain counts, model
+identifiers, finish reasons, and token usage, not request or response bodies.
+Callers control logging through the injected logger, including disabling it.
+
+Content privacy belongs to the caller, not this package. Error diagnostics
+retain provider content without redaction, with excerpts bounded in size;
+parse errors may retain their original cause. Hosts must decide how to handle
+these errors before displaying, persisting, or logging them. There is no
+per-request sensitive-output flag or content sanitizer.
+
+### Migrating content policies
+
+Remove `flags.sensitiveOutput` from requests. The `redactSecrets` and
+`redactDiagnosticValue` exports have been removed; `diagnosticExcerpt` now
+only truncates text. Apply any application-specific sanitization at the
+consumer boundary, and configure the injected logger to control log output.
+Embedding and rerank requests no longer expose `flags`, which had no other
+supported behavior for those operations.
 
 ## Building
 

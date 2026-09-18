@@ -30,18 +30,19 @@ import {
 } from '../utils/json.js';
 import { parseSseEvents } from '../utils/sse.js';
 import {
-  httpError,
-  messagesWithStructuredSchema,
   messageText,
-  parseJsonBody,
-  parseStructuredOutput,
   requestReasoningEffort,
   requireRequestInput,
   streamErrorEvent,
 } from './common.js';
+import {
+  messagesWithStructuredSchema,
+  parseStructuredOutput,
+} from './structured.js';
 import { withProviderLogging } from './logging.js';
 
-type SecretSource = string | (() => string | Promise<string>);
+import { authorization, type SecretSource } from './auth.js';
+import { requestJson, withProviderErrors } from './http.js';
 
 export type LmStudioProviderDeps = {
   readonly transport: HttpTransport;
@@ -70,8 +71,12 @@ export const lmStudioCapabilities: ProviderCapabilities = {
 };
 
 export const createLmStudioProvider = (
-  deps: LmStudioProviderDeps,
+  dependencies: LmStudioProviderDeps,
 ): LlmProvider => {
+  const deps = {
+    ...dependencies,
+    transport: withProviderErrors(dependencies.transport, 'lmstudio'),
+  };
   const baseUrl = deps.baseUrl ?? lmStudioMetadata.baseUrl;
 
   async function complete<Schema extends StructuredOutputSchema>(
@@ -86,8 +91,7 @@ export const createLmStudioProvider = (
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
     requireRequestInput('lmstudio', request);
-    const sensitiveOutput = request.flags?.sensitiveOutput === true;
-    const response = await deps.transport.request({
+    const response = await requestJson(deps.transport, 'lmstudio', {
       method: 'POST',
       url: `${baseUrl}/api/v1/chat`,
       headers: {
@@ -99,22 +103,10 @@ export const createLmStudioProvider = (
       signal: request.signal,
     });
 
-    if (response.status >= 400) {
-      throw httpError(
-        'lmstudio',
-        response.status,
-        response.body,
-        sensitiveOutput,
-      );
-    }
-
     return parseStructuredOutput(
       'lmstudio',
       request,
-      finished(
-        parseJsonBody('lmstudio', response.body, sensitiveOutput),
-        'stop',
-      ),
+      finished(response, 'stop'),
     );
   }
 
@@ -129,7 +121,6 @@ export const createLmStudioProvider = (
         request: ProviderRequest<Output>,
       ): AsyncIterable<ProviderStreamEvent<Output>> {
         requireRequestInput('lmstudio', request);
-        const sensitiveOutput = request.flags?.sensitiveOutput === true;
         const text: string[] = [];
         const reasoning: string[] = [];
         const auth = await authHeader(deps);
@@ -169,7 +160,6 @@ export const createLmStudioProvider = (
               'malformed_stream_event',
               'Malformed LM Studio stream event.',
               event.data,
-              sensitiveOutput,
             );
             return;
           }
@@ -194,7 +184,6 @@ export const createLmStudioProvider = (
               'provider_error',
               errorMessage(payload),
               event.data,
-              sensitiveOutput,
             );
             continue;
           }
@@ -257,7 +246,7 @@ export const createLmStudioProvider = (
       },
 
       async models(signal?: AbortSignal): Promise<readonly Model[]> {
-        const response = await deps.transport.request({
+        const response = await requestJson(deps.transport, 'lmstudio', {
           method: 'GET',
           url: `${baseUrl}/api/v1/models`,
           headers: {
@@ -267,11 +256,7 @@ export const createLmStudioProvider = (
           signal,
         });
 
-        if (response.status >= 400) {
-          throw httpError('lmstudio', response.status, response.body);
-        }
-
-        return models(parseJsonBody('lmstudio', response.body));
+        return models(response);
       },
 
       async validateModel(model: string, signal?: AbortSignal): Promise<Model> {
@@ -468,43 +453,9 @@ const isLlmModel = (model: Record<string, unknown>): boolean => {
 const authHeader = async (
   deps: LmStudioProviderDeps,
 ): Promise<Record<string, string>> => {
-  const value = await authorization(deps);
+  const value = await authorization(deps, 'lmstudio', 'LM Studio');
 
   return value === undefined ? {} : { authorization: value };
-};
-
-const authorization = async (
-  deps: LmStudioProviderDeps,
-): Promise<string | undefined> => {
-  const apiKey = await secret(deps.apiKey);
-  const auth = await secret(deps.authorization);
-
-  if (apiKey !== undefined && auth !== undefined) {
-    throw new ProviderErrorObject({
-      provider: 'lmstudio',
-      code: 'auth_ambiguous',
-      message:
-        'LM Studio provider accepts either apiKey or authorization, not both.',
-    });
-  }
-
-  if (apiKey !== undefined) {
-    return `Bearer ${apiKey}`;
-  }
-
-  return auth;
-};
-
-const secret = async (
-  source: SecretSource | undefined,
-): Promise<string | undefined> => {
-  if (source === undefined) {
-    return undefined;
-  }
-
-  const value = typeof source === 'function' ? await source() : source;
-
-  return value.trim() === '' ? undefined : value;
 };
 
 const prune = (value: Record<string, unknown>): Record<string, unknown> =>

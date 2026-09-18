@@ -74,7 +74,6 @@ for (const fixture of compatibleProviders()) {
       input: 'A short document.',
       dimensions: 1024,
       signal: controller.signal,
-      flags: { sensitiveOutput: true },
     });
     const request = fixture.transport.requests[0];
 
