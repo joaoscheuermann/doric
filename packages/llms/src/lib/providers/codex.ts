@@ -7,12 +7,13 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
   ProviderStreamEvent,
   StructuredOutputSchema,
@@ -116,7 +117,7 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       async embedding(
         _request: ProviderEmbeddingRequest,
-      ): Promise<readonly number[]> {
+      ): Promise<ProviderEmbeddingFinished> {
         throw new ProviderErrorObject({
           provider: 'codex',
           code: 'unsupported_embeddings',
@@ -126,7 +127,7 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       async rerank(
         _request: ProviderRerankRequest,
-      ): Promise<readonly ProviderRerankResult[]> {
+      ): Promise<ProviderRerankFinished> {
         throw new ProviderErrorObject({
           provider: 'codex',
           code: 'unsupported_reranking',

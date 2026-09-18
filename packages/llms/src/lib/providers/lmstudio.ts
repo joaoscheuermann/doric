@@ -7,13 +7,14 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMessage,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
   ProviderStreamEvent,
   StructuredOutputSchema,
@@ -237,7 +238,7 @@ export const createLmStudioProvider = (
 
       async embedding(
         _request: ProviderEmbeddingRequest,
-      ): Promise<readonly number[]> {
+      ): Promise<ProviderEmbeddingFinished> {
         throw new ProviderErrorObject({
           provider: 'lmstudio',
           code: 'unsupported_embeddings',
@@ -247,7 +248,7 @@ export const createLmStudioProvider = (
 
       async rerank(
         _request: ProviderRerankRequest,
-      ): Promise<readonly ProviderRerankResult[]> {
+      ): Promise<ProviderRerankFinished> {
         throw new ProviderErrorObject({
           provider: 'lmstudio',
           code: 'unsupported_reranking',

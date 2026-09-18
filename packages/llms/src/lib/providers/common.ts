@@ -4,12 +4,14 @@ import type {
   JsonObject,
   JsonValue,
   ProviderError,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderId,
   ProviderMessage,
   ProviderRequest,
   ProviderRerankRequest,
+  ProviderRerankFinished,
   ProviderRerankResult,
   ProviderStructuredFinished,
   ReasoningEffort,
@@ -173,6 +175,7 @@ export const streamErrorEvent = (
 
 export const parseUsage = (
   usage: Record<string, unknown> | undefined,
+  costUnit?: string,
 ): UsageMetadata | undefined => {
   if (usage === undefined) {
     return undefined;
@@ -197,6 +200,17 @@ export const parseUsage = (
     promptDetails === undefined
       ? undefined
       : numberField(promptDetails, 'cached_tokens');
+  const cacheWriteTokens =
+    promptDetails === undefined
+      ? undefined
+      : numberField(promptDetails, 'cache_write_tokens');
+  const searchUnits = numberField(usage, 'search_units');
+  const amount = numberField(usage, 'cost');
+  const costDetails = recordField(usage, 'cost_details');
+  const upstreamAmount =
+    costDetails === undefined
+      ? undefined
+      : numberField(costDetails, 'upstream_inference_cost');
 
   return {
     inputTokens,
@@ -204,6 +218,17 @@ export const parseUsage = (
     totalTokens,
     reasoningTokens,
     cachedInputTokens,
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
+    ...(searchUnits === undefined ? {} : { searchUnits }),
+    ...(amount === undefined
+      ? {}
+      : {
+          cost: {
+            amount,
+            ...(costUnit === undefined ? {} : { unit: costUnit }),
+            ...(upstreamAmount === undefined ? {} : { upstreamAmount }),
+          },
+        }),
   };
 };
 
@@ -262,12 +287,17 @@ export const parseJsonBody = (
 export const parseEmbedding = (
   provider: ProviderId,
   body: Record<string, unknown>,
-): readonly number[] => {
+  costUnit?: string,
+): ProviderEmbeddingFinished => {
   const data = arrayField(body, 'data');
   const embedding = arrayField(asRecord(data[0]) ?? {}, 'embedding');
 
   if (embedding.length > 0 && embedding.every(isFiniteNumber)) {
-    return embedding as readonly number[];
+    const usage = parseUsage(recordField(body, 'usage'), costUnit);
+    return {
+      embedding: embedding as readonly number[],
+      ...(usage === undefined ? {} : { usage }),
+    };
   }
 
   throw new ProviderErrorObject({
@@ -280,7 +310,8 @@ export const parseEmbedding = (
 export const parseRerank = (
   provider: ProviderId,
   body: Record<string, unknown>,
-): readonly ProviderRerankResult[] => {
+  costUnit?: string,
+): ProviderRerankFinished => {
   const results = arrayField(body, 'results');
   const parsed = results.map((value) => {
     const result = asRecord(value);
@@ -299,7 +330,11 @@ export const parseRerank = (
   });
 
   if (parsed.length > 0 && parsed.every(isRerankResult)) {
-    return parsed;
+    const usage = parseUsage(recordField(body, 'usage'), costUnit);
+    return {
+      results: parsed,
+      ...(usage === undefined ? {} : { usage }),
+    };
   }
 
   throw new ProviderErrorObject({

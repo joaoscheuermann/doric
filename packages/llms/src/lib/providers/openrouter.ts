@@ -7,12 +7,13 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
   ProviderStreamEvent,
   StructuredOutputSchema,
@@ -250,7 +251,7 @@ export const createOpenRouterProviderCore = (
 
     async embedding(
       request: ProviderEmbeddingRequest,
-    ): Promise<readonly number[]> {
+    ): Promise<ProviderEmbeddingFinished> {
       requireEmbeddingInput(providerId, request);
       const sensitiveOutput = request.flags?.sensitiveOutput === true;
       const body = {
@@ -283,12 +284,13 @@ export const createOpenRouterProviderCore = (
       return parseEmbedding(
         providerId,
         parseJsonBody(providerId, response.body, sensitiveOutput),
+        'credits',
       );
     },
 
     async rerank(
       request: ProviderRerankRequest,
-    ): Promise<readonly ProviderRerankResult[]> {
+    ): Promise<ProviderRerankFinished> {
       requireRerankInput(providerId, request);
       const sensitiveOutput = request.flags?.sensitiveOutput === true;
       const body = {
@@ -320,6 +322,7 @@ export const createOpenRouterProviderCore = (
       return parseRerank(
         providerId,
         parseJsonBody(providerId, response.body, sensitiveOutput),
+        'credits',
       );
     },
 

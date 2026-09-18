@@ -7,13 +7,14 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMessage,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
   ProviderStreamEvent,
   ProviderToolCall,
@@ -220,7 +221,7 @@ export const createLmStudioOpenAiProvider = (
 
       async embedding(
         request: ProviderEmbeddingRequest,
-      ): Promise<readonly number[]> {
+      ): Promise<ProviderEmbeddingFinished> {
         requireEmbeddingInput('lmstudio-openai', request);
         const sensitiveOutput = request.flags?.sensitiveOutput === true;
         const body = {
@@ -258,7 +259,7 @@ export const createLmStudioOpenAiProvider = (
 
       async rerank(
         request: ProviderRerankRequest,
-      ): Promise<readonly ProviderRerankResult[]> {
+      ): Promise<ProviderRerankFinished> {
         requireRerankInput('lmstudio-openai', request);
         const sensitiveOutput = request.flags?.sensitiveOutput === true;
         const body = {

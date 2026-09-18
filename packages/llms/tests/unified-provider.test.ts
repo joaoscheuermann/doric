@@ -65,13 +65,25 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":42}' } },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 2,
+          total_tokens: 3,
+          cost: 0.01,
+          cost_details: { upstream_inference_cost: 0.008 },
+        },
       }),
       response({
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
         ],
-        usage: { prompt_tokens: 4, completion_tokens: 5, total_tokens: 9 },
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 5,
+          total_tokens: 9,
+          cost: 0.02,
+          cost_details: { upstream_inference_cost: 0.015 },
+        },
       }),
     ],
   });
@@ -102,6 +114,11 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
     inputTokens: 5,
     outputTokens: 7,
     totalTokens: 12,
+    cost: {
+      amount: 0.03,
+      unit: 'credits',
+      upstreamAmount: 0.023,
+    },
   });
 });
 

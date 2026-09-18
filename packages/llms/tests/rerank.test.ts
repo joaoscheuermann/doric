@@ -71,7 +71,7 @@ for (const fixture of compatibleProviders()) {
   test(`reranks documents through ${fixture.name}`, async () => {
     const controller = new AbortController();
 
-    const results = await fixture.provider.rerank({
+    const result = await fixture.provider.rerank({
       model: 'rerank-model',
       query: 'capital of France',
       documents: ['Berlin is in Germany.', 'Paris is in France.'],
@@ -82,10 +82,12 @@ for (const fixture of compatibleProviders()) {
     const request = fixture.transport.requests[0];
 
     assert.equal(fixture.provider.capabilities.reranking, true);
-    assert.deepEqual(results, [
-      { index: 1, relevanceScore: 0.91 },
-      { index: 0, relevanceScore: 0.42 },
-    ]);
+    assert.deepEqual(result, {
+      results: [
+        { index: 1, relevanceScore: 0.91 },
+        { index: 0, relevanceScore: 0.42 },
+      ],
+    });
     assert.equal(request?.method, 'POST');
     assert.equal(request?.url, fixture.endpoint);
     assert.equal(request?.headers?.authorization, fixture.authorization);
@@ -100,6 +102,43 @@ for (const fixture of compatibleProviders()) {
     assert.equal(request?.signal, controller.signal);
   });
 }
+
+test('preserves OpenRouter rerank usage and cost', async () => {
+  const transport = fakeTransport({
+    responses: [
+      response({
+        id: 'rerank-1',
+        model: 'rerank-model',
+        results: [{ index: 0, relevance_score: 0.91 }],
+        usage: {
+          search_units: 1,
+          total_tokens: 150,
+          cost: 0.000_02,
+          cost_details: { upstream_inference_cost: 0.000_015 },
+        },
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({
+    transport,
+    apiKey: 'router-key',
+  });
+
+  const result = await provider.rerank({
+    model: 'rerank-model',
+    query: 'capital of France',
+    documents: ['Paris is in France.'],
+  });
+
+  assert.deepEqual(result.results, [{ index: 0, relevanceScore: 0.91 }]);
+  assert.deepEqual(result.usage?.cost, {
+    amount: 0.000_02,
+    unit: 'credits',
+    upstreamAmount: 0.000_015,
+  });
+  assert.equal(result.usage?.searchUnits, 1);
+  assert.equal(result.usage?.totalTokens, 150);
+});
 
 test('rejects malformed rerank responses', async () => {
   const transport = fakeTransport({

@@ -374,9 +374,14 @@ and text-document reranking through `/rerank` below the configured base URL.
 Embedding requests may include optional positive-integer `dimensions`, which
 the compatible providers forward unchanged to the endpoint.
 Rerank requests carry a model, query, non-empty document list, and optional
-positive `topN`; successful results expose each original document index and
-finite relevance score. Codex and LM Studio native support neither embeddings
-nor reranking.
+positive `topN`. Successful embedding and rerank responses use explicit result
+envelopes and preserve provider-reported usage when present. Usage may include
+input, output, total, reasoning, cached-input, and cache-write token counts,
+rerank search units, and normalized cost metadata with amount, optional unit,
+and optional upstream amount. OpenRouter costs use the `credits` unit.
+Successful rerank results expose each original document index and finite
+relevance score. Codex and LM Studio native support neither embeddings nor
+reranking.
 `packages/llms` also exposes a generic OpenAI Responses-compatible factory with
 caller-configured provider identity and base URL. Its `/responses`, `/models`,
 `/embeddings`, and `/rerank` operations preserve that identity in metadata,

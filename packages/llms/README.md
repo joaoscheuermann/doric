@@ -91,12 +91,15 @@ optional positive-integer `dimensions` value for models that support a
 configurable embedding size.
 
 ```ts
-const embedding = await provider.embedding({
+const { embedding, usage } = await provider.embedding({
   model: 'voyageai/voyage-4-large',
   input: 'A document to embed.',
   dimensions: 1024,
 });
 ```
+
+The result also carries provider-reported usage when available. OpenRouter
+usage includes token counts and billed cost in credits.
 
 ## Reranking
 
@@ -106,7 +109,7 @@ provider's configured base URL (for example, OpenRouter uses
 `https://openrouter.ai/api/v1/rerank`).
 
 ```ts
-const results = await provider.rerank({
+const { results, usage } = await provider.rerank({
   model: 'cohere/rerank-v3.5',
   query: 'What is the capital of France?',
   documents: [
@@ -118,6 +121,9 @@ const results = await provider.rerank({
 
 // [{ index: 1, relevanceScore: 0.98 }]
 ```
+
+Reranking usage may include total tokens, search units, and provider-reported
+cost. Providers that omit accounting data return no `usage` field.
 
 Structured requests may set
 `flags.includeStructuredSchemaOnSystemPrompt: true` to append a deterministic

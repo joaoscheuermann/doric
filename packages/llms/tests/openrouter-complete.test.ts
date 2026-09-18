@@ -282,8 +282,13 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
           prompt_tokens: 2,
           completion_tokens: 3,
           total_tokens: 5,
+          cost: 0.000_01,
+          cost_details: { upstream_inference_cost: 0.000_008 },
           completion_tokens_details: { reasoning_tokens: 1 },
-          prompt_tokens_details: { cached_tokens: 1 },
+          prompt_tokens_details: {
+            cached_tokens: 1,
+            cache_write_tokens: 2,
+          },
         },
       }),
       response({ error: { message: 'bad sk-testSecret123' } }, 401),
@@ -316,6 +321,12 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
     totalTokens: 5,
     reasoningTokens: 1,
     cachedInputTokens: 1,
+    cacheWriteTokens: 2,
+    cost: {
+      amount: 0.000_01,
+      unit: 'credits',
+      upstreamAmount: 0.000_008,
+    },
   });
 
   await assert.rejects(

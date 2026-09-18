@@ -7,12 +7,13 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
   ProviderStreamEvent,
   ProviderToolCall,
@@ -289,7 +290,7 @@ export const createOpenAiProviderCore = (
 
     async embedding(
       request: ProviderEmbeddingRequest,
-    ): Promise<readonly number[]> {
+    ): Promise<ProviderEmbeddingFinished> {
       requireEmbeddingInput(providerId, request);
       const auth = await authorization(deps, providerId, providerName);
       const sensitiveOutput = request.flags?.sensitiveOutput === true;
@@ -328,7 +329,7 @@ export const createOpenAiProviderCore = (
 
     async rerank(
       request: ProviderRerankRequest,
-    ): Promise<readonly ProviderRerankResult[]> {
+    ): Promise<ProviderRerankFinished> {
       requireRerankInput(providerId, request);
       const auth = await authorization(deps, providerId, providerName);
       const sensitiveOutput = request.flags?.sensitiveOutput === true;

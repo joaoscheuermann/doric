@@ -184,7 +184,38 @@ const addUsage = (
     totalTokens: add(left.totalTokens, right.totalTokens),
     reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
     cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
+    cacheWriteTokens: add(left.cacheWriteTokens, right.cacheWriteTokens),
+    searchUnits: add(left.searchUnits, right.searchUnits),
+    cost: addCost(left.cost, right.cost),
   });
+};
+
+const addCost = (
+  left: UsageMetadata['cost'],
+  right: UsageMetadata['cost'],
+): UsageMetadata['cost'] => {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  if (
+    left.unit !== undefined &&
+    right.unit !== undefined &&
+    left.unit !== right.unit
+  ) {
+    return undefined;
+  }
+
+  return {
+    amount: left.amount + right.amount,
+    ...(left.unit === undefined && right.unit === undefined
+      ? {}
+      : { unit: left.unit ?? right.unit }),
+    ...(left.upstreamAmount === undefined && right.upstreamAmount === undefined
+      ? {}
+      : {
+          upstreamAmount:
+            (left.upstreamAmount ?? 0) + (right.upstreamAmount ?? 0),
+        }),
+  };
 };
 
 const usage = (value: UsageMetadata): UsageMetadata =>

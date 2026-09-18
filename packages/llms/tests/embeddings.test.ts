@@ -69,7 +69,7 @@ for (const fixture of compatibleProviders()) {
   test(`creates embeddings through ${fixture.name}`, async () => {
     const controller = new AbortController();
 
-    const embedding = await fixture.provider.embedding({
+    const result = await fixture.provider.embedding({
       model: 'text-embedding-3-small',
       input: 'A short document.',
       dimensions: 1024,
@@ -79,7 +79,7 @@ for (const fixture of compatibleProviders()) {
     const request = fixture.transport.requests[0];
 
     assert.equal(fixture.provider.capabilities.embeddings, true);
-    assert.deepEqual(embedding, [0.25, -0.5]);
+    assert.deepEqual(result, { embedding: [0.25, -0.5] });
     assert.equal(request?.method, 'POST');
     assert.equal(request?.url, fixture.endpoint);
     assert.equal(request?.headers?.authorization, fixture.authorization);
@@ -93,6 +93,40 @@ for (const fixture of compatibleProviders()) {
     assert.equal(request?.signal, controller.signal);
   });
 }
+
+test('preserves OpenRouter embedding usage and cost', async () => {
+  const transport = fakeTransport({
+    responses: [
+      response({
+        data: [{ embedding: [0.25, -0.5] }],
+        usage: {
+          prompt_tokens: 7,
+          total_tokens: 7,
+          cost: 0.000_004,
+          cost_details: { upstream_inference_cost: 0.000_003 },
+        },
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({
+    transport,
+    apiKey: 'router-key',
+  });
+
+  const result = await provider.embedding({
+    model: 'text-embedding-3-small',
+    input: 'A short document.',
+  });
+
+  assert.deepEqual(result.embedding, [0.25, -0.5]);
+  assert.deepEqual(result.usage?.cost, {
+    amount: 0.000_004,
+    unit: 'credits',
+    upstreamAmount: 0.000_003,
+  });
+  assert.equal(result.usage?.inputTokens, 7);
+  assert.equal(result.usage?.totalTokens, 7);
+});
 
 test('rejects malformed OpenAI embedding responses', async () => {
   const transport = fakeTransport({

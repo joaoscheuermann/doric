@@ -59,7 +59,7 @@ export const parseFinished = (
   return {
     text: content,
     finishReason: finishReason(choice.finish_reason),
-    usage: parseUsage(recordField(response, 'usage')),
+    usage: parseUsage(recordField(response, 'usage'), 'credits'),
     reasoning: reasoning === undefined ? undefined : { text: reasoning },
     refusal,
     toolCalls,
@@ -78,7 +78,7 @@ export const streamEvents = (
     ProviderStreamEvent,
     { readonly type: 'response.finished' }
   >[] = [];
-  const usage = parseUsage(recordField(payload, 'usage'));
+  const usage = parseUsage(recordField(payload, 'usage'), 'credits');
 
   if (usage !== undefined) {
     state.usage = usage;

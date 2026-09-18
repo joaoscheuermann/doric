@@ -90,7 +90,10 @@ export const withProviderLogging = (
         request.flags?.sensitiveOutput === true,
         request.signal,
         () => provider.embedding(request),
-        (embedding) => ({ dimensions: embedding.length }),
+        ({ embedding, usage }) => ({
+          dimensions: embedding.length,
+          ...usageFields(usage),
+        }),
       );
     },
 
@@ -102,7 +105,10 @@ export const withProviderLogging = (
         request.flags?.sensitiveOutput === true,
         request.signal,
         () => provider.rerank(request),
-        (results) => ({ resultCount: results.length }),
+        ({ results, usage }) => ({
+          resultCount: results.length,
+          ...usageFields(usage),
+        }),
       );
     },
 
@@ -244,6 +250,11 @@ const usageFields = (usage: UsageMetadata | undefined): Fields =>
         totalTokens: usage.totalTokens,
         reasoningTokens: usage.reasoningTokens,
         cachedInputTokens: usage.cachedInputTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        searchUnits: usage.searchUnits,
+        cost: usage.cost?.amount,
+        costUnit: usage.cost?.unit,
+        upstreamCost: usage.cost?.upstreamAmount,
       };
 
 const terminalFromFinish = (finish: ProviderFinished<unknown>): Terminal => {
