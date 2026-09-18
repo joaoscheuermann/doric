@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { ModelRole, type Prisma } from '../generated/prisma/client.js';
+import { ModelRole, type Prisma } from '../../generated/prisma/client.js';
 import {
   ConfigInputSchema,
   type ConfigInput,
   type DoricConfig,
-} from './config.js';
-import type { Database } from './database.js';
+} from './schema.js';
+import type { Database } from '../database.js';
 
 const singletonId = 1;
 

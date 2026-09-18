@@ -7,8 +7,8 @@ import {
 import type { Logger } from 'pino';
 import type { ToolFactory } from 'tool';
 
-import type { DoricConfig } from './config.js';
-import { coordinationNames } from './coordination.js';
+import type { DoricConfig } from './schema.js';
+import { coordinationNames } from '../agents/direct/tools/index.js';
 
 export type Catalog = {
   readonly skills: readonly Skill[];

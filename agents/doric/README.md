@@ -8,6 +8,52 @@ Root and child Threads share Project files and processes; they are not isolated.
 HTTP and Socket.IO share `0.0.0.0:3000` by default (`DORIC_HOST`, `DORIC_PORT`).
 There is no legacy Session or A2A API.
 
+## Source organization
+
+```text
+src/lib/
+├── agents/direct/
+│   ├── executor.ts
+│   ├── prompts/system.ts
+│   └── tools/
+│       ├── index.ts
+│       ├── spawn-thread.ts
+│       ├── send-to-thread.ts
+│       ├── list-threads.ts
+│       ├── get-thread.ts
+│       ├── interrupt-thread.ts
+│       └── terminate-thread.ts
+├── config/
+│   ├── schema.ts
+│   ├── service.ts
+│   ├── store.ts
+│   └── generation.ts
+├── workspace/
+│   ├── types.ts
+│   ├── service.ts
+│   ├── runtime.ts
+│   ├── runner.ts
+│   ├── coordination.ts
+│   ├── projects.ts
+│   ├── threads.ts
+│   └── storage.ts
+├── http/
+│   ├── app.ts
+│   └── errors.ts
+├── events/
+│   ├── socket.ts
+│   └── serialization.ts
+├── database.ts
+└── vms.ts
+```
+
+The Direct system prompt is one exported literal template string; the executor
+appends bundle skills in their declared order. Each coordination tool owns its
+definition, schemas, and adapter in one file. Shared lifecycle and authorization
+remain in `workspace`, behind the injected coordination contract.
+Sandbox tools still belong to their existing bundles. HTTP routes and generated
+Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
+
 ## Lifecycle
 
 Create a Project first, then create its Threads explicitly. Project creation

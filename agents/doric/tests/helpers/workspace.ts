@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { defaultConfig } from '../../src/lib/config.js';
+import { defaultConfig } from '../../src/lib/config/schema.js';
 import type {
   ProjectRecord,
   ProjectStore,
@@ -8,7 +8,7 @@ import type {
   ThreadRecord,
   ThreadStore,
   WorkspacePublisher,
-} from '../../src/lib/workspace.js';
+} from '../../src/lib/workspace/types.js';
 
 export const deferred = <T = void>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;

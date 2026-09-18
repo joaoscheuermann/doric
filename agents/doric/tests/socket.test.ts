@@ -4,15 +4,15 @@ import test from 'node:test';
 import { io as connect, type Socket } from 'socket.io-client';
 import { Server as SocketServer } from 'socket.io';
 
-import { createWorkspaceSocket } from '../src/lib/socket.js';
-import { defaultConfig } from '../src/lib/config.js';
+import { createWorkspaceSocket } from '../src/lib/events/socket.js';
+import { defaultConfig } from '../src/lib/config/schema.js';
 import type {
   Project,
   Thread,
   ThreadEvent,
   ProjectStore,
   ThreadStore,
-} from '../src/lib/workspace.js';
+} from '../src/lib/workspace/types.js';
 
 const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';

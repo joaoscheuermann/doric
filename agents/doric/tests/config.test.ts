@@ -5,9 +5,9 @@ import {
   ConfigInputSchema,
   defaultConfig,
   type DoricConfig,
-} from '../src/lib/config.js';
-import { createConfigService } from '../src/lib/config-service.js';
-import type { Generation } from '../src/lib/generation.js';
+} from '../src/lib/config/schema.js';
+import { createConfigService } from '../src/lib/config/service.js';
+import type { Generation } from '../src/lib/config/generation.js';
 
 test('accepts the complete default configuration', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);

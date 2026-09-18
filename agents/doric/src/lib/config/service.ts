@@ -1,8 +1,8 @@
 import type { Bundle } from 'bundle';
 import type { Logger } from 'pino';
 
-import type { ConfigInput, DoricConfig } from './config.js';
-import type { ConfigStore } from './config-store.js';
+import type { ConfigInput, DoricConfig } from './schema.js';
+import type { ConfigStore } from './store.js';
 import { createGeneration, type Generation } from './generation.js';
 
 export type ConfigService = {

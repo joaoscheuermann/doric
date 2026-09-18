@@ -1,8 +1,8 @@
 import { Router } from 'express';
 
-import { ConfigInputSchema } from '../lib/config.js';
-import type { ConfigService } from '../lib/config-service.js';
-import { sendError } from '../lib/http.js';
+import { ConfigInputSchema } from '../lib/config/schema.js';
+import type { ConfigService } from '../lib/config/service.js';
+import { sendError } from '../lib/http/errors.js';
 
 /** Exposes the credential-free singleton configuration without changing its schema. */
 export const createConfigRouter = (service: ConfigService): Router => {

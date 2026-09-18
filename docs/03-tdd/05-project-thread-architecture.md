@@ -42,14 +42,16 @@ O limite atual do pool continua limitando Projects, não Threads.
 ## 2. Base existente e divisão de responsabilidades
 
 O host separa as responsabilidades nos módulos
-[`workspace-service.ts`](../../agents/doric/src/lib/workspace-service.ts)
+[`workspace/service.ts`](../../agents/doric/src/lib/workspace/service.ts)
 (Projects, árvore, lease e encerramento),
-[`thread-runner.ts`](../../agents/doric/src/lib/thread-runner.ts)
+[`workspace/runner.ts`](../../agents/doric/src/lib/workspace/runner.ts)
 (fila e execução por Thread),
-[`direct.ts`](../../agents/doric/src/lib/direct.ts) (Agent por entrada) e
-[`coordination.ts`](../../agents/doric/src/lib/coordination.ts)
+[`agents/direct/executor.ts`](../../agents/doric/src/lib/agents/direct/executor.ts)
+(Agent por entrada) e
+[`agents/direct/tools/index.ts`](../../agents/doric/src/lib/agents/direct/tools/index.ts)
 (ferramentas vinculadas ao pai). Os contratos estão em
-[`workspace.ts`](../../agents/doric/src/lib/workspace.ts).
+[`workspace/types.ts`](../../agents/doric/src/lib/workspace/types.ts) e
+[`workspace/coordination.ts`](../../agents/doric/src/lib/workspace/coordination.ts).
 Persistência, rotas e replay migram para Project e Thread no mesmo escopo.
 
 | Responsabilidade antes concentrada na Session   | Responsável                           |
@@ -348,7 +350,7 @@ Evidências da implementação:
 - `nx show projects`, `nx run doric:build` e `nx run agent:typecheck` passaram.
 - `nx run agent:test`: 104 testes passaram.
 - `nx run doric:test`, com `DORIC_TEST_DATABASE_URL` e
-  `DORIC_TEST_SANDBOX=true`: 96 testes passaram, sem skips. Inclui baseline
+  `DORIC_TEST_SANDBOX=true`: 100 testes passaram, sem skips. Inclui baseline
   limpa em PostgreSQL 18.4 e fluxo composto HTTP/Socket.IO, Direct,
   ferramentas dos bundles e sandbox Docker real.
 - A baseline foi aplicada com `nx run doric:migrate` em banco vazio; uma
@@ -377,6 +379,12 @@ Mutações em cópias temporárias comprovaram a detecção de fila invertida,
 controles sempre rejeitados, histórico órfão, callback não aguardado,
 recuperação de stream ausente, erro de persistência tratado como recuperável,
 alias legado e dependência de formatação incidental no provider de teste.
+
+A reorganização de `src/lib` preservou os corpos dos módulos compartilhados,
+alterando apenas seus imports. O prompt base em `agents/direct/prompts/system.ts`
+exporta uma única constante literal; a composição de skills mantém o texto
+anterior. Comparações com a versão anterior confirmaram igualdade do prompt e
+dos nomes, ordem, descrições e schemas das seis tools individualizadas.
 
 Seguir a skill behavioral-testing. Verificar contratos públicos, não nomes de
 helpers, coleções internas ou detalhes de chamadas entre módulos.

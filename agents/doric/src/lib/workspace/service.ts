@@ -1,14 +1,14 @@
 import type { Logger } from 'pino';
 import type { Sandpool } from 'sandpool';
 
-import type { ConfigService } from './config-service.js';
-import { runDirectPrompt } from './direct.js';
-import { createThreadRunner } from './thread-runner.js';
+import type { ConfigService } from '../config/service.js';
+import { runDirectPrompt } from '../agents/direct/executor.js';
+import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
   type ProjectRuntime,
   type ThreadExecution,
-} from './workspace-runtime.js';
+} from './runtime.js';
 import {
   isTerminal,
   type ProjectStore,
@@ -16,9 +16,9 @@ import {
   type WorkspacePublisher,
   type WorkspaceService,
   type ProjectSsh,
-} from './workspace.js';
+} from './types.js';
 
-export type { ThreadExecution } from './workspace-runtime.js';
+export type { ThreadExecution } from './runtime.js';
 
 type Options = {
   readonly projects: ProjectStore;

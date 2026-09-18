@@ -2,9 +2,9 @@ import type { ProviderMessage } from 'llms';
 import type {
   Thread as StoredThread,
   ThreadEvent as StoredEvent,
-} from '../generated/prisma/client.js';
-import type { Database } from './database.js';
-import type { Thread, ThreadEvent, ThreadStore } from './workspace.js';
+} from '../../generated/prisma/client.js';
+import type { Database } from '../database.js';
+import type { Thread, ThreadEvent, ThreadStore } from './types.js';
 import {
   checkLimit,
   excludedStates,
@@ -14,7 +14,7 @@ import {
   storedState,
   terminal,
   timestamps,
-} from './workspace-storage.js';
+} from './storage.js';
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({

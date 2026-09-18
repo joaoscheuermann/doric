@@ -1,7 +1,7 @@
-import type { Project as StoredProject } from '../generated/prisma/client.js';
-import type { DoricConfig } from './config.js';
-import type { Database } from './database.js';
-import type { Project, ProjectStore } from './workspace.js';
+import type { Project as StoredProject } from '../../generated/prisma/client.js';
+import type { DoricConfig } from '../config/schema.js';
+import type { Database } from '../database.js';
+import type { Project, ProjectStore } from './types.js';
 import {
   checkLimit,
   excludedStates,
@@ -11,7 +11,7 @@ import {
   storedState,
   terminal,
   timestamps,
-} from './workspace-storage.js';
+} from './storage.js';
 
 /** Persists environment snapshots independently from conversations. */
 export const createProjectStore = (database: Database): ProjectStore => ({

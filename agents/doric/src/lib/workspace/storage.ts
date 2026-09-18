@@ -1,5 +1,5 @@
-import { Prisma } from '../generated/prisma/client.js';
-import type { Page, ThreadState } from './workspace.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import type { Page, ThreadState } from './types.js';
 
 export const terminal = ['FAILED', 'CANCELLED'] as const;
 

@@ -87,6 +87,16 @@ Human follow-ups in a child do not bounce responses back to its parent.
 Host-bound coordination tools act only on direct children in the same Project;
 each child has its own history, not an automatic copy of its parent's history.
 
+Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts`,
+`agents/direct/prompts/system.ts`, and one module per coordination tool in
+`agents/direct/tools`. The system prompt file exports only one constant literal
+template string; dynamic bundle skills are appended by the executor, not encoded
+as arrays of prompt lines. Shared lifecycle and control contracts live in
+`workspace`; configuration, HTTP composition/errors, and event transport/safe
+serialization live in `config`, `http`, and `events` respectively. The database
+client and VM registry remain `database.ts` and `vms.ts` at the lib root.
+This organization does not change bundle ownership or runtime behavior.
+
 ### Current Runtime
 
 Repository-owned executable bundles live as individual Nx packages immediately

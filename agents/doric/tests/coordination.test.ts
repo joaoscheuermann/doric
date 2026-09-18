@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ThreadCoordination } from '../src/lib/coordination.js';
-import { createWorkspaceService } from '../src/lib/workspace-service.js';
-import type { Thread, WorkspaceService } from '../src/lib/workspace.js';
+import type { ThreadCoordination } from '../src/lib/workspace/coordination.js';
+import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import type { Thread, WorkspaceService } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
 const create = async (

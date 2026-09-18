@@ -1,7 +1,7 @@
 import type { ProviderMessage } from 'llms';
 import type { SandboxSshAccess } from 'sandbox';
 
-import type { DoricConfig } from './config.js';
+import type { DoricConfig } from '../config/schema.js';
 
 export type ProjectState =
   | 'queued'

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createWorkspaceService } from '../src/lib/workspace-service.js';
-import type { InputSource } from '../src/lib/workspace.js';
+import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import type { InputSource } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
 test(

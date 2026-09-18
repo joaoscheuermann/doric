@@ -8,8 +8,8 @@ import type {
   Project,
   Thread,
   WorkspaceService,
-} from '../src/lib/workspace.js';
-import { registerHttpRoutes } from '../src/lib/http-app.js';
+} from '../src/lib/workspace/types.js';
+import { registerHttpRoutes } from '../src/lib/http/app.js';
 
 const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';

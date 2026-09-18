@@ -1,7 +1,7 @@
 import express, { type Router } from 'express';
 import type { SandboxSshAccess } from 'sandbox';
 
-import { handleHttpError, sendError } from '../lib/http.js';
+import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { RunningVm } from '../lib/vms.js';
 
 export type CreateVmsRouterOptions = {

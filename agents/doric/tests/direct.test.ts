@@ -5,8 +5,11 @@ import { AgentErrorObject } from 'agent';
 import type { ProviderMessage, ProviderRequest } from 'llms';
 import { z } from 'zod';
 
-import { defaultConfig } from '../src/lib/config.js';
-import { directSystemPrompt, runDirectPrompt } from '../src/lib/direct.js';
+import { defaultConfig } from '../src/lib/config/schema.js';
+import {
+  directSystemPrompt,
+  runDirectPrompt,
+} from '../src/lib/agents/direct/executor.js';
 
 test('includes the Direct instruction and every skill body once in bundle order', () => {
   const system = directSystemPrompt([
@@ -20,6 +23,16 @@ test('includes the Direct instruction and every skill body once in bundle order'
   assert.ok(first >= 0 && first < second);
   assert.equal(system.lastIndexOf('First body.'), first);
   assert.equal(system.lastIndexOf('Second body.'), second);
+});
+
+test('preserves skill whitespace and separates each skill from the preceding prompt', () => {
+  assert.equal(
+    directSystemPrompt([
+      skill('first', '\nFirst body.\n'),
+      skill('second', 'Second body.'),
+    ]),
+    `${directSystemPrompt([])}\n\n## Skill: first\n\n\nFirst body.\n\n\n## Skill: second\n\nSecond body.`,
+  );
 });
 
 test('feeds complete persisted history into each fresh Direct agent', async () => {

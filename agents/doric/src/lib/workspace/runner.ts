@@ -1,20 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ThreadCoordination } from './coordination.js';
-import { eventJson } from './event-json.js';
+import { eventJson } from '../events/serialization.js';
 import {
   ThreadPersistenceError,
   type ProjectRuntime,
   type PromptJob,
   type RuntimeContext,
   type ThreadRuntime,
-} from './workspace-runtime.js';
+} from './runtime.js';
 import {
   isTerminal,
   type InputSource,
   type InterruptResult,
   type Thread,
-} from './workspace.js';
+} from './types.js';
 
 /** Owns independent prompt loops. Only queue/state mutations use the project lock. */
 export const createThreadRunner = (context: RuntimeContext) => {

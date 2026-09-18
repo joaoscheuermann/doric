@@ -11,21 +11,21 @@ import { createSandpool } from 'sandpool';
 import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
 
-import { createConfigService } from '../src/lib/config-service.js';
-import { createConfigStore } from '../src/lib/config-store.js';
-import { createGeneration } from '../src/lib/generation.js';
-import { registerHttpRoutes } from '../src/lib/http-app.js';
-import { createProjectStore } from '../src/lib/projects.js';
-import { createWorkspaceSocket } from '../src/lib/socket.js';
-import { createThreadStore } from '../src/lib/threads.js';
+import { createConfigService } from '../src/lib/config/service.js';
+import { createConfigStore } from '../src/lib/config/store.js';
+import { createGeneration } from '../src/lib/config/generation.js';
+import { registerHttpRoutes } from '../src/lib/http/app.js';
+import { createProjectStore } from '../src/lib/workspace/projects.js';
+import { createWorkspaceSocket } from '../src/lib/events/socket.js';
+import { createThreadStore } from '../src/lib/workspace/threads.js';
 import { createVmRegistry } from '../src/lib/vms.js';
-import { createWorkspaceService } from '../src/lib/workspace-service.js';
+import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type {
   InputSource,
   Project,
   Thread,
   ThreadEvent,
-} from '../src/lib/workspace.js';
+} from '../src/lib/workspace/types.js';
 import { inbox } from './helpers/socket-inbox.js';
 import {
   cleanupStack,

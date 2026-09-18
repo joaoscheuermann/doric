@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 import { z } from 'zod';
 
-import { sendError } from '../lib/http.js';
+import { sendError } from '../lib/http/errors.js';
 
 export const pageInput = z.object({
   limit: z.coerce.number().int().safe().positive().max(100).default(50),

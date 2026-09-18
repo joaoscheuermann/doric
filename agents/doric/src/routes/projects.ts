@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { handleHttpError, sendError } from '../lib/http.js';
-import type { WorkspaceService } from '../lib/workspace.js';
+import { handleHttpError, sendError } from '../lib/http/errors.js';
+import type { WorkspaceService } from '../lib/workspace/types.js';
 import { conflict, idInput, missing, pageInput } from './workspace-input.js';
 
 const createInput = z.object({ parentThreadId: z.uuid().optional() }).strict();

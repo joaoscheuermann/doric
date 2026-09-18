@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { defaultConfig } from '../src/lib/config.js';
-import { createConfigStore } from '../src/lib/config-store.js';
-import { createProjectStore } from '../src/lib/projects.js';
-import { createThreadStore } from '../src/lib/threads.js';
+import { defaultConfig } from '../src/lib/config/schema.js';
+import { createConfigStore } from '../src/lib/config/store.js';
+import { createProjectStore } from '../src/lib/workspace/projects.js';
+import { createThreadStore } from '../src/lib/workspace/threads.js';
 import {
   migrationDirectory,
   persistenceFixture,

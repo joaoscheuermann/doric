@@ -6,7 +6,7 @@ import type {
   ThreadEvent,
   ThreadStore,
   WorkspacePublisher,
-} from './workspace.js';
+} from '../workspace/types.js';
 
 const threadQuery = z.object({
   threadId: z.uuid(),

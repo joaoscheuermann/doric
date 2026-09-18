@@ -12,14 +12,14 @@ import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
 import { Server as SocketServer } from 'socket.io';
 
-import { createConfigService } from './lib/config-service.js';
-import { createConfigStore } from './lib/config-store.js';
+import { createConfigService } from './lib/config/service.js';
+import { createConfigStore } from './lib/config/store.js';
 import { createDatabase } from './lib/database.js';
-import { registerHttpRoutes } from './lib/http-app.js';
-import { createWorkspaceService } from './lib/workspace-service.js';
-import { createProjectStore } from './lib/projects.js';
-import { createThreadStore } from './lib/threads.js';
-import { createWorkspaceSocket } from './lib/socket.js';
+import { registerHttpRoutes } from './lib/http/app.js';
+import { createWorkspaceService } from './lib/workspace/service.js';
+import { createProjectStore } from './lib/workspace/projects.js';
+import { createThreadStore } from './lib/workspace/threads.js';
+import { createWorkspaceSocket } from './lib/events/socket.js';
 import { createVmRegistry } from './lib/vms.js';
 
 const logger = pino(

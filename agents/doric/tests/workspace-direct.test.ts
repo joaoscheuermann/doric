@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import type { ProviderRequest } from 'llms';
 
-import type { ConfigService } from '../src/lib/config-service.js';
-import { createWorkspaceService } from '../src/lib/workspace-service.js';
+import type { ConfigService } from '../src/lib/config/service.js';
+import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
 const finish = (text: string) => ({

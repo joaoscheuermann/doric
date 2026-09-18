@@ -3,7 +3,7 @@ import type { Sandbox } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
 
 import type { ThreadCoordination } from './coordination.js';
-import type { Generation } from './generation.js';
+import type { Generation } from '../config/generation.js';
 import type {
   InputSource,
   Project,
@@ -11,7 +11,7 @@ import type {
   Thread,
   ThreadStore,
   WorkspacePublisher,
-} from './workspace.js';
+} from './types.js';
 
 /** A failed durable write must stop this conversation, not retry on stale history. */
 export class ThreadPersistenceError extends Error {
