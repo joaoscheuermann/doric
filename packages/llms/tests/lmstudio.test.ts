@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { z } from 'zod';
 
 import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
@@ -16,9 +17,13 @@ const schema = z.object({
 
 const assertSchemaInstruction = (prompt: string): void => {
   assert.match(prompt, /Return exactly one JSON object/u);
+
   assert.match(prompt, /JSON Schema/u);
+
   assert.match(prompt, /~~~json\n\{/u);
+
   assert.match(prompt, /\n\}\n~~~/u);
+
   assert.match(prompt, /"answer"/u);
 };
 
@@ -57,16 +62,24 @@ test('sends LM Studio chat requests to the default native endpoint without auth'
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
 
   assert.equal(provider.metadata.id, 'lmstudio');
+
   assert.equal(provider.metadata.name, 'LM Studio');
+
   assert.equal(provider.metadata.baseUrl, 'http://localhost:1234');
+
   assert.equal(provider.capabilities.tools, false);
+
   assert.equal(provider.capabilities.reasoning, true);
+
   assert.equal(provider.capabilities.serviceTier, false);
+
   assert.equal(transport.requests[0]?.url, 'http://localhost:1234/api/v1/chat');
+
   assert.equal(
     'authorization' in (transport.requests[0]?.headers ?? {}),
     false,
   );
+
   assert.deepEqual(body, {
     model: 'qwen3-coder-fast',
     input: 'Hi',
@@ -76,15 +89,20 @@ test('sends LM Studio chat requests to the default native endpoint without auth'
     max_output_tokens: 64,
     reasoning: 'low',
   });
+
   assert.equal('service_tier' in body, false);
+
   assert.equal(result.text, 'Done.');
+
   assert.deepEqual(result.reasoning, { text: 'Thinking.' });
+
   assert.deepEqual(result.usage, {
     inputTokens: 3,
     outputTokens: 5,
     totalTokens: 8,
     reasoningTokens: 2,
   });
+
   assert.deepEqual(result.toolCalls, []);
 });
 
@@ -97,29 +115,36 @@ test('adds one structured schema instruction after authored native system messag
     ],
   });
   const provider = createLmStudioProvider({ transport });
+
   const messages = [
     { role: 'system' as const, content: 'First policy.' },
     { role: 'system' as const, content: 'Second policy.' },
     { role: 'user' as const, content: 'Answer.' },
   ];
+
   const request = {
     model: 'local-model',
     messages,
     schema,
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   } as const;
-
   const result = await provider.complete(request);
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
 
   assert.ok(
     body.system_prompt.startsWith('First policy.\n\nSecond policy.\n\n'),
   );
+
   assert.equal(body.system_prompt.match(/JSON Schema/gu)?.length, 1);
+
   assertSchemaInstruction(body.system_prompt);
+
   assert.equal(body.input, 'Answer.');
+
   assert.deepEqual(result.structured, { answer: 'Done' });
+
   assert.deepEqual(request.messages, messages);
+
   assert.equal(request.messages, messages);
 });
 
@@ -145,9 +170,11 @@ test('uses the same structured schema instruction for native streams', async () 
       flags: { includeStructuredSchemaOnSystemPrompt: true },
     }),
   );
+
   const body = JSON.parse(transport.requests[0]?.body ?? '{}');
 
   assertSchemaInstruction(body.system_prompt);
+
   assert.equal(body.input, 'Answer.');
 });
 
@@ -170,6 +197,7 @@ test('does not add schema instructions unless both the flag and schema are prese
     ],
     schema,
   });
+
   await provider.complete({
     model: 'local-model',
     messages: [
@@ -202,11 +230,13 @@ test('normalizes top-level LM Studio reasoning effort values for native requests
     messages: [{ role: 'user', content: 'Hi' }],
     effort: 'none',
   });
+
   await provider.complete({
     model: 'local-model',
     messages: [{ role: 'user', content: 'Hi' }],
     effort: 'minimal',
   });
+
   await provider.complete({
     model: 'local-model',
     messages: [{ role: 'user', content: 'Hi' }],
@@ -225,9 +255,11 @@ test('maps LM Studio authorization modes', async () => {
   const blank = fakeTransport({
     responses: [response({ output: [{ type: 'message', content: 'ok' }] })],
   });
+
   const apiKey = fakeTransport({
     responses: [response({ output: [{ type: 'message', content: 'ok' }] })],
   });
+
   const exact = fakeTransport({
     responses: [response({ output: [{ type: 'message', content: 'ok' }] })],
   });
@@ -240,6 +272,7 @@ test('maps LM Studio authorization modes', async () => {
     model: 'local-model',
     messages: [{ role: 'user', content: 'Hi' }],
   });
+
   await createLmStudioProvider({
     transport: apiKey,
     apiKey: 'local-key',
@@ -247,6 +280,7 @@ test('maps LM Studio authorization modes', async () => {
     model: 'local-model',
     messages: [{ role: 'user', content: 'Hi' }],
   });
+
   await createLmStudioProvider({
     transport: exact,
     authorization: 'Bearer session-token',
@@ -256,7 +290,9 @@ test('maps LM Studio authorization modes', async () => {
   });
 
   assert.equal('authorization' in (blank.requests[0]?.headers ?? {}), false);
+
   assert.equal(apiKey.requests[0]?.headers?.authorization, 'Bearer local-key');
+
   assert.equal(
     exact.requests[0]?.headers?.authorization,
     'Bearer session-token',
@@ -315,13 +351,17 @@ test('maps LM Studio named stream events to provider events', async () => {
   const finished = events.at(-1);
 
   assert.equal(transport.requests[0]?.url, 'http://localhost:1234/api/v1/chat');
+
   assert.equal(body.model, 'local-model-fast');
+
   assert.equal(body.stream, true);
+
   assert.deepEqual(events[0], {
     type: 'response.started',
     provider: 'lmstudio',
     model: 'local-model-fast',
   } satisfies ProviderStreamEvent);
+
   assert.deepEqual(
     events
       .filter(
@@ -331,6 +371,7 @@ test('maps LM Studio named stream events to provider events', async () => {
       .map((event) => event.delta),
     ['Hel', 'lo'],
   );
+
   assert.deepEqual(
     events
       .filter(
@@ -340,7 +381,9 @@ test('maps LM Studio named stream events to provider events', async () => {
       .map((event) => event.delta),
     ['why'],
   );
+
   assert.ok(events.some((event) => event.type === 'usage'));
+
   assert.equal(finished?.type, 'response.finished');
 
   if (finished?.type !== 'response.finished') {
@@ -348,7 +391,9 @@ test('maps LM Studio named stream events to provider events', async () => {
   }
 
   assert.equal(finished.finish.text, 'Hello');
+
   assert.deepEqual(finished.finish.reasoning, { text: 'why' });
+
   assert.deepEqual(finished.finish.usage, {
     inputTokens: 2,
     outputTokens: 3,
@@ -395,8 +440,11 @@ test('continues LM Studio streams after provider error events', async () => {
   }
 
   assert.equal(error.error.provider, 'lmstudio');
+
   assert.equal(error.error.code, 'provider_error');
+
   assert.equal(error.error.message, 'transient warning');
+
   assert.equal(finished?.type, 'response.finished');
 
   if (finished?.type !== 'response.finished') {
@@ -404,7 +452,9 @@ test('continues LM Studio streams after provider error events', async () => {
   }
 
   assert.ok(events.some((event) => event.type === 'usage'));
+
   assert.equal(finished.finish.text, 'Partial done');
+
   assert.deepEqual(finished.finish.usage, {
     inputTokens: 1,
     outputTokens: 2,
@@ -434,22 +484,26 @@ test('maps LM Studio model identity and validation errors', async () => {
       response({ models: [{ key: 'local-model', type: 'llm' }] }),
     ],
   });
+
   const provider = createLmStudioProvider({
     transport,
   });
-
   const models = await provider.models();
 
   assert.equal(provider.metadata.baseUrl, 'http://localhost:1234');
+
   assert.equal(
     transport.requests[0]?.url,
     'http://localhost:1234/api/v1/models',
   );
+
   assert.equal(
     'authorization' in (transport.requests[0]?.headers ?? {}),
     false,
   );
+
   assert.equal(models.length, 1);
+
   assert.deepEqual(models[0], {
     id: 'local-model',
     name: 'Local Model',
@@ -462,6 +516,7 @@ test('maps LM Studio model identity and validation errors', async () => {
       max_context_length: 4096,
     },
   });
+
   await assert.rejects(
     provider.validateModel('missing-model'),
     (error: unknown) =>
@@ -475,6 +530,7 @@ test('sends LM Studio model requests with API key auth', async () => {
   const transport = fakeTransport({
     responses: [response({ models: [{ key: 'local-model', type: 'llm' }] })],
   });
+
   const provider = createLmStudioProvider({
     transport,
     apiKey: 'local-key',
@@ -486,6 +542,7 @@ test('sends LM Studio model requests with API key auth', async () => {
     transport.requests[0]?.url,
     'http://localhost:1234/api/v1/models',
   );
+
   assert.equal(
     transport.requests[0]?.headers?.authorization,
     'Bearer local-key',

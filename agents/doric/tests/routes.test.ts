@@ -11,7 +11,9 @@ test('creates a prompt-free session with its stable SSH link', async () => {
 
   try {
     const created = await fetch(`${host.url}/sessions`, { method: 'POST' });
+
     assert.equal(created.status, 202);
+
     assert.deepEqual(await created.json(), {
       ...session,
       ssh: { href: `/sessions/${session.id}/ssh` },
@@ -31,9 +33,13 @@ test('returns the same public representation from session list and detail', asyn
     const listed = await fetch(`${host.url}/sessions`);
     const detail = await fetch(`${host.url}/sessions/${session.id}`);
     const detailBody = (await detail.json()) as Record<string, unknown>;
+
     assert.deepEqual(detailBody, session);
+
     assert.equal('result' in detailBody, false);
+
     assert.equal('prompt' in detailBody, false);
+
     assert.deepEqual(
       ((await listed.json()) as { sessions: unknown[] }).sessions[0],
       detailBody,
@@ -54,7 +60,9 @@ test('accepts a session prompt and returns its identifier', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt: 'inspect the sandbox' }),
     });
+
     assert.equal(prompted.status, 202);
+
     assert.deepEqual(await prompted.json(), { promptId });
   } finally {
     await host.close();
@@ -63,9 +71,11 @@ test('accepts a session prompt and returns its identifier', async () => {
 
 test('uses an exclusive event cursor and prohibits replay caching', async () => {
   const cursors: number[] = [];
+
   const host = await serveSessions({
     events: async (_id: string, sequence: number) => {
       cursors.push(sequence);
+
       return { events: [event], lastSequence: 2 };
     },
   });
@@ -74,14 +84,18 @@ test('uses an exclusive event cursor and prohibits replay caching', async () => 
     const events = await fetch(
       `${host.url}/sessions/${session.id}/events?afterSequence=1`,
     );
+
     assert.equal(events.status, 200);
+
     assert.equal(events.headers.get('cache-control'), 'no-store');
+
     assert.deepEqual(await events.json(), {
       events: [event],
       lastSequence: 2,
     });
 
     await fetch(`${host.url}/sessions/${session.id}/events`);
+
     assert.deepEqual(cursors, [1, 0]);
   } finally {
     await host.close();
@@ -125,6 +139,7 @@ test('rejects an empty session prompt', async () => {
 test('maps inactive and missing prompt targets to stable errors', async (t) => {
   let status: 'inactive' | 'missing' = 'inactive';
   const host = await serveSessions({ prompt: async () => ({ status }) });
+
   const cases = [
     {
       name: 'returns session_inactive when the session no longer accepts prompts',
@@ -144,6 +159,7 @@ test('maps inactive and missing prompt targets to stable errors', async (t) => {
     for (const entry of cases) {
       await t.test(entry.name, async () => {
         status = entry.status;
+
         await expectError(
           `${host.url}/sessions/${session.id}/prompt`,
           entry.http,
@@ -194,8 +210,11 @@ test('returns ready session SSH access without permitting caches', async () => {
 
   try {
     const response = await fetch(`${host.url}/sessions/${session.id}/ssh`);
+
     assert.equal(response.status, 200);
+
     assert.equal(response.headers.get('cache-control'), 'no-store');
+
     assert.deepEqual(await response.json(), {
       status: 'ready',
       vmId: 'vm/1',
@@ -211,6 +230,7 @@ test('maps unavailable session SSH states to stable responses', async (t) => {
   let status: 'pending' | 'unavailable' | 'expired' | 'missing' = 'pending';
   const service = { ssh: async () => ({ status }) };
   const host = await serveSessions(service);
+
   const cases = [
     {
       name: 'returns a retryable response while SSH is pending',
@@ -241,9 +261,13 @@ test('maps unavailable session SSH states to stable responses', async (t) => {
     for (const entry of cases) {
       await t.test(entry.name, async () => {
         status = entry.status;
+
         const response = await fetch(`${host.url}/sessions/${session.id}/ssh`);
+
         assert.equal(response.status, entry.http);
+
         assert.equal(response.headers.get('cache-control'), 'no-store');
+
         if ('code' in entry) {
           assert.equal(
             ((await response.json()) as { error: { code: string } }).error.code,
@@ -251,6 +275,7 @@ test('maps unavailable session SSH states to stable responses', async (t) => {
           );
         } else {
           assert.deepEqual(await response.json(), { status: 'pending' });
+
           assert.equal(response.headers.get('retry-after'), '1');
         }
       });
@@ -268,7 +293,9 @@ test('terminates an existing session', async () => {
       `${host.url}/sessions/${session.id}/terminate`,
       { method: 'POST' },
     );
+
     assert.equal(terminated.status, 200);
+
     assert.deepEqual(await terminated.json(), session);
   } finally {
     await host.close();
@@ -294,6 +321,7 @@ test('deletes only terminal sessions through stable HTTP outcomes', async (t) =>
   let outcome: 'deleted' | 'active' | 'missing' = 'deleted';
   const service = { delete: async () => outcome };
   const host = await serveSessions(service);
+
   const cases = [
     {
       name: 'returns an empty success after deleting a terminal session',
@@ -318,10 +346,13 @@ test('deletes only terminal sessions through stable HTTP outcomes', async (t) =>
     for (const entry of cases) {
       await t.test(entry.name, async () => {
         outcome = entry.outcome;
+
         const response = await fetch(`${host.url}/sessions/${session.id}`, {
           method: 'DELETE',
         });
+
         assert.equal(response.status, entry.http);
+
         if ('code' in entry) {
           assert.equal(
             ((await response.json()) as { error: { code: string } }).error.code,
@@ -346,6 +377,7 @@ const session = {
   updatedAt: new Date(0).toISOString(),
 };
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
+
 const event = {
   sessionId: session.id,
   promptId,
@@ -354,6 +386,7 @@ const event = {
   event: { type: 'reasoning.delta', delta: 'reasoning' },
   createdAt: new Date(1000).toISOString(),
 };
+
 const sshAccess = {
   host: '127.0.0.1',
   port: 2200,
@@ -370,7 +403,9 @@ const expectError = async (
   init?: RequestInit,
 ) => {
   const response = await fetch(url, init);
+
   assert.equal(response.status, status);
+
   assert.equal(
     ((await response.json()) as { error: { code: string } }).error.code,
     code,
@@ -379,16 +414,23 @@ const expectError = async (
 
 const serveSessions = (service: unknown) => {
   const app = express();
+
   app.use(express.json());
+
   app.use('/sessions', createSessionsRouter(service as never));
+
   return serve(app);
 };
 
 const serve = async (app: Express) => {
   const server = createServer(app);
+
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
   const address = server.address();
+
   assert.ok(address !== null && typeof address === 'object');
+
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>

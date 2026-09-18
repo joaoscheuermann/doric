@@ -20,6 +20,7 @@ type LogRecord = Readonly<Record<string, unknown>> & {
 
 test('emits uniform debug events with safe metadata for all operations', async () => {
   const captured = captureLogger();
+
   const transport = fakeTransport({
     responses: [
       response({
@@ -47,6 +48,7 @@ test('emits uniform debug events with safe metadata for all operations', async (
       ],
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'PRIVATE_CREDENTIAL',
@@ -60,19 +62,24 @@ test('emits uniform debug events with safe metadata for all operations', async (
       { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
     ],
   });
+
   await collect(
     provider.stream({
       model: 'gpt-test',
       messages: [{ role: 'user', content: 'PRIVATE_STREAM_PROMPT' }],
     }),
   );
+
   await provider.embedding({ model: 'embed-test', input: 'PRIVATE_INPUT' });
+
   await provider.rerank({
     model: 'rerank-test',
     query: 'PRIVATE_QUERY',
     documents: ['PRIVATE_DOCUMENT'],
   });
+
   await provider.models();
+
   await provider.validateModel('validated-model');
 
   assert.deepEqual(
@@ -93,19 +100,23 @@ test('emits uniform debug events with safe metadata for all operations', async (
       'llm model validation completed',
     ],
   );
+
   assert.ok(captured.records.every(({ level }) => level === 20));
+
   assert.ok(
     captured.records.every(
       ({ component, provider }) =>
         component === 'llms' && provider === 'openai',
     ),
   );
+
   assert.deepEqual(select(captured.records[1] ?? {}, requestKeys), {
     model: 'gpt-test',
     messageCount: 1,
     toolCount: 1,
     hasSchema: false,
   });
+
   assert.deepEqual(select(captured.records[2] ?? {}, finishKeys), {
     finishReason: 'stop',
     toolCount: 0,
@@ -113,12 +124,17 @@ test('emits uniform debug events with safe metadata for all operations', async (
     outputTokens: 3,
     totalTokens: 5,
   });
+
   assert.equal(captured.records[6]?.dimensions, 3);
+
   assert.equal(captured.records[7]?.documentCount, 1);
+
   assert.equal(captured.records[8]?.resultCount, 1);
+
   assert.equal(captured.records[10]?.modelCount, 1);
 
   const serialized = JSON.stringify(captured.records);
+
   for (const sentinel of [
     'PRIVATE_PROMPT',
     'PRIVATE_STREAM_PROMPT',
@@ -136,6 +152,7 @@ test('emits uniform debug events with safe metadata for all operations', async (
 
 test('emits no call events when sensitive output is enabled', async () => {
   const captured = captureLogger();
+
   const provider = createOpenAiProvider({
     logger: captured.logger,
     transport: fakeTransport({
@@ -161,6 +178,7 @@ test('emits no call events when sensitive output is enabled', async () => {
     messages: [{ role: 'user', content: 'private' }],
     flags,
   });
+
   await collect(
     provider.stream({
       model: 'private-model',
@@ -168,7 +186,9 @@ test('emits no call events when sensitive output is enabled', async () => {
       flags,
     }),
   );
+
   await provider.embedding({ model: 'private-model', input: 'private', flags });
+
   await provider.rerank({
     model: 'private-model',
     query: 'private',
@@ -184,6 +204,7 @@ test('emits no call events when sensitive output is enabled', async () => {
 
 test('logs failed unsupported operations without logging the error', async () => {
   const captured = captureLogger();
+
   const provider = createLmStudioProvider({
     transport: fakeTransport({}),
     logger: captured.logger,
@@ -201,11 +222,13 @@ test('logs failed unsupported operations without logging the error', async () =>
       'llm embedding failed',
     ],
   );
+
   assert.doesNotMatch(JSON.stringify(captured.records), /PRIVATE_INPUT/u);
 });
 
 test('logs a cancelled terminal when a stream consumer stops early', async () => {
   const captured = captureLogger();
+
   const provider = createOpenAiProvider({
     logger: captured.logger,
     transport: fakeTransport({ streams: [['data: {}\n\n']] }),
@@ -226,6 +249,7 @@ test('logs a cancelled terminal when a stream consumer stops early', async () =>
 
 test('keeps later stream events after logging the first error terminal', async () => {
   const captured = captureLogger();
+
   const provider = createLmStudioProvider({
     logger: captured.logger,
     transport: fakeTransport({
@@ -250,6 +274,7 @@ test('keeps later stream events after logging the first error terminal', async (
   );
 
   assert.equal(events.at(-1)?.type, 'response.finished');
+
   assert.deepEqual(
     captured.records.map(({ msg }) => msg),
     ['llm provider initialized', 'llm stream started', 'llm stream failed'],
@@ -258,6 +283,7 @@ test('keeps later stream events after logging the first error terminal', async (
 
 test('Codex complete and model validation do not duplicate internal events', async () => {
   const captured = captureLogger();
+
   const provider = createCodexProvider({
     authorization: 'Bearer private',
     logger: captured.logger,
@@ -278,6 +304,7 @@ test('Codex complete and model validation do not duplicate internal events', asy
     model: 'gpt-codex',
     messages: [{ role: 'user', content: 'private' }],
   });
+
   await provider.validateModel('gpt-codex');
 
   assert.deepEqual(
@@ -290,12 +317,14 @@ test('Codex complete and model validation do not duplicate internal events', asy
       'llm model validation completed',
     ],
   );
+
   assert.ok(captured.records.every(({ provider }) => provider === 'codex'));
 });
 
 test('validates logger methods synchronously for every provider factory', () => {
   const transport = fakeTransport({});
   const invalid = null as never;
+
   const factories = [
     () => createOpenAiProvider({ transport, logger: invalid }),
     () =>
@@ -330,6 +359,7 @@ test('validates logger methods synchronously for every provider factory', () => 
 test('preserves thrown error identity while logging only a failed terminal', async () => {
   const captured = captureLogger();
   const failure = new Error('PRIVATE_CAUSE');
+
   const transport: HttpTransport = {
     async request() {
       throw failure;
@@ -339,8 +369,8 @@ test('preserves thrown error identity while logging only a failed terminal', asy
     },
   };
   const provider = createOpenAiProvider({ transport, logger: captured.logger });
-
   let caught: unknown;
+
   try {
     await provider.complete({
       model: 'gpt-test',
@@ -351,7 +381,9 @@ test('preserves thrown error identity while logging only a failed terminal', asy
   }
 
   assert.equal(caught, failure);
+
   assert.equal(captured.records.at(-1)?.msg, 'llm completion failed');
+
   assert.doesNotMatch(JSON.stringify(captured.records), /PRIVATE_CAUSE/u);
 });
 
@@ -360,6 +392,7 @@ const captureLogger = (): {
   readonly records: LogRecord[];
 } => {
   const records: LogRecord[] = [];
+
   const logger = pino(
     { level: 'debug' },
     {
@@ -381,8 +414,8 @@ const select = (
   Object.fromEntries(
     keys.flatMap((key) => (key in record ? [[key, record[key]]] : [])),
   );
-
 const requestKeys = ['model', 'messageCount', 'toolCount', 'hasSchema'];
+
 const finishKeys = [
   'finishReason',
   'toolCount',
@@ -390,7 +423,6 @@ const finishKeys = [
   'outputTokens',
   'totalTokens',
 ];
-
 const sse = (value: unknown): string => `data: ${JSON.stringify(value)}\n\n`;
 
 const namedSse = (event: string, value: unknown): string =>

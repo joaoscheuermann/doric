@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  type AgentConfig,
   ConfigParseError,
   parseConfig,
   parseInitialMessageConfig,
   parseMessageConfigUpdate,
-  type AgentConfig,
 } from '../src/index.js';
 
 test('returns config data when message metadata contains configuration', () => {
@@ -241,8 +241,11 @@ function assertConfigError(
 ): void {
   assert.throws(action, (error: unknown) => {
     assert.ok(error instanceof ConfigParseError);
+
     assert.equal(error.code, code);
+
     assert.equal(error.path, path);
+
     return true;
   });
 }

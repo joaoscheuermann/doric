@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProviderErrorObject, type LlmProvider } from '../src/index.js';
+import { type LlmProvider, ProviderErrorObject } from '../src/index.js';
 import {
   createCodexProvider,
   createLmStudioOpenAiProvider,
@@ -82,21 +82,29 @@ for (const fixture of compatibleProviders()) {
     const request = fixture.transport.requests[0];
 
     assert.equal(fixture.provider.capabilities.reranking, true);
+
     assert.deepEqual(results, [
       { index: 1, relevanceScore: 0.91 },
       { index: 0, relevanceScore: 0.42 },
     ]);
+
     assert.equal(request?.method, 'POST');
+
     assert.equal(request?.url, fixture.endpoint);
+
     assert.equal(request?.headers?.authorization, fixture.authorization);
+
     assert.equal(request?.headers?.['content-type'], 'application/json');
+
     assert.equal(request?.headers?.accept, 'application/json');
+
     assert.deepEqual(JSON.parse(request?.body ?? '{}'), {
       model: 'rerank-model',
       query: 'capital of France',
       documents: ['Berlin is in Germany.', 'Paris is in France.'],
       top_n: 2,
     });
+
     assert.equal(request?.signal, controller.signal);
   });
 }
@@ -109,6 +117,7 @@ test('rejects malformed rerank responses', async () => {
       response({ results: [{ index: 0, relevance_score: 'high' }] }),
     ],
   });
+
   const provider = createOpenRouterProvider({
     transport,
     apiKey: 'router-key',
@@ -131,6 +140,7 @@ test('rejects malformed rerank responses', async () => {
 
 test('rejects invalid rerank requests before networking', async () => {
   const transport = fakeTransport({});
+
   const provider = createOpenRouterProvider({
     transport,
     apiKey: 'router-key',
@@ -142,6 +152,7 @@ test('rejects invalid rerank requests before networking', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'missing_model',
   );
+
   await assert.rejects(
     provider.rerank({
       model: 'rerank-model',
@@ -152,12 +163,14 @@ test('rejects invalid rerank requests before networking', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'missing_input',
   );
+
   await assert.rejects(
     provider.rerank({ model: 'rerank-model', query: 'query', documents: [] }),
     (error: unknown) =>
       error instanceof ProviderErrorObject &&
       error.data.code === 'missing_input',
   );
+
   await assert.rejects(
     provider.rerank({
       model: 'rerank-model',
@@ -169,6 +182,7 @@ test('rejects invalid rerank requests before networking', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'invalid_top_n',
   );
+
   assert.equal(transport.requests.length, 0);
 });
 
@@ -197,6 +211,7 @@ for (const fixture of [
     );
 
     assert.equal(provider.capabilities.reranking, false);
+
     assert.equal(fixture.transport.requests.length, 0);
   });
 }

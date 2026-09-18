@@ -27,23 +27,29 @@ export const createSessionsSocket = (
 
   namespace.use((socket, next) => {
     const parsed = queryInput.safeParse(socket.handshake.query);
+
     if (!parsed.success) {
       next(new Error('A valid sessionId query parameter is required.'));
+
       return;
     }
+
     socket.data.subscription = parsed.data;
+
     next();
   });
 
   namespace.on('connection', async (socket) => {
     const { sessionId, afterSequence = 0 } = socket.data
       .subscription as z.output<typeof queryInput>;
+
     const subscription = subscribe(
       subscriptions,
       sessionId,
       socket,
       afterSequence,
     );
+
     socket.on('disconnect', () =>
       unsubscribe(subscriptions, sessionId, socket),
     );
@@ -52,16 +58,20 @@ export const createSessionsSocket = (
       store.find(sessionId),
       store.eventsAfter(sessionId, afterSequence),
     ]);
+
     socket.emit('session:snapshot', {
       sessionId,
       session: record?.session ?? null,
       events,
     });
+
     subscription.lastSequence = Math.max(
       afterSequence,
       events.at(-1)?.sequence ?? afterSequence,
     );
+
     subscription.ready = true;
+
     flush(subscriptions, socket, sessionId, subscription);
   });
 
@@ -70,8 +80,10 @@ export const createSessionsSocket = (
       subscriptions.get(value.sessionId)?.forEach((subscription, socket) => {
         if (!subscription.ready) {
           subscription.buffered.push(value);
+
           return;
         }
+
         emitEvent(socket, subscription, value);
       });
     },
@@ -79,8 +91,10 @@ export const createSessionsSocket = (
       subscriptions.get(value.id)?.forEach((subscription, socket) => {
         if (!subscription.ready) {
           subscription.update = value;
+
           return;
         }
+
         socket.emit('session:updated', value);
       });
     },
@@ -88,9 +102,12 @@ export const createSessionsSocket = (
       subscriptions.get(id)?.forEach((subscription, socket) => {
         if (!subscription.ready) {
           subscription.deleted = true;
+
           return;
         }
+
         socket.emit('session:deleted', { sessionId: id });
+
         unsubscribe(subscriptions, id, socket);
       });
     },
@@ -105,14 +122,18 @@ const subscribe = (
 ): Subscription => {
   const sockets =
     subscriptions.get(sessionId) ?? new Map<Socket, Subscription>();
+
   const subscription = {
     ready: false,
     lastSequence: afterSequence,
     buffered: [],
     deleted: false,
   };
+
   sockets.set(socket, subscription);
+
   subscriptions.set(sessionId, sockets);
+
   return subscription;
 };
 
@@ -122,8 +143,12 @@ const unsubscribe = (
   socket: Socket,
 ) => {
   const sockets = subscriptions.get(sessionId);
+
   sockets?.delete(socket);
-  if (sockets?.size === 0) subscriptions.delete(sessionId);
+
+  if (sockets?.size === 0) {
+    subscriptions.delete(sessionId);
+  }
 };
 
 const flush = (
@@ -135,13 +160,18 @@ const flush = (
   subscription.buffered
     .sort((left, right) => left.sequence - right.sequence)
     .forEach((event) => emitEvent(socket, subscription, event));
+
   subscription.buffered.length = 0;
+
   if (subscription.update !== undefined) {
     socket.emit('session:updated', subscription.update);
+
     subscription.update = undefined;
   }
+
   if (subscription.deleted) {
     socket.emit('session:deleted', { sessionId });
+
     unsubscribe(subscriptions, sessionId, socket);
   }
 };
@@ -151,7 +181,11 @@ const emitEvent = (
   subscription: Subscription,
   event: SessionEvent,
 ) => {
-  if (event.sequence <= subscription.lastSequence) return;
+  if (event.sequence <= subscription.lastSequence) {
+    return;
+  }
+
   socket.emit('agent:event', event);
+
   subscription.lastSequence = event.sequence;
 };

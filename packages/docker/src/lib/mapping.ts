@@ -49,14 +49,19 @@ export const encodeBody = (
   readonly bytes?: Uint8Array;
   readonly headers: Readonly<Record<string, string>>;
 } => {
-  if (body === undefined) return { headers: {} };
+  if (body === undefined) {
+    return { headers: {} };
+  }
+
   if (body instanceof Uint8Array) {
     return {
       bytes: body,
       headers: { 'content-length': String(body.byteLength) },
     };
   }
+
   const bytes = Buffer.from(JSON.stringify(body));
+
   return {
     bytes,
     headers: {
@@ -98,12 +103,14 @@ export const containerInspectFrom = (
   raw: Record<string, unknown>,
 ): ContainerInspect => {
   const settings = recordValue(raw.NetworkSettings);
+
   const addresses = Object.values(recordValue(settings.Networks))
     .map(recordValue)
     .map((network) => stringValue(network.IPAddress))
     .filter(
       (value): value is string => value !== undefined && value.length > 0,
     );
+
   const ports = Object.fromEntries(
     Object.entries(recordValue(settings.Ports)).map(([port, value]) => [
       port,
@@ -118,6 +125,7 @@ export const containerInspectFrom = (
         : [],
     ]),
   );
+
   return { id: stringField(raw, 'Id'), ipAddress: addresses[0], ports, raw };
 };
 
@@ -131,9 +139,11 @@ export const stringField = (
   key: string,
 ): string => {
   const value = record[key];
+
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`Docker response is missing string field: ${key}`);
   }
+
   return value;
 };
 
@@ -141,8 +151,10 @@ export const numberField = (
   record: Record<string, unknown>,
   key: string,
 ): number | null => (typeof record[key] === 'number' ? record[key] : null);
+
 export const containerId = (container: ContainerRef | string): string =>
   typeof container === 'string' ? container : container.id;
+
 export const withDefaultTimeout = (
   request: DockerTransportRequest,
   timeoutMs: number | undefined,
@@ -150,31 +162,47 @@ export const withDefaultTimeout = (
   ...request,
   timeoutMs: request.timeoutMs ?? timeoutMs,
 });
+
 export const defaultConnection = (): DockerConnection =>
   process.platform === 'win32' ? { kind: 'namedPipe' } : { kind: 'unix' };
+
 export const socketPath = (connection: DockerConnection): string =>
   connection.kind === 'unix'
     ? (connection.socketPath ??
       dockerHostSocketPath(process.env.DOCKER_HOST) ??
       '/var/run/docker.sock')
     : (connection.pipePath ?? '//./pipe/docker_engine');
+
 export const pathWithQuery = (request: DockerTransportRequest): string => {
   const params = new URLSearchParams();
+
   for (const [key, value] of Object.entries(request.query ?? {})) {
-    if (value !== undefined) params.set(key, String(value));
+    if (value !== undefined) {
+      params.set(key, String(value));
+    }
   }
+
   const query = params.toString();
+
   return query.length === 0 ? request.path : `${request.path}?${query}`;
 };
 
 const stringValue = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
+
 const recordValue = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null
     ? (value as Record<string, unknown>)
     : {};
+
 const dockerHostSocketPath = (host: string | undefined): string | undefined => {
-  if (host === undefined || host.length === 0) return undefined;
-  if (host.startsWith('unix://')) return host.slice('unix://'.length);
+  if (host === undefined || host.length === 0) {
+    return undefined;
+  }
+
+  if (host.startsWith('unix://')) {
+    return host.slice('unix://'.length);
+  }
+
   return host.startsWith('/') ? host : undefined;
 };

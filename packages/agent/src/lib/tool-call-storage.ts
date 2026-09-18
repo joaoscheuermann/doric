@@ -20,6 +20,7 @@ export const createToolCallStorage = (
   return {
     append: (call, output) => {
       const id = createId();
+
       validateId(id, ids);
 
       const record = Object.freeze({
@@ -29,8 +30,11 @@ export const createToolCallStorage = (
         input: serializeInput(call),
         output,
       });
+
       ids.add(id);
+
       records.push(record);
+
       return record;
     },
     list: () => [...records],
@@ -44,6 +48,7 @@ const validateId = (id: string, ids: ReadonlySet<string>): void => {
       message: 'Tool call storage produced an empty observation ID.',
     });
   }
+
   if (ids.has(id)) {
     throw new AgentErrorObject({
       code: 'tool_call_id_collision',
@@ -55,7 +60,10 @@ const validateId = (id: string, ids: ReadonlySet<string>): void => {
 const serializeInput = (call: ToolCall): string => {
   try {
     const input = JSON.stringify(call.payload);
-    if (input !== undefined) return input;
+
+    if (input !== undefined) {
+      return input;
+    }
   } catch (cause) {
     throw new AgentErrorObject(
       {

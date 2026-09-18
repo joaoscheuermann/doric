@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ProviderMessage } from 'llms';
+
 import {
   Prisma,
-  SessionState as StoredState,
   type Session as StoredSession,
   type SessionEvent as StoredEvent,
+  SessionState as StoredState,
 } from '../generated/prisma/client.js';
-
 import type { DoricConfig } from './config.js';
 import type { Database } from './database.js';
 
@@ -57,6 +57,7 @@ const terminal = new Set<StoredState>([
   StoredState.FAILED,
   StoredState.CANCELLED,
 ]);
+
 const accepting = new Set<StoredState>([
   StoredState.QUEUED,
   StoredState.READY,
@@ -66,22 +67,30 @@ const accepting = new Set<StoredState>([
 /** Owns generic session state, persisted messages, and contiguous events. */
 export const createSessionStore = (database: Database) => {
   const eventTails = new Map<string, Promise<void>>();
+
   const serialized = async <Value>(
     id: string,
     operation: () => Promise<Value>,
   ): Promise<Value> => {
     const previous = eventTails.get(id) ?? Promise.resolve();
     let release: () => void = () => undefined;
+
     const current = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     eventTails.set(id, current);
+
     await previous;
+
     try {
       return await operation();
     } finally {
       release();
-      if (eventTails.get(id) === current) eventTails.delete(id);
+
+      if (eventTails.get(id) === current) {
+        eventTails.delete(id);
+      }
     }
   };
 
@@ -97,11 +106,14 @@ export const createSessionStore = (database: Database) => {
           select: { lastSequence: true },
         });
         const sequence = current.lastSequence + 1;
+
         await transaction.session.update({
           where: { id },
           data: { lastSequence: sequence },
         });
+
         const event = value as { readonly type?: unknown };
+
         const stored = await transaction.sessionEvent.create({
           data: {
             sessionId: id,
@@ -111,6 +123,7 @@ export const createSessionStore = (database: Database) => {
             event: json(value),
           },
         });
+
         return sessionEvent(stored);
       }),
     );
@@ -125,6 +138,7 @@ export const createSessionStore = (database: Database) => {
           finishedAt: new Date(),
         },
       });
+
       return result.count;
     },
 
@@ -137,11 +151,13 @@ export const createSessionStore = (database: Database) => {
           messages: [],
         },
       });
+
       return { session: session(stored), snapshot, messages: [] };
     },
 
     async find(id: string): Promise<SessionRecord | undefined> {
       const stored = await database.session.findUnique({ where: { id } });
+
       return stored === null ? undefined : record(stored);
     },
 
@@ -153,6 +169,7 @@ export const createSessionStore = (database: Database) => {
       });
       const hasMore = records.length > limit;
       const page = records.slice(0, limit).map(session);
+
       return {
         sessions: page,
         nextCursor: hasMore ? page.at(-1)?.id : undefined,
@@ -164,7 +181,9 @@ export const createSessionStore = (database: Database) => {
         where: { id, state: StoredState.QUEUED },
         data: { state: StoredState.READY, startedAt: new Date() },
       });
+
       const stored = await database.session.findUnique({ where: { id } });
+
       return stored === null ? undefined : session(stored);
     },
 
@@ -173,7 +192,9 @@ export const createSessionStore = (database: Database) => {
         where: { id, state: StoredState.READY },
         data: { state: StoredState.RUNNING },
       });
+
       const stored = await database.session.findUnique({ where: { id } });
+
       return stored === null ? undefined : session(stored);
     },
 
@@ -185,15 +206,22 @@ export const createSessionStore = (database: Database) => {
         where: { id, state: StoredState.RUNNING },
         data: { messages: json(messages), state: StoredState.READY },
       });
+
       const stored = await database.session.findUnique({ where: { id } });
-      if (stored === null) return undefined;
+
+      if (stored === null) {
+        return undefined;
+      }
+
       if (stored.state !== StoredState.RUNNING) {
         const updated = await database.session.update({
           where: { id },
           data: { messages: json(messages) },
         });
+
         return session(updated);
       }
+
       return session(stored);
     },
 
@@ -206,15 +234,22 @@ export const createSessionStore = (database: Database) => {
           const current = await transaction.session.findUnique({
             where: { id },
           });
-          if (current === null) return { status: 'missing' as const };
-          if (!accepting.has(current.state))
+
+          if (current === null) {
+            return { status: 'missing' as const };
+          }
+
+          if (!accepting.has(current.state)) {
             return { status: 'inactive' as const };
+          }
 
           const sequence = current.lastSequence + 1;
+
           await transaction.session.update({
             where: { id },
             data: { lastSequence: sequence },
           });
+
           const stored = await transaction.sessionEvent.create({
             data: {
               sessionId: id,
@@ -224,6 +259,7 @@ export const createSessionStore = (database: Database) => {
               event: { type: 'prompt.accepted' },
             },
           });
+
           return { status: 'accepted' as const, event: sessionEvent(stored) };
         }),
       );
@@ -231,9 +267,15 @@ export const createSessionStore = (database: Database) => {
 
     async requestCancellation(id: string): Promise<Session | undefined> {
       const current = await database.session.findUnique({ where: { id } });
-      if (current === null || terminal.has(current.state))
+
+      if (current === null || terminal.has(current.state)) {
         return current === null ? undefined : session(current);
-      if (current.state === StoredState.CANCELLING) return session(current);
+      }
+
+      if (current.state === StoredState.CANCELLING) {
+        return session(current);
+      }
+
       return session(
         await database.session.update({
           where: { id },
@@ -248,14 +290,22 @@ export const createSessionStore = (database: Database) => {
       errorCode?: string,
     ): Promise<Session | undefined> {
       const current = await database.session.findUnique({ where: { id } });
-      if (current === null) return undefined;
-      if (terminal.has(current.state)) return session(current);
+
+      if (current === null) {
+        return undefined;
+      }
+
+      if (terminal.has(current.state)) {
+        return session(current);
+      }
+
       const state =
         current.state === StoredState.CANCELLING
           ? StoredState.CANCELLED
           : target === 'failed'
             ? StoredState.FAILED
             : StoredState.CANCELLED;
+
       return session(
         await database.session.update({
           where: { id },
@@ -290,9 +340,17 @@ export const createSessionStore = (database: Database) => {
         where: { id },
         select: { state: true },
       });
-      if (current === null) return 'missing';
-      if (!terminal.has(current.state)) return 'active';
+
+      if (current === null) {
+        return 'missing';
+      }
+
+      if (!terminal.has(current.state)) {
+        return 'active';
+      }
+
       await database.session.delete({ where: { id } });
+
       return 'deleted';
     },
   };

@@ -5,8 +5,8 @@ import type {
 } from '../../types/provider.js';
 import {
   isStrictCompatible,
-  messageText,
   messagesWithStructuredSchema,
+  messageText,
   requireRequestInput,
   structuredJsonSchema,
 } from '../common.js';
@@ -27,9 +27,12 @@ export const openRouterBody = (
   options: OpenRouterBodyOptions = {},
 ): Record<string, unknown> => {
   const providerId = options.providerId ?? 'openrouter';
+
   requireRequestInput(providerId, request);
+
   const schema = structuredJsonSchema(providerId, request.schema);
   const structuredOutput = options.structuredOutput ?? 'json_schema';
+
   const messages = messagesWithStructuredSchema(
     providerId,
     structuredOutput === 'json_schema' || request.schema === undefined

@@ -3,10 +3,10 @@ import { Agent, request } from 'node:http';
 import test from 'node:test';
 
 import {
-  OAuthErrorObject,
-  createLocalCallbackServer,
-  openBrowser,
   type BrowserSpawn,
+  createLocalCallbackServer,
+  OAuthErrorObject,
+  openBrowser,
 } from '../src/index.js';
 
 test('parses local OAuth callback paths and query parameters', async () => {
@@ -14,13 +14,16 @@ test('parses local OAuth callback paths and query parameters', async () => {
 
   try {
     const waiting = server.waitForCallback('state-123');
+
     const response = await fetch(
       `${server.redirectUri}?code=code-123&state=state-123`,
     );
     const callback = await waiting;
 
     assert.equal(response.status, 200);
+
     assert.equal(callback.code, 'code-123');
+
     assert.equal(callback.state, 'state-123');
   } finally {
     await server.close();
@@ -33,17 +36,22 @@ test('closes local OAuth callback connections after a completed callback', async
 
   try {
     const waiting = server.waitForCallback('state-123');
+
     const response = await requestCallback(
       `${server.redirectUri}?code=code-123&state=state-123`,
       agent,
     );
 
     assert.equal(response.status, 200);
+
     assert.equal(response.connection, 'close');
+
     await waiting;
+
     await withTimeout(server.close(), 1_000);
   } finally {
     agent.destroy();
+
     await server.close().catch(() => undefined);
   }
 });
@@ -74,6 +82,7 @@ test('rejects pending local OAuth callbacks when the signal aborts', async () =>
 test('selects browser opener commands by platform', async () => {
   const url = 'https://example.test/callback?code=abc&state=xyz';
   const calls: { command: string; args: readonly string[] }[] = [];
+
   const spawn: BrowserSpawn = (command, args) => {
     calls.push({ command, args });
 
@@ -85,7 +94,9 @@ test('selects browser opener commands by platform', async () => {
   };
 
   await openBrowser(url, { platform: 'win32', spawn });
+
   await openBrowser(url, { platform: 'darwin', spawn });
+
   await openBrowser(url, { platform: 'linux', spawn });
 
   assert.deepEqual(calls, [
@@ -113,6 +124,7 @@ const requestCallback = (
   new Promise((resolve, reject) => {
     const callback = request(url, { agent }, (response) => {
       response.resume();
+
       response.on('end', () => {
         resolve({
           status: response.statusCode,
@@ -122,6 +134,7 @@ const requestCallback = (
     });
 
     callback.on('error', reject);
+
     callback.end();
   });
 

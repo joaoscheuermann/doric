@@ -1,10 +1,12 @@
+import { z } from 'zod';
+
 import { ProviderErrorObject } from '../classes/provider-error.js';
 import type {
   FinishReason,
   JsonObject,
   JsonValue,
-  ProviderError,
   ProviderEmbeddingRequest,
+  ProviderError,
   ProviderFinished,
   ProviderId,
   ProviderMessage,
@@ -23,7 +25,6 @@ import {
   numberField,
   recordField,
 } from '../utils/json.js';
-import { z } from 'zod';
 
 export const requireRequestInput = (
   provider: ProviderId,
@@ -184,15 +185,18 @@ export const parseUsage = (
   const promptDetails = recordField(usage, 'prompt_tokens_details');
   const inputTokens =
     numberField(usage, 'input_tokens') ?? numberField(usage, 'prompt_tokens');
+
   const outputTokens =
     numberField(usage, 'output_tokens') ??
     numberField(usage, 'completion_tokens');
   const totalTokens = numberField(usage, 'total_tokens');
+
   const reasoningTokens =
     numberField(usage, 'reasoning_tokens') ??
     (details === undefined
       ? undefined
       : numberField(details, 'reasoning_tokens'));
+
   const cachedInputTokens =
     promptDetails === undefined
       ? undefined
@@ -246,6 +250,7 @@ export const parseJsonBody = (
       message: `${provider} returned invalid JSON.`,
       ...(sensitiveOutput ? {} : { diagnostic: diagnosticExcerpt(body) }),
     };
+
     throw sensitiveOutput
       ? new ProviderErrorObject(data)
       : new ProviderErrorObject(data, { cause });
@@ -267,7 +272,7 @@ export const parseEmbedding = (
   const embedding = arrayField(asRecord(data[0]) ?? {}, 'embedding');
 
   if (embedding.length > 0 && embedding.every(isFiniteNumber)) {
-    return embedding as readonly number[];
+    return embedding;
   }
 
   throw new ProviderErrorObject({
@@ -282,6 +287,7 @@ export const parseRerank = (
   body: Record<string, unknown>,
 ): readonly ProviderRerankResult[] => {
   const results = arrayField(body, 'results');
+
   const parsed = results.map((value) => {
     const result = asRecord(value);
     const index =
@@ -384,9 +390,11 @@ export const messagesWithStructuredSchema = (
   }
 
   const content = structuredSchemaPrompt(schema);
+
   const system = request.messages.filter(
     (message) => message.role === 'system',
   );
+
   const nonSystem = request.messages.filter(
     (message) => message.role !== 'system',
   );
@@ -476,6 +484,7 @@ export const parseStructuredOutput = <Output = JsonValue>(
     parsed = JSON.parse(finish.text) as unknown;
   } catch (cause) {
     const sensitiveOutput = request.flags?.sensitiveOutput === true;
+
     const data = {
       provider,
       code: 'invalid_structured_output',
@@ -484,6 +493,7 @@ export const parseStructuredOutput = <Output = JsonValue>(
         ? {}
         : { diagnostic: structuredOutputDiagnostic(finish) }),
     };
+
     throw sensitiveOutput
       ? new ProviderErrorObject(data)
       : new ProviderErrorObject(data, { cause });

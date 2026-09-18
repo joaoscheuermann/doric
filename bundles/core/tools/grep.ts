@@ -1,13 +1,13 @@
 import { posix as path } from 'node:path';
 
+import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
-import { z } from 'zod';
 
 const DEFAULT_LIMIT = 100;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const MAX_LINE_LENGTH = 500;
-
 const description =
   'Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.';
 
@@ -44,7 +44,9 @@ export const output = z
   .strict();
 
 export type GrepMatch = z.output<typeof match>;
+
 export type GrepOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type IgnorePattern = {
@@ -80,16 +82,19 @@ const execute = async (
   }
 
   const kind = await pathKind(sandbox, workspaceRoot, searchPath.path);
+
   if (kind === 'missing') {
     return empty(`Path not found: ${searchDir}`);
   }
 
   const regex = compileSearch(input);
+
   if (typeof regex === 'string') {
     return empty(`Invalid regex pattern: ${regex}`);
   }
 
   const glob = input.glob === undefined ? undefined : compileGlob(input.glob);
+
   if (typeof glob === 'string') {
     return empty(`Invalid glob pattern '${input.glob}': ${glob}`);
   }
@@ -130,6 +135,7 @@ const collect = async (
     const relative = isSingleFile
       ? path.basename(file)
       : path.relative(searchPath, file);
+
     if (
       glob !== undefined &&
       !glob.test(relative) &&
@@ -139,13 +145,16 @@ const collect = async (
     }
 
     const text = await sandbox.readFile(file).catch(() => undefined);
+
     if (text === undefined) {
       continue;
     }
 
     const lines = text.split(/\r?\n/);
+
     for (const [index, line] of lines.entries()) {
       regex.lastIndex = 0;
+
       if (!regex.test(line)) {
         continue;
       }
@@ -153,18 +162,22 @@ const collect = async (
       const [matched, matchTruncated] = truncateLine(line);
       const [before, beforeTruncated] = contextBefore(lines, index, context);
       const [after, afterTruncated] = contextAfter(lines, index, context);
+
       linesTruncated ||= matchTruncated || beforeTruncated || afterTruncated;
 
       const entryBytes = relative.length + matched.length + 20;
+
       if (
         totalBytes + entryBytes > MAX_OUTPUT_BYTES ||
         matches.length >= limit
       ) {
         truncated = true;
+
         break;
       }
 
       totalBytes += entryBytes;
+
       matches.push({
         file: relative,
         line: index + 1,
@@ -235,6 +248,7 @@ const listFiles = async (
 const compileSearch = (input: Input): RegExp | string => {
   const pattern =
     input.literal === true ? escapeRegExp(input.pattern) : input.pattern;
+
   try {
     return new RegExp(pattern, input.ignoreCase === true ? 'i' : undefined);
   } catch (error) {
@@ -260,9 +274,12 @@ const contextLines = (
   lines: readonly string[],
 ): [readonly string[], boolean] => {
   let truncated = false;
+
   const values = lines.map((line) => {
     const [value, wasTruncated] = truncateLine(line);
+
     truncated ||= wasTruncated;
+
     return value;
   });
 
@@ -309,6 +326,7 @@ const readIgnores = async (
   }
 
   const files = lines(result.stdout).map(normalizePath).sort();
+
   const groups = await Promise.all(
     files.map(async (file) =>
       parseIgnores(
@@ -352,24 +370,29 @@ const isIgnored = (
   ignores: readonly IgnorePattern[],
 ): boolean => {
   let ignored = false;
+
   for (const ignore of ignores) {
     const pattern = ignore.pattern.endsWith('/')
       ? ignore.pattern.slice(0, -1)
       : ignore.pattern;
+
     if (ignore.pattern.endsWith('/') && !isDirectory) {
       continue;
     }
 
     const glob = compileGlob(pattern);
+
     if (!contains(ignore.base, fullPath)) {
       continue;
     }
 
     const relative = path.relative(ignore.base, fullPath);
+
     const matched =
       glob instanceof RegExp
         ? glob.test(relative) || glob.test(path.basename(fullPath))
         : relative === pattern || path.basename(fullPath) === pattern;
+
     if (matched) {
       ignored = !ignore.negated;
     }
@@ -391,18 +414,23 @@ const compileGlob = (pattern: string): RegExp | string => {
       if (char === '*' && chars[index + 1] === '*') {
         return '\0';
       }
+
       if (char === '*' && chars[index - 1] === '*') {
         return '';
       }
+
       if (char === '*') {
         return '[^/]*';
       }
+
       if (char === '?') {
         return '[^/]';
       }
+
       if (char === '\0') {
         return '.*';
       }
+
       return escapeRegExp(char);
     })
     .join('')
@@ -416,6 +444,7 @@ const resolvePath = (
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
+
   const resolved = normalizePath(
     path.isAbsolute(value) ? value : path.join(root, value),
   );
@@ -471,6 +500,7 @@ const ancestors = (root: string, fullPath: string): readonly string[] => {
 
   while (contains(root, current) && current !== root) {
     values.unshift(current);
+
     current = path.dirname(current);
   }
 
@@ -485,6 +515,7 @@ const lines = (value: string): readonly string[] =>
 
 const normalizePath = (value: string): string => {
   const resolved = path.normalize(path.isAbsolute(value) ? value : `/${value}`);
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/, '');
 };
 

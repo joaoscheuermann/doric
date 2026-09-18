@@ -1,8 +1,9 @@
 import { posix as path } from 'node:path';
 
+import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
-import { z } from 'zod';
 
 const description =
   "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.";
@@ -24,6 +25,7 @@ export const output = z
   .strict();
 
 export type WriteOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 /** Creates the provider-neutral file write tool. */
@@ -57,6 +59,7 @@ const execute = async (
   }
 
   const diff = diffPreview(oldContent, input.content);
+
   return {
     success: true,
     bytes_written: Buffer.byteLength(input.content),
@@ -93,12 +96,15 @@ const diffPreview = (
   for (let index = start; index < prefix; index += 1) {
     lines.push(formatLine(index + 1, ' ', oldLines[index] ?? '', width));
   }
+
   for (const [index, line] of oldChanged.entries()) {
     lines.push(formatLine(prefix + index + 1, '-', line, width));
   }
+
   for (const [index, line] of newChanged.entries()) {
     lines.push(formatLine(prefix + index + 1, '+', line, width));
   }
+
   for (let index = prefix + oldChanged.length; index < endOld; index += 1) {
     lines.push(formatLine(index + 1, ' ', oldLines[index] ?? '', width));
   }
@@ -122,6 +128,7 @@ const commonPrefix = (
   right: readonly string[],
 ): number => {
   let index = 0;
+
   while (
     index < left.length &&
     index < right.length &&
@@ -129,6 +136,7 @@ const commonPrefix = (
   ) {
     index += 1;
   }
+
   return index;
 };
 
@@ -137,6 +145,7 @@ const commonSuffix = (
   right: readonly string[],
 ): number => {
   let count = 0;
+
   while (
     count < left.length &&
     count < right.length &&
@@ -144,6 +153,7 @@ const commonSuffix = (
   ) {
     count += 1;
   }
+
   return count;
 };
 

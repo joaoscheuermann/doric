@@ -41,6 +41,15 @@ jobs:
 
       - run: npm ci
 
+      # Report existing style debt until the initial cleanup is complete.
+      - name: Check formatting (adoption report)
+        continue-on-error: true
+        run: npm run format:check
+
+      - name: Lint workspace (adoption report)
+        continue-on-error: true
+        run: npm run lint
+
       - name: Apply Doric test migrations
         env:
           DORIC_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
@@ -54,5 +63,5 @@ jobs:
       - name: Run Agent tests
         run: npx nx test agent
 
-      # Run Nx targets for lint, build, typecheck
-      - run: npx nx run-many -t lint build typecheck
+      # Lint is reported separately during adoption.
+      - run: npx nx run-many -t build typecheck

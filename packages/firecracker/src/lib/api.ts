@@ -15,6 +15,7 @@ export const createFirecrackerApi = (
 ): FirecrackerApi => {
   const request = async (input: FirecrackerRequest): Promise<void> => {
     const response = await transport(socketPath, input);
+
     if (response.status < 200 || response.status >= 300) {
       throw new Error(
         `Firecracker API ${input.method} ${input.path} failed with status ${response.status}`,
@@ -34,6 +35,7 @@ export const createFirecrackerApi = (
           boot_args: 'console=ttyS0 reboot=k panic=1 pci=off ipv6.disable=1',
         },
       });
+
       await request({
         method: 'PUT',
         path: '/machine-config',
@@ -44,6 +46,7 @@ export const createFirecrackerApi = (
           track_dirty_pages: false,
         },
       });
+
       await request({
         method: 'PUT',
         path: '/drives/base',
@@ -54,6 +57,7 @@ export const createFirecrackerApi = (
           is_read_only: true,
         },
       });
+
       await request({
         method: 'PUT',
         path: '/drives/writable',
@@ -64,7 +68,9 @@ export const createFirecrackerApi = (
           is_read_only: false,
         },
       });
+
       await request({ method: 'PUT', path: '/entropy', body: {} });
+
       await request({
         method: 'PUT',
         path: '/network-interfaces/eth0',
@@ -91,6 +97,7 @@ export const nodeTransport: FirecrackerTransport = (socketPath, input) =>
       input.body === undefined
         ? undefined
         : Buffer.from(JSON.stringify(input.body));
+
     const options: RequestOptions = {
       socketPath,
       method: input.method,
@@ -103,9 +110,12 @@ export const nodeTransport: FirecrackerTransport = (socketPath, input) =>
               'content-length': String(bytes.byteLength),
             },
     };
+
     const client = httpRequest(options, (response) => {
       const chunks: Uint8Array[] = [];
+
       response.on('data', (chunk: Uint8Array) => chunks.push(chunk));
+
       response.on('end', () =>
         resolve({
           status: response.statusCode ?? 0,
@@ -113,21 +123,31 @@ export const nodeTransport: FirecrackerTransport = (socketPath, input) =>
         }),
       );
     });
+
     const abort = () =>
       client.destroy(
         Object.assign(new Error('Firecracker API request aborted'), {
           name: 'AbortError',
         }),
       );
+
     client.once('error', reject);
+
     input.signal?.addEventListener('abort', abort, { once: true });
+
     client.once('close', () =>
       input.signal?.removeEventListener('abort', abort),
     );
+
     if (input.signal?.aborted) {
       abort();
+
       return;
     }
-    if (bytes !== undefined) client.write(bytes);
+
+    if (bytes !== undefined) {
+      client.write(bytes);
+    }
+
     client.end();
   });

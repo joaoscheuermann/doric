@@ -3,13 +3,15 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createFetchTransport, createLmStudioProvider } from 'llms';
-import { generate, isOkfError } from 'okf';
 import pino from 'pino';
 import pretty from 'pino-pretty';
 
+import { createFetchTransport, createLmStudioProvider } from 'llms';
+import { generate, isOkfError } from 'okf';
+
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const model = process.argv[2]?.trim();
+
 const logger = pino(
   {
     redact: {
@@ -39,67 +41,95 @@ const progress = (activity) => {
         activity,
         `Starting OKF generation (batch size ${activity.batchSize})`,
       );
+
       return;
+
     case 'okf.file.start':
       logger.info(activity, `Inspecting ${activity.source}`);
+
       return;
+
     case 'okf.file.cache.miss':
       logger.info(
         activity,
         `Cache miss for ${activity.source}; starting three-step generation`,
       );
+
       return;
+
     case 'okf.file.summary.start':
       logger.info(
         activity,
         `Summarizing ${activity.source} from source evidence`,
       );
+
       return;
+
     case 'okf.file.summary.complete':
       logger.info(activity, `Source analysis ready for ${activity.source}`);
+
       return;
+
     case 'okf.file.description.start':
       logger.info(activity, `Writing description for ${activity.source}`);
+
       return;
+
     case 'okf.file.description.complete':
       logger.info(activity, `Validated description for ${activity.source}`);
+
       return;
+
     case 'okf.file.tags.start':
       logger.info(activity, `Selecting tags for ${activity.source}`);
+
       return;
+
     case 'okf.file.tags.complete':
       logger.info(activity, `Validated tags for ${activity.source}`);
+
       return;
+
     case 'okf.file.cached':
       logger.info(
         activity,
         `Cache hit for ${activity.source}; reusing concept (${activity.processed} processed)`,
       );
+
       return;
+
     case 'okf.file.generated':
       logger.info(
         activity,
         `Generated concept for ${activity.source} (${activity.processed} processed)`,
       );
+
       return;
+
     case 'okf.index.start':
       logger.info(
         activity,
         `Building project index from ${activity.files} files`,
       );
+
       return;
+
     case 'okf.index.complete':
       logger.info(
         activity,
         `Project index written for ${activity.files} files`,
       );
+
       return;
+
     case 'okf.generate.complete':
       logger.info(
         activity,
         `OKF generation complete: ${activity.files} files, ${activity.generated} generated, ${activity.cached} cached`,
       );
+
       return;
+
     default:
       throw new Error('Unsupported OKF progress event');
   }
@@ -107,6 +137,7 @@ const progress = (activity) => {
 
 if (!model) {
   logger.error('Usage: npm run okf -- <model-id>');
+
   process.exitCode = 1;
 } else {
   try {
@@ -114,6 +145,7 @@ if (!model) {
       transport: createFetchTransport(),
       logger: pino({ enabled: false }),
     });
+
     await generate({ provider, model, progress }, ROOT_DIR);
   } catch (error) {
     if (isOkfError(error)) {
@@ -134,6 +166,7 @@ if (!model) {
         'OKF generation failed unexpectedly',
       );
     }
+
     process.exitCode = 1;
   }
 }

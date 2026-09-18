@@ -77,11 +77,13 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
     }),
   );
   const finished = events.at(-1);
+
   const expectedToolCalls = [
     { id: 'call_1', name: 'lookup', arguments: '{"q":"x"}', index: 0 },
   ];
 
   assert.equal(events[0]?.type, 'response.started');
+
   assert.deepEqual(
     events
       .filter(
@@ -93,6 +95,7 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
       .map((event) => event.delta),
     ['Hi'],
   );
+
   assert.deepEqual(
     events
       .filter(
@@ -104,6 +107,7 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
       .map((event) => event.delta),
     ['why'],
   );
+
   assert.deepEqual(
     events
       .filter(
@@ -115,7 +119,9 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
       .map((event) => event.delta),
     ['no'],
   );
+
   assert.ok(events.some((event) => event.type === 'usage'));
+
   assert.deepEqual(
     events
       .filter(
@@ -125,6 +131,7 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
       .map((event) => event.call),
     expectedToolCalls,
   );
+
   assert.equal(finished?.type, 'response.finished');
 
   if (finished?.type !== 'response.finished') {
@@ -132,14 +139,20 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
   }
 
   assert.equal(finished.finish.text, 'Hi');
+
   assert.deepEqual(finished.finish.reasoning, { text: 'why' });
+
   assert.deepEqual(finished.finish.replay, [
     { type: 'reasoning.encrypted', data: 'opaque-1' },
     { type: 'reasoning.text', text: 'hidden' },
   ]);
+
   assert.equal(finished.finish.refusal, 'no');
+
   assert.equal(finished.finish.finishReason, 'tool_calls');
+
   assert.deepEqual(finished.finish.toolCalls, expectedToolCalls);
+
   assert.equal(finished.finish.structured, undefined);
 });
 
@@ -195,6 +208,7 @@ test('allows invalid OpenRouter structured JSON from streams', async () => {
     }),
     apiKey: 'key',
   });
+
   const streamProvider = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [
@@ -210,6 +224,7 @@ test('allows invalid OpenRouter structured JSON from streams', async () => {
     }),
     apiKey: 'key',
   });
+
   const request = {
     model: 'openai/gpt-5',
     messages: [{ role: 'user', content: 'Hi' }],
@@ -222,6 +237,7 @@ test('allows invalid OpenRouter structured JSON from streams', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'invalid_structured_output',
   );
+
   const events = await collect(streamProvider.stream(request));
   const finished = events.at(-1);
 
@@ -232,6 +248,7 @@ test('allows invalid OpenRouter structured JSON from streams', async () => {
   }
 
   assert.equal(finished.finish.text, 'not-json');
+
   assert.equal(finished.finish.structured, undefined);
 });
 
@@ -240,6 +257,7 @@ test('returns OpenRouter stream error events for malformed and provider errors',
     transport: fakeTransport({ streams: [['data: not-json\n\n']] }),
     apiKey: 'key',
   });
+
   const providerError = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [[sse({ error: { message: 'bad' } })]],
@@ -258,6 +276,7 @@ test('returns OpenRouter stream error events for malformed and provider errors',
     ).at(-1)?.type,
     'error',
   );
+
   assert.equal(
     (
       await collect(

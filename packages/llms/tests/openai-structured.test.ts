@@ -280,6 +280,7 @@ test('returns OpenAI stream refusals without structured parsing', async () => {
   }
 
   assert.equal(finished.finish.refusal, 'No.');
+
   assert.equal(finished.finish.structured, undefined);
 });
 
@@ -296,6 +297,7 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
     }),
     apiKey: 'sk-testSecret123',
   });
+
   const streamProvider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -312,6 +314,7 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
     }),
     apiKey: 'sk-testSecret123',
   });
+
   const request = {
     model: 'gpt-5',
     messages: [{ role: 'user', content: 'Hi' }],
@@ -324,6 +327,7 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'invalid_structured_output',
   );
+
   const events = await collect(streamProvider.stream(request));
   const finished = events.at(-1);
 
@@ -334,11 +338,13 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
   }
 
   assert.equal(finished.finish.text, 'not-json');
+
   assert.equal(finished.finish.structured, undefined);
 });
 
 test('omits sensitive structured output from errors', async () => {
   const sentinel = 'RATIONALE_DEBUG_PRIVATE';
+
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
@@ -351,8 +357,8 @@ test('omits sensitive structured output from errors', async () => {
     }),
     apiKey: 'sk-testSecret123',
   });
-
   let caught: unknown;
+
   try {
     await provider.complete({
       model: 'gpt-5',
@@ -365,12 +371,16 @@ test('omits sensitive structured output from errors', async () => {
   }
 
   assert.ok(caught instanceof ProviderErrorObject);
+
   assert.equal(caught.data.code, 'invalid_structured_output');
+
   assert.equal(caught.data.diagnostic, undefined);
+
   assert.equal(
     (caught as Error & { readonly cause?: unknown }).cause,
     undefined,
   );
+
   assert.doesNotMatch(
     JSON.stringify({
       message: caught.message,

@@ -29,7 +29,9 @@ export const createOpenRouterCatalog = (
       .then(toSupportMap)
       .then((support) => {
         cached = support;
+
         expiresAt = Date.now() + ttlMs;
+
         return support;
       })
       .finally(() => {
@@ -50,7 +52,10 @@ export const createOpenRouterCatalog = (
     try {
       return (await refresh(signal)).get(model) ?? missingModelSupport;
     } catch (error) {
-      if (signal?.aborted === true) throw error;
+      if (signal?.aborted === true) {
+        throw error;
+      }
+
       return cached === undefined
         ? emptySupport
         : (cached.get(model) ?? missingModelSupport);
@@ -64,6 +69,7 @@ const toSupportMap = (
   new Map(
     models.map((model) => {
       const raw = asRecord(model.raw) ?? {};
+
       const parameters = new Set(
         arrayField(raw, 'supported_parameters').filter(
           (value): value is string => typeof value === 'string',

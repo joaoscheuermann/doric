@@ -8,8 +8,8 @@ import {
   isAbortError,
   isOkfError,
 } from './classes/okf-error.js';
-import { filterIgnored } from './git.js';
 import { DEFAULT_BATCH_SIZE } from './constants.js';
+import { filterIgnored } from './git.js';
 
 export type WalkOptions = {
   readonly batchSize?: number;
@@ -30,6 +30,7 @@ export async function walk(
   }
 
   const relativeFiles = await discover(root, options.ignore ?? []);
+
   const files = relativeFiles.map((file) =>
     path.join(root, ...file.split('/')),
   );
@@ -37,16 +38,25 @@ export async function walk(
 
   for (let offset = 0; offset < files.length; offset += batchSize) {
     options.signal?.throwIfAborted();
+
     await Promise.all(
       files.slice(offset, offset + batchSize).map(async (file) => {
         options.signal?.throwIfAborted();
-        if (!(await isRegularFile(file))) return;
+
+        if (!(await isRegularFile(file))) {
+          return;
+        }
 
         const buffer = await readSource(file);
-        if (isBinary(buffer)) return;
+
+        if (isBinary(buffer)) {
+          return;
+        }
 
         const body = buffer.toString('utf-8');
+
         textFiles.push(file);
+
         await callback(file, body);
       }),
     );
@@ -71,9 +81,13 @@ const discover = async (
       .map(normalize)
       .sort();
     const discovered = await regularFiles(root, candidates);
+
     return await filterIgnored(root, discovered, ignore);
   } catch (error) {
-    if (isOkfError(error) || isAbortError(error)) throw error;
+    if (isOkfError(error) || isAbortError(error)) {
+      throw error;
+    }
+
     throw createOkfError('OKF_DISCOVERY_FAILED');
   }
 };
@@ -82,7 +96,10 @@ const readSource = async (file: string): Promise<Buffer> => {
   try {
     return await fs.promises.readFile(file);
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     throw createOkfError('OKF_DISCOVERY_FAILED');
   }
 };
@@ -113,7 +130,9 @@ const isRegularFile = async (file: string): Promise<boolean> => {
 };
 
 const isBinary = (buffer: Buffer): boolean => {
-  if (buffer.includes(0)) return true;
+  if (buffer.includes(0)) {
+    return true;
+  }
 
   try {
     new TextDecoder('utf-8', { fatal: true }).decode(buffer);
@@ -126,5 +145,6 @@ const isBinary = (buffer: Buffer): boolean => {
       count + (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13 ? 1 : 0),
     0,
   );
+
   return buffer.length > 0 && controls / buffer.length > 0.3;
 };

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { z } from 'zod';
+
 import { createMessageStorage } from 'messages';
 import { createToolStorage, defineTool } from 'tool';
-import { z } from 'zod';
 
 import {
   call,
@@ -19,12 +20,15 @@ for (const mode of ['complete', 'stream'] as const) {
     const trace: string[] = [];
     let releaseFirst!: () => void;
     let markFirstStarted!: () => void;
+
     const firstStarted = new Promise<void>((resolve) => {
       markFirstStarted = resolve;
     });
+
     const firstMayFinish = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
+
     const tools = createToolStorage([
       defineTool({
         name: 'first',
@@ -32,9 +36,13 @@ for (const mode of ['complete', 'stream'] as const) {
         output: z.string(),
         execute: async () => {
           trace.push('first.started');
+
           markFirstStarted();
+
           await firstMayFinish;
+
           trace.push('first.finished');
+
           return 'first result';
         },
       })(undefined as never),
@@ -44,10 +52,12 @@ for (const mode of ['complete', 'stream'] as const) {
         output: z.string(),
         execute: () => {
           trace.push('second.started');
+
           return 'second result';
         },
       })(undefined as never),
     ]);
+
     const provider = createProvider({
       complete: (_request, index) =>
         index === 0
@@ -60,6 +70,7 @@ for (const mode of ['complete', 'stream'] as const) {
             : completeFinish('Done.'),
         ),
     });
+
     const agent = createAgent({
       provider: provider.provider,
       tools,
@@ -72,11 +83,13 @@ for (const mode of ['complete', 'stream'] as const) {
       mode === 'complete'
         ? agent.complete('Run in order.')
         : collect(agent.stream('Run in order.'));
+
     await firstStarted;
 
     assert.deepEqual(trace, ['first.started']);
 
     releaseFirst();
+
     await operation;
 
     assert.deepEqual(trace, [

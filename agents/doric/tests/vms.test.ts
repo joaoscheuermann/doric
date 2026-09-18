@@ -3,9 +3,10 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import express from 'express';
+
 import type {
-  SandboxProvisionInput,
   SandboxProvider,
+  SandboxProvisionInput,
   SandboxRuntime,
 } from 'sandbox';
 
@@ -21,11 +22,11 @@ const input: SandboxProvisionInput = {
 
 test('tracks provisioned VMs until disposal completes', async () => {
   let nextId = 1;
+
   const provider: SandboxProvider = {
     provision: async () => runtime(`vm-${String(nextId++)}`),
   };
   const registry = createVmRegistry('firecracker', provider);
-
   const first = await registry.provider.provision(input);
   const second = await registry.provider.provision(input);
 
@@ -33,6 +34,7 @@ test('tracks provisioned VMs until disposal completes', async () => {
     { id: 'vm-1', provider: 'firecracker' },
     { id: 'vm-2', provider: 'firecracker' },
   ]);
+
   assert.deepEqual(registry.find('vm-1'), {
     id: 'vm-1',
     provider: 'firecracker',
@@ -41,7 +43,9 @@ test('tracks provisioned VMs until disposal completes', async () => {
   await first.dispose();
 
   assert.deepEqual(registry.list(), [{ id: 'vm-2', provider: 'firecracker' }]);
+
   assert.equal(registry.find('vm-1'), undefined);
+
   await second.dispose();
 });
 
@@ -58,6 +62,7 @@ test('keeps a VM registered when disposal fails', async () => {
   const tracked = await registry.provider.provision(input);
 
   await assert.rejects(tracked.dispose());
+
   assert.deepEqual(registry.list(), [{ id: 'vm-1', provider: 'docker' }]);
 });
 
@@ -66,7 +71,9 @@ test('returns every running VM', async () => {
 
   try {
     const response = await fetch(`${host.url}/vms`);
+
     assert.equal(response.status, 200);
+
     assert.deepEqual(await response.json(), vms);
   } finally {
     await host.close();
@@ -78,8 +85,11 @@ test('returns leased VM SSH access without permitting caches', async () => {
 
   try {
     const response = await fetch(`${host.url}/vms/vm-1/ssh`);
+
     assert.equal(response.status, 200);
+
     assert.equal(response.headers.get('cache-control'), 'no-store');
+
     assert.deepEqual(await response.json(), {
       vm: vms[0],
       sessionId,
@@ -95,7 +105,9 @@ test('rejects SSH access for an idle VM', async () => {
 
   try {
     const response = await fetch(`${host.url}/vms/vm-2/ssh`);
+
     assert.equal(response.status, 409);
+
     assert.equal(
       ((await response.json()) as { error: { code: string } }).error.code,
       'vm_ssh_unavailable',
@@ -110,7 +122,9 @@ test('reports missing VMs through the stable error code', async () => {
 
   try {
     const response = await fetch(`${host.url}/vms/missing/ssh`);
+
     assert.equal(response.status, 404);
+
     assert.equal(
       ((await response.json()) as { error: { code: string } }).error.code,
       'vm_not_found',
@@ -122,6 +136,7 @@ test('reports missing VMs through the stable error code', async () => {
 
 const serveVms = async () => {
   const app = express();
+
   app.use(
     '/vms',
     createVmsRouter({
@@ -131,14 +146,19 @@ const serveVms = async () => {
         id === 'vm-1' ? { sessionId, ssh: access } : undefined,
     }),
   );
+
   const server = createServer(app);
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
+
     server.listen(0, '127.0.0.1', resolve);
   });
+
   const address = server.address();
+
   assert.ok(address !== null && typeof address === 'object');
+
   return {
     url: `http://127.0.0.1:${String(address.port)}`,
     close: () =>
@@ -164,12 +184,13 @@ const runtime = (id: string): SandboxRuntime => ({
   ssh: async () => undefined,
   dispose: async () => undefined,
 });
-
 const sessionId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
+
 const vms = [
   { id: 'vm-1', provider: 'firecracker' as const },
   { id: 'vm-2', provider: 'firecracker' as const },
 ];
+
 const access = {
   host: '127.0.0.1',
   port: 2200,

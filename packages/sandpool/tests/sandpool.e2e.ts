@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import pino from 'pino';
+
 import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
 test('warms, leases, replaces, releases, and shuts down sandboxes', async () => {
   let nextId = 0;
   const disposed: string[] = [];
+
   const pool = createSandpool({
     minIdle: 1,
     maxSandboxes: 1,
@@ -16,19 +18,28 @@ test('warms, leases, replaces, releases, and shuts down sandboxes', async () => 
   });
 
   await pool.waitUntilHeated();
+
   const first = await pool.acquire();
+
   await first.release();
+
   await pool.waitUntilHeated();
+
   const second = await pool.acquire();
+
   assert.notEqual(second.sandbox.id, first.sandbox.id);
+
   await second.release();
+
   await pool.dispose();
 
   assert.deepEqual(
     disposed,
     Array.from({ length: nextId }, (_, index) => `sandbox-${index + 1}`),
   );
+
   assert.equal(pool.status().lifecycle, 'disposed');
+
   assert.equal(pool.status().total, 0);
 });
 

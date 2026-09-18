@@ -23,7 +23,9 @@ const messages = (system: string, input: string) => [
 export const completeText = async (
   input: TextCompletionInput,
 ): Promise<string> => {
-  if (wasAborted(input.signal)) throw sanitizedAbort();
+  if (wasAborted(input.signal)) {
+    throw sanitizedAbort();
+  }
 
   try {
     const response = await input.provider.complete({
@@ -37,10 +39,17 @@ export const completeText = async (
     });
     const result = response.text?.trim();
 
-    if (wasAborted(input.signal)) throw sanitizedAbort();
-    if (result) return result;
+    if (wasAborted(input.signal)) {
+      throw sanitizedAbort();
+    }
+
+    if (result) {
+      return result;
+    }
   } catch (error) {
-    if (wasAborted(input.signal) || isAbortError(error)) throw sanitizedAbort();
+    if (wasAborted(input.signal) || isAbortError(error)) {
+      throw sanitizedAbort();
+    }
   }
 
   throw new Error(`${input.stage} did not return valid text output`);

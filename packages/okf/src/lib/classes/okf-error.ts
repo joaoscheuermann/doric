@@ -120,7 +120,6 @@ const SOURCE_CODES: ReadonlySet<OkfErrorCode> = new Set([
 ]);
 const CONSTRUCTION_TOKEN = Symbol('OkfError construction');
 const AUTHENTIC = new WeakSet<OkfError>();
-
 let construct: (token: symbol, code: OkfErrorCode, source?: string) => OkfError;
 
 /** A curated, privacy-safe failure raised at a known OKF operation boundary. */
@@ -136,18 +135,26 @@ export class OkfError extends Error {
         'OkfError cannot be constructed outside the OKF package.',
       );
     }
+
     const definition = DEFINITIONS[code];
+
     super(
       definition.source === true && source !== undefined
         ? definition.message.replace('<source>', source)
         : definition.message,
     );
+
     this.name = 'OkfError';
+
     this.code = code;
+
     this.stage = definition.stage;
+
     this.hint = definition.hint;
-    if (definition.source === true && source !== undefined)
+
+    if (definition.source === true && source !== undefined) {
       this.source = source;
+    }
   }
 
   static {
@@ -165,8 +172,11 @@ export const createOkfError = (
   ) {
     throw new Error('OKF source identity is invalid.');
   }
+
   const error = construct(CONSTRUCTION_TOKEN, code, source);
+
   AUTHENTIC.add(error);
+
   return error;
 };
 
@@ -180,7 +190,10 @@ const isNormalizedSource = (source: string | undefined): source is string => {
   if (source === undefined || source.length === 0 || source.includes('\\')) {
     return false;
   }
-  if (source.startsWith('/') || /^[A-Za-z]:/u.test(source)) return false;
+
+  if (source.startsWith('/') || /^[A-Za-z]:/u.test(source)) {
+    return false;
+  }
 
   return source
     .split('/')

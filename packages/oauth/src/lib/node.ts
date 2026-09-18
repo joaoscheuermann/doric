@@ -48,10 +48,12 @@ const DEFAULT_SUCCESS_HTML =
   '<!doctype html><title>OAuth complete</title><p>You can close this window.</p>';
 const DEFAULT_ERROR_HTML =
   '<!doctype html><title>OAuth failed</title><p>OAuth did not complete.</p>';
+
 const TEXT_HEADERS = {
   'content-type': 'text/plain',
   connection: 'close',
 };
+
 const HTML_HEADERS = {
   'content-type': 'text/html',
   connection: 'close',
@@ -71,23 +73,31 @@ export const createLocalCallbackServer = async (
 
     if (callback.path !== path) {
       response.writeHead(404, TEXT_HEADERS);
+
       response.end('Not found');
+
       return;
     }
 
     if (pending === undefined) {
       response.writeHead(409, TEXT_HEADERS);
+
       response.end('No OAuth callback is pending.');
+
       return;
     }
 
     const current = pending;
+
     pending = undefined;
 
     const stateMatches = callback.value.state === current.expectedState;
     const hasError = callback.value.error !== undefined || !stateMatches;
+
     response.writeHead(hasError ? 400 : 200, HTML_HEADERS);
+
     response.end(hasError ? DEFAULT_ERROR_HTML : DEFAULT_SUCCESS_HTML);
+
     finishPending(current, () => current.resolve(callback.value));
   });
 
@@ -121,7 +131,9 @@ export const createLocalCallbackServer = async (
         const abort = (): void => {
           if (pending !== undefined) {
             const current = pending;
+
             pending = undefined;
+
             finishPending(current, () =>
               reject(serverError('oauth_callback_aborted')),
             );
@@ -132,6 +144,7 @@ export const createLocalCallbackServer = async (
 
         if (signal?.aborted === true) {
           abort();
+
           return;
         }
 
@@ -144,7 +157,9 @@ export const createLocalCallbackServer = async (
 
       if (pending !== undefined) {
         const current = pending;
+
         pending = undefined;
+
         finishPending(current, () =>
           current.reject(serverError('oauth_callback_server_closed')),
         );
@@ -163,6 +178,7 @@ export const openBrowser = async (
   const platform = options.platform ?? process.platform;
   const spawn = options.spawn ?? defaultSpawn;
   const command = commandFor(platform, url);
+
   const child = spawn(command.command, command.args, {
     detached: true,
     stdio: 'ignore',
@@ -194,8 +210,10 @@ const value = (url: URL, key: string): string | undefined =>
 const listen = (server: Server, port: number, host: string): Promise<void> =>
   new Promise((resolve, reject) => {
     server.once('error', reject);
+
     server.listen(port, host, () => {
       server.off('error', reject);
+
       resolve();
     });
   });
@@ -206,19 +224,23 @@ const close = (server: Server): Promise<void> =>
       closeIdleConnections?: () => void;
       closeAllConnections?: () => void;
     };
+
     const forceClose = setTimeout(() => {
       connections.closeAllConnections?.();
     }, 100);
 
     server.close((error) => {
       clearTimeout(forceClose);
+
       if (error === undefined) {
         resolve();
+
         return;
       }
 
       reject(error);
     });
+
     connections.closeIdleConnections?.();
   });
 
@@ -227,6 +249,7 @@ const finishPending = (
   complete: () => void,
 ): void => {
   pending.signal?.removeEventListener('abort', pending.abort);
+
   complete();
 };
 

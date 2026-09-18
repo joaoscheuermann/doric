@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 
-import { defineTool, type ToolFactory } from 'tool';
-import type { Sandbox, SandboxExecResult } from 'sandbox';
 import { z } from 'zod';
+
+import type { Sandbox, SandboxExecResult } from 'sandbox';
+import { defineTool, type ToolFactory } from 'tool';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -14,7 +15,6 @@ const TAIL_LINE_LIMIT = 48;
 const MAX_LINE_CHARS = 1000;
 const DIAGNOSTIC_LINE_LIMIT = 20;
 const DIAGNOSTIC_CONTEXT_RADIUS = 2;
-
 const description =
   'Executes shell commands inside the injected sandbox session. Returns compact stdout/stderr summaries, diagnostics, exit_code, duration, and a raw_output_ref when trace storage is enabled.';
 
@@ -37,9 +37,11 @@ const compactStreamSchema = z
     truncated: z.boolean(),
   })
   .strict();
+
 const diagnosticContext = z
   .object({ line: z.number(), text: z.string() })
   .strict();
+
 const terminalDiagnostic = z
   .object({
     kind: z.string(),
@@ -72,8 +74,11 @@ export const output = z
   .strict();
 
 export type CompactStream = z.output<typeof compactStreamSchema>;
+
 export type TerminalDiagnostic = z.output<typeof terminalDiagnostic>;
+
 export type TerminalOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type Options = {
@@ -116,16 +121,19 @@ const execute = async (
       ? '.'
       : (input.working_directory ?? '.'),
   );
+
   const timeoutMs = Math.min(
     input.timeout_ms ?? DEFAULT_TIMEOUT_MS,
     MAX_TIMEOUT_MS,
   );
+
   const execution = await runCommand(
     sandbox,
     input.command,
     workingDirectory,
     timeoutMs,
   );
+
   return compact(execution, await writeTrace(traceDir, execution));
 };
 
@@ -232,9 +240,11 @@ const compactStream = (text: string): CompactStream => {
   }
 
   const head = lines.slice(0, HEAD_LINE_LIMIT);
+
   const tail = lines.slice(
     Math.max(lines.length - TAIL_LINE_LIMIT, HEAD_LINE_LIMIT),
   );
+
   const omitted = lines.slice(
     HEAD_LINE_LIMIT,
     Math.max(lines.length - TAIL_LINE_LIMIT, HEAD_LINE_LIMIT),
@@ -265,9 +275,12 @@ const writeTrace = async (
 
   const traceId = randomUUID();
   const file = path.join(traceDir, `${traceId}.json`);
+
   try {
     await mkdir(traceDir, { recursive: true });
+
     await writeFile(file, JSON.stringify(execution, null, 2), 'utf8');
+
     return { traceId, rawOutputRef: file };
   } catch (error) {
     return {
@@ -282,6 +295,7 @@ const reduceDiagnostics = (
   execution: Execution,
 ): readonly TerminalDiagnostic[] => {
   const diagnostics = extractDiagnostics(execution.stdout, execution.stderr);
+
   return isCargoVerification(execution.command)
     ? appendCargoFailures(diagnostics, execution.stdout)
     : diagnostics;
@@ -308,8 +322,10 @@ const streamDiagnostics = (
   text: string,
 ): readonly TerminalDiagnostic[] => {
   const lines = splitLines(text);
+
   return lines.reduce<TerminalDiagnostic[]>((diagnostics, line, index) => {
     const kind = classifyDiagnostic(line);
+
     if (kind === undefined) {
       return diagnostics;
     }
@@ -334,6 +350,7 @@ const mergeDiagnostic = (
       value.stream === diagnostic.stream &&
       value.text === diagnostic.text,
   );
+
   if (existing < 0) {
     return [...diagnostics, diagnostic];
   }
@@ -351,6 +368,7 @@ const contextLines = (
 ): TerminalDiagnostic['context'] => {
   const start = Math.max(index - DIAGNOSTIC_CONTEXT_RADIUS, 0);
   const end = Math.min(index + DIAGNOSTIC_CONTEXT_RADIUS + 1, lines.length);
+
   return lines.slice(start, end).map((line, offset) => ({
     line: start + offset + 1,
     text: capLine(line),
@@ -359,6 +377,7 @@ const contextLines = (
 
 const classifyDiagnostic = (line: string): string | undefined => {
   const lower = line.toLowerCase();
+
   const checks: readonly [string, boolean][] = [
     ['rust_error', line.includes('error[E')],
     [
@@ -401,6 +420,7 @@ const classifyDiagnostic = (line: string): string | undefined => {
         line.includes('Warning:'),
     ],
   ];
+
   return checks.find(([, matches]) => matches)?.[0];
 };
 
@@ -412,6 +432,7 @@ const appendCargoFailures = (
   stdout: string,
 ): readonly TerminalDiagnostic[] => {
   const current = [...diagnostics];
+
   for (const [index, line] of splitLines(stdout).entries()) {
     if (line.startsWith('test ') && line.includes('FAILED')) {
       current.push({
@@ -423,6 +444,7 @@ const appendCargoFailures = (
       });
     }
   }
+
   return current;
 };
 
@@ -431,6 +453,7 @@ const isCargoVerification = (command: string): boolean => {
     .replace(/["']/g, '')
     .replace(/\\/g, '/')
     .toLowerCase();
+
   return /(?:^|[\s;\/])cargo(?:\.exe)?\s+(test|check|clippy)\b/.test(
     normalized,
   );

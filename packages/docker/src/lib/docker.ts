@@ -7,14 +7,6 @@ import {
   DockerRequestAbortedError,
   DockerRequestTimeoutError,
 } from './classes/errors.js';
-import type {
-  CreateDockerClientOptions,
-  DockerClient,
-  DockerConnection,
-  DockerResponse,
-  DockerTransport,
-  DockerTransportRequest,
-} from './types/docker.js';
 import {
   containerFrom,
   containerId,
@@ -32,8 +24,16 @@ import {
   versionFrom,
   withDefaultTimeout,
 } from './mapping.js';
-import { demuxDockerOutput } from './utils/demux.js';
 import { provisionDocker } from './provider.js';
+import type {
+  CreateDockerClientOptions,
+  DockerClient,
+  DockerConnection,
+  DockerResponse,
+  DockerTransport,
+  DockerTransportRequest,
+} from './types/docker.js';
+import { demuxDockerOutput } from './utils/demux.js';
 
 const decoder = new TextDecoder();
 
@@ -45,6 +45,7 @@ export const createDockerClient = (
     options.request ??
     createNodeTransport(options.connection ?? defaultConnection());
   const timeoutMs = options.timeoutMs;
+
   const send = (
     input: DockerTransportRequest,
     expectedStatus: number | readonly number[],
@@ -103,8 +104,13 @@ export const createDockerClient = (
         },
         [200, 404],
       );
-      if (response.status === 404) return undefined;
+
+      if (response.status === 404) {
+        return undefined;
+      }
+
       const raw = parseJson<Record<string, unknown>>(response.body);
+
       return imageFrom(raw);
     },
 
@@ -143,6 +149,7 @@ export const createDockerClient = (
         },
         200,
       );
+
       return containerInspectFrom(raw);
     },
 
@@ -175,6 +182,7 @@ export const createDockerClient = (
         201,
       );
       const execId = stringField(created, 'Id');
+
       const stream = await send(
         {
           method: 'POST',
@@ -185,6 +193,7 @@ export const createDockerClient = (
         },
         200,
       );
+
       const inspected = await json<Record<string, unknown>>(
         {
           method: 'GET',
@@ -194,6 +203,7 @@ export const createDockerClient = (
         },
         200,
       );
+
       const output =
         input.tty === true
           ? { stdout: stream.body, stderr: new Uint8Array() }
@@ -220,6 +230,7 @@ export const createDockerClient = (
         201,
       );
       const execId = stringField(created, 'Id');
+
       await send(
         {
           method: 'POST',
@@ -230,6 +241,7 @@ export const createDockerClient = (
         },
         200,
       );
+
       return execId;
     },
 
@@ -273,18 +285,22 @@ const createNodeTransport =
   (request) =>
     new Promise<DockerResponse>((resolve, reject) => {
       const body = encodeBody(request.body);
+
       const options: RequestOptions = {
         method: request.method,
         path: pathWithQuery(request),
         socketPath: socketPath(connection),
         headers: { ...request.headers, ...body.headers },
       };
+
       const client = httpRequest(options, (response) => {
         const chunks: Uint8Array[] = [];
 
         response.on('data', (chunk: Uint8Array) => chunks.push(chunk));
+
         response.on('end', () => {
           cleanup();
+
           resolve({
             status: response.statusCode ?? 0,
             headers: { ...response.headers },
@@ -292,22 +308,26 @@ const createNodeTransport =
           });
         });
       });
+
       const abort = () => {
         client.destroy(
           new DockerRequestAbortedError(request.method, request.path),
         );
       };
+
       const cleanup = () => {
         request.signal?.removeEventListener('abort', abort);
       };
 
       client.on('error', (error) => {
         cleanup();
+
         reject(error);
       });
 
       if (request.signal?.aborted === true) {
         abort();
+
         return;
       }
 
@@ -326,6 +346,7 @@ const sendDockerRequest = async (
   expectedStatus: number | readonly number[],
 ): Promise<DockerResponse> => {
   const response = await withRequestControl(transport, request);
+
   const expected = Array.isArray(expectedStatus)
     ? expectedStatus
     : [expectedStatus];
@@ -354,13 +375,16 @@ const withRequestControl = async (
   let timedOut = false;
   const abortFromInput = () => controller.abort();
   const timeout = request.timeoutMs;
+
   const timer =
     timeout === undefined
       ? undefined
       : setTimeout(() => {
           timedOut = true;
+
           controller.abort();
         }, timeout);
+
   const abortPromise = new Promise<never>((_resolve, reject) => {
     const onAbort = () => {
       reject(

@@ -47,6 +47,7 @@ type RecipeInput = {
 /** Calculates the recipe-aware identity for a generated concept. */
 export const recipeHash = (input: RecipeInput): string => {
   const sourceHash = sha256(input.content);
+
   const recipe = {
     source: {
       hash: sourceHash,

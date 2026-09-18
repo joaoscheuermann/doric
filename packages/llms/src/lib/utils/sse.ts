@@ -22,6 +22,7 @@ export async function* parseSseEvents(
     }
 
     const body = data.join('\n');
+
     const parsed = {
       event,
       data: body,
@@ -29,6 +30,7 @@ export async function* parseSseEvents(
     };
 
     event = undefined;
+
     data = [];
 
     return parsed;
@@ -64,7 +66,9 @@ export async function* parseSseEvents(
       typeof chunk === 'string'
         ? chunk
         : decoder.decode(chunk, { stream: true });
+
     const lines = buffer.split(/\r?\n/);
+
     buffer = lines.pop() ?? '';
 
     for (const line of lines) {

@@ -21,5 +21,6 @@ export type HttpStreamChunk = string | Uint8Array;
 /** Boundary for provider HTTP calls; tests should inject fakes here. */
 export interface HttpTransport {
   request(request: HttpRequest): Promise<HttpResponse>;
+
   stream(request: HttpRequest): AsyncIterable<HttpStreamChunk>;
 }

@@ -15,8 +15,11 @@ test('parses SSE comments chunk boundaries multi-line data and done markers', as
     parseSseEvents(
       (async function* () {
         yield ': comment\n';
+
         yield 'event: message\ndata: first\n';
+
         yield 'data: second\n\n';
+
         yield 'data: [DONE]\n\n';
       })(),
     ),

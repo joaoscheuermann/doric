@@ -44,7 +44,9 @@ export const createProvider = (
         request: ProviderRequest<Result>,
       ) => {
         const index = requests.length;
+
         requests.push(request);
+
         const system = text(request, 'system');
         const input = text(request, 'user');
         const structured = await output(system, input, index, request);
@@ -67,7 +69,11 @@ const text = (
   const content = request.messages.find(
     (message) => message.role === role,
   )?.content;
-  if (typeof content !== 'string') throw new Error(`Missing ${role} message`);
+
+  if (typeof content !== 'string') {
+    throw new Error(`Missing ${role} message`);
+  }
+
   return content;
 };
 
@@ -82,7 +88,11 @@ export const evidencePath = (input: string): string => {
   const match = input.match(
     /^## Path\r?\n\r?\n(`{3,}|~{3,})text\r?\n([\s\S]*?)\r?\n\1\r?$/mu,
   );
-  if (match?.[2] === undefined) throw new Error('Missing Path evidence');
+
+  if (match?.[2] === undefined) {
+    throw new Error('Missing Path evidence');
+  }
+
   return match[2];
 };
 

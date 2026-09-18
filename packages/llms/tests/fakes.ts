@@ -1,3 +1,5 @@
+import pino, { type Logger } from 'pino';
+
 import type {
   HttpRequest,
   HttpResponse,
@@ -5,20 +7,19 @@ import type {
   HttpTransport,
 } from '../src/index.js';
 import {
+  type CodexProviderDeps,
   createCodexProvider as createCodexProviderBase,
   createLmStudioOpenAiProvider as createLmStudioOpenAiProviderBase,
   createLmStudioProvider as createLmStudioProviderBase,
   createOpenAiProvider as createOpenAiProviderBase,
   createOpenRouterProvider as createOpenRouterProviderBase,
   createUnifiedProvider as createUnifiedProviderBase,
-  type CodexProviderDeps,
   type LmStudioOpenAiProviderDeps,
   type LmStudioProviderDeps,
   type OpenAiProviderDeps,
   type OpenRouterProviderDeps,
   type UnifiedProviderDeps,
 } from '../src/index.js';
-import pino, { type Logger } from 'pino';
 
 type TestDeps<Deps extends { readonly logger: Logger }> = Omit<
   Deps,
@@ -85,6 +86,7 @@ export const fakeTransport = (options: {
 
     async request(request: HttpRequest): Promise<HttpResponse> {
       requests.push(request);
+
       const next = responses.shift();
 
       if (next === undefined) {
@@ -96,6 +98,7 @@ export const fakeTransport = (options: {
 
     async *stream(request: HttpRequest): AsyncIterable<HttpStreamChunk> {
       requests.push(request);
+
       const next = streams.shift();
 
       if (next === undefined) {

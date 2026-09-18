@@ -1,13 +1,13 @@
 import type {
   ProviderFinished,
+  ProviderReplayItem,
   ProviderStreamEvent,
   ProviderToolCall,
-  ProviderReplayItem,
   ReasoningMetadata,
 } from '../../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   recordField,
   stringField,
 } from '../../utils/json.js';
@@ -58,6 +58,7 @@ export const streamEvent = (
     const index = Number(payload.output_index ?? payload.item_index ?? 0);
     const previous = calls.get(index);
     const delta = stringField(payload, 'delta') ?? '';
+
     const next = {
       id: previous?.id ?? stringField(payload, 'item_id') ?? `call_${index}`,
       name: previous?.name ?? stringField(payload, 'name') ?? '',
@@ -84,6 +85,7 @@ export const streamEvent = (
     }
 
     const index = Number(payload.output_index ?? 0);
+
     const call = {
       id:
         stringField(item, 'call_id') ??
@@ -116,11 +118,13 @@ export const recordTextSnapshot = (
 
   if (type === 'response.output_item.done') {
     snapshots.outputItems.push(text);
+
     return;
   }
 
   if (type === 'response.output_text.done') {
     snapshots.outputTexts.push(text);
+
     return;
   }
 
@@ -152,18 +156,22 @@ export const parseFinished = (
   streamToolCalls: readonly ProviderToolCall[] = [],
 ): ProviderFinished => {
   const output = arrayField(response, 'output').map(asRecord).filter(isRecord);
+
   const content = output
     .flatMap((item) => arrayField(item, 'content'))
     .map(asRecord)
     .filter(isRecord);
+
   const contentText = content
     .filter((item) => item.type === 'output_text')
     .map((item) => stringField(item, 'text') ?? '')
     .join('');
+
   const outputText =
     streamText ??
     nonEmptyText(stringField(response, 'output_text')) ??
     contentText;
+
   const refusal =
     stringField(response, 'refusal') ??
     streamRefusal ??
@@ -174,6 +182,7 @@ export const parseFinished = (
           stringField(item, 'refusal') ?? stringField(item, 'text') ?? '',
       )
       .join('');
+
   const responseToolCalls = output
     .filter((item) => item.type === 'function_call')
     .map((item, index) => ({
@@ -187,6 +196,7 @@ export const parseFinished = (
     }));
   const toolCalls =
     responseToolCalls.length === 0 ? streamToolCalls : responseToolCalls;
+
   const reasoningText =
     streamReasoning ??
     output

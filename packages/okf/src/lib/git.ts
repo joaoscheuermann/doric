@@ -20,6 +20,7 @@ export const filterIgnored = async (
 ): Promise<readonly string[]> => {
   const explicit = createIgnore().add(patterns);
   const matchers: ScopedIgnore[] = [];
+
   const ignoreFiles = paths
     .filter(isGitIgnore)
     .sort(
@@ -27,10 +28,15 @@ export const filterIgnored = async (
     );
 
   for (const file of ignoreFiles) {
-    if (explicit.ignores(file) || isIgnored(file, matchers)) continue;
+    if (explicit.ignores(file) || isIgnored(file, matchers)) {
+      continue;
+    }
 
     const matcher = await readMatcher(root, file);
-    if (matcher) matchers.push(matcher);
+
+    if (matcher) {
+      matchers.push(matcher);
+    }
   }
 
   return paths.filter(
@@ -64,11 +70,19 @@ const isIgnored = (
   let ignored = false;
 
   for (const { base, matcher } of matchers) {
-    if (base && !file.startsWith(`${base}/`)) continue;
+    if (base && !file.startsWith(`${base}/`)) {
+      continue;
+    }
 
     const result = matcher.test(base ? file.slice(base.length + 1) : file);
-    if (result.ignored) ignored = true;
-    if (result.unignored) ignored = false;
+
+    if (result.ignored) {
+      ignored = true;
+    }
+
+    if (result.unignored) {
+      ignored = false;
+    }
   }
 
   return ignored;

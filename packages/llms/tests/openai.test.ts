@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createToolStorage, defineTool } from 'tool';
 import { z } from 'zod';
+
+import { createToolStorage, defineTool } from 'tool';
 
 import {
   createOpenAiCompatibleProvider,
-  ProviderErrorObject,
   openAiBody,
+  ProviderErrorObject,
 } from '../src/index.js';
 import { fakeTransport, response, silentLogger } from './fakes.js';
 
@@ -25,6 +26,7 @@ test('preserves configured identity in compatible metadata and errors', async ()
     name: 'Configured',
     baseUrl: 'https://compatible.invalid/v1',
   });
+
   await assert.rejects(
     provider.complete({
       model: 'model',
@@ -34,6 +36,7 @@ test('preserves configured identity in compatible metadata and errors', async ()
       error instanceof ProviderErrorObject &&
       error.data.provider === 'configured',
   );
+
   await assert.rejects(
     provider.complete({ model: '', messages: [] }),
     (error: unknown) =>
@@ -86,9 +89,13 @@ test('maps OpenAI Responses DTO with instructions tools reasoning and fast servi
   );
 
   assert.equal(body.model, 'gpt-5');
+
   assert.equal(body.instructions, 'Follow policy.');
+
   assert.equal(body.service_tier, 'priority');
+
   assert.deepEqual(body.reasoning, { effort: 'low', summary: 'concise' });
+
   assert.deepEqual(body.tools, [
     {
       type: 'function',
@@ -101,6 +108,7 @@ test('maps OpenAI Responses DTO with instructions tools reasoning and fast servi
       strict: false,
     },
   ]);
+
   assert.deepEqual(body.input, [
     {
       role: 'user',
@@ -112,7 +120,9 @@ test('maps OpenAI Responses DTO with instructions tools reasoning and fast servi
       output: 'tool output',
     },
   ]);
+
   assert.equal('text' in body, false);
+
   assert.equal(body.store, false);
 });
 
@@ -231,6 +241,7 @@ test('does not mutate strict OpenAI tool schemas with optional properties', () =
     required: ['pattern'],
     additionalProperties: false,
   } as const;
+
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -262,6 +273,7 @@ test('does not mutate strict OpenAI tool schemas with optional properties', () =
       strict: false,
     },
   ]);
+
   assert.deepEqual(inputSchema.required, ['pattern']);
 });
 
@@ -310,11 +322,13 @@ test('adds a schema system instruction while retaining OpenAI text format', () =
     body.instructions as string,
     /^First policy\.\n\nSecond policy\.[\s\S]*Return exactly one JSON object[\s\S]*JSON Schema/u,
   );
+
   assert.equal(
     (body.text as { readonly format?: { readonly type?: string } }).format
       ?.type,
     'json_schema',
   );
+
   assert.deepEqual(body.input, [
     {
       role: 'user',
@@ -339,6 +353,7 @@ test('maps OpenAI nested union structured output schemas to text format DTOs', (
     },
     false,
   );
+
   const text = body.text as {
     readonly format?: {
       readonly schema?: {
@@ -354,8 +369,11 @@ test('maps OpenAI nested union structured output schemas to text format DTOs', (
   const variants = text.format?.schema?.properties?.action?.anyOf;
 
   assert.equal(text.format?.schema?.type, 'object');
+
   assert.ok(Array.isArray(variants));
+
   assert.equal(variants.length, 2);
+
   assert.deepEqual(
     variants.map((variant) => (variant as Record<string, unknown>).required),
     [
@@ -363,6 +381,7 @@ test('maps OpenAI nested union structured output schemas to text format DTOs', (
       ['type', 'answer'],
     ],
   );
+
   assert.deepEqual(
     variants.map(
       (variant) => (variant as Record<string, unknown>).additionalProperties,
@@ -376,14 +395,17 @@ test('rejects OpenAI top-level union structured output schemas', () => {
     model: 'gpt-5',
     messages: [{ role: 'user', content: 'Return JSON.' }],
   } as const;
+
   const topLevelUnion = z.union([
     z.object({ type: z.literal('question'), question: z.string() }),
     z.object({ type: z.literal('answer'), answer: z.string() }),
   ]);
+
   const topLevelDiscriminatedUnion = z.discriminatedUnion('type', [
     z.object({ type: z.literal('question'), question: z.string() }),
     z.object({ type: z.literal('answer'), answer: z.string() }),
   ]);
+
   const rejectsInvalidStructuredSchema = (error: unknown) =>
     error instanceof ProviderErrorObject &&
     error.data.code === 'invalid_structured_schema';
@@ -392,6 +414,7 @@ test('rejects OpenAI top-level union structured output schemas', () => {
     () => openAiBody({ ...request, schema: topLevelUnion }, false),
     rejectsInvalidStructuredSchema,
   );
+
   assert.throws(
     () => openAiBody({ ...request, schema: topLevelDiscriminatedUnion }, false),
     rejectsInvalidStructuredSchema,
@@ -454,6 +477,7 @@ test('maps tool controls and replays opaque Responses output items', () => {
       arguments: '{"query":"x"}',
     },
   ] as const;
+
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -474,7 +498,9 @@ test('maps tool controls and replays opaque Responses output items', () => {
   );
 
   assert.deepEqual(body.tool_choice, { type: 'function', name: 'lookup' });
+
   assert.equal(body.parallel_tool_calls, false);
+
   assert.deepEqual(body.input, [
     {
       role: 'user',

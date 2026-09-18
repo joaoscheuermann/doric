@@ -13,8 +13,8 @@ import type {
   ProviderRequest,
   ProviderRerankRequest,
   ProviderRerankResult,
-  ProviderStructuredFinished,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
@@ -65,9 +65,11 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
       readonly schema: Schema;
     },
   ): Promise<ProviderStructuredFinished<StructuredOutputValue<Schema>>>;
+
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>>;
+
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
@@ -199,6 +201,7 @@ const codexBody = (body: string | undefined): string | undefined => {
 
   const parsed = JSON.parse(body) as Record<string, unknown>;
   const supported = { ...parsed };
+
   delete supported.temperature;
 
   return JSON.stringify({

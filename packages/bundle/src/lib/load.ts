@@ -2,9 +2,10 @@ import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type { ToolFactory } from 'tool';
 import { parse } from 'yaml';
 import { z } from 'zod';
+
+import type { ToolFactory } from 'tool';
 
 import { SkillSchema } from './schemas/skill.js';
 import type { Bundle, BundleManifest, Skill } from './types/bundle.js';
@@ -12,6 +13,7 @@ import type { Bundle, BundleManifest, Skill } from './types/bundle.js';
 const nameSchema = z.string().trim().min(1);
 const toolPathSchema = z.string().regex(/^tools\/[^/]+\.js$/);
 const skillPathSchema = z.string().regex(/^skills\/[^/]+\/SKILL\.md$/);
+
 const manifestSchema = z
   .object({
     name: nameSchema,
@@ -34,6 +36,7 @@ const manifestSchema = z
     ),
   })
   .strict();
+
 const skillMetadataSchema = z
   .object({
     name: nameSchema,
@@ -49,7 +52,6 @@ const skillMetadataSchema = z
     indexText: z.string().optional(),
   })
   .strict();
-
 const compare = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
@@ -62,6 +64,7 @@ const resourcePath = (bundlePath: string, relativePath: string): string => {
   }
 
   const path = resolve(bundlePath, ...relativePath.split('/'));
+
   if (!path.startsWith(`${resolve(bundlePath)}${sep}`)) {
     throw new Error(
       `Bundle resource path escapes its bundle: "${relativePath}".`,
@@ -92,6 +95,7 @@ const manifest = async (bundlePath: string): Promise<BundleManifest> => {
 
 const splitSkill = (source: string, context: string) => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(source);
+
   if (match === null) {
     throw new Error(`${context} must contain YAML frontmatter.`);
   }
@@ -109,6 +113,7 @@ const loadSkill = async (
 
   try {
     const metadata = parse(yaml) as unknown;
+
     if (
       typeof metadata !== 'object' ||
       metadata === null ||
@@ -116,10 +121,12 @@ const loadSkill = async (
     ) {
       throw new Error('Skill frontmatter must be an object.');
     }
+
     const { ['allowed-tools']: allowedTools, ...fields } = metadata as Record<
       string,
       unknown
     >;
+
     return SkillSchema.parse(
       skillMetadataSchema.parse({ ...fields, allowedTools, body }),
     );
@@ -129,8 +136,12 @@ const loadSkill = async (
 };
 
 const isToolFactory = (value: unknown): value is ToolFactory => {
-  if (typeof value !== 'function') return false;
+  if (typeof value !== 'function') {
+    return false;
+  }
+
   const candidate = value as Partial<ToolFactory>;
+
   return (
     typeof candidate.name === 'string' &&
     candidate.name.trim().length > 0 &&
@@ -157,15 +168,18 @@ const loadTool = async (
   }
 
   const context = `tool "${relativePath}" in bundle "${bundlePath}"`;
+
   try {
     const loaded = (await import(
       pathToFileURL(resourcePath(bundlePath, relativePath)).href
     )) as {
       readonly default?: unknown;
     };
+
     if (!isToolFactory(loaded.default)) {
       throw new Error('The default export is not a compatible ToolFactory.');
     }
+
     return loaded.default;
   } catch (cause) {
     throw withCause(`Unable to load ${context}.`, cause);
@@ -179,17 +193,20 @@ const unique = (
   context: string,
 ) => {
   const previous = names.get(name);
+
   if (previous !== undefined) {
     throw new Error(
       `Duplicate ${kind} name "${name}": ${previous} and ${context}.`,
     );
   }
+
   names.set(name, context);
 };
 
 /** Loads strict, manifest-declared bundles immediately below a root directory. */
 export async function loadBundles(root: string): Promise<readonly Bundle[]> {
   let entries;
+
   try {
     entries = await readdir(resolve(root), { withFileTypes: true });
   } catch (cause) {
@@ -207,30 +224,41 @@ export async function loadBundles(root: string): Promise<readonly Bundle[]> {
 
   for (const bundlePath of paths) {
     const definition = await manifest(bundlePath);
+
     unique('bundle', bundleNames, definition.name, bundlePath);
+
     const tools = [];
+
     for (const declared of definition.tools) {
       const factory = await loadTool(bundlePath, declared.path);
+
       unique(
         'tool',
         toolNames,
         factory.name,
         `"${declared.path}" in bundle "${definition.name}"`,
       );
+
       tools.push({ factory, alwaysAvailable: declared.alwaysAvailable });
     }
+
     const skills = [];
+
     for (const declared of definition.skills) {
       const skill = await loadSkill(bundlePath, declared.path);
+
       unique(
         'skill',
         skillNames,
         skill.name,
         `"${declared.path}" in bundle "${definition.name}"`,
       );
+
       skills.push({ skill, alwaysAvailable: declared.alwaysAvailable });
     }
+
     const localTools = new Set(tools.map(({ factory }) => factory.name));
+
     for (const { skill } of skills) {
       for (const name of skill.allowedTools) {
         if (!localTools.has(name)) {
@@ -240,6 +268,7 @@ export async function loadBundles(root: string): Promise<readonly Bundle[]> {
         }
       }
     }
+
     bundles.push({
       name: definition.name,
       description: definition.description,

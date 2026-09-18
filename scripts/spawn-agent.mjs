@@ -9,6 +9,7 @@ import { A2AClient } from '@a2a-js/sdk/client';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = resolve(ROOT_DIR, '.env');
+
 const REDACTED_KEYS = new Set([
   'authorization',
   'github_token',
@@ -18,24 +19,29 @@ const REDACTED_KEYS = new Set([
 ]);
 const SECRET_KEY_PATTERN = /(?:authorization|secret|token)/iu;
 const SECRET_ENV_KEY_PATTERN = /(?:AUTHORIZATION|SECRET|TOKEN)/iu;
+
 const TEST_PROVIDER = {
   id: 'codex',
   type: 'codex',
 };
+
 const TEST_MODEL = {
   id: 'default',
   provider: TEST_PROVIDER.id,
   model: 'gpt-5.5',
 };
+
 const TEST_TASK = {
   id: 'coding',
   model: TEST_MODEL.id,
 };
+
 const CLI_OPTIONS = new Map([
   ['--repo', 'repoUrl'],
   ['--prompt', 'prompt'],
   ['--contextId', 'contextId'],
 ]);
+
 const REQUIRED_CLI_OPTIONS = new Map([
   ['repoUrl', '--repo <url>'],
   ['prompt', '--prompt <text>'],
@@ -85,6 +91,7 @@ const parseArgs = (args) => {
 
     const inlineValue =
       inlineSeparator < 0 ? undefined : arg.slice(inlineSeparator + 1);
+
     const value =
       inlineValue === undefined
         ? readOptionValue(args, index, name)
@@ -308,6 +315,7 @@ const sendWithStreamingFallback = async (client, params, redactText) => {
   try {
     for await (const event of client.sendMessageStream(params)) {
       streamed = true;
+
       logJson('stream-event', event, redactText);
     }
 
@@ -355,5 +363,6 @@ try {
   }
 } catch (error) {
   console.error(errorMessage(error));
+
   process.exitCode = 1;
 }

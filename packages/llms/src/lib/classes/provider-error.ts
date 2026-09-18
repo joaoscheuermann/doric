@@ -6,8 +6,11 @@ export class ProviderErrorObject extends Error {
 
   constructor(data: ProviderError, options?: ErrorOptions) {
     super(data.message, options);
+
     this.name = 'ProviderError';
+
     this.data = data;
+
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

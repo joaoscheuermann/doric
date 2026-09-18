@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { ProviderErrorObject, openRouterBody } from '../src/index.js';
+import { openRouterBody, ProviderErrorObject } from '../src/index.js';
 import { createOpenRouterProvider, fakeTransport, response } from './fakes.js';
 
 test('maps OpenRouter chat completions DTO with messages tools and reasoning', () => {
@@ -45,14 +45,20 @@ test('maps OpenRouter chat completions DTO with messages tools and reasoning', (
   );
 
   assert.equal(body.model, 'openai/gpt-5');
+
   assert.equal(body.stream, false);
+
   assert.equal(body.max_tokens, 32);
+
   assert.deepEqual(body.reasoning, { effort: 'medium' });
+
   assert.deepEqual(body.tool_choice, {
     type: 'function',
     function: { name: 'lookup' },
   });
+
   assert.equal(body.parallel_tool_calls, false);
+
   assert.deepEqual(body.tools, [
     {
       type: 'function',
@@ -68,6 +74,7 @@ test('maps OpenRouter chat completions DTO with messages tools and reasoning', (
       },
     },
   ]);
+
   assert.deepEqual(body.messages, [
     { role: 'system', content: 'System' },
     {
@@ -84,6 +91,7 @@ test('maps OpenRouter chat completions DTO with messages tools and reasoning', (
     },
     { role: 'tool', content: 'Result', tool_call_id: 'call_1' },
   ]);
+
   assert.equal('response_format' in body, false);
 });
 
@@ -98,17 +106,22 @@ test('supports conservative OpenRouter structured-output fallbacks', () => {
     structuredOutput: 'json_object',
     requireParameters: true,
   });
+
   const promptOnly = openRouterBody(request, false, {
     structuredOutput: 'prompt',
   });
 
   assert.deepEqual(jsonObject.response_format, { type: 'json_object' });
+
   assert.deepEqual(jsonObject.provider, { require_parameters: true });
+
   assert.equal(
     (jsonObject.messages as readonly { readonly role: string }[])[0]?.role,
     'system',
   );
+
   assert.equal('response_format' in promptOnly, false);
+
   assert.equal(
     (promptOnly.messages as readonly { readonly role: string }[])[0]?.role,
     'system',
@@ -160,14 +173,15 @@ test('adds a schema system instruction while retaining OpenRouter response forma
     { role: 'system' as const, content: 'Follow policy.' },
     { role: 'user' as const, content: 'Return JSON.' },
   ];
+
   const request = {
     model: 'openai/gpt-5',
     messages,
     schema: z.object({ answer: z.string() }),
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   } as const;
-
   const body = openRouterBody(request, false);
+
   const bodyMessages = body.messages as readonly {
     readonly role: string;
     readonly content: string;
@@ -177,17 +191,23 @@ test('adds a schema system instruction while retaining OpenRouter response forma
     bodyMessages.map(({ role }) => role),
     ['system', 'system', 'user'],
   );
+
   assert.equal(bodyMessages[0]?.content, 'Follow policy.');
+
   assert.match(
     bodyMessages[1]?.content ?? '',
     /Return exactly one JSON object[\s\S]*JSON Schema/u,
   );
+
   assert.equal(bodyMessages[2]?.content, 'Return JSON.');
+
   assert.equal(
     (body.response_format as { readonly type?: string }).type,
     'json_schema',
   );
+
   assert.equal(request.messages, messages);
+
   assert.deepEqual(request.messages, messages);
 });
 
@@ -207,6 +227,7 @@ test('maps OpenRouter nested union structured output schemas to response format 
     },
     false,
   );
+
   const responseFormat = body.response_format as {
     readonly json_schema?: {
       readonly schema?: {
@@ -223,8 +244,11 @@ test('maps OpenRouter nested union structured output schemas to response format 
     responseFormat.json_schema?.schema?.properties?.action?.anyOf;
 
   assert.equal(responseFormat.json_schema?.schema?.type, 'object');
+
   assert.ok(Array.isArray(variants));
+
   assert.equal(variants.length, 2);
+
   assert.deepEqual(
     variants.map((variant) => (variant as Record<string, unknown>).type),
     ['object', 'object'],
@@ -290,6 +314,7 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
       response({ error: { message: 'forbidden sk-testSecret456' } }, 403),
     ],
   });
+
   const provider = createOpenRouterProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -301,15 +326,21 @@ test('parses OpenRouter completion and redacts auth failures', async () => {
   });
 
   assert.equal(result.text, 'Hello');
+
   assert.equal(result.finishReason, 'tool_calls');
+
   assert.deepEqual(result.reasoning, { text: 'Because' });
+
   assert.deepEqual(result.replay, [
     { type: 'reasoning.encrypted', data: 'opaque' },
   ]);
+
   assert.equal(result.refusal, 'No');
+
   assert.deepEqual(result.toolCalls, [
     { id: 'call_1', name: 'lookup', arguments: '{"q":"x"}', index: 0 },
   ]);
+
   assert.deepEqual(result.usage, {
     inputTokens: 2,
     outputTokens: 3,
@@ -408,8 +439,8 @@ test('fetches and validates OpenRouter models with context fallback', async () =
     }),
     apiKey: 'key',
   });
-
   const models = await provider.models();
+
   assert.deepEqual(
     models.map((model) => [model.id, model.contextWindow]),
     [
@@ -418,6 +449,7 @@ test('fetches and validates OpenRouter models with context fallback', async () =
       ['c', 4096],
     ],
   );
+
   assert.equal((await provider.validateModel('b')).contextWindow, 4096);
 });
 

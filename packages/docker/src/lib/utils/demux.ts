@@ -19,6 +19,7 @@ export const demuxDockerOutput = (stream: Uint8Array): DemuxedOutput => {
     }
 
     const channel = stream[offset];
+
     const size =
       stream[offset + 4] * 16_777_216 +
       stream[offset + 5] * 65_536 +
@@ -61,6 +62,7 @@ const concat = (chunks: readonly Uint8Array[]): Uint8Array => {
 
   for (const chunk of chunks) {
     output.set(chunk, offset);
+
     offset += chunk.byteLength;
   }
 

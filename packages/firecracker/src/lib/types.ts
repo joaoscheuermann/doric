@@ -55,6 +55,7 @@ export type CreateFirecrackerClientOptions = {
 
 export type FirecrackerApi = {
   request(input: FirecrackerRequest): Promise<void>;
+
   configure(input: {
     readonly cpuCount: number;
     readonly memoryMiB: number;
@@ -65,5 +66,6 @@ export type FirecrackerApi = {
     readonly tap: string;
     readonly guestMac: string;
   }): Promise<void>;
+
   start(signal?: AbortSignal): Promise<void>;
 };

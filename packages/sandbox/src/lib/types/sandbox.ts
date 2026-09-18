@@ -75,9 +75,13 @@ export type SandboxProvisionInput = {
 export interface SandboxRuntime {
   readonly id: string;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+
   putFile(path: string, bytes: Uint8Array): Promise<void>;
+
   getFile(path: string): Promise<Uint8Array>;
+
   ssh(): Promise<SandboxSshAccess | undefined>;
+
   dispose(): Promise<void>;
 }
 
@@ -125,12 +129,19 @@ export interface Sandbox {
   readonly id: string;
   readonly root: string;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+
   cloneRepo(input: CloneRepoInput): Promise<ClonedRepo>;
+
   readFile(path: string): Promise<string>;
+
   writeFile(path: string, content: string): Promise<void>;
+
   putFile(path: string, bytes: Uint8Array): Promise<void>;
+
   getFile(path: string): Promise<Uint8Array>;
+
   diff(input?: SandboxDiffInput): Promise<string>;
+
   ssh(): Promise<SandboxSshAccess | undefined>;
 }
 

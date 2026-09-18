@@ -44,16 +44,19 @@ test('selects native structured output from live OpenRouter capabilities', async
     messages: [{ role: 'user', content: 'Answer.' }],
     schema: z.object({ answer: z.string() }),
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as Record<
     string,
     unknown
   >;
 
   assert.deepEqual(result.structured, { answer: 'ok' });
+
   assert.equal(
     (body.response_format as { readonly type?: string }).type,
     'json_schema',
   );
+
   assert.deepEqual(body.provider, { require_parameters: true });
 });
 
@@ -82,22 +85,29 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
     messages: [{ role: 'user', content: 'Answer.' }],
     schema: z.object({ answer: z.string() }),
   });
+
   const first = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly messages?: readonly { readonly role?: string; content?: string }[];
     readonly response_format?: unknown;
   };
+
   const second = JSON.parse(transport.requests[2]?.body ?? '{}') as {
     readonly messages?: readonly { readonly role?: string; content?: string }[];
   };
 
   assert.equal(first.response_format, undefined);
+
   assert.equal(first.messages?.[0]?.role, 'system');
+
   assert.match(first.messages?.[0]?.content ?? '', /JSON Schema/u);
+
   assert.match(
     second.messages?.at(-1)?.content ?? '',
     /Structured output correction/u,
   );
+
   assert.deepEqual(result.structured, { answer: 'ok' });
+
   assert.deepEqual(result.usage, {
     inputTokens: 5,
     outputTokens: 7,
@@ -130,7 +140,9 @@ test('buffers direct structured streams until validation succeeds', async () => 
     events.map(({ type }) => type),
     ['response.started', 'text.delta', 'response.finished'],
   );
+
   assert.equal(transport.requests.length, 2);
+
   assert.equal(transport.requests[1]?.headers?.accept, 'application/json');
 });
 
@@ -154,6 +166,7 @@ test('rejects non-emulatable feature combinations before completion', async () =
       error instanceof ProviderErrorObject &&
       error.data.code === 'incompatible_model_request',
   );
+
   assert.equal(transport.requests.length, 1);
 });
 
@@ -201,6 +214,7 @@ test('uses the upstream profile when an OpenAI-compatible proxy replaces the mod
       }),
     ],
   });
+
   const provider = createUnifiedProvider({
     transport,
     apiKey: 'key',
@@ -214,14 +228,18 @@ test('uses the upstream profile when an OpenAI-compatible proxy replaces the mod
       { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
     ],
   });
+
   const body = JSON.parse(transport.requests[0]?.body ?? '{}') as {
     readonly model?: string;
     readonly provider?: unknown;
   };
 
   assert.equal(transport.requests.length, 1);
+
   assert.match(transport.requests[0]?.url ?? '', /chat\/completions$/u);
+
   assert.equal(body.model, 'benchflow-openrouter-openai-gpt-5.6-luna');
+
   assert.deepEqual(body.provider, { require_parameters: true });
 });
 
@@ -269,6 +287,7 @@ test('emulates sequential tools when the model does not advertise parallel contr
     ],
     parallelToolCalls: false,
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly messages?: readonly {
       readonly role?: string;
@@ -279,7 +298,9 @@ test('emulates sequential tools when the model does not advertise parallel contr
   };
 
   assert.equal(body.parallel_tool_calls, undefined);
+
   assert.deepEqual(body.provider, { require_parameters: true });
+
   assert.match(
     body.messages?.find(({ role }) => role === 'system')?.content ?? '',
     /limit applies only to the current response, not to the task or node/u,
@@ -305,6 +326,7 @@ test('forwards parallel tool control when the model advertises it', async () => 
     ],
     parallelToolCalls: false,
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly parallel_tool_calls?: boolean;
   };

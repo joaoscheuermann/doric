@@ -19,18 +19,19 @@ export type Summary = {
 
 const validAnalysis = (value: string): boolean =>
   value.length > 0 && !/^---(?:\r?\n|$)/u.test(value);
-
 const LIST_PREFIX = /^(?:[-*+]|\d+[.)])\s+/u;
 const FENCE = /(?:`{3,}|~{3,})/u;
 
 const unwrapFence = (value: string): string | undefined => {
   const match =
     /^(?<fence>`{3,}|~{3,})[^\n]*\n(?<body>[\s\S]*)\n\k<fence>$/u.exec(value);
+
   return match?.groups?.['body']?.trim();
 };
 
 const jsonTags = (value: string): readonly string[] | undefined => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(value);
   } catch {
@@ -42,6 +43,7 @@ const jsonTags = (value: string): readonly string[] | undefined => {
       ? parsed
       : undefined;
   }
+
   if (
     parsed === null ||
     typeof parsed !== 'object' ||
@@ -51,8 +53,13 @@ const jsonTags = (value: string): readonly string[] | undefined => {
   }
 
   const keys = Object.keys(parsed);
-  if (keys.length !== 1 || keys[0] !== 'tags') return undefined;
+
+  if (keys.length !== 1 || keys[0] !== 'tags') {
+    return undefined;
+  }
+
   const tags = (parsed as { readonly tags?: unknown }).tags;
+
   return Array.isArray(tags) && tags.every((item) => typeof item === 'string')
     ? tags
     : undefined;
@@ -61,10 +68,12 @@ const jsonTags = (value: string): readonly string[] | undefined => {
 const cleanTag = (value: string): string => {
   const unlisted = value.replace(LIST_PREFIX, '').trim();
   const first = unlisted[0];
+
   const quoted =
     (first === "'" || first === '"' || first === '`') &&
     unlisted.length >= 2 &&
     unlisted.at(-1) === first;
+
   return (quoted ? unlisted.slice(1, -1) : unlisted).trim();
 };
 
@@ -72,10 +81,14 @@ const plainTags = (value: string): readonly string[] => {
   const label = /^tags:[ \t]*/iu.test(value);
   const candidate = value.replace(/^tags:[ \t]*/iu, '');
   const lines = candidate.split('\n').filter((line) => line.trim().length > 0);
-  if (lines.length > 1) return lines;
+
+  if (lines.length > 1) {
+    return lines;
+  }
 
   const single = lines[0] ?? '';
   const commaItems = single.split(',');
+
   return label || commaItems.every((item) => !/[.?!]/u.test(item))
     ? commaItems
     : [single];
@@ -84,15 +97,22 @@ const plainTags = (value: string): readonly string[] => {
 const parseTags = (input: string): readonly string[] | undefined => {
   const normalized = input.replace(/\r\n?/gu, '\n').trim();
   const unwrapped = unwrapFence(normalized);
-  if (unwrapped === undefined && FENCE.test(normalized)) return undefined;
-  const value = unwrapped ?? normalized;
 
+  if (unwrapped === undefined && FENCE.test(normalized)) {
+    return undefined;
+  }
+
+  const value = unwrapped ?? normalized;
   const first = value.trimStart()[0];
   const items =
     first === '[' || first === '{' ? jsonTags(value) : plainTags(value);
-  if (items === undefined) return undefined;
+
+  if (items === undefined) {
+    return undefined;
+  }
 
   const tags = items.map(cleanTag).filter((tag) => tag.length > 0);
+
   return tags.length > 0 ? tags : undefined;
 };
 
@@ -109,7 +129,11 @@ export const summarize = async (
     stage: `Source summary for ${evidence.path}`,
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
   });
-  if (!validAnalysis(result)) throw new Error('Invalid source analysis');
+
+  if (!validAnalysis(result)) {
+    throw new Error('Invalid source analysis');
+  }
+
   return result;
 };
 
@@ -143,6 +167,7 @@ export const selectTags = async (
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
   });
   const original = result.trim();
+
   return parseTags(original) ?? [original];
 };
 
@@ -188,6 +213,7 @@ const section = (heading: string, value: string, language: string): string => {
 const fenced = (value: string, language: string): string => {
   const fence = selectFence(value);
   const body = value.endsWith('\n') ? value : `${value}\n`;
+
   return `${fence}${language}\n${body}${fence}`;
 };
 
@@ -195,6 +221,7 @@ const selectFence = (value: string): string => {
   const backticks = longestRun(value, '`');
   const tildes = longestRun(value, '~');
   const marker = backticks <= tildes ? '`' : '~';
+
   return marker.repeat(Math.max(3, Math.min(backticks, tildes) + 1));
 };
 

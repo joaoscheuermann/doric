@@ -20,6 +20,7 @@ export const outputPath = (source: string): string => {
 
 const pathName = (source: string): string => {
   const separator = Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\'));
+
   return source.slice(separator + 1);
 };
 
@@ -27,13 +28,17 @@ const pathName = (source: string): string => {
 export const parseDescription = (markdown: string): string => {
   const frontmatter = FRONTMATTER.exec(markdown)?.[1] ?? '';
   const document = parseDocument(frontmatter, { uniqueKeys: true });
+
   if (document.errors.length > 0) {
     throw new Error('Generated OKF frontmatter must be valid YAML');
   }
+
   const description = document.get('description');
+
   if (description === undefined) {
     throw new Error('Generated OKF frontmatter is missing description');
   }
+
   if (typeof description !== 'string') {
     throw new Error('Generated OKF frontmatter description must be a string');
   }
@@ -44,6 +49,7 @@ export const parseDescription = (markdown: string): string => {
 /** Renders source entries as a deterministic Markdown tree linking mirrored outputs. */
 export const renderTree = (entries: readonly TreeEntry[]): string => {
   const tree: Tree = new Map();
+
   const unique = entries
     .map((entry) => ({
       ...entry,
@@ -59,7 +65,9 @@ export const renderTree = (entries: readonly TreeEntry[]): string => {
         index === 0 || entry.path !== sorted[index - 1]?.path,
     );
 
-  for (const entry of unique) add(tree, entry);
+  for (const entry of unique) {
+    add(tree, entry);
+  }
 
   return ['# Project', '', ...render(tree)].join('\n') + '\n';
 };
@@ -71,17 +79,22 @@ const add = (tree: Tree, entry: TreeEntry): void => {
   for (const [index, part] of parts.entries()) {
     if (index === parts.length - 1) {
       node.set(part, entry);
+
       return;
     }
 
     const current = node.get(part);
+
     if (current instanceof Map) {
       node = current;
+
       continue;
     }
 
     const child: Tree = new Map();
+
     node.set(part, child);
+
     node = child;
   }
 };

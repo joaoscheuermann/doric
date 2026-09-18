@@ -1,11 +1,11 @@
-import { createAgent, createToolCallStorage, type AgentEvent } from 'agent';
+import { type AgentEvent, createAgent, createToolCallStorage } from 'agent';
 import type { Skill } from 'bundle';
 import { createMessageStorage } from 'messages';
 import type { Sandbox } from 'sandbox';
 import { createToolStorage } from 'tool';
 
 import { eventJson } from './event-json.js';
-import { providerFor, type Generation } from './generation.js';
+import { type Generation, providerFor } from './generation.js';
 import type { SessionStore } from './sessions.js';
 
 type DirectPromptOptions = {
@@ -48,9 +48,14 @@ export const runDirectPrompt = async ({
   event,
 }: DirectPromptOptions): Promise<void> => {
   const record = await store.find(sessionId);
-  if (record === undefined) return;
+
+  if (record === undefined) {
+    return;
+  }
+
   const messages = createMessageStorage(record.messages);
   const execution = generation.snapshot.configuration.models.execution;
+
   const agent = createAgent({
     provider: providerFor(generation, execution.providerId),
     model: execution.model,
@@ -106,5 +111,6 @@ const publish = async ({
     promptId,
     eventJson(value, generation.redactions()),
   );
+
   event(stored);
 };

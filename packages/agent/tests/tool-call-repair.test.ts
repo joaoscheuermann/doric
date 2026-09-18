@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  AgentErrorObject,
-  type Agent,
-  type AgentRunOptions,
-} from '../src/index.js';
+import { z } from 'zod';
+
 import type { ProviderStreamEvent } from 'llms';
 import { createMessageStorage, type MessageStorage } from 'messages';
 import { createToolStorage, defineTool, ToolErrorObject } from 'tool';
-import { z } from 'zod';
 
+import {
+  type Agent,
+  AgentErrorObject,
+  type AgentRunOptions,
+} from '../src/index.js';
 import {
   call,
   collect,
@@ -40,12 +41,14 @@ const assertIncomplete = (messages: MessageStorage, callId: string): void => {
     );
 
   assert.ok(result);
+
   assert.equal(result.toolResultStatus, 'incomplete');
 };
 
 test('structured stream suppresses every provider event from a rejected executable batch', async () => {
   const marker = 'rejected-private-event';
   let executions = 0;
+
   const tools = createToolStorage(
     ['first', 'second'].map((name) =>
       defineTool({
@@ -54,19 +57,23 @@ test('structured stream suppresses every provider event from a rejected executab
         output: z.string(),
         execute: (_sandbox, { value }) => {
           executions += 1;
+
           return value;
         },
       })(undefined as never),
     ),
   );
+
   const rejected = completeFinish(marker, [
     call('first', { value: 'valid' }, 'call-first'),
     call('second', { value: 42 }, 'call-second'),
   ]);
+
   const provider = createProvider({
     stream: (request, index) => {
       if (index > 0) {
         const terminal = request.tools?.at(-1)?.name ?? 'missing-terminal';
+
         return streamEvents(
           completeFinish('', [call(terminal, { answer: 'done' })]),
         );
@@ -78,17 +85,22 @@ test('structured stream suppresses every provider event from a rejected executab
           provider: 'fake',
           model: marker,
         };
+
         yield { type: 'text.delta', delta: marker };
+
         yield { type: 'reasoning.delta', delta: marker };
+
         yield {
           type: 'usage',
           usage: { inputTokens: 999_999, totalTokens: 999_999 },
         };
+
         yield { type: 'response.finished', finish: rejected };
       })();
     },
   });
   const repairs: number[] = [];
+
   const agent = createAgent({
     provider: provider.provider,
     tools,
@@ -107,14 +119,18 @@ test('structured stream suppresses every provider event from a rejected executab
   );
 
   assert.equal(executions, 0);
+
   assert.deepEqual(repairs, [1]);
+
   assert.doesNotMatch(JSON.stringify(events), new RegExp(marker, 'u'));
+
   assert.equal(
     events.some(
       (event) => event.type === 'usage' && event.usage.totalTokens === 999_999,
     ),
     false,
   );
+
   assert.equal(
     events.filter((event) => event.type === 'response.finished').length,
     1,
@@ -124,6 +140,7 @@ test('structured stream suppresses every provider event from a rejected executab
 for (const mode of ['complete', 'stream'] as const) {
   test(`${mode} stores an incomplete result for a final rejected terminal call`, async () => {
     const callId = `terminal-${mode}`;
+
     const provider = createProvider({
       complete: (request) =>
         completeFinish('', [
@@ -149,6 +166,7 @@ for (const mode of ['complete', 'stream'] as const) {
         ),
     });
     const messages = createMessageStorage();
+
     const agent = createAgent({
       provider: provider.provider,
       tools: createTools().storage,
@@ -166,12 +184,14 @@ for (const mode of ['complete', 'stream'] as const) {
         error instanceof AgentErrorObject &&
         error.data.code === 'invalid_structured_output',
     );
+
     assertIncomplete(messages, callId);
   });
 
   test(`${mode} stores an incomplete result for a final rejected executable call`, async () => {
     const callId = `executable-${mode}`;
     let executions = 0;
+
     const tools = createToolStorage([
       defineTool({
         name: 'lookup',
@@ -179,10 +199,12 @@ for (const mode of ['complete', 'stream'] as const) {
         output: z.string(),
         execute: (_sandbox, { query }) => {
           executions += 1;
+
           return query;
         },
       })(undefined as never),
     ]);
+
     const provider = createProvider({
       complete: () =>
         completeFinish('', [call('lookup', { query: 42 }, callId)]),
@@ -192,6 +214,7 @@ for (const mode of ['complete', 'stream'] as const) {
         ),
     });
     const messages = createMessageStorage();
+
     const agent = createAgent({
       provider: provider.provider,
       tools,
@@ -206,7 +229,9 @@ for (const mode of ['complete', 'stream'] as const) {
         error instanceof ToolErrorObject &&
         error.data.code === 'invalid_payload',
     );
+
     assert.equal(executions, 0);
+
     assertIncomplete(messages, callId);
   });
 }

@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AgentErrorObject, type AgentEvent } from '../src/index.js';
 import { z } from 'zod';
+
+import type { ProviderFinished } from 'llms';
+import { createMessageStorage } from 'messages';
+import { createToolStorage, defineTool } from 'tool';
+
+import { AgentErrorObject, type AgentEvent } from '../src/index.js';
 import {
   call,
   collect,
@@ -12,12 +17,10 @@ import {
   createTools,
   streamEvents,
 } from './fakes.js';
-import type { ProviderFinished } from 'llms';
-import { createMessageStorage } from 'messages';
-import { createToolStorage, defineTool } from 'tool';
 
 test('complete executes requested tools and calls the provider again with tool results', async () => {
   const lookup = call('lookup', { query: 'doric' });
+
   const fake = createProvider({
     complete: (_request, index) =>
       index === 0
@@ -26,6 +29,7 @@ test('complete executes requested tools and calls the provider again with tool r
   });
   const tools = createTools({ results: { lookup: { found: true } } });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: tools.storage,
@@ -33,15 +37,18 @@ test('complete executes requested tools and calls the provider again with tool r
     system: '',
     model: 'fake-model',
   });
-
   const response = await agent.complete('Find context.');
 
   assert.equal(response.text, 'Tool says result.');
+
   assert.equal(fake.requests.length, 2);
+
   assert.deepEqual(tools.calls, [
     { id: lookup.id, name: 'lookup', payload: { query: 'doric' } },
   ]);
+
   const stored = messages.list();
+
   assert.deepEqual(stored.slice(0, 2), [
     { role: 'user', content: 'Find context.' },
     {
@@ -50,19 +57,26 @@ test('complete executes requested tools and calls the provider again with tool r
       toolCalls: [lookup],
     },
   ]);
+
   assert.equal(stored[2]?.role, 'tool');
+
   assert.equal(stored[2]?.toolCallId, lookup.id);
+
   assert.match(String(stored[2]?.content), /# Tool Result/u);
+
   assert.match(String(stored[2]?.content), /\{"found":true\}/u);
+
   assert.deepEqual(stored[3], {
     role: 'assistant',
     content: 'Tool says result.',
   });
+
   assert.deepEqual(fake.requests[1]?.messages, messages.list().slice(0, 3));
 });
 
 test('rejects an invalid tool-call batch before any handler executes', async () => {
   let executions = 0;
+
   const tools = createToolStorage(
     ['first', 'second'].map((name) =>
       defineTool({
@@ -71,12 +85,14 @@ test('rejects an invalid tool-call batch before any handler executes', async () 
         output: z.string(),
         execute: (_sandbox, { value }) => {
           executions += 1;
+
           return value;
         },
       })(undefined as never),
     ),
   );
   const repairs: number[] = [];
+
   const fake = createProvider({
     complete: (_request, index) =>
       index === 0
@@ -86,6 +102,7 @@ test('rejects an invalid tool-call batch before any handler executes', async () 
           ])
         : completeFinish('Recovered.'),
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools,
@@ -101,8 +118,11 @@ test('rejects an invalid tool-call batch before any handler executes', async () 
   });
 
   assert.equal(response.text, 'Recovered.');
+
   assert.equal(executions, 0);
+
   assert.deepEqual(repairs, [1]);
+
   assert.equal(
     fake.requests[1]?.messages.filter(
       ({ role, toolResultStatus }) =>
@@ -114,6 +134,7 @@ test('rejects an invalid tool-call batch before any handler executes', async () 
 
 test('stream yields provider events tool events and final agent event across a tool loop', async () => {
   const lookup = call('lookup', { query: 'stream' });
+
   const fake = createProvider({
     stream: (_request, index) =>
       streamEvents(
@@ -124,6 +145,7 @@ test('stream yields provider events tool events and final agent event across a t
   });
   const tools = createTools({ results: { lookup: 'stream-result' } });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: tools.storage,
@@ -131,7 +153,6 @@ test('stream yields provider events tool events and final agent event across a t
     system: 'Stream system.',
     model: 'fake-model',
   });
-
   const events = await collect(agent.stream('Stream input.'));
 
   assert.deepEqual(
@@ -149,22 +170,32 @@ test('stream yields provider events tool events and final agent event across a t
       'agent.finished',
     ],
   );
+
   assert.deepEqual(events[4], {
     type: 'tool.started',
     call: { id: lookup.id, name: 'lookup', payload: { query: 'stream' } },
   });
+
   const toolFinished = events[5];
+
   assert.equal(toolFinished?.type, 'tool.finished');
-  if (toolFinished?.type !== 'tool.finished')
+
+  if (toolFinished?.type !== 'tool.finished') {
     assert.fail('Missing tool event.');
+  }
+
   assert.deepEqual(toolFinished.call, {
     id: lookup.id,
     name: 'lookup',
     payload: { query: 'stream' },
   });
+
   assert.equal(toolFinished.result, 'stream-result');
+
   assert.equal(toolFinished.record.output, 'stream-result');
+
   assert.match(toolFinished.content, new RegExp(toolFinished.record.id, 'u'));
+
   const final = events.at(-1);
 
   assert.equal(
@@ -175,11 +206,13 @@ test('stream yields provider events tool events and final agent event across a t
 
 test('rejects concurrent runs with AgentErrorObject before storage mutation', async () => {
   let release!: (finish: ProviderFinished) => void;
+
   const pending = new Promise<ProviderFinished>((resolve) => {
     release = resolve;
   });
   const fake = createProvider({ complete: () => pending });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools().storage,
@@ -187,7 +220,6 @@ test('rejects concurrent runs with AgentErrorObject before storage mutation', as
     system: '',
     model: 'fake-model',
   });
-
   const first = agent.complete('First.');
 
   await assert.rejects(
@@ -195,18 +227,22 @@ test('rejects concurrent runs with AgentErrorObject before storage mutation', as
     (error: unknown) =>
       error instanceof AgentErrorObject && error.data.code === 'concurrent_run',
   );
+
   assert.deepEqual(messages.list(), [{ role: 'user', content: 'First.' }]);
 
   release(completeFinish('First done.'));
+
   await first;
 });
 
 test('stream yields tool.failed and propagates tool execution errors', async () => {
   const failure = new Error('tool failed');
   const lookup = call('lookup');
+
   const fake = createProvider({
     stream: () => streamEvents(completeFinish('Need tool.', [lookup])),
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools({ failure }).storage,
@@ -234,11 +270,13 @@ test('stream yields tool.failed and propagates tool execution errors', async () 
 
 test('complete propagates provider errors unchanged', async () => {
   const failure = new Error('provider failed');
+
   const fake = createProvider({
     complete: () => {
       throw failure;
     },
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools().storage,
@@ -255,11 +293,13 @@ test('complete propagates provider errors unchanged', async () => {
 
 test('stream propagates provider errors unchanged', async () => {
   const failure = new Error('provider stream failed');
+
   const fake = createProvider({
     stream: () => {
       throw failure;
     },
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools().storage,
@@ -284,6 +324,7 @@ test('stream throws AgentErrorObject when the provider omits response.finished',
         };
       })(),
   });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools().storage,
@@ -304,6 +345,7 @@ test('serializes string object and undefined tool results into tool messages', a
   const first = call('string');
   const second = call('object');
   const third = call('empty');
+
   const fake = createProvider({
     complete: (_request, index) =>
       index === 0
@@ -311,6 +353,7 @@ test('serializes string object and undefined tool results into tool messages', a
         : completeFinish('Done.'),
   });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools({
@@ -328,10 +371,12 @@ test('serializes string object and undefined tool results into tool messages', a
   await agent.complete('Serialize.');
 
   const results = messages.list().filter((message) => message.role === 'tool');
+
   assert.deepEqual(
     results.map(({ toolCallId }) => toolCallId),
     [first.id, second.id, third.id],
   );
+
   ['plain text', '{"ok":true}', '## Output'].forEach((output, index) =>
     assert.ok(String(results[index]?.content).includes(output)),
   );
@@ -339,12 +384,16 @@ test('serializes string object and undefined tool results into tool messages', a
 
 test('throws AgentErrorObject when a tool result cannot be serialized', async () => {
   const cyclic: Record<string, unknown> = {};
+
   cyclic.self = cyclic;
+
   const cycle = call('cycle');
+
   const fake = createProvider({
     complete: () => completeFinish('Need tool.', [cycle]),
   });
   const messages = createMessageStorage();
+
   const agent = createAgent({
     provider: fake.provider,
     tools: createTools({ results: { cycle: cyclic } }).storage,
@@ -359,6 +408,7 @@ test('throws AgentErrorObject when a tool result cannot be serialized', async ()
       error instanceof AgentErrorObject &&
       error.data.code === 'tool_result_serialization_failed',
   );
+
   assert.equal(
     messages.list().some((message) => message.role === 'tool'),
     false,
@@ -373,6 +423,7 @@ test('continues tool loops until the provider returns a final response', async (
         : completeFinish('Final after tools.'),
   });
   const tools = createTools({ results: { repeat: 'again' } });
+
   const agent = createAgent({
     provider: fake.provider,
     tools: tools.storage,
@@ -380,10 +431,11 @@ test('continues tool loops until the provider returns a final response', async (
     system: '',
     model: 'fake-model',
   });
-
   const response = await agent.complete('Loop.');
 
   assert.equal(response.text, 'Final after tools.');
+
   assert.equal(fake.requests.length, 4);
+
   assert.equal(tools.calls.length, 3);
 });

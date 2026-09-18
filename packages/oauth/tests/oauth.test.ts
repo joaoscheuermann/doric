@@ -9,24 +9,25 @@ import {
   CODEX_OAUTH_CALLBACK_PATH,
   CODEX_OAUTH_CLIENT_ID,
   CODEX_OAUTH_ORIGINATOR,
-  OAuthErrorObject,
   codexOAuthProfile,
-  createOAuthClient,
   createCodexOAuth,
-  resolveCodexAuth,
+  createOAuthClient,
   type OAuthCallbackServer,
+  OAuthErrorObject,
   type OAuthHttpRequest,
   type OAuthHttpResponse,
   type OAuthProfile,
   type OAuthTokenRecord,
   type OAuthTokenStore,
   type OAuthTransport,
+  resolveCodexAuth,
 } from '../src/index.js';
 
 test('builds PKCE authorization URL and exchanges callback code', async () => {
   let opened = '';
   const saved: OAuthTokenRecord[] = [];
   const store = memoryStore();
+
   const transport = fakeTransport({
     responses: [
       response({
@@ -57,7 +58,6 @@ test('builds PKCE authorization URL and exchanges callback code', async () => {
     random: sequentialRandom(),
     clock: () => 1_000,
   }).authorize();
-
   const authUrl = new URL(opened);
   const body = new URLSearchParams(transport.requests[0]?.body);
   const verifier = body.get('code_verifier') ?? '';
@@ -66,24 +66,37 @@ test('builds PKCE authorization URL and exchanges callback code', async () => {
     authUrl.origin + authUrl.pathname,
     testProfile.authorizationEndpoint,
   );
+
   assert.equal(authUrl.searchParams.get('response_type'), 'code');
+
   assert.equal(authUrl.searchParams.get('client_id'), 'client');
+
   assert.equal(
     authUrl.searchParams.get('redirect_uri'),
     'http://127.0.0.1/callback',
   );
+
   assert.equal(authUrl.searchParams.get('scope'), testProfile.defaultScope);
+
   assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256');
+
   assert.equal(
     authUrl.searchParams.get('code_challenge'),
     pkceChallenge(verifier),
   );
+
   assert.equal(transport.requests[0]?.url, testProfile.tokenEndpoint);
+
   assert.equal(body.get('grant_type'), 'authorization_code');
+
   assert.equal(body.get('code'), 'code-123');
+
   assert.equal(body.get('redirect_uri'), 'http://127.0.0.1/callback');
+
   assert.equal(record.accessToken, 'new.token.value');
+
   assert.equal(record.expiresAt, 3_601_000);
+
   assert.equal(saved.length, 1);
 });
 
@@ -108,6 +121,7 @@ test('rejects OAuth callback state mismatch before token exchange', async () => 
     }).authorize(),
     hasCode('oauth_state_mismatch'),
   );
+
   assert.equal(transport.requests.length, 0);
 });
 
@@ -146,11 +160,13 @@ test('rejects invalid OAuth token responses', async () => {
 
 test('refreshes OAuth credentials before use when expiry is inside skew', async () => {
   const saved: OAuthTokenRecord[] = [];
+
   const store = memoryStore({
     accessToken: 'old.token.value',
     refreshToken: 'refresh-token',
     expiresAt: 1_050,
   });
+
   const transport = fakeTransport({
     responses: [
       response({
@@ -180,7 +196,9 @@ test('refreshes OAuth credentials before use when expiry is inside skew', async 
   }).credential();
 
   assert.equal(credential.authorization, 'Bearer new.token.value');
+
   assert.equal(saved[0]?.refreshToken, 'new-refresh');
+
   assert.equal(saved[0]?.expiresAt, 11_000);
 });
 
@@ -212,6 +230,7 @@ test('forces OAuth refresh even when stored credentials are not expiring', async
   }).credential({ forceRefresh: true });
 
   assert.equal(credential.authorization, 'Bearer forced.token.value');
+
   assert.equal(transport.requests.length, 1);
 });
 
@@ -243,6 +262,7 @@ test('rejects OAuth refresh when the stored credential lacks a refresh token', a
 test('parses JWT claims and renders OAuth credentials', async () => {
   const accessToken = jwt({ sub: 'user_1', email: 'a@example.com' });
   const store = memoryStore();
+
   const client = authWithResponse(
     response({
       access_token: accessToken,
@@ -252,11 +272,11 @@ test('parses JWT claims and renders OAuth credentials', async () => {
     }),
     store,
   );
-
   const record = await client.authorize();
   const credential = await client.credential();
 
   assert.deepEqual(record.claims, { sub: 'user_1', email: 'a@example.com' });
+
   assert.deepEqual(credential, {
     source: 'oauth',
     scheme: 'Bearer',
@@ -270,6 +290,7 @@ test('parses JWT claims and renders OAuth credentials', async () => {
 
 test('uses Codex OAuth profile defaults', async () => {
   let opened = '';
+
   const client = createCodexOAuth({
     transport: fakeTransport({
       responses: [response({ access_token: 'openai.token.value' })],
@@ -289,22 +310,30 @@ test('uses Codex OAuth profile defaults', async () => {
   await client.authorize();
 
   const url = new URL(opened);
+
   assert.deepEqual(client.profile, codexOAuthProfile);
+
   assert.equal(
     url.origin + url.pathname,
     codexOAuthProfile.authorizationEndpoint,
   );
+
   assert.equal(url.searchParams.get('client_id'), CODEX_OAUTH_CLIENT_ID);
+
   assert.equal(
     url.searchParams.get('scope'),
     'openid profile email offline_access api.connectors.read api.connectors.invoke',
   );
+
   assert.equal(
     url.searchParams.get('redirect_uri'),
     `http://localhost:1455${CODEX_OAUTH_CALLBACK_PATH}`,
   );
+
   assert.equal(url.searchParams.get('id_token_add_organizations'), 'true');
+
   assert.equal(url.searchParams.get('codex_cli_simplified_flow'), 'true');
+
   assert.equal(url.searchParams.get('originator'), CODEX_OAUTH_ORIGINATOR);
 });
 
@@ -335,8 +364,11 @@ test('resolves Codex ChatGPT auth from auth.json with account headers', async ()
     });
 
     assert.equal(credential.kind, 'chatgpt');
+
     assert.equal(credential.authorization, `Bearer ${accessToken}`);
+
     assert.equal(credential.accountId, 'acct_123');
+
     assert.equal(credential.fedramp, true);
   });
 });
@@ -354,6 +386,7 @@ test('resolves Codex authorization header from env', async () => {
   });
 
   assert.equal(credential.authorization, `Bearer ${accessToken}`);
+
   assert.equal(credential.accountId, 'acct_env');
 });
 
@@ -377,6 +410,7 @@ test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client id', a
         }),
       ],
     });
+
     const credential = await resolveCodexAuth({
       codexHome: dir,
       env: {},
@@ -390,11 +424,17 @@ test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client id', a
       transport.requests[0]?.url,
       'https://auth.openai.com/oauth/token',
     );
+
     assert.equal(requestBody.client_id, 'app_EMoamEEZ73f0CkXaXp7hrann');
+
     assert.equal(requestBody.grant_type, 'refresh_token');
+
     assert.equal(requestBody.refresh_token, 'old-refresh');
+
     assert.equal(credential.accountId, 'acct_existing');
+
     assert.equal(saved.tokens.refresh_token, 'new-refresh');
+
     assert.equal(saved.tokens.access_token, credential.token);
   });
 });
@@ -446,6 +486,7 @@ const memoryStore = (initial?: OAuthTokenRecord): MutableStore => {
 
     async save(next) {
       record = next;
+
       this.onSave?.(next);
     },
   };
@@ -482,6 +523,7 @@ const fakeTransport = (options: {
 
     async request(request: OAuthHttpRequest): Promise<OAuthHttpResponse> {
       requests.push(request);
+
       const next = responses.shift();
 
       if (next === undefined) {

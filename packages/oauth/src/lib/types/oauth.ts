@@ -21,6 +21,7 @@ export type OAuthTokenRecord = {
 
 export interface OAuthTokenStore {
   load(): Promise<OAuthTokenRecord | undefined>;
+
   save(record: OAuthTokenRecord): Promise<void>;
 }
 
@@ -56,6 +57,7 @@ export interface OAuthCallbackServer {
     expectedState: string,
     signal?: AbortSignal,
   ): Promise<OAuthCallback>;
+
   close?(): Promise<void>;
 }
 
@@ -85,9 +87,11 @@ export type OAuthClient = {
   authorize(options?: {
     readonly signal?: AbortSignal;
   }): Promise<OAuthTokenRecord>;
+
   refresh(options?: {
     readonly signal?: AbortSignal;
   }): Promise<OAuthTokenRecord>;
+
   credential(options?: {
     readonly forceRefresh?: boolean;
     readonly signal?: AbortSignal;

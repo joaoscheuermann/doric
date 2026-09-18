@@ -1,7 +1,7 @@
 import type { Model } from '../../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   numberField,
   recordField,
   stringField,

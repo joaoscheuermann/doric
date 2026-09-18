@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import hostPath from 'node:path';
 import { posix as path } from 'node:path';
-import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import type { SandboxSession } from 'sandbox';
@@ -19,14 +19,20 @@ describe('write tool', () => {
     });
 
     assert.equal(result.success, true);
+
     assert.equal(result.bytes_written, 5);
+
     assert.match(result.diff ?? '', /1 \+hello/);
+
     assert.equal(
       await sandbox.readHost('/workspace/repo/notes/today.txt'),
       'hello',
     );
+
     assert.deepEqual(sandbox.reads, ['/workspace/repo/notes/today.txt']);
+
     assert.deepEqual(sandbox.writes, ['/workspace/repo/notes/today.txt']);
+
     await sandbox.dispose();
   });
 
@@ -43,8 +49,11 @@ describe('write tool', () => {
       bytes_written: 0,
       error: 'Path must not be empty',
     });
+
     assert.deepEqual(sandbox.reads, []);
+
     assert.deepEqual(sandbox.writes, []);
+
     await sandbox.dispose();
   });
 });
@@ -88,13 +97,17 @@ const fakeSandbox = async (name: string): Promise<FakeSandbox> => {
 
     async readFile(sandboxPath) {
       reads.push(sandboxPath);
+
       return readFile(target(sandboxPath), 'utf8');
     },
 
     async writeFile(sandboxPath, content) {
       writes.push(sandboxPath);
+
       const host = target(sandboxPath);
+
       await mkdir(hostPath.dirname(host), { recursive: true });
+
       await writeFile(host, content, 'utf8');
     },
 

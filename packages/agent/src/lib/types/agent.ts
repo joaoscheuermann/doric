@@ -13,6 +13,7 @@ import type {
 } from 'llms';
 import type { MessageStorage } from 'messages';
 import type { ToolCall, ToolStorage } from 'tool';
+
 import type { ToolCallRecord, ToolCallStorage } from './tool-call-storage.js';
 
 export type AgentOptions = {
@@ -88,6 +89,7 @@ export type Agent = {
         readonly schema: Schema;
       },
     ): Promise<AgentResponse<Output>>;
+
     <Output = JsonValue>(
       input: string,
       options?: AgentRunOptions<Output>,
@@ -103,6 +105,7 @@ export type Agent = {
         readonly schema: Schema;
       },
     ): AsyncIterable<AgentEvent<Output>>;
+
     <Output = JsonValue>(
       input: string,
       options?: AgentRunOptions<Output>,

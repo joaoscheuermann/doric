@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 
 import type { ToolDefinitionSchema } from '../schemas/definition.js';
@@ -6,9 +7,11 @@ import type { ToolMetadataSchema } from '../schemas/metadata.js';
 import type { JsonValue } from './json.js';
 
 export type ToolInput = z.ZodObject;
+
 export type ToolOutput = z.ZodType;
 
 type ToolDefinitionValue = z.output<typeof ToolDefinitionSchema>;
+
 type ToolMetadataValue = z.output<typeof ToolMetadataSchema>;
 
 export type ToolDefinition = {
@@ -87,9 +90,13 @@ export type ToolFactory<
 
 export type ToolStorage = {
   definitions(): readonly ToolDefinition[];
+
   calls(turn: ToolTurn): readonly ToolCall[];
+
   validate(call: ToolCall | ToolCallRequest): ToolCall;
+
   get(name: string): Tool | undefined;
+
   execute(call: ToolCall | ToolCallRequest): Promise<unknown>;
 };
 
