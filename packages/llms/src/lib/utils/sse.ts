@@ -6,12 +6,11 @@ export type SseEvent = {
   readonly done: boolean;
 };
 
-const decoder = new TextDecoder();
-
 /** Parses server-sent events across arbitrary chunk boundaries. */
 export async function* parseSseEvents(
   chunks: AsyncIterable<HttpStreamChunk>,
 ): AsyncIterable<SseEvent> {
+  const decoder = new TextDecoder();
   let buffer = '';
   let event: string | undefined;
   let data: string[] = [];
@@ -55,7 +54,7 @@ export async function* parseSseEvents(
     }
 
     if (field === 'data') {
-      data = [...data, value];
+      data.push(value);
     }
 
     return undefined;

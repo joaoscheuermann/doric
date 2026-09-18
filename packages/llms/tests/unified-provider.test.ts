@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { ProviderErrorObject } from '../src/index.js';
+import { ProviderErrorObject, type ProviderRequest } from '../src/index.js';
 import {
   collect,
   createUnifiedProvider,
@@ -68,13 +68,25 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":42}' } },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 2,
+          total_tokens: 3,
+          cost: 0.01,
+          cost_details: { upstream_inference_cost: 0.008 },
+        },
       }),
       response({
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
         ],
-        usage: { prompt_tokens: 4, completion_tokens: 5, total_tokens: 9 },
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 5,
+          total_tokens: 9,
+          cost: 0.02,
+          cost_details: { upstream_inference_cost: 0.015 },
+        },
       }),
     ],
   });
@@ -112,6 +124,11 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
     inputTokens: 5,
     outputTokens: 7,
     totalTokens: 12,
+    cost: {
+      amount: 0.03,
+      unit: 'credits',
+      upstreamAmount: 0.023,
+    },
   });
 });
 
@@ -168,6 +185,77 @@ test('rejects non-emulatable feature combinations before completion', async () =
   );
 
   assert.equal(transport.requests.length, 1);
+});
+
+const disabledReasoning: readonly {
+  readonly name: string;
+  readonly options: Pick<ProviderRequest, 'effort' | 'flags'>;
+}[] = [
+  {
+    name: 'nested none',
+    options: { flags: { reasoning: { effort: 'none' } } },
+  },
+  {
+    name: 'explicit none over enabled flag',
+    options: { effort: 'none', flags: { reasoning: true } },
+  },
+  {
+    name: 'explicit none over nested effort',
+    options: { effort: 'none', flags: { reasoning: { effort: 'high' } } },
+  },
+];
+
+for (const { name, options } of disabledReasoning) {
+  test(`allows forced tools when reasoning is disabled by ${name}`, async () => {
+    const transport = fakeTransport({
+      responses: [
+        modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
+        response({
+          choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+        }),
+      ],
+    });
+    const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+
+    await provider.complete({
+      model: 'anthropic/claude-sonnet-4',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      ...options,
+    });
+
+    const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+      readonly reasoning?: unknown;
+    };
+    assert.deepEqual(body.reasoning, { effort: 'none' });
+  });
+}
+
+test('rejects forced tools when explicit effort overrides a disabled reasoning flag', async () => {
+  const provider = createUnifiedProvider({
+    transport: fakeTransport({}),
+    apiKey: 'key',
+    upstreamModel: 'anthropic/claude-sonnet-4',
+  });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'proxy-alias',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      effort: 'high',
+      flags: { reasoning: false },
+    }),
+    (error: unknown) =>
+      error instanceof ProviderErrorObject &&
+      error.data.code === 'incompatible_model_request',
+  );
 });
 
 test('allows an unknown laboratory only when live capabilities prove tools and forced choice', async () => {

@@ -4,12 +4,15 @@ import type {
   ProviderRequest,
 } from '../../types/provider.js';
 import {
+  messageText,
+  requestReasoningEffort,
+  requireRequestInput,
+} from '../common.js';
+import {
   isStrictCompatible,
   messagesWithStructuredSchema,
-  messageText,
-  requireRequestInput,
   structuredJsonSchema,
-} from '../common.js';
+} from '../structured.js';
 
 const structuredOutputName = 'structured_output';
 
@@ -27,12 +30,9 @@ export const openRouterBody = (
   options: OpenRouterBodyOptions = {},
 ): Record<string, unknown> => {
   const providerId = options.providerId ?? 'openrouter';
-
   requireRequestInput(providerId, request);
-
   const schema = structuredJsonSchema(providerId, request.schema);
   const structuredOutput = options.structuredOutput ?? 'json_schema';
-
   const messages = messagesWithStructuredSchema(
     providerId,
     structuredOutput === 'json_schema' || request.schema === undefined
@@ -134,18 +134,16 @@ const reasoningRequest = (
   request: ProviderRequest<unknown>,
 ): Record<string, unknown> | undefined => {
   const value = request.flags?.reasoning;
+  const effort = requestReasoningEffort(request);
 
-  if (value === undefined || value === false) {
-    return request.effort === undefined
-      ? undefined
-      : { effort: request.effort };
+  if (effort === undefined && (value === undefined || value === false)) {
+    return undefined;
   }
 
-  return value === true
-    ? request.effort === undefined
-      ? {}
-      : { effort: request.effort }
-    : prune({ effort: request.effort ?? value.effort, summary: value.summary });
+  return prune({
+    effort,
+    summary: typeof value === 'object' ? value.summary : undefined,
+  });
 };
 
 const prune = (value: Record<string, unknown>): Record<string, unknown> =>

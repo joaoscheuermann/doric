@@ -280,7 +280,6 @@ test('returns OpenAI stream refusals without structured parsing', async () => {
   }
 
   assert.equal(finished.finish.refusal, 'No.');
-
   assert.equal(finished.finish.structured, undefined);
 });
 
@@ -297,7 +296,6 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
     }),
     apiKey: 'sk-testSecret123',
   });
-
   const streamProvider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -314,7 +312,6 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
     }),
     apiKey: 'sk-testSecret123',
   });
-
   const request = {
     model: 'gpt-5',
     messages: [{ role: 'user', content: 'Hi' }],
@@ -327,7 +324,6 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
       error instanceof ProviderErrorObject &&
       error.data.code === 'invalid_structured_output',
   );
-
   const events = await collect(streamProvider.stream(request));
   const finished = events.at(-1);
 
@@ -338,56 +334,63 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
   }
 
   assert.equal(finished.finish.text, 'not-json');
-
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('omits sensitive structured output from errors', async () => {
-  const sentinel = 'RATIONALE_DEBUG_PRIVATE';
-
+test('includes schema validation diagnostics in structured output errors', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
         response({
           status: 'completed',
-          output_text: JSON.stringify({ reasoning: sentinel }),
+          output_text: JSON.stringify({ answer: 42 }),
           output: [],
         }),
       ],
     }),
     apiKey: 'sk-testSecret123',
   });
-  let caught: unknown;
 
+  let caught: unknown;
   try {
     await provider.complete({
       model: 'gpt-5',
       messages: [{ role: 'user', content: 'Hi' }],
       schema: z.object({ answer: z.string() }),
-      flags: { sensitiveOutput: true },
     });
   } catch (error) {
     caught = error;
   }
 
   assert.ok(caught instanceof ProviderErrorObject);
-
   assert.equal(caught.data.code, 'invalid_structured_output');
+  assert.match(caught.data.diagnostic ?? '', /answer/);
+});
 
-  assert.equal(caught.data.diagnostic, undefined);
-
-  assert.equal(
-    (caught as Error & { readonly cause?: unknown }).cause,
-    undefined,
-  );
-
-  assert.doesNotMatch(
-    JSON.stringify({
-      message: caught.message,
-      data: caught.data,
-      cause: (caught as Error & { readonly cause?: unknown }).cause,
+test('retains invalid structured text and its parse cause', async () => {
+  const text = 'not-json sk-testSecret123';
+  const provider = createOpenAiProvider({
+    transport: fakeTransport({
+      responses: [
+        response({ status: 'completed', output_text: text, output: [] }),
+      ],
     }),
-    new RegExp(sentinel, 'u'),
+    apiKey: 'sk-testSecret123',
+  });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'gpt-5',
+      messages: [{ role: 'user', content: 'Hi' }],
+      schema: z.object({ answer: z.string() }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ProviderErrorObject);
+      assert.equal(error.data.code, 'invalid_structured_output');
+      assert.equal(error.data.diagnostic, text);
+      assert.ok(error.cause instanceof SyntaxError);
+      return true;
+    },
   );
 });
 

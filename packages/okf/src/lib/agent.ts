@@ -34,7 +34,6 @@ export const completeText = async (
       effort: input.effort,
       temperature: 0,
       maxOutputTokens: input.maxOutputTokens,
-      flags: { sensitiveOutput: true },
       signal: input.signal,
     });
     const result = response.text?.trim();

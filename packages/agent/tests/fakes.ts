@@ -104,8 +104,8 @@ export const createProvider = (options: {
           ProviderStreamEvent<Output>
         >;
       },
-      embedding: async () => [],
-      rerank: async () => [],
+      embedding: async () => ({ embedding: [] }),
+      rerank: async () => ({ results: [] }),
       models: async () => [{ id: 'fake-model' }],
       validateModel: async (model: string) => ({ id: model }),
     } as unknown as LlmProvider,

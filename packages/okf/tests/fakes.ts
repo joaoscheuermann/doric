@@ -3,7 +3,10 @@ import type {
   LlmProvider,
   ProviderFinished,
   ProviderRequest,
+  ProviderStructuredFinished,
   ProviderStreamEvent,
+  StructuredOutputSchema,
+  StructuredOutputValue,
 } from 'llms';
 
 type Output = (
@@ -23,6 +26,30 @@ export const createProvider = (
 ): ProviderFake => {
   const requests: ProviderRequest<unknown>[] = [];
 
+  async function complete<Schema extends StructuredOutputSchema>(
+    request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {
+      readonly schema: Schema;
+    },
+  ): Promise<ProviderStructuredFinished<StructuredOutputValue<Schema>>>;
+  async function complete<Result = JsonValue>(
+    request: ProviderRequest<Result>,
+  ): Promise<ProviderFinished<Result>>;
+  async function complete<Result = JsonValue>(
+    request: ProviderRequest<Result>,
+  ): Promise<ProviderFinished<Result>> {
+    if (request.schema !== undefined) {
+      throw new Error('OKF must not request structured output.');
+    }
+
+    const index = requests.length;
+    requests.push(request);
+    const system = text(request, 'system');
+    const input = text(request, 'user');
+    return finish(
+      await output(system, input, index, request),
+    ) as ProviderFinished<Result>;
+  }
+
   return {
     requests,
     provider: {
@@ -33,28 +60,24 @@ export const createProvider = (
       },
       capabilities: {
         streaming: false,
+        embeddings: false,
+        reranking: false,
         tools: false,
         reasoning: true,
         modelListing: false,
         oauth: false,
         serviceTier: false,
-        structuredOutputs: true,
+        structuredOutputs: false,
       },
-      complete: async <Result = JsonValue>(
-        request: ProviderRequest<Result>,
-      ) => {
-        const index = requests.length;
-
-        requests.push(request);
-
-        const system = text(request, 'system');
-        const input = text(request, 'user');
-        const structured = await output(system, input, index, request);
-
-        return finish(structured) as ProviderFinished<Result>;
-      },
+      complete,
       stream: async function* <Result = JsonValue>() {
         yield* [] as ProviderStreamEvent<Result>[];
+      },
+      embedding: async () => {
+        throw new Error('OKF must not request embeddings.');
+      },
+      rerank: async () => {
+        throw new Error('OKF must not request reranking.');
       },
       models: async () => [],
       validateModel: async (model) => ({ id: model }),
@@ -69,11 +92,7 @@ const text = (
   const content = request.messages.find(
     (message) => message.role === role,
   )?.content;
-
-  if (typeof content !== 'string') {
-    throw new Error(`Missing ${role} message`);
-  }
-
+  if (typeof content !== 'string') throw new Error(`Missing ${role} message`);
   return content;
 };
 
@@ -88,11 +107,7 @@ export const evidencePath = (input: string): string => {
   const match = input.match(
     /^## Path\r?\n\r?\n(`{3,}|~{3,})text\r?\n([\s\S]*?)\r?\n\1\r?$/mu,
   );
-
-  if (match?.[2] === undefined) {
-    throw new Error('Missing Path evidence');
-  }
-
+  if (match?.[2] === undefined) throw new Error('Missing Path evidence');
   return match[2];
 };
 

@@ -7,38 +7,36 @@ import type {
   LlmProvider,
   Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
-  ProviderStreamEvent,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
+  ProviderStreamEvent,
   ProviderToolCall,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
 import {
-  arrayField,
   asRecord,
+  arrayField,
   recordField,
   stringField,
 } from '../utils/json.js';
-import { parseSseEvents } from '../utils/sse.js';
 import {
-  httpError,
   parseEmbedding,
-  parseJsonBody,
   parseRerank,
-  parseStructuredOutput,
+  parseJsonBody,
   requireEmbeddingInput,
-  requireRequestInput,
   requireRerankInput,
+  requireRequestInput,
   streamErrorEvent,
 } from './common.js';
-import { withProviderLogging } from './logging.js';
-import { authorization, type SecretSource } from './openai/auth.js';
+import { parseStructuredOutput } from './structured.js';
+import { authorization, type SecretSource } from './auth.js';
 import { openAiBody } from './openai/body.js';
 import {
   createTextSnapshots,
@@ -47,9 +45,11 @@ import {
   streamEvent,
   streamText,
 } from './openai/parse.js';
+import { parseSseEvents } from '../utils/sse.js';
+import { withProviderLogging } from './logging.js';
+import { requestJson, withProviderErrors } from './http.js';
 
-export type { SecretSource } from './openai/auth.js';
-
+export type { SecretSource } from './auth.js';
 export { openAiBody } from './openai/body.js';
 
 export type OpenAiProviderDeps = {
@@ -84,6 +84,7 @@ export const openAiCapabilities: ProviderCapabilities = {
   serviceTier: true,
   structuredOutputs: true,
 };
+
 export const createOpenAiProvider = (deps: OpenAiProviderDeps): LlmProvider =>
   withProviderLogging(createOpenAiProviderCore(deps), deps.logger);
 
@@ -93,7 +94,6 @@ export const createOpenAiCompatibleProvider = (
 ): LlmProvider => {
   const baseUrl = deps.baseUrl ?? openAiMetadata.baseUrl;
   const metadata = { ...deps.identity, baseUrl };
-
   return withProviderLogging(
     createOpenAiProviderCore(deps, metadata),
     deps.logger,
@@ -101,9 +101,18 @@ export const createOpenAiCompatibleProvider = (
 };
 
 export const createOpenAiProviderCore = (
-  deps: Omit<OpenAiProviderDeps, 'logger'>,
+  dependencies: Omit<OpenAiProviderDeps, 'logger'>,
   metadata: ProviderMetadata = openAiMetadata,
+  options: {
+    readonly body?: (body: Record<string, unknown>) => Record<string, unknown>;
+    readonly headers?: () => Promise<Record<string, string>>;
+  } = {},
 ): LlmProvider => {
+  const deps = {
+    ...dependencies,
+    transport: withProviderErrors(dependencies.transport, metadata.id),
+  };
+  const adaptBody = options.body ?? ((body: Record<string, unknown>) => body);
   const baseUrl = deps.baseUrl ?? metadata.baseUrl;
   const providerId = metadata.id;
   const providerName = metadata.name;
@@ -113,30 +122,18 @@ export const createOpenAiProviderCore = (
     body: Record<string, unknown>,
   ): Promise<Record<string, unknown>> => {
     const auth = await authorization(deps, providerId, providerName);
-    const sensitiveOutput = request.flags?.sensitiveOutput === true;
-
-    const response = await deps.transport.request({
+    return requestJson(deps.transport, providerId, {
       method: 'POST',
       url: `${baseUrl}/responses`,
       headers: {
         ...(auth === undefined ? {} : { authorization: auth }),
+        ...(await options.headers?.()),
         'content-type': 'application/json',
         accept: 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(adaptBody(body)),
       signal: request.signal,
     });
-
-    if (response.status >= 400) {
-      throw httpError(
-        providerId,
-        response.status,
-        response.body,
-        sensitiveOutput,
-      );
-    }
-
-    return parseJsonBody(providerId, response.body, sensitiveOutput);
   };
 
   async function complete<Schema extends StructuredOutputSchema>(
@@ -144,18 +141,14 @@ export const createOpenAiProviderCore = (
       readonly schema: Schema;
     },
   ): Promise<ProviderStructuredFinished<StructuredOutputValue<Schema>>>;
-
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>>;
-
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
     requireRequestInput(providerId, request);
-
     const body = openAiBody(request, false, providerId);
-
     return parseStructuredOutput(
       providerId,
       request,
@@ -173,8 +166,6 @@ export const createOpenAiProviderCore = (
       request: ProviderRequest<Output>,
     ): AsyncIterable<ProviderStreamEvent<Output>> {
       requireRequestInput(providerId, request);
-
-      const sensitiveOutput = request.flags?.sensitiveOutput === true;
       const body = openAiBody(request, true, providerId);
       const text: string[] = [];
       const reasoning: string[] = [];
@@ -195,10 +186,11 @@ export const createOpenAiProviderCore = (
           url: `${baseUrl}/responses`,
           headers: {
             ...(auth === undefined ? {} : { authorization: auth }),
+            ...(await options.headers?.()),
             'content-type': 'application/json',
             accept: 'text/event-stream',
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(adaptBody(body)),
           signal: request.signal,
         }),
       )) {
@@ -209,21 +201,18 @@ export const createOpenAiProviderCore = (
         let payload: Record<string, unknown>;
 
         try {
-          payload = parseJsonBody(providerId, event.data, sensitiveOutput);
+          payload = parseJsonBody(providerId, event.data);
         } catch {
           yield streamErrorEvent(
             providerId,
             'malformed_stream_event',
             event.data,
             undefined,
-            sensitiveOutput,
           );
-
           return;
         }
 
         const parsed = streamEvent(payload, calls);
-
         recordTextSnapshot(textSnapshots, payload);
 
         if (parsed?.type === 'text.delta') {
@@ -244,7 +233,6 @@ export const createOpenAiProviderCore = (
 
         if (payload.type === 'response.completed') {
           const response = recordField(payload, 'response') ?? payload;
-
           const finish = parseStructuredOutput(
             providerId,
             request,
@@ -264,7 +252,6 @@ export const createOpenAiProviderCore = (
           }
 
           yield { type: 'response.finished', finish };
-
           return;
         }
 
@@ -274,9 +261,7 @@ export const createOpenAiProviderCore = (
             'provider_error',
             `${providerName} stream failed.`,
             undefined,
-            sensitiveOutput,
           );
-
           return;
         }
       }
@@ -300,12 +285,9 @@ export const createOpenAiProviderCore = (
 
     async embedding(
       request: ProviderEmbeddingRequest,
-    ): Promise<readonly number[]> {
+    ): Promise<ProviderEmbeddingFinished> {
       requireEmbeddingInput(providerId, request);
-
       const auth = await authorization(deps, providerId, providerName);
-      const sensitiveOutput = request.flags?.sensitiveOutput === true;
-
       const body = {
         model: request.model,
         input: request.input,
@@ -313,94 +295,61 @@ export const createOpenAiProviderCore = (
           ? {}
           : { dimensions: request.dimensions }),
       };
-
-      const response = await deps.transport.request({
+      const response = await requestJson(deps.transport, providerId, {
         method: 'POST',
         url: `${baseUrl}/embeddings`,
         headers: {
           ...(auth === undefined ? {} : { authorization: auth }),
+          ...(await options.headers?.()),
           'content-type': 'application/json',
           accept: 'application/json',
         },
         body: JSON.stringify(body),
         signal: request.signal,
       });
-
-      if (response.status >= 400) {
-        throw httpError(
-          providerId,
-          response.status,
-          response.body,
-          sensitiveOutput,
-        );
-      }
-
-      return parseEmbedding(
-        providerId,
-        parseJsonBody(providerId, response.body, sensitiveOutput),
-      );
+      return parseEmbedding(providerId, response);
     },
 
     async rerank(
       request: ProviderRerankRequest,
-    ): Promise<readonly ProviderRerankResult[]> {
+    ): Promise<ProviderRerankFinished> {
       requireRerankInput(providerId, request);
-
       const auth = await authorization(deps, providerId, providerName);
-      const sensitiveOutput = request.flags?.sensitiveOutput === true;
-
       const body = {
         model: request.model,
         query: request.query,
         documents: request.documents,
         ...(request.topN === undefined ? {} : { top_n: request.topN }),
       };
-
-      const response = await deps.transport.request({
+      const response = await requestJson(deps.transport, providerId, {
         method: 'POST',
         url: `${baseUrl}/rerank`,
         headers: {
           ...(auth === undefined ? {} : { authorization: auth }),
+          ...(await options.headers?.()),
           'content-type': 'application/json',
           accept: 'application/json',
         },
         body: JSON.stringify(body),
         signal: request.signal,
       });
-
-      if (response.status >= 400) {
-        throw httpError(
-          providerId,
-          response.status,
-          response.body,
-          sensitiveOutput,
-        );
-      }
-
-      return parseRerank(
-        providerId,
-        parseJsonBody(providerId, response.body, sensitiveOutput),
-      );
+      return parseRerank(providerId, response);
     },
 
     async models(signal?: AbortSignal): Promise<readonly Model[]> {
       const auth = await authorization(deps, providerId, providerName);
-
-      const response = await deps.transport.request({
+      const response = await requestJson(deps.transport, providerId, {
         method: 'GET',
         url: `${baseUrl}/models`,
         headers: {
           ...(auth === undefined ? {} : { authorization: auth }),
+          ...(await options.headers?.()),
           accept: 'application/json',
         },
         signal,
       });
 
-      if (response.status >= 400) {
-        throw httpError(providerId, response.status, response.body);
-      }
-
-      return arrayField(parseJsonBody(providerId, response.body), 'data')
+      return arrayField(response, 'data')
         .map(asRecord)
         .filter(
           (model): model is Record<string, unknown> => model !== undefined,

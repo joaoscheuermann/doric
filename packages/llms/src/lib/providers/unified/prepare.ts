@@ -1,5 +1,6 @@
 import { ProviderErrorObject } from '../../classes/provider-error.js';
 import type { ProviderMessage, ProviderRequest } from '../../types/provider.js';
+import { requestReasoningEffort } from '../common.js';
 import type { PreparedOpenRouterRequest } from '../openrouter.js';
 import type { OpenRouterModelSupport } from './catalog.js';
 import { unifiedProfileForModel } from './profiles.js';
@@ -126,10 +127,15 @@ const requireCompatibleChoice = (
   }
 };
 
-const hasReasoning = (request: ProviderRequest<unknown>): boolean =>
-  (request.effort !== undefined && request.effort !== 'none') ||
-  request.flags?.reasoning === true ||
-  typeof request.flags?.reasoning === 'object';
+const hasReasoning = (request: ProviderRequest<unknown>): boolean => {
+  const effort = requestReasoningEffort(request);
+  if (effort !== undefined) return effort !== 'none';
+
+  return (
+    request.flags?.reasoning === true ||
+    typeof request.flags?.reasoning === 'object'
+  );
+};
 
 const structuredStrategy = (
   request: ProviderRequest<unknown>,

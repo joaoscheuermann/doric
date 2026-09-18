@@ -4,13 +4,12 @@ import type {
   ProviderRequest,
   ProviderToolCall,
 } from '../../types/provider.js';
+import { messageText, requireRequestInput } from '../common.js';
 import {
   isStrictCompatible,
   messagesWithStructuredSchema,
-  messageText,
-  requireRequestInput,
   structuredJsonSchema,
-} from '../common.js';
+} from '../structured.js';
 
 const structuredOutputName = 'structured_output';
 
@@ -20,11 +19,9 @@ export const openAiBody = (
   provider = 'openai',
 ): Record<string, unknown> => {
   requireRequestInput(provider, request);
-
   const schema = structuredJsonSchema(provider, request.schema);
   const messages = messagesWithStructuredSchema(provider, request, schema);
   const alias = fastAlias(request.model);
-
   const system = messages
     .filter((message) => message.role === 'system')
     .map(messageText)
@@ -80,7 +77,6 @@ const inputItems = (
   }
 
   const text = messageText(message);
-
   if (message.role === 'assistant') {
     if (message.replay !== undefined && message.replay.length > 0) {
       return message.replay;
@@ -98,7 +94,6 @@ const inputItems = (
       },
     ],
   };
-
   return [item];
 };
 
