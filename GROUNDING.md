@@ -183,6 +183,17 @@ and reserved index/log files, does not follow symbolic links, and does not
 write files or access the network. The tool is a standalone package and is not
 registered with a built-in workflow or agent composition by this scope.
 
+`packages/victor` owns Node.js-compatible, process-local in-memory retrieval.
+It exposes incremental lexical and vector indexes plus a read-only hybrid
+search. The lexical index applies deterministic Unicode tokenization and BM25;
+the vector index accepts caller-injected embedding generation and ranks by
+cosine similarity. Both indexes store caller values through per-add text
+transformation. Hybrid search queries its injected lexical and semantic sources
+concurrently, fuses their bounded ranks with equal-weight reciprocal rank fusion
+using a fixed rank constant of 60, deduplicates by a caller-provided canonical
+key, and resolves fused-score ties by that key. It has no persistence or
+provider integration.
+
 `agents/doric` receives complete singleton configuration replacements through
 `PUT /config`. It persists only provider IDs, HTTP(S) base URLs,
 credential environment-variable names ending in `_API_KEY`, one
