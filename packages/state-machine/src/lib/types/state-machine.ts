@@ -8,12 +8,19 @@ export type StateMachineErrorCode =
 export type StateMachineErrorData<Handlers extends string = string> = {
   readonly code: StateMachineErrorCode;
   readonly message: string;
-  readonly state: Handlers;
+  readonly handler: Handlers;
 };
+
+/**
+ * A top-level data record. Runtime also checks for Object.prototype or null;
+ * TypeScript's structural types cannot prove an object's prototype.
+ * Property values are unrestricted and transitions copy only the top level.
+ */
+export type StateMachineState = Record<string, unknown>;
 
 export type StateMachineTransition<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
 > = {
   readonly type: 'transition';
   readonly handler: Handlers;
@@ -32,7 +39,7 @@ export type StateMachineFail<Failed> = {
 
 export type StateMachineAction<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Finished,
   Failed,
 > =
@@ -42,7 +49,7 @@ export type StateMachineAction<
 
 export type StateMachineTransitionFunction<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
 > = (
   handler: Handlers,
   state: State,
@@ -58,7 +65,7 @@ export type StateMachineFailFunction<Failed> = (
 
 export type StateMachineHandlerActions<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Finished,
   Failed,
 > = {
@@ -69,7 +76,7 @@ export type StateMachineHandlerActions<
 
 export type StateMachineHandler<
   Context,
-  State extends object,
+  State extends StateMachineState,
   Handlers extends string = string,
   Finished = void,
   Failed = unknown,
@@ -83,7 +90,7 @@ export type StateMachineHandler<
 
 export type StateMachineRunInput<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
 > = {
   readonly initial: Handlers;
@@ -93,7 +100,7 @@ export type StateMachineRunInput<
 
 type StateMachineResultBase<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
 > = {
   readonly handler: Handlers;
@@ -103,7 +110,7 @@ type StateMachineResultBase<
 
 export type StateMachineFinishedResult<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
 > = StateMachineResultBase<Handlers, State, Context> & {
@@ -113,7 +120,7 @@ export type StateMachineFinishedResult<
 
 export type StateMachineFailedResult<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Failed,
 > = StateMachineResultBase<Handlers, State, Context> & {
@@ -123,7 +130,7 @@ export type StateMachineFailedResult<
 
 export type StateMachineErrorResult<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
 > = StateMachineResultBase<Handlers, State, Context> & {
   readonly status: 'error';
@@ -132,7 +139,7 @@ export type StateMachineErrorResult<
 
 export type StateMachineResult<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
   Failed,
@@ -143,7 +150,7 @@ export type StateMachineResult<
 
 export type StateMachineDefinition<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
   Failed,

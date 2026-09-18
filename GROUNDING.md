@@ -510,8 +510,22 @@ available handler names from that map. Each run keeps its context, current
 handler, and current state local and resolves with a finished, domain-failed,
 or engine-error result. Every handler receives the same state object type but
 explicitly supplies the next state to a transition. A transition accepts only
-an available handler name and passes that handler a shallow copy of the
-supplied state object. It owns no workflow policy, persistence, listeners,
+an available handler name. Top-level state must be a plain data record with
+this realm's `Object.prototype` or a null prototype; nested values are
+unrestricted. The public record constraint cannot prove prototypes, so runtime
+checks the initial and transition states. Initial state is passed by reference.
+The executor shallow-copies transition state after the handler returns or
+resolves, before the next handler, equally for literal and helper actions.
+Copies normalize null prototypes to `Object.prototype` and share nested values.
+Each run creates one frozen actions object; control is local to that run, not
+deep isolation of caller-owned values.
+Error metadata uses `data.handler` for the handler name, distinct from the
+terminal state object. Unsupported initial state returns `handler_failed` with
+a `TypeError` cause; unsupported transition state returns
+`invalid_handler_return` with the source state. Thrown values, async rejections,
+and exceptions during action inspection or transition copying become
+`handler_failed` with the unchanged cause. Missing handlers retain the
+`missing_handler` code. It owns no workflow policy, persistence, listeners,
 recovery hooks, or external side effects.
 
 ## Repository Shape

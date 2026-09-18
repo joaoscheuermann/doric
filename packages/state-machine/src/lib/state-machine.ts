@@ -3,7 +3,6 @@ import type {
   StateMachineAction,
   StateMachineDefinition,
   StateMachineErrorCode,
-  StateMachineErrorData,
   StateMachineErrorResult,
   StateMachineFailFunction,
   StateMachineFinishFunction,
@@ -11,13 +10,14 @@ import type {
   StateMachineHandlerActions,
   StateMachineResult,
   StateMachineRunInput,
+  StateMachineState,
   StateMachineTransition,
   StateMachineTransitionFunction,
 } from './types/state-machine.js';
 
 type RuntimeHandlers<
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
   Failed,
@@ -28,22 +28,23 @@ type RuntimeHandlers<
   >
 >;
 
-type HandlerCall =
-  | { readonly type: 'returned'; readonly action: unknown }
-  | { readonly type: 'threw'; readonly cause: unknown };
-
 /**
- * Configures the context and state object types, then infers available handler
+ * Configures the context and plain state record types, then infers handler
  * names from the handler map passed to the returned initializer.
  */
 export const createStateMachine =
-  <Context, State extends object, Finished = void, Failed = unknown>() =>
+  <
+    Context,
+    State extends StateMachineState,
+    Finished = void,
+    Failed = unknown,
+  >() =>
   /** Creates a reusable definition whose run state is isolated to each call. */
   <Handlers extends string>(handlers: {
     readonly [Handler in Handlers]: StateMachineHandler<
       Context,
       State,
-      Handlers,
+      NoInfer<Handlers>,
       Finished,
       Failed
     >;
@@ -63,7 +64,7 @@ export const createStateMachine =
 
 const createActions = <
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Finished,
   Failed,
 >(): StateMachineHandlerActions<Handlers, State, Finished, Failed> => {
@@ -73,7 +74,7 @@ const createActions = <
   ) => ({
     type: 'transition',
     handler,
-    state: copy(state),
+    state,
   });
 
   const finish: StateMachineFinishFunction<Finished> = (value) => ({
@@ -86,12 +87,12 @@ const createActions = <
     error,
   });
 
-  return { transition, finish, fail };
+  return Object.freeze({ transition, finish, fail });
 };
 
 const execute = async <
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
   Failed,
@@ -99,87 +100,92 @@ const execute = async <
   input: StateMachineRunInput<Handlers, State, Context>,
   handlers: RuntimeHandlers<Handlers, State, Context, Finished, Failed>,
 ): Promise<StateMachineResult<Handlers, State, Context, Finished, Failed>> => {
-  let step = initialStep(input);
+  let step: StateMachineTransition<Handlers, State> = {
+    type: 'transition',
+    handler: input.initial,
+    state: input.state,
+  };
+  const actions = createActions<Handlers, State, Finished, Failed>();
+  const engineError = (
+    code: StateMachineErrorCode,
+    message: string,
+    options?: ErrorOptions,
+  ): StateMachineErrorResult<Handlers, State, Context> => ({
+    status: 'error',
+    error: new StateMachineError(
+      { code, message, handler: step.handler },
+      options,
+    ),
+    handler: step.handler,
+    state: step.state,
+    context: input.context,
+  });
 
-  while (true) {
-    const { handler, state } = step;
-    const current = ownHandler(handlers, handler);
+  try {
+    if (!isPlainState(step.state)) {
+      throw new TypeError('Initial state must be a plain data object');
+    }
 
-    if (current === undefined) {
-      return engineError(
-        issue(
+    while (true) {
+      const { handler, state } = step;
+      const current = ownHandler(handlers, handler);
+
+      if (current === undefined) {
+        return engineError(
           'missing_handler',
           `No state handler defined for: ${handler}`,
-          handler,
-        ),
-        state,
-        input.context,
-      );
-    }
+        );
+      }
 
-    const call = await callHandler(
-      current,
-      state,
-      input.context,
-      createActions(),
-    );
+      const returned: unknown = await current(state, input.context, actions);
+      const action = readAction<Handlers, State, Finished, Failed>(returned);
 
-    if (call.type === 'threw') {
-      return engineError(
-        issue('handler_failed', `State handler failed: ${handler}`, handler),
-        state,
-        input.context,
-        { cause: call.cause },
-      );
-    }
-
-    if (!isAction<Handlers, State, Finished, Failed>(call.action)) {
-      return engineError(
-        issue(
+      if (action === undefined) {
+        return engineError(
           'invalid_handler_return',
           `State handler returned an invalid action: ${handler}`,
+        );
+      }
+
+      if (action.type === 'finish') {
+        return {
+          status: 'finished',
+          value: action.value,
           handler,
-        ),
-        state,
-        input.context,
-      );
-    }
+          state,
+          context: input.context,
+        };
+      }
 
-    if (call.action.type === 'finish') {
-      return {
-        status: 'finished',
-        value: call.action.value,
-        handler,
-        state,
-        context: input.context,
+      if (action.type === 'fail') {
+        return {
+          status: 'failed',
+          error: action.error,
+          handler,
+          state,
+          context: input.context,
+        };
+      }
+
+      // Copy only after the handler resolves, equally for helpers and literals.
+      step = {
+        type: 'transition',
+        handler: action.handler,
+        state: { ...action.state },
       };
     }
-
-    if (call.action.type === 'fail') {
-      return {
-        status: 'failed',
-        error: call.action.error,
-        handler,
-        state,
-        context: input.context,
-      };
-    }
-
-    step = call.action;
+  } catch (cause) {
+    return engineError(
+      'handler_failed',
+      `State handler execution failed: ${step.handler}`,
+      { cause },
+    );
   }
 };
 
-const initialStep = <Handlers extends string, State extends object, Context>(
-  input: StateMachineRunInput<Handlers, State, Context>,
-): StateMachineTransition<Handlers, State> => ({
-  type: 'transition',
-  handler: input.initial,
-  state: input.state,
-});
-
 const ownHandler = <
   Handlers extends string,
-  State extends object,
+  State extends StateMachineState,
   Context,
   Finished,
   Failed,
@@ -194,85 +200,54 @@ const ownHandler = <
     ? handlers[handler]
     : undefined;
 
-const callHandler = async <
+// Capture and validate the envelope once; getters must not change validated
+// fields before use. Domain payload types remain the caller's responsibility.
+const readAction = <
   Handlers extends string,
-  State extends object,
-  Context,
+  State extends StateMachineState,
   Finished,
   Failed,
 >(
-  handler: StateMachineHandler<Context, State, Handlers, Finished, Failed>,
-  state: State,
-  context: Context,
-  actions: StateMachineHandlerActions<Handlers, State, Finished, Failed>,
-): Promise<HandlerCall> => {
-  try {
-    return {
-      type: 'returned',
-      action: await handler(state, context, actions),
-    };
-  } catch (cause) {
-    return { type: 'threw', cause };
+  value: unknown,
+): StateMachineAction<Handlers, State, Finished, Failed> | undefined => {
+  if (typeof value !== 'object' || value === null || !('type' in value)) {
+    return undefined;
+  }
+
+  switch (value.type) {
+    case 'transition': {
+      if (!('handler' in value) || !('state' in value)) {
+        return undefined;
+      }
+      const handler = value.handler;
+      const state = value.state;
+      return typeof handler === 'string' && isPlainState(state)
+        ? {
+            type: 'transition',
+            handler: handler as Handlers,
+            state: state as State,
+          }
+        : undefined;
+    }
+    case 'finish':
+      return 'value' in value
+        ? { type: 'finish', value: value.value as Finished | undefined }
+        : undefined;
+    case 'fail':
+      return 'error' in value
+        ? { type: 'fail', error: value.error as Failed }
+        : undefined;
+    default:
+      return undefined;
   }
 };
 
-const issue = <Handlers extends string>(
-  code: StateMachineErrorCode,
-  message: string,
-  state: Handlers,
-): StateMachineErrorData<Handlers> => ({ code, message, state });
+const isPlainState = (value: unknown): value is StateMachineState => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
 
-const engineError = <Handlers extends string, State extends object, Context>(
-  data: StateMachineErrorData<Handlers>,
-  state: State,
-  context: Context,
-  options?: ErrorOptions,
-): StateMachineErrorResult<Handlers, State, Context> => ({
-  status: 'error',
-  error: new StateMachineError(data, options),
-  handler: data.state,
-  state,
-  context,
-});
+  const prototype: unknown = Object.getPrototypeOf(value);
 
-const isTransition = <Handlers extends string, State extends object>(
-  value: unknown,
-): value is StateMachineTransition<Handlers, State> =>
-  isRecord(value) &&
-  value.type === 'transition' &&
-  typeof value.handler === 'string' &&
-  isObject(value.state);
-
-const isFinish = <Finished>(
-  value: unknown,
-): value is {
-  readonly type: 'finish';
-  readonly value: Finished | undefined;
-} => isRecord(value) && value.type === 'finish' && 'value' in value;
-
-const isFail = <Failed>(
-  value: unknown,
-): value is {
-  readonly type: 'fail';
-  readonly error: Failed;
-} => isRecord(value) && value.type === 'fail' && 'error' in value;
-
-const isAction = <
-  Handlers extends string,
-  State extends object,
-  Finished,
-  Failed,
->(
-  value: unknown,
-): value is StateMachineAction<Handlers, State, Finished, Failed> =>
-  isTransition<Handlers, State>(value) ||
-  isFinish<Finished>(value) ||
-  isFail<Failed>(value);
-
-const copy = <State extends object>(state: State): State => ({ ...state });
-
-const isObject = (value: unknown): value is object =>
-  typeof value === 'object' && value !== null;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  isObject(value);
+  return prototype === Object.prototype || prototype === null;
+};
