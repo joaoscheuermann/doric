@@ -1,4 +1,5 @@
 import type { JsonValue, ProviderFinished } from 'llms';
+import { AgentErrorObject } from '../classes/agent-error.js';
 
 import type {
   AgentResponse,
@@ -10,6 +11,26 @@ import type {
 import type { ToolCallRecord } from '../types/tool-call-storage.js';
 
 const defaultMaxToolCallRepairs = 2;
+
+export const turnGuard = (maxTurns: number | undefined): (() => void) => {
+  if (
+    maxTurns !== undefined &&
+    (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)
+  ) {
+    throw new TypeError('Agent maxTurns must be a positive safe integer.');
+  }
+
+  let turns = 0;
+  return (): void => {
+    if (maxTurns !== undefined && turns >= maxTurns) {
+      throw new AgentErrorObject({
+        code: 'turn_limit_exceeded',
+        message: `Agent exceeded its ${maxTurns}-turn limit.`,
+      });
+    }
+    turns += 1;
+  };
+};
 
 export const repairLimit = (value: number | undefined): number => {
   const limit = value ?? defaultMaxToolCallRepairs;

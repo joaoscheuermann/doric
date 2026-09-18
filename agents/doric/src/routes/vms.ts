@@ -1,7 +1,7 @@
 import express, { type Router } from 'express';
 import type { SandboxSshAccess } from 'sandbox';
 
-import { sendError } from '../lib/http.js';
+import { handleHttpError, sendError } from '../lib/http.js';
 import type { RunningVm } from '../lib/vms.js';
 
 export type CreateVmsRouterOptions = {
@@ -10,7 +10,7 @@ export type CreateVmsRouterOptions = {
   readonly ssh: (
     id: string,
   ) => Promise<
-    { readonly sessionId: string; readonly ssh: SandboxSshAccess } | undefined
+    { readonly projectId: string; readonly ssh: SandboxSshAccess } | undefined
   >;
 };
 
@@ -47,5 +47,6 @@ export const createVmsRouter = ({
     response.json({ vm, ...access });
   });
 
+  router.use(handleHttpError);
   return router;
 };

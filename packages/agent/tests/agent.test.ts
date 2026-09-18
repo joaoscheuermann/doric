@@ -359,9 +359,15 @@ test('throws AgentErrorObject when a tool result cannot be serialized', async ()
       error instanceof AgentErrorObject &&
       error.data.code === 'tool_result_serialization_failed',
   );
-  assert.equal(
-    messages.list().some((message) => message.role === 'tool'),
-    false,
+  assert.deepEqual(
+    messages
+      .list()
+      .filter(({ role }) => role === 'tool')
+      .map(({ toolCallId, toolResultStatus }) => [
+        toolCallId,
+        toolResultStatus,
+      ]),
+    [['call_cycle', 'incomplete']],
   );
 });
 

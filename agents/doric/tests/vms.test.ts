@@ -20,25 +20,42 @@ const input: SandboxProvisionInput = {
 };
 
 test('tracks provisioned VMs until disposal completes', async () => {
+  let release!: () => void;
+  const disposing = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let nextId = 1;
   const provider: SandboxProvider = {
-    provision: async () => runtime(`vm-${String(nextId++)}`),
+    provision: async () => ({
+      ...runtime(`vm-${String(nextId++)}`),
+      dispose: () => disposing,
+    }),
   };
   const registry = createVmRegistry('firecracker', provider);
 
   const first = await registry.provider.provision(input);
   const second = await registry.provider.provision(input);
 
-  assert.deepEqual(registry.list(), [
-    { id: 'vm-1', provider: 'firecracker' },
-    { id: 'vm-2', provider: 'firecracker' },
-  ]);
+  assert.deepEqual(
+    [...registry.list()].sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'vm-1', provider: 'firecracker' },
+      { id: 'vm-2', provider: 'firecracker' },
+    ],
+  );
   assert.deepEqual(registry.find('vm-1'), {
     id: 'vm-1',
     provider: 'firecracker',
   });
 
-  await first.dispose();
+  const disposed = first.dispose();
+  assert.deepEqual(
+    new Set(registry.list().map(({ id }) => id)),
+    new Set(['vm-1', 'vm-2']),
+  );
+  assert.equal(registry.find('vm-1')?.id, 'vm-1');
+  release();
+  await disposed;
 
   assert.deepEqual(registry.list(), [{ id: 'vm-2', provider: 'firecracker' }]);
   assert.equal(registry.find('vm-1'), undefined);
@@ -46,19 +63,30 @@ test('tracks provisioned VMs until disposal completes', async () => {
 });
 
 test('keeps a VM registered when disposal fails', async () => {
+  let reject!: (cause: Error) => void;
+  const disposal = new Promise<void>((_resolve, fail) => {
+    reject = fail;
+  });
   const provider: SandboxProvider = {
     provision: async () => ({
       ...runtime('vm-1'),
-      dispose: async () => {
-        throw new Error('disposal failed');
-      },
+      dispose: () => disposal,
     }),
   };
   const registry = createVmRegistry('docker', provider);
   const tracked = await registry.provider.provision(input);
 
-  await assert.rejects(tracked.dispose());
+  const disposed = tracked.dispose();
+  assert.equal(registry.find('vm-1')?.id, 'vm-1');
+  assert.deepEqual(
+    registry.list().map(({ id }) => id),
+    ['vm-1'],
+  );
+  const failed = assert.rejects(disposed);
+  reject(new Error('disposal failed'));
+  await failed;
   assert.deepEqual(registry.list(), [{ id: 'vm-1', provider: 'docker' }]);
+  assert.equal(registry.find('vm-1')?.id, 'vm-1');
 });
 
 test('returns every running VM', async () => {
@@ -67,7 +95,11 @@ test('returns every running VM', async () => {
   try {
     const response = await fetch(`${host.url}/vms`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), vms);
+    const inventory = (await response.json()) as typeof vms;
+    assert.deepEqual(
+      inventory.sort((a, b) => a.id.localeCompare(b.id)),
+      [...vms].sort((a, b) => a.id.localeCompare(b.id)),
+    );
   } finally {
     await host.close();
   }
@@ -82,7 +114,7 @@ test('returns leased VM SSH access without permitting caches', async () => {
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await response.json(), {
       vm: vms[0],
-      sessionId,
+      projectId,
       ssh: access,
     });
   } finally {
@@ -96,6 +128,7 @@ test('rejects SSH access for an idle VM', async () => {
   try {
     const response = await fetch(`${host.url}/vms/vm-2/ssh`);
     assert.equal(response.status, 409);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.equal(
       ((await response.json()) as { error: { code: string } }).error.code,
       'vm_ssh_unavailable',
@@ -111,6 +144,7 @@ test('reports missing VMs through the stable error code', async () => {
   try {
     const response = await fetch(`${host.url}/vms/missing/ssh`);
     assert.equal(response.status, 404);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.equal(
       ((await response.json()) as { error: { code: string } }).error.code,
       'vm_not_found',
@@ -128,7 +162,7 @@ const serveVms = async () => {
       list: () => vms,
       find: (id) => vms.find((vm) => vm.id === id),
       ssh: async (id) =>
-        id === 'vm-1' ? { sessionId, ssh: access } : undefined,
+        id === 'vm-1' ? { projectId, ssh: access } : undefined,
     }),
   );
   const server = createServer(app);
@@ -165,7 +199,7 @@ const runtime = (id: string): SandboxRuntime => ({
   dispose: async () => undefined,
 });
 
-const sessionId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
+const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const vms = [
   { id: 'vm-1', provider: 'firecracker' as const },
   { id: 'vm-2', provider: 'firecracker' as const },

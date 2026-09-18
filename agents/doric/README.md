@@ -1,184 +1,179 @@
 # Doric Direct agent
 
-Doric exposes long-lived, sandbox-backed Direct sessions. PostgreSQL stores
-configuration, public session state, provider-ready message history, and the
-complete ordered Agent event stream. Socket.IO replays that durable history
-before continuing with live delivery.
+Doric exposes sandbox-backed **Projects** and persistent **Threads**. A Project
+owns one environment, sandbox lease, and captured configuration. Each Thread
+owns an independent conversation, FIFO prompt queue, and ordered event history.
+Root and child Threads share Project files and processes; they are not isolated.
 
-The HTTP and Socket.IO interfaces share one listener. It defaults to
-`0.0.0.0:3000` and can be changed with `DORIC_HOST` and `DORIC_PORT`.
+HTTP and Socket.IO share `0.0.0.0:3000` by default (`DORIC_HOST`, `DORIC_PORT`).
+There is no legacy Session or A2A API.
 
-## Session lifecycle
+## Lifecycle
 
-`POST /sessions` creates a `queued` session without a prompt and starts
-acquiring one sandbox lease. Acquisition changes the state to `ready`. The
-lease and sandbox are reused by every prompt and remain reserved until the
-session is terminated or the process shuts down.
+Create a Project first, then create its Threads explicitly. Project creation
+does not create a conversation. Projects move from `queued` to `ready`; Threads
+wait for the environment and then process prompts through `ready -> running ->
+ready`. Different Threads can run concurrently without a Thread count,
+concurrency, or depth cap.
 
-Accepted prompts are serialized in FIFO order. Each prompt changes the state
-from `ready` to `running` and back to `ready`, whether it succeeds or fails. A
-prompt failure does not terminate the session. Termination changes an active
-session through `cancelling` to `cancelled`; sandbox acquisition or restart
-reconciliation can change it to `failed`.
+Interrupt targets one `promptId`, preserves the Thread and subsequent queued
+inputs, and does not interrupt children. Terminating a Thread cancels its entire
+subtree but leaves other Threads and the Project environment available.
+Terminating a Project cancels all its Threads before releasing its lease.
+Cancellation is cooperative; it does not undo sandbox changes.
 
-There is no automatic expiry. At most ten sandboxes are provisioned by the
-default pool, so callers must terminate sessions they no longer need.
-
-For every prompt Doric creates a fresh Agent with:
-
-- the captured `models.execution` provider/model and `execution.maxTurns`;
-- all bundle tools bound to the session sandbox;
-- a fresh tool-call storage;
-- message storage initialized from the exact persisted conversation history;
-- one deterministic system prompt followed by every bundle skill body in
-  bundle order.
-
-Complete and partial message history is persisted after success or failure and
-becomes the next prompt's history.
+Projects do not expire automatically. Terminate unused Projects to release their
+environments. Physical deletion requires terminal state, including descendants.
+After a server restart, interrupted work is marked failed rather than resumed.
 
 ## REST API
 
-| Method   | Path                      | Success | Purpose                                      |
-| -------- | ------------------------- | ------- | -------------------------------------------- |
-| `GET`    | `/config`                 | `200`   | Return the active configuration snapshot.    |
-| `PUT`    | `/config`                 | `200`   | Replace the complete configuration.          |
-| `POST`   | `/sessions`               | `202`   | Create a prompt-free queued session.         |
-| `GET`    | `/sessions`               | `200`   | List sessions with cursor pagination.        |
-| `GET`    | `/sessions/:id`           | `200`   | Return the same representation as the list.  |
-| `POST`   | `/sessions/:id/prompt`    | `202`   | Accept one prompt into the FIFO queue.       |
-| `GET`    | `/sessions/:id/events`    | `200`   | Replay all or cursor-filtered events.        |
-| `GET`    | `/sessions/:id/ssh`       | `200`   | Poll SSH access for the reserved sandbox.    |
-| `POST`   | `/sessions/:id/terminate` | `200`   | Request idempotent cancellation.             |
-| `DELETE` | `/sessions/:id`           | `204`   | Delete a terminal session and its events.    |
-| `GET`    | `/vms`                    | `200`   | List provisioned runtimes.                   |
-| `GET`    | `/vms/:id/ssh`            | `200`   | Return SSH access for a currently leased VM. |
+| Method    | Path                      | Success   | Purpose                                            |
+| --------- | ------------------------- | --------- | -------------------------------------------------- |
+| GET / PUT | `/config`                 | 200       | Read / replace credential-free configuration.      |
+| POST      | `/projects`               | 202       | Reserve an environment without a Thread or prompt. |
+| GET       | `/projects`               | 200       | List Projects.                                     |
+| GET       | `/projects/:id`           | 200       | Read public Project metadata.                      |
+| POST      | `/projects/:id/threads`   | 201       | Create a root or child Thread.                     |
+| GET       | `/projects/:id/threads`   | 200       | List Threads; optional `parentThreadId` filter.    |
+| GET       | `/projects/:id/ssh`       | 200 / 202 | Read private SSH access / wait for environment.    |
+| POST      | `/projects/:id/terminate` | 200       | Terminate the Project and its Threads.             |
+| DELETE    | `/projects/:id`           | 204       | Delete a terminal Project.                         |
+| GET       | `/threads/:id`            | 200       | Read public Thread metadata.                       |
+| POST      | `/threads/:id/prompt`     | 202       | Enqueue human input; returns `promptId`.           |
+| GET       | `/threads/:id/events`     | 200       | Replay durable events.                             |
+| POST      | `/threads/:id/interrupt`  | 200       | Interrupt the specified active prompt.             |
+| POST      | `/threads/:id/terminate`  | 200       | Terminate a Thread subtree.                        |
+| DELETE    | `/threads/:id`            | 204       | Delete a terminal subtree.                         |
+| GET       | `/vms`                    | 200       | List provisioned VM runtimes.                      |
+| GET       | `/vms/:id/ssh`            | 200       | Read SSH access associated with `projectId`.       |
 
-### Configuration
+Lists use `{ items, nextCursor? }`, with `limit` (1–100, default 50) and an
+exclusive UUID `cursor`. Page size does not limit total Projects or Threads.
+Public metadata omits message history, prompts, credentials, and SSH keys.
+Errors use `{ error: { code, message } }`. Invalid IDs/cursors return 400,
+invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
 
-The `GET/PUT /config` schema stores provider URLs, credential
-environment-variable names, one `models.execution` profile, and
-`execution.maxTurns`. Direct uses that execution profile for every prompt in a
-session.
+### Create and converse
 
-Credential values are resolved from the named environment variables at
-runtime. They are never stored in the configuration tables.
-
-### Create and prompt
-
-```console
-curl -sS -X POST http://127.0.0.1:3000/sessions
+```sh
+curl -X POST http://127.0.0.1:3000/projects
+# Use the returned Project id:
+curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/threads
+# For a child, supply {"parentThreadId":"PARENT_THREAD_ID"} instead.
+curl -X POST -H 'content-type: application/json' \
+  -d '{"prompt":"Inspect the repository and run focused tests."}' \
+  http://127.0.0.1:3000/threads/THREAD_ID/prompt
+curl -X POST -H 'content-type: application/json' \
+  -d '{"promptId":"PROMPT_ID"}' \
+  http://127.0.0.1:3000/threads/THREAD_ID/interrupt
+curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 ```
 
-```json
-{
-  "id": "018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601",
-  "state": "queued",
-  "configRevision": 1,
-  "lastSequence": 0,
-  "createdAt": "2026-08-24T12:00:00.000Z",
-  "updatedAt": "2026-08-24T12:00:00.000Z",
-  "ssh": {
-    "href": "/sessions/018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601/ssh"
-  }
-}
+The creation body accepts only `parentThreadId`; the prompt body accepts only
+`prompt`. Public callers cannot forge parent/result origins or correlation.
+A stale interrupt returns `409 thread_not_running`, never cancelling a later
+execution. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
+pending, 409 when unavailable, and 410 when expired. SSH responses forbid caches.
+
+The existing CLI now uses these operations:
+
+```sh
+npm run doric:spawn-agent -- --url http://127.0.0.1:3000 \
+  --prompt "Inspect the workspace" --terminate
 ```
 
-```console
-curl -sS -X POST \
-  -H 'content-type: application/json' \
-  -d '{"prompt":"Inspect the repository and run the focused tests."}' \
-  http://127.0.0.1:3000/sessions/018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601/prompt
+It creates Project then Thread, submits input, polls durable replay, and prints
+only IDs, event metadata, and the Project SSH URL. Without `--terminate`, the
+Project remains reserved. Configure `/config` and server credentials separately;
+the client does not send credentials or A2A configuration.
+
+### Replay
+
+`GET /threads/:id/events?afterSequence=N` returns `{ events, lastSequence }`.
+The optional cursor is exclusive (default 0). Sequence numbers are contiguous
+per Thread, not globally ordered across Threads. Each event contains:
+
+```text
+{ projectId, threadId, promptId, sequence, type, event, createdAt }
 ```
 
-```json
-{
-  "promptId": "018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602"
-}
-```
-
-Sessions accept prompts while `queued`, `ready`, or `running`. Concurrent
-requests receive independent prompt IDs and enter the same FIFO queue. Terminal
-or cancelling sessions return `409 session_inactive`.
-
-The public list/detail representation contains `id`, `state`,
-`configRevision`, `lastSequence`, timestamps, and `errorCode` when applicable.
-It never includes prompts, messages, events, or results.
-
-### Event replay
-
-`GET /sessions/:id/events` returns the complete point-in-time history.
-`afterSequence=N` is an optional exclusive cursor. The response prohibits
-caching and has this shape:
-
-```json
-{
-  "events": [
-    {
-      "sessionId": "018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601",
-      "promptId": "018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602",
-      "sequence": 1,
-      "type": "prompt.accepted",
-      "event": { "type": "prompt.accepted" },
-      "createdAt": "2026-08-24T12:00:01.000Z"
-    }
-  ],
-  "lastSequence": 1
-}
-```
-
-Agent stream events retain reasoning, provider replay, tool payloads/results,
-usage, response finishes, and failures. Doric also writes `prompt.accepted`,
-`agent.failed`, and `agent.cancelled`. Events are persisted before publication.
-
-Errors preserve defined `name`, `message`, `stack`, `cause`, and own
-properties. Undefined object properties are omitted; undefined array entries,
-cycles, and other non-JSON values use explicit markers. Values of configured
-credentials are replaced with `[REDACTED]` before persistence.
+Events are persisted before publication. Their bodies include model reasoning,
+provider replay, tool inputs/results, usage, and failures. Credentials are
+redacted before persistence. Full prompt/event payloads are not operational logs.
 
 ## Socket.IO
-
-Connect to namespace `/sessions` with `sessionId` in the connection query.
-`afterSequence` is optional; omitting it requests full playback.
 
 ```ts
 import { io } from 'socket.io-client';
 
-const socket = io('http://127.0.0.1:3000/sessions', {
-  query: { sessionId, afterSequence: 42 },
+const thread = io('http://127.0.0.1:3000/threads', {
+  query: { threadId, afterSequence: 42 },
+});
+const project = io('http://127.0.0.1:3000/projects', {
+  query: { projectId },
 });
 ```
 
-The server emits:
+| Namespace   | Event              | Payload                                                |
+| ----------- | ------------------ | ------------------------------------------------------ |
+| `/threads`  | `thread:snapshot`  | `{ threadId, projectId, project, thread, events }`     |
+| `/threads`  | `agent:event`      | Complete persisted Thread event envelope.              |
+| both        | `thread:updated`   | Public Thread metadata.                                |
+| both        | `thread:deleted`   | `{ projectId, threadId }`                              |
+| `/projects` | `project:snapshot` | `{ projectId, project, threads }`                      |
+| `/projects` | `project:updated`  | Public Project metadata.                               |
+| `/projects` | `project:deleted`  | `{ projectId }`                                        |
+| both        | `workspace:error`  | Sanitized `{ code, message }`; connection then closes. |
 
-| Event              | Payload                                        |
-| ------------------ | ---------------------------------------------- |
-| `session:snapshot` | `{ sessionId, session, events }`               |
-| `agent:event`      | One complete persisted session-event envelope. |
-| `session:updated`  | The current public session representation.     |
-| `session:deleted`  | `{ sessionId }`                                |
+Missing snapshot resources are `null`. The Project snapshot contains the full
+Thread tree as a flat array with `parentThreadId` links. Project reconnection
+resnapshots that tree; execution history is replayed separately per Thread.
+Thread subscriptions are installed before durable replay, buffer live events
+and lifecycle notifications, and deduplicate by sequence. Clients reconnect
+with their last received sequence.
 
-The subscription is registered before PostgreSQL replay. Events published
-during replay are buffered and deduplicated by sequence before live delivery.
+Each accepted input emits `prompt.accepted` with its trusted origin. The host
+emits `prompt.finished` with `{ type, status, text, source }`; `status` is
+`completed`, `failed`, or `cancelled`. Success is acknowledged only after
+conversation history is saved. Use this event, not the inner
+`agent.finished`. A persistence failure can instead make the Thread terminal
+with `persistence_failed`; clients must also observe Thread state.
 
-## Persistence
+Delegated results are queued automatically for the parent without interrupting
+its current prompt. They can trigger additional model/tool activity. The
+`--terminate` client option closes the entire Project after its submitted
+prompt ends, including any still-running descendants; omit it to keep those
+conversations available.
 
-The Prisma schema uses generic `Session` and `SessionEvent` models. Messages
-and event bodies are JSONB, event sequences are contiguous per session, and
-deleting a terminal session cascades to its events.
+## Persistence and security
 
-Migration `20260824000000_direct_sessions` creates the complete Direct
-configuration, session, and event schema from an empty PostgreSQL database.
+PostgreSQL stores Projects, Threads, messages, configuration snapshots, and
+Thread events. Apply migrations separately with `npx nx run doric:migrate`;
+startup does not apply them. The cutover uses a single clean Project/Thread
+baseline generated from the current Prisma schema, plus bootstrap
+configuration, its singleton constraint, and the immutable-tree trigger.
+It does not convert Session data or retain old migrations.
 
-Production startup never runs migrations implicitly. Apply them separately:
+Use an empty database. A database with the old schema or migration history
+must be explicitly recreated by its operator before deployment. Neither the
+host nor the baseline deletes or resets an existing database automatically.
 
-```console
-npx nx run doric:migrate
-```
+The API is unauthenticated. Keep it on an isolated trusted network, especially
+because SSH responses and execution replay contain sensitive material. Provider
+credential values belong in server environment variables, never configuration
+JSON or client requests.
 
-## Security
+## Validation
 
-The API is unauthenticated and binds to all interfaces by default. Keep it on
-an isolated trusted network. This is especially important because event replay
-intentionally exposes model reasoning, replay data, tool input/output, stacks,
-and causes. Full event bodies and prompts are not written to Doric operational
-logs.
+Run `npx nx run doric:test` for the host suite and `npx nx run agent:test`
+for the reusable loop. `doric:test` also builds the bundled tools.
+
+To include persistence and the composed Docker workflow, supply
+`DORIC_TEST_DATABASE_URL` pointing to a dedicated PostgreSQL test instance and
+set `DORIC_TEST_SANDBOX=true`. The tests create isolated schemas and a disposable
+Docker sandbox; only the external LLM is scripted. Without these variables,
+the external-infrastructure cases explicitly skip.
+
+The client workflow tests run with
+`node --test scripts/tests/spawn-agent.test.mjs`.

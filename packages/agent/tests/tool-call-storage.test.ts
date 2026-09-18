@@ -35,7 +35,13 @@ test('appends immutable records with deterministic unique opaque IDs', () => {
     output: '{"found":true}',
   });
   assert.ok(Object.isFrozen(first));
-  assert.notStrictEqual(storage.list(), storage.list());
+  const snapshot = storage.list();
+  storage.append({ id: 'call-2', name: 'lookup', payload: {} }, 'second');
+  assert.deepEqual(snapshot, [first]);
+  assert.deepEqual(
+    storage.list().map(({ id }) => id),
+    ['observation-1', 'observation-2'],
+  );
 });
 
 test('creates distinct UUIDs by default', () => {
@@ -158,12 +164,17 @@ for (const mode of ['complete', 'stream'] as const) {
     }
 
     const record = storage.list()[0];
-    assert.equal(record?.id, observationId);
-    assert.equal(record?.output, '{"exit_code":1}');
+    assert.deepEqual(record, {
+      id: observationId,
+      callId: 'call_lookup',
+      toolName: 'lookup',
+      input: JSON.stringify({ query: mode }),
+      output: '{"exit_code":1}',
+    });
     const message = messages.list().find(({ role }) => role === 'tool');
     assert.match(String(message?.content), new RegExp(observationId, 'u'));
     const finished = events.find(({ type }) => type === 'tool.finished');
-    assert.equal(
+    assert.deepEqual(
       finished?.type === 'tool.finished' ? finished.record : undefined,
       record,
     );

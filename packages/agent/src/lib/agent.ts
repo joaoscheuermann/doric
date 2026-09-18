@@ -12,19 +12,18 @@ import type {
   AgentOptions,
   AgentResponse,
   AgentRunOptions,
-  AgentToolEvent,
 } from './types/agent.js';
 import type { ToolCallRecord } from './types/tool-call-storage.js';
-import { serializeToolResult } from './utils/serialize.js';
+import { runTools } from './utils/run-tools.js';
 import {
   notifyStructuredAttempt,
   notifyToolCallRepair,
-  notifyToolEvent,
   pushIncompleteToolResults,
   repairLimit,
   responseFromFinish,
   toolCallCorrection,
   toolResultEnvelope,
+  turnGuard,
 } from './utils/run.js';
 import {
   createStructuredOutputTool,
@@ -39,6 +38,7 @@ import {
 export const createAgent = (options: AgentOptions): Agent => {
   /** One agent owns one mutable message history and therefore runs serially. */
   let running = false;
+  const pendingCalls = new Set<string>();
 
   const acquire = (): void => {
     if (running) {
@@ -52,29 +52,14 @@ export const createAgent = (options: AgentOptions): Agent => {
   };
 
   const release = (): void => {
-    running = false;
-  };
-
-  const turnGuard = (maxTurns: number | undefined): (() => void) => {
-    if (
-      maxTurns !== undefined &&
-      (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)
-    ) {
-      throw new TypeError('Agent maxTurns must be a positive safe integer.');
+    for (const callId of pendingCalls) {
+      pushToolResult(
+        callId,
+        'Tool call did not complete. Execution may have been interrupted.',
+        'incomplete',
+      );
     }
-
-    let turns = 0;
-
-    return (): void => {
-      if (maxTurns !== undefined && turns >= maxTurns) {
-        throw new AgentErrorObject({
-          code: 'turn_limit_exceeded',
-          message: `Agent exceeded its ${maxTurns}-turn limit.`,
-        });
-      }
-
-      turns += 1;
-    };
+    running = false;
   };
 
   const buildRequest = <Output = JsonValue>(
@@ -154,6 +139,7 @@ export const createAgent = (options: AgentOptions): Agent => {
       content,
       ...(toolResultStatus === undefined ? {} : { toolResultStatus }),
     });
+    pendingCalls.delete(callId);
   };
 
   const pushObservedToolResult = (record: ToolCallRecord): string => {
@@ -171,43 +157,11 @@ export const createAgent = (options: AgentOptions): Agent => {
       ...(finish.toolCalls.length === 0 ? {} : { toolCalls: finish.toolCalls }),
       ...(finish.replay === undefined ? {} : { replay: finish.replay }),
     });
+    for (const call of finish.toolCalls) pendingCalls.add(call.id);
   };
 
   const validatedCalls = (finish: ProviderFinished<unknown>) =>
     options.tools.calls(finish).map((call) => options.tools.validate(call));
-
-  const runTools = async function* <Output>(
-    calls: ReturnType<typeof validatedCalls>,
-    runOptions: AgentRunOptions<Output>,
-  ): AsyncGenerator<AgentToolEvent> {
-    /** Execute provider-requested tools sequentially in provider order. */
-    for (const call of calls) {
-      const started = { type: 'tool.started' as const, call };
-      await notifyToolEvent(runOptions, started);
-      yield started;
-
-      try {
-        const result = await options.tools.execute(call);
-        const output = serializeToolResult(result);
-        const record = options.toolCalls.append(call, output);
-        const content = pushObservedToolResult(record);
-        const finished = {
-          type: 'tool.finished' as const,
-          call,
-          result,
-          content,
-          record,
-        };
-        await notifyToolEvent(runOptions, finished);
-        yield finished;
-      } catch (error) {
-        const failed = { type: 'tool.failed' as const, call, error };
-        await notifyToolEvent(runOptions, failed);
-        yield failed;
-        throw error;
-      }
-    }
-  };
 
   return {
     complete: async <Output = JsonValue>(
@@ -231,10 +185,16 @@ export const createAgent = (options: AgentOptions): Agent => {
 
         while (true) {
           /** Ask the provider for either executable calls or the terminal result. */
+          runOptions.signal?.throwIfAborted();
           beginTurn();
           const request = buildRequest(runOptions, terminal, correction);
           correction = undefined;
+          runOptions.signal?.throwIfAborted();
           const finish = await options.provider.complete(request);
+          if (runOptions.signal?.aborted) {
+            storeAssistant(finish);
+            runOptions.signal.throwIfAborted();
+          }
 
           /** Intercept and validate the reserved terminal call before normal tools. */
           if (terminal !== undefined) {
@@ -297,6 +257,7 @@ export const createAgent = (options: AgentOptions): Agent => {
               });
               /** Store the normalized tool-free finish as the final assistant message. */
               storeAssistant(submission.finish);
+              runOptions.signal?.throwIfAborted();
               return responseFromFinish(submission.finish);
             }
           }
@@ -327,7 +288,12 @@ export const createAgent = (options: AgentOptions): Agent => {
           }
 
           /** Tool results are appended before the loop requests the next turn. */
-          for await (const event of runTools(calls, runOptions)) {
+          for await (const event of runTools(
+            options,
+            calls,
+            runOptions,
+            pushObservedToolResult,
+          )) {
             void event;
           }
         }
@@ -359,13 +325,20 @@ export const createAgent = (options: AgentOptions): Agent => {
         } as const;
 
         while (true) {
+          runOptions.signal?.throwIfAborted();
           let finish: ProviderFinished<Output> | undefined;
           const buffered: ProviderStreamEvent<Output>[] = [];
           beginTurn();
           const request = buildRequest(runOptions, terminal, correction);
           correction = undefined;
 
+          runOptions.signal?.throwIfAborted();
           for await (const event of options.provider.stream(request)) {
+            if (runOptions.signal?.aborted) {
+              if (event.type === 'response.finished')
+                storeAssistant(event.finish);
+              runOptions.signal.throwIfAborted();
+            }
             if (event.type === 'response.finished') {
               /** Normalize a terminal call before exposing the finished event. */
               if (terminal !== undefined) {
@@ -436,15 +409,20 @@ export const createAgent = (options: AgentOptions): Agent => {
                 finish = event.finish;
               }
 
+              storeAssistant(finish);
+              runOptions.signal?.throwIfAborted();
               if (terminal === undefined) yield { ...event, finish };
               else buffered.push({ ...event, finish });
+              runOptions.signal?.throwIfAborted();
               continue;
             }
 
             if (terminal === undefined) yield event;
             else buffered.push(event);
+            runOptions.signal?.throwIfAborted();
           }
 
+          runOptions.signal?.throwIfAborted();
           if (finish === undefined && correction !== undefined) continue;
 
           if (finish === undefined) {
@@ -454,8 +432,6 @@ export const createAgent = (options: AgentOptions): Agent => {
                 'Provider stream ended without a response.finished event.',
             });
           }
-
-          storeAssistant(finish);
 
           /** Ordinary calls cannot inherit a prior structured repair baseline. */
           if (finish.toolCalls.length > 0) baseline = undefined;
@@ -476,7 +452,10 @@ export const createAgent = (options: AgentOptions): Agent => {
             continue;
           }
 
-          for (const event of buffered) yield event;
+          for (const event of buffered) {
+            yield event;
+            runOptions.signal?.throwIfAborted();
+          }
 
           if (calls.length === 0) {
             const response = responseFromFinish(finish);
@@ -487,7 +466,12 @@ export const createAgent = (options: AgentOptions): Agent => {
             return;
           }
 
-          for await (const event of runTools(calls, runOptions)) {
+          for await (const event of runTools(
+            options,
+            calls,
+            runOptions,
+            pushObservedToolResult,
+          )) {
             yield event;
           }
         }

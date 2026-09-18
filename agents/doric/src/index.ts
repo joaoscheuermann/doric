@@ -15,14 +15,12 @@ import { Server as SocketServer } from 'socket.io';
 import { createConfigService } from './lib/config-service.js';
 import { createConfigStore } from './lib/config-store.js';
 import { createDatabase } from './lib/database.js';
-import { handleHttpError } from './lib/http.js';
-import { createSessionService } from './lib/session-service.js';
-import { createSessionStore } from './lib/sessions.js';
-import { createSessionsSocket } from './lib/socket.js';
+import { registerHttpRoutes } from './lib/http-app.js';
+import { createWorkspaceService } from './lib/workspace-service.js';
+import { createProjectStore } from './lib/projects.js';
+import { createThreadStore } from './lib/threads.js';
+import { createWorkspaceSocket } from './lib/socket.js';
 import { createVmRegistry } from './lib/vms.js';
-import { createConfigRouter } from './routes/config.js';
-import { createSessionsRouter } from './routes/sessions.js';
-import { createVmsRouter } from './routes/vms.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -149,41 +147,35 @@ async function main() {
     },
     'Doric configuration activated',
   );
-  startupStage = 'session_reconciliation';
-  startup.info('Reconciling persisted sessions');
-  const sessions = createSessionStore(database);
-  const interrupted = await sessions.reconcile();
-  if (interrupted === 0) {
-    startup.info({ interruptedSessionCount: interrupted }, 'Sessions ready');
-  } else {
-    startup.warn(
-      { interruptedSessionCount: interrupted },
-      'Interrupted sessions marked as failed',
-    );
-  }
-  const publisher = createSessionsSocket(io, sessions);
-  const service = createSessionService({
-    store: sessions,
+  startupStage = 'workspace_reconciliation';
+  startup.info('Reconciling persisted projects and threads');
+  const projects = createProjectStore(database);
+  const threads = createThreadStore(database);
+  const interruptedThreads = await threads.reconcile();
+  const interruptedProjects = await projects.reconcile();
+  const interrupted = { interruptedThreads, interruptedProjects };
+  startup.info(interrupted, 'Project and thread reconciliation complete');
+  const publisher = createWorkspaceSocket(io, projects, threads);
+  const service = createWorkspaceService({
+    projects,
+    threads,
     config,
     pool,
     publisher,
     logger,
   });
 
-  app.use(express.json());
-  app.use(
-    '/vms',
-    createVmsRouter({
+  registerHttpRoutes(app, {
+    config,
+    service,
+    vms: {
       list: vms.list,
       find: vms.find,
       ssh: service.sshForVm,
-    }),
-  );
-  app.use('/config', createConfigRouter(config));
-  app.use('/sessions', createSessionsRouter(service));
-  app.use(handleHttpError);
+    },
+  });
   startup.info(
-    { restEndpointCount: 11, socketNamespace: '/sessions' },
+    { socketNamespaces: ['/projects', '/threads'] },
     'Network interfaces configured',
   );
 

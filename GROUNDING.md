@@ -45,8 +45,49 @@ Those terms are out-of-scope markers unless the user explicitly expands the
 product scope and current files support the change.
 
 `agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
-sessions through REST and Socket.IO, while the reusable agent loop remains in
-`packages/agent`.
+Projects and independent chat Threads through REST and Socket.IO, while the
+reusable agent loop remains in `packages/agent`.
+
+### Project And Thread Contract
+
+The host architecture replaces Session with a Project that owns
+one sandbox lease and its captured configuration, and Threads that own
+independent conversations, histories, and serial input queues. Threads may have
+child Threads; a child executing work delegated by its parent is a subagent,
+not a different runtime or a conversation inaccessible to the user. Users can
+send prompts to any active Thread, including agent-created children; parent
+agents can coordinate their children through host-bound tools.
+
+Distinct Threads execute independently in parallel, with no Doric-imposed
+Thread count or concurrent-execution cap, globally or per Project. Execution
+within each Thread remains serial. Threads share their Project's sandbox;
+the existing sandbox-pool capacity governs Projects, not Threads.
+
+The migration replaces the Session-facing APIs and clients without legacy
+compatibility adapters. Creating a Project and creating a Thread are separate
+operations: new Projects start without a conversation. The approved database
+cutover uses one clean Project/Thread baseline with no Session schema or data
+conversion path. Existing legacy databases must be explicitly recreated before
+deployment; neither startup nor migrations silently reset an existing database.
+
+The Project/Thread implementation replaces the former Session contract.
+The architecture, migration plan, and acceptance criteria are recorded in
+`docs/03-tdd/05-project-thread-architecture.md`.
+
+Interrupt targets an active `promptId`, preserves pending inputs and children,
+and waits for cooperative cancellation before the next input runs. Terminating
+a Thread closes its subtree without releasing the Project sandbox; terminating
+a Project closes all its Threads and releases its lease exactly once after
+active work settles. Neither operation rolls back sandbox effects.
+
+Completion, failure, or cancellation of a delegated request automatically
+enqueues a correlated result for its parent: a ready parent runs it, a busy
+parent processes it in FIFO order, and a terminal parent is never reopened.
+Human follow-ups in a child do not bounce responses back to its parent.
+Host-bound coordination tools act only on direct children in the same Project;
+each child has its own history, not an automatic copy of its parent's history.
+
+### Current Runtime
 
 Repository-owned executable bundles live as individual Nx packages immediately
 below `/bundles`; each bundle owns its package metadata, TypeScript build, and
@@ -187,9 +228,10 @@ registered with a built-in workflow or agent composition by this scope.
 `PUT /config`. It persists only provider IDs, HTTP(S) base URLs,
 credential environment-variable names ending in `_API_KEY`, one
 `models.execution` profile, and `execution.maxTurns`. Credential values remain
-process environment inputs. Each session created by `POST /sessions`
+process environment inputs. Each Project created by `POST /projects`
 captures the active configuration generation and an immutable JSONB snapshot;
-later replacements affect only new sessions.
+later replacements affect only new Projects. Every Thread uses its Project's
+captured generation.
 
 `packages/sandpool` owns process-local `SandboxSession` capacity, FIFO leasing,
 background warming, bounded factory-attempt batches, replacement, and disposal.
@@ -199,7 +241,7 @@ provider-specific creation policy or persistence. A batch rejects pending FIFO
 acquisitions and heat waiters after `maxCreateAttempts` consecutive factory
 failures; the default is three, and later demand starts a fresh batch so a
 recovered provider can serve new work. Doric explicitly uses that three-attempt
-limit, allowing its existing execution failure path to move affected sessions
+limit, allowing its execution failure path to move affected Projects
 from `queued` to `failed`. Its capacity option is `maxSandboxes`, and a lease
 guards SSH access exactly as it guards other operations. `packages/sandbox` owns
 the provider-neutral
@@ -211,7 +253,7 @@ effective egress requires IP-literal DNS. Doric explicitly provisions its agent
 sandboxes from the multi-architecture `node:22-bookworm` image, which includes
 Git, with the `1.1.1.1` DNS resolver so selected Git skills can reach public
 remotes. `DORIC_SANDBOX_SSH=true` adds loopback-bound, dynamically allocated
-user SSH access so a trusted same-host user can inspect the active session
+user SSH access so a trusted same-host user can inspect the active Project
 sandbox. Native source runs default it off because provider SSH requires pinned
 host assets; the Doric runtime image and Compose profiles default it on and
 include those assets. Remote authentication remains runtime-provided and must
@@ -254,10 +296,10 @@ OpenSSH client. Its Linux-only Compose profiles provide either the Docker
 socket plus host-network firewall access or KVM/TUN/cgroup/state/cache access
 without a Docker socket. The privileged Firecracker profile is a development
 and e2e harness, not a production isolation boundary. Doric acquires one pool
-lease when each persisted session is created and retains it across every
-serialized prompt. It binds every bundle tool to that sandbox, propagates
+lease when each persisted Project is created and retains it across all its
+Threads and prompts. It binds every bundle tool to that sandbox, propagates
 cancellation through acquisition and active provider calls, and releases the
-lease exactly once on termination, acquisition failure, or shutdown. Sessions
+lease exactly once on termination, acquisition failure, or shutdown. Projects
 have no automatic expiry and therefore occupy capacity until explicitly
 terminated.
 
@@ -267,55 +309,60 @@ a Socket.IO server to the same HTTP listener. The listener binds to
 exposes port 3000. Its modular Express router exposes `GET /vms`, which returns
 the IDs and selected provider names of runtimes successfully provisioned by
 this Doric process and not yet successfully disposed. `GET /vms/:id/ssh`
-returns the selected provider, owning live session ID, and complete
-`SandboxSshAccess` only while that VM is leased to an active Direct session;
+returns the selected provider, owning live Project ID, and complete
+`SandboxSshAccess` only while that VM is leased to an active Project;
 idle, releasing, and disposed VMs never expose access. The registry wraps the
-provider at the composition boundary and the session service owns the
-process-local lease association. `POST /sessions` accepts no prompt and includes a stable
-session SSH subresource link while preserving asynchronous queued creation.
+provider at the composition boundary and the workspace service owns the
+process-local lease association. `POST /projects` accepts no prompt and includes
+a stable Project SSH subresource link while preserving asynchronous queued
+creation.
 That subresource reports pending acquisition, returns the active VM and SSH
 access, or reports unavailable or expired access after release. Private keys
 remain ephemeral provider-managed sandbox state and HTTP response data;
 provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
 HTTP responses prohibit caching. REST additionally owns `GET/PUT /config`,
-session creation, cursor listing, detail, FIFO prompt acceptance through
-`POST /sessions/:id/prompt`, ordered event replay with an optional exclusive
-`afterSequence`, idempotent termination, and terminal-only deletion under
-`/sessions`. A public session contains only its ID, state, captured config
-revision, last sequence, timestamps, and an error code when applicable; list
-and detail use the same representation. It never contains prompts, messages,
-events, results, or SSH credentials.
+Project and Thread creation, cursor listing, detail, FIFO prompt acceptance
+through `POST /threads/:id/prompt`, ordered event replay with an optional
+exclusive `afterSequence`, targeted prompt interruption, idempotent termination,
+and terminal-only deletion. `/projects` owns environments and `/threads` owns
+conversations; there are no `/sessions` routes or compatibility aliases.
+Public Project and Thread list/detail representations contain identity, state,
+ownership, timestamps, applicable revision/sequence and sanitized error codes,
+not prompts, messages, events, results, or SSH credentials.
 
-Socket.IO namespace `/sessions` requires `sessionId` in the connection query
-and accepts an optional `afterSequence`. It emits `session:snapshot` after full
-or incremental durable playback, then `agent:event`, `session:updated`, and
-`session:deleted` without a replay/live gap. Each delivered event is
-`{ sessionId, promptId, sequence, type, event, createdAt }`. PostgreSQL is the
-event source of truth: an event and the session's contiguous last sequence are
-committed before live emission.
+Socket.IO uses separate `/projects` and `/threads` namespaces. Project
+subscriptions expose environment and tree updates; Thread subscriptions use
+`threadId` and optional `afterSequence` for durable playback followed by live
+events without a replay/live gap. Each Thread event is
+`{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
+PostgreSQL is the event source of truth: an event and the Thread's contiguous
+last sequence are committed before live emission. There is no global event
+ordering between Threads; Project reconnection refreshes its snapshot and tree.
 
 `agents/doric` owns its Prisma ORM 7 schema, generated client configuration,
 and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
 PostgreSQL stores the singleton configuration, normalized provider/model rows,
-generic session snapshots, persisted provider-ready message history, and
-ordered JSONB events. The initial Direct migration creates that complete schema
-from an empty database. Startup marks every
-non-terminal session failed with the sanitized `process_interrupted` code;
-events remain replayable and explicit terminal deletion cascades to events.
+Project configuration snapshots, Thread parentage and provider-ready message
+history, and ordered JSONB Thread events. The initial migration creates this
+schema from an empty database. Session-era migrations and data-conversion SQL
+are removed as part of the approved cutover. Startup marks every non-terminal Project and Thread
+failed with the sanitized `process_interrupted` code; events remain replayable.
+Physical Thread deletion requires its entire subtree to be terminal; Project
+deletion requires every Thread terminal and cascades to its Threads and events.
 The local Compose surface pins PostgreSQL 18.4, mounts its PostgreSQL-18 volume
 at `/var/lib/postgresql`, runs migrations as a one-shot dependency, and starts
 either Doric sandbox profile only after the database is healthy and migrations
 complete.
 Doric startup emits safe structured `info` logs for its listener and sandbox
 selection, PostgreSQL client initialization, sandbox limits, bundle resource
-counts, active configuration revision and model profiles, session
+counts, active configuration revision and model profiles, Project/Thread
 reconciliation, mounted interfaces, and listener readiness. Startup failures
 identify only the active bootstrap stage; they do not retain or emit database
 or provider URLs, credential environment names or values, prompts, caught
 diagnostics, causes, or thrown values.
-Configuration and session routes remain unauthenticated on the existing
+Configuration, Project, and Thread routes remain unauthenticated on the existing
 `0.0.0.0` listener. Provider base URLs and credential environment names are
 intentionally configurable through the open PUT, so deployments must keep this
 listener on an isolated trusted network. Agent events intentionally expose
@@ -473,6 +520,14 @@ receives started, finished, and failed events in both modes; streamed
 `tool.finished` also exposes the record. Rejected calls, reserved terminal calls,
 thrown handlers, and serialization failures create no record. Valid operational
 failure values such as non-zero command exit codes remain ordinary records.
+Agent complete and stream runs check cancellation before provider and tool
+execution and after awaited lifecycle callbacks and streamed boundaries.
+Already-running tool handlers may settle, but cancellation prevents subsequent
+tools and provider turns from starting. Interrupted, failed, or closed runs
+append incomplete results for unresolved assistant tool calls, without
+duplicating completed results or creating synthetic tool-call records.
+Callback exceptions retain their identity and do not misreport a completed
+tool as failed. Direct checks cancellation again after awaited event writes.
 Agent runs may declare an optional positive safe-integer `maxTurns`; omission
 keeps the loop unbounded. Invalid values fail with `TypeError` before message
 storage or provider activity. The budget is checked immediately before every
@@ -545,23 +600,34 @@ Credentials and secrets must not be persisted, printed, logged, or committed.
 Prefer dependency injection and explicit configuration objects for sensitive
 runtime inputs.
 
-Doric Direct session replay is durable in PostgreSQL. Sessions transition from
-`queued` to `ready` after sandbox acquisition; each FIFO prompt transitions
-`ready -> running -> ready`; termination uses `cancelling -> cancelled`; and
-acquisition or reconciliation failures use `failed`. A fresh Agent per prompt
+Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
+`queued` to `ready` after sandbox acquisition; Threads wait for their Project
+and each FIFO input transitions `ready -> running -> ready`. Project and Thread
+termination use `cancelling -> cancelled`; acquisition or reconciliation
+failures use `failed`. A fresh Agent per prompt
 receives a fresh tool-call store, all sandbox-bound tools, the deterministic
-all-skills system prompt, and `createMessageStorage(...)` initialized from the
-exact persisted provider-ready history. Success and failure both persist the
-resulting complete or partial history. Prompt failures return the session to
-`ready`; acquisition failure is terminal. Doric adds `prompt.accepted`,
-`agent.failed`, and `agent.cancelled` events around the Agent stream.
+all-skills system prompt, host-bound child coordination tools, and
+`createMessageStorage(...)` initialized from that Thread's exact persisted
+provider-ready history. Success and failure both persist the resulting complete
+or partial history, redacting configured credentials. Provider/tool failures
+return the Thread to `ready`; history or event persistence failures fail the
+Thread closed rather than executing queued inputs on stale history. Acquisition
+failure is terminal for the Project. Cancellation and lease cleanup continue
+even if cancellation-state persistence fails.
+Doric adds `prompt.accepted`, `prompt.finished`, `agent.failed`, and
+`agent.cancelled` events around the Agent stream. `prompt.finished` carries
+the input source, terminal status, and response text; successful completion
+requires history persistence. Clients use it, not the inner `agent.finished`,
+to acknowledge prompt completion.
+Delegation results are redacted before entering the parent's input queue.
 
 Arbitrary Agent event values are converted to JSON without dropping reasoning,
 replay, tool payloads/results, errors, or defined stacks, causes, and own error
 properties. Undefined object properties are omitted. Undefined array entries,
 cycles, and other non-JSON values receive explicit markers, and configured
-credential values are redacted. One process-local map owns only live leases,
-FIFO prompts, abort controllers, and Socket.IO subscribers. It is not the
+credential values are redacted. Process-local runtime state owns live Project
+leases, independent Thread FIFO queues, abort controllers, and Socket.IO
+subscribers. It is not the
 replay source of truth, does not resume accepted or queued prompts after
 restart, and requires no distributed Socket.IO adapter because Doric currently
 supports one host instance.

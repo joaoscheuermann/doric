@@ -1,23 +1,38 @@
 # Doric
 
-Doric is a TypeScript coding agent that keeps a conversation and its working
-environment alive across multiple prompts.
+Doric is a TypeScript coding agent with long-lived Project environments and
+independent Thread conversations, including agent-coordinated child Threads.
 
 ## How Direct works
 
-1. A client creates a session through the REST API.
-2. Doric reserves one isolated Docker or Firecracker sandbox for that session.
-3. Prompts enter a FIFO queue and run one at a time in the same sandbox.
+1. A client creates a Project through `/projects`, without an implicit chat.
+2. Doric reserves one isolated Docker or Firecracker sandbox for that Project
+   and captures its configuration.
+3. The client separately creates Threads. Each has its own history and FIFO
+   queue; distinct Threads run concurrently in the shared Project sandbox,
+   without a Doric-imposed Thread count or concurrency cap.
 4. Each prompt gets a fresh Agent instance with the configured model, persisted
    conversation history, built-in skills, and sandbox-bound tools.
-5. PostgreSQL stores configuration, sessions, messages, and the ordered event
-   stream. Socket.IO replays stored events before delivering live updates.
-6. The sandbox remains reserved until the session is terminated. Sessions do
-   not expire automatically.
+5. PostgreSQL stores Projects, Threads, messages, and per-Thread ordered events.
+   Separate `/projects` and `/threads` Socket.IO namespaces expose updates;
+   Thread subscriptions replay stored events before delivering live events.
+6. Users and parent agents can send prompts to child Threads. Delegated results
+   automatically queue a new input for the parent, without forwarding unrelated
+   human follow-ups.
+7. Interrupting a `promptId` preserves the Thread's queue and children.
+   Terminating a Thread closes its subtree; terminating the Project closes all
+   Threads and releases the sandbox once. Projects do not expire automatically.
+
+Project/Thread follows the implemented
+[architecture contract](docs/03-tdd/05-project-thread-architecture.md).
+It replaces Session APIs without `/sessions` compatibility routes. The database
+uses a clean Project/Thread baseline: legacy databases must be explicitly
+recreated, not upgraded in place. There is no automatic reset or Session data
+conversion.
 
 ## Start Direct locally
 
-With PostgreSQL and Docker running:
+With an empty PostgreSQL database and Docker running:
 
 ```console
 npm ci
@@ -40,7 +55,7 @@ commands.
 ### Agent
 
 - [`agents/doric`](agents/doric/README.md) — Direct REST and Socket.IO host,
-  PostgreSQL persistence, and long-lived sandbox sessions.
+  PostgreSQL persistence, Project sandboxes, and independent chat Threads.
 
 ### Built-in bundles
 
