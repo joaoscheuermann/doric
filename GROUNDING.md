@@ -504,6 +504,16 @@ scope. The ChatGPT Codex backend requires streaming requests with
 be fulfilled by consuming the streaming backend response. Codex requests must
 not forward unsupported public Responses API controls such as `temperature`.
 
+`packages/state-machine` owns reusable, process-local typed transition
+execution. A definition stores only its exhaustive handler map and infers its
+available handler names from that map. Each run keeps its context, current
+handler, and current state local and resolves with a finished, domain-failed,
+or engine-error result. Every handler receives the same state object type but
+explicitly supplies the next state to a transition. A transition accepts only
+an available handler name and passes that handler a shallow copy of the
+supplied state object. It owns no workflow policy, persistence, listeners,
+recovery hooks, or external side effects.
+
 ## Repository Shape
 
 Doric is an Nx-managed TypeScript workspace with npm workspaces for
