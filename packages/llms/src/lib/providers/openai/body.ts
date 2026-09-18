@@ -4,13 +4,12 @@ import type {
   ProviderRequest,
   ProviderToolCall,
 } from '../../types/provider.js';
+import { messageText, requireRequestInput } from '../common.js';
 import {
   isStrictCompatible,
-  messageText,
   messagesWithStructuredSchema,
-  requireRequestInput,
   structuredJsonSchema,
-} from '../common.js';
+} from '../structured.js';
 
 const structuredOutputName = 'structured_output';
 

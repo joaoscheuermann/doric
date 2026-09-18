@@ -25,6 +25,53 @@ const lookupInputSchema = {
   additionalProperties: false,
 } as const;
 
+for (const stream of [false, true]) {
+  for (const choice of [
+    'auto',
+    'none',
+    'required',
+    { name: 'lookup' },
+  ] as const) {
+    for (const parallel of [false, true]) {
+      test(`sends LM Studio tool selection ${JSON.stringify(choice)} and parallel=${parallel} in ${stream ? 'stream' : 'complete'}`, async () => {
+        const transport = fakeTransport({
+          responses: [response({ choices: [{ message: { content: 'ok' } }] })],
+          streams: [['data: [DONE]\n\n']],
+        });
+        const provider = createLmStudioOpenAiProvider({ transport });
+        const request = {
+          model: 'local-model',
+          messages: [{ role: 'user', content: 'Use a tool.' }] as const,
+          tools: [
+            {
+              name: 'lookup',
+              inputSchema: lookupInputSchema,
+              outputSchema: {},
+            },
+          ],
+          toolChoice: choice,
+          parallelToolCalls: parallel,
+        };
+
+        if (stream) {
+          await collect(provider.stream(request));
+        } else {
+          await provider.complete(request);
+        }
+
+        const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+        assert.deepEqual(
+          body.tool_choice,
+          typeof choice === 'string'
+            ? choice
+            : { type: 'function', function: { name: 'lookup' } },
+        );
+        assert.equal(body.parallel_tool_calls, parallel);
+      });
+    }
+  }
+}
+
 test('sends LM Studio OpenAI-compatible structured output requests without tools through response format', async () => {
   const transport = fakeTransport({
     responses: [

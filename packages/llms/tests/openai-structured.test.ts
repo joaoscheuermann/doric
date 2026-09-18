@@ -337,14 +337,13 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('omits sensitive structured output from errors', async () => {
-  const sentinel = 'RATIONALE_DEBUG_PRIVATE';
+test('includes schema validation diagnostics in structured output errors', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
         response({
           status: 'completed',
-          output_text: JSON.stringify({ reasoning: sentinel }),
+          output_text: JSON.stringify({ answer: 42 }),
           output: [],
         }),
       ],
@@ -358,7 +357,6 @@ test('omits sensitive structured output from errors', async () => {
       model: 'gpt-5',
       messages: [{ role: 'user', content: 'Hi' }],
       schema: z.object({ answer: z.string() }),
-      flags: { sensitiveOutput: true },
     });
   } catch (error) {
     caught = error;
@@ -366,18 +364,33 @@ test('omits sensitive structured output from errors', async () => {
 
   assert.ok(caught instanceof ProviderErrorObject);
   assert.equal(caught.data.code, 'invalid_structured_output');
-  assert.equal(caught.data.diagnostic, undefined);
-  assert.equal(
-    (caught as Error & { readonly cause?: unknown }).cause,
-    undefined,
-  );
-  assert.doesNotMatch(
-    JSON.stringify({
-      message: caught.message,
-      data: caught.data,
-      cause: (caught as Error & { readonly cause?: unknown }).cause,
+  assert.match(caught.data.diagnostic ?? '', /answer/);
+});
+
+test('retains invalid structured text and its parse cause', async () => {
+  const text = 'not-json sk-testSecret123';
+  const provider = createOpenAiProvider({
+    transport: fakeTransport({
+      responses: [
+        response({ status: 'completed', output_text: text, output: [] }),
+      ],
     }),
-    new RegExp(sentinel, 'u'),
+    apiKey: 'sk-testSecret123',
+  });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'gpt-5',
+      messages: [{ role: 'user', content: 'Hi' }],
+      schema: z.object({ answer: z.string() }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ProviderErrorObject);
+      assert.equal(error.data.code, 'invalid_structured_output');
+      assert.equal(error.data.diagnostic, text);
+      assert.ok(error.cause instanceof SyntaxError);
+      return true;
+    },
   );
 });
 

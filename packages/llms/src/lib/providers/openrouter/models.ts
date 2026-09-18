@@ -1,4 +1,4 @@
-import type { Model } from '../../types/provider.js';
+import type { Model, ProviderId } from '../../types/provider.js';
 import {
   asRecord,
   arrayField,
@@ -6,6 +6,29 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
+import { requestJson } from '../http.js';
+import type { OpenRouterProviderDeps } from '../openrouter.js';
+import { authorization } from './auth.js';
+
+export const createOpenRouterModelsLoader =
+  (
+    deps: Pick<OpenRouterProviderDeps, 'transport' | 'apiKey'>,
+    baseUrl: string,
+    providerId: ProviderId,
+  ) =>
+  async (signal?: AbortSignal): Promise<readonly Model[]> => {
+    const response = await requestJson(deps.transport, providerId, {
+      method: 'GET',
+      url: `${baseUrl}/models`,
+      headers: {
+        authorization: await authorization(deps.apiKey),
+        accept: 'application/json',
+      },
+      signal,
+    });
+
+    return modelsFromResponse(response);
+  };
 
 export const modelsFromResponse = (
   response: Record<string, unknown>,

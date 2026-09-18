@@ -131,9 +131,10 @@ explicit `Tags:` label or when every comma candidate lacks sentence
 punctuation. Malformed or unsupported JSON, non-string values, extra object
 keys, mismatched or partial fences, content outside a fence, and recognized
 forms with no remaining items fall back to the original trimmed response as
-one tag. No call requests structured output or schema injection. All calls are
-flagged as sensitive output, without
-logging, response excerpts, or diagnostic/cause propagation. Generated
+one tag. No call requests structured output or schema injection. OKF's
+completion boundary discards provider diagnostics and causes; composition
+roots configure private providers with a disabled logger. Content privacy is
+owned by OKF and its host, not by a flag in the LLM package. Generated
 concepts persist the first result as analysis with the later description and
 tags in deterministic YAML metadata plus Markdown. YAML preserves the complete
 trimmed description, including internal newlines; the deterministic project
@@ -346,18 +347,20 @@ Sandpool and each repository-owned LLM provider require an injected
 `pino.Logger` and create their own component child logger. They emit only safe,
 structured `debug` operation logs: lifecycle and allowlisted counts/identifiers,
 never prompts, model inputs or outputs, stored values, vectors, credentials,
-URLs, headers, diagnostics, causes, or thrown values. A provider request with
-`flags.sensitiveOutput` emits no provider operational logs. Composition roots
-pass their existing logger to these dependencies; private OKF provider calls
-use a disabled Pino logger.
+URLs, headers, diagnostics, causes, or thrown values. Composition roots control
+logging through the injected logger; there is no per-request privacy flag.
+They pass their existing logger to these dependencies; private OKF provider
+calls use a disabled Pino logger.
 
 Doric supports OpenAI, raw OpenRouter, unified OpenRouter, LM Studio native,
 LM Studio OpenAI compatibility, and Codex as provider integrations. The unified
 provider uses stable OpenRouter Chat Completions, a 15-minute live model
 capability cache with stale-on-error fallback, and curated profiles for OpenAI,
 Anthropic, Gemini, Gemma, DeepSeek, Kimi, Mistral, Qwen, Llama, xAI, GLM,
-Cohere, and MiniMax. It maps tool choice and sequential controls, forwards only
-already-compatible strict tool schemas, and preserves ordered opaque
+Cohere, and MiniMax. Catalog refresh is shared independently of individual
+request cancellation; each caller may cancel its own wait. It maps tool choice
+and sequential controls, forwards only already-compatible strict tool schemas,
+and preserves ordered opaque
 `reasoning_details` for replay. It sends `parallel_tool_calls` only when the
 live model catalog advertises that parameter; otherwise it omits the transport
 control, reinforces sequential requests with a model-facing instruction, and
@@ -374,9 +377,9 @@ non-emulatable combinations fail explicitly before completion.
 The opt-in paid unified-provider conformance runner reserves stdout for its
 final JSON report, permits up to 1,024 output tokens per request, and emits Pino
 progress to stderr. Failures identify the exact structured-output, tool-call,
-or tool-replay stage and expose only the sanitized provider error fields already
-retained by the LLM boundary. An empty non-sensitive structured response
-diagnostic identifies its finish reason and available output/reasoning token
+or tool-replay stage and expose the provider error fields retained by the LLM
+boundary; the runner owns the decision to display those diagnostics. An empty
+structured response diagnostic identifies its finish reason and available output/reasoning token
 counts instead of returning an empty string.
 LM Studio native
 uses its native REST API at `http://localhost:1234` by default. LM Studio
@@ -393,9 +396,14 @@ and text-document reranking through `/rerank` below the configured base URL.
 Embedding requests may include optional positive-integer `dimensions`, which
 the compatible providers forward unchanged to the endpoint.
 Rerank requests carry a model, query, non-empty document list, and optional
-positive `topN`; successful results expose each original document index and
-finite relevance score. Codex and LM Studio native support neither embeddings
-nor reranking.
+positive `topN`. Successful embedding and rerank responses use explicit result
+envelopes and preserve provider-reported usage when present. Usage may include
+input, output, total, reasoning, cached-input, and cache-write token counts,
+rerank search units, and normalized cost metadata with amount, optional unit,
+and optional upstream amount. OpenRouter costs use the `credits` unit.
+Successful rerank results expose each original document index and finite
+relevance score. Codex and LM Studio native support neither embeddings nor
+reranking.
 `packages/llms` also exposes a generic OpenAI Responses-compatible factory with
 caller-configured provider identity and base URL. Its `/responses`, `/models`,
 `/embeddings`, and `/rerank` operations preserve that identity in metadata,
@@ -413,10 +421,13 @@ response output item for exact replay, forwards incomplete tool results, and
 marks schemas strict only when their unmodified JSON Schema is already
 strict-compatible. Replay and encrypted reasoning never enter provider
 operational logs.
-Provider requests may also set `flags.sensitiveOutput`; repository-owned
-providers then suppress operational logs for the call and omit model-response
-bodies, excerpts, diagnostics, and causes from error surfaces while preserving
-the normal completion result.
+`packages/llms` does not classify or sanitize content and has no
+`sensitiveOutput` flag. Provider errors may retain response excerpts,
+diagnostics, and causes without redaction. Excerpts are bounded for diagnostic
+volume, not privacy. Consumers own display, persistence, and privacy policies;
+this does not change host credential handling or add payloads to operational
+logs. HTTP stream-opening failures retain structured status and diagnostic
+information and are normalized to provider errors without changing cancellation.
 Provider requests may set
 `flags.includeStructuredSchemaOnSystemPrompt: true` together with `schema` to
 append one deterministic, collision-safe Markdown system message containing
@@ -424,8 +435,7 @@ the converted JSON Schema. Authored system messages retain their order before
 that generated message, followed by all non-system messages in their original
 order. The flag is additive to provider-native structured-output fields;
 omitting it, setting it to false, or using it without a schema leaves messages
-unchanged. `flags.sensitiveOutput`, independently, controls repository-provider
-diagnostic suppression for private calls.
+unchanged.
 Every `provider.complete` request with a schema resolves only after a JSON
 response has been parsed and validated by that schema. Refusals, tool calls,
 missing or invalid JSON, and schema-validation failures reject with
