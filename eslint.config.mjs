@@ -2,13 +2,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 
 import js from '@eslint/js';
-import stylistic from '@stylistic/eslint-plugin';
 import prettier from 'eslint-config-prettier/flat';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
-
-import variableSpacing from './eslint-rules/variable-spacing.mjs';
 
 const { workspaces } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
@@ -28,11 +25,6 @@ const workspaceNames = workspaces
 const escapePattern = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const workspacePattern = `^(${workspaceNames.map(escapePattern).join('|')})(/|$|\\u0000)`;
 const builtinPattern = `^(node:|(${builtinModules.map(escapePattern).join('|')})($|\\u0000))`;
-
-const variableStatement = {
-  selector:
-    'VariableDeclaration, ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
-};
 
 export default tseslint.config(
   {
@@ -70,25 +62,27 @@ export default tseslint.config(
   },
   {
     files: [
-      '{packages,agents,bundles,tools,benchmarks}/*/{src,tests,tools}/**/*.ts',
+      '{packages,agents,bundles,tools,benchmarks}/*/{src,tests,tools}/**/*.{ts,mts,cts}',
+      '{packages,agents,bundles,tools,benchmarks}/*/index.{ts,mts,cts}',
     ],
-    extends: [tseslint.configs.recommendedTypeChecked],
+    extends: [
+      tseslint.configs.recommendedTypeChecked,
+      tseslint.configs.stylisticTypeChecked,
+    ],
     languageOptions: {
       parserOptions: {
         project: [
           './{packages,agents,bundles,tools,benchmarks}/*/tsconfig.{lib,app,spec,e2e}.json',
+          './{packages,agents,bundles,tools,benchmarks}/*/tsconfig.json',
         ],
         tsconfigRootDir: import.meta.dirname,
       },
     },
   },
-  prettier,
   {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     plugins: {
-      '@stylistic': stylistic,
       'simple-import-sort': simpleImportSort,
-      local: { rules: { 'variable-spacing': variableSpacing } },
     },
     rules: {
       'simple-import-sort/imports': [
@@ -103,22 +97,8 @@ export default tseslint.config(
           ],
         },
       ],
-      '@stylistic/padding-line-between-statements': [
-        'error',
-        { blankLine: 'always', prev: '*', next: '*' },
-        { blankLine: 'any', prev: 'import', next: 'import' },
-        {
-          blankLine: 'any',
-          prev: variableStatement,
-          next: variableStatement,
-        },
-      ],
-      'local/variable-spacing': 'error',
-      curly: ['error', 'all'],
-      'no-nested-ternary': 'error',
-      complexity: ['warn', 8],
-      'max-depth': ['warn', 3],
-      'max-params': ['warn', 3],
     },
   },
+  // Keep formatting with Prettier, including when upstream presets evolve.
+  prettier,
 );

@@ -5,6 +5,7 @@
   "scripts": {
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "lint:test": "node --test tests/lint.test.mjs",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "doric:spawn-agent": "node scripts/spawn-agent.mjs",
@@ -21,7 +22,6 @@
     "@nx/eslint": "^22.6.5",
     "@nx/js": "^22.6.5",
     "@nxlv/python": "^22.2.2",
-    "@stylistic/eslint-plugin": "^5.10.0",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",

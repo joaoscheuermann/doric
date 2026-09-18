@@ -41,6 +41,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Test lint configuration
+        run: npm run lint:test
+
       # Report existing style debt until the initial cleanup is complete.
       - name: Check formatting (adoption report)
         continue-on-error: true
