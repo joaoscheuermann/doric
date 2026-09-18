@@ -59,6 +59,9 @@
     },
     {
       "path": "./packages/state-machine"
+    },
+    {
+      "path": "./packages/victor"
     }
   ]
 }

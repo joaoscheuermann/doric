@@ -1,24 +1,23 @@
 import type { Logger } from 'pino';
 
 import { ProviderErrorObject } from '../classes/provider-error.js';
-import type { HttpRequest, HttpTransport } from '../types/http.js';
+import type { HttpTransport } from '../types/http.js';
 import type {
   JsonValue,
   LlmProvider,
-  Model,
   ProviderCapabilities,
+  ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderRerankResult,
+  ProviderRerankFinished,
   ProviderStructuredFinished,
-  ProviderStreamEvent,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
-import { parseStructuredOutput } from './common.js';
+import { parseStructuredOutput } from './structured.js';
 import { withProviderLogging } from './logging.js';
 import { createOpenAiProviderCore, type SecretSource } from './openai.js';
 
@@ -54,11 +53,15 @@ export const codexCapabilities: ProviderCapabilities = {
 
 /** Creates a Codex-authenticated provider over ChatGPT's Codex Responses API. */
 export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
-  const openai = createOpenAiProviderCore({
-    transport: withCodexHeaders(deps.transport, deps),
-    authorization: deps.authorization,
-    baseUrl: deps.baseUrl ?? codexBaseUrl,
-  });
+  const openai = createOpenAiProviderCore(
+    {
+      transport: deps.transport,
+      authorization: deps.authorization,
+      baseUrl: deps.baseUrl ?? codexBaseUrl,
+    },
+    codexMetadata,
+    { body: codexBody, headers: () => codexHeaders(deps) },
+  );
 
   async function complete<Schema extends StructuredOutputSchema>(
     request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {
@@ -71,27 +74,21 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
-    try {
-      for await (const event of openai.stream(request)) {
-        const mapped = codexEvent(event);
-
-        if (mapped.type === 'response.finished') {
-          return parseStructuredOutput('codex', request, mapped.finish);
-        }
-
-        if (mapped.type === 'error') {
-          throw new ProviderErrorObject(mapped.error);
-        }
+    for await (const event of openai.stream(request)) {
+      if (event.type === 'response.finished') {
+        return parseStructuredOutput('codex', request, event.finish);
       }
 
-      throw new ProviderErrorObject({
-        provider: 'codex',
-        code: 'missing_stream_finish',
-        message: 'Codex stream ended before a final response.',
-      });
-    } catch (error) {
-      throw codexError(error);
+      if (event.type === 'error') {
+        throw new ProviderErrorObject(event.error);
+      }
     }
+
+    throw new ProviderErrorObject({
+      provider: 'codex',
+      code: 'missing_stream_finish',
+      message: 'Codex stream ended before a final response.',
+    });
   }
 
   return withProviderLogging(
@@ -102,21 +99,9 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       complete,
 
-      async *stream<Output = JsonValue>(
-        request: ProviderRequest<Output>,
-      ): AsyncIterable<ProviderStreamEvent<Output>> {
-        try {
-          for await (const event of openai.stream(request)) {
-            yield codexEvent(event);
-          }
-        } catch (error) {
-          throw codexError(error);
-        }
-      },
-
       async embedding(
         _request: ProviderEmbeddingRequest,
-      ): Promise<readonly number[]> {
+      ): Promise<ProviderEmbeddingFinished> {
         throw new ProviderErrorObject({
           provider: 'codex',
           code: 'unsupported_embeddings',
@@ -126,86 +111,27 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       async rerank(
         _request: ProviderRerankRequest,
-      ): Promise<readonly ProviderRerankResult[]> {
+      ): Promise<ProviderRerankFinished> {
         throw new ProviderErrorObject({
           provider: 'codex',
           code: 'unsupported_reranking',
           message: 'Codex provider does not support reranking.',
         });
       },
-
-      async models(signal?: AbortSignal): Promise<readonly Model[]> {
-        try {
-          return (await openai.models(signal)).map((model) => ({
-            ...model,
-            provider: 'codex',
-          }));
-        } catch (error) {
-          throw codexError(error);
-        }
-      },
-
-      async validateModel(model: string, signal?: AbortSignal): Promise<Model> {
-        try {
-          const found = await openai.validateModel(model, signal);
-
-          return { ...found, provider: 'codex' };
-        } catch (error) {
-          throw codexError(error);
-        }
-      },
     },
     deps.logger,
   );
 };
 
-const withCodexHeaders = (
-  transport: HttpTransport,
-  deps: CodexProviderDeps,
-): HttpTransport => ({
-  async request(request) {
-    return transport.request(await requestWithHeaders(request, deps));
-  },
-
-  stream(request) {
-    return streamWithHeaders(transport, request, deps);
-  },
-});
-
-async function* streamWithHeaders(
-  transport: HttpTransport,
-  request: HttpRequest,
-  deps: CodexProviderDeps,
-) {
-  yield* transport.stream(await requestWithHeaders(request, deps));
-}
-
-const requestWithHeaders = async (
-  request: HttpRequest,
-  deps: CodexProviderDeps,
-): Promise<HttpRequest> => ({
-  ...request,
-  body: codexBody(request.body),
-  headers: {
-    ...request.headers,
-    ...(await codexHeaders(deps)),
-  },
-});
-
-const codexBody = (body: string | undefined): string | undefined => {
-  if (body === undefined) {
-    return undefined;
-  }
-
-  const parsed = JSON.parse(body) as Record<string, unknown>;
-  const supported = { ...parsed };
+const codexBody = (body: Record<string, unknown>): Record<string, unknown> => {
+  const supported = { ...body };
   delete supported.temperature;
 
-  return JSON.stringify({
+  return {
     ...supported,
-    instructions: codexInstructions(parsed.instructions),
+    instructions: codexInstructions(body.instructions),
     store: false,
-  });
+  };
 };
 
 const codexInstructions = (value: unknown): string =>
@@ -221,31 +147,6 @@ const codexHeaders = async (
     : { 'ChatGPT-Account-ID': await secret(deps.chatGptAccountId) }),
   ...(deps.fedramp === true ? { 'X-OpenAI-Fedramp': 'true' } : {}),
 });
-
-const codexEvent = <Output>(
-  event: ProviderStreamEvent<Output>,
-): ProviderStreamEvent<Output> => {
-  if (event.type === 'response.started') {
-    return { ...event, provider: 'codex' };
-  }
-
-  if (event.type === 'error') {
-    return { ...event, error: { ...event.error, provider: 'codex' } };
-  }
-
-  return event;
-};
-
-const codexError = (error: unknown): unknown => {
-  if (error instanceof ProviderErrorObject) {
-    return new ProviderErrorObject({
-      ...error.data,
-      provider: 'codex',
-    });
-  }
-
-  return error;
-};
 
 const secret = async (source: SecretSource): Promise<string> => {
   const value = typeof source === 'function' ? await source() : source;

@@ -1,4 +1,4 @@
-import { ProviderErrorObject } from '../../classes/provider-error.js';
+import { ProviderErrorObject } from '../classes/provider-error.js';
 
 export type SecretSource = string | (() => string | Promise<string>);
 

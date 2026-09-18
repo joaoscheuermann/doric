@@ -134,7 +134,7 @@ test('emits uniform debug events with safe metadata for all operations', async (
   }
 });
 
-test('emits no call events when sensitive output is enabled', async () => {
+test('lets the caller disable operation logs through its logger', async () => {
   const captured = captureLogger();
   const provider = createOpenAiProvider({
     logger: captured.logger,
@@ -154,26 +154,23 @@ test('emits no call events when sensitive output is enabled', async () => {
       ],
     }),
   });
-  const flags = { sensitiveOutput: true } as const;
+  captured.logger.level = 'silent';
 
   await provider.complete({
     model: 'private-model',
     messages: [{ role: 'user', content: 'private' }],
-    flags,
   });
   await collect(
     provider.stream({
       model: 'private-model',
       messages: [{ role: 'user', content: 'private' }],
-      flags,
     }),
   );
-  await provider.embedding({ model: 'private-model', input: 'private', flags });
+  await provider.embedding({ model: 'private-model', input: 'private' });
   await provider.rerank({
     model: 'private-model',
     query: 'private',
     documents: ['private'],
-    flags,
   });
 
   assert.deepEqual(

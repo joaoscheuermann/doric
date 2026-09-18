@@ -4,12 +4,15 @@ import type {
   ProviderRequest,
 } from '../../types/provider.js';
 import {
-  isStrictCompatible,
   messageText,
-  messagesWithStructuredSchema,
+  requestReasoningEffort,
   requireRequestInput,
-  structuredJsonSchema,
 } from '../common.js';
+import {
+  isStrictCompatible,
+  messagesWithStructuredSchema,
+  structuredJsonSchema,
+} from '../structured.js';
 
 const structuredOutputName = 'structured_output';
 
@@ -131,18 +134,16 @@ const reasoningRequest = (
   request: ProviderRequest<unknown>,
 ): Record<string, unknown> | undefined => {
   const value = request.flags?.reasoning;
+  const effort = requestReasoningEffort(request);
 
-  if (value === undefined || value === false) {
-    return request.effort === undefined
-      ? undefined
-      : { effort: request.effort };
+  if (effort === undefined && (value === undefined || value === false)) {
+    return undefined;
   }
 
-  return value === true
-    ? request.effort === undefined
-      ? {}
-      : { effort: request.effort }
-    : prune({ effort: request.effort ?? value.effort, summary: value.summary });
+  return prune({
+    effort,
+    summary: typeof value === 'object' ? value.summary : undefined,
+  });
 };
 
 const prune = (value: Record<string, unknown>): Record<string, unknown> =>

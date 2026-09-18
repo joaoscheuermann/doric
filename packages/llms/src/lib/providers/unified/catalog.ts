@@ -24,8 +24,9 @@ export const createOpenRouterCatalog = (
   let expiresAt = 0;
   let pending: Promise<ReadonlyMap<string, OpenRouterModelSupport>> | undefined;
 
-  const refresh = (signal?: AbortSignal) => {
-    pending ??= load(signal)
+  const refresh = () => {
+    // Shared work belongs to the catalog, not to any individual caller.
+    pending ??= load()
       .then(toSupportMap)
       .then((support) => {
         cached = support;
@@ -43,19 +44,42 @@ export const createOpenRouterCatalog = (
     model: string,
     signal?: AbortSignal,
   ): Promise<OpenRouterModelSupport> => {
+    signal?.throwIfAborted();
+
     if (cached !== undefined && Date.now() < expiresAt) {
       return cached.get(model) ?? missingModelSupport;
     }
 
     try {
-      return (await refresh(signal)).get(model) ?? missingModelSupport;
-    } catch (error) {
-      if (signal?.aborted === true) throw error;
+      const support = await waitForRefresh(refresh(), signal);
+      return support.get(model) ?? missingModelSupport;
+    } catch {
+      signal?.throwIfAborted();
       return cached === undefined
         ? emptySupport
         : (cached.get(model) ?? missingModelSupport);
     }
   };
+};
+
+const waitForRefresh = async (
+  refresh: Promise<ReadonlyMap<string, OpenRouterModelSupport>>,
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, OpenRouterModelSupport>> => {
+  if (signal === undefined) return refresh;
+
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+
+  try {
+    return await Promise.race([refresh, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 };
 
 const toSupportMap = (
