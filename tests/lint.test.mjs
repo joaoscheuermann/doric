@@ -4,7 +4,16 @@ import test from 'node:test';
 import { ESLint } from 'eslint';
 import { format } from 'prettier';
 
-const lint = new ESLint();
+const lint = new ESLint({
+  overrideConfig: {
+    languageOptions: {
+      parserOptions: {
+        // lintText replaces on-disk source with in-memory snippets, even in CI.
+        disallowAutomaticSingleRunInference: true,
+      },
+    },
+  },
+});
 const typedFile = 'packages/session/src/lib/session.ts';
 
 test('reports undefined names in JavaScript tooling', async () => {
