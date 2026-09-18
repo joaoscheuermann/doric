@@ -3,20 +3,17 @@ import type {
   SearchIndex,
   SearchResult,
 } from './types/search.js';
+import { selectTop } from './utils/top.js';
 import { invalid, validateLogger, validateTopK } from './utils/validation.js';
 
 type Entry<Data> = {
   readonly data: Data;
-  readonly frequencies: ReadonlyMap<string, number>;
   readonly length: number;
-  readonly index: number;
 };
 
-type ScoreContext = {
-  readonly query: ReadonlySet<string>;
-  readonly documentFrequencies: ReadonlyMap<string, number>;
-  readonly documents: number;
-  readonly averageLength: number;
+type Posting = {
+  readonly index: number;
+  readonly count: number;
 };
 
 const K1 = 1.2;
@@ -49,25 +46,6 @@ const termScore = (
   (count * (K1 + 1)) /
   (count + K1 * (1 - B + B * (documentLength / averageLength)));
 
-const score = <Data>(entry: Entry<Data>, context: ScoreContext): number => {
-  let total = 0;
-
-  for (const term of context.query) {
-    const count = entry.frequencies.get(term);
-    const documentFrequency = context.documentFrequencies.get(term);
-
-    if (count === undefined || documentFrequency === undefined) {
-      continue;
-    }
-
-    total +=
-      idf(context.documents, documentFrequency) *
-      termScore(count, entry.length, context.averageLength);
-  }
-
-  return total;
-};
-
 /** Creates an in-memory lexical index ranked with BM25. */
 export const createLexicalIndex = <Data = unknown>(
   options: LexicalIndexOptions,
@@ -78,7 +56,7 @@ export const createLexicalIndex = <Data = unknown>(
 
   const logger = parentLogger.child({ component: 'victor' });
   const entries: Entry<Data>[] = [];
-  const documentFrequencies = new Map<string, number>();
+  const postings = new Map<string, Posting[]>();
   let totalLength = 0;
 
   logger.debug({}, 'lexical index created');
@@ -108,19 +86,21 @@ export const createLexicalIndex = <Data = unknown>(
         }
 
         const counts = frequencies(terms);
+        const index = entries.length;
 
-        for (const term of counts.keys()) {
-          documentFrequencies.set(
-            term,
-            (documentFrequencies.get(term) ?? 0) + 1,
-          );
+        for (const [term, count] of counts) {
+          const list = postings.get(term);
+
+          if (list === undefined) {
+            postings.set(term, [{ index, count }]);
+          } else {
+            list.push({ index, count });
+          }
         }
 
         entries.push({
           data,
-          frequencies: counts,
           length: terms.length,
-          index: entries.length,
         });
 
         totalLength += terms.length;
@@ -169,27 +149,31 @@ export const createLexicalIndex = <Data = unknown>(
         }
 
         const averageLength = totalLength / entries.length;
+        const scores = new Map<number, number>();
 
-        const context = {
-          query: queryTerms,
-          documentFrequencies,
-          documents: entries.length,
-          averageLength,
-        };
+        for (const term of queryTerms) {
+          const list = postings.get(term);
 
-        const results = entries
-          .map((entry) => ({
-            data: entry.data,
-            index: entry.index,
-            score: score(entry, context),
-          }))
-          .filter((entry) => entry.score > 0)
-          .sort(
-            (left, right) =>
-              right.score - left.score || left.index - right.index,
-          )
-          .slice(0, topK)
-          .map(({ data, score: relevance }) => ({ data, score: relevance }));
+          if (list === undefined) {
+            continue;
+          }
+
+          const weight = idf(entries.length, list.length);
+
+          for (const { index, count } of list) {
+            const contribution =
+              weight * termScore(count, entries[index].length, averageLength);
+            scores.set(index, (scores.get(index) ?? 0) + contribution);
+          }
+        }
+
+        // Posting traversal order differs from insertion order across terms.
+        const results = selectTop(
+          scores,
+          topK,
+          ([leftIndex, leftScore], [rightIndex, rightScore]) =>
+            rightScore - leftScore || leftIndex - rightIndex,
+        ).map(([index, score]) => ({ data: entries[index].data, score }));
 
         logger.debug(
           { ...fields, resultCount: results.length },

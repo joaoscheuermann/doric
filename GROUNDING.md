@@ -187,7 +187,15 @@ registered with a built-in workflow or agent composition by this scope.
 It exposes incremental lexical and vector indexes plus a read-only hybrid
 search. The lexical index applies deterministic Unicode tokenization and BM25;
 the vector index accepts caller-injected embedding generation and ranks by
-cosine similarity. Both indexes store caller values through per-add text
+cosine similarity. Embeddings must be dense arrays of finite numbers with the
+configured dimensions and non-zero magnitude; the index snapshots them before
+storage and rejects malformed results on both addition and search.
+Stored and query embeddings are normalized once with magnitude-safe scaling;
+exact vector search then uses dot products. Lexical search uses an inverted
+posting index and computes IDF once per query term using current corpus
+statistics. Both indexes select exact top-K results with bounded heaps and
+preserve insertion order for score ties.
+Both indexes store caller values through per-add text
 transformation. Hybrid search queries its injected lexical and semantic sources
 concurrently, fuses their bounded ranks with equal-weight reciprocal rank fusion
 using a fixed rank constant of 60, deduplicates by a caller-provided canonical

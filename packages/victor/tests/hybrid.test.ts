@@ -5,6 +5,8 @@ import pino from 'pino';
 
 import {
   createHybridSearch,
+  createLexicalIndex,
+  createVectorIndex,
   type Search,
   type SearchResult,
 } from '../src/index.js';
@@ -20,23 +22,52 @@ const result = (id: string, score: number): SearchResult<Document> => ({
   score,
 });
 
+test('combines the real lexical and vector indexes without losing shared candidates', async () => {
+  const lexical = createLexicalIndex<Document>({ logger });
+  const vectors: Record<string, number[]> = {
+    lexical: [0, 1],
+    shared: [1, 1],
+    semantic: [1, 0],
+    target: [1, 0],
+  };
+  const semantic = createVectorIndex<Document>({
+    dimensions: 2,
+    logger,
+    embedding: async (text) => vectors[text],
+  });
+
+  for (const [id, text] of [
+    ['lexical', 'target'],
+    ['shared', 'target filler'],
+    ['semantic', 'unrelated'],
+  ]) {
+    const document = { id };
+    await lexical.add(document, () => text);
+    await semantic.add(document, ({ id }) => id);
+  }
+
+  const hybrid = createHybridSearch({
+    lexical,
+    semantic,
+    key: ({ id }) => id,
+    logger,
+  });
+  const results = await hybrid.search('target', 2);
+
+  assert.deepEqual(
+    results.map(({ data }) => data.id),
+    ['shared', 'lexical'],
+  );
+  assert.equal(results[0].score, 2 / 62);
+});
+
 test('fuses lexical and semantic ranks with RRF and canonical-key deduplication', async () => {
-  const calls: Array<{ readonly source: string; readonly topK: number }> = [];
-
   const lexical: Search<Document> = {
-    search: async (_query, topK) => {
-      calls.push({ source: 'lexical', topK });
-
-      return [result('alpha', 100), result('beta', 50)];
-    },
+    search: async () => [result('alpha', 100), result('beta', 50)],
   };
 
   const semantic: Search<Document> = {
-    search: async (_query, topK) => {
-      calls.push({ source: 'semantic', topK });
-
-      return [result('gamma', 0.9), result('beta', 0.8)];
-    },
+    search: async () => [result('gamma', 0.9), result('beta', 0.8)],
   };
 
   const hybrid = createHybridSearch({
@@ -47,19 +78,82 @@ test('fuses lexical and semantic ranks with RRF and canonical-key deduplication'
   });
   const results = await hybrid.search('private query', 3);
 
-  assert.deepEqual(calls, [
-    { source: 'lexical', topK: 3 },
-    { source: 'semantic', topK: 3 },
-  ]);
-
   assert.deepEqual(
     results.map(({ data }) => data.id),
     ['beta', 'alpha', 'gamma'],
   );
 
-  assert.ok((results[0]?.score ?? 0) > (results[1]?.score ?? 0));
+  assert.equal(results[0]?.score, 2 / 62);
+  assert.equal(results[1]?.score, 1 / 61);
+  assert.equal(results[2]?.score, 1 / 61);
+});
 
-  assert.equal(results[1]?.score, results[2]?.score);
+test('uses the requested query and limit for both sources', async () => {
+  const source = (id: string): Search<Document> => ({
+    search: async (query, topK) =>
+      query === 'requested query' && topK === 2 ? [result(id, 1)] : [],
+  });
+  const hybrid = createHybridSearch({
+    lexical: source('lexical'),
+    semantic: source('semantic'),
+    key: ({ id }) => id,
+    logger,
+  });
+
+  const results = await hybrid.search('requested query', 2);
+
+  assert.deepEqual(
+    results.map(({ data }) => data.id),
+    ['lexical', 'semantic'],
+  );
+});
+
+test('counts a canonical key only once per source without compressing later ranks', async () => {
+  const hybrid = createHybridSearch({
+    lexical: {
+      search: async () => [
+        result('alpha', 100),
+        result('alpha', 90),
+        result('beta', 80),
+      ],
+    },
+    semantic: { search: async () => [] },
+    key: ({ id }) => id,
+    logger,
+  });
+
+  const results = await hybrid.search('query', 3);
+
+  assert.deepEqual(
+    results.map(({ data }) => data.id),
+    ['alpha', 'beta'],
+  );
+  assert.equal(results[0]?.score, 1 / 61);
+  assert.equal(results[1]?.score, 1 / 63);
+});
+
+test('limits source rankings before fusion and the final ranking after fusion', async () => {
+  const hybrid = createHybridSearch({
+    lexical: {
+      search: async () => [
+        result('zulu', 100),
+        result('alpha', 90),
+        result('outside', 80),
+      ],
+    },
+    semantic: {
+      search: async () => [result('beta', 0.9), result('outside', 0.8)],
+    },
+    key: ({ id }) => id,
+    logger,
+  });
+
+  const results = await hybrid.search('query', 2);
+
+  assert.deepEqual(
+    results.map(({ data }) => data.id),
+    ['beta', 'zulu'],
+  );
 });
 
 test('does not query either source when topK is zero', async () => {

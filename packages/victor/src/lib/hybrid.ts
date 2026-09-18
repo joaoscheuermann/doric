@@ -9,13 +9,6 @@ type Fused<Data> = SearchResult<Data> & {
   readonly key: string;
 };
 
-type Fusion<Data> = {
-  readonly lexical: readonly SearchResult<Data>[];
-  readonly semantic: readonly SearchResult<Data>[];
-  readonly key: (data: Data) => string;
-  readonly topK: number;
-};
-
 const RRF_K = 60;
 
 const validateSearch = (value: unknown, name: string): void => {
@@ -55,17 +48,16 @@ const addRanking = <Data>(
   });
 };
 
-const fuse = <Data>({
-  lexical,
-  semantic,
-  key,
-  topK,
-}: Fusion<Data>): ReadonlyArray<SearchResult<Data>> => {
+const fuse = <Data>(
+  rankings: ReadonlyArray<ReadonlyArray<SearchResult<Data>>>,
+  key: (data: Data) => string,
+  topK: number,
+): ReadonlyArray<SearchResult<Data>> => {
   const fused = new Map<string, Fused<Data>>();
 
-  addRanking(fused, lexical.slice(0, topK), key);
-
-  addRanking(fused, semantic.slice(0, topK), key);
+  for (const ranking of rankings) {
+    addRanking(fused, ranking.slice(0, topK), key);
+  }
 
   return [...fused.values()]
     .sort(
@@ -122,12 +114,7 @@ export const createHybridSearch = <Data = unknown>(
           semantic.search(query, topK),
         ]);
 
-        const results = fuse({
-          lexical: rankings[0],
-          semantic: rankings[1],
-          key,
-          topK,
-        });
+        const results = fuse(rankings, key, topK);
 
         logger.debug(
           { ...fields, resultCount: results.length },

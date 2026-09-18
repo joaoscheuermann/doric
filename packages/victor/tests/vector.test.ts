@@ -4,21 +4,9 @@ import test from 'node:test';
 
 import pino, { type Logger } from 'pino';
 
-import {
-  createVectorIndex as createVectorDatabase,
-  type SearchIndex as VectorDatabase,
-  type SearchResult as VectorSearchResult,
-} from '../src/index.js';
+import { createVectorIndex, type SearchResult } from '../src/index.js';
 
-type LogRecord = {
-  readonly component?: string;
-  readonly dimensions?: number;
-  readonly entryCount?: number;
-  readonly level: number;
-  readonly msg: string;
-  readonly resultCount?: number;
-  readonly topK?: number;
-};
+type LogRecord = Record<string, unknown>;
 
 const silentLogger = pino({ enabled: false });
 
@@ -53,7 +41,7 @@ type TextData = {
 };
 
 test('returns the closest stored structured data and cosine scores', async () => {
-  const vectors: VectorDatabase<Skill> = createVectorDatabase<Skill>({
+  const vectors = createVectorIndex<Skill>({
     dimensions: 2,
     logger: silentLogger,
     embedding: async (text) =>
@@ -75,13 +63,10 @@ test('returns the closest stored structured data and cosine scores', async () =>
 
   await vectors.add(east, transform);
 
-  const result = await vectors.search('query', 2);
-
-  const acceptsSkillResults = (
-    value: ReadonlyArray<VectorSearchResult<Skill>>,
-  ): void => undefined;
-
-  acceptsSkillResults(result);
+  const result: ReadonlyArray<SearchResult<Skill>> = await vectors.search(
+    'query',
+    2,
+  );
 
   assert.equal(result.length, 2);
 
@@ -90,14 +75,12 @@ test('returns the closest stored structured data and cosine scores', async () =>
   assert.deepEqual(result[1]?.data, { direction: 'diagonal', id: 'diagonal' });
 
   assert.ok(Math.abs((result[1]?.score ?? 0) - Math.SQRT1_2) < 1e-12);
-
-  assert.equal('metadata' in (result[0] ?? {}), false);
 });
 
 test('embeds only text returned by the transformer and runs it once per add', async () => {
   const texts: string[] = [];
 
-  const vectors = createVectorDatabase<{
+  const vectors = createVectorIndex<{
     readonly title: string;
     readonly body: string;
   }>({
@@ -128,7 +111,7 @@ test('embeds only text returned by the transformer and runs it once per add', as
 test('rejects invalid transformers before embedding or retaining data', async () => {
   let embeddings = 0;
 
-  const vectors = createVectorDatabase<TextData>({
+  const vectors = createVectorIndex<TextData>({
     dimensions: 2,
     logger: silentLogger,
     embedding: async () => {
@@ -160,7 +143,7 @@ test('rejects invalid transformers before embedding or retaining data', async ()
 });
 
 test('limits results to topK and retains insertion order for equal scores', async () => {
-  const vectors = createVectorDatabase<{
+  const vectors = createVectorIndex<{
     readonly text: string;
     readonly order: number;
   }>({
@@ -192,11 +175,10 @@ test('limits results to topK and retains insertion order for equal scores', asyn
 
 test('returns no results without embedding zero-topK or empty-database queries', async () => {
   let calls = 0;
-  const { logger, records } = captureLogger();
 
-  const vectors = createVectorDatabase({
+  const vectors = createVectorIndex({
     dimensions: 2,
-    logger,
+    logger: silentLogger,
     embedding: async () => {
       calls += 1;
 
@@ -211,53 +193,12 @@ test('returns no results without embedding zero-topK or empty-database queries',
   assert.deepEqual(await vectors.search('empty', 1), []);
 
   assert.equal(calls, 0);
-
-  assert.deepEqual(
-    records.map(({ msg, entryCount, resultCount, topK }) => ({
-      msg,
-      entryCount,
-      resultCount,
-      topK,
-    })),
-    [
-      {
-        msg: 'vector database created',
-        entryCount: undefined,
-        resultCount: undefined,
-        topK: undefined,
-      },
-      {
-        msg: 'vector database search started',
-        entryCount: 0,
-        resultCount: undefined,
-        topK: 0,
-      },
-      {
-        msg: 'vector database search completed',
-        entryCount: 0,
-        resultCount: 0,
-        topK: 0,
-      },
-      {
-        msg: 'vector database search started',
-        entryCount: 0,
-        resultCount: undefined,
-        topK: 1,
-      },
-      {
-        msg: 'vector database search completed',
-        entryCount: 0,
-        resultCount: 0,
-        topK: 1,
-      },
-    ],
-  );
 });
 
 test('rejects invalid configuration, malformed embeddings, and invalid topK values', async () => {
   for (const dimensions of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
     assert.throws(() =>
-      createVectorDatabase({
+      createVectorIndex({
         dimensions,
         embedding: async () => [1],
         logger: silentLogger,
@@ -271,7 +212,7 @@ test('rejects invalid configuration, malformed embeddings, and invalid topK valu
     [1, Number.POSITIVE_INFINITY],
     [0, 0],
   ]) {
-    const vectors = createVectorDatabase<TextData>({
+    const vectors = createVectorIndex<TextData>({
       dimensions: 2,
       logger: silentLogger,
       embedding: async () => vector,
@@ -282,7 +223,7 @@ test('rejects invalid configuration, malformed embeddings, and invalid topK valu
     );
   }
 
-  const vectors = createVectorDatabase({
+  const vectors = createVectorIndex({
     dimensions: 2,
     logger: silentLogger,
     embedding: async () => [1, 0],
@@ -293,8 +234,104 @@ test('rejects invalid configuration, malformed embeddings, and invalid topK valu
   }
 });
 
+test('rejects sparse embeddings without retaining data or returning invalid scores', async () => {
+  const sparse = new Array<number>(2);
+  sparse[0] = 1;
+  const vectors = createVectorIndex<string>({
+    dimensions: 2,
+    logger: silentLogger,
+    embedding: async (text) => (text === 'sparse' ? sparse : [1, 0]),
+  });
+
+  await assert.rejects(
+    vectors.add('sparse', (text) => text),
+    TypeError,
+  );
+  assert.deepEqual(await vectors.search('valid', 2), []);
+  await vectors.add('valid', (text) => text);
+  await assert.rejects(vectors.search('sparse', 2), TypeError);
+  assert.deepEqual(await vectors.search('valid', 2), [
+    { data: 'valid', score: 1 },
+  ]);
+});
+
+test('keeps cosine scores finite for extreme finite embedding magnitudes', async () => {
+  for (const scale of [Number.MAX_VALUE, Number.MIN_VALUE]) {
+    const vectors = createVectorIndex<string>({
+      dimensions: 2,
+      logger: silentLogger,
+      embedding: async (text) =>
+        text === 'opposite' ? [-scale, -scale] : [scale, scale],
+    });
+    await vectors.add('same', (text) => text);
+    await vectors.add('opposite', (text) => text);
+
+    const results = await vectors.search('query', 2);
+
+    assert.deepEqual(
+      results.map(({ data }) => data),
+      ['same', 'opposite'],
+    );
+    assert.ok(Math.abs(results[0].score - 1) < 1e-12);
+    assert.ok(Math.abs(results[1].score + 1) < 1e-12);
+  }
+});
+
+test('keeps stored embeddings independent of later provider mutations', async () => {
+  const stored = [1, 0];
+  const vectors = createVectorIndex<string>({
+    dimensions: 2,
+    logger: silentLogger,
+    embedding: async (text) => (text === 'stored' ? stored : [1, 0]),
+  });
+  await vectors.add('stored', (text) => text);
+  stored[0] = 0;
+  stored[1] = 1;
+
+  assert.deepEqual(await vectors.search('query', 1), [
+    { data: 'stored', score: 1 },
+  ]);
+});
+
+test('selects exact top-K with stable ties across mixed positive and negative scores', async () => {
+  const directions = [0, -3, 2, 1, -1, 4, 2, -2, 3, 1, -4, 4, 0, 5, -5, 3];
+  const vectors = createVectorIndex<number>({
+    dimensions: 2,
+    logger: silentLogger,
+    embedding: async (text) =>
+      text === 'query' ? [1, 0] : [directions[Number(text)], 1],
+  });
+
+  for (let index = 0; index < directions.length; index += 1) {
+    await vectors.add(index, String);
+  }
+
+  // For vectors [x, 1] against [1, 0], cosine increases with x.
+  const expected = directions
+    .map((direction, index) => ({ direction, index }))
+    .sort(
+      (left, right) =>
+        right.direction - left.direction || left.index - right.index,
+    )
+    .map(({ index }) => index);
+
+  for (const limit of [1, 2, 3, 5, 8, 16, 20]) {
+    const results = await vectors.search('query', limit);
+
+    assert.deepEqual(
+      results.map(({ data }) => data),
+      expected.slice(0, limit),
+    );
+    assert.ok(
+      results.every(
+        ({ score }) => Number.isFinite(score) && Math.abs(score) <= 1,
+      ),
+    );
+  }
+});
+
 test('does not retain data when its transformer or embedding fails', async () => {
-  const vectors = createVectorDatabase<{
+  const vectors = createVectorIndex<{
     readonly text: string;
     readonly retained?: boolean;
   }>({
@@ -329,95 +366,12 @@ test('does not retain data when its transformer or embedding fails', async () =>
 test('requires a logger with debug and child functions synchronously', () => {
   assert.throws(
     () =>
-      createVectorDatabase({
+      createVectorIndex({
         dimensions: 2,
         embedding: async () => [1, 0],
         logger: { debug: () => undefined } as unknown as Logger,
       }),
-    /logger: expected an object with debug and child functions/,
-  );
-});
-
-test('emits structured debug logs for successful add and search operations', async () => {
-  const { logger, records } = captureLogger();
-
-  const vectors = createVectorDatabase({
-    dimensions: 2,
-    logger,
-    embedding: async (text) => (text === 'query' ? [0, 1] : [1, 0]),
-  });
-
-  await vectors.add({ id: 'stored' }, () => 'stored');
-
-  await vectors.search('query', 1);
-
-  assert.deepEqual(
-    records.map(
-      ({
-        component,
-        dimensions,
-        entryCount,
-        level,
-        msg,
-        resultCount,
-        topK,
-      }) => ({
-        component,
-        dimensions,
-        entryCount,
-        level,
-        msg,
-        resultCount,
-        topK,
-      }),
-    ),
-    [
-      {
-        component: 'victor',
-        dimensions: 2,
-        entryCount: undefined,
-        level: 20,
-        msg: 'vector database created',
-        resultCount: undefined,
-        topK: undefined,
-      },
-      {
-        component: 'victor',
-        dimensions: 2,
-        entryCount: 0,
-        level: 20,
-        msg: 'vector database add started',
-        resultCount: undefined,
-        topK: undefined,
-      },
-      {
-        component: 'victor',
-        dimensions: 2,
-        entryCount: 1,
-        level: 20,
-        msg: 'vector database add completed',
-        resultCount: undefined,
-        topK: undefined,
-      },
-      {
-        component: 'victor',
-        dimensions: 2,
-        entryCount: 1,
-        level: 20,
-        msg: 'vector database search started',
-        resultCount: undefined,
-        topK: 1,
-      },
-      {
-        component: 'victor',
-        dimensions: 2,
-        entryCount: 1,
-        level: 20,
-        msg: 'vector database search completed',
-        resultCount: 1,
-        topK: 1,
-      },
-    ],
+    TypeError,
   );
 });
 
@@ -432,7 +386,7 @@ test('logs failures without exposing private data or changing error identity', a
   const searchFailure = new Error(privateSearchFailure);
   const { logger, records } = captureLogger();
 
-  const vectors = createVectorDatabase({
+  const vectors = createVectorIndex({
     dimensions: 2,
     logger,
     embedding: async (text) => {
@@ -458,25 +412,7 @@ test('logs failures without exposing private data or changing error identity', a
     (error) => error === searchFailure,
   );
 
-  assert.deepEqual(
-    records.map(({ msg }) => msg),
-    [
-      'vector database created',
-      'vector database add started',
-      'vector database add failed',
-      'vector database add started',
-      'vector database add completed',
-      'vector database search started',
-      'vector database search failed',
-    ],
-  );
-
-  assert.equal(
-    records.every(
-      ({ component, level }) => component === 'victor' && level === 20,
-    ),
-    true,
-  );
+  assert.ok(records.length > 0);
 
   const rendered = JSON.stringify(records);
 

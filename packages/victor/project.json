@@ -4,6 +4,14 @@
   "sourceRoot": "packages/victor/src",
   "projectType": "library",
   "targets": {
+    "benchmark": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "cache": false,
+      "options": {
+        "command": "node --expose-gc packages/victor/benchmarks/search.mjs"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist-tests"],
