@@ -49,6 +49,55 @@ const result = await provider.complete({
 });
 ```
 
+### Jev decisions
+
+Jev is a System One decision model rather than a chat model. Use the raw
+OpenRouter provider's typed `decide` method, which calls OpenRouter's Decisions
+API with the same injected transport and API key.
+
+```ts
+const result = await provider.decide({
+  model: '~typesafe/jev-latest',
+  state: 'Help! My payouts have been failing for 3 days.',
+  questions: {
+    isUrgent: {
+      type: 'noul',
+      instructions: 'Does this message convey urgency?',
+      criteria: {
+        true: 'Explicitly time-sensitive',
+        false: 'No urgency expressed',
+      },
+    },
+    department: {
+      type: 'choice',
+      instructions: 'Which team should handle this?',
+      criteria: {
+        billing: 'Payments, invoicing, refunds',
+        technical: 'Bugs, outages, integrations',
+        sales: 'Pricing, upgrades, new accounts',
+      },
+    },
+    frustration: {
+      type: 'score',
+      instructions: 'How frustrated is the customer?',
+      criteria: ['Calm', 'Frustrated', 'Very angry'],
+    },
+  },
+});
+
+if (
+  result.answers.isUrgent.noul > 0.8 &&
+  result.answers.department.choice === 'billing'
+) {
+  // Escalate to billing.
+}
+```
+
+Each question is inferred independently: Noul answers expose `noul`, Choice
+answers expose `choice`, `probabilities`, and `confidence`, and Score answers
+expose `score`, `legend`, `probabilities`, and `confidence`. State,
+instructions, and criteria may contain strings or structured JSON.
+
 ## OpenAI with an API key
 
 ```ts

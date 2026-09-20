@@ -179,6 +179,72 @@ test('lets the caller disable operation logs through its logger', async () => {
   );
 });
 
+test('logs Jev decisions without logging state questions or answers', async () => {
+  const captured = captureLogger();
+  const provider = createOpenRouterProvider({
+    logger: captured.logger,
+    apiKey: 'PRIVATE_CREDENTIAL',
+    transport: fakeTransport({
+      responses: [
+        response({
+          model: 'typesafe/jev-1.13',
+          answers: {
+            private_question: { type: 'noul', noul: 0.9 },
+          },
+          usage: { input_tokens: 10, output_tokens: 2 },
+        }),
+      ],
+    }),
+  });
+
+  await provider.decide({
+    model: '~typesafe/jev-latest',
+    state: 'PRIVATE_STATE',
+    questions: {
+      private_question: {
+        type: 'noul',
+        instructions: 'PRIVATE_INSTRUCTIONS',
+      },
+    },
+  });
+
+  assert.deepEqual(
+    captured.records.map(({ msg }) => msg),
+    [
+      'llm provider initialized',
+      'llm decision started',
+      'llm decision completed',
+    ],
+  );
+  assert.deepEqual(
+    select(captured.records[1] ?? {}, [
+      'model',
+      'questionCount',
+      'answerCount',
+    ]),
+    { model: '~typesafe/jev-latest', questionCount: 1 },
+  );
+  assert.deepEqual(
+    select(captured.records[2] ?? {}, [
+      'model',
+      'questionCount',
+      'answerCount',
+      'inputTokens',
+      'outputTokens',
+    ]),
+    {
+      model: 'typesafe/jev-1.13',
+      answerCount: 1,
+      inputTokens: 10,
+      outputTokens: 2,
+    },
+  );
+  assert.doesNotMatch(
+    JSON.stringify(captured.records),
+    /PRIVATE_(?:STATE|INSTRUCTIONS|CREDENTIAL)|private_question/u,
+  );
+});
+
 test('logs failed unsupported operations without logging the error', async () => {
   const captured = captureLogger();
   const provider = createLmStudioProvider({

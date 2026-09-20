@@ -1,6 +1,12 @@
 import type { Logger } from 'pino';
 
 import { ProviderErrorObject } from '../classes/provider-error.js';
+import type {
+  DecisionProvider,
+  DecisionQuestions,
+  ProviderDecisionFinished,
+  ProviderDecisionRequest,
+} from '../types/decision.js';
 import type { HttpTransport } from '../types/http.js';
 import type {
   JsonValue,
@@ -35,6 +41,12 @@ import {
   openRouterBody,
   type OpenRouterBodyOptions,
 } from './openrouter/body.js';
+import {
+  openRouterDecisionBody,
+  openRouterDecisionsUrl,
+  parseDecisionFinished,
+  requireDecisionInput,
+} from './openrouter/decisions.js';
 import { createOpenRouterModelsLoader } from './openrouter/models.js';
 import {
   createStreamState,
@@ -55,6 +67,8 @@ export type OpenRouterProviderDeps = {
   readonly baseUrl?: string;
   readonly logger: Logger;
 };
+
+export type OpenRouterProvider = LlmProvider & DecisionProvider;
 
 export type PreparedOpenRouterRequest = {
   readonly request: ProviderRequest<unknown>;
@@ -89,14 +103,14 @@ export const openRouterCapabilities: ProviderCapabilities = {
 
 export const createOpenRouterProvider = (
   deps: OpenRouterProviderDeps,
-): LlmProvider =>
+): OpenRouterProvider =>
   withProviderLogging(createOpenRouterProviderCore(deps), deps.logger);
 
 /** Shared unlogged transport core used by OpenRouter policy adapters. */
 export const createOpenRouterProviderCore = (
   dependencies: OpenRouterProviderDeps,
   options: OpenRouterProviderCoreOptions = {},
-): LlmProvider => {
+): OpenRouterProvider => {
   const metadata = options.metadata ?? openRouterMetadata;
   const providerId = metadata.id;
   const deps = {
@@ -157,6 +171,25 @@ export const createOpenRouterProviderCore = (
     capabilities: openRouterCapabilities,
 
     complete,
+
+    async decide<Questions extends DecisionQuestions>(
+      request: ProviderDecisionRequest<Questions>,
+    ): Promise<ProviderDecisionFinished<Questions>> {
+      requireDecisionInput(providerId, request);
+      const response = await requestJson(deps.transport, providerId, {
+        method: 'POST',
+        url: openRouterDecisionsUrl(baseUrl),
+        headers: {
+          authorization: await authorization(deps.apiKey),
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(openRouterDecisionBody(request)),
+        signal: request.signal,
+      });
+
+      return parseDecisionFinished(providerId, request.questions, response);
+    },
 
     async *stream<Output = JsonValue>(
       request: ProviderRequest<Output>,
