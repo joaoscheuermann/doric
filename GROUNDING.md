@@ -431,6 +431,11 @@ deterministic schema prompt, then validate with the original Zod schema and
 allow at most two correction attempts. Structured streams emit only after
 buffered validation. Tools plus a direct provider schema and other
 non-emulatable combinations fail explicitly before completion.
+The raw OpenRouter provider additionally exposes typed System One decisions for
+Jev through `POST /api/alpha/decisions`. A decision evaluates one JSON state
+against one or more `noul`, `choice`, or `score` questions and returns the
+model-resolved typed answers and normalized usage. Decision payloads are not
+adapted into chat completions or written to operational logs.
 The opt-in paid unified-provider conformance runner reserves stdout for its
 final JSON report, permits up to 1,024 output tokens per request, and emits Pino
 progress to stderr. Failures identify the exact structured-output, tool-call,
