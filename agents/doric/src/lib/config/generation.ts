@@ -8,7 +8,8 @@ import {
 } from 'llms';
 import type { ToolFactory } from 'tool';
 
-import type { DoricConfig } from './config.js';
+import type { DoricConfig } from './schema.js';
+import { coordinationNames } from '../agents/direct/tools/index.js';
 
 export type Catalog = {
   readonly skills: readonly Skill[];
@@ -29,13 +30,20 @@ type GenerationOptions = {
   readonly environment?: NodeJS.ProcessEnv;
 };
 
-/** Builds one provider and bundle generation captured by new sessions. */
+/** Builds one provider and bundle generation captured by new Projects. */
 export const createGeneration = async ({
   snapshot,
   bundles,
   logger,
   environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
+  for (const bundle of bundles) {
+    for (const { factory } of bundle.tools) {
+      if (coordinationNames.some((name) => name === factory.name)) {
+        throw new Error('Bundle tool conflicts with a host coordination tool.');
+      }
+    }
+  }
   const credentials = new Set<string>();
 
   const credential = (name: string): string => {

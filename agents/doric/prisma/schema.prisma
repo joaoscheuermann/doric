@@ -11,7 +11,15 @@ enum ModelRole {
   EXECUTION
 }
 
-enum SessionState {
+enum ProjectState {
+  QUEUED
+  READY
+  CANCELLING
+  FAILED
+  CANCELLED
+}
+
+enum ThreadState {
   QUEUED
   READY
   RUNNING
@@ -57,33 +65,56 @@ model ModelConfiguration {
   @@map("model_configuration")
 }
 
-model Session {
-  id             String         @id @default(uuid()) @db.Uuid
-  state          SessionState   @default(QUEUED)
-  configRevision Int            @map("config_revision")
-  configSnapshot Json           @map("config_snapshot") @db.JsonB
-  messages       Json           @default("[]") @db.JsonB
-  errorCode      String?        @map("error_code")
-  lastSequence   Int            @default(0) @map("last_sequence")
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  startedAt      DateTime?      @map("started_at") @db.Timestamptz(3)
-  finishedAt     DateTime?      @map("finished_at") @db.Timestamptz(3)
-  events         SessionEvent[]
+model Project {
+  id             String       @id @default(uuid()) @db.Uuid
+  state          ProjectState @default(QUEUED)
+  configRevision Int          @map("config_revision")
+  configSnapshot Json         @map("config_snapshot") @db.JsonB
+  errorCode      String?      @map("error_code")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  startedAt      DateTime?    @map("started_at") @db.Timestamptz(3)
+  finishedAt     DateTime?    @map("finished_at") @db.Timestamptz(3)
+  threads        Thread[]
 
   @@index([createdAt, id])
-  @@map("session")
+  @@map("project")
 }
 
-model SessionEvent {
-  sessionId String   @map("session_id") @db.Uuid
+model Thread {
+  id             String        @id @default(uuid()) @db.Uuid
+  projectId      String        @map("project_id") @db.Uuid
+  parentThreadId String?       @map("parent_thread_id") @db.Uuid
+  state          ThreadState   @default(QUEUED)
+  messages       Json          @default("[]") @db.JsonB
+  activePromptId String?       @map("active_prompt_id") @db.Uuid
+  errorCode      String?       @map("error_code")
+  lastSequence   Int           @default(0) @map("last_sequence")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  startedAt      DateTime?     @map("started_at") @db.Timestamptz(3)
+  finishedAt     DateTime?     @map("finished_at") @db.Timestamptz(3)
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent         Thread?       @relation("ThreadTree", fields: [projectId, parentThreadId], references: [projectId, id], onDelete: Cascade, onUpdate: NoAction)
+  children       Thread[]      @relation("ThreadTree")
+  events         ThreadEvent[]
+
+  @@unique([projectId, id])
+  @@index([projectId, createdAt, id])
+  @@index([projectId, parentThreadId, createdAt, id])
+  @@map("thread")
+}
+
+model ThreadEvent {
+  projectId String   @map("project_id") @db.Uuid
+  threadId  String   @map("thread_id") @db.Uuid
   promptId  String   @map("prompt_id") @db.Uuid
   sequence  Int
   type      String
   event     Json     @db.JsonB
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  thread    Thread   @relation(fields: [projectId, threadId], references: [projectId, id], onDelete: Cascade)
 
-  @@id([sessionId, sequence])
-  @@map("session_event")
+  @@id([threadId, sequence])
+  @@map("thread_event")
 }

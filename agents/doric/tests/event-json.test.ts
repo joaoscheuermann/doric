@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { eventJson } from '../src/lib/event-json.js';
+import { eventJson } from '../src/lib/events/serialization.js';
 
 test('preserves reasoning replay and tool IO while redacting credentials', () => {
   const event = {

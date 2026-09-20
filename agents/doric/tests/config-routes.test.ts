@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import express from 'express';
 
-import { defaultConfig } from '../src/lib/config.js';
+import { defaultConfig } from '../src/lib/config/schema.js';
 import { createConfigRouter } from '../src/routes/config.js';
 
 test('returns the active configuration at the root config route', async () => {

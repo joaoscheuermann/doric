@@ -1,0 +1,396 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import test from 'node:test';
+import express from 'express';
+
+import type {
+  Page,
+  Project,
+  Thread,
+  WorkspaceService,
+} from '../src/lib/workspace/types.js';
+import { registerHttpRoutes } from '../src/lib/http/app.js';
+
+const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
+const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
+const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
+const project: Project = {
+  id: projectId,
+  state: 'ready',
+  configRevision: 1,
+  createdAt: '',
+  updatedAt: '',
+};
+const thread: Thread = {
+  id: threadId,
+  projectId,
+  state: 'ready',
+  lastSequence: 0,
+  createdAt: '',
+  updatedAt: '',
+};
+
+// These are HTTP adapter tests: service outcomes are controlled below.
+// Workspace lifecycle and persistence are exercised in their own suites.
+test('maps separate Project and Thread creation and list results', async (t) => {
+  const host = await serve({
+    threads: { list: async () => ({ items: [thread] }) },
+  });
+  t.after(host.close);
+  const created = await host.request('/projects', 'POST');
+  assert.equal(created.status, 202);
+  const createdBody = (await created.json()) as { ssh: { href: string } };
+  assert.equal(createdBody.ssh.href, `/projects/${projectId}/ssh`);
+  const conversation = await host.request(
+    `/projects/${projectId}/threads`,
+    'POST',
+  );
+  assert.equal(conversation.status, 201);
+  assert.equal(((await conversation.json()) as Thread).projectId, projectId);
+  const after = await host.request(`/projects/${projectId}/threads`);
+  assert.equal(((await after.json()) as Page<Thread>).items[0]?.id, threadId);
+});
+
+test('production HTTP registration exposes no legacy Session aliases', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const [method, path] of [
+    ['POST', '/sessions'],
+    ['GET', '/sessions'],
+    ['GET', `/sessions/${projectId}`],
+  ] as const) {
+    assert.equal((await host.request(path, method)).status, 404);
+  }
+});
+
+test('creates child threads and rejects privileged creation input', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const child = await host.request(`/projects/${projectId}/threads`, 'POST', {
+    parentThreadId: threadId,
+  });
+  assert.equal(((await child.json()) as Thread).parentThreadId, threadId);
+  for (const body of [
+    { prompt: 'task' },
+    { source: { kind: 'parent' } },
+    { parentThreadId: 'bad' },
+  ]) {
+    assert.equal(
+      (await host.request(`/projects/${projectId}/threads`, 'POST', body))
+        .status,
+      422,
+    );
+  }
+});
+
+test('accepts human prompts but rejects blank text and forged origin', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const path = `/threads/${threadId}/prompt`;
+  const accepted = await host.request(path, 'POST', { prompt: 'Do the work' });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(await accepted.json(), { promptId });
+  for (const body of [
+    { prompt: ' ' },
+    {},
+    { prompt: 'Do it', source: { kind: 'parent' } },
+  ]) {
+    assert.equal((await host.request(path, 'POST', body)).status, 422);
+  }
+});
+
+test('requires prompt-scoped interruption and reports stale execution conflicts', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const path = `/threads/${threadId}/interrupt`;
+  assert.equal((await host.request(path, 'POST')).status, 422);
+  assert.equal(
+    (await host.request(path, 'POST', { promptId: projectId })).status,
+    409,
+  );
+  const interrupted = await host.request(path, 'POST', { promptId });
+  assert.equal(interrupted.status, 200);
+  assert.deepEqual(await interrupted.json(), { status: 'interrupted' });
+});
+
+test('forwards the replay cursor, prohibits caching and validates identifiers and pages', async (t) => {
+  const host = await serve({
+    threads: {
+      events: async (id, cursor) => {
+        assert.equal(id, threadId);
+        assert.equal(cursor, 1);
+        return {
+          events: [
+            {
+              sequence: 2,
+              projectId,
+              threadId,
+              promptId,
+              type: 'text.delta',
+              event: {},
+              createdAt: '',
+            },
+          ],
+          lastSequence: 2,
+        };
+      },
+    },
+  });
+  t.after(host.close);
+  const response = await host.request(
+    `/threads/${threadId}/events?afterSequence=1`,
+  );
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const body = (await response.json()) as {
+    events: { sequence: number }[];
+    lastSequence: number;
+  };
+  assert.deepEqual(
+    body.events.map((event: { sequence: number }) => event.sequence),
+    [2],
+  );
+  assert.equal(body.lastSequence, 2);
+  assert.equal(
+    (await host.request(`/threads/${threadId}/events?afterSequence=-1`)).status,
+    400,
+  );
+  assert.equal((await host.request('/projects?limit=101')).status, 400);
+  assert.equal((await host.request('/threads/not-an-id')).status, 400);
+});
+
+test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const [kind, operations] of [
+    [
+      'project',
+      [
+        ['GET', ''],
+        ['DELETE', ''],
+        ['GET', '/ssh'],
+        ['GET', '/threads'],
+        ['POST', '/threads'],
+        ['POST', '/terminate'],
+      ],
+    ],
+    [
+      'thread',
+      [
+        ['GET', ''],
+        ['DELETE', ''],
+        ['GET', '/events'],
+        ['POST', '/prompt'],
+        ['POST', '/interrupt'],
+        ['POST', '/terminate'],
+      ],
+    ],
+  ] as const) {
+    for (const [method, suffix] of operations) {
+      const response = await host.request(
+        `/${kind}s/not-an-id${suffix}`,
+        method,
+      );
+      assert.equal(response.status, 400);
+      const { error } = (await response.json()) as {
+        error: { code: string; message: unknown };
+      };
+      assert.equal(error.code, `invalid_${kind}_id`);
+      assert.equal(typeof error.message, 'string');
+      assert.ok(error.message);
+    }
+  }
+});
+
+test('reports missing resources and refuses active deletion', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const [kind, id] of [
+    ['projects', projectId],
+    ['threads', threadId],
+  ]) {
+    assert.equal((await host.request(`/${kind}/${promptId}`)).status, 404);
+    assert.equal((await host.request(`/${kind}/${id}`, 'DELETE')).status, 409);
+  }
+});
+
+test('maps termination and successful deletion outcomes for Projects and Threads', async (t) => {
+  const host = await serve({
+    projects: { delete: async () => 'deleted' },
+    threads: { delete: async () => 'deleted' },
+  });
+  t.after(host.close);
+  for (const [kind, id] of [
+    ['threads', threadId],
+    ['projects', projectId],
+  ]) {
+    const path = `/${kind}/${id}`;
+    const stopped = await host.request(`${path}/terminate`, 'POST');
+    assert.equal(
+      ((await stopped.json()) as Project | Thread).state,
+      'cancelled',
+    );
+    assert.equal((await host.request(path, 'DELETE')).status, 204);
+  }
+});
+
+test('returns private project SSH access and sanitizes unexpected failures', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const response = await host.request(`/projects/${projectId}/ssh`);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(
+    ((await response.json()) as { href: string }).href,
+    '/vms/vm-1/ssh',
+  );
+  const failed = await host.request(`/projects/${promptId}/ssh`);
+  assert.equal(failed.status, 500);
+  const failure = (await failed.json()) as {
+    error: { code: string; message: string };
+  };
+  assert.equal(failure.error.code, 'internal_error');
+  assert.equal(typeof failure.error.message, 'string');
+  assert.ok(failure.error.message.length > 0);
+  assert.doesNotMatch(JSON.stringify(failure), /secret provider credentials/);
+});
+
+for (const [status, expected] of [
+  ['pending', 202],
+  ['expired', 410],
+  ['unavailable', 409],
+  ['missing', 404],
+] as const) {
+  test(`reports ${status} project SSH access without exposing or caching credentials`, async (t) => {
+    const host = await serve({ projects: { ssh: async () => ({ status }) } });
+    t.after(host.close);
+    const response = await host.request(`/projects/${projectId}/ssh`);
+    assert.equal(response.status, expected);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    if (status === 'pending')
+      assert.equal(response.headers.get('retry-after'), '1');
+    assert.equal('ssh' in ((await response.json()) as object), false);
+  });
+}
+
+test('rejects cross-project parenting and inputs into inactive threads', async (t) => {
+  const host = await serve({
+    threads: {
+      create: async () => ({ status: 'invalid_parent' }),
+      prompt: async () => ({ status: 'inactive' }),
+    },
+  });
+  t.after(host.close);
+  const child = await host.request(`/projects/${projectId}/threads`, 'POST', {
+    parentThreadId: promptId,
+  });
+  assert.equal(child.status, 409);
+  assert.equal(
+    ((await child.json()) as ErrorBody).error.code,
+    'thread_invalid_parent',
+  );
+  const prompt = await host.request(`/threads/${threadId}/prompt`, 'POST', {
+    prompt: 'Try again',
+  });
+  assert.equal(prompt.status, 409);
+  assert.equal(
+    ((await prompt.json()) as ErrorBody).error.code,
+    'thread_inactive',
+  );
+});
+
+test('forwards pagination cursors and parent filters and preserves the next cursor', async (t) => {
+  const host = await serve({
+    threads: {
+      list: async (_id, limit, cursor, parentThreadId) => ({
+        items: [{ ...thread, parentThreadId }],
+        ...(limit === 100 && cursor === promptId
+          ? { nextCursor: threadId }
+          : {}),
+      }),
+    },
+  });
+  t.after(host.close);
+  const response = await host.request(
+    `/projects/${projectId}/threads?limit=100&cursor=${promptId}&parentThreadId=${projectId}`,
+  );
+  const page = (await response.json()) as Page<Thread>;
+  assert.equal(page.items[0]?.parentThreadId, projectId);
+  assert.equal(page.nextCursor, threadId);
+});
+
+type ErrorBody = { error: { code: string } };
+
+const serve = async (
+  overrides: {
+    projects?: Partial<WorkspaceService['projects']>;
+    threads?: Partial<WorkspaceService['threads']>;
+  } = {},
+) => {
+  const service: WorkspaceService = {
+    projects: {
+      create: async () => project,
+      find: async (id) => (id === projectId ? project : undefined),
+      list: async () => ({ items: [project] }),
+      terminate: async () => ({ ...project, state: 'cancelled' }),
+      delete: async () => 'active',
+      ssh: async (id) => {
+        if (id !== projectId) throw new Error('secret provider credentials');
+        return {
+          status: 'ready',
+          vmId: 'vm-1',
+          ssh: {
+            host: '127.0.0.1',
+            port: 22,
+            username: 'root',
+            privateKey: 'private',
+            knownHosts: '',
+            hostKeyFingerprint: '',
+          },
+        };
+      },
+      ...overrides.projects,
+    },
+    threads: {
+      create: async (_id, parentThreadId) => ({
+        status: 'created',
+        thread: { ...thread, ...(parentThreadId ? { parentThreadId } : {}) },
+      }),
+      find: async (id) => (id === threadId ? thread : undefined),
+      list: async () => ({ items: [] }),
+      prompt: async () => ({ status: 'accepted', promptId }),
+      events: async () => ({ events: [], lastSequence: 0 }),
+      interrupt: async (_id, target) =>
+        target === promptId ? 'interrupted' : 'not_running',
+      terminate: async () => ({ ...thread, state: 'cancelled' }),
+      delete: async () => 'active',
+      ...overrides.threads,
+    },
+    sshForVm: async () => undefined,
+    dispose: async () => undefined,
+  };
+  const app = express();
+  const unsupported = (): never => {
+    throw new Error('Unexpected config access');
+  };
+  registerHttpRoutes(app, {
+    config: { current: unsupported, replace: unsupported },
+    service,
+    vms: { list: () => [], find: () => undefined, ssh: service.sshForVm },
+  });
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return {
+    request: (path: string, method = 'GET', body?: unknown) =>
+      fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method,
+        ...(body === undefined
+          ? {}
+          : {
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            }),
+      }),
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+};
