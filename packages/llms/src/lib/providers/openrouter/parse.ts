@@ -5,8 +5,8 @@ import type {
   ProviderToolCall,
 } from '../../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   numberField,
   recordField,
   stringField,
@@ -37,11 +37,13 @@ export const parseFinished = (
   const choice = asRecord(arrayField(response, 'choices')[0]) ?? {};
   const message = recordField(choice, 'message') ?? {};
   const content = stringField(message, 'content') ?? '';
+
   const reasoning =
     stringField(message, 'reasoning') ??
     stringField(message, 'reasoning_content');
   const refusal = stringField(message, 'refusal');
   const replay = replayItems(message);
+
   const toolCalls = arrayField(message, 'tool_calls')
     .map(asRecord)
     .filter(isRecord)
@@ -59,7 +61,7 @@ export const parseFinished = (
   return {
     text: content,
     finishReason: finishReason(choice.finish_reason),
-    usage: parseUsage(recordField(response, 'usage')),
+    usage: parseUsage(recordField(response, 'usage'), 'credits'),
     reasoning: reasoning === undefined ? undefined : { text: reasoning },
     refusal,
     toolCalls,
@@ -78,10 +80,11 @@ export const streamEvents = (
     ProviderStreamEvent,
     { readonly type: 'response.finished' }
   >[] = [];
-  const usage = parseUsage(recordField(payload, 'usage'));
+  const usage = parseUsage(recordField(payload, 'usage'), 'credits');
 
   if (usage !== undefined) {
     state.usage = usage;
+
     events.push({ type: 'usage', usage });
   }
 
@@ -90,6 +93,7 @@ export const streamEvents = (
     .filter(isRecord)) {
     const delta = recordField(choice, 'delta') ?? {};
     const content = stringField(delta, 'content');
+
     const reasoning =
       stringField(delta, 'reasoning') ??
       stringField(delta, 'reasoning_content');
@@ -99,16 +103,19 @@ export const streamEvents = (
 
     if (content !== undefined) {
       state.text.push(content);
+
       events.push({ type: 'text.delta', delta: content });
     }
 
     if (reasoning !== undefined) {
       state.reasoning.push(reasoning);
+
       events.push({ type: 'reasoning.delta', delta: reasoning });
     }
 
     if (refusal !== undefined) {
       state.refusal.push(refusal);
+
       events.push({ type: 'refusal.delta', delta: refusal });
     }
 
@@ -118,6 +125,7 @@ export const streamEvents = (
       const index = numberField(call, 'index') ?? 0;
       const fn = recordField(call, 'function') ?? {};
       const previous = state.calls.get(index);
+
       const next = {
         id: stringField(call, 'id') ?? previous?.id ?? `call_${index}`,
         name: stringField(fn, 'name') ?? previous?.name ?? '',
@@ -126,6 +134,7 @@ export const streamEvents = (
       };
 
       state.calls.set(index, next);
+
       events.push({
         type: 'tool_call.delta',
         index,

@@ -6,11 +6,17 @@ import type {
 } from './types/oauth.js';
 
 export const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+
 export const CODEX_OAUTH_CALLBACK_HOST = 'localhost';
+
 export const CODEX_OAUTH_CALLBACK_PORT = 1455;
+
 export const CODEX_OAUTH_FALLBACK_CALLBACK_PORT = 1457;
+
 export const CODEX_OAUTH_CALLBACK_PATH = '/auth/callback';
+
 export const CODEX_OAUTH_ORIGINATOR = 'codex_cli_rs';
+
 export const CODEX_AUTHORIZATION_ENV_KEY = 'CODEX_AUTHORIZATION';
 
 export const codexOAuthProfile: OAuthProfile = {

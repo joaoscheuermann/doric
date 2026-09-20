@@ -98,8 +98,10 @@ object keys, mismatched or partial fences, content outside a fence, and any
 recognized form with no remaining items fall back to one tag containing the
 original trimmed response. No call requests structured output or injects a
 response schema.
-All three calls are marked as sensitive output so repository providers omit
-response excerpts and diagnostics from debug and error surfaces.
+OKF owns its failure sanitization: its completion boundary discards provider
+diagnostics and causes before reporting a failed generation stage. Injected
+providers own their logging; callers handling private source should configure
+a disabled logger, as the repository's OKF runner does.
 
 Concepts persist the first call's Markdown as `analysis`, plus the description
 and tags from the later calls. YAML serialization preserves the complete

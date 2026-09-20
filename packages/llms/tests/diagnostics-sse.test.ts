@@ -4,10 +4,15 @@ import test from 'node:test';
 import { diagnosticExcerpt, parseSseEvents } from '../src/index.js';
 import { collect } from './fakes.js';
 
-test('redacts and truncates diagnostic excerpts', () => {
-  const excerpt = diagnosticExcerpt(`sk-testSecret123 ${'x'.repeat(20)}`, 16);
+test('bounds diagnostic excerpts without changing their content', () => {
+  const content = 'provider output';
 
-  assert.equal(excerpt, 'sk-[redacted] xx...[truncated]');
+  assert.equal(diagnosticExcerpt(content, content.length), content);
+  assert.equal(diagnosticExcerpt(content, 8), 'provider...[truncated]');
+  assert.equal(
+    diagnosticExcerpt('sk-fake123 Bearer fake-token'),
+    'sk-fake123 Bearer fake-token',
+  );
 });
 
 test('parses SSE comments chunk boundaries multi-line data and done markers', async () => {
@@ -15,8 +20,11 @@ test('parses SSE comments chunk boundaries multi-line data and done markers', as
     parseSseEvents(
       (async function* () {
         yield ': comment\n';
+
         yield 'event: message\ndata: first\n';
+
         yield 'data: second\n\n';
+
         yield 'data: [DONE]\n\n';
       })(),
     ),

@@ -56,6 +56,12 @@
     },
     {
       "path": "./bundles/git"
+    },
+    {
+      "path": "./packages/state-machine"
+    },
+    {
+      "path": "./packages/victor"
     }
   ]
 }

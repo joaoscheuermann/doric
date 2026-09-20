@@ -1,9 +1,3 @@
-import {
-  createAgent,
-  createToolCallStorage,
-  type AgentEvent,
-  type AgentOptions,
-} from '../src/index.js';
 import type {
   LlmProvider,
   ProviderFinished,
@@ -18,6 +12,13 @@ import type {
   ToolStorage,
   ToolTurn,
 } from 'tool';
+
+import {
+  type AgentEvent,
+  type AgentOptions,
+  createAgent,
+  createToolCallStorage,
+} from '../src/index.js';
 
 type ProviderFake = {
   readonly provider: LlmProvider;
@@ -86,6 +87,7 @@ export const createProvider = (options: {
         request: ProviderRequest<Output>,
       ) => {
         const index = requests.length;
+
         requests.push(request);
 
         return (options.complete?.(request, index) ??
@@ -95,14 +97,15 @@ export const createProvider = (options: {
         request: ProviderRequest<Output>,
       ) {
         const index = requests.length;
+
         requests.push(request);
 
         yield* (options.stream?.(request, index) ?? []) as AsyncIterable<
           ProviderStreamEvent<Output>
         >;
       },
-      embedding: async () => [],
-      rerank: async () => [],
+      embedding: async () => ({ embedding: [] }),
+      rerank: async () => ({ results: [] }),
       models: async () => [{ id: 'fake-model' }],
       validateModel: async (model: string) => ({ id: model }),
     } as unknown as LlmProvider,
@@ -117,6 +120,7 @@ export const createTools = (
   } = {},
 ): ToolFake => {
   const calls: ToolCall[] = [];
+
   const storage: ToolStorage = {
     definitions: () => options.definitions ?? [],
     calls: (turn: ToolTurn) => (turn.toolCalls ?? []).map(parseToolCall),
@@ -124,6 +128,7 @@ export const createTools = (
     get: () => undefined,
     execute: async (toolCall) => {
       const parsed = 'payload' in toolCall ? toolCall : parseToolCall(toolCall);
+
       calls.push(parsed);
 
       if (options.failure !== undefined) {
@@ -153,10 +158,12 @@ export const streamEvents = (
       provider: 'fake',
       model: 'fake-model',
     };
+
     yield {
       type: 'text.delta',
       delta: finish.text,
     };
+
     yield {
       type: 'response.finished',
       finish,

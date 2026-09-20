@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 
 import {
-  ToolErrorObject,
-  ToolDefinitionSchema,
-  ToolMetadataSchema,
   createToolStorage,
   defineTool,
   type ToolCall,
+  ToolDefinitionSchema,
+  ToolErrorObject,
+  ToolMetadataSchema,
 } from '../src/index.js';
 
 const sandbox = { id: 'sandbox', root: '/workspace' } as Sandbox;
@@ -29,6 +30,7 @@ test('exports a JSON-Schema-compatible tool definition schema', () => {
   };
 
   assert.deepEqual(ToolDefinitionSchema.parse(value), value);
+
   assert.equal(z.toJSONSchema(ToolDefinitionSchema).type, 'object');
 });
 
@@ -36,6 +38,7 @@ test('exports strict-output-compatible tool metadata', () => {
   const value = { name: 'lookup', description: 'Looks up a value.' };
 
   assert.deepEqual(ToolMetadataSchema.parse(value), value);
+
   assert.deepEqual(z.toJSONSchema(ToolMetadataSchema).required, [
     'name',
     'description',
@@ -44,7 +47,9 @@ test('exports strict-output-compatible tool metadata', () => {
 
 test('infers typed payloads from Zod schemas at compile time', async () => {
   const expectString = (value: string): string => value;
+
   const expectNumber = (value: number): number => value;
+
   const factory = defineTool({
     name: 'lookup',
     input: z.object({
@@ -57,6 +62,7 @@ test('infers typed payloads from Zod schemas at compile time', async () => {
     }),
     execute(received, payload) {
       assert.equal(received, sandbox);
+
       expectString(payload.query);
 
       if (payload.limit !== undefined) {
@@ -85,26 +91,40 @@ test('exposes metadata before binding and binds the supplied sandbox', async () 
     output: z.string(),
     execute: (received, { query, limit }) => {
       assert.equal(received, sandbox);
+
       return `${query}:${limit}`;
     },
   });
 
   assert.equal(factory.name, 'search');
+
   assert.equal(factory.description, 'Search indexed context.');
+
   assert.equal(factory.input instanceof z.ZodObject, true);
+
   assert.equal(factory.output instanceof z.ZodString, true);
+
   assert.equal('schema' in factory, false);
+
   assert.equal('outputSchema' in factory, false);
+
   assert.equal(factory.definition.name, 'search');
+
   assert.equal(factory.definition.description, 'Search indexed context.');
+
   assert.equal(factory.definition.strict, true);
+
   assert.equal(factory.definition.inputSchema.type, 'object');
+
   assert.deepEqual(factory.definition.inputSchema.required, ['query', 'limit']);
+
   assert.deepEqual(factory.definition.inputSchema.properties, {
     query: { type: 'string' },
     limit: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
   });
+
   assert.equal(factory.definition.outputSchema.type, 'string');
+
   assert.equal(await factory(sandbox).execute({ query: 'x', limit: 2 }), 'x:2');
 });
 
@@ -165,6 +185,7 @@ test('preserves definition order and rejects duplicate names', () => {
     output: z.string(),
     execute: () => 'first',
   });
+
   const second = defineTool({
     name: 'second',
     input: z.object({}),
@@ -240,6 +261,7 @@ test('validates payloads before execution and supports async handlers', async ()
 
 test('validates calls without executing handlers', () => {
   let executions = 0;
+
   const storage = createToolStorage([
     defineTool({
       name: 'lookup',
@@ -247,6 +269,7 @@ test('validates calls without executing handlers', () => {
       output: z.string(),
       execute(_sandbox, { query }) {
         executions += 1;
+
         return query;
       },
     })(sandbox),
@@ -265,6 +288,7 @@ test('validates calls without executing handlers', () => {
       index: undefined,
     },
   );
+
   assert.equal(executions, 0);
 });
 
@@ -321,6 +345,7 @@ test('validates handler output without exposing the rejected value', async () =>
 
   await assert.rejects(tool.execute({ query: 'doric' }), (error: unknown) => {
     assert.ok(error instanceof ToolErrorObject);
+
     assert.deepEqual(error.data, {
       code: 'invalid_output',
       message: 'Tool handler returned invalid output: lookup',
@@ -332,7 +357,9 @@ test('validates handler output without exposing the rejected value', async () =>
         },
       ],
     });
+
     assert.equal(error.cause, undefined);
+
     return true;
   });
 });

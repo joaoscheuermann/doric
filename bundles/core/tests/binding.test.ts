@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import pino from 'pino';
+
 import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
@@ -10,6 +11,7 @@ import factory from '../tools/write.js';
 test('binds a core tool to a lease and rejects operations after release', async () => {
   const files = new Map<string, string>();
   let disposed = false;
+
   const session: SandboxSession = {
     id: 'core-test',
     root: '/workspace',
@@ -23,7 +25,11 @@ test('binds a core tool to a lease and rejects operations after release', async 
     cloneRepo: async () => ({ path: '/workspace/repo', commit: 'abc' }),
     readFile: async (path) => {
       const value = files.get(path);
-      if (value === undefined) throw new Error('missing');
+
+      if (value === undefined) {
+        throw new Error('missing');
+      }
+
       return value;
     },
     writeFile: async (path, content) => {
@@ -37,6 +43,7 @@ test('binds a core tool to a lease and rejects operations after release', async 
       disposed = true;
     },
   };
+
   const pool = createSandpool({
     minIdle: 0,
     maxSandboxes: 1,
@@ -46,19 +53,23 @@ test('binds a core tool to a lease and rejects operations after release', async 
 
   try {
     const lease = await pool.acquire();
+
     const result = await factory(lease.sandbox).execute({
       path: 'result.md',
       content: '# Result',
     });
 
     assert.equal(result.success, true);
+
     assert.equal(files.get('/workspace/result.md'), '# Result');
 
     await lease.release();
+
     await assert.rejects(
       lease.sandbox.readFile('/workspace/result.md'),
       /lease is no longer active/u,
     );
+
     assert.equal(disposed, true);
   } finally {
     await pool.dispose();

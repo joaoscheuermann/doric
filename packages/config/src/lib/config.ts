@@ -11,6 +11,7 @@ import type { ConfigParseErrorCode } from './types/error.js';
 import { at, isRecord } from './utils/object.js';
 
 export { ConfigParseError } from './classes/parse-error.js';
+
 export type {
   AgentConfig,
   GithubConfig,
@@ -19,6 +20,7 @@ export type {
   ReasoningEffort,
   TaskConfig,
 } from './types/config.js';
+
 export type { ConfigParseErrorCode, ConfigParseIssue } from './types/error.js';
 
 const MESSAGE_METADATA_PATH = 'message.metadata';
@@ -102,10 +104,12 @@ function parseProvider(value: unknown, path: string): ProviderConfig {
 function parseModel(value: unknown, path: string): ModelConfig {
   const input = object(value, path);
   const effort = optionalReasoningEffort(input['effort'], at(path, 'effort'));
+
   const reasoning = optionalReasoningEffort(
     input['reasoning'],
     at(path, 'reasoning'),
   );
+
   const internalKey = optionalString(
     input['internal_key'],
     at(path, 'internal_key'),

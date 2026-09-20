@@ -1,6 +1,6 @@
 import {
-  structuredJsonSchema,
   type ProviderFinished,
+  structuredJsonSchema,
   type StructuredOutputSchema,
 } from 'llms';
 import type { ToolDefinition } from 'tool';
@@ -59,7 +59,6 @@ export const createStructuredOutputTool = (
 ): StructuredOutputTool => {
   /** Never shadow a caller tool that already uses the preferred terminal name. */
   const name = availableName(new Set(tools.map((tool) => tool.name)));
-
   /** Reuse the provider schema conversion used by native structured output. */
   const inputSchema = structuredJsonSchema(provider, schema);
 
@@ -132,11 +131,13 @@ export const parseStructuredOutputTool = <Output>(
     const composed = composeCandidate(baseline, value);
     const parsed = tool.schema.safeParse(composed);
 
-    if (parsed.success)
+    if (parsed.success) {
       return finishedSubmission(finish, composed, parsed.data);
+    }
 
     /** A failed composition falls back to normal whole-submission validation. */
     const replacement = tool.schema.safeParse(value);
+
     if (replacement.success) {
       return finishedSubmission(finish, value, replacement.data);
     }
@@ -161,7 +162,9 @@ export const nextStructuredOutputRepair = (
   maxRepairs = defaultInvalidSubmissionLimit,
   baseline?: StructuredOutputBaseline,
 ): StructuredOutputRepair => {
-  if (invalidSubmissions >= maxRepairs) throw error;
+  if (invalidSubmissions >= maxRepairs) {
+    throw error;
+  }
 
   return {
     invalidSubmissions: invalidSubmissions + 1,
@@ -200,11 +203,16 @@ const invalidValidation = <Output>(
 };
 
 const availableName = (names: ReadonlySet<string>): string => {
-  if (!names.has(baseName)) return baseName;
+  if (!names.has(baseName)) {
+    return baseName;
+  }
 
   /** Select the first deterministic suffix not owned by caller tools. */
   let suffix = 2;
-  while (names.has(`${baseName}_${suffix}`)) suffix += 1;
+
+  while (names.has(`${baseName}_${suffix}`)) {
+    suffix += 1;
+  }
 
   return `${baseName}_${suffix}`;
 };
@@ -240,10 +248,12 @@ const validationDiagnostic = (issues: readonly ValidationIssue[]): string =>
     .map((issue) => {
       const path = issue.path.map(String).join('.') || '<root>';
       const kind = issue.code.replace(/\s+/g, '_').trim();
+
       const expected =
         typeof issue.expected === 'string'
           ? [`  Expected: ${issue.expected}`]
           : [];
+
       const [message = '', ...details] = issue.message
         .split(/\r?\n/u)
         .map((line) => line.replace(/\s+/g, ' ').trim())
@@ -264,12 +274,19 @@ const repairablePaths = (
   issues: readonly ValidationIssue[],
 ): readonly StructuredOutputPath[] | undefined => {
   const paths = issues.map((issue) => repairablePath(value, issue));
-  if (paths.some((path) => path === undefined)) return undefined;
+
+  if (paths.some((path) => path === undefined)) {
+    return undefined;
+  }
 
   const unique = new Map<string, StructuredOutputPath>();
+
   paths.forEach((path) => {
-    if (path !== undefined) unique.set(JSON.stringify(path), path);
+    if (path !== undefined) {
+      unique.set(JSON.stringify(path), path);
+    }
   });
+
   return [...unique.values()];
 };
 
@@ -277,7 +294,10 @@ const repairablePath = (
   value: unknown,
   issue: ValidationIssue,
 ): StructuredOutputPath | undefined => {
-  if (issue.code === 'custom' || issue.path.length === 0) return undefined;
+  if (issue.code === 'custom' || issue.path.length === 0) {
+    return undefined;
+  }
+
   if (
     !issue.path.every(
       (part) => typeof part === 'string' || typeof part === 'number',
@@ -286,14 +306,19 @@ const repairablePath = (
     return undefined;
   }
 
-  const path = issue.path as StructuredOutputPath;
+  const path = issue.path;
   const located = locate(value, path);
-  if (!located.parentFound) return undefined;
+
+  if (!located.parentFound) {
+    return undefined;
+  }
+
   if (!located.found) {
     return typeof path.at(-1) === 'string' && primitiveExpected(issue.expected)
       ? path
       : undefined;
   }
+
   return primitive(located.value) && !collectionExpected(issue.expected)
     ? path
     : undefined;
@@ -315,6 +340,7 @@ const composeCandidate = (
 ): unknown =>
   baseline.paths.reduce((value, path) => {
     const replacement = locate(candidate, path);
+
     return replacement.parentFound
       ? replaceAt(value, path, replacement)
       : value;
@@ -328,15 +354,22 @@ type Located = {
 
 const locate = (value: unknown, path: StructuredOutputPath): Located => {
   let current = value;
+
   for (let index = 0; index < path.length; index += 1) {
-    if (!container(current)) return { found: false, parentFound: false };
-    const key = path[index]!;
+    if (!container(current)) {
+      return { found: false, parentFound: false };
+    }
+
+    const key = path[index];
     const found = Object.prototype.hasOwnProperty.call(current, key);
+
     if (!found) {
       return { found: false, parentFound: index === path.length - 1 };
     }
+
     current = current[key as keyof typeof current];
   }
+
   return { found: true, parentFound: true, value: current };
 };
 
@@ -346,15 +379,22 @@ const replaceAt = (
   replacement: Located,
 ): unknown => {
   const [key, ...rest] = path;
-  if (key === undefined || !container(value)) return value;
+
+  if (key === undefined || !container(value)) {
+    return value;
+  }
 
   if (rest.length === 0) {
     if (Array.isArray(value)) {
-      if (typeof key !== 'number' || !replacement.found) return value;
+      if (typeof key !== 'number' || !replacement.found) {
+        return value;
+      }
+
       return value.map((item, index) =>
         index === key ? replacement.value : item,
       );
     }
+
     return Object.fromEntries([
       ...Object.entries(value).filter(([name]) => name !== String(key)),
       ...(replacement.found ? [[String(key), replacement.value]] : []),
@@ -363,6 +403,7 @@ const replaceAt = (
 
   const child = value[key as keyof typeof value];
   const next = replaceAt(child, rest, replacement);
+
   return Array.isArray(value)
     ? value.map((item, index) => (index === key ? next : item))
     : Object.fromEntries(

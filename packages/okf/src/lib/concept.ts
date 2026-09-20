@@ -32,7 +32,9 @@ export const renderConcept = (input: ConceptInput): string => {
       : { exports: input.interface.exports }),
   };
   const document = new Document(metadata);
+
   markFlowSequences(document, metadata);
+
   const yaml = document.toString({
     defaultKeyType: 'PLAIN',
     defaultStringType: 'QUOTE_DOUBLE',
@@ -47,16 +49,24 @@ export const hasRecipeHash = (markdown: string, expected: string): boolean => {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(
     markdown,
   )?.[1];
-  if (frontmatter === undefined) return false;
+
+  if (frontmatter === undefined) {
+    return false;
+  }
 
   const document = parseDocument(frontmatter, { uniqueKeys: true });
-  if (document.errors.length > 0) return false;
+
+  if (document.errors.length > 0) {
+    return false;
+  }
+
   return document.get('hash') === expected;
 };
 
 const title = (source: string): string => {
   const name = path.posix.basename(source);
   const extension = path.posix.extname(name);
+
   return extension.length === 0 ? name : name.slice(0, -extension.length);
 };
 
@@ -67,12 +77,20 @@ const markFlowSequences = (document: Document, metadata: object): void => {
   ): void => {
     if (Array.isArray(value)) {
       const node = document.getIn(location, true);
-      if (isSeq(node) && value.every((item) => typeof item === 'string'))
+
+      if (isSeq(node) && value.every((item) => typeof item === 'string')) {
         node.flow = true;
+      }
+
       value.forEach((item, index) => walk(item, [...location, index]));
+
       return;
     }
-    if (value === null || typeof value !== 'object') return;
+
+    if (value === null || typeof value !== 'object') {
+      return;
+    }
+
     Object.entries(value).forEach(([key, item]) =>
       walk(item, [...location, key]),
     );

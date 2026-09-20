@@ -54,6 +54,7 @@ test('parses OpenAI completion output usage reasoning and tool calls', async () 
       }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -65,8 +66,11 @@ test('parses OpenAI completion output usage reasoning and tool calls', async () 
   });
 
   assert.equal(result.text, 'Done');
+
   assert.equal(result.finishReason, 'tool_calls');
+
   assert.deepEqual(result.reasoning, { text: 'Thought' });
+
   assert.deepEqual(result.usage, {
     inputTokens: 3,
     outputTokens: 4,
@@ -74,9 +78,11 @@ test('parses OpenAI completion output usage reasoning and tool calls', async () 
     reasoningTokens: 2,
     cachedInputTokens: undefined,
   });
+
   assert.deepEqual(result.toolCalls, [
     { id: 'call_1', name: 'lookup', arguments: '{"q":"x"}', index: 0 },
   ]);
+
   assert.deepEqual(result.replay, [
     { type: 'reasoning', summary: [{ text: 'Thought' }] },
     {
@@ -98,6 +104,7 @@ test('returns parsed OpenAI structured output from completions', async () => {
       }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -108,10 +115,10 @@ test('returns parsed OpenAI structured output from completions', async () => {
     messages: [{ role: 'user', content: 'Hi' }],
     schema: z.object({ answer: z.coerce.number() }),
   });
-
   const answer: number = result.structured.answer;
 
   assert.deepEqual(result.structured, { answer: 4 });
+
   assert.equal(answer, 4);
 });
 
@@ -125,6 +132,7 @@ test('returns parsed OpenAI nested union structured output from completions', as
       }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -181,6 +189,7 @@ test('rejects OpenAI refusals when structured output is required', async () => {
       }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -236,6 +245,7 @@ test('sends OpenAI API key auth as bearer token', async () => {
       response({ status: 'completed', output_text: 'ok', output: [] }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: 'sk-testSecret123',
@@ -258,6 +268,7 @@ test('sends exact OpenAI authorization header when supplied', async () => {
       response({ status: 'completed', output_text: 'ok', output: [] }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     authorization: 'Custom credential-value',
@@ -299,6 +310,7 @@ test('omits OpenAI authorization header when credentials are blank', async () =>
       response({ status: 'completed', output_text: 'ok', output: [] }),
     ],
   });
+
   const provider = createOpenAiProvider({
     transport,
     apiKey: '  ',
@@ -365,6 +377,7 @@ test('does not refresh OpenAI auth after 401 responses', async () => {
   const transport = fakeTransport({
     responses: [response({ error: 'expired' }, 401)],
   });
+
   const provider = createOpenAiProvider({
     transport,
     authorization: 'Bearer expired-token',
@@ -378,5 +391,6 @@ test('does not refresh OpenAI auth after 401 responses', async () => {
     (error: unknown) =>
       error instanceof ProviderErrorObject && error.data.code === 'auth_failed',
   );
+
   assert.equal(transport.requests.length, 1);
 });

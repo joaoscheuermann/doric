@@ -10,6 +10,7 @@ export type RunningVm = {
 export type VmRegistry = {
   readonly provider: SandboxProvider;
   list(): readonly RunningVm[];
+
   find(id: string): RunningVm | undefined;
 };
 
@@ -24,7 +25,9 @@ export const createVmRegistry = (
     provider: {
       async provision(input) {
         const runtime = await provider.provision(input);
+
         running.set(runtime.id, { id: runtime.id, provider: name });
+
         return tracked(runtime, () => running.delete(runtime.id));
       },
     },
@@ -44,6 +47,7 @@ const tracked = (
   ssh: () => runtime.ssh(),
   async dispose() {
     await runtime.dispose();
+
     remove();
   },
 });

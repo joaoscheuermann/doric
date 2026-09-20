@@ -35,7 +35,10 @@ export const turnGuard = (maxTurns: number | undefined): (() => void) => {
 export const repairLimit = (value: number | undefined): number => {
   const limit = value ?? defaultMaxToolCallRepairs;
 
-  if (Number.isSafeInteger(limit) && limit >= 0) return limit;
+  if (Number.isSafeInteger(limit) && limit >= 0) {
+    return limit;
+  }
+
   throw new TypeError(
     'Agent maxToolCallRepairs must be a non-negative safe integer.',
   );
@@ -102,6 +105,7 @@ const fenced = (value: string): string => {
   );
   const fence = '`'.repeat(Math.max(3, longest + 1));
   const body = value.endsWith('\n') ? value : `${value}\n`;
+
   return `${fence}text\n${body}${fence}`;
 };
 

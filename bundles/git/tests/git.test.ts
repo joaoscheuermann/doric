@@ -33,10 +33,15 @@ describe('git tool', () => {
         timeoutMs: 5000,
       },
     ]);
+
     assert.equal(output.schema, 'git.command.v1');
+
     assert.equal(output.success, true);
+
     assert.equal(output.exit_code, 0);
+
     assert.equal(output.stdout.text, 'main\n');
+
     assert.equal(output.working_directory, '/workspace/repo');
   });
 
@@ -49,6 +54,7 @@ describe('git tool', () => {
     });
 
     assert.equal(sandbox.execs[0]?.cwd, '/workspace');
+
     assert.equal(sandbox.execs[0]?.timeoutMs, 600_000);
   });
 
@@ -58,19 +64,25 @@ describe('git tool', () => {
     ).execute({ args: ['status'] });
 
     assert.equal(output.success, false);
+
     assert.equal(output.exit_code, -1);
+
     assert.match(output.stderr.text, /exec failed/u);
   });
 
   test('bounds large stdout while preserving its beginning and end', async () => {
     const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
+
     const output = await createTool()(fakeSandbox(result({ stdout }))).execute({
       args: ['log', '--oneline', '--all'],
     });
 
     assert.equal(output.stdout.truncated, true);
+
     assert.ok(output.stdout.omitted_bytes > 0);
+
     assert.match(output.stdout.text, /^a+/u);
+
     assert.match(output.stdout.text, /z+$/u);
   });
 });
@@ -84,7 +96,11 @@ const fakeSandbox = (behavior: SandboxExecResult | Error): FakeSandbox => {
     execs,
     async exec(input) {
       execs.push(input);
-      if (behavior instanceof Error) throw behavior;
+
+      if (behavior instanceof Error) {
+        throw behavior;
+      }
+
       return behavior;
     },
     cloneRepo: unsupported,

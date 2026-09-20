@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { type AgentStructuredAttemptEvent } from '../src/index.js';
-import { createMessageStorage } from 'messages';
 import { z } from 'zod';
 
+import { createMessageStorage } from 'messages';
+
+import { type AgentStructuredAttemptEvent } from '../src/index.js';
 import {
   call,
   collect,
@@ -37,6 +38,7 @@ for (const mode of ['complete', 'stream'] as const) {
     });
     const events: AgentStructuredAttemptEvent[] = [];
     let observerActive = false;
+
     const agent = createAgent({
       provider: provider.provider,
       tools: createTools().storage,
@@ -44,21 +46,30 @@ for (const mode of ['complete', 'stream'] as const) {
       system: '',
       model: 'fake-model',
     });
+
     const options = {
       schema,
       onStructuredAttempt: async (event: AgentStructuredAttemptEvent) => {
         assert.equal(observerActive, false);
+
         observerActive = true;
+
         await Promise.resolve();
+
         events.push(event);
+
         observerActive = false;
       },
     };
 
-    if (mode === 'complete') await agent.complete('Return it.', options);
-    else await collect(agent.stream('Return it.', options));
+    if (mode === 'complete') {
+      await agent.complete('Return it.', options);
+    } else {
+      await collect(agent.stream('Return it.', options));
+    }
 
     assert.equal(events.length, 2);
+
     assert.deepEqual(events[0], {
       schemaVersion: 1,
       attempt: 1,
@@ -66,7 +77,9 @@ for (const mode of ['complete', 'stream'] as const) {
       feedbackSent: true,
       diagnostic: events[0]?.diagnostic,
     });
+
     assert.match(events[0]?.diagnostic ?? '', /Field: answer/);
+
     assert.deepEqual(events[1], {
       schemaVersion: 1,
       attempt: 2,
@@ -77,6 +90,7 @@ for (const mode of ['complete', 'stream'] as const) {
 
   test(`${mode} aborts immediately when the structured-attempt callback fails`, async () => {
     const failure = new Error('observer stopped the run');
+
     const provider = createProvider({
       complete: (request) =>
         completeFinish('', [call(terminal(request), { answer: 'done' })]),
@@ -86,6 +100,7 @@ for (const mode of ['complete', 'stream'] as const) {
         ),
     });
     const messages = createMessageStorage();
+
     const agent = createAgent({
       provider: provider.provider,
       tools: createTools().storage,
@@ -93,6 +108,7 @@ for (const mode of ['complete', 'stream'] as const) {
       system: '',
       model: 'fake-model',
     });
+
     const operation =
       mode === 'complete'
         ? agent.complete('Return it.', {
@@ -111,7 +127,9 @@ for (const mode of ['complete', 'stream'] as const) {
           );
 
     await assert.rejects(operation, (error: unknown) => error === failure);
+
     assert.equal(provider.requests.length, 1);
+
     assert.deepEqual(messages.list(), [
       { role: 'user', content: 'Return it.' },
     ]);
@@ -127,6 +145,7 @@ for (const mode of ['complete', 'stream'] as const) {
         ),
     });
     const feedback: boolean[] = [];
+
     const agent = createAgent({
       provider: provider.provider,
       tools: createTools().storage,
@@ -134,18 +153,21 @@ for (const mode of ['complete', 'stream'] as const) {
       system: '',
       model: 'fake-model',
     });
+
     const options = {
       schema,
       onStructuredAttempt: (event: AgentStructuredAttemptEvent) => {
         feedback.push(event.feedbackSent);
       },
     };
+
     const operation =
       mode === 'complete'
         ? agent.complete('Return it.', options)
         : collect(agent.stream('Return it.', options));
 
     await assert.rejects(operation);
+
     assert.deepEqual(feedback, [true, true, false]);
   });
 }

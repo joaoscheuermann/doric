@@ -33,24 +33,39 @@ test('omits undefined object properties while marking array entries', () => {
 
 test('serializes Error fields own properties cycles and non-JSON values', () => {
   const cause = new Error('root secret');
+
   const error = new Error('failed secret', { cause }) as Error & {
     code: bigint;
     context: unknown;
   };
+
   error.code = 7n;
+
   error.context = { value: Number.NaN };
+
   const cyclic: Record<string, unknown> = { error };
+
   cyclic.self = cyclic;
 
   const serialized = eventJson(cyclic, ['secret']) as Record<string, unknown>;
+
   assert.equal(serialized.self, '[Circular: $]');
+
   const storedError = serialized.error as Record<string, unknown>;
+
   assert.equal(storedError.name, 'Error');
+
   assert.equal(storedError.message, 'failed [REDACTED]');
+
   assert.equal(storedError.code, '[BigInt: 7]');
+
   const output = JSON.stringify(serialized);
+
   assert.match(output, /failed \[REDACTED\]/u);
+
   assert.match(output, /root \[REDACTED\]/u);
+
   assert.match(output, /\[BigInt: 7\]/u);
+
   assert.match(output, /\[NaN\]/u);
 });

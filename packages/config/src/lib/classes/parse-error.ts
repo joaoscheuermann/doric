@@ -6,9 +6,13 @@ export class ConfigParseError extends TypeError {
 
   constructor(code: ConfigParseErrorCode, path: string, message: string) {
     super(message);
+
     this.name = 'ConfigParseError';
+
     this.code = code;
+
     this.path = path;
+
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

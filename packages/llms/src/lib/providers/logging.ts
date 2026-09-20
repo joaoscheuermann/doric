@@ -27,7 +27,7 @@ const operationNames = {
 
 type Operation = keyof typeof operationNames;
 
-/** Adds privacy-safe, uniform operational events to an LLM provider. */
+/** Adds uniform operational events to an LLM provider. */
 export const withProviderLogging = (
   provider: LlmProvider,
   logger: Logger,
@@ -55,7 +55,6 @@ export const withProviderLogging = (
       log,
       'complete',
       requestFields(request),
-      request.flags?.sensitiveOutput === true,
       request.signal,
       () => provider.complete(request),
       finishFields,
@@ -87,10 +86,12 @@ export const withProviderLogging = (
         log,
         'embedding',
         { model: request.model },
-        request.flags?.sensitiveOutput === true,
         request.signal,
         () => provider.embedding(request),
-        (embedding) => ({ dimensions: embedding.length }),
+        ({ embedding, usage }) => ({
+          dimensions: embedding.length,
+          ...usageFields(usage),
+        }),
       );
     },
 
@@ -99,10 +100,12 @@ export const withProviderLogging = (
         log,
         'rerank',
         rerankFields(request),
-        request.flags?.sensitiveOutput === true,
         request.signal,
         () => provider.rerank(request),
-        (results) => ({ resultCount: results.length }),
+        ({ results, usage }) => ({
+          resultCount: results.length,
+          ...usageFields(usage),
+        }),
       );
     },
 
@@ -111,7 +114,6 @@ export const withProviderLogging = (
         log,
         'models',
         {},
-        false,
         signal,
         () => provider.models(signal),
         (models) => ({ modelCount: models.length }),
@@ -123,7 +125,6 @@ export const withProviderLogging = (
         log,
         'validateModel',
         { model },
-        false,
         signal,
         () => provider.validateModel(model, signal),
         (validated) => ({ model: validated.id }),
@@ -136,16 +137,15 @@ const loggedPromise = async <Result>(
   logger: Logger,
   operation: Operation,
   startedFields: Fields,
-  sensitive: boolean,
   signal: AbortSignal | undefined,
   execute: () => Promise<Result>,
   completedFields: (result: Result) => Fields,
 ): Promise<Result> => {
-  debug(logger, operation, 'started', startedFields, sensitive);
+  debug(logger, operation, 'started', startedFields);
 
   try {
     const result = await execute();
-    debug(logger, operation, 'completed', completedFields(result), sensitive);
+    debug(logger, operation, 'completed', completedFields(result));
     return result;
   } catch (error) {
     debug(
@@ -153,7 +153,6 @@ const loggedPromise = async <Result>(
       operation,
       cancelled(error, signal) ? 'cancelled' : 'failed',
       {},
-      sensitive,
     );
     throw error;
   }
@@ -164,19 +163,18 @@ async function* loggedStream<Output>(
   source: AsyncIterable<ProviderStreamEvent<Output>>,
   request: ProviderRequest<Output>,
 ): AsyncIterable<ProviderStreamEvent<Output>> {
-  const sensitive = request.flags?.sensitiveOutput === true;
   let terminal = false;
-  debug(logger, 'stream', 'started', requestFields(request), sensitive);
+  debug(logger, 'stream', 'started', requestFields(request));
 
   try {
     for await (const event of source) {
       if (!terminal && event.type === 'error') {
         terminal = true;
-        debug(logger, 'stream', 'failed', {}, sensitive);
+        debug(logger, 'stream', 'failed', {});
       } else if (!terminal && event.type === 'response.finished') {
         terminal = true;
         const status = terminalFromFinish(event.finish);
-        debug(logger, 'stream', status, finishFields(event.finish), sensitive);
+        debug(logger, 'stream', status, finishFields(event.finish));
       }
 
       yield event;
@@ -184,7 +182,7 @@ async function* loggedStream<Output>(
 
     if (!terminal) {
       terminal = true;
-      debug(logger, 'stream', 'completed', {}, sensitive);
+      debug(logger, 'stream', 'completed', {});
     }
   } catch (error) {
     if (!terminal) {
@@ -194,13 +192,12 @@ async function* loggedStream<Output>(
         'stream',
         cancelled(error, request.signal) ? 'cancelled' : 'failed',
         {},
-        sensitive,
       );
     }
     throw error;
   } finally {
     if (!terminal) {
-      debug(logger, 'stream', 'cancelled', {}, sensitive);
+      debug(logger, 'stream', 'cancelled', {});
     }
   }
 }
@@ -210,11 +207,8 @@ const debug = (
   operation: Operation,
   status: 'started' | Terminal,
   fields: Fields,
-  sensitive: boolean,
 ): void => {
-  if (!sensitive) {
-    logger.debug(fields, `llm ${operationNames[operation]} ${status}`);
-  }
+  logger.debug(fields, `llm ${operationNames[operation]} ${status}`);
 };
 
 const requestFields = (request: ProviderRequest<unknown>): Fields => ({
@@ -244,6 +238,11 @@ const usageFields = (usage: UsageMetadata | undefined): Fields =>
         totalTokens: usage.totalTokens,
         reasoningTokens: usage.reasoningTokens,
         cachedInputTokens: usage.cachedInputTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        searchUnits: usage.searchUnits,
+        cost: usage.cost?.amount,
+        costUnit: usage.cost?.unit,
+        upstreamCost: usage.cost?.upstreamAmount,
       };
 
 const terminalFromFinish = (finish: ProviderFinished<unknown>): Terminal => {

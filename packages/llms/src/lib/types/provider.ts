@@ -1,10 +1,11 @@
+import type { z } from 'zod';
+
 import type {
   JsonObject,
   JsonValue,
   ToolCallRequest,
   ToolDefinition,
 } from 'tool';
-import type { z } from 'zod';
 
 export type { JsonArray, JsonObject, JsonPrimitive, JsonValue } from 'tool';
 
@@ -83,6 +84,7 @@ export type ReasoningRequest = {
 };
 
 export type StructuredOutputSchema = z.ZodType;
+
 export type StructuredOutputValue<Schema extends StructuredOutputSchema> =
   z.output<Schema>;
 
@@ -90,8 +92,6 @@ export type ProviderCallFlags = {
   readonly reasoning?: boolean | ReasoningRequest;
   readonly serviceTier?: 'auto' | 'default' | 'priority';
   readonly includeUsage?: boolean;
-  /** Suppresses operational logs and omits model output from diagnostics. */
-  readonly sensitiveOutput?: boolean;
   /** Adds the structured output JSON Schema to the model's system prompt. */
   readonly includeStructuredSchemaOnSystemPrompt?: boolean;
 };
@@ -111,6 +111,13 @@ export type UsageMetadata = {
   readonly totalTokens?: number;
   readonly reasoningTokens?: number;
   readonly cachedInputTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly searchUnits?: number;
+  readonly cost?: {
+    readonly amount: number;
+    readonly unit?: string;
+    readonly upstreamAmount?: number;
+  };
 };
 
 export type ReasoningMetadata = {
@@ -211,7 +218,6 @@ export type ProviderEmbeddingRequest = {
   readonly model: string;
   readonly input: string;
   readonly dimensions?: number;
-  readonly flags?: ProviderCallFlags;
   readonly signal?: AbortSignal;
 };
 
@@ -221,13 +227,22 @@ export type ProviderRerankRequest = {
   readonly query: string;
   readonly documents: readonly string[];
   readonly topN?: number;
-  readonly flags?: ProviderCallFlags;
   readonly signal?: AbortSignal;
 };
 
 export type ProviderRerankResult = {
   readonly index: number;
   readonly relevanceScore: number;
+};
+
+export type ProviderEmbeddingFinished = {
+  readonly embedding: readonly number[];
+  readonly usage?: UsageMetadata;
+};
+
+export type ProviderRerankFinished = {
+  readonly results: readonly ProviderRerankResult[];
+  readonly usage?: UsageMetadata;
 };
 
 /** Provider-neutral completion and streaming contract for agent-core callers. */
@@ -255,11 +270,11 @@ export interface LlmProvider {
     request: ProviderRequest<Output>,
   ): AsyncIterable<ProviderStreamEvent<Output>>;
 
-  embedding(request: ProviderEmbeddingRequest): Promise<readonly number[]>;
+  embedding(
+    request: ProviderEmbeddingRequest,
+  ): Promise<ProviderEmbeddingFinished>;
 
-  rerank(
-    request: ProviderRerankRequest,
-  ): Promise<readonly ProviderRerankResult[]>;
+  rerank(request: ProviderRerankRequest): Promise<ProviderRerankFinished>;
 
   models(signal?: AbortSignal): Promise<readonly Model[]>;
 

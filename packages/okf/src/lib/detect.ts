@@ -17,6 +17,7 @@ export type SupportedType = (typeof SUPPORTED_EXTENSIONS)[number];
 /** Derives the OKF type from the lowercase final filename extension. */
 export const detectType = (source: string): string => {
   const extension = path.posix.extname(source.replaceAll('\\', '/'));
+
   return extension.length > 1
     ? extension.slice(1).toLowerCase()
     : 'no-extension';

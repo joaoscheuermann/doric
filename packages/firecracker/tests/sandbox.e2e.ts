@@ -3,22 +3,24 @@ import { execFile } from 'node:child_process';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import test from 'node:test';
+import { promisify } from 'node:util';
+
+import pino from 'pino';
 
 import { createSandbox, type SandboxSession } from 'sandbox';
-import pino from 'pino';
 import { createSandpool } from 'sandpool';
 
 import {
-  DEFAULT_FIRECRACKER_PATHS,
   createFirecrackerClient,
+  DEFAULT_FIRECRACKER_PATHS,
   nodeTransport,
   preflightFirecrackerHost,
 } from '../src/index.js';
 
 const run = promisify(execFile);
 const resources = { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 } as const;
+
 const network = {
   mode: 'disabled',
   ssh: true,
@@ -42,6 +44,7 @@ test(
   { timeout: 10 * 60_000 },
   async () => {
     let sandbox: SandboxSession | undefined;
+
     try {
       sandbox = await createSandbox({
         provider: createFirecrackerClient(),
@@ -55,13 +58,19 @@ test(
         cmd: ['node', '-p', 'JSON.stringify([process.version,process.cwd()])'],
         timeoutMs: 10_000,
       });
+
       assert.equal(node.exitCode, 0, node.stderr);
+
       const [version, cwd] = JSON.parse(node.stdout) as [string, string];
+
       assert.match(version, /^v22\./u);
+
       assert.equal(cwd, '/workspace');
 
       const bytes = Uint8Array.from([0, 1, 2, 127, 128, 254, 255]);
+
       await sandbox.putFile('/workspace/payload.bin', bytes);
+
       assert.deepEqual(await sandbox.getFile('/workspace/payload.bin'), bytes);
 
       const publicHttps = await sandbox.exec({
@@ -72,7 +81,9 @@ test(
         ],
         timeoutMs: 20_000,
       });
+
       assert.equal(publicHttps.exitCode, 0, publicHttps.stderr);
+
       assert.match(publicHttps.stdout, /^\d{3}\s*$/u);
 
       const metadata = await sandbox.exec({
@@ -83,19 +94,29 @@ test(
         ],
         timeoutMs: 5_000,
       });
+
       assert.equal(metadata.exitCode, 0, metadata.stderr);
+
       assert.doesNotMatch(metadata.stdout, /open/u);
+
       assert.match(metadata.stdout, /blocked/u);
 
       const ssh = await sandbox.ssh();
+
       assert.ok(ssh);
+
       const directory = await mkdtemp(join(tmpdir(), 'doric-ssh-'));
+
       try {
         const key = join(directory, 'id_ed25519');
         const knownHosts = join(directory, 'known_hosts');
+
         await writeFile(key, ssh.privateKey, { mode: 0o600 });
+
         await chmod(key, 0o600);
+
         await writeFile(knownHosts, `${ssh.knownHosts}\n`, { mode: 0o600 });
+
         const result = await run(
           'ssh',
           [
@@ -117,6 +138,7 @@ test(
           ],
           { timeout: 10_000 },
         );
+
         assert.match(result.stdout, /^v22\./u);
       } finally {
         await rm(directory, { recursive: true, force: true });
@@ -132,6 +154,7 @@ test(
   { timeout: 15 * 60_000 },
   async () => {
     const provider = createFirecrackerClient();
+
     const pool = createSandpool({
       minIdle: 1,
       maxSandboxes: 1,
@@ -147,12 +170,19 @@ test(
 
     try {
       await pool.waitUntilHeated();
+
       const first = await pool.acquire();
+
       await first.sandbox.writeFile('isolated.txt', 'first');
+
       await first.release();
+
       await pool.waitUntilHeated();
+
       const second = await pool.acquire();
+
       assert.notEqual(second.sandbox.id, first.sandbox.id);
+
       const isolated = await second.sandbox.exec({
         cmd: [
           'node',
@@ -160,12 +190,16 @@ test(
           "process.exit(require('fs').existsSync('/workspace/isolated.txt')?1:0)",
         ],
       });
+
       assert.equal(isolated.exitCode, 0, isolated.stderr);
+
       await second.release();
     } finally {
       await pool.dispose();
     }
+
     assert.equal(pool.status().lifecycle, 'disposed');
+
     assert.equal(pool.status().total, 0);
   },
 );

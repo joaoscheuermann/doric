@@ -1,4 +1,5 @@
 import type { ToolFactory } from 'tool';
+
 import type { SkillRecord } from '../schemas/skill.js';
 
 export type BundleManifestTool = {

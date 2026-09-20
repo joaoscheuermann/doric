@@ -4,13 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { JsonlParseError, jsonl } from '../src/index.js';
+import { jsonl, JsonlParseError } from '../src/index.js';
 
 test('writes one JSON line when append receives a record', async () => {
   await withTempJsonl(async (path) => {
     const file = jsonl(path);
 
     await file.append({ id: 'one', nested: { ok: true } });
+
     await file.close();
 
     assert.equal(
@@ -29,6 +30,7 @@ test('preserves call order when append is called concurrently', async () => {
       file.append({ index: 2 }),
       file.append({ index: 3 }),
     ]);
+
     await file.close();
 
     assert.equal(
@@ -40,7 +42,10 @@ test('preserves call order when append is called concurrently', async () => {
 
 test('streams parsed records when read receives JSON lines', async () => {
   await withTempJsonl(async (path) => {
-    await writeFile(path, '{"kind":"started"}\n{"kind":"finished","ok":true}\n');
+    await writeFile(
+      path,
+      '{"kind":"started"}\n{"kind":"finished","ok":true}\n',
+    );
 
     const records = [];
 
@@ -67,16 +72,22 @@ test('rejects with line context when read receives invalid JSON', async () => {
       },
       (error: unknown) => {
         assert.ok(error instanceof JsonlParseError);
+
         assert.equal(error.path, path);
+
         assert.equal(error.lineNumber, 2);
+
         assert.equal(error.line, 'not json');
+
         return true;
       },
     );
   });
 });
 
-async function withTempJsonl(testFile: (path: string) => Promise<void>): Promise<void> {
+async function withTempJsonl(
+  testFile: (path: string) => Promise<void>,
+): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'jsonl-'));
   const path = join(dir, 'events.jsonl');
 

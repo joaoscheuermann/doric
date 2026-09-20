@@ -12,6 +12,7 @@ export interface ToolCallRecord {
 /** Process-local append-only ledger of successful executable-tool results. */
 export interface ToolCallStorage {
   append(call: ToolCall, output: string): ToolCallRecord;
+
   list(): readonly ToolCallRecord[];
 }
 

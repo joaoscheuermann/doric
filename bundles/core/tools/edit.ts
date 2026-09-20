@@ -1,8 +1,9 @@
 import { posix as path } from 'node:path';
 
+import { z } from 'zod';
+
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
-import { z } from 'zod';
 
 const description =
   "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit.";
@@ -31,6 +32,7 @@ export const output = z
   .strict();
 
 export type EditOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type NormalizedEdit = {
@@ -82,6 +84,7 @@ const execute = async (
   const normalized = normalizeToLf(content);
   const edits = input.edits.map(normalizeEntry);
   const validation = validate(input.path, edits);
+
   if (validation !== undefined) {
     return errorOutput(validation);
   }
@@ -89,11 +92,13 @@ const execute = async (
   const anyFuzzy = edits.some((edit) => !normalized.includes(edit.oldText));
   const baseContent = anyFuzzy ? normalizeForFuzzy(normalized) : normalized;
   const matched = locate(input.path, edits, baseContent);
+
   if (typeof matched === 'string') {
     return errorOutput(matched);
   }
 
   const newContent = apply(baseContent, matched);
+
   if (newContent === baseContent) {
     return errorOutput(
       `No changes made to ${input.path}. The replacement produced identical content.`,
@@ -106,6 +111,7 @@ const execute = async (
       () => undefined,
       (error: unknown) => `Failed to write file: ${errorMessage(error)}`,
     );
+
   if (writeError !== undefined) {
     return errorOutput(writeError);
   }
@@ -162,11 +168,13 @@ const locate = (
 ): readonly MatchedEdit[] | string => {
   const matched = edits.map((edit, index) => {
     const matchIndex = baseContent.indexOf(edit.oldText);
+
     if (matchIndex < 0) {
       return missingMatch(filePath, index, edits.length);
     }
 
     const occurrences = countOccurrences(baseContent, edit.oldText);
+
     if (occurrences > 1) {
       return duplicateMatch(filePath, index, edits.length, occurrences);
     }
@@ -182,6 +190,7 @@ const locate = (
   const failure = matched.find(
     (value): value is string => typeof value === 'string',
   );
+
   if (failure !== undefined) {
     return failure;
   }
@@ -193,6 +202,7 @@ const locate = (
   for (let index = 1; index < sorted.length; index += 1) {
     const previous = sorted[index - 1];
     const current = sorted[index];
+
     if (previous.matchIndex + previous.matchLength > current.matchIndex) {
       return `edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${filePath}. Merge them into one edit.`;
     }
@@ -234,10 +244,13 @@ const duplicateMatch = (
 const countOccurrences = (content: string, needle: string): number => {
   let count = 0;
   let index = content.indexOf(needle);
+
   while (index >= 0) {
     count += 1;
+
     index = content.indexOf(needle, index + needle.length);
   }
+
   return count;
 };
 
@@ -258,12 +271,15 @@ const diffPreview = (
   for (let index = start; index < prefix; index += 1) {
     lines.push(formatLine(index + 1, ' ', oldLines[index] ?? '', width));
   }
+
   for (const [index, line] of oldChanged.entries()) {
     lines.push(formatLine(prefix + index + 1, '-', line, width));
   }
+
   for (const [index, line] of newChanged.entries()) {
     lines.push(formatLine(prefix + index + 1, '+', line, width));
   }
+
   for (
     let index = prefix + oldChanged.length;
     index < Math.min(oldLines.length, prefix + oldChanged.length + 3);
@@ -282,6 +298,7 @@ const firstChangedLine = (
   const oldLines = splitLines(oldContent);
   const newLines = splitLines(newContent);
   const prefix = commonPrefix(oldLines, newLines);
+
   return prefix < oldLines.length || prefix < newLines.length
     ? prefix + 1
     : undefined;
@@ -299,6 +316,7 @@ const commonPrefix = (
   right: readonly string[],
 ): number => {
   let index = 0;
+
   while (
     index < left.length &&
     index < right.length &&
@@ -306,6 +324,7 @@ const commonPrefix = (
   ) {
     index += 1;
   }
+
   return index;
 };
 
@@ -314,6 +333,7 @@ const commonSuffix = (
   right: readonly string[],
 ): number => {
   let count = 0;
+
   while (
     count < left.length &&
     count < right.length &&
@@ -321,42 +341,53 @@ const commonSuffix = (
   ) {
     count += 1;
   }
+
   return count;
 };
 
 const normalizeToLf = (value: string): string =>
   value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
 const detectLineEnding = (value: string): string =>
   value.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+
 const restoreLineEndings = (value: string, ending: string): string =>
   ending === '\r\n' ? value.replaceAll('\n', '\r\n') : value;
+
 const stripBom = (value: string): readonly [string, string] =>
   value.startsWith('\uFEFF') ? ['\uFEFF', value.slice(1)] : ['', value];
+
 const normalizeForFuzzy = (value: string): string =>
   splitLines(value)
     .map((line) => line.trimEnd())
     .join('\n');
+
 const formatLine = (
   line: number,
   marker: string,
   text: string,
   width: number,
 ): string => `${String(line).padStart(width, ' ')} ${marker}${text}`;
+
 const resolvePath = (workspaceRoot: string, value: string): string =>
   path.normalize(
     path.isAbsolute(value) ? value : path.join(workspaceRoot, value),
   );
+
 const readFailure = (filePath: string, error: unknown): string =>
   hasCode(error, 'ENOENT')
     ? `File not found: ${filePath}`
     : `Failed to read file: ${errorMessage(error)}`;
+
 const hasCode = (error: unknown, code: string): boolean =>
   typeof error === 'object' &&
   error !== null &&
   'code' in error &&
   error.code === code;
+
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
 const errorOutput = (error: string): EditOutput => ({
   success: false,
   diff: '',

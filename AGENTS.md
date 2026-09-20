@@ -93,6 +93,14 @@ revising model-facing prompts.
 
 ## Validation And Response
 
+After every file-editing task, format the changed files with
+`npx prettier --write <files>` (for supported, non-ignored files), then always
+run `npm run format:check` and `npm run lint` before the final response.
+Fix violations introduced by the task and rerun the checks after corrections.
+Do not run workspace-wide autofixes or reformat unrelated files unless asked.
+If existing violations or tooling failures prevent a clean result, report
+them explicitly; do not silently skip checks or claim they passed.
+
 Use the narrowest reliable proof for the change. Prefer configured Nx targets
 for TypeScript work, repository formatter checks for formatting work, and
 `git diff --check` for docs-only changes.

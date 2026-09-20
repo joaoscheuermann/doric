@@ -1,9 +1,10 @@
 import { Buffer } from 'node:buffer';
 import { posix as path } from 'node:path';
 
+import { z } from 'zod';
+
 import type { Sandbox, SandboxExecResult } from 'sandbox';
 import { defineTool, type ToolFactory } from 'tool';
-import { z } from 'zod';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -41,6 +42,7 @@ export const output = z
   .strict();
 
 export type GitOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 const environment = [
@@ -64,6 +66,7 @@ export default createTool();
 
 const execute = async (sandbox: Sandbox, input: Input): Promise<GitOutput> => {
   const started = Date.now();
+
   const requested =
     input.working_directory?.trim() === ''
       ? sandbox.root
@@ -72,6 +75,7 @@ const execute = async (sandbox: Sandbox, input: Input): Promise<GitOutput> => {
 
   try {
     workingDirectory = resolvePath(sandbox.root, requested);
+
     const result = await sandbox.exec({
       cmd: ['git', ...input.args],
       cwd: workingDirectory,
@@ -144,6 +148,7 @@ const compact = (value: string): z.output<typeof stream> => {
 
 const resolvePath = (root: string, value: string): string => {
   const workspace = path.normalize(root);
+
   const resolved = path.normalize(
     path.isAbsolute(value) ? value : path.join(workspace, value),
   );

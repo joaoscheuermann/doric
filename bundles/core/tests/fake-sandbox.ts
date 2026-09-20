@@ -1,8 +1,8 @@
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import hostPath from 'node:path';
 import { posix as sandboxPath } from 'node:path';
 
-import type { SandboxExecInput, SandboxExecResult, Sandbox } from 'sandbox';
+import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 export const WORKSPACE_ROOT = '/workspace';
 
@@ -92,6 +92,7 @@ const find = async (
   const type = cmd[cmd.indexOf('-type') + 1];
   const name = cmd.includes('.gitignore') ? '.gitignore' : undefined;
   const pruneNodeModules = cmd.includes('node_modules');
+
   const paths = await walk(localTarget, target, {
     type,
     name,
@@ -113,11 +114,13 @@ const walk = async (
   options: WalkOptions,
 ): Promise<readonly string[]> => {
   const stats = await lstat(local).catch(() => undefined);
+
   if (stats === undefined || stats.isSymbolicLink()) {
     return [];
   }
 
   const name = sandboxPath.basename(sandbox);
+
   if (
     name === '.git' ||
     (options.pruneNodeModules && name === 'node_modules')
@@ -137,6 +140,7 @@ const walk = async (
   }
 
   const children = await readdir(local);
+
   const nested = await Promise.all(
     children.map((child) =>
       walk(
@@ -166,6 +170,7 @@ const toLocalPath = (
   }
 
   const relative = sandboxPath.relative(normalizedRoot, normalized);
+
   return relative === ''
     ? localRoot
     : hostPath.join(localRoot, ...relative.split('/'));
@@ -187,6 +192,7 @@ const normalizePath = (value: string): string => {
   const resolved = sandboxPath.normalize(
     sandboxPath.isAbsolute(value) ? value : `/${value}`,
   );
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/, '');
 };
 

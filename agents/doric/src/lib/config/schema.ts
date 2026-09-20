@@ -47,6 +47,7 @@ export const ConfigInputSchema = z
   .strict()
   .superRefine((value, context) => {
     const ids = new Set<string>();
+
     value.providers.forEach(({ id }, index) => {
       if (ids.has(id)) {
         context.addIssue({
@@ -55,6 +56,7 @@ export const ConfigInputSchema = z
           path: ['providers', index, 'id'],
         });
       }
+
       ids.add(id);
     });
 

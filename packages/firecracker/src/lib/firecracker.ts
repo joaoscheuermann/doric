@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 
 export const FIRECRACKER_VERSION = '1.16.1';
+
 export const GUEST_KERNEL_VERSION = '6.18';
 
 export const DEFAULT_FIRECRACKER_PATHS: FirecrackerPaths = {
@@ -43,8 +44,11 @@ export const createFirecrackerClient = (
   return {
     async provision(input) {
       await preflight(config);
+
       reconciliation ??= reconcileStaleFirecrackerResources(config);
+
       await reconciliation;
+
       return provision(input, config);
     },
   };

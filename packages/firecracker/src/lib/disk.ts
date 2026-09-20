@@ -19,6 +19,7 @@ export const createWritableDisk = async (input: {
 }): Promise<string> => {
   const disk = join(input.directory, 'writable.ext4');
   const seed = join(input.directory, `seed-${randomUUID()}`);
+
   await mkdir(seed, { recursive: true, mode: 0o700 });
 
   try {
@@ -27,11 +28,13 @@ export const createWritableDisk = async (input: {
       args: ['-s', `${input.diskMiB}M`, disk],
       signal: input.signal,
     });
+
     await run({
       file: 'mkfs.ext4',
       args: ['-F', '-q', disk],
       signal: input.signal,
     });
+
     const files = {
       authorized_keys: `${input.keys.managementPublic}\n${input.keys.userPublic}\n`,
       dropbear_host_key: input.keys.hostPrivate,
@@ -41,17 +44,25 @@ export const createWritableDisk = async (input: {
         .map((server) => `nameserver ${server}`)
         .join('\n'),
     } as const;
+
     await debugfs(disk, 'mkdir /config', input.signal);
+
     await debugfs(disk, 'mkdir /upper', input.signal);
+
     await debugfs(disk, 'mkdir /work', input.signal);
+
     for (const [name, value] of Object.entries(files)) {
       const source = join(seed, name);
+
       await writeFile(source, value, { mode: 0o600 });
+
       await debugfs(disk, `write ${source} /config/${name}`, input.signal);
     }
+
     return disk;
   } catch (cause) {
     await rm(disk, { force: true });
+
     throw cause;
   } finally {
     await rm(seed, { recursive: true, force: true });

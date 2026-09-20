@@ -1,5 +1,6 @@
-import { defineTool, type ToolFactory } from 'tool';
 import { z } from 'zod';
+
+import { defineTool, type ToolFactory } from 'tool';
 
 const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
@@ -8,7 +9,6 @@ const MAX_FIND_LIMIT = 100;
 const DEFAULT_MAX_CHARS = 12_000;
 const MAX_PAGE_CHARS = 50_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
-
 const description =
   'Search the web, open HTTP(S) pages as extracted text, or find literal text in a page.';
 
@@ -27,6 +27,7 @@ export const input = z
 const searchResult = z
   .object({ title: z.string(), url: z.string(), snippet: z.string() })
   .strict();
+
 const page = z
   .object({ url: z.string(), title: z.string(), text: z.string() })
   .strict();
@@ -46,9 +47,13 @@ export const output = z
   .strict();
 
 export type WebSearchResult = z.output<typeof searchResult>;
+
 export type WebPageOutput = z.output<typeof page>;
+
 export type WebFindMatch = z.output<typeof findMatch>;
+
 export type WebOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
 
 type FetchResponse = {
@@ -98,6 +103,7 @@ const execute = async (
   if (input.action === 'search') {
     return search(input, fetcher, timeoutMs);
   }
+
   if (input.action === 'open_page') {
     return openPage(input, fetcher, timeoutMs);
   }
@@ -111,20 +117,25 @@ const search = async (
   timeoutMs: number,
 ): Promise<WebOutput> => {
   const query = input.query?.trim();
+
   if (query === undefined || query === '') {
     return webError('search', 'Missing query for search');
   }
 
   const limit = clamp(input.limit ?? DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
   const url = new URL('https://duckduckgo.com/html/');
+
   url.searchParams.set('q', query);
+
   const html = await fetchText(url.toString(), fetcher, timeoutMs);
+
   if (!html.ok) {
     return webError('search', html.error);
   }
 
   const results = parseDuckDuckGoResults(html.text);
   const truncated = results.length > limit;
+
   return {
     action: 'search',
     detail: query,
@@ -141,6 +152,7 @@ const openPage = async (
   timeoutMs: number,
 ): Promise<WebOutput> => {
   const url = normalizedUrl(input.url);
+
   if (url === undefined) {
     return webError('open_page', 'Missing or invalid URL for open_page');
   }
@@ -151,11 +163,13 @@ const openPage = async (
     MAX_PAGE_CHARS,
   );
   const html = await fetchText(url, fetcher, timeoutMs);
+
   if (!html.ok) {
     return webError('open_page', html.error);
   }
 
   const [text, truncated] = truncateText(extractPageText(html.text), maxChars);
+
   return {
     action: 'open_page',
     detail: url,
@@ -177,17 +191,20 @@ const findInPage = async (
   timeoutMs: number,
 ): Promise<WebOutput> => {
   const url = normalizedUrl(input.url);
+
   if (url === undefined) {
     return webError('find_in_page', 'Missing or invalid URL for find_in_page');
   }
 
   const pattern = input.pattern?.trim();
+
   if (pattern === undefined || pattern === '') {
     return webError('find_in_page', 'Missing pattern for find_in_page');
   }
 
   const limit = clamp(input.limit ?? DEFAULT_FIND_LIMIT, 1, MAX_FIND_LIMIT);
   const html = await fetchText(url, fetcher, timeoutMs);
+
   if (!html.ok) {
     return webError('find_in_page', html.error);
   }
@@ -198,6 +215,7 @@ const findInPage = async (
     input.ignoreCase ?? true,
     limit,
   );
+
   return {
     action: 'find_in_page',
     detail: `'${pattern}' in ${url}`,
@@ -214,6 +232,7 @@ const fetchText = async (
   timeoutMs: number,
 ): Promise<FetchTextResult> => {
   const controller = new AbortController();
+
   const timeout = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
@@ -254,6 +273,7 @@ const parseDuckDuckGoResults = (html: string): readonly WebSearchResult[] => {
     /<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
   const snippetPattern =
     /<a[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)<\/a>/gis;
+
   const snippets = [...html.matchAll(snippetPattern)].map((match) =>
     cleanHtml(match[1] ?? ''),
   );
@@ -269,8 +289,10 @@ const parseDuckDuckGoResults = (html: string): readonly WebSearchResult[] => {
 
 const normalizeDuckDuckGoUrl = (rawUrl: string): string => {
   const value = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
+
   try {
     const url = new URL(value);
+
     return url.searchParams.get('uddg') ?? url.toString();
   } catch {
     return value;
@@ -284,6 +306,7 @@ const normalizedUrl = (value: string | undefined): string | undefined => {
 
   try {
     const url = new URL(value.trim());
+
     return url.protocol === 'http:' || url.protocol === 'https:'
       ? url.toString()
       : undefined;
@@ -294,21 +317,25 @@ const normalizedUrl = (value: string | undefined): string | undefined => {
 
 const extractTitle = (html: string): string => {
   const title = /<title[^>]*>(.*?)<\/title>/is.exec(html)?.[1] ?? '';
+
   return cleanHtml(title);
 };
 
 const extractPageText = (html: string): string => {
   const withoutHead = html.replace(/<head[^>]*>.*?<\/head>/gis, ' ');
+
   const withoutScripts = withoutHead.replace(
     /<script[^>]*>.*?<\/script>|<style[^>]*>.*?<\/style>|<noscript[^>]*>.*?<\/noscript>/gis,
     ' ',
   );
+
   const withBreaks = withoutScripts.replace(
     /<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\s*\/?\s*>/gi,
     '\n',
   );
   const withoutTags = withBreaks.replace(/<[^>]+>/gis, ' ');
   const decoded = decodeHtml(withoutTags);
+
   const normalized = decoded
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/[ \t]{2,}/g, ' '))
@@ -334,13 +361,16 @@ const findInText = (
 
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     const haystack = ignoreCase ? line.toLowerCase() : line;
+
     if (!haystack.includes(needle)) {
       continue;
     }
 
     total += 1;
+
     if (matches.length >= limit) {
       truncated = true;
+
       break;
     }
 
@@ -369,6 +399,7 @@ const decodeHtml = (value: string): string =>
         const code = numeric.toLowerCase().startsWith('x')
           ? Number.parseInt(numeric.slice(1), 16)
           : Number.parseInt(numeric, 10);
+
         return Number.isNaN(code) ? _ : String.fromCodePoint(code);
       }
 

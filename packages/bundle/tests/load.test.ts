@@ -6,9 +6,10 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { SkillSchema, loadBundles } from '../src/index.js';
+import { loadBundles, SkillSchema } from '../src/index.js';
 
 type ToolEntry = { readonly path: string; readonly alwaysAvailable: boolean };
+
 type SkillEntry = { readonly path: string; readonly alwaysAvailable: boolean };
 
 const skill = (name: string, allowedTools: readonly string[] = []) => `---
@@ -36,7 +37,9 @@ test('exports a JSON-Schema-compatible skill schema', () => {
     ...value,
     indexText: 'example | Example skill. | read | Follow the procedure.',
   });
+
   assert.equal(z.toJSONSchema(SkillSchema).type, 'object');
+
   assert.deepEqual(z.toJSONSchema(SkillSchema, { io: 'input' }).required, [
     'name',
     'description',
@@ -85,10 +88,12 @@ const createBundle = async (
   } = {},
 ) => {
   const path = join(root, directory);
+
   await Promise.all([
     mkdir(join(path, 'tools'), { recursive: true }),
     mkdir(join(path, 'skills'), { recursive: true }),
   ]);
+
   await writeFile(
     join(path, 'manifest.json'),
     JSON.stringify({
@@ -98,6 +103,7 @@ const createBundle = async (
       skills: options.skills ?? [],
     }),
   );
+
   return path;
 };
 
@@ -120,9 +126,12 @@ const writeTool = async (bundle: string, file: string, name: string) =>
 
 test('preserves lexical bundle order and manifest resource order', async () => {
   const root = await createRoot();
+
   try {
     await createBundle(root, 'z');
+
     await createBundle(root, 'a');
+
     assert.deepEqual(
       (await loadBundles(root)).map(({ name }) => name),
       ['a', 'z'],
@@ -134,23 +143,32 @@ test('preserves lexical bundle order and manifest resource order', async () => {
 
 test('loads executable tools, availability flags, and skill frontmatter', async () => {
   const root = await createRoot();
+
   try {
     const bundle = await createBundle(root, 'core', {
       tools: [{ path: 'tools/example.js', alwaysAvailable: true }],
       skills: [{ path: 'skills/example/SKILL.md', alwaysAvailable: false }],
     });
+
     await writeTool(bundle, 'example.js', 'example');
+
     await mkdir(join(bundle, 'skills', 'example'));
+
     await writeFile(
       join(bundle, 'skills', 'example', 'SKILL.md'),
       skill('example-skill', ['example']),
     );
 
     const [loaded] = await loadBundles(root);
+
     assert.equal(loaded?.tools[0]?.alwaysAvailable, true);
+
     const factory = loaded?.tools[0]?.factory;
+
     assert.equal(factory?.name, 'example');
+
     assert.equal(loaded?.skills[0]?.alwaysAvailable, false);
+
     assert.deepEqual(loaded?.skills[0]?.skill.allowedTools, ['example']);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -159,11 +177,14 @@ test('loads executable tools, availability flags, and skill frontmatter', async 
 
 test('loads missing allowed-tools as an empty array', async () => {
   const root = await createRoot();
+
   try {
     const bundle = await createBundle(root, 'core', {
       skills: [{ path: 'skills/example/SKILL.md', alwaysAvailable: false }],
     });
+
     await mkdir(join(bundle, 'skills', 'example'));
+
     await writeFile(
       join(bundle, 'skills', 'example', 'SKILL.md'),
       `---
@@ -181,7 +202,9 @@ Follow this procedure.
     const allowedTools = loaded?.skills[0]?.skill.allowedTools;
 
     assert.ok(allowedTools);
+
     assert.equal(Array.isArray(allowedTools), true);
+
     assert.equal(allowedTools.length, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -190,13 +213,17 @@ Follow this procedure.
 
 test('loads the same canonical skill record exposed by SkillSchema', async () => {
   const root = await createRoot();
+
   try {
     const bundle = await createBundle(root, 'core', {
       tools: [{ path: 'tools/read.js', alwaysAvailable: false }],
       skills: [{ path: 'skills/example/SKILL.md', alwaysAvailable: false }],
     });
+
     await writeTool(bundle, 'read.js', 'read');
+
     await mkdir(join(bundle, 'skills', 'example'));
+
     await writeFile(
       join(bundle, 'skills', 'example', 'SKILL.md'),
       `---
@@ -211,6 +238,7 @@ indexText: untrusted
     );
 
     const [loaded] = await loadBundles(root);
+
     assert.deepEqual(loaded?.skills[0]?.skill, {
       name: 'example',
       description: 'Example description',
@@ -226,8 +254,10 @@ indexText: untrusted
 
 test('rejects invalid manifests, undeclared-compatible paths, and missing files contextually', async () => {
   const root = await createRoot();
+
   try {
     const bundle = await createBundle(root, 'core');
+
     await writeFile(
       join(bundle, 'manifest.json'),
       JSON.stringify({
@@ -237,6 +267,7 @@ test('rejects invalid manifests, undeclared-compatible paths, and missing files 
         skills: [],
       }),
     );
+
     await assert.rejects(loadBundles(root), /manifest/i);
 
     await writeFile(
@@ -248,6 +279,7 @@ test('rejects invalid manifests, undeclared-compatible paths, and missing files 
         skills: [],
       }),
     );
+
     await assert.rejects(
       loadBundles(root),
       (error: unknown) =>
@@ -260,25 +292,35 @@ test('rejects invalid manifests, undeclared-compatible paths, and missing files 
 
 test('rejects incompatible exports and unresolved local tool references', async () => {
   const root = await createRoot();
+
   try {
     const bundle = await createBundle(root, 'core', {
       tools: [{ path: 'tools/bad.js', alwaysAvailable: false }],
     });
+
     await writeFile(join(bundle, 'tools', 'bad.js'), 'export default {};');
+
     await assert.rejects(loadBundles(root), (error: unknown) => {
       assert.ok(error instanceof Error);
+
       assert.match(error.message, /Unable to load tool/);
+
       assert.ok(error.cause instanceof Error);
+
       assert.match(error.cause.message, /compatible Tool/);
+
       return true;
     });
 
     await writeTool(bundle, 'available.js', 'available');
+
     await mkdir(join(bundle, 'skills', 'dependent'));
+
     await writeFile(
       join(bundle, 'skills', 'dependent', 'SKILL.md'),
       skill('dependent', ['missing']),
     );
+
     await writeFile(
       join(bundle, 'manifest.json'),
       JSON.stringify({
@@ -288,6 +330,7 @@ test('rejects incompatible exports and unresolved local tool references', async 
         skills: [{ path: 'skills/dependent/SKILL.md', alwaysAvailable: false }],
       }),
     );
+
     await assert.rejects(loadBundles(root), /unavailable tool "missing"/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -296,8 +339,10 @@ test('rejects incompatible exports and unresolved local tool references', async 
 
 test('rejects globally duplicated bundle, skill, and tool names', async () => {
   const scenarios = ['bundle', 'skill', 'tool'] as const;
+
   for (const scenario of scenarios) {
     const root = await createRoot();
+
     try {
       for (const directory of ['a', 'b']) {
         const bundle = await createBundle(root, directory, {
@@ -311,15 +356,21 @@ test('rejects globally duplicated bundle, skill, and tool names', async () => {
               ? [{ path: 'skills/shared/SKILL.md', alwaysAvailable: false }]
               : [],
         });
-        if (scenario === 'tool') await writeTool(bundle, 'shared.js', 'shared');
+
+        if (scenario === 'tool') {
+          await writeTool(bundle, 'shared.js', 'shared');
+        }
+
         if (scenario === 'skill') {
           await mkdir(join(bundle, 'skills', 'shared'));
+
           await writeFile(
             join(bundle, 'skills', 'shared', 'SKILL.md'),
             skill('shared'),
           );
         }
       }
+
       await assert.rejects(
         loadBundles(root),
         new RegExp(`Duplicate ${scenario} name`),

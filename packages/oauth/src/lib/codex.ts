@@ -3,10 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { OAuthErrorObject } from './classes/oauth-error.js';
-import {
-  CODEX_OAUTH_CLIENT_ID,
-  codexOAuthProfile,
-} from './codex-oauth.js';
+import { CODEX_OAUTH_CLIENT_ID, codexOAuthProfile } from './codex-oauth.js';
 import { createFetchTransport, type OAuthTransport } from './http.js';
 import { asRecord, diagnosticExcerpt, stringField } from './utils/json.js';
 import { parseTokenClaims } from './utils/jwt.js';
@@ -220,6 +217,7 @@ const refreshChatGptToken = async (
   }
 
   const refreshed = parseRefreshResponse(response.body);
+
   const nextAuth = {
     ...auth,
     tokens: {
@@ -382,7 +380,7 @@ const readAuthJson = async (
   try {
     const parsed = asRecord(JSON.parse(await readFile(path, 'utf8')));
 
-    return parsed as CodexAuthJson | undefined;
+    return parsed;
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined;

@@ -1,10 +1,11 @@
 import { Buffer } from 'node:buffer';
 import { posix as path } from 'node:path';
 
-import type { Sandbox } from 'sandbox';
-import { defineTool } from 'tool';
 import * as YAML from 'yaml';
 import { z } from 'zod';
+
+import type { Sandbox } from 'sandbox';
+import { defineTool } from 'tool';
 
 import type { OkfToolOptions } from './types/okf.js';
 
@@ -27,7 +28,6 @@ type YamlModule = {
 
 const yaml = YAML as unknown as YamlModule;
 const parseYaml = yaml.parse ?? yaml.default?.parse;
-
 const description =
   'Search Open Knowledge Format concepts under .agents/bundles. Returns bounded, deterministically ranked concept metadata and Markdown content without reading outside the bundle root.';
 
@@ -67,8 +67,11 @@ export const output = z
   .strict();
 
 export type OkfSearchResult = z.output<typeof searchResult>;
+
 export type OkfSearchOutput = z.output<typeof output>;
+
 type Input = z.output<typeof input>;
+
 type Options = OkfToolOptions & { readonly sandbox: Sandbox };
 
 type Concept = Omit<OkfSearchResult, 'contentTruncated' | 'score'> & {
@@ -100,21 +103,32 @@ const execute = async (
   input: Input,
 ): Promise<OkfSearchOutput> => {
   const query = queryTerms(input.query);
-  if ('error' in query) return empty(query.error);
+
+  if ('error' in query) {
+    return empty(query.error);
+  }
 
   const root = normalizePath(
     path.join(options.workspaceRoot, '.agents/bundles'),
   );
   const target = searchTarget(root, input.bundle);
-  if ('error' in target) return empty(target.error);
+
+  if ('error' in target) {
+    return empty(target.error);
+  }
 
   const kind = await pathKind(options, target.path);
+
   if (kind !== 'directory') {
     return empty(missingMessage(input.bundle, kind));
   }
 
   const listed = await listConcepts(options, root, target.path);
-  if ('error' in listed) return empty(listed.error);
+
+  if ('error' in listed) {
+    return empty(listed.error);
+  }
+
   if (listed.paths.length > MAX_CONCEPTS) {
     return empty(
       `OKF search exceeds ${MAX_CONCEPTS} concepts; select a bundle.`,
@@ -124,6 +138,7 @@ const execute = async (
   const loaded = await Promise.all(
     listed.paths.map((file) => loadConcept(options, root, file)),
   );
+
   const concepts = loaded.flatMap((result) =>
     'concept' in result ? [result.concept] : [],
   );
@@ -137,9 +152,12 @@ const searchTarget = (
   root: string,
   bundle: string | undefined,
 ): { readonly path: string } | { readonly error: string } => {
-  if (bundle === undefined) return { path: root };
+  if (bundle === undefined) {
+    return { path: root };
+  }
 
   const value = bundle.trim();
+
   if (
     value === '.' ||
     value === '..' ||
@@ -151,14 +169,21 @@ const searchTarget = (
   }
 
   const target = normalizePath(path.join(root, value));
+
   return contains(root, target)
     ? { path: target }
     : { error: `Invalid bundle name: ${bundle}` };
 };
 
 const missingMessage = (bundle: string | undefined, kind: PathKind): string => {
-  if (bundle !== undefined) return `OKF bundle not found: ${bundle}`;
-  if (kind === 'missing') return 'OKF bundle root not found: .agents/bundles';
+  if (bundle !== undefined) {
+    return `OKF bundle not found: ${bundle}`;
+  }
+
+  if (kind === 'missing') {
+    return 'OKF bundle root not found: .agents/bundles';
+  }
+
   return 'OKF bundle root is not a directory: .agents/bundles';
 };
 
@@ -191,6 +216,7 @@ const isConceptPath = (bundleRoot: string, file: string): boolean => {
   }
 
   const parts = path.relative(bundleRoot, file).split('/');
+
   return parts.length >= 2 && file.endsWith('.md');
 };
 
@@ -200,13 +226,19 @@ const loadConcept = async (
   file: string,
 ): Promise<LoadResult> => {
   const markdown = await options.sandbox.readFile(file).catch(() => undefined);
-  if (markdown === undefined) return { skipped: true };
+
+  if (markdown === undefined) {
+    return { skipped: true };
+  }
 
   const relative = path.relative(bundleRoot, file);
   const parts = relative.split('/');
   const metadata = frontmatter(markdown);
   const type = field(metadata?.value, 'type');
-  if (metadata === undefined || type === undefined) return { skipped: true };
+
+  if (metadata === undefined || type === undefined) {
+    return { skipped: true };
+  }
 
   const conceptId = parts.slice(1).join('/').slice(0, -3);
   const content = metadata.body.trim();
@@ -235,12 +267,22 @@ const frontmatter = (
   | { readonly value: Readonly<Record<string, unknown>>; readonly body: string }
   | undefined => {
   const match = FRONTMATTER.exec(markdown);
-  if (match === null) return undefined;
+
+  if (match === null) {
+    return undefined;
+  }
 
   try {
-    if (parseYaml === undefined) return undefined;
+    if (parseYaml === undefined) {
+      return undefined;
+    }
+
     const value = parseYaml(match[1] ?? '', { maxAliasCount: 50 });
-    if (!isRecord(value)) return undefined;
+
+    if (!isRecord(value)) {
+      return undefined;
+    }
+
     return { value, body: markdown.slice(match[0].length) };
   } catch {
     return undefined;
@@ -274,14 +316,18 @@ const score = (
     [concept.type, 4],
     [`${concept.conceptId} ${concept.resource ?? ''}`, 3],
   ] as const;
+
   const fields = metadata.map(
     ([value, weight]) => [normalize(value), weight] as const,
   );
   const body = normalize(concept.content);
+
   const termScore = terms.reduce((total, term) => {
     const metadataWeight = fields.find(([value]) => value.includes(term))?.[1];
+
     return total + (metadataWeight ?? (body.includes(term) ? 1 : 0));
   }, 0);
+
   const phraseScore = fields.some(([value]) => value.includes(query))
     ? 10
     : body.includes(query)
@@ -301,13 +347,19 @@ const collect = (
   let bytes = 0;
 
   for (const value of ranked) {
-    if (results.length >= limit) break;
+    if (results.length >= limit) {
+      break;
+    }
 
     const result = present(value);
     const resultBytes = Buffer.byteLength(JSON.stringify(result), 'utf8');
-    if (bytes + resultBytes > MAX_OUTPUT_BYTES) break;
+
+    if (bytes + resultBytes > MAX_OUTPUT_BYTES) {
+      break;
+    }
 
     bytes += resultBytes;
+
     results.push(result);
   }
 
@@ -342,6 +394,7 @@ const queryTerms = (
   | { readonly normalized: string; readonly terms: readonly string[] }
   | { readonly error: string } => {
   const normalized = normalize(value.trim());
+
   if (normalized === '' || normalized.length > 500) {
     return { error: 'Query must contain between 1 and 500 characters.' };
   }
@@ -383,16 +436,25 @@ const field = (
   name: string,
 ): string | undefined => {
   const raw = value?.[name];
-  if (typeof raw !== 'string') return undefined;
+
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
   const text = raw.trim();
+
   return text === '' ? undefined : text;
 };
 
 const stringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)
     ? value.flatMap((item) => {
-        if (typeof item !== 'string') return [];
+        if (typeof item !== 'string') {
+          return [];
+        }
+
         const text = item.trim();
+
         return text === '' ? [] : [text];
       })
     : [];
@@ -420,6 +482,7 @@ const normalize = (value: string): string =>
 
 const normalizePath = (value: string): string => {
   const resolved = path.normalize(path.isAbsolute(value) ? value : `/${value}`);
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/u, '');
 };
 

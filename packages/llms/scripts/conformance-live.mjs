@@ -14,6 +14,7 @@ const budgetUsd = 5;
 const maxCallsPerModel = 5;
 const maxInputTokensPerCall = 4096;
 const maxOutputTokens = 1024;
+
 const logger = pino(
   {
     base: { component: 'llms-conformance' },
@@ -31,6 +32,7 @@ const logger = pino(
   },
   pino.destination({ dest: 2, sync: true }),
 );
+
 const representatives = [
   ['OpenAI', 'openai/gpt-5.6-luna'],
   ['Anthropic', 'anthropic/claude-sonnet-5'],
@@ -47,6 +49,7 @@ const representatives = [
   ['MiniMax', 'minimax/minimax-m3'],
 ];
 const toolMessages = [{ role: 'user', content: 'Call add with 2 and 2.' }];
+
 const addTools = [
   {
     name: 'add',
@@ -70,7 +73,10 @@ if (!process.argv.includes(acknowledgement)) {
 }
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-if (!apiKey) throw new Error('OPENROUTER_API_KEY is required');
+
+if (!apiKey) {
+  throw new Error('OPENROUTER_API_KEY is required');
+}
 
 const provider = createUnifiedProvider({
   transport: createFetchTransport(),
@@ -81,14 +87,16 @@ const catalog = await provider.models();
 const models = new Map(catalog.map((model) => [model.id, model]));
 
 for (const [, id] of representatives) {
-  if (!models.has(id))
+  if (!models.has(id)) {
     throw new Error(`representative model is missing: ${id}`);
+  }
 }
 
 const estimatedWorstCaseUsd = representatives.reduce(
   (total, [, id]) => total + worstCaseCost(models.get(id)),
   0,
 );
+
 if (
   !Number.isFinite(estimatedWorstCaseUsd) ||
   estimatedWorstCaseUsd > budgetUsd
@@ -108,10 +116,12 @@ logger.info(
 );
 
 const results = [];
+
 for (const [lab, model] of representatives) {
   const startedAt = Date.now();
   let stage = 'structured_output';
   const supportedParameters = modelParameters(models.get(model));
+
   logger.info(
     {
       lab,
@@ -124,20 +134,29 @@ for (const [lab, model] of representatives) {
 
   try {
     await runStage(lab, model, stage, () => structuredCase(model));
+
     stage = 'tool_call';
+
     const called = await runStage(lab, model, stage, () => toolCallCase(model));
+
     stage = 'tool_replay';
+
     await runStage(lab, model, stage, () => toolReplayCase(model, called));
+
     const durationMs = Date.now() - startedAt;
+
     logger.info({ lab, model, durationMs }, 'model conformance completed');
+
     results.push({ lab, model, ok: true, durationMs });
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const details = errorDetails(error);
+
     logger.error(
       { lab, model, stage, durationMs, ...details },
       'model conformance failed',
     );
+
     results.push({
       lab,
       model,
@@ -150,20 +169,29 @@ for (const [lab, model] of representatives) {
 }
 
 const ok = results.every((result) => result.ok);
+
 logger.info({ ok }, 'live conformance completed');
+
 process.stdout.write(
   `${JSON.stringify({ ok, budgetUsd, estimatedWorstCaseUsd, results }, null, 2)}\n`,
 );
-if (!ok) process.exitCode = 1;
+
+if (!ok) {
+  process.exitCode = 1;
+}
 
 async function runStage(lab, model, stage, execute) {
   const startedAt = Date.now();
+
   logger.info({ lab, model, stage }, 'conformance stage started');
+
   const result = await execute();
+
   logger.info(
     { lab, model, stage, durationMs: Date.now() - startedAt },
     'conformance stage completed',
   );
+
   return result;
 }
 
@@ -174,6 +202,7 @@ async function structuredCase(model) {
     schema: z.object({ answer: z.literal('4') }).strict(),
     maxOutputTokens,
   });
+
   assert.deepEqual(finish.structured, { answer: '4' });
 }
 
@@ -185,12 +214,16 @@ async function toolCallCase(model) {
     parallelToolCalls: false,
     maxOutputTokens,
   });
+
   assert.equal(called.toolCalls.length, 1);
+
   assert.equal(called.toolCalls[0]?.name, 'add');
+
   assert.deepEqual(JSON.parse(called.toolCalls[0]?.arguments ?? ''), {
     left: 2,
     right: 2,
   });
+
   return called;
 }
 
@@ -211,23 +244,35 @@ async function toolReplayCase(model, called) {
     parallelToolCalls: false,
     maxOutputTokens,
   });
+
   assert.equal(answered.toolCalls.length, 0);
+
   assert.match(answered.text, /\b4\b/u);
 }
 
 function modelParameters(model) {
   const raw = model?.raw;
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return [];
+
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return [];
+  }
 
   const parameters = raw.supported_parameters;
+
   return Array.isArray(parameters)
     ? parameters.filter((value) => typeof value === 'string').sort()
     : [];
 }
 
 function strategy(parameters) {
-  if (parameters.includes('structured_outputs')) return 'json_schema';
-  if (parameters.includes('response_format')) return 'json_object';
+  if (parameters.includes('structured_outputs')) {
+    return 'json_schema';
+  }
+
+  if (parameters.includes('response_format')) {
+    return 'json_object';
+  }
+
   return 'prompt';
 }
 
@@ -254,10 +299,12 @@ function errorDetails(error) {
 
 function worstCaseCost(model) {
   const raw = model?.raw;
+
   const pricing =
     raw !== null && typeof raw === 'object' && !Array.isArray(raw)
       ? raw.pricing
       : undefined;
+
   if (
     pricing === null ||
     typeof pricing !== 'object' ||
@@ -268,7 +315,10 @@ function worstCaseCost(model) {
 
   const input = Number(pricing.prompt);
   const output = Number(pricing.completion);
-  if (!Number.isFinite(input) || !Number.isFinite(output)) return Number.NaN;
+
+  if (!Number.isFinite(input) || !Number.isFinite(output)) {
+    return Number.NaN;
+  }
 
   return (
     maxCallsPerModel *

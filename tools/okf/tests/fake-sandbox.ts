@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import hostPath from 'node:path';
 import { posix as path } from 'node:path';
 
@@ -26,6 +26,7 @@ export const createFakeSandbox = (localRoot: string): FakeSandbox => {
       exec: (input) => exec(localRoot, input),
       readFile: async (file) => {
         reads.push(file);
+
         return readFile(toLocal(localRoot, file), 'utf8');
       },
       cloneRepo: reject,
@@ -56,8 +57,14 @@ const exec = async (
 const pathKind = async (localRoot: string, value: string): Promise<string> => {
   const stats = await lstat(toLocal(localRoot, value)).catch(() => undefined);
 
-  if (stats === undefined) return 'missing';
-  if (stats.isDirectory()) return 'directory';
+  if (stats === undefined) {
+    return 'missing';
+  }
+
+  if (stats.isDirectory()) {
+    return 'directory';
+  }
+
   return stats.isFile() ? 'file' : 'other';
 };
 
@@ -77,11 +84,21 @@ const walk = async (
   sandbox: string,
 ): Promise<readonly string[]> => {
   const stats = await lstat(local).catch(() => undefined);
-  if (stats === undefined || stats.isSymbolicLink()) return [];
-  if (stats.isFile()) return [sandbox];
-  if (!stats.isDirectory()) return [];
+
+  if (stats === undefined || stats.isSymbolicLink()) {
+    return [];
+  }
+
+  if (stats.isFile()) {
+    return [sandbox];
+  }
+
+  if (!stats.isDirectory()) {
+    return [];
+  }
 
   const children = await readdir(local);
+
   const nested = await Promise.all(
     children.map((child) =>
       walk(hostPath.join(local, child), path.join(sandbox, child)),
@@ -93,6 +110,7 @@ const walk = async (
 
 const toLocal = (localRoot: string, value: string): string => {
   const normalized = normalize(value);
+
   if (
     normalized !== WORKSPACE_ROOT &&
     !normalized.startsWith(`${WORKSPACE_ROOT}/`)
@@ -101,6 +119,7 @@ const toLocal = (localRoot: string, value: string): string => {
   }
 
   const relative = path.relative(WORKSPACE_ROOT, normalized);
+
   return relative === ''
     ? localRoot
     : hostPath.join(localRoot, ...relative.split('/'));
@@ -108,6 +127,7 @@ const toLocal = (localRoot: string, value: string): string => {
 
 const normalize = (value: string): string => {
   const resolved = path.normalize(path.isAbsolute(value) ? value : `/${value}`);
+
   return resolved === '/' ? resolved : resolved.replace(/\/+$/u, '');
 };
 

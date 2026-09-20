@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { ProviderErrorObject } from '../src/index.js';
+import { ProviderErrorObject, type ProviderRequest } from '../src/index.js';
 import {
   collect,
   createUnifiedProvider,
@@ -44,16 +44,19 @@ test('selects native structured output from live OpenRouter capabilities', async
     messages: [{ role: 'user', content: 'Answer.' }],
     schema: z.object({ answer: z.string() }),
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as Record<
     string,
     unknown
   >;
 
   assert.deepEqual(result.structured, { answer: 'ok' });
+
   assert.equal(
     (body.response_format as { readonly type?: string }).type,
     'json_schema',
   );
+
   assert.deepEqual(body.provider, { require_parameters: true });
 });
 
@@ -65,13 +68,25 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":42}' } },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 2,
+          total_tokens: 3,
+          cost: 0.01,
+          cost_details: { upstream_inference_cost: 0.008 },
+        },
       }),
       response({
         choices: [
           { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
         ],
-        usage: { prompt_tokens: 4, completion_tokens: 5, total_tokens: 9 },
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 5,
+          total_tokens: 9,
+          cost: 0.02,
+          cost_details: { upstream_inference_cost: 0.015 },
+        },
       }),
     ],
   });
@@ -82,26 +97,38 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
     messages: [{ role: 'user', content: 'Answer.' }],
     schema: z.object({ answer: z.string() }),
   });
+
   const first = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly messages?: readonly { readonly role?: string; content?: string }[];
     readonly response_format?: unknown;
   };
+
   const second = JSON.parse(transport.requests[2]?.body ?? '{}') as {
     readonly messages?: readonly { readonly role?: string; content?: string }[];
   };
 
   assert.equal(first.response_format, undefined);
+
   assert.equal(first.messages?.[0]?.role, 'system');
+
   assert.match(first.messages?.[0]?.content ?? '', /JSON Schema/u);
+
   assert.match(
     second.messages?.at(-1)?.content ?? '',
     /Structured output correction/u,
   );
+
   assert.deepEqual(result.structured, { answer: 'ok' });
+
   assert.deepEqual(result.usage, {
     inputTokens: 5,
     outputTokens: 7,
     totalTokens: 12,
+    cost: {
+      amount: 0.03,
+      unit: 'credits',
+      upstreamAmount: 0.023,
+    },
   });
 });
 
@@ -130,7 +157,9 @@ test('buffers direct structured streams until validation succeeds', async () => 
     events.map(({ type }) => type),
     ['response.started', 'text.delta', 'response.finished'],
   );
+
   assert.equal(transport.requests.length, 2);
+
   assert.equal(transport.requests[1]?.headers?.accept, 'application/json');
 });
 
@@ -154,7 +183,79 @@ test('rejects non-emulatable feature combinations before completion', async () =
       error instanceof ProviderErrorObject &&
       error.data.code === 'incompatible_model_request',
   );
+
   assert.equal(transport.requests.length, 1);
+});
+
+const disabledReasoning: readonly {
+  readonly name: string;
+  readonly options: Pick<ProviderRequest, 'effort' | 'flags'>;
+}[] = [
+  {
+    name: 'nested none',
+    options: { flags: { reasoning: { effort: 'none' } } },
+  },
+  {
+    name: 'explicit none over enabled flag',
+    options: { effort: 'none', flags: { reasoning: true } },
+  },
+  {
+    name: 'explicit none over nested effort',
+    options: { effort: 'none', flags: { reasoning: { effort: 'high' } } },
+  },
+];
+
+for (const { name, options } of disabledReasoning) {
+  test(`allows forced tools when reasoning is disabled by ${name}`, async () => {
+    const transport = fakeTransport({
+      responses: [
+        modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
+        response({
+          choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+        }),
+      ],
+    });
+    const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+
+    await provider.complete({
+      model: 'anthropic/claude-sonnet-4',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      ...options,
+    });
+
+    const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+      readonly reasoning?: unknown;
+    };
+    assert.deepEqual(body.reasoning, { effort: 'none' });
+  });
+}
+
+test('rejects forced tools when explicit effort overrides a disabled reasoning flag', async () => {
+  const provider = createUnifiedProvider({
+    transport: fakeTransport({}),
+    apiKey: 'key',
+    upstreamModel: 'anthropic/claude-sonnet-4',
+  });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'proxy-alias',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      effort: 'high',
+      flags: { reasoning: false },
+    }),
+    (error: unknown) =>
+      error instanceof ProviderErrorObject &&
+      error.data.code === 'incompatible_model_request',
+  );
 });
 
 test('allows an unknown laboratory only when live capabilities prove tools and forced choice', async () => {
@@ -201,6 +302,7 @@ test('uses the upstream profile when an OpenAI-compatible proxy replaces the mod
       }),
     ],
   });
+
   const provider = createUnifiedProvider({
     transport,
     apiKey: 'key',
@@ -214,14 +316,18 @@ test('uses the upstream profile when an OpenAI-compatible proxy replaces the mod
       { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
     ],
   });
+
   const body = JSON.parse(transport.requests[0]?.body ?? '{}') as {
     readonly model?: string;
     readonly provider?: unknown;
   };
 
   assert.equal(transport.requests.length, 1);
+
   assert.match(transport.requests[0]?.url ?? '', /chat\/completions$/u);
+
   assert.equal(body.model, 'benchflow-openrouter-openai-gpt-5.6-luna');
+
   assert.deepEqual(body.provider, { require_parameters: true });
 });
 
@@ -269,6 +375,7 @@ test('emulates sequential tools when the model does not advertise parallel contr
     ],
     parallelToolCalls: false,
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly messages?: readonly {
       readonly role?: string;
@@ -279,7 +386,9 @@ test('emulates sequential tools when the model does not advertise parallel contr
   };
 
   assert.equal(body.parallel_tool_calls, undefined);
+
   assert.deepEqual(body.provider, { require_parameters: true });
+
   assert.match(
     body.messages?.find(({ role }) => role === 'system')?.content ?? '',
     /limit applies only to the current response, not to the task or node/u,
@@ -305,6 +414,7 @@ test('forwards parallel tool control when the model advertises it', async () => 
     ],
     parallelToolCalls: false,
   });
+
   const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
     readonly parallel_tool_calls?: boolean;
   };

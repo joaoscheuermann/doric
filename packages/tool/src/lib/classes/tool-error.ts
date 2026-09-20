@@ -6,7 +6,9 @@ export class ToolErrorObject extends Error {
 
   constructor(data: ToolError, options?: ErrorOptions) {
     super(data.message, options);
+
     this.name = 'ToolErrorObject';
+
     this.data = data;
   }
 }

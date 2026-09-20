@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { basename } from 'node:path';
 
 export type CommandInput = {
@@ -26,28 +26,41 @@ export const run = (input: CommandInput): Promise<CommandResult> =>
     const stderr: Uint8Array[] = [];
     let timedOut = false;
     let settled = false;
-
     const abort = () => child.kill('SIGKILL');
+
     const timer =
       input.timeoutMs === undefined
         ? undefined
         : setTimeout(() => {
             timedOut = true;
+
             abort();
           }, input.timeoutMs);
+
     const cleanup = () => {
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+
       input.signal?.removeEventListener('abort', abort);
     };
+
     const fail = (cause: Error) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
+
       settled = true;
+
       cleanup();
+
       reject(cause);
     };
 
     child.stdout.on('data', (chunk: Uint8Array) => stdout.push(chunk));
+
     child.stderr.on('data', (chunk: Uint8Array) => stderr.push(chunk));
+
     child.once('error', () =>
       fail(
         new Error(
@@ -55,32 +68,44 @@ export const run = (input: CommandInput): Promise<CommandResult> =>
         ),
       ),
     );
+
     child.once('close', (code) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
+
       settled = true;
+
       cleanup();
+
       if (timedOut) {
         reject(
           new Error(
             `Firecracker host command timed out: ${basename(input.file)}`,
           ),
         );
+
         return;
       }
+
       if (input.signal?.aborted) {
         reject(
           Object.assign(new Error('The operation was aborted'), {
             name: 'AbortError',
           }),
         );
+
         return;
       }
+
       if (code !== 0) {
         reject(
           new Error(`Firecracker host command failed: ${basename(input.file)}`),
         );
+
         return;
       }
+
       resolve({
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr),
@@ -89,11 +114,17 @@ export const run = (input: CommandInput): Promise<CommandResult> =>
 
     if (input.signal?.aborted) {
       abort();
+
       return;
     }
+
     input.signal?.addEventListener('abort', abort, { once: true });
-    if (input.stdin !== undefined) child.stdin.end(input.stdin);
-    else child.stdin.end();
+
+    if (input.stdin !== undefined) {
+      child.stdin.end(input.stdin);
+    } else {
+      child.stdin.end();
+    }
   });
 
 export const start = (input: CommandInput): ChildProcess =>

@@ -1,5 +1,5 @@
-import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,10 +34,15 @@ describe('terminal tool', () => {
         timeoutMs: 5000,
       },
     ]);
+
     assert.equal(result.schema, 'terminal.compact.v1');
+
     assert.equal(result.working_directory, '/workspace/repo/src');
+
     assert.equal(result.exit_code, 0);
+
     assert.equal(result.success, true);
+
     assert.deepEqual(result.stdout.head, ['hello']);
   });
 
@@ -72,7 +77,9 @@ describe('terminal tool', () => {
     });
 
     assert.equal(result.exit_code, -1);
+
     assert.equal(result.success, false);
+
     assert.match(result.stderr.head.join('\n'), /timed out/u);
   });
 
@@ -85,7 +92,9 @@ describe('terminal tool', () => {
     });
 
     assert.equal(result.exit_code, -1);
+
     assert.equal(result.success, false);
+
     assert.match(result.stderr.head.join('\n'), /container exec failed/u);
   });
 
@@ -103,8 +112,11 @@ describe('terminal tool', () => {
     });
 
     assert.equal(result.success, false);
+
     assert.equal(result.diagnostics[0]?.kind, 'typescript_error');
+
     assert.equal(result.diagnostics[0]?.stream, 'stderr');
+
     assert.match(result.diagnostics[0]?.text ?? '', /TS2304/u);
   });
 
@@ -116,11 +128,12 @@ describe('terminal tool', () => {
       const result = await createTool({ traceDir })(sandbox).execute({
         command: 'echo hello',
       });
-
       const rawOutputRef = result.raw_output_ref;
 
       assert.ok(result.trace_id);
+
       assert.ok(rawOutputRef);
+
       assert.equal(
         rawOutputRef,
         path.join(traceDir, `${result.trace_id}.json`),
@@ -133,7 +146,9 @@ describe('terminal tool', () => {
       };
 
       assert.equal(trace.command, 'echo hello');
+
       assert.equal(trace.workingDirectory, '/workspace');
+
       assert.equal(trace.stdout, 'hello\n');
     } finally {
       await rm(traceDir, { recursive: true, force: true });

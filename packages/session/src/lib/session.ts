@@ -5,10 +5,15 @@ export type SessionEntry<Value> = {
 
 export interface SessionStore<Value> {
   get(id: string): Value | undefined;
+
   load(id: string): Promise<Value> | undefined;
+
   getOrCreate(id: string, create: () => Value | Promise<Value>): Promise<Value>;
+
   delete(id: string): boolean;
+
   list(): readonly SessionEntry<Value>[];
+
   clear(): void;
 }
 
@@ -47,12 +52,14 @@ export const createSessionStore = <Value>(): SessionStore<Value> => {
       }
 
       const token = Symbol(id);
+
       const promise = Promise.resolve()
         .then(create)
         .then(
           (value) => {
             if (inFlight.get(id)?.token === token) {
               values.set(id, value);
+
               inFlight.delete(id);
             }
 
@@ -85,6 +92,7 @@ export const createSessionStore = <Value>(): SessionStore<Value> => {
 
     clear() {
       values.clear();
+
       inFlight.clear();
     },
   };
