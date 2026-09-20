@@ -34,26 +34,10 @@ export const createConfigService = async ({
   });
   let tail = Promise.resolve();
 
-  const exclusive = async <Value>(
-    operation: () => Promise<Value>,
-  ): Promise<Value> => {
-    const previous = tail;
-    let release: () => void = () => undefined;
-    tail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-    }
-  };
-
   return {
     current: () => active,
-    replace: (config) =>
-      exclusive(async () => {
+    replace(config) {
+      const replacement = tail.then(async () => {
         const candidate = await buildGeneration({
           snapshot: { configuration: config, revision: 0, updatedAt: '' },
           bundles,
@@ -63,6 +47,13 @@ export const createConfigService = async ({
         const snapshot = await store.replace(config);
         active = { ...candidate, snapshot };
         return snapshot;
-      }),
+      });
+      // A rejected replacement must not block later requests.
+      tail = replacement.then(
+        () => undefined,
+        () => undefined,
+      );
+      return replacement;
+    },
   };
 };

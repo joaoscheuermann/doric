@@ -160,9 +160,21 @@ test(
     const root = await createThread(service, project.id);
     const child = await createThread(service, project.id, root.id);
     const grandchild = await createThread(service, project.id, child.id);
+    const otherChild = await createThread(service, project.id, root.id);
+    const otherGrandchild = await createThread(
+      service,
+      project.id,
+      otherChild.id,
+    );
     const sibling = await createThread(service, project.id);
     await service.threads.terminate(root.id);
-    for (const thread of [root, child, grandchild]) {
+    for (const thread of [
+      root,
+      child,
+      grandchild,
+      otherChild,
+      otherGrandchild,
+    ]) {
       await harness.threadState(thread.id, 'cancelled');
       assert.equal(
         (await service.threads.prompt(thread.id, 'later')).status,

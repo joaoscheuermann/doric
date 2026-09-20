@@ -6,6 +6,7 @@ import { runDirectPrompt } from '../agents/direct/executor.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
+  subtreeIds,
   type ProjectRuntime,
   type ThreadExecution,
 } from './runtime.js';
@@ -43,7 +44,6 @@ export const createWorkspaceService = ({
   const runtimes = new Map<string, ProjectRuntime>();
   const exclusive = createMutationQueue();
   const runner = createThreadRunner({
-    projects,
     threads,
     publisher,
     logger,
@@ -158,32 +158,6 @@ export const createWorkspaceService = ({
     return access === undefined
       ? { status: 'unavailable' }
       : { status: 'ready', vmId: runtime.lease.sandbox.id, ssh: access };
-  };
-  const subtreeIds = (
-    values: readonly {
-      readonly id: string;
-      readonly parentThreadId?: string;
-    }[],
-    id: string,
-  ) => {
-    const children = new Map<string, string[]>();
-    for (const item of values) {
-      if (item.parentThreadId !== undefined)
-        children.set(item.parentThreadId, [
-          ...(children.get(item.parentThreadId) ?? []),
-          item.id,
-        ]);
-    }
-    const result = new Set([id]);
-    const pending = [id];
-    while (pending.length > 0)
-      for (const child of children.get(pending.pop()!) ?? []) {
-        if (!result.has(child)) {
-          result.add(child);
-          pending.push(child);
-        }
-      }
-    return result;
   };
   return {
     projects: {

@@ -45,7 +45,15 @@ export const createConfigStore = (database: Database): ConfigStore => ({
           })),
         });
         await transaction.modelConfiguration.createMany({
-          data: modelRows(config),
+          data: [
+            {
+              configurationId: singletonId,
+              role: ModelRole.EXECUTION,
+              providerId: config.models.execution.providerId,
+              model: config.models.execution.model,
+              effort: config.models.execution.effort,
+            },
+          ],
         });
         const stored = await transaction.doricConfiguration.update({
           where: { id: singletonId },
@@ -63,33 +71,25 @@ export const createConfigStore = (database: Database): ConfigStore => ({
   },
 });
 
-const modelRows = (config: ConfigInput) => [modelRow(config.models.execution)];
-
-const modelRow = (profile: ConfigInput['models']['execution']) => ({
-  configurationId: singletonId,
-  role: ModelRole.EXECUTION,
-  providerId: profile.providerId,
-  model: profile.model,
-  effort: profile.effort,
-});
-
 const fromStored = (stored: StoredConfig): DoricConfig => {
-  const models = new Map(stored.models.map((model) => [model.role, model]));
-  const reasoning = (role: ModelRole) => {
-    const profile = required(models, role);
-    return {
-      providerId: profile.providerId,
-      model: profile.model,
-      effort: profile.effort as ConfigInput['models']['execution']['effort'],
-    };
-  };
+  const execution = stored.models.find(
+    ({ role }) => role === ModelRole.EXECUTION,
+  );
+  if (execution === undefined)
+    throw new Error(
+      `Stored Doric model role is missing: ${ModelRole.EXECUTION}`,
+    );
 
   const configuration = ConfigInputSchema.parse({
     providers: stored.providers
       .map(({ id, baseUrl, apiKeyEnv }) => ({ id, baseUrl, apiKeyEnv }))
       .sort((left, right) => left.id.localeCompare(right.id)),
     models: {
-      execution: reasoning(ModelRole.EXECUTION),
+      execution: {
+        providerId: execution.providerId,
+        model: execution.model,
+        effort: execution.effort,
+      },
     },
     execution: { maxTurns: stored.maxTurns },
   });
@@ -99,14 +99,4 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
     revision: stored.revision,
     updatedAt: stored.updatedAt.toISOString(),
   };
-};
-
-const required = <Value>(
-  values: ReadonlyMap<ModelRole, Value>,
-  role: ModelRole,
-): Value => {
-  const value = values.get(role);
-  if (value === undefined)
-    throw new Error(`Stored Doric model role is missing: ${role}`);
-  return value;
 };

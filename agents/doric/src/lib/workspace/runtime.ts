@@ -7,7 +7,6 @@ import type { Generation } from '../config/generation.js';
 import type {
   InputSource,
   Project,
-  ProjectStore,
   Thread,
   ThreadStore,
   WorkspacePublisher,
@@ -60,7 +59,6 @@ export type ProjectRuntime = {
   ending?: Promise<void>;
 };
 export type RuntimeContext = {
-  readonly projects: ProjectStore;
   readonly threads: ThreadStore;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;
@@ -69,6 +67,31 @@ export type RuntimeContext = {
     id: string,
     operation: () => Promise<Value>,
   ) => Promise<Value>;
+};
+
+/** Includes the root, then discovers descendants in stable sibling order. */
+export const subtreeIds = (
+  threads: readonly Pick<Thread, 'id' | 'parentThreadId'>[],
+  rootId: string,
+): Set<string> => {
+  const children = new Map<string, string[]>();
+  for (const thread of threads) {
+    const parentId = thread.parentThreadId;
+    if (parentId === undefined) continue;
+    const siblings = children.get(parentId);
+    if (siblings === undefined) children.set(parentId, [thread.id]);
+    else siblings.push(thread.id);
+  }
+  const ids = new Set([rootId]);
+  const pending = [rootId];
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    for (const child of children.get(id) ?? []) {
+      if (ids.has(child)) continue;
+      ids.add(child);
+      pending.push(child);
+    }
+  }
+  return ids;
 };
 
 /** Serializes short lifecycle mutations only, never Agent execution or waiting. */

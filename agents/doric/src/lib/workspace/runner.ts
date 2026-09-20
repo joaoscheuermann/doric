@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { ThreadCoordination } from './coordination.js';
 import { eventJson } from '../events/serialization.js';
 import {
+  subtreeIds,
   ThreadPersistenceError,
   type ProjectRuntime,
   type PromptJob,
@@ -240,22 +241,8 @@ export const createThreadRunner = (context: RuntimeContext) => {
     return 'interrupted';
   };
   const descendants = (project: ProjectRuntime, rootId: string) => {
-    const ids = new Set([rootId]);
-    const children = new Map<string, string[]>();
-    for (const item of project.threads.values()) {
-      const parent = item.thread.parentThreadId;
-      if (parent !== undefined)
-        children.set(parent, [...(children.get(parent) ?? []), item.thread.id]);
-    }
-    const pending = [rootId];
-    while (pending.length > 0) {
-      for (const id of children.get(pending.pop()!) ?? []) {
-        if (!ids.has(id)) {
-          ids.add(id);
-          pending.push(id);
-        }
-      }
-    }
+    const threads = [...project.threads.values()].map(({ thread }) => thread);
+    const ids = subtreeIds(threads, rootId);
     return [...ids].flatMap((id) => {
       const thread = project.threads.get(id);
       return thread === undefined ? [] : [thread];

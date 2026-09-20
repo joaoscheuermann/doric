@@ -3,6 +3,7 @@ import type { DoricConfig } from '../config/schema.js';
 import type { Database } from '../database.js';
 import type { Project, ProjectStore } from './types.js';
 import {
+  before,
   checkLimit,
   excludedStates,
   json,
@@ -43,15 +44,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
         : await database.project.findUnique({ where: { id: cursor } });
     if (anchor === null) return { items: [] };
     const records = await database.project.findMany({
-      where:
-        anchor === undefined
-          ? {}
-          : {
-              OR: [
-                { createdAt: { lt: anchor.createdAt } },
-                { createdAt: anchor.createdAt, id: { lt: anchor.id } },
-              ],
-            },
+      where: before(anchor),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });

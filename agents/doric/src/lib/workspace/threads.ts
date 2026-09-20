@@ -6,6 +6,7 @@ import type {
 import type { Database } from '../database.js';
 import type { Thread, ThreadEvent, ThreadStore } from './types.js';
 import {
+  before,
   checkLimit,
   excludedStates,
   json,
@@ -78,14 +79,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     const records = await database.thread.findMany({
       where: {
         ...scope,
-        ...(anchor === undefined
-          ? {}
-          : {
-              OR: [
-                { createdAt: { lt: anchor.createdAt } },
-                { createdAt: anchor.createdAt, id: { lt: anchor.id } },
-              ],
-            }),
+        ...before(anchor),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,

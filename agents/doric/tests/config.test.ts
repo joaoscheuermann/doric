@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { pino } from 'pino';
 
 import {
   ConfigInputSchema,
@@ -14,11 +15,13 @@ test('accepts the complete default configuration', () => {
 });
 
 test('rejects credential values embedded in provider configuration', () => {
-  const secret = structuredClone(defaultConfig) as unknown as Record<
-    string,
-    unknown
-  >;
-  (secret.providers as Record<string, unknown>[])[0]!.apiKey = 'private';
+  const secret = {
+    ...defaultConfig,
+    providers: defaultConfig.providers.map((provider) => ({
+      ...provider,
+      apiKey: 'private',
+    })),
+  };
   assert.equal(ConfigInputSchema.safeParse(secret).success, false);
 });
 
@@ -89,11 +92,19 @@ test('keeps the active generation and accepts later replacements after a build f
 
 test('keeps the active generation when persistent replacement fails', async () => {
   const harness = await configHarness({ failedWrite: 'broken-store' });
+  const original = harness.service.current();
 
   await assert.rejects(harness.service.replace(configured('broken-store')));
   assert.deepEqual(harness.writes, []);
   assert.equal(
     harness.service.current().snapshot.configuration.models.execution.model,
+    defaultConfig.models.execution.model,
+  );
+  const snapshot = await harness.service.replace(configured('recovered'));
+  assert.equal(snapshot.configuration.models.execution.model, 'recovered');
+  assert.deepEqual(harness.service.current().snapshot, snapshot);
+  assert.equal(
+    original.snapshot.configuration.models.execution.model,
     defaultConfig.models.execution.model,
   );
 });
@@ -128,13 +139,18 @@ const configHarness = async ({
     const model = current.configuration.models.execution.model;
     if (model === blockedBuild) await buildGate;
     if (model === failedBuild) throw new Error('generation unavailable');
-    return { snapshot: current, marker: model } as unknown as Generation;
+    return {
+      snapshot: current,
+      providers: new Map(),
+      redactions: () => [],
+      catalog: { skills: [], tools: [] },
+    } satisfies Generation;
   };
   const service = await createConfigService({
     store,
     bundles: [],
-    logger: {} as never,
-    buildGeneration: build as never,
+    logger: pino({ enabled: false }),
+    buildGeneration: build,
   });
   return { service, writes, releaseBuild };
 };

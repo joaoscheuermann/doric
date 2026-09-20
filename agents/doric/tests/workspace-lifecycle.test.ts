@@ -6,6 +6,66 @@ import type { InputSource } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
 test(
+  'publishes deletion for the entire subtree only after the store accepts it',
+  { timeout: 3000 },
+  async () => {
+    const harness = workspace();
+    const deleted: string[] = [];
+    let outcome: 'active' | 'deleted' = 'active';
+    const service = createWorkspaceService({
+      ...harness.dependencies,
+      threads: {
+        ...harness.threads,
+        deleteSubtree: async () => outcome,
+      },
+      publisher: {
+        ...harness.publisher,
+        threadDeleted: (_projectId, id) => deleted.push(id),
+      },
+      pool: pool(),
+      execute: async () => 'done',
+    });
+    const project = await service.projects.create();
+    await harness.projectState(project.id, 'ready');
+    const create = async (parentId?: string) => {
+      const result = await service.threads.create(project.id, parentId);
+      assert.ok(result.status === 'created');
+      return result.thread;
+    };
+    const root = await create();
+    const child = await create(root.id);
+    const grandchild = await create(child.id);
+    const otherChild = await create(root.id);
+    const otherGrandchild = await create(otherChild.id);
+    const sibling = await create();
+    const subtree = [root, child, grandchild, otherChild, otherGrandchild];
+
+    assert.equal(await service.threads.delete(root.id), 'active');
+    assert.deepEqual(deleted, []);
+    await service.threads.terminate(root.id);
+    for (const thread of subtree) {
+      await harness.threadState(thread.id, 'cancelled');
+    }
+    outcome = 'deleted';
+    assert.equal(await service.threads.delete(root.id), 'deleted');
+    assert.equal(deleted.length, subtree.length);
+    assert.deepEqual(new Set(deleted), new Set(subtree.map(({ id }) => id)));
+    for (const id of deleted) {
+      assert.equal(
+        (await service.threads.create(project.id, id)).status,
+        'invalid_parent',
+      );
+    }
+    assert.equal(
+      (await service.threads.prompt(sibling.id, 'still available')).status,
+      'accepted',
+    );
+    assert.equal((await service.projects.find(project.id))?.state, 'ready');
+    await service.dispose();
+  },
+);
+
+test(
   'exposes SSH only for the active Project lease, not pending disposal',
   { timeout: 5000 },
   async () => {

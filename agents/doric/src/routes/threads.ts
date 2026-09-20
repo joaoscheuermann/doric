@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
-import { conflict, idInput, missing } from './workspace-input.js';
+import { conflict, missing, validateId } from './workspace-input.js';
 
 const promptInput = z
   .object({
@@ -18,18 +18,7 @@ const eventsInput = z.object({
 /** Human input cannot supply a privileged origin or delegation correlation. */
 export const createThreadsRouter = (service: WorkspaceService): Router => {
   const router = Router();
-  router.use('/:id', (request, response, next) => {
-    if (!idInput.safeParse(request.params.id).success) {
-      sendError(
-        response,
-        400,
-        'invalid_thread_id',
-        'The thread ID is invalid.',
-      );
-      return;
-    }
-    next();
-  });
+  router.use('/:id', validateId('thread'));
   router.get('/:id', async (request, response) => {
     const thread = await service.threads.find(request.params.id);
     if (thread === undefined) {

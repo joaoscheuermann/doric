@@ -158,6 +158,49 @@ test('forwards the replay cursor, prohibits caching and validates identifiers an
   assert.equal((await host.request('/threads/not-an-id')).status, 400);
 });
 
+test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const [kind, operations] of [
+    [
+      'project',
+      [
+        ['GET', ''],
+        ['DELETE', ''],
+        ['GET', '/ssh'],
+        ['GET', '/threads'],
+        ['POST', '/threads'],
+        ['POST', '/terminate'],
+      ],
+    ],
+    [
+      'thread',
+      [
+        ['GET', ''],
+        ['DELETE', ''],
+        ['GET', '/events'],
+        ['POST', '/prompt'],
+        ['POST', '/interrupt'],
+        ['POST', '/terminate'],
+      ],
+    ],
+  ] as const) {
+    for (const [method, suffix] of operations) {
+      const response = await host.request(
+        `/${kind}s/not-an-id${suffix}`,
+        method,
+      );
+      assert.equal(response.status, 400);
+      const { error } = (await response.json()) as {
+        error: { code: string; message: unknown };
+      };
+      assert.equal(error.code, `invalid_${kind}_id`);
+      assert.equal(typeof error.message, 'string');
+      assert.ok(error.message);
+    }
+  }
+});
+
 test('reports missing resources and refuses active deletion', async (t) => {
   const host = await serve();
   t.after(host.close);

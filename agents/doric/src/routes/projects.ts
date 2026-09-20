@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
-import { conflict, idInput, missing, pageInput } from './workspace-input.js';
+import { conflict, missing, pageInput, validateId } from './workspace-input.js';
 
 const createInput = z.object({ parentThreadId: z.uuid().optional() }).strict();
 const threadsInput = pageInput.extend({ parentThreadId: z.uuid().optional() });
@@ -41,18 +41,7 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
       await service.projects.list(input.data.limit, input.data.cursor),
     );
   });
-  router.use('/:id', (request, response, next) => {
-    if (!idInput.safeParse(request.params.id).success) {
-      sendError(
-        response,
-        400,
-        'invalid_project_id',
-        'The project ID is invalid.',
-      );
-      return;
-    }
-    next();
-  });
+  router.use('/:id', validateId('project'));
   router.get('/:id', async (request, response) => {
     const project = await service.projects.find(request.params.id);
     if (project === undefined) {

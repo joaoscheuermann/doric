@@ -51,6 +51,17 @@ export const excludedStates = (state: ThreadState) =>
     ? [...terminal, 'CANCELLING' as const]
     : [...terminal];
 
+/** Exclusive cursor predicate for newest-first creation-time/id ordering. */
+export const before = (anchor: { createdAt: Date; id: string } | undefined) =>
+  anchor === undefined
+    ? {}
+    : {
+        OR: [
+          { createdAt: { lt: anchor.createdAt } },
+          { createdAt: anchor.createdAt, id: { lt: anchor.id } },
+        ],
+      };
+
 export const page = <Value extends { readonly id: string }>(
   records: readonly Value[],
   limit: number,
