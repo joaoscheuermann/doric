@@ -48,6 +48,19 @@ product scope and current files support the change.
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
+`app/doric` is the Electron desktop application. Its sandboxed, context-isolated
+main process is paired with the React renderer in `app/doric-renderer`; the
+renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
+The main process alone calls the Doric HTTP API at `127.0.0.1:3000` and exposes
+only semantic Project and Thread operations through a preload IPC boundary.
+The macOS workspace window retains always-visible native traffic lights over a
+renderer-owned draggable title bar. Splash, native theme, and renderer default
+to dark before React starts. The compact, resizable shadcn sidebar lists named
+Projects and recursive Threads, supports inline create and rename, and exposes
+context actions for create, lifecycle-aware delete, and copying Thread IDs.
+Selecting a Thread opens a process-local text editor; the desktop app does not
+send prompts yet.
+
 ### Project And Thread Contract
 
 The host architecture replaces Session with a Project that owns
@@ -343,23 +356,25 @@ returns the selected provider, owning live Project ID, and complete
 `SandboxSshAccess` only while that VM is leased to an active Project;
 idle, releasing, and disposed VMs never expose access. The registry wraps the
 provider at the composition boundary and the workspace service owns the
-process-local lease association. `POST /projects` accepts no prompt and includes
-a stable Project SSH subresource link while preserving asynchronous queued
-creation.
+process-local lease association. `POST /projects` accepts only a display name,
+not a prompt, and includes a stable Project SSH subresource link while
+preserving asynchronous queued creation.
 That subresource reports pending acquisition, returns the active VM and SSH
 access, or reports unavailable or expired access after release. Private keys
 remain ephemeral provider-managed sandbox state and HTTP response data;
 provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
 HTTP responses prohibit caching. REST additionally owns `GET/PUT /config`,
-Project and Thread creation, cursor listing, detail, FIFO prompt acceptance
-through `POST /threads/:id/prompt`, ordered event replay with an optional
-exclusive `afterSequence`, targeted prompt interruption, idempotent termination,
-and terminal-only deletion. `/projects` owns environments and `/threads` owns
-conversations; there are no `/sessions` routes or compatibility aliases.
-Public Project and Thread list/detail representations contain identity, state,
-ownership, timestamps, applicable revision/sequence and sanitized error codes,
-not prompts, messages, events, results, or SSH credentials.
+named Project and Thread creation, rename through `PATCH`, cursor listing,
+detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, ordered event
+replay with an optional exclusive `afterSequence`, targeted prompt interruption,
+idempotent termination, and terminal-only deletion. Project and Thread names
+are trimmed, exclude NUL, and contain 1 to 80 Unicode code points. `/projects`
+owns environments and `/threads` owns conversations; there are no `/sessions`
+routes or compatibility aliases. Public Project and Thread list/detail
+representations contain identity, name, state, ownership, timestamps,
+applicable revision/sequence and sanitized error codes, not prompts, messages,
+events, results, or SSH credentials.
 
 Socket.IO uses separate `/projects` and `/threads` namespaces. Project
 subscriptions expose environment and tree updates; Thread subscriptions use
@@ -374,11 +389,13 @@ ordering between Threads; Project reconnection refreshes its snapshot and tree.
 and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
 PostgreSQL stores the singleton configuration, normalized provider/model rows,
-Project configuration snapshots, Thread parentage and provider-ready message
-history, and ordered JSONB Thread events. The initial migration creates this
-schema from an empty database. Session-era migrations and data-conversion SQL
-are removed as part of the approved cutover. Startup marks every non-terminal Project and Thread
-failed with the sanitized `process_interrupted` code; events remain replayable.
+Project names and configuration snapshots, Thread names, parentage and
+provider-ready message history, and ordered JSONB Thread events. The initial
+migration creates the Project/Thread baseline from an empty database; later
+incremental migrations preserve that baseline while extending it. Session-era
+migrations and data-conversion SQL are removed as part of the approved cutover.
+Startup marks every non-terminal Project and Thread failed with the sanitized
+`process_interrupted` code; events remain replayable.
 Physical Thread deletion requires its entire subtree to be terminal; Project
 deletion requires every Thread terminal and cascades to its Threads and events.
 The local Compose surface pins PostgreSQL 18.4, mounts its PostgreSQL-18 volume

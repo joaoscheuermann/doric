@@ -5,7 +5,8 @@ independent Thread conversations, including agent-coordinated child Threads.
 
 ## How Direct works
 
-1. A client creates a Project through `/projects`, without an implicit chat.
+1. A client creates a named Project through `/projects`, without an implicit
+   chat.
 2. Doric reserves one isolated Docker or Firecracker sandbox for that Project
    and captures its configuration.
 3. The client separately creates Threads. Each has its own history and FIFO
@@ -26,9 +27,9 @@ independent Thread conversations, including agent-coordinated child Threads.
 Project/Thread follows the implemented
 [architecture contract](docs/03-tdd/05-project-thread-architecture.md).
 It replaces Session APIs without `/sessions` compatibility routes. The database
-uses a clean Project/Thread baseline: legacy databases must be explicitly
-recreated, not upgraded in place. There is no automatic reset or Session data
-conversion.
+starts from a clean Project/Thread baseline and extends it with incremental
+migrations. Session-era databases must still be explicitly recreated; there is
+no automatic reset or Session data conversion.
 
 ## Start Direct locally
 
@@ -47,6 +48,19 @@ it on a trusted network.
 See [`agents/doric/README.md`](agents/doric/README.md) for the API, event, and
 persistence contracts.
 
+## Start the desktop app
+
+With the Direct backend listening on `127.0.0.1:3000`, start the React renderer
+and Electron process together:
+
+```console
+npm run doric:dev
+```
+
+The desktop app manages named Projects and recursive Threads through a
+sandboxed preload IPC boundary. Selecting a Thread opens a local text editor;
+the desktop app does not send prompts yet.
+
 ## Workspace guide
 
 Each Nx project owns a README with its public contract, usage, and development
@@ -56,6 +70,13 @@ commands.
 
 - [`agents/doric`](agents/doric/README.md) — Direct REST and Socket.IO host,
   PostgreSQL persistence, Project sandboxes, and independent chat Threads.
+
+### Desktop
+
+- [`app/doric`](app/doric/README.md) — Electron main process and secure backend
+  bridge.
+- [`app/doric-renderer`](app/doric-renderer/README.md) — compact shadcn/ui
+  Project and recursive Thread workspace.
 
 ### Built-in bundles
 

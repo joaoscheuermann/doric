@@ -80,12 +80,14 @@ After a server restart, interrupted work is marked failed rather than resumed.
 | POST      | `/projects`               | 202       | Reserve an environment without a Thread or prompt. |
 | GET       | `/projects`               | 200       | List Projects.                                     |
 | GET       | `/projects/:id`           | 200       | Read public Project metadata.                      |
+| PATCH     | `/projects/:id`           | 200       | Rename a Project.                                  |
 | POST      | `/projects/:id/threads`   | 201       | Create a root or child Thread.                     |
 | GET       | `/projects/:id/threads`   | 200       | List Threads; optional `parentThreadId` filter.    |
 | GET       | `/projects/:id/ssh`       | 200 / 202 | Read private SSH access / wait for environment.    |
 | POST      | `/projects/:id/terminate` | 200       | Terminate the Project and its Threads.             |
 | DELETE    | `/projects/:id`           | 204       | Delete a terminal Project.                         |
 | GET       | `/threads/:id`            | 200       | Read public Thread metadata.                       |
+| PATCH     | `/threads/:id`            | 200       | Rename a Thread.                                   |
 | POST      | `/threads/:id/prompt`     | 202       | Enqueue human input; returns `promptId`.           |
 | GET       | `/threads/:id/events`     | 200       | Replay durable events.                             |
 | POST      | `/threads/:id/interrupt`  | 200       | Interrupt the specified active prompt.             |
@@ -103,10 +105,20 @@ invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
 ### Create and converse
 
 ```sh
-curl -X POST http://127.0.0.1:3000/projects
+curl -X POST -H 'content-type: application/json' \
+  -d '{"name":"Repository work"}' \
+  http://127.0.0.1:3000/projects
 # Use the returned Project id:
-curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/threads
-# For a child, supply {"parentThreadId":"PARENT_THREAD_ID"} instead.
+curl -X POST -H 'content-type: application/json' \
+  -d '{"name":"Inspect tests"}' \
+  http://127.0.0.1:3000/projects/PROJECT_ID/threads
+# For a child, also supply "parentThreadId":"PARENT_THREAD_ID".
+curl -X PATCH -H 'content-type: application/json' \
+  -d '{"name":"Renamed project"}' \
+  http://127.0.0.1:3000/projects/PROJECT_ID
+curl -X PATCH -H 'content-type: application/json' \
+  -d '{"name":"Renamed thread"}' \
+  http://127.0.0.1:3000/threads/THREAD_ID
 curl -X POST -H 'content-type: application/json' \
   -d '{"prompt":"Inspect the repository and run focused tests."}' \
   http://127.0.0.1:3000/threads/THREAD_ID/prompt
@@ -116,8 +128,11 @@ curl -X POST -H 'content-type: application/json' \
 curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 ```
 
-The creation body accepts only `parentThreadId`; the prompt body accepts only
-`prompt`. Public callers cannot forge parent/result origins or correlation.
+Project creation requires `{ "name": "..." }`. Thread creation requires
+`{ "name": "..." }` and accepts an optional `parentThreadId`. Both PATCH
+operations require the same name-only body. Names are trimmed, reject NUL, and
+contain 1–80 Unicode characters. The prompt body accepts only `prompt`. Public
+callers cannot forge parent/result origins or correlation.
 A stale interrupt returns `409 thread_not_running`, never cancelling a later
 execution. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
 pending, 409 when unavailable, and 410 when expired. SSH responses forbid caches.
@@ -196,10 +211,10 @@ conversations available.
 
 PostgreSQL stores Projects, Threads, messages, configuration snapshots, and
 Thread events. Apply migrations separately with `npx nx run doric:migrate`;
-startup does not apply them. The cutover uses a single clean Project/Thread
-baseline generated from the current Prisma schema, plus bootstrap
-configuration, its singleton constraint, and the immutable-tree trigger.
-It does not convert Session data or retain old migrations.
+startup does not apply them. The migration history starts with the clean
+Project/Thread baseline, bootstrap configuration, singleton constraint, and
+immutable-tree trigger. The following incremental migration adds and backfills
+Project and Thread names. It does not convert Session data.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the
