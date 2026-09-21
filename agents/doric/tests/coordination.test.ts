@@ -11,7 +11,7 @@ const create = async (
   projectId: string,
   parentId?: string,
 ): Promise<Thread> => {
-  const value = await service.threads.create(projectId, parentId);
+  const value = await service.threads.create(projectId, 'Thread', parentId);
   assert.ok(value.status === 'created');
   return value.thread;
 };
@@ -55,7 +55,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     const parent = await create(service, project.id);
     const child = await create(service, project.id, parent.id);
     const descendant = await create(service, project.id, child.id);
@@ -109,8 +109,8 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
-    const otherProject = await service.projects.create();
+    const project = await service.projects.create('Project');
+    const otherProject = await service.projects.create('Other project');
     const parent = await create(service, project.id);
     const child = await create(service, project.id, parent.id);
     const grandchild = await create(service, project.id, child.id);
@@ -160,7 +160,7 @@ test(
         return 'delegated';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     const parent = await create(service, project.id);
     await service.threads.prompt(parent.id, 'delegate');
     await result.promise;
@@ -196,7 +196,7 @@ test(
         return 'unexpected execution';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     const thread = await create(service, project.id);
     await service.threads.prompt(thread.id, 'queued');
     await service.projects.terminate(project.id);

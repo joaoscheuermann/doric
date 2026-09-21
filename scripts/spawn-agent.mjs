@@ -67,7 +67,7 @@ const run = async (options) => {
       throw new Error(`Doric request failed (HTTP ${response.status}).`);
     return response.json();
   };
-  const project = await request('/projects', {});
+  const project = await request('/projects', { name: 'spawn-agent project' });
   console.log(
     JSON.stringify({
       projectId: project.id,
@@ -75,7 +75,9 @@ const run = async (options) => {
     }),
   );
   try {
-    const thread = await request(`/projects/${project.id}/threads`, {});
+    const thread = await request(`/projects/${project.id}/threads`, {
+      name: 'spawn-agent root',
+    });
     const { promptId } = await request(`/threads/${thread.id}/prompt`, {
       prompt: options.prompt,
     });

@@ -16,6 +16,7 @@ const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 const project: Project = {
   id: projectId,
+  name: 'Project',
   state: 'ready',
   configRevision: 1,
   createdAt: '',
@@ -24,6 +25,7 @@ const project: Project = {
 const thread: Thread = {
   id: threadId,
   projectId,
+  name: 'Thread',
   state: 'ready',
   lastSequence: 0,
   createdAt: '',
@@ -37,18 +39,30 @@ test('maps separate Project and Thread creation and list results', async (t) => 
     threads: { list: async () => ({ items: [thread] }) },
   });
   t.after(host.close);
-  const created = await host.request('/projects', 'POST');
+  const created = await host.request('/projects', 'POST', {
+    name: '  Project  ',
+  });
   assert.equal(created.status, 202);
-  const createdBody = (await created.json()) as { ssh: { href: string } };
+  const createdBody = (await created.json()) as Project & {
+    ssh: { href: string };
+  };
+  assert.equal(createdBody.name, 'Project');
   assert.equal(createdBody.ssh.href, `/projects/${projectId}/ssh`);
   const conversation = await host.request(
     `/projects/${projectId}/threads`,
     'POST',
+    { name: '  Thread  ' },
   );
   assert.equal(conversation.status, 201);
-  assert.equal(((await conversation.json()) as Thread).projectId, projectId);
+  assert.equal(((await conversation.json()) as Thread).name, 'Thread');
   const after = await host.request(`/projects/${projectId}/threads`);
-  assert.equal(((await after.json()) as Page<Thread>).items[0]?.id, threadId);
+  const page = (await after.json()) as Page<Thread>;
+  assert.equal(page.items[0]?.id, threadId);
+  assert.equal(page.items[0]?.name, 'Thread');
+  const projects = (await (
+    await host.request('/projects')
+  ).json()) as Page<Project>;
+  assert.equal(projects.items[0]?.name, 'Project');
 });
 
 test('production HTTP registration exposes no legacy Session aliases', async (t) => {
@@ -67,13 +81,14 @@ test('creates child threads and rejects privileged creation input', async (t) =>
   const host = await serve();
   t.after(host.close);
   const child = await host.request(`/projects/${projectId}/threads`, 'POST', {
+    name: 'Child',
     parentThreadId: threadId,
   });
   assert.equal(((await child.json()) as Thread).parentThreadId, threadId);
   for (const body of [
     { prompt: 'task' },
     { source: { kind: 'parent' } },
-    { parentThreadId: 'bad' },
+    { name: 'Child', parentThreadId: 'bad' },
   ]) {
     assert.equal(
       (await host.request(`/projects/${projectId}/threads`, 'POST', body))
@@ -81,6 +96,108 @@ test('creates child threads and rejects privileged creation input', async (t) =>
       422,
     );
   }
+});
+
+test('rejects invalid names for Project and Thread creation', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const body of [
+    {},
+    { name: '   ' },
+    { name: 'x'.repeat(81) },
+    { name: '😀'.repeat(81) },
+    { name: 'before\0after' },
+    { name: 'Valid', unexpected: true },
+    { name: 42 },
+  ]) {
+    assert.equal((await host.request('/projects', 'POST', body)).status, 422);
+    assert.equal(
+      (await host.request(`/projects/${projectId}/threads`, 'POST', body))
+        .status,
+      422,
+    );
+  }
+});
+
+test('accepts names containing up to 80 Unicode code points', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const name of ['x'.repeat(80), '😀'.repeat(80)]) {
+    const createdProject = await host.request('/projects', 'POST', { name });
+    assert.equal(createdProject.status, 202);
+    assert.equal(((await createdProject.json()) as Project).name, name);
+    const createdThread = await host.request(
+      `/projects/${projectId}/threads`,
+      'POST',
+      { name },
+    );
+    assert.equal(createdThread.status, 201);
+    assert.equal(((await createdThread.json()) as Thread).name, name);
+  }
+});
+
+test('renames Projects and Threads with normalized names', async (t) => {
+  const host = await serve({
+    projects: {
+      rename: async (id, name) =>
+        id === projectId ? { ...project, name } : undefined,
+    },
+    threads: {
+      rename: async (id, name) =>
+        id === threadId ? { ...thread, name } : undefined,
+    },
+  });
+  t.after(host.close);
+  const renamedProject = await host.request(`/projects/${projectId}`, 'PATCH', {
+    name: '  Renamed project  ',
+  });
+  assert.equal(renamedProject.status, 200);
+  assert.equal(
+    ((await renamedProject.json()) as Project).name,
+    'Renamed project',
+  );
+  const renamedThread = await host.request(`/threads/${threadId}`, 'PATCH', {
+    name: '  Renamed thread  ',
+  });
+  assert.equal(renamedThread.status, 200);
+  assert.equal(((await renamedThread.json()) as Thread).name, 'Renamed thread');
+});
+
+test('returns 404 for missing rename targets and rejects invalid rename input', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  assert.equal(
+    (
+      await host.request(`/projects/${promptId}`, 'PATCH', {
+        name: 'Missing',
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await host.request(`/threads/${promptId}`, 'PATCH', {
+        name: 'Missing',
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await host.request(`/projects/${projectId}`, 'PATCH', {
+        name: ' ',
+      })
+    ).status,
+    422,
+  );
+  assert.equal(
+    (
+      await host.request(`/threads/${threadId}`, 'PATCH', {
+        name: 'x'.repeat(81),
+      })
+    ).status,
+    422,
+  );
 });
 
 test('accepts human prompts but rejects blank text and forged origin', async (t) => {
@@ -166,6 +283,7 @@ test('rejects invalid project and thread IDs before handling resource operations
       'project',
       [
         ['GET', ''],
+        ['PATCH', ''],
         ['DELETE', ''],
         ['GET', '/ssh'],
         ['GET', '/threads'],
@@ -177,6 +295,7 @@ test('rejects invalid project and thread IDs before handling resource operations
       'thread',
       [
         ['GET', ''],
+        ['PATCH', ''],
         ['DELETE', ''],
         ['GET', '/events'],
         ['POST', '/prompt'],
@@ -280,6 +399,7 @@ test('rejects cross-project parenting and inputs into inactive threads', async (
   });
   t.after(host.close);
   const child = await host.request(`/projects/${projectId}/threads`, 'POST', {
+    name: 'Child',
     parentThreadId: promptId,
   });
   assert.equal(child.status, 409);
@@ -327,9 +447,11 @@ const serve = async (
 ) => {
   const service: WorkspaceService = {
     projects: {
-      create: async () => project,
+      create: async (name) => ({ ...project, name }),
       find: async (id) => (id === projectId ? project : undefined),
       list: async () => ({ items: [project] }),
+      rename: async (id, name) =>
+        id === projectId ? { ...project, name } : undefined,
       terminate: async () => ({ ...project, state: 'cancelled' }),
       delete: async () => 'active',
       ssh: async (id) => {
@@ -350,12 +472,18 @@ const serve = async (
       ...overrides.projects,
     },
     threads: {
-      create: async (_id, parentThreadId) => ({
+      create: async (_id, name, parentThreadId) => ({
         status: 'created',
-        thread: { ...thread, ...(parentThreadId ? { parentThreadId } : {}) },
+        thread: {
+          ...thread,
+          name,
+          ...(parentThreadId ? { parentThreadId } : {}),
+        },
       }),
       find: async (id) => (id === threadId ? thread : undefined),
       list: async () => ({ items: [] }),
+      rename: async (id, name) =>
+        id === threadId ? { ...thread, name } : undefined,
       prompt: async () => ({ status: 'accepted', promptId }),
       events: async () => ({ events: [], lastSequence: 0 }),
       interrupt: async (_id, target) =>

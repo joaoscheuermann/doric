@@ -2,11 +2,16 @@ import type { RequestHandler, Response } from 'express';
 import { z } from 'zod';
 
 import { sendError } from '../lib/http/errors.js';
+import { isValidName, normalizeName } from '../lib/workspace/names.js';
 
 export const pageInput = z.object({
   limit: z.coerce.number().int().safe().positive().max(100).default(50),
   cursor: z.uuid().optional(),
 });
+export const nameInput = z
+  .string()
+  .transform(normalizeName)
+  .refine(isValidName);
 export const idInput = z.uuid();
 export const validateId =
   (kind: 'project' | 'thread'): RequestHandler =>

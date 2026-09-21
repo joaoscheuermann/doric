@@ -269,7 +269,12 @@ test(
       socket.connect();
       return notices;
     };
-    const project = await request<Project>('/projects', 'POST', {}, 202);
+    const project = await request<Project>(
+      '/projects',
+      'POST',
+      { name: 'Integration project' },
+      202,
+    );
     const projectSocket = subscribe('projects', { projectId: project.id });
     const snapshot = await projectSocket.wait<{
       project: Project;
@@ -286,7 +291,7 @@ test(
     const root = await request<Thread>(
       `/projects/${project.id}/threads`,
       'POST',
-      {},
+      { name: 'Root thread' },
       201,
     );
     const rootSocket = subscribe('threads', { threadId: root.id });

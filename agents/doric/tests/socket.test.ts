@@ -19,6 +19,7 @@ const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 const project: Project = {
   id: projectId,
+  name: 'Project',
   state: 'ready',
   configRevision: 1,
   createdAt: '',
@@ -27,6 +28,7 @@ const project: Project = {
 const thread: Thread = {
   id: threadId,
   projectId,
+  name: 'Thread',
   state: 'ready',
   lastSequence: 2,
   createdAt: '',
@@ -337,6 +339,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     }),
     create: unsupported,
     list: async () => ({ items: [project] }),
+    rename: unsupported,
     setState: unsupported,
     delete: unsupported,
     reconcile: unsupported,
@@ -348,6 +351,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     listByProject: async () => [thread],
     list: async () => ({ items: [thread] }),
     create: unsupported,
+    rename: unsupported,
     setState: unsupported,
     saveMessages: unsupported,
     appendEvent: unsupported,

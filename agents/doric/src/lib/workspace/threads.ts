@@ -19,7 +19,7 @@ import {
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({
-  async create(projectId, parentThreadId) {
+  async create(projectId, name, parentThreadId) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId}::uuid FOR UPDATE`;
       const owner = await tx.project.findUniqueOrThrow({
@@ -49,7 +49,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         }
       }
       const stored = await tx.thread.create({
-        data: { projectId, parentThreadId },
+        data: { projectId, name, parentThreadId },
       });
       return { thread: thread(stored), messages: [] };
     });
@@ -94,6 +94,16 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       })
     ).map(thread);
+  },
+
+  async rename(id, name) {
+    const result = await database.thread.updateMany({
+      where: { id },
+      data: { name },
+    });
+    if (result.count === 0) return undefined;
+    const stored = await database.thread.findUnique({ where: { id } });
+    return stored === null ? undefined : thread(stored);
   },
 
   async setState(id, state, activePromptId, errorCode) {
@@ -210,6 +220,7 @@ const thread = (stored: StoredThread): Thread => ({
   ...(stored.parentThreadId === null
     ? {}
     : { parentThreadId: stored.parentThreadId }),
+  name: stored.name,
   state: states[stored.state],
   lastSequence: stored.lastSequence,
   ...(stored.activePromptId === null

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ThreadCoordination } from './coordination.js';
 import { eventJson } from '../events/serialization.js';
+import { nameFromPrompt } from './names.js';
 import {
   subtreeIds,
   ThreadPersistenceError,
@@ -212,14 +213,18 @@ export const createThreadRunner = (context: RuntimeContext) => {
         start(project, thread);
       });
   };
-  const create = async (project: ProjectRuntime, parentThreadId?: string) => {
+  const create = async (
+    project: ProjectRuntime,
+    name: string,
+    parentThreadId?: string,
+  ) => {
     if (project.closing) return { status: 'inactive' as const };
     if (parentThreadId !== undefined) {
       const parent = project.threads.get(parentThreadId);
       if (parent === undefined) return { status: 'invalid_parent' as const };
       if (parent.closing) return { status: 'inactive' as const };
     }
-    const record = await store.create(project.project.id, parentThreadId);
+    const record = await store.create(project.project.id, name, parentThreadId);
     const runtime: ThreadRuntime = {
       thread: record.thread,
       jobs: [],
@@ -294,11 +299,13 @@ export const createThreadRunner = (context: RuntimeContext) => {
             }
           }
           await task;
-          await state(
-            thread,
-            failure === undefined ? 'cancelled' : 'failed',
-            undefined,
-            failure,
+          await exclusive(project.project.id, () =>
+            state(
+              thread,
+              failure === undefined ? 'cancelled' : 'failed',
+              undefined,
+              failure,
+            ),
           );
         })
         .catch(() => {
@@ -345,7 +352,11 @@ export const createThreadRunner = (context: RuntimeContext) => {
           allowed();
           if (prompt.trim().length === 0)
             throw new TypeError('A non-empty prompt is required.');
-          const created = await create(project, parent.thread.id);
+          const created = await create(
+            project,
+            nameFromPrompt(prompt),
+            parent.thread.id,
+          );
           if (created.status !== 'created')
             throw new Error('Thread cannot be created.');
           const accepted = await enqueue(

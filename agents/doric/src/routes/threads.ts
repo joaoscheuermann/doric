@@ -3,8 +3,9 @@ import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
-import { conflict, missing, validateId } from './workspace-input.js';
+import { conflict, missing, nameInput, validateId } from './workspace-input.js';
 
+const threadInput = z.object({ name: nameInput }).strict();
 const promptInput = z
   .object({
     prompt: z.string().refine((value) => value.trim().length > 0),
@@ -19,6 +20,27 @@ const eventsInput = z.object({
 export const createThreadsRouter = (service: WorkspaceService): Router => {
   const router = Router();
   router.use('/:id', validateId('thread'));
+  router.patch('/:id', async (request, response) => {
+    const input = threadInput.safeParse(request.body ?? {});
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_thread',
+        'A Thread name between 1 and 80 characters is required.',
+      );
+      return;
+    }
+    const thread = await service.threads.rename(
+      request.params.id,
+      input.data.name,
+    );
+    if (thread === undefined) {
+      missing(response, 'thread');
+      return;
+    }
+    response.json(thread);
+  });
   router.get('/:id', async (request, response) => {
     const thread = await service.threads.find(request.params.id);
     if (thread === undefined) {

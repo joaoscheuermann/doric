@@ -3,30 +3,35 @@ import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
-import { conflict, missing, pageInput, validateId } from './workspace-input.js';
+import {
+  conflict,
+  missing,
+  nameInput,
+  pageInput,
+  validateId,
+} from './workspace-input.js';
 
-const createInput = z.object({ parentThreadId: z.uuid().optional() }).strict();
+const projectInput = z.object({ name: nameInput }).strict();
+const createInput = z
+  .object({ name: nameInput, parentThreadId: z.uuid().optional() })
+  .strict();
 const threadsInput = pageInput.extend({ parentThreadId: z.uuid().optional() });
 
 /** Project creation reserves an environment; conversations are created separately. */
 export const createProjectsRouter = (service: WorkspaceService): Router => {
   const router = Router();
   router.post('/', async (request, response) => {
-    if (
-      !z
-        .object({})
-        .strict()
-        .safeParse(request.body ?? {}).success
-    ) {
+    const input = projectInput.safeParse(request.body ?? {});
+    if (!input.success) {
       sendError(
         response,
         422,
         'invalid_project',
-        'Project creation takes no input.',
+        'A Project name between 1 and 80 characters is required.',
       );
       return;
     }
-    const project = await service.projects.create();
+    const project = await service.projects.create(input.data.name);
     response
       .status(202)
       .json({ ...project, ssh: { href: `/projects/${project.id}/ssh` } });
@@ -42,6 +47,27 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
     );
   });
   router.use('/:id', validateId('project'));
+  router.patch('/:id', async (request, response) => {
+    const input = projectInput.safeParse(request.body ?? {});
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_project',
+        'A Project name between 1 and 80 characters is required.',
+      );
+      return;
+    }
+    const project = await service.projects.rename(
+      request.params.id,
+      input.data.name,
+    );
+    if (project === undefined) {
+      missing(response, 'project');
+      return;
+    }
+    response.json(project);
+  });
   router.get('/:id', async (request, response) => {
     const project = await service.projects.find(request.params.id);
     if (project === undefined) {
@@ -57,12 +83,13 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
         response,
         422,
         'invalid_thread',
-        'Only an optional parentThreadId is accepted.',
+        'A Thread name between 1 and 80 characters and optional parentThreadId are accepted.',
       );
       return;
     }
     const result = await service.threads.create(
       request.params.id,
+      input.data.name,
       input.data.parentThreadId,
     );
     if (result.status === 'missing') {

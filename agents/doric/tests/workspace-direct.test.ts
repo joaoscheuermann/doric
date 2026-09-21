@@ -71,8 +71,8 @@ test(
         }),
       } as never,
     });
-    const project = await service.projects.create();
-    const created = await service.threads.create(project.id);
+    const project = await service.projects.create('Project');
+    const created = await service.threads.create(project.id, 'Thread');
     assert.ok(created.status === 'created');
     await service.threads.prompt(
       created.thread.id,
@@ -147,8 +147,8 @@ test(
         }),
       } as never,
     });
-    const project = await service.projects.create();
-    const created = await service.threads.create(project.id);
+    const project = await service.projects.create('Project');
+    const created = await service.threads.create(project.id, 'Thread');
     assert.ok(created.status === 'created');
     await service.threads.prompt(created.thread.id, 'first');
     await started.promise;
@@ -209,8 +209,8 @@ test(
         return 'cancelled';
       },
     });
-    const project = await service.projects.create();
-    const created = await service.threads.create(project.id);
+    const project = await service.projects.create('Project');
+    const created = await service.threads.create(project.id, 'Thread');
     assert.ok(created.status === 'created');
     await service.threads.prompt(created.thread.id, 'work');
     await started.promise;
@@ -271,8 +271,8 @@ test(
         }),
       } as never,
     });
-    const project = await service.projects.create();
-    const created = await service.threads.create(project.id);
+    const project = await service.projects.create('Project');
+    const created = await service.threads.create(project.id, 'Thread');
     assert.ok(created.status === 'created');
     await service.threads.prompt(created.thread.id, 'first');
     await started.promise;

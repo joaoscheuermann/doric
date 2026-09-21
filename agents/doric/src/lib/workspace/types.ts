@@ -12,6 +12,7 @@ export type ProjectState =
 export type ThreadState = ProjectState | 'running';
 export type Project = {
   readonly id: string;
+  readonly name: string;
   readonly state: ProjectState;
   readonly configRevision: number;
   readonly errorCode?: string;
@@ -24,6 +25,7 @@ export type Thread = {
   readonly id: string;
   readonly projectId: string;
   readonly parentThreadId?: string;
+  readonly name: string;
   readonly state: ThreadState;
   readonly lastSequence: number;
   readonly activePromptId?: string;
@@ -89,9 +91,10 @@ export type ProjectSsh =
 
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
-  create(snapshot: DoricConfig): Promise<ProjectRecord>;
+  create(name: string, snapshot: DoricConfig): Promise<ProjectRecord>;
   find(id: string): Promise<ProjectRecord | undefined>;
   list(limit: number, cursor?: string): Promise<Page<Project>>;
+  rename(id: string, name: string): Promise<Project | undefined>;
   setState(
     id: string,
     state: ProjectState,
@@ -101,7 +104,11 @@ export interface ProjectStore {
   reconcile(): Promise<number>;
 }
 export interface ThreadStore {
-  create(projectId: string, parentThreadId?: string): Promise<ThreadRecord>;
+  create(
+    projectId: string,
+    name: string,
+    parentThreadId?: string,
+  ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
   list(
     projectId: string,
@@ -110,6 +117,7 @@ export interface ThreadStore {
     parentThreadId?: string,
   ): Promise<Page<Thread>>;
   listByProject(projectId: string): Promise<readonly Thread[]>;
+  rename(id: string, name: string): Promise<Thread | undefined>;
   setState(
     id: string,
     state: ThreadState,
@@ -135,15 +143,20 @@ export interface WorkspacePublisher {
 }
 export interface WorkspaceService {
   readonly projects: {
-    create(): Promise<Project>;
+    create(name: string): Promise<Project>;
     find(id: string): Promise<Project | undefined>;
     list(limit: number, cursor?: string): Promise<Page<Project>>;
+    rename(id: string, name: string): Promise<Project | undefined>;
     terminate(id: string): Promise<Project | undefined>;
     delete(id: string): Promise<DeleteResult>;
     ssh(id: string): Promise<ProjectSsh>;
   };
   readonly threads: {
-    create(projectId: string, parentThreadId?: string): Promise<ThreadResult>;
+    create(
+      projectId: string,
+      name: string,
+      parentThreadId?: string,
+    ): Promise<ThreadResult>;
     find(id: string): Promise<Thread | undefined>;
     list(
       projectId: string,
@@ -151,6 +164,7 @@ export interface WorkspaceService {
       cursor?: string,
       parentThreadId?: string,
     ): Promise<Page<Thread> | undefined>;
+    rename(id: string, name: string): Promise<Thread | undefined>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
     events(
       id: string,

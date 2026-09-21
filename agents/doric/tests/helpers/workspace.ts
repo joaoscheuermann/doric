@@ -29,9 +29,10 @@ export const workspace = () => {
   };
   const now = new Date(0).toISOString();
   const projects: ProjectStore = {
-    create: async (snapshot) => {
+    create: async (name, snapshot) => {
       const project = {
         id: randomUUID(),
+        name,
         state: 'queued' as const,
         configRevision: snapshot.revision,
         createdAt: now,
@@ -49,6 +50,14 @@ export const workspace = () => {
         .filter(({ id }) => cursor === undefined || id > cursor)
         .slice(0, limit),
     }),
+    rename: async (id, name) => {
+      const record = projectRecords.get(id);
+      if (!record) return undefined;
+      const project = { ...record.project, name };
+      projectRecords.set(id, { ...record, project });
+      notify();
+      return project;
+    },
     setState: async (id, state, errorCode) => {
       const record = projectRecords.get(id);
       if (!record) return undefined;
@@ -72,11 +81,12 @@ export const workspace = () => {
     reconcile: async () => 0,
   };
   const threads: ThreadStore = {
-    create: async (projectId, parentThreadId) => {
+    create: async (projectId, name, parentThreadId) => {
       const thread = {
         id: randomUUID(),
         projectId,
         ...(parentThreadId ? { parentThreadId } : {}),
+        name,
         state: 'queued' as const,
         lastSequence: 0,
         createdAt: now,
@@ -104,6 +114,14 @@ export const workspace = () => {
       [...threadRecords.values()]
         .map(({ thread }) => thread)
         .filter((thread) => thread.projectId === projectId),
+    rename: async (id, name) => {
+      const record = threadRecords.get(id);
+      if (!record) return undefined;
+      const thread = { ...record.thread, name };
+      threadRecords.set(id, { ...record, thread });
+      notify();
+      return thread;
+    },
     setState: async (id, state, activePromptId, errorCode) => {
       const record = threadRecords.get(id);
       if (!record) return undefined;

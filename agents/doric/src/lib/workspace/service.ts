@@ -98,15 +98,17 @@ export const createWorkspaceService = ({
             errorCode = 'sandbox_release_failed';
           }
         }
-        try {
-          await setProject(
-            runtime,
-            errorCode === undefined ? 'cancelled' : 'failed',
-            errorCode,
-          );
-        } finally {
-          runtimes.delete(runtime.project.id);
-        }
+        await exclusive(runtime.project.id, async () => {
+          try {
+            await setProject(
+              runtime,
+              errorCode === undefined ? 'cancelled' : 'failed',
+              errorCode,
+            );
+          } finally {
+            runtimes.delete(runtime.project.id);
+          }
+        });
       })
       .catch(() => {
         logger.error(
@@ -161,11 +163,11 @@ export const createWorkspaceService = ({
   };
   return {
     projects: {
-      create: () =>
+      create: (name) =>
         exclusive('creation', async () => {
           if (disposed) throw new Error('Doric is shutting down.');
           const generation = config.current();
-          const record = await projects.create(generation.snapshot);
+          const record = await projects.create(name, generation.snapshot);
           const runtime: ProjectRuntime = {
             project: record.project,
             generation,
@@ -185,6 +187,16 @@ export const createWorkspaceService = ({
         }),
       find: async (id) => (await projects.find(id))?.project,
       list: (limit, cursor) => projects.list(limit, cursor),
+      rename: (id, name) =>
+        exclusive(id, async () => {
+          const value = await projects.rename(id, name);
+          if (value !== undefined) {
+            const runtime = runtimes.get(id);
+            if (runtime !== undefined) runtime.project = value;
+            publisher.projectUpdated(value);
+          }
+          return value;
+        }),
       terminate: (id) =>
         exclusive(id, async () => {
           const runtime = runtimes.get(id);
@@ -206,7 +218,7 @@ export const createWorkspaceService = ({
       ssh,
     },
     threads: {
-      create: (projectId, parentThreadId) =>
+      create: (projectId, name, parentThreadId) =>
         exclusive(projectId, async () => {
           const runtime = runtimes.get(projectId);
           if (runtime === undefined)
@@ -216,13 +228,28 @@ export const createWorkspaceService = ({
                   ? ('missing' as const)
                   : ('inactive' as const),
             };
-          return runner.create(runtime, parentThreadId);
+          return runner.create(runtime, name, parentThreadId);
         }),
       find: async (id) => (await threads.find(id))?.thread,
       list: async (projectId, limit, cursor, parentThreadId) =>
         (await projects.find(projectId)) === undefined
           ? undefined
           : threads.list(projectId, limit, cursor, parentThreadId),
+      rename: async (id, name) => {
+        const record = await threads.find(id);
+        if (record === undefined) return undefined;
+        return exclusive(record.thread.projectId, async () => {
+          const value = await threads.rename(id, name);
+          if (value !== undefined) {
+            const runtime = runtimes
+              .get(record.thread.projectId)
+              ?.threads.get(id);
+            if (runtime !== undefined) runtime.thread = value;
+            publisher.threadUpdated(value);
+          }
+          return value;
+        });
+      },
       prompt: async (id, prompt) => {
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
