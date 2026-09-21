@@ -51,8 +51,9 @@ reusable agent loop remains in `packages/agent`.
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
 main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
-The main process alone calls the Doric HTTP API at `127.0.0.1:3000` and exposes
-only semantic Project and Thread operations through a preload IPC boundary.
+The main process alone communicates with Doric HTTP and Socket.IO at
+`127.0.0.1:3000` and exposes only semantic Project and Thread operations plus
+connection status through a preload IPC boundary.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
@@ -60,7 +61,12 @@ Projects and recursive Threads, supports inline create and rename, and exposes
 context actions for create, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. Selecting a Thread opens a
-process-local text editor; the desktop app does not send prompts yet.
+process-local text editor and a persistent header tab. One full-height resize
+handle owns the sidebar boundary across header and content and disappears when
+the sidebar closes. A segmented footer shares that geometry and shows the
+Electron main process's Socket.IO connection status on the content side. Header
+tabs can be reordered, closed, selected, and double-clicked to rename their
+Thread. The desktop app does not send prompts yet.
 
 ### Project And Thread Contract
 
@@ -377,11 +383,15 @@ representations contain identity, name, state, ownership, timestamps,
 applicable revision/sequence and sanitized error codes, not prompts, messages,
 events, results, or SSH credentials.
 
-Socket.IO uses separate `/projects` and `/threads` namespaces. Project
-subscriptions expose environment and tree updates; Thread subscriptions use
-`threadId` and optional `afterSequence` for durable playback followed by live
-events without a replay/live gap. Each Thread event is
-`{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
+Socket.IO uses separate `/status`, `/projects`, and `/threads` namespaces.
+`/status` accepts no subscription input or application payload and provides the
+long-lived connectivity signal consumed by the Electron main process. Project
+and Thread subscription parameters travel through namespace-scoped handshake
+auth so clients can multiplex those sockets with `/status` through one Manager
+and one Engine.IO transport. Project subscriptions expose environment and tree
+updates; Thread subscriptions use `threadId` and optional `afterSequence` for
+durable playback followed by live events without a replay/live gap. Each Thread
+event is `{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
 PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.

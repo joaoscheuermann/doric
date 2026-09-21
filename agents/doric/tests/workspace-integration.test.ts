@@ -2,44 +2,45 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { loadBundles } from 'bundle';
-import { createDockerClient } from 'docker';
 import express from 'express';
 import pino from 'pino';
-import { createSandbox } from 'sandbox';
-import { createSandpool } from 'sandpool';
 import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
 
+import { loadBundles } from 'bundle';
+import { createDockerClient } from 'docker';
+import { createSandbox } from 'sandbox';
+import { createSandpool } from 'sandpool';
+
+import { createGeneration } from '../src/lib/config/generation.js';
 import { createConfigService } from '../src/lib/config/service.js';
 import { createConfigStore } from '../src/lib/config/store.js';
-import { createGeneration } from '../src/lib/config/generation.js';
-import { registerHttpRoutes } from '../src/lib/http/app.js';
-import { createProjectStore } from '../src/lib/workspace/projects.js';
 import { createWorkspaceSocket } from '../src/lib/events/socket.js';
-import { createThreadStore } from '../src/lib/workspace/threads.js';
+import { registerHttpRoutes } from '../src/lib/http/app.js';
 import { createVmRegistry } from '../src/lib/vms.js';
+import { createProjectStore } from '../src/lib/workspace/projects.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import { createThreadStore } from '../src/lib/workspace/threads.js';
 import type {
   InputSource,
   Project,
   Thread,
   ThreadEvent,
 } from '../src/lib/workspace/types.js';
-import { inbox } from './helpers/socket-inbox.js';
+import {
+  childPrompt,
+  childResult,
+  followup,
+  marker,
+  parentPrompt,
+  scriptedProvider,
+  secondPrompt,
+} from './helpers/integration-provider.js';
 import {
   cleanupStack,
   persistenceFixture,
 } from './helpers/persistence-fixture.js';
-import {
-  scriptedProvider,
-  marker,
-  parentPrompt,
-  childPrompt,
-  childResult,
-  followup,
-  secondPrompt,
-} from './helpers/integration-provider.js';
+import { inbox } from './helpers/socket-inbox.js';
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const enabled = connectionString && process.env.DORIC_TEST_SANDBOX === 'true';
@@ -255,14 +256,14 @@ test(
     };
     const subscribe = (
       namespace: string,
-      query: Record<string, string | number>,
+      auth: Record<string, string | number>,
     ) => {
       const socket = io(`${base}/${namespace}`, {
         transports: ['websocket'],
         reconnection: false,
         autoConnect: false,
         forceNew: true,
-        query,
+        auth,
       });
       cleanup.defer(async () => socket.close());
       const notices = inbox(socket);

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 
 type EditableNameProps = {
+  readonly className?: string;
   readonly editing: boolean;
   readonly label: string;
   readonly onCancel: () => void;
@@ -20,6 +21,7 @@ const selectContents = (element: HTMLElement): void => {
 };
 
 export function EditableName({
+  className,
   editing,
   label,
   onCancel,
@@ -89,6 +91,7 @@ export function EditableName({
       title={error}
       className={cn(
         'min-w-0 flex-1 truncate select-none',
+        className,
         editing &&
           'cursor-text select-text text-sidebar-accent-foreground underline decoration-sidebar-ring underline-offset-4 outline-none',
         error && 'decoration-destructive',

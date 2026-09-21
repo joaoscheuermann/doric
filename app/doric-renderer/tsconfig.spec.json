@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "exclude": [],
-  "include": ["src/app/workspace.ts", "tests/**/*.ts"]
+  "include": ["src/app/connection.ts", "src/app/workspace.ts", "tests/**/*.ts"]
 }

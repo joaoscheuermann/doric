@@ -11,8 +11,10 @@
     "types": ["node"]
   },
   "include": [
+    "src/connection/**/*.ts",
     "src/startup/splash.ts",
     "src/workspace/api.ts",
+    "src/workspace/config.ts",
     "src/workspace/validation.ts",
     "tests/**/*.ts"
   ]

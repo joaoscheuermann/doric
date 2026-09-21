@@ -1,3 +1,5 @@
+import type { ConnectionApi } from './connection';
+
 export type Project = {
   readonly id: string;
   readonly name: string;
@@ -29,6 +31,7 @@ export type Entity =
   | { readonly kind: 'thread'; readonly value: Thread };
 
 export type WorkspaceApi = {
+  readonly connection: ConnectionApi;
   readonly projects: {
     list(): Promise<readonly Project[]>;
     create(name: string): Promise<Project>;
@@ -64,6 +67,68 @@ export const upsert = <Value extends { readonly id: string }>(
   return values.map((candidate, candidateIndex) =>
     candidateIndex === index ? value : candidate,
   );
+};
+
+export const openThreadTab = (
+  threads: readonly Thread[],
+  thread: Thread,
+): readonly Thread[] =>
+  threads.some((candidate) => candidate.id === thread.id)
+    ? threads.map((candidate) =>
+        candidate.id === thread.id ? thread : candidate,
+      )
+    : [...threads, thread];
+
+export type TabBounds = {
+  readonly id: string;
+  readonly left: number;
+  readonly width: number;
+};
+
+export type DropTarget = {
+  readonly id: string;
+  readonly position: 'before' | 'after';
+};
+
+/**
+ * Resolves the insertion point for a dragged tab from the pointer position and
+ * the current tab bounds. The pointer lands before the first tab whose midpoint
+ * is to its right; past every midpoint it lands after the last tab, which is
+ * what lets a tab move to the end of a partially filled tab bar.
+ */
+export const dropTargetFor = (
+  tabs: readonly TabBounds[],
+  clientX: number,
+): DropTarget | undefined => {
+  for (const tab of tabs) {
+    if (clientX < tab.left + tab.width / 2) {
+      return { id: tab.id, position: 'before' };
+    }
+  }
+  const last = tabs[tabs.length - 1];
+  return last === undefined ? undefined : { id: last.id, position: 'after' };
+};
+
+export const moveThreadTab = (
+  threads: readonly Thread[],
+  sourceId: string,
+  targetId: string,
+  position: 'before' | 'after',
+): readonly Thread[] => {
+  const source = threads.find((thread) => thread.id === sourceId);
+  if (source === undefined || sourceId === targetId) return threads;
+
+  const remaining = threads.filter((thread) => thread.id !== sourceId);
+  const targetIndex = remaining.findIndex((thread) => thread.id === targetId);
+  if (targetIndex === -1) return threads;
+
+  const reordered = [...remaining];
+  reordered.splice(
+    position === 'before' ? targetIndex : targetIndex + 1,
+    0,
+    source,
+  );
+  return reordered;
 };
 
 export const threadSubtreeIds = (

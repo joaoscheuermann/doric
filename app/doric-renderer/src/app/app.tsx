@@ -4,7 +4,6 @@ import {
   type SidebarActions,
   type SidebarModel,
 } from '@/components/project-sidebar';
-import { Button } from '@/components/ui/button';
 import {
   Empty,
   EmptyDescription,
@@ -13,35 +12,26 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Field, FieldLabel } from '@/components/ui/field';
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
-import {
-  SidebarInset,
-  SidebarProvider,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  FileTextIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-} from 'lucide-react';
+  WorkspaceFooter,
+  WorkspaceSidebarFooter,
+} from '@/components/workspace-footer';
 import {
-  type CSSProperties,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
-import { usePanelRef } from 'react-resizable-panels';
+  WorkspaceHeader,
+  WorkspaceSidebarHeader,
+} from '@/components/workspace-header';
+import { WorkspaceLayout } from '@/components/workspace-layout';
+import { FileTextIcon } from 'lucide-react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
 import type { Draft, Entity, Project, Thread } from './workspace';
 import {
   messageFrom,
+  moveThreadTab,
+  openThreadTab,
   threadsForProject,
   threadSubtreeIds,
   upsert,
@@ -53,59 +43,6 @@ const panelWidth = {
   '--sidebar-width': '100%',
 } as CSSProperties;
 
-/** Clears the native macOS traffic lights while preserving left alignment. */
-const titleBarInset = 'pl-20';
-
-function SidebarToggle() {
-  const { open, toggleSidebar } = useSidebar();
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={open ? 'Hide sidebar' : 'Show sidebar'}
-      className="self-center [app-region:no-drag]"
-      onClick={toggleSidebar}
-    >
-      {open ? <PanelLeftCloseIcon /> : <PanelLeftOpenIcon />}
-    </Button>
-  );
-}
-
-function WorkspaceLayout({
-  children,
-  sidebar,
-}: {
-  readonly children: ReactNode;
-  readonly sidebar: ReactNode;
-}) {
-  const { open, setOpen } = useSidebar();
-  const panel = usePanelRef();
-
-  useEffect(() => {
-    if (open) panel.current?.expand();
-    else panel.current?.collapse();
-  }, [open, panel]);
-
-  return (
-    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-      <ResizablePanel
-        panelRef={panel}
-        collapsible
-        collapsedSize={0}
-        defaultSize="15rem"
-        minSize="11rem"
-        maxSize="24rem"
-        onResize={(size) => setOpen(size.asPercentage > 0)}
-      >
-        {sidebar}
-      </ResizablePanel>
-      <ResizableHandle withHandle />
-      <ResizablePanel className="min-w-0">{children}</ResizablePanel>
-    </ResizablePanelGroup>
-  );
-}
-
 export function App() {
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [threadsByProject, setThreadsByProject] = useState<
@@ -113,6 +50,7 @@ export function App() {
   >({});
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
+  const [openThreads, setOpenThreads] = useState<readonly Thread[]>([]);
   const [draft, setDraft] = useState<Draft>();
   const [editing, setEditing] = useState<Entity>();
   const [deleting, setDeleting] = useState<Entity>();
@@ -284,6 +222,7 @@ export function App() {
     ) {
       setSelectedProjectId(thread.projectId);
       setSelectedThreadId(thread.id);
+      setOpenThreads((current) => openThreadTab(current, thread));
       setDraft((current) => (current === operationDraft ? undefined : current));
     }
   };
@@ -309,6 +248,11 @@ export function App() {
           thread,
         ),
       }));
+      setOpenThreads((current) =>
+        current.map((candidate) =>
+          candidate.id === thread.id ? thread : candidate,
+        ),
+      );
     }
 
     if (intent.current === operationIntent) {
@@ -344,6 +288,9 @@ export function App() {
             ),
           ),
         );
+        setOpenThreads((current) =>
+          current.filter((thread) => thread.projectId !== entity.value.id),
+        );
         if (
           intent.current === operationIntent &&
           selectedProjectId === entity.value.id
@@ -372,6 +319,9 @@ export function App() {
             ? undefined
             : current,
         );
+        setOpenThreads((current) =>
+          current.filter((thread) => !removedIds.has(thread.id)),
+        );
         void loadThreads(entity.value.projectId);
       }
       setDeleting(undefined);
@@ -393,6 +343,31 @@ export function App() {
     (thread) =>
       thread.id === selectedThreadId && thread.projectId === selectedProjectId,
   );
+  const selectThread = (thread: Thread) => {
+    intent.current += 1;
+    setDraft(undefined);
+    setEditing(undefined);
+    setSelectedProjectId(thread.projectId);
+    setSelectedThreadId(thread.id);
+    setOpenThreads((current) => openThreadTab(current, thread));
+  };
+  const closeThread = (id: string) => {
+    const index = openThreads.findIndex((thread) => thread.id === id);
+    if (index === -1) return;
+    const remaining = openThreads.filter((thread) => thread.id !== id);
+    setOpenThreads(remaining);
+    if (selectedThreadId !== id) return;
+
+    const replacement = remaining[Math.min(index, remaining.length - 1)];
+    if (replacement) {
+      selectThread(replacement);
+      return;
+    }
+    intent.current += 1;
+    setDraft(undefined);
+    setEditing(undefined);
+    setSelectedThreadId(undefined);
+  };
   const model: SidebarModel = {
     draft,
     editing,
@@ -428,13 +403,7 @@ export function App() {
     deleteEntity: setDeleting,
     rename,
     selectProject,
-    selectThread: (thread) => {
-      intent.current += 1;
-      setDraft(undefined);
-      setEditing(undefined);
-      setSelectedProjectId(thread.projectId);
-      setSelectedThreadId(thread.id);
-    },
+    selectThread,
     startRename: (entity) => {
       intent.current += 1;
       setDraft(undefined);
@@ -448,15 +417,27 @@ export function App() {
         style={panelWidth}
         className="h-svh min-h-0 flex-col overflow-hidden"
       >
-        <header
-          className={`flex h-8 shrink-0 items-center border-b pr-2 [app-region:drag] ${titleBarInset}`}
-        >
-          <div className="flex h-full items-center [app-region:no-drag]">
-            <SidebarToggle />
-          </div>
-        </header>
         <WorkspaceLayout
+          footer={<WorkspaceFooter />}
+          header={
+            <WorkspaceHeader
+              onCloseThread={closeThread}
+              onMoveThread={(sourceId, targetId, position) =>
+                setOpenThreads((current) =>
+                  moveThreadTab(current, sourceId, targetId, position),
+                )
+              }
+              onRenameThread={(thread, name) =>
+                rename({ kind: 'thread', value: thread }, name)
+              }
+              onSelectThread={selectThread}
+              selectedThreadId={selectedThreadId}
+              threads={openThreads}
+            />
+          }
           sidebar={<ProjectSidebar actions={actions} model={model} />}
+          sidebarFooter={<WorkspaceSidebarFooter />}
+          sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
             <section

@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import {
+  connectionStatusChannel,
+  createConnectionState,
+} from '../../connection/ipc';
+import type { ConnectionStatus } from '../../connection/status';
+
 type Project = {
   readonly id: string;
   readonly name: string;
@@ -30,7 +36,16 @@ const invoke = async <Value>(channel: string, ...args: unknown[]) => {
   return result.value;
 };
 
+const connection = createConnectionState();
+ipcRenderer.on(connectionStatusChannel, (_event, status: ConnectionStatus) => {
+  connection.update(status);
+});
+
 contextBridge.exposeInMainWorld('doric', {
+  connection: {
+    status: connection.status,
+    subscribe: connection.subscribe,
+  },
   projects: {
     list: () => invoke<readonly Project[]>('doric:projects:list'),
     create: (name: string) => invoke<Project>('doric:projects:create', name),

@@ -1,4 +1,5 @@
-const baseUrl = 'http://127.0.0.1:3000';
+import { workspaceUrl } from './config';
+
 const pageLimit = 100;
 
 export type Project = {
@@ -63,7 +64,7 @@ const request = async <Value>(
 ): Promise<Value> => {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await fetch(`${workspaceUrl}${path}`, {
       ...init,
       headers:
         init?.body === undefined

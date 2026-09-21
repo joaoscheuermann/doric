@@ -166,26 +166,31 @@ redacted before persistence. Full prompt/event payloads are not operational logs
 ## Socket.IO
 
 ```ts
-import { io } from 'socket.io-client';
+import { Manager } from 'socket.io-client';
 
-const thread = io('http://127.0.0.1:3000/threads', {
-  query: { threadId, afterSequence: 42 },
+const manager = new Manager('http://127.0.0.1:3000');
+const status = manager.socket('/status');
+const thread = manager.socket('/threads', {
+  auth: { threadId, afterSequence: 42 },
 });
-const project = io('http://127.0.0.1:3000/projects', {
-  query: { projectId },
-});
+const project = manager.socket('/projects', { auth: { projectId } });
 ```
 
-| Namespace   | Event              | Payload                                                |
-| ----------- | ------------------ | ------------------------------------------------------ |
-| `/threads`  | `thread:snapshot`  | `{ threadId, projectId, project, thread, events }`     |
-| `/threads`  | `agent:event`      | Complete persisted Thread event envelope.              |
-| both        | `thread:updated`   | Public Thread metadata.                                |
-| both        | `thread:deleted`   | `{ projectId, threadId }`                              |
-| `/projects` | `project:snapshot` | `{ projectId, project, threads }`                      |
-| `/projects` | `project:updated`  | Public Project metadata.                               |
-| `/projects` | `project:deleted`  | `{ projectId }`                                        |
-| both        | `workspace:error`  | Sanitized `{ code, message }`; connection then closes. |
+| Namespace               | Event              | Payload                                                |
+| ----------------------- | ------------------ | ------------------------------------------------------ |
+| `/status`               | `connect`          | None; confirms that the Doric host is reachable.       |
+| `/threads`              | `thread:snapshot`  | `{ threadId, projectId, project, thread, events }`     |
+| `/threads`              | `agent:event`      | Complete persisted Thread event envelope.              |
+| `/threads`, `/projects` | `thread:updated`   | Public Thread metadata.                                |
+| `/threads`, `/projects` | `thread:deleted`   | `{ projectId, threadId }`                              |
+| `/projects`             | `project:snapshot` | `{ projectId, project, threads }`                      |
+| `/projects`             | `project:updated`  | Public Project metadata.                               |
+| `/projects`             | `project:deleted`  | `{ projectId }`                                        |
+| `/threads`, `/projects` | `workspace:error`  | Sanitized `{ code, message }`; connection then closes. |
+
+`/status` requires no parameters and emits no application payload. Reuse one
+`Manager` for `/status` and workspace subscriptions so they share one Engine.IO
+connection.
 
 Missing snapshot resources are `null`. The Project snapshot contains the full
 Thread tree as a flat array with `parentThreadId` links. Project reconnection

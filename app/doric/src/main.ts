@@ -3,6 +3,11 @@ import { pathToFileURL } from 'node:url';
 
 import { app, BrowserWindow, nativeTheme, session } from 'electron';
 
+import { bindConnectionStatus } from './connection/ipc';
+import {
+  type ConnectionMonitor,
+  createConnectionService,
+} from './connection/status';
 import { remainingSplashMs, splashUrl } from './startup/splash';
 import { workspaceReady } from './workspace/api';
 import { registerWorkspaceHandlers } from './workspace/ipc';
@@ -12,6 +17,7 @@ const developmentRendererUrl = `http://localhost:${rendererPort}/`;
 const connectionPollMs = 1_000;
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+let connection: ConnectionMonitor | null = null;
 
 const rendererUrl = (): string =>
   app.isPackaged
@@ -118,6 +124,9 @@ const createWindow = () => {
     if (url !== allowedUrl) event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (connection !== null) {
+    bindConnectionStatus(mainWindow.webContents, connection);
+  }
 
   if (app.isPackaged) {
     void mainWindow.loadURL(allowedUrl);
@@ -129,6 +138,11 @@ const createWindow = () => {
 
 void app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
+  connection = createConnectionService();
+  app.once('will-quit', () => {
+    connection?.close();
+    connection = null;
+  });
   const allowedUrl = rendererUrl();
   installContentSecurityPolicy();
   registerWorkspaceHandlers(allowedUrl);
