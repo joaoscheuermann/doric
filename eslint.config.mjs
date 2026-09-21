@@ -52,18 +52,18 @@ export default tseslint.config(
     ],
   },
   {
-    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
+    files: ['**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['**/*.{ts,mts,cts}'],
+    files: ['**/*.{ts,mts,cts,tsx}'],
     extends: [tseslint.configs.recommended],
   },
   {
     files: [
-      '{packages,agents,bundles,tools,benchmarks}/*/{src,tests,tools}/**/*.{ts,mts,cts}',
-      '{packages,agents,bundles,tools,benchmarks}/*/index.{ts,mts,cts}',
+      '{packages,agents,bundles,tools,benchmarks,app}/*/{src,tests,tools}/**/*.{ts,mts,cts,tsx}',
+      '{packages,agents,bundles,tools,benchmarks,app}/*/index.{ts,mts,cts,tsx}',
     ],
     extends: [
       tseslint.configs.recommendedTypeChecked,
@@ -74,13 +74,15 @@ export default tseslint.config(
         project: [
           './{packages,agents,bundles,tools,benchmarks}/*/tsconfig.{lib,app,spec,e2e}.json',
           './{packages,agents,bundles,tools,benchmarks}/*/tsconfig.json',
+          './app/*/tsconfig.{lib,app,spec,e2e}.json',
+          './app/*/tsconfig.json',
         ],
         tsconfigRootDir: import.meta.dirname,
       },
     },
   },
   {
-    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
+    files: ['**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
     plugins: {
       'simple-import-sort': simpleImportSort,
     },
