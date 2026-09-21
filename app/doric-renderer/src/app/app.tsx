@@ -223,8 +223,6 @@ export function App() {
     intent.current += 1;
     setError(undefined);
     setEditing(undefined);
-    setSelectedProjectId(undefined);
-    setSelectedThreadId(undefined);
     setDraft({ kind: 'project' });
   };
 
@@ -232,10 +230,10 @@ export function App() {
     intent.current += 1;
     setError(undefined);
     setEditing(undefined);
-    setSelectedThreadId(undefined);
     setDraft({ kind: 'thread', projectId, parentThreadId });
     if (selectedProjectId !== projectId) {
       setSelectedProjectId(projectId);
+      setSelectedThreadId(undefined);
     }
     if (threadsByProject[projectId] === undefined) {
       void loadThreads(projectId);

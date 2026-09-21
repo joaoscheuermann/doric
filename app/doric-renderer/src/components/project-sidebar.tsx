@@ -184,14 +184,17 @@ function DraftName({
   readonly onCancel: () => void;
   readonly onSubmit: (name: string) => Promise<void>;
 }) {
+  const DraftIcon = depth === undefined ? FolderIcon : MessageSquareIcon;
+
   return (
     <div
-      className="relative w-full pr-3"
+      className="relative flex min-h-7 w-full items-center gap-2 pr-3 text-xs [&>svg]:size-3.5!"
       style={{
         paddingLeft: depth === undefined ? '0.75rem' : indentation(depth),
       }}
     >
       <TreeGuides depth={depth ?? 0} />
+      <DraftIcon />
       <InlineName
         initialValue={initialValue}
         label={label}

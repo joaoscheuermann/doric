@@ -58,8 +58,9 @@ renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
 Projects and recursive Threads, supports inline create and rename, and exposes
 context actions for create, lifecycle-aware delete, and copying Thread IDs.
-Selecting a Thread opens a process-local text editor; the desktop app does not
-send prompts yet.
+Creation starts as a focused local draft: an empty submission stays in place,
+while blur discards it without an API call. Selecting a Thread opens a
+process-local text editor; the desktop app does not send prompts yet.
 
 ### Project And Thread Contract
 

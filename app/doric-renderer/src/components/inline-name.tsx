@@ -27,11 +27,25 @@ export function InlineName({
     input.current?.select();
   }, []);
 
+  const focus = () => requestAnimationFrame(() => input.current?.focus());
+
+  const cancel = () => {
+    if (settled.current) return;
+    settled.current = true;
+    onCancel();
+  };
+
   const submit = async () => {
     if (settled.current) return;
+    if (value.trim().length === 0) {
+      setError(undefined);
+      focus();
+      return;
+    }
     const invalid = nameError(value);
     if (invalid) {
       setError(invalid);
+      focus();
       return;
     }
 
@@ -44,20 +58,21 @@ export function InlineName({
       setError(messageFrom(reason));
       setPending(false);
       settled.current = false;
-      requestAnimationFrame(() => input.current?.focus());
+      focus();
     }
   };
 
   return (
-    <Field data-invalid={Boolean(error)}>
+    <Field data-invalid={Boolean(error)} className="min-w-0 flex-1 gap-0">
       <Input
         ref={input}
         aria-invalid={Boolean(error)}
         aria-label={label}
-        className="h-7"
+        className="h-7 rounded-none border-0 bg-transparent! px-0 py-0 text-xs! shadow-none focus-visible:border-0 focus-visible:ring-0"
         disabled={pending}
+        placeholder="..."
         value={value}
-        onBlur={() => void submit()}
+        onBlur={cancel}
         onChange={(event) => {
           setValue(limitName(event.target.value));
           setError(undefined);
@@ -69,12 +84,11 @@ export function InlineName({
           }
           if (event.key === 'Escape') {
             event.preventDefault();
-            settled.current = true;
-            onCancel();
+            cancel();
           }
         }}
       />
-      <FieldError>{error}</FieldError>
+      <FieldError className="text-xs">{error}</FieldError>
     </Field>
   );
 }
