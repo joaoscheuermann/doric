@@ -50,7 +50,7 @@ const delay = (milliseconds: number) =>
 /** Keeps native traffic lights visible and centered in the 32px renderer bar. */
 const titleBarOptions = (): Electron.BrowserWindowConstructorOptions =>
   process.platform === 'darwin'
-    ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 9 } }
+    ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 9 } }
     : {};
 
 const createSplashWindow = () => {
