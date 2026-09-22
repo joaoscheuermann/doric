@@ -1,7 +1,15 @@
 import { ipcMain } from 'electron';
 
 import { workspaceApi, WorkspaceError } from './api';
-import { identifier, name, senderIsAllowed } from './validation';
+import type { ThreadEventService } from './events';
+import type { ProjectEventService } from './project-events';
+import {
+  identifier,
+  name,
+  prompt,
+  senderIsAllowed,
+  sequence,
+} from './validation';
 
 type Result<Value> =
   | { readonly ok: true; readonly value: Value }
@@ -33,7 +41,11 @@ const safe = <Args extends readonly unknown[], Value>(
 };
 
 /** Registers the renderer's complete, intentionally narrow workspace boundary. */
-export const registerWorkspaceHandlers = (rendererUrl: string): void => {
+export const registerWorkspaceHandlers = (
+  rendererUrl: string,
+  events: ThreadEventService,
+  projects: ProjectEventService,
+): void => {
   ipcMain.handle(
     'doric:projects:list',
     safe(rendererUrl, workspaceApi.projects.list),
@@ -69,6 +81,12 @@ export const registerWorkspaceHandlers = (rendererUrl: string): void => {
     ),
   );
   ipcMain.handle(
+    'doric:threads:get',
+    safe(rendererUrl, (value: unknown) =>
+      workspaceApi.threads.get(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:create',
     safe(
       rendererUrl,
@@ -87,6 +105,12 @@ export const registerWorkspaceHandlers = (rendererUrl: string): void => {
     ),
   );
   ipcMain.handle(
+    'doric:threads:prompt',
+    safe(rendererUrl, (value: unknown, nextPrompt: unknown) =>
+      workspaceApi.threads.prompt(identifier(value), prompt(nextPrompt)),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:terminate',
     safe(rendererUrl, (value: unknown) =>
       workspaceApi.threads.terminate(identifier(value)),
@@ -98,4 +122,28 @@ export const registerWorkspaceHandlers = (rendererUrl: string): void => {
       workspaceApi.threads.delete(identifier(value)),
     ),
   );
+  ipcMain.on('doric:threads:watch', (event, value, afterSequence) => {
+    if (!senderIsAllowed(event.senderFrame?.url, rendererUrl)) return;
+    try {
+      events.watch(event.sender, identifier(value), sequence(afterSequence));
+    } catch {
+      // Invalid send payloads never cross the main-process boundary.
+    }
+  });
+  ipcMain.on('doric:threads:unwatch', (event) => {
+    if (!senderIsAllowed(event.senderFrame?.url, rendererUrl)) return;
+    events.stop(event.sender);
+  });
+  ipcMain.on('doric:projects:watch', (event, value) => {
+    if (!senderIsAllowed(event.senderFrame?.url, rendererUrl)) return;
+    try {
+      projects.watch(event.sender, identifier(value));
+    } catch {
+      // Invalid send payloads never cross the main-process boundary.
+    }
+  });
+  ipcMain.on('doric:projects:unwatch', (event) => {
+    if (!senderIsAllowed(event.senderFrame?.url, rendererUrl)) return;
+    projects.stop(event.sender);
+  });
 };

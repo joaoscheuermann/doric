@@ -18,6 +18,55 @@ export type Thread = {
   readonly updatedAt: string;
 };
 
+export type ThreadEvent = {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  readonly sequence: number;
+  readonly type: string;
+  readonly event: unknown;
+  readonly createdAt: string;
+};
+
+export type ThreadUpdate =
+  | {
+      readonly kind: 'snapshot';
+      readonly snapshot: {
+        readonly threadId: string;
+        readonly projectId: string | null;
+        readonly project: Project | null;
+        readonly thread: Thread | null;
+        readonly events: readonly ThreadEvent[];
+      };
+    }
+  | { readonly kind: 'event'; readonly event: ThreadEvent }
+  | { readonly kind: 'updated'; readonly thread: Thread }
+  | {
+      readonly kind: 'deleted';
+      readonly projectId: string;
+      readonly threadId: string;
+    }
+  | { readonly kind: 'error'; readonly message: string };
+
+export type ProjectUpdate =
+  | {
+      readonly kind: 'snapshot';
+      readonly snapshot: {
+        readonly projectId: string;
+        readonly project: Project | null;
+        readonly threads: readonly Thread[];
+      };
+    }
+  | { readonly kind: 'thread-updated'; readonly thread: Thread }
+  | {
+      readonly kind: 'thread-deleted';
+      readonly projectId: string;
+      readonly threadId: string;
+    }
+  | { readonly kind: 'project-updated'; readonly project: Project }
+  | { readonly kind: 'project-deleted'; readonly projectId: string }
+  | { readonly kind: 'error'; readonly message: string };
+
 export type Draft =
   | { readonly kind: 'project' }
   | {
@@ -38,15 +87,26 @@ export type WorkspaceApi = {
     rename(id: string, name: string): Promise<Project>;
     terminate(id: string): Promise<Project>;
     delete(id: string): Promise<void>;
+    watch(
+      projectId: string,
+      listener: (update: ProjectUpdate) => void,
+    ): () => void;
   };
   readonly threads: {
     list(projectId: string): Promise<readonly Thread[]>;
+    get(id: string): Promise<Thread | undefined>;
     create(
       projectId: string,
       name: string,
       parentThreadId?: string,
     ): Promise<Thread>;
     rename(id: string, name: string): Promise<Thread>;
+    prompt(id: string, prompt: string): Promise<{ readonly promptId: string }>;
+    watch(
+      id: string,
+      afterSequence: number,
+      listener: (update: ThreadUpdate) => void,
+    ): () => void;
     terminate(id: string): Promise<Thread>;
     delete(id: string): Promise<void>;
   };
@@ -61,9 +121,12 @@ export const threadsForProject = (
 export const upsert = <Value extends { readonly id: string }>(
   values: readonly Value[],
   value: Value,
+  position: 'first' | 'last' = 'first',
 ): readonly Value[] => {
   const index = values.findIndex((candidate) => candidate.id === value.id);
-  if (index === -1) return [value, ...values];
+  if (index === -1) {
+    return position === 'last' ? [...values, value] : [value, ...values];
+  }
   return values.map((candidate, candidateIndex) =>
     candidateIndex === index ? value : candidate,
   );

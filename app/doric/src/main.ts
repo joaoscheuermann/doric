@@ -4,13 +4,22 @@ import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, session } from 'electron';
 
 import { bindConnectionStatus } from './connection/ipc';
+import { createConnectionManager } from './connection/manager';
 import {
   type ConnectionMonitor,
   createConnectionService,
 } from './connection/status';
 import { remainingSplashMs, splashUrl } from './startup/splash';
 import { workspaceReady } from './workspace/api';
+import {
+  createThreadEventService,
+  type ThreadEventService,
+} from './workspace/events';
 import { registerWorkspaceHandlers } from './workspace/ipc';
+import {
+  createProjectEventService,
+  type ProjectEventService,
+} from './workspace/project-events';
 
 const rendererPort = 4200;
 const developmentRendererUrl = `http://localhost:${rendererPort}/`;
@@ -18,6 +27,8 @@ const connectionPollMs = 1_000;
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let connection: ConnectionMonitor | null = null;
+let threadEvents: ThreadEventService | null = null;
+let projectEvents: ProjectEventService | null = null;
 
 const rendererUrl = (): string =>
   app.isPackaged
@@ -94,10 +105,10 @@ const connectWorkspace = async () => {
 const createWindow = () => {
   const allowedUrl = rendererUrl();
   mainWindow = new BrowserWindow({
-    width: 960,
-    height: 640,
-    minWidth: 640,
-    minHeight: 480,
+    width: 1280,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
     show: false,
     backgroundColor: '#1c1b19',
     ...titleBarOptions(),
@@ -138,14 +149,21 @@ const createWindow = () => {
 
 void app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
-  connection = createConnectionService();
+  const manager = createConnectionManager();
+  connection = createConnectionService(manager);
+  threadEvents = createThreadEventService(manager);
+  projectEvents = createProjectEventService(manager);
   app.once('will-quit', () => {
+    threadEvents?.close();
+    threadEvents = null;
+    projectEvents?.close();
+    projectEvents = null;
     connection?.close();
     connection = null;
   });
   const allowedUrl = rendererUrl();
   installContentSecurityPolicy();
-  registerWorkspaceHandlers(allowedUrl);
+  registerWorkspaceHandlers(allowedUrl, threadEvents, projectEvents);
   createSplashWindow();
   void connectWorkspace().then(createWindow);
 

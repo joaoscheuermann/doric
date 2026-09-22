@@ -58,8 +58,9 @@ npm run doric:dev
 ```
 
 The desktop app manages named Projects and recursive Threads through a
-sandboxed preload IPC boundary. Selecting a Thread opens a local text editor;
-the desktop app does not send prompts yet.
+sandboxed preload IPC boundary. Selecting a Thread opens its durable
+conversation and a Markdown prompt editor that submits with Command+Enter on
+macOS or Control+Enter on Windows.
 
 ## Workspace guide
 

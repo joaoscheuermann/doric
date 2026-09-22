@@ -20,6 +20,10 @@ export type Thread = {
   readonly updatedAt: string;
 };
 
+export type PromptReceipt = {
+  readonly promptId: string;
+};
+
 type Page<Value> = {
   readonly items: readonly Value[];
   readonly nextCursor?: string;
@@ -35,6 +39,40 @@ export class WorkspaceError extends Error {
 }
 
 const genericError = 'Doric could not complete the request.';
+const invalidResponse = (): never => {
+  throw new WorkspaceError('Doric returned an invalid response.');
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const threadFrom = (value: unknown): Thread => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.name !== 'string' ||
+    typeof value.projectId !== 'string' ||
+    (value.parentThreadId !== undefined &&
+      typeof value.parentThreadId !== 'string') ||
+    typeof value.state !== 'string' ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    return invalidResponse();
+  }
+  return value as Thread;
+};
+
+const promptReceiptFrom = (value: unknown): PromptReceipt => {
+  if (
+    !isRecord(value) ||
+    typeof value.promptId !== 'string' ||
+    value.promptId.length === 0
+  ) {
+    return invalidResponse();
+  }
+  return { promptId: value.promptId };
+};
 
 export const messageFromErrorEnvelope = (value: unknown): string => {
   if (typeof value !== 'object' || value === null || !('error' in value)) {
@@ -172,6 +210,17 @@ export const workspaceApi = {
   threads: {
     list: (projectId: string) =>
       allPages<Thread>(`/projects/${id(projectId)}/threads`),
+    get: async (threadId: string) => {
+      try {
+        return threadFrom(await request<unknown>(`/threads/${id(threadId)}`));
+      } catch (error) {
+        // A deleted Thread is a normal outcome, not a transient failure.
+        if (error instanceof WorkspaceError && error.status === 404) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
     create: (projectId: string, name: string, parentThreadId?: string) =>
       request<Thread>(`/projects/${id(projectId)}/threads`, {
         method: 'POST',
@@ -182,6 +231,13 @@ export const workspaceApi = {
         method: 'PATCH',
         body: body({ name }),
       }),
+    prompt: async (threadId: string, prompt: string) =>
+      promptReceiptFrom(
+        await request<unknown>(`/threads/${id(threadId)}/prompt`, {
+          method: 'POST',
+          body: body({ prompt }),
+        }),
+      ),
     terminate: (threadId: string) =>
       request<Thread>(`/threads/${id(threadId)}/terminate`, {
         method: 'POST',

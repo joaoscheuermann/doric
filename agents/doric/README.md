@@ -63,7 +63,9 @@ ready`. Different Threads can run concurrently without a Thread count,
 concurrency, or depth cap.
 
 Interrupt targets one `promptId`, preserves the Thread and subsequent queued
-inputs, and does not interrupt children. Terminating a Thread cancels its entire
+inputs, and does not interrupt children. Rewind replaces an edited turn, so it
+requires an idle Thread with an empty queue and discards that turn and every
+later one. Terminating a Thread cancels its entire
 subtree but leaves other Threads and the Project environment available.
 Terminating a Project cancels all its Threads before releasing its lease.
 Cancellation is cooperative; it does not undo sandbox changes.
@@ -89,6 +91,7 @@ After a server restart, interrupted work is marked failed rather than resumed.
 | GET       | `/threads/:id`            | 200       | Read public Thread metadata.                       |
 | PATCH     | `/threads/:id`            | 200       | Rename a Thread.                                   |
 | POST      | `/threads/:id/prompt`     | 202       | Enqueue human input; returns `promptId`.           |
+| POST      | `/threads/:id/rewind`     | 202       | Replace an earlier prompt and discard later turns. |
 | GET       | `/threads/:id/events`     | 200       | Replay durable events.                             |
 | POST      | `/threads/:id/interrupt`  | 200       | Interrupt the specified active prompt.             |
 | POST      | `/threads/:id/terminate`  | 200       | Terminate a Thread subtree.                        |
@@ -123,6 +126,9 @@ curl -X POST -H 'content-type: application/json' \
   -d '{"prompt":"Inspect the repository and run focused tests."}' \
   http://127.0.0.1:3000/threads/THREAD_ID/prompt
 curl -X POST -H 'content-type: application/json' \
+  -d '{"promptId":"PROMPT_ID","prompt":"Inspect only the host tests."}' \
+  http://127.0.0.1:3000/threads/THREAD_ID/rewind
+curl -X POST -H 'content-type: application/json' \
   -d '{"promptId":"PROMPT_ID"}' \
   http://127.0.0.1:3000/threads/THREAD_ID/interrupt
 curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
@@ -133,6 +139,14 @@ Project creation requires `{ "name": "..." }`. Thread creation requires
 operations require the same name-only body. Names are trimmed, reject NUL, and
 contain 1–80 Unicode characters. The prompt body accepts only `prompt`. Public
 callers cannot forge parent/result origins or correlation.
+Rewind accepts only `{ "promptId", "prompt" }` and answers `202 { promptId }`
+like a prompt. It removes the named turn and every later turn from the durable
+event log and the provider-ready history, then accepts the edited text as a new
+human input. Each turn records the provider-history length it started from, so
+rewind truncates exactly at that turn boundary. A Thread that is running or has
+queued input refuses with `409 thread_busy`, so queued work never runs on
+truncated history; a `promptId` without a recorded turn in that Thread returns
+`404 prompt_not_found`. Sequence numbers are never reused.
 A stale interrupt returns `409 thread_not_running`, never cancelling a later
 execution. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
 pending, 409 when unavailable, and 410 when expired. SSH responses forbid caches.
@@ -162,6 +176,14 @@ per Thread, not globally ordered across Threads. Each event contains:
 Events are persisted before publication. Their bodies include model reasoning,
 provider replay, tool inputs/results, usage, and failures. Credentials are
 redacted before persistence. Full prompt/event payloads are not operational logs.
+
+Rewind appends one `history.truncated` event whose body is
+`{ type: 'history.truncated', afterSequence }`; `afterSequence` is the sequence
+of the last surviving event, or `0` when none survives. Subscribers receive it
+before the replacement `prompt.accepted`. Because sequence numbers are never
+reused, later events continue above the marker and a replay cursor above it
+simply skips the discarded range; clients drop their local events above
+`afterSequence`.
 
 ## Socket.IO
 
@@ -199,10 +221,11 @@ Thread subscriptions are installed before durable replay, buffer live events
 and lifecycle notifications, and deduplicate by sequence. Clients reconnect
 with their last received sequence.
 
-Each accepted input emits `prompt.accepted` with its trusted origin. The host
-emits `prompt.finished` with `{ type, status, text, source }`; `status` is
-`completed`, `failed`, or `cancelled`. Success is acknowledged only after
-conversation history is saved. Use this event, not the inner
+Each accepted input emits `prompt.accepted` with `{ type, text, source }`; `text`
+is the input after configured-credential redaction and `source` is its trusted
+origin. The host emits `prompt.finished` with `{ type, status, text, source }`;
+`status` is `completed`, `failed`, or `cancelled`. Success is acknowledged only
+after conversation history is saved. Use this event, not the inner
 `agent.finished`. A persistence failure can instead make the Thread terminal
 with `persistence_failed`; clients must also observe Thread state.
 
@@ -219,7 +242,8 @@ Thread events. Apply migrations separately with `npx nx run doric:migrate`;
 startup does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and
 immutable-tree trigger. The following incremental migration adds and backfills
-Project and Thread names. It does not convert Session data.
+Project and Thread names, and the next adds the per-turn provider-history
+checkpoints that rewind truncates. It does not convert Session data.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the

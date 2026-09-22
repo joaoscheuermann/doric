@@ -5,6 +5,11 @@ import {
   createConnectionState,
 } from '../../connection/ipc';
 import type { ConnectionStatus } from '../../connection/status';
+import { type ThreadUpdate, threadUpdateChannel } from '../../workspace/events';
+import {
+  type ProjectUpdate,
+  projectUpdateChannel,
+} from '../../workspace/project-events';
 
 type Project = {
   readonly id: string;
@@ -41,6 +46,16 @@ ipcRenderer.on(connectionStatusChannel, (_event, status: ConnectionStatus) => {
   connection.update(status);
 });
 
+let threadListener: ((update: ThreadUpdate) => void) | undefined;
+ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
+  threadListener?.(update);
+});
+
+let projectListener: ((update: ProjectUpdate) => void) | undefined;
+ipcRenderer.on(projectUpdateChannel, (_event, update: ProjectUpdate) => {
+  projectListener?.(update);
+});
+
 contextBridge.exposeInMainWorld('doric', {
   connection: {
     status: connection.status,
@@ -53,14 +68,39 @@ contextBridge.exposeInMainWorld('doric', {
       invoke<Project>('doric:projects:rename', id, name),
     terminate: (id: string) => invoke<Project>('doric:projects:terminate', id),
     delete: (id: string) => invoke<void>('doric:projects:delete', id),
+    watch: (projectId: string, listener: (update: ProjectUpdate) => void) => {
+      projectListener = listener;
+      ipcRenderer.send('doric:projects:watch', projectId);
+      return () => {
+        if (projectListener !== listener) return;
+        projectListener = undefined;
+        ipcRenderer.send('doric:projects:unwatch');
+      };
+    },
   },
   threads: {
     list: (projectId: string) =>
       invoke<readonly Thread[]>('doric:threads:list', projectId),
+    get: (id: string) => invoke<Thread | undefined>('doric:threads:get', id),
     create: (projectId: string, name: string, parentThreadId?: string) =>
       invoke<Thread>('doric:threads:create', projectId, name, parentThreadId),
     rename: (id: string, name: string) =>
       invoke<Thread>('doric:threads:rename', id, name),
+    prompt: (id: string, prompt: string) =>
+      invoke<{ readonly promptId: string }>('doric:threads:prompt', id, prompt),
+    watch: (
+      id: string,
+      afterSequence: number,
+      listener: (update: ThreadUpdate) => void,
+    ) => {
+      threadListener = listener;
+      ipcRenderer.send('doric:threads:watch', id, afterSequence);
+      return () => {
+        if (threadListener !== listener) return;
+        threadListener = undefined;
+        ipcRenderer.send('doric:threads:unwatch');
+      };
+    },
     terminate: (id: string) => invoke<Thread>('doric:threads:terminate', id),
     delete: (id: string) => invoke<void>('doric:threads:delete', id),
   },

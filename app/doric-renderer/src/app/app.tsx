@@ -4,16 +4,8 @@ import {
   type SidebarActions,
   type SidebarModel,
 } from '@/components/project-sidebar';
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { ThreadPane } from '@/components/thread-pane';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   WorkspaceFooter,
@@ -24,9 +16,10 @@ import {
   WorkspaceSidebarHeader,
 } from '@/components/workspace-header';
 import { WorkspaceLayout } from '@/components/workspace-layout';
-import { FileTextIcon } from 'lucide-react';
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
+import { usePersistedTabs } from './use-persisted-tabs';
+import { useProjectEvents } from './use-project-events';
 import type { Draft, Entity, Project, Thread } from './workspace';
 import {
   messageFrom,
@@ -49,8 +42,6 @@ export function App() {
     Readonly<Record<string, readonly Thread[]>>
   >({});
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
-  const [selectedThreadId, setSelectedThreadId] = useState<string>();
-  const [openThreads, setOpenThreads] = useState<readonly Thread[]>([]);
   const [draft, setDraft] = useState<Draft>();
   const [editing, setEditing] = useState<Entity>();
   const [deleting, setDeleting] = useState<Entity>();
@@ -60,8 +51,9 @@ export function App() {
     ReadonlySet<string>
   >(new Set());
   const [error, setError] = useState<string>();
-  const [notes, setNotes] = useState<Record<string, string>>({});
   const intent = useRef(0);
+  /** Interaction intent at mount, so a late tab restore cannot win. */
+  const restoreIntent = useRef(intent.current);
   const loadSequences = useRef(new Map<string, number>());
   const mutationSequences = useRef(new Map<string, number>());
 
@@ -146,6 +138,29 @@ export function App() {
       active = false;
     };
   }, []);
+
+  const { openThreads, setOpenThreads, selectedThreadId, setSelectedThreadId } =
+    usePersistedTabs({
+      isCurrent: () => intent.current === restoreIntent.current,
+      onRestore: (thread) => {
+        intent.current += 1;
+        setSelectedProjectId(thread.projectId);
+        setSelectedThreadId(thread.id);
+        void loadThreads(thread.projectId);
+      },
+      get: (id) => window.doric.threads.get(id),
+    });
+
+  useProjectEvents({
+    projectId: selectedProjectId,
+    threadsByProject,
+    setProjects,
+    setThreadsByProject,
+    setOpenThreads,
+    setSelectedProjectId,
+    setSelectedThreadId,
+    fail: setError,
+  });
 
   const selectProject = (project: Project) => {
     intent.current += 1;
@@ -339,9 +354,8 @@ export function App() {
           threadsByProject[selectedProjectId] ?? [],
           selectedProjectId,
         );
-  const selectedThread = threads.find(
-    (thread) =>
-      thread.id === selectedThreadId && thread.projectId === selectedProjectId,
+  const selectedThread = openThreads.find(
+    (thread) => thread.id === selectedThreadId,
   );
   const selectThread = (thread: Thread) => {
     intent.current += 1;
@@ -350,6 +364,9 @@ export function App() {
     setSelectedProjectId(thread.projectId);
     setSelectedThreadId(thread.id);
     setOpenThreads((current) => openThreadTab(current, thread));
+    if (threadsByProject[thread.projectId] === undefined) {
+      void loadThreads(thread.projectId);
+    }
   };
   const closeThread = (id: string) => {
     const index = openThreads.findIndex((thread) => thread.id === id);
@@ -367,6 +384,14 @@ export function App() {
     setDraft(undefined);
     setEditing(undefined);
     setSelectedThreadId(undefined);
+  };
+  /** The cached tree is the source of Thread names for delegated rows. */
+  const threadName = (id: string): string | undefined => {
+    for (const threads of Object.values(threadsByProject)) {
+      const found = threads.find((thread) => thread.id === id);
+      if (found !== undefined) return found.name;
+    }
+    return undefined;
   };
   const model: SidebarModel = {
     draft,
@@ -440,42 +465,7 @@ export function App() {
           sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
-            <section
-              aria-label="Thread editor"
-              className="flex min-h-0 flex-1 p-4"
-            >
-              {selectedThread ? (
-                <Field className="min-h-0 flex-1">
-                  <FieldLabel htmlFor={`editor-${selectedThread.id}`}>
-                    {selectedThread.name}
-                  </FieldLabel>
-                  <Textarea
-                    id={`editor-${selectedThread.id}`}
-                    className="min-h-0 flex-1 resize-none"
-                    placeholder="Write a note…"
-                    value={notes[selectedThread.id] ?? ''}
-                    onChange={(event) =>
-                      setNotes((current) => ({
-                        ...current,
-                        [selectedThread.id]: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-              ) : (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <FileTextIcon />
-                    </EmptyMedia>
-                    <EmptyTitle>No thread selected</EmptyTitle>
-                    <EmptyDescription>
-                      Select a thread to open its text editor.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </section>
+            <ThreadPane thread={selectedThread} threadName={threadName} />
           </SidebarInset>
         </WorkspaceLayout>
         <DeleteDialog

@@ -2,8 +2,11 @@
 
 `doric-app` owns the Electron main process. It loads `doric-renderer`,
 communicates with the local Direct host at `http://127.0.0.1:3000` over HTTP and
-Socket.IO, and exposes only named Project and Thread operations plus semantic
-connection status through a sandboxed, origin-checked preload bridge.
+Socket.IO, and exposes only named Project and Thread operations, an event
+subscription for one selected Thread and one selected Project, and semantic
+connection status through a sandboxed, origin-checked preload bridge. The
+`/status`, `/threads`, and `/projects` namespaces share one process-long
+Engine.IO connection; the renderer never accesses any transport directly.
 
 At startup a frameless, square, dark splash window shows the centered `Doric`
 name while the main process waits for the local Direct API to answer. The splash

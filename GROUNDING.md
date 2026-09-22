@@ -52,21 +52,55 @@ reusable agent loop remains in `packages/agent`.
 main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
 The main process alone communicates with Doric HTTP and Socket.IO at
-`127.0.0.1:3000` and exposes only semantic Project and Thread operations plus
-connection status through a preload IPC boundary.
+`127.0.0.1:3000` and exposes only semantic Project and Thread operations, one
+selected-Thread event subscription, one selected-Project tree subscription, and
+connection status through a preload IPC boundary. The status, Thread, and
+Project namespaces share one process-long Socket.IO Manager and Engine.IO
+connection.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
 Projects and recursive Threads, supports inline create and rename, and exposes
 context actions for create, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
-while blur discards it without an API call. Selecting a Thread opens a
-process-local text editor and a persistent header tab. One full-height resize
-handle owns the sidebar boundary across header and content and disappears when
-the sidebar closes. A segmented footer shares that geometry and shows the
-Electron main process's Socket.IO connection status on the content side. Header
-tabs can be reordered, closed, selected, and double-clicked to rename their
-Thread. The desktop app does not send prompts yet.
+while blur discards it without an API call. Selecting a Thread opens its durable
+event-derived conversation and a persistent header tab. The conversation is a
+centered reading column inside full-width rows: a human prompt and the prompt
+input wear a band that reaches the panel edges, while agent turns and delegated
+inputs stay bare, so the band itself distinguishes what the user wrote. The
+input's gutter holds a terminal prompt marker (`❯`) rather than an avatar, and
+the agent's rows carry a bare icon while the human's rows carry none; the gutter
+slot stays reserved in every row, so the column never moves. Rows render safe
+streaming Markdown without chat bubbles, tables, remote images, or raw HTML.
+Running prose uses a vendored Noto Serif, since the packaged CSP permits fonts
+from `self` only, while machine-facing rows stay sans and monospace.
+Its toolbar-free Slate editor preserves Markdown source and submits only with
+Command+Enter on macOS or Control+Enter on Windows. The composer mirrors Thread
+lifecycle state: a stopping, cancelled, or failed Thread is explained instead of
+accepting a prompt, and a prompt without a terminal event is shown as
+unanswered. The same durable event stream supplies
+the agent's reasoning, its tool calls, and the input another Thread wrote for it
+as chronological segments: a `Result from thread <name>` or `Task from thread
+<name>` row collapses to a label plus the child's status and expands to the
+sender's own words on the same monospace surface as tool payloads, verbatim
+rather than as Markdown, with the host's model-facing envelope removed and a
+deleted Thread falling back to its short id. A `Thinking`
+row and a `Call <tool>` row each toggle their payload from a chevron beside the
+label, and an expanded call shows `Input` and `Output` blocks on their own
+surface, with the result clamped behind `Show all`. Those secondary segments
+stay quieter than the answer through color alone, and the renderer keeps no
+second history. Agent text deltas and the grapheme-safe typewriter reveal remain
+separate states. The sidebar tree follows the selected Project's live
+subscription, so a
+Thread created by an agent appears without a manual refresh, while header tabs
+stay user-driven. Open-tab order and selection persist locally across app
+restarts, while PostgreSQL Thread events remain the sole conversation-history
+source. One
+full-height resize handle owns the sidebar boundary across header and content
+and disappears when the sidebar closes. A segmented footer shares that geometry
+and shows the Electron main process's Socket.IO connection status on the content
+side. Header tabs can be reordered, closed, selected, and double-clicked to
+rename their Thread.
 
 ### Project And Thread Contract
 
@@ -85,10 +119,11 @@ the existing sandbox-pool capacity governs Projects, not Threads.
 
 The migration replaces the Session-facing APIs and clients without legacy
 compatibility adapters. Creating a Project and creating a Thread are separate
-operations: new Projects start without a conversation. The approved database
-cutover uses one clean Project/Thread baseline with no Session schema or data
-conversion path. Existing legacy databases must be explicitly recreated before
-deployment; neither startup nor migrations silently reset an existing database.
+operations: new Projects start without a conversation. Before 1.0, approved
+schema changes may be consolidated into one clean Project/Thread baseline
+without data-conversion or incremental-migration guarantees. Incompatible
+legacy development databases must be explicitly recreated; neither startup nor
+migrations silently reset an existing database.
 
 The Project/Thread implementation replaces the former Session contract.
 The architecture, migration plan, and acceptance criteria are recorded in
@@ -373,9 +408,16 @@ provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
 HTTP responses prohibit caching. REST additionally owns `GET/PUT /config`,
 named Project and Thread creation, rename through `PATCH`, cursor listing,
-detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, ordered event
+detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
+rewind through `POST /threads/:id/rewind`, ordered event
 replay with an optional exclusive `afterSequence`, targeted prompt interruption,
-idempotent termination, and terminal-only deletion. Project and Thread names
+idempotent termination, and terminal-only deletion. Each Thread turn records the
+provider-history length it started from, so rewind truncates that history
+exactly at a turn boundary, removes the edited turn and every later turn from
+the durable event log, drops their checkpoints, and then accepts the edited text
+as a normal human input. Rewind refuses while the Thread is running or has
+queued input, so the FIFO queue never executes on truncated history. Project and
+Thread names
 are trimmed, exclude NUL, and contain 1 to 80 Unicode code points. `/projects`
 owns environments and `/threads` owns conversations; there are no `/sessions`
 routes or compatibility aliases. Public Project and Thread list/detail
@@ -401,10 +443,11 @@ and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
 PostgreSQL stores the singleton configuration, normalized provider/model rows,
 Project names and configuration snapshots, Thread names, parentage and
-provider-ready message history, and ordered JSONB Thread events. The initial
-migration creates the Project/Thread baseline from an empty database; later
-incremental migrations preserve that baseline while extending it. Session-era
-migrations and data-conversion SQL are removed as part of the approved cutover.
+provider-ready message history, and ordered JSONB Thread events. Before 1.0,
+approved schema changes may be consolidated into the clean Project/Thread
+baseline rather than retained as incremental migrations. Existing incompatible
+development databases must be explicitly recreated. Session-era migrations and
+data-conversion SQL are removed as part of the approved cutover.
 Startup marks every non-terminal Project and Thread failed with the sanitized
 `process_interrupted` code; events remain replayable.
 Physical Thread deletion requires its entire subtree to be terminal; Project
@@ -710,11 +753,17 @@ return the Thread to `ready`; history or event persistence failures fail the
 Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue
 even if cancellation-state persistence fails.
-Doric adds `prompt.accepted`, `prompt.finished`, `agent.failed`, and
-`agent.cancelled` events around the Agent stream. `prompt.finished` carries
-the input source, terminal status, and response text; successful completion
-requires history persistence. Clients use it, not the inner `agent.finished`,
-to acknowledge prompt completion.
+Doric adds `history.truncated`, `prompt.accepted`, `prompt.finished`,
+`agent.failed`, and
+`agent.cancelled` events around the Agent stream. `prompt.accepted` carries the
+input text and its source after the standard configured-credential redaction.
+`prompt.finished` carries the input source, terminal status, and response text;
+successful completion requires history persistence. Clients use it, not the
+inner `agent.finished`, to acknowledge prompt completion. `history.truncated`
+carries `{ type, afterSequence }`, where `afterSequence` is the sequence of the
+last surviving event or `0` when none survives; it is appended before the
+replacement input is accepted, and sequence numbers are never reused, so the
+discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
 Arbitrary Agent event values are converted to JSON without dropping reasoning,

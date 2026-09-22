@@ -216,6 +216,57 @@ test('accepts human prompts but rejects blank text and forged origin', async (t)
   }
 });
 
+test('rewinds an earlier prompt and reports its refusal reasons', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const path = `/threads/${threadId}/rewind`;
+  const accepted = await host.request(path, 'POST', {
+    promptId,
+    prompt: 'Do the work differently',
+  });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(await accepted.json(), { promptId });
+  for (const body of [
+    {},
+    { promptId, prompt: ' ' },
+    { promptId: 'not-an-id', prompt: 'Edited' },
+    { promptId, prompt: 'Edited', source: { kind: 'parent' } },
+  ]) {
+    assert.equal((await host.request(path, 'POST', body)).status, 422);
+  }
+  assert.equal(
+    (
+      await host.request(`/threads/${promptId}/rewind`, 'POST', {
+        promptId,
+        prompt: 'Edited',
+      })
+    ).status,
+    404,
+  );
+});
+
+test('maps rewind conflicts and unknown prompts to stable error codes', async (t) => {
+  const cases = [
+    ['busy', 409, 'thread_busy'],
+    ['unknown_prompt', 404, 'prompt_not_found'],
+    ['inactive', 409, 'thread_inactive'],
+  ] as const;
+  for (const [status, expected, code] of cases) {
+    const host = await serve({ threads: { rewind: async () => ({ status }) } });
+    t.after(host.close);
+    const response = await host.request(`/threads/${threadId}/rewind`, 'POST', {
+      promptId,
+      prompt: 'Edited',
+    });
+    assert.equal(response.status, expected);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(body.error.code, code);
+    assert.ok(body.error.message.length > 0);
+  }
+});
+
 test('requires prompt-scoped interruption and reports stale execution conflicts', async (t) => {
   const host = await serve();
   t.after(host.close);
@@ -299,6 +350,7 @@ test('rejects invalid project and thread IDs before handling resource operations
         ['DELETE', ''],
         ['GET', '/events'],
         ['POST', '/prompt'],
+        ['POST', '/rewind'],
         ['POST', '/interrupt'],
         ['POST', '/terminate'],
       ],
@@ -485,6 +537,10 @@ const serve = async (
       rename: async (id, name) =>
         id === threadId ? { ...thread, name } : undefined,
       prompt: async () => ({ status: 'accepted', promptId }),
+      rewind: async (id) =>
+        id === threadId
+          ? { status: 'accepted', promptId }
+          : { status: 'missing' },
       events: async () => ({ events: [], lastSequence: 0 }),
       interrupt: async (_id, target) =>
         target === promptId ? 'interrupted' : 'not_running',

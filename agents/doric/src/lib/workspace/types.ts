@@ -64,6 +64,7 @@ export type ProjectRecord = {
 export type ThreadRecord = {
   readonly thread: Thread;
   readonly messages: readonly ProviderMessage[];
+  readonly checkpoints: Readonly<Record<string, number>>;
 };
 export type Page<Value> = {
   readonly items: readonly Value[];
@@ -76,6 +77,11 @@ export type ThreadResult =
 export type PromptResult =
   | { readonly status: 'accepted'; readonly promptId: string }
   | { readonly status: 'missing' | 'inactive' };
+export type RewindResult =
+  | { readonly status: 'accepted'; readonly promptId: string }
+  | {
+      readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
+    };
 export type InterruptResult =
   | 'interrupted'
   | 'missing'
@@ -125,6 +131,9 @@ export interface ThreadStore {
     errorCode?: string,
   ): Promise<Thread | undefined>;
   saveMessages(id: string, messages: readonly ProviderMessage[]): Promise<void>;
+  saveCheckpoint(id: string, promptId: string): Promise<void>;
+  /** Removes the prompt's turn and every later one, returning its marker event. */
+  rewind(id: string, promptId: string): Promise<ThreadEvent | undefined>;
   appendEvent(
     id: string,
     promptId: string,
@@ -166,6 +175,7 @@ export interface WorkspaceService {
     ): Promise<Page<Thread> | undefined>;
     rename(id: string, name: string): Promise<Thread | undefined>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
+    rewind(id: string, promptId: string, prompt: string): Promise<RewindResult>;
     events(
       id: string,
       afterSequence: number,

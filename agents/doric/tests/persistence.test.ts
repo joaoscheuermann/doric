@@ -118,6 +118,58 @@ integrationTest(
 );
 
 integrationTest(
+  'rewinds a Thread onto an earlier turn boundary without reusing sequences',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create('Project', await configs.load());
+    const { thread } = await threads.create(project.id, 'Thread');
+    const ids = [randomUUID(), randomUUID(), randomUUID()] as const;
+    const messages = [
+      { role: 'user' as const, content: 'first' },
+      { role: 'assistant' as const, content: 'first answer' },
+      { role: 'user' as const, content: 'second' },
+      { role: 'assistant' as const, content: 'second answer' },
+      { role: 'user' as const, content: 'third' },
+      { role: 'assistant' as const, content: 'third answer' },
+    ];
+    // Each turn checkpoints the provider history it reads, then appends its own.
+    for (const [index, promptId] of ids.entries()) {
+      await threads.saveCheckpoint(thread.id, promptId);
+      await threads.appendEvent(thread.id, promptId, {
+        type: 'prompt.accepted',
+      });
+      await threads.saveMessages(thread.id, messages.slice(0, (index + 1) * 2));
+    }
+    assert.deepEqual((await threads.find(thread.id))?.checkpoints, {
+      [ids[0]]: 0,
+      [ids[1]]: 2,
+      [ids[2]]: 4,
+    });
+
+    const marker = await threads.rewind(thread.id, ids[1]);
+
+    assert.equal(marker?.sequence, 4);
+    assert.equal(marker?.type, 'history.truncated');
+    assert.deepEqual(marker?.event, {
+      type: 'history.truncated',
+      afterSequence: 1,
+    });
+    assert.deepEqual(
+      (await threads.eventsAfter(thread.id, 0)).map(({ sequence }) => sequence),
+      [1, 4],
+    );
+    const restored = (await threads.find(thread.id))!;
+    assert.equal(restored.thread.lastSequence, 4);
+    assert.deepEqual(restored.messages, messages.slice(0, 2));
+    assert.deepEqual(restored.checkpoints, { [ids[0]]: 0 });
+    // Removed turns lost their checkpoint, so they cannot be rewound again.
+    assert.equal(await threads.rewind(thread.id, ids[1]), undefined);
+    assert.equal(await threads.rewind(thread.id, ids[2]), undefined);
+    assert.equal(await threads.rewind(thread.id, randomUUID()), undefined);
+    assert.equal(await threads.rewind(randomUUID(), ids[0]), undefined);
+  },
+);
+
+integrationTest(
   'preserves terminal and cancelling states and clears the active prompt when not running',
   async ({ configs, projects, threads }) => {
     const { project } = await projects.create('Project', await configs.load());
@@ -385,10 +437,11 @@ integrationTest(
   },
 );
 
-test('ships the clean baseline followed by the incremental naming migration', async () => {
+test('ships the baseline followed by the incremental naming and checkpoint migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
+    '20260827000000_add_thread_checkpoints',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -408,6 +461,14 @@ test('ships the clean baseline followed by the incremental naming migration', as
   assert.match(naming, /UPDATE "project" SET "name"/u);
   assert.match(naming, /UPDATE "thread" SET "name"/u);
   assert.match(naming, /ALTER COLUMN "name" SET NOT NULL/u);
+  const checkpoints = await readFile(
+    `${migrationDirectory}/20260827000000_add_thread_checkpoints/migration.sql`,
+    'utf8',
+  );
+  assert.match(
+    checkpoints,
+    /ADD COLUMN "checkpoints" JSONB NOT NULL DEFAULT '\{\}';/u,
+  );
 });
 
 test(

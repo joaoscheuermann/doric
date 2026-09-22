@@ -313,7 +313,11 @@ void test('rejects legacy query-only workspace subscriptions', async (t) => {
 
 test('routes live notifications only to the subscribed Thread and Project', async (t) => {
   const host = await serve({
-    find: async (id) => ({ thread: { ...thread, id }, messages: [] }),
+    find: async (id) => ({
+      thread: { ...thread, id },
+      messages: [],
+      checkpoints: {},
+    }),
   });
   t.after(host.close);
   for (const [namespace, key, name, publish] of [
@@ -399,7 +403,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     reconcile: unsupported,
   };
   const threads: ThreadStore = {
-    find: async () => ({ thread, messages: [] }),
+    find: async () => ({ thread, messages: [], checkpoints: {} }),
     eventsAfter: async (_id: string, cursor: number) =>
       [event(1), event(2)].filter((value) => value.sequence > cursor),
     listByProject: async () => [thread],
@@ -408,6 +412,8 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     rename: unsupported,
     setState: unsupported,
     saveMessages: unsupported,
+    saveCheckpoint: unsupported,
+    rewind: unsupported,
     appendEvent: unsupported,
     deleteSubtree: unsupported,
     reconcile: unsupported,

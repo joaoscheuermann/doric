@@ -15,6 +15,8 @@
     "src/startup/splash.ts",
     "src/workspace/api.ts",
     "src/workspace/config.ts",
+    "src/workspace/events.ts",
+    "src/workspace/project-events.ts",
     "src/workspace/validation.ts",
     "tests/**/*.ts"
   ]

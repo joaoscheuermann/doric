@@ -51,7 +51,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       const stored = await tx.thread.create({
         data: { projectId, name, parentThreadId },
       });
-      return { thread: thread(stored), messages: [] };
+      return { thread: thread(stored), messages: [], checkpoints: {} };
     });
   },
 
@@ -62,6 +62,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       : {
           thread: thread(stored),
           messages: stored.messages as unknown as readonly ProviderMessage[],
+          checkpoints: checkpoints(stored),
         };
   },
 
@@ -137,6 +138,66 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     await database.thread.update({
       where: { id },
       data: { messages: json(messages) },
+    });
+  },
+
+  async saveCheckpoint(id, promptId) {
+    // The database owns the count so it matches the exact history a turn reads.
+    await database.$executeRaw`
+      UPDATE "thread"
+      SET "checkpoints" = "checkpoints" || jsonb_build_object(
+        ${promptId}::text, jsonb_array_length("messages")
+      )
+      WHERE "id" = ${id}::uuid`;
+  },
+
+  async rewind(id, promptId) {
+    return database.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM thread WHERE id = ${id}::uuid FOR UPDATE`;
+      const current = await tx.thread.findUnique({ where: { id } });
+      if (current === null) return undefined;
+      const checkpoint = checkpoints(current)[promptId];
+      if (checkpoint === undefined) return undefined;
+      const [boundary] = await tx.$queryRaw<{ sequence: number | null }[]>`
+        SELECT MIN("sequence") AS sequence FROM "thread_event"
+        WHERE "thread_id" = ${id}::uuid AND "prompt_id" = ${promptId}::uuid`;
+      const from = boundary?.sequence;
+      if (from === undefined || from === null) return undefined;
+      const removed = await tx.$queryRaw<{ prompt_id: string }[]>`
+        SELECT DISTINCT "prompt_id" FROM "thread_event"
+        WHERE "thread_id" = ${id}::uuid AND "sequence" >= ${from}`;
+      const [survivor] = await tx.$queryRaw<{ sequence: number | null }[]>`
+        SELECT MAX("sequence") AS sequence FROM "thread_event"
+        WHERE "thread_id" = ${id}::uuid AND "sequence" < ${from}`;
+      const afterSequence = survivor?.sequence ?? 0;
+      await tx.threadEvent.deleteMany({
+        where: { threadId: id, sequence: { gte: from } },
+      });
+      const updated = await tx.thread.update({
+        where: { id },
+        data: {
+          messages: json(
+            (current.messages as unknown as readonly ProviderMessage[]).slice(
+              0,
+              checkpoint,
+            ),
+          ),
+          checkpoints: json(prune(current, removed)),
+          lastSequence: { increment: 1 },
+        },
+      });
+      return event(
+        await tx.threadEvent.create({
+          data: {
+            projectId: updated.projectId,
+            threadId: id,
+            promptId,
+            sequence: updated.lastSequence,
+            type: 'history.truncated',
+            event: json({ type: 'history.truncated', afterSequence }),
+          },
+        }),
+      );
     });
   },
 
@@ -228,6 +289,19 @@ const thread = (stored: StoredThread): Thread => ({
     : { activePromptId: stored.activePromptId }),
   ...timestamps(stored),
 });
+
+const checkpoints = (stored: StoredThread): Readonly<Record<string, number>> =>
+  stored.checkpoints as unknown as Readonly<Record<string, number>>;
+
+const prune = (
+  stored: StoredThread,
+  removed: readonly { readonly prompt_id: string }[],
+): Readonly<Record<string, number>> => {
+  const ids = new Set(removed.map(({ prompt_id }) => prompt_id));
+  return Object.fromEntries(
+    Object.entries(checkpoints(stored)).filter(([id]) => !ids.has(id)),
+  );
+};
 
 const event = (stored: StoredEvent): ThreadEvent => ({
   projectId: stored.projectId,

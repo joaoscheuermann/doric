@@ -89,6 +89,7 @@ model Thread {
   name           String
   state          ThreadState   @default(QUEUED)
   messages       Json          @default("[]") @db.JsonB
+  checkpoints    Json          @default("{}") @db.JsonB
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")

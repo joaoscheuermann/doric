@@ -64,7 +64,11 @@ export const createThreadRunner = (context: RuntimeContext) => {
     if (prompt.trim().length === 0)
       throw new TypeError('A non-empty prompt is required.');
     const job: PromptJob = { id: randomUUID(), prompt, source };
-    await publish(project, thread, job, { type: 'prompt.accepted', source });
+    await publish(project, thread, job, {
+      type: 'prompt.accepted',
+      text: prompt,
+      source,
+    });
     thread.jobs.push(job);
     start(project, thread);
     return { status: 'accepted' as const, promptId: job.id };
@@ -135,6 +139,8 @@ export const createThreadRunner = (context: RuntimeContext) => {
         };
         thread.active = active;
         await state(thread, 'running', job.id);
+        // The turn's rewind boundary is the history it is about to read.
+        await store.saveCheckpoint(thread.thread.id, job.id);
         return active;
       });
       if (active === undefined) return;
@@ -244,6 +250,23 @@ export const createThreadRunner = (context: RuntimeContext) => {
       return 'not_running';
     thread.active.controller.abort();
     return 'interrupted';
+  };
+  // Caller holds the project's mutation lock.
+  const rewind = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    promptId: string,
+    prompt: string,
+  ) => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state))
+      return { status: 'inactive' as const };
+    // Queued or active work would otherwise run on truncated history.
+    if (thread.active !== undefined || thread.jobs.length > 0)
+      return { status: 'busy' as const };
+    const marker = await store.rewind(thread.thread.id, promptId);
+    if (marker === undefined) return { status: 'unknown_prompt' as const };
+    publisher.event(marker);
+    return enqueue(project, thread, prompt, { kind: 'user' });
   };
   const descendants = (project: ProjectRuntime, rootId: string) => {
     const threads = [...project.threads.values()].map(({ thread }) => thread);
@@ -408,5 +431,14 @@ export const createThreadRunner = (context: RuntimeContext) => {
         }),
     };
   };
-  return { start, enqueue, create, interrupt, descendants, close, state };
+  return {
+    start,
+    enqueue,
+    create,
+    interrupt,
+    rewind,
+    descendants,
+    close,
+    state,
+  };
 };

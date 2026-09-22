@@ -92,7 +92,7 @@ export const workspace = () => {
         createdAt: now,
         updatedAt: now,
       };
-      const record = { thread, messages: [] };
+      const record = { thread, messages: [], checkpoints: {} };
       threadRecords.set(thread.id, record);
       notify();
       return record;
@@ -143,6 +143,66 @@ export const workspace = () => {
     saveMessages: async (id, messages) => {
       const record = threadRecords.get(id);
       if (record) threadRecords.set(id, { ...record, messages });
+    },
+    saveCheckpoint: async (id, promptId) => {
+      const record = threadRecords.get(id);
+      if (!record) return;
+      threadRecords.set(id, {
+        ...record,
+        checkpoints: {
+          ...record.checkpoints,
+          [promptId]: record.messages.length,
+        },
+      });
+    },
+    rewind: async (id, promptId) => {
+      const record = threadRecords.get(id);
+      if (!record) return undefined;
+      const checkpoint = record.checkpoints[promptId];
+      const sequences = events
+        .filter((event) => event.threadId === id && event.promptId === promptId)
+        .map(({ sequence }) => sequence);
+      if (checkpoint === undefined || sequences.length === 0) return undefined;
+      const from = Math.min(...sequences);
+      const removed = new Set(
+        events
+          .filter((event) => event.threadId === id && event.sequence >= from)
+          .map(({ promptId: id }) => id),
+      );
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event.threadId === id && event.sequence >= from)
+          events.splice(index, 1);
+      }
+      const afterSequence = Math.max(
+        0,
+        ...events
+          .filter((event) => event.threadId === id)
+          .map(({ sequence }) => sequence),
+      );
+      const sequence = record.thread.lastSequence + 1;
+      const marker = {
+        projectId: record.thread.projectId,
+        threadId: id,
+        promptId,
+        sequence,
+        type: 'history.truncated',
+        event: { type: 'history.truncated', afterSequence },
+        createdAt: now,
+      };
+      events.push(marker);
+      threadRecords.set(id, {
+        ...record,
+        messages: record.messages.slice(0, checkpoint),
+        checkpoints: Object.fromEntries(
+          Object.entries(record.checkpoints).filter(
+            ([key]) => !removed.has(key),
+          ),
+        ),
+        thread: { ...record.thread, lastSequence: sequence },
+      });
+      notify();
+      return marker;
     },
     appendEvent: async (id, promptId, event) => {
       const record = threadRecords.get(id);

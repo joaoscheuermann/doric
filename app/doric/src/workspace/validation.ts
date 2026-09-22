@@ -32,3 +32,17 @@ export const identifier = (value: unknown): string => {
 
   return value;
 };
+
+export const prompt = (value: unknown): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new WorkspaceError('Enter a prompt before continuing.');
+  }
+  return value;
+};
+
+export const sequence = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new WorkspaceError('The event cursor is invalid.');
+  }
+  return value;
+};

@@ -12,6 +12,12 @@ const promptInput = z
   })
   .strict();
 const interruptInput = z.object({ promptId: z.uuid() }).strict();
+const rewindInput = z
+  .object({
+    promptId: z.uuid(),
+    prompt: z.string().refine((value) => value.trim().length > 0),
+  })
+  .strict();
 const eventsInput = z.object({
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
@@ -66,6 +72,50 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
     );
     if (result.status === 'missing') {
       missing(response, 'thread');
+      return;
+    }
+    if (result.status !== 'accepted') {
+      conflict(response, 'thread', 'inactive');
+      return;
+    }
+    response.status(202).json({ promptId: result.promptId });
+  });
+  router.post('/:id/rewind', async (request, response) => {
+    const input = rewindInput.safeParse(request.body);
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_rewind',
+        'A prompt ID and a non-empty prompt are required.',
+      );
+      return;
+    }
+    const result = await service.threads.rewind(
+      request.params.id,
+      input.data.promptId,
+      input.data.prompt,
+    );
+    if (result.status === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result.status === 'unknown_prompt') {
+      sendError(
+        response,
+        404,
+        'prompt_not_found',
+        'The prompt was not found in this Thread.',
+      );
+      return;
+    }
+    if (result.status === 'busy') {
+      sendError(
+        response,
+        409,
+        'thread_busy',
+        'The Thread is running or has queued input and cannot be rewound.',
+      );
       return;
     }
     if (result.status !== 'accepted') {

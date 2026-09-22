@@ -52,6 +52,26 @@ describe('workspace state helpers', () => {
     );
   });
 
+  test('prepends a new entity by default', () => {
+    assert.deepEqual(
+      upsert([thread('one', 'project-a')], thread('two', 'project-a')).map(
+        ({ id }) => id,
+      ),
+      ['two', 'one'],
+    );
+  });
+
+  test('appends a new entity after its siblings when asked to insert last', () => {
+    assert.deepEqual(
+      upsert(
+        [thread('one', 'project-a'), thread('two', 'project-a')],
+        thread('three', 'project-a'),
+        'last',
+      ).map(({ id }) => id),
+      ['one', 'two', 'three'],
+    );
+  });
+
   test('opens each Thread tab once in click order and refreshes its name', () => {
     const first = thread('one', 'project-a');
     const second = thread('two', 'project-a');

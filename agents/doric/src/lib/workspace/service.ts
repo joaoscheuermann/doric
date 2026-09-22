@@ -261,6 +261,17 @@ export const createWorkspaceService = ({
           return runner.enqueue(project, thread, prompt, { kind: 'user' });
         });
       },
+      rewind: async (id, promptId, prompt) => {
+        const record = await threads.find(id);
+        if (record === undefined) return { status: 'missing' };
+        return exclusive(record.thread.projectId, async () => {
+          const project = runtimes.get(record.thread.projectId);
+          const thread = project?.threads.get(id);
+          if (project === undefined || thread === undefined)
+            return { status: 'inactive' as const };
+          return runner.rewind(project, thread, promptId, prompt);
+        });
+      },
       events: async (id, afterSequence) => {
         const record = await threads.find(id);
         if (record === undefined) return undefined;

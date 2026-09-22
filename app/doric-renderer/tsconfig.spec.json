@@ -13,5 +13,18 @@
     "types": ["node"]
   },
   "exclude": [],
-  "include": ["src/app/connection.ts", "src/app/workspace.ts", "tests/**/*.ts"]
+  "include": [
+    "src/app/connection.ts",
+    "src/app/workspace.ts",
+    "src/doric.d.ts",
+    "src/chat/delegated.ts",
+    "src/chat/markdown-source.ts",
+    "src/chat/projector.ts",
+    "src/chat/reveal.ts",
+    "src/chat/shortcuts.ts",
+    "src/chat/tabs.ts",
+    "src/chat/thread-state.ts",
+    "src/chat/tool-display.ts",
+    "tests/**/*.ts"
+  ]
 }

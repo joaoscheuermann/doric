@@ -1,6 +1,4 @@
-import { Manager } from 'socket.io-client';
-
-import { workspaceUrl } from '../workspace/config';
+import type { Manager } from 'socket.io-client';
 
 export type ConnectionStatus = 'connected' | 'disconnected';
 export type ConnectionListener = (status: ConnectionStatus) => void;
@@ -61,12 +59,10 @@ export const createConnectionMonitor = (
   };
 };
 
-/** Creates the process-long connection to the local Doric host. */
-export const createConnectionService = (): ConnectionMonitor => {
-  const manager = new Manager(workspaceUrl, {
-    transports: ['websocket'],
-    reconnection: true,
-  });
+/** Monitors the status namespace on the process-long shared connection. */
+export const createConnectionService = (
+  manager: Manager,
+): ConnectionMonitor => {
   const socket = manager.socket('/status');
   return createConnectionMonitor(socket, () => socket.disconnect());
 };
