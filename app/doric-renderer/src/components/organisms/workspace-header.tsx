@@ -1,15 +1,14 @@
-import { EditableName } from '@/components/molecules/editable-name';
+import { ThreadTab } from '@/components/molecules/thread-tab';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList } from '@/components/ui/tabs';
 import {
   type DropTarget,
   dropTargetFor,
   type Thread,
 } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react';
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 type MoveThreadTab = (
@@ -171,92 +170,38 @@ export function WorkspaceHeader({
             aria-label="Open Threads"
             className="no-scrollbar h-full w-full justify-start overflow-x-auto overflow-y-hidden rounded-none bg-transparent p-0"
           >
-            {threads.map((thread) => {
-              const active = selectedThreadId === thread.id;
-              const dropped =
-                dropTarget?.id === thread.id &&
-                dropTarget.id !== draggedThreadId;
-
-              return (
-                <div
-                  key={thread.id}
-                  className={cn(
-                    'group/tab relative -ml-px h-full flex-none first:ml-0 [app-region:no-drag]',
-                    active && 'z-10',
-                    dragging && draggedThreadId === thread.id && 'opacity-60',
-                  )}
-                >
-                  <TabsTrigger asChild value={thread.id}>
-                    <div
-                      data-thread-tab={thread.id}
-                      onPointerDown={(event) => {
-                        if (
-                          editingThreadId === thread.id ||
-                          event.button !== 0
-                        ) {
-                          return;
-                        }
-                        drag.current = {
-                          id: thread.id,
-                          x: event.clientX,
-                          y: event.clientY,
-                        };
-                        setDraggedThreadId(thread.id);
-                      }}
-                      className={cn(
-                        'relative flex h-full! w-fit max-w-64 flex-none items-center gap-0! rounded-none! py-0 pr-7 pl-2 text-xs shadow-none! after:content-none [app-region:no-drag]',
-                        active
-                          ? 'border-t-border! border-r-border! border-b-transparent! border-l-border! bg-background!'
-                          : 'border-t-transparent! border-r-border! border-b-transparent! border-l-transparent!',
-                      )}
-                    >
-                      <EditableName
-                        className="flex-none! max-w-56"
-                        editing={editingThreadId === thread.id}
-                        label="Thread name"
-                        value={thread.name}
-                        onStart={() => setEditingThreadId(thread.id)}
-                        onCancel={() => setEditingThreadId(undefined)}
-                        onSubmit={async (name) => {
-                          await onRenameThread(thread, name);
-                          setEditingThreadId((current) =>
-                            current === thread.id ? undefined : current,
-                          );
-                        }}
-                      />
-                      {dropped && (
-                        <span
-                          aria-hidden
-                          className={cn(
-                            'pointer-events-none absolute inset-y-0 w-0.5 bg-primary',
-                            dropTarget.position === 'before'
-                              ? 'left-0'
-                              : 'right-0',
-                          )}
-                        />
-                      )}
-                    </div>
-                  </TabsTrigger>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    data-tab-close
-                    aria-label={`Close ${thread.name}`}
-                    className="absolute top-1 right-1 opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100 [app-region:no-drag]"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      setEditingThreadId((current) =>
-                        current === thread.id ? undefined : current,
-                      );
-                      onCloseThread(thread.id);
-                    }}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                </div>
-              );
-            })}
+            {threads.map((thread) => (
+              <ThreadTab
+                key={thread.id}
+                thread={thread}
+                active={selectedThreadId === thread.id}
+                editing={editingThreadId === thread.id}
+                lifted={dragging && draggedThreadId === thread.id}
+                dropIndicator={
+                  dropTarget !== undefined &&
+                  dropTarget.id === thread.id &&
+                  dropTarget.id !== draggedThreadId
+                    ? dropTarget.position
+                    : undefined
+                }
+                onDragStart={(event) => {
+                  drag.current = {
+                    id: thread.id,
+                    x: event.clientX,
+                    y: event.clientY,
+                  };
+                  setDraggedThreadId(thread.id);
+                }}
+                onEditStart={() => setEditingThreadId(thread.id)}
+                onEditEnd={() =>
+                  setEditingThreadId((current) =>
+                    current === thread.id ? undefined : current,
+                  )
+                }
+                onRename={(name) => onRenameThread(thread, name)}
+                onClose={() => onCloseThread(thread.id)}
+              />
+            ))}
           </TabsList>
         </Tabs>
       )}

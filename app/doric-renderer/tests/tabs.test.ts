@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { parseTabs, restoreTabs, serializeTabs } from '../src/domain/tabs';
+import {
+  parseTabs,
+  restoreTabs,
+  serializeTabs,
+  shouldWriteTabs,
+} from '../src/domain/tabs';
 import type { Thread } from '../src/domain/workspace';
 
 const thread = (id: string): Thread => ({
@@ -57,5 +62,23 @@ describe('persisted tabs', () => {
       }),
       /Doric backend is unavailable/,
     );
+  });
+
+  test('writes nothing while the saved tabs are still being read', () => {
+    assert.equal(shouldWriteTabs(undefined, false), false);
+    assert.equal(shouldWriteTabs(undefined, true), false);
+  });
+
+  test('writes once a read found nothing or restored the saved tabs', () => {
+    assert.equal(shouldWriteTabs('none', false), true);
+    assert.equal(shouldWriteTabs('restored', false), true);
+  });
+
+  test('keeps the saved tabs when the read that would replace them failed', () => {
+    assert.equal(shouldWriteTabs('failed', false), false);
+  });
+
+  test('writes every change that follows a failed read', () => {
+    assert.equal(shouldWriteTabs('failed', true), true);
   });
 });

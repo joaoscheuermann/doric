@@ -73,13 +73,13 @@ submit button and that log rendered verbatim as JSON, with no styling.
 `threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
 PostgreSQL Thread events remain the sole conversation-history source. Because that
 rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
-tool calls, delegated input or comments. The packaged CSP still permits fonts from
-`self` only, and the vendored Noto Serif stays in the repository for it. The sidebar tree follows the selected Project's live
+tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
+only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
+face. The sidebar tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh, while header tabs
 stay user-driven. Open-tab order and selection persist locally across app
-restarts, while PostgreSQL Thread events remain the sole conversation-history
-source. One
+restarts. One
 full-height resize handle owns the sidebar boundary across header and content
 and disappears when the sidebar closes. A segmented footer shares that geometry
 and shows the Electron main process's Socket.IO connection status on the content

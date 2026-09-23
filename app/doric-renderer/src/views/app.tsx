@@ -3,6 +3,7 @@ import {
   WorkspaceFooter,
   WorkspaceSidebarFooter,
 } from '@/components/molecules/workspace-footer';
+import { Conversation } from '@/components/organisms/conversation';
 import {
   ProjectSidebar,
   type SidebarActions,
@@ -14,21 +15,19 @@ import {
 } from '@/components/organisms/workspace-header';
 import { ThreadPane } from '@/components/templates/thread-pane';
 import { WorkspaceLayout } from '@/components/templates/workspace-layout';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import type { Draft, Entity, Project, Thread } from '@/domain/workspace';
 import {
-  messageFrom,
-  moveThreadTab,
-  openThreadTab,
-  threadsForProject,
-  threadSubtreeIds,
-  upsert,
-  withoutThreadSubtree,
-} from '@/domain/workspace';
-import { usePersistedTabs } from '@/hooks/use-persisted-tabs';
-import { useProjectEvents } from '@/hooks/use-project-events';
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useWorkspace } from '@/hooks/use-workspace';
+import { FileTextIcon } from 'lucide-react';
+import { type CSSProperties } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -36,396 +35,34 @@ const panelWidth = {
 } as CSSProperties;
 
 export function App() {
-  const [projects, setProjects] = useState<readonly Project[]>([]);
-  const [threadsByProject, setThreadsByProject] = useState<
-    Readonly<Record<string, readonly Thread[]>>
-  >({});
-  const [selectedProjectId, setSelectedProjectId] = useState<string>();
-  const [draft, setDraft] = useState<Draft>();
-  const [editing, setEditing] = useState<Entity>();
-  const [deleting, setDeleting] = useState<Entity>();
-  const [deletingPending, setDeletingPending] = useState(false);
-  const [loadingProjects, setLoadingProjects] = useState(true);
-  const [loadingThreadProjects, setLoadingThreadProjects] = useState<
-    ReadonlySet<string>
-  >(new Set());
-  const [error, setError] = useState<string>();
-  const intent = useRef(0);
-  /** Interaction intent at mount, so a late tab restore cannot win. */
-  const restoreIntent = useRef(intent.current);
-  const loadSequences = useRef(new Map<string, number>());
-  const mutationSequences = useRef(new Map<string, number>());
-
-  const nextMutation = (key: string): number => {
-    const sequence = (mutationSequences.current.get(key) ?? 0) + 1;
-    mutationSequences.current.set(key, sequence);
-    return sequence;
-  };
-
-  const mutationIsCurrent = (key: string, sequence: number): boolean =>
-    mutationSequences.current.get(key) === sequence;
-
-  const invalidateThreadLoads = (projectId: string): void => {
-    loadSequences.current.set(
-      projectId,
-      (loadSequences.current.get(projectId) ?? 0) + 1,
-    );
-    setLoadingThreadProjects((current) => {
-      const next = new Set(current);
-      next.delete(projectId);
-      return next;
-    });
-  };
-
-  const loadThreads = async (projectId: string) => {
-    const requestIntent = intent.current;
-    const sequence = (loadSequences.current.get(projectId) ?? 0) + 1;
-    loadSequences.current.set(projectId, sequence);
-    setLoadingThreadProjects((current) => new Set([...current, projectId]));
-    try {
-      const nextThreads = await window.doric.threads.list(projectId);
-      if (loadSequences.current.get(projectId) === sequence) {
-        setThreadsByProject((current) => ({
-          ...current,
-          [projectId]: threadsForProject(nextThreads, projectId),
-        }));
-      }
-    } catch (reason) {
-      if (loadSequences.current.get(projectId) === sequence) {
-        if (intent.current === requestIntent) setError(messageFrom(reason));
-      }
-    } finally {
-      if (loadSequences.current.get(projectId) === sequence) {
-        setLoadingThreadProjects((current) => {
-          const next = new Set(current);
-          next.delete(projectId);
-          return next;
-        });
-      }
-    }
-  };
-
-  useEffect(() => {
-    let active = true;
-    const initialIntent = intent.current;
-    void window.doric.projects
-      .list()
-      .then((nextProjects) => {
-        if (!active) return;
-        setProjects((current) => {
-          const known = new Set(current.map((project) => project.id));
-          return [
-            ...current,
-            ...nextProjects.filter((project) => !known.has(project.id)),
-          ];
-        });
-        const first = nextProjects[0];
-        if (first && intent.current === initialIntent) {
-          setSelectedProjectId(first.id);
-          void loadThreads(first.id);
-        }
-      })
-      .catch((reason: unknown) => {
-        if (active && intent.current === initialIntent) {
-          setError(messageFrom(reason));
-        }
-      })
-      .finally(() => {
-        if (active) setLoadingProjects(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const { openThreads, setOpenThreads, selectedThreadId, setSelectedThreadId } =
-    usePersistedTabs({
-      isCurrent: () => intent.current === restoreIntent.current,
-      onRestore: (thread) => {
-        intent.current += 1;
-        setSelectedProjectId(thread.projectId);
-        setSelectedThreadId(thread.id);
-        void loadThreads(thread.projectId);
-      },
-      get: (id) => window.doric.threads.get(id),
-    });
-
-  useProjectEvents({
-    projectId: selectedProjectId,
-    threadsByProject,
-    setProjects,
-    setThreadsByProject,
-    setOpenThreads,
-    setSelectedProjectId,
-    setSelectedThreadId,
-    fail: setError,
-  });
-
-  const selectProject = (project: Project) => {
-    intent.current += 1;
-    setError(undefined);
-    setDraft(undefined);
-    setEditing(undefined);
-    setSelectedProjectId(project.id);
-    setSelectedThreadId(undefined);
-    void loadThreads(project.id);
-  };
-
-  const beginProject = () => {
-    intent.current += 1;
-    setError(undefined);
-    setEditing(undefined);
-    setDraft({ kind: 'project' });
-  };
-
-  const beginThread = (projectId: string, parentThreadId?: string) => {
-    intent.current += 1;
-    setError(undefined);
-    setEditing(undefined);
-    setDraft({ kind: 'thread', projectId, parentThreadId });
-    if (selectedProjectId !== projectId) {
-      setSelectedProjectId(projectId);
-      setSelectedThreadId(undefined);
-    }
-    if (threadsByProject[projectId] === undefined) {
-      void loadThreads(projectId);
-    }
-  };
-
-  const createProject = async (name: string) => {
-    const operationIntent = intent.current;
-    const sequence = nextMutation('projects:create');
-    const project = await window.doric.projects.create(name);
-    setProjects((current) => upsert(current, project));
-    if (
-      mutationIsCurrent('projects:create', sequence) &&
-      intent.current === operationIntent
-    ) {
-      setSelectedProjectId(project.id);
-      setSelectedThreadId(undefined);
-      setThreadsByProject((current) => ({ ...current, [project.id]: [] }));
-      setDraft((current) =>
-        current?.kind === 'project' ? undefined : current,
-      );
-    }
-  };
-
-  const createThread = async (name: string) => {
-    if (draft?.kind !== 'thread') return;
-    const operationDraft = draft;
-    const operationIntent = intent.current;
-    const key = `threads:create:${operationDraft.projectId}`;
-    const sequence = nextMutation(key);
-    invalidateThreadLoads(operationDraft.projectId);
-    const thread = await window.doric.threads.create(
-      operationDraft.projectId,
-      name,
-      operationDraft.parentThreadId,
-    );
-    invalidateThreadLoads(thread.projectId);
-    setThreadsByProject((current) => ({
-      ...current,
-      [thread.projectId]: upsert(
-        threadsForProject(current[thread.projectId] ?? [], thread.projectId),
-        thread,
-      ),
-    }));
-    if (
-      mutationIsCurrent(key, sequence) &&
-      intent.current === operationIntent
-    ) {
-      setSelectedProjectId(thread.projectId);
-      setSelectedThreadId(thread.id);
-      setOpenThreads((current) => openThreadTab(current, thread));
-      setDraft((current) => (current === operationDraft ? undefined : current));
-    }
-  };
-
-  const rename = async (entity: Entity, name: string) => {
-    const key = `${entity.kind}:rename:${entity.value.id}`;
-    const sequence = nextMutation(key);
-    const operationIntent = intent.current;
-
-    if (entity.kind === 'project') {
-      const project = await window.doric.projects.rename(entity.value.id, name);
-      if (!mutationIsCurrent(key, sequence)) return;
-      setProjects((current) => upsert(current, project));
-    } else {
-      invalidateThreadLoads(entity.value.projectId);
-      const thread = await window.doric.threads.rename(entity.value.id, name);
-      if (!mutationIsCurrent(key, sequence)) return;
-      invalidateThreadLoads(thread.projectId);
-      setThreadsByProject((current) => ({
-        ...current,
-        [thread.projectId]: upsert(
-          threadsForProject(current[thread.projectId] ?? [], thread.projectId),
-          thread,
-        ),
-      }));
-      setOpenThreads((current) =>
-        current.map((candidate) =>
-          candidate.id === thread.id ? thread : candidate,
-        ),
-      );
-    }
-
-    if (intent.current === operationIntent) {
-      setEditing((current) =>
-        current?.kind === entity.kind && current.value.id === entity.value.id
-          ? undefined
-          : current,
-      );
-    }
-  };
-
-  const deleteEntity = async () => {
-    if (!deleting) return;
-    setDeletingPending(true);
-    setError(undefined);
-    const entity = deleting;
-    const operationIntent = intent.current;
-    const key = `${entity.kind}:delete:${entity.value.id}`;
-    const sequence = nextMutation(key);
-    try {
-      if (entity.kind === 'project') {
-        invalidateThreadLoads(entity.value.id);
-        await window.doric.projects.terminate(entity.value.id);
-        await window.doric.projects.delete(entity.value.id);
-        if (!mutationIsCurrent(key, sequence)) return;
-        setProjects((current) =>
-          current.filter((project) => project.id !== entity.value.id),
-        );
-        setThreadsByProject((current) =>
-          Object.fromEntries(
-            Object.entries(current).filter(
-              ([projectId]) => projectId !== entity.value.id,
-            ),
-          ),
-        );
-        setOpenThreads((current) =>
-          current.filter((thread) => thread.projectId !== entity.value.id),
-        );
-        if (
-          intent.current === operationIntent &&
-          selectedProjectId === entity.value.id
-        ) {
-          setSelectedProjectId(undefined);
-          setSelectedThreadId(undefined);
-        }
-      } else {
-        invalidateThreadLoads(entity.value.projectId);
-        const removedIds = threadSubtreeIds(
-          threadsByProject[entity.value.projectId] ?? [],
-          entity.value.id,
-        );
-        await window.doric.threads.terminate(entity.value.id);
-        await window.doric.threads.delete(entity.value.id);
-        if (!mutationIsCurrent(key, sequence)) return;
-        setThreadsByProject((current) => ({
-          ...current,
-          [entity.value.projectId]: withoutThreadSubtree(
-            current[entity.value.projectId] ?? [],
-            entity.value.id,
-          ),
-        }));
-        setSelectedThreadId((current) =>
-          current !== undefined && removedIds.has(current)
-            ? undefined
-            : current,
-        );
-        setOpenThreads((current) =>
-          current.filter((thread) => !removedIds.has(thread.id)),
-        );
-        void loadThreads(entity.value.projectId);
-      }
-      setDeleting(undefined);
-    } catch (reason) {
-      setError(messageFrom(reason));
-    } finally {
-      setDeletingPending(false);
-    }
-  };
-
-  const threads =
-    selectedProjectId === undefined
-      ? []
-      : threadsForProject(
-          threadsByProject[selectedProjectId] ?? [],
-          selectedProjectId,
-        );
-  const selectedThread = openThreads.find(
-    (thread) => thread.id === selectedThreadId,
-  );
-  const selectThread = (thread: Thread) => {
-    intent.current += 1;
-    setDraft(undefined);
-    setEditing(undefined);
-    setSelectedProjectId(thread.projectId);
-    setSelectedThreadId(thread.id);
-    setOpenThreads((current) => openThreadTab(current, thread));
-    if (threadsByProject[thread.projectId] === undefined) {
-      void loadThreads(thread.projectId);
-    }
-  };
-  const closeThread = (id: string) => {
-    const index = openThreads.findIndex((thread) => thread.id === id);
-    if (index === -1) return;
-    const remaining = openThreads.filter((thread) => thread.id !== id);
-    setOpenThreads(remaining);
-    if (selectedThreadId !== id) return;
-
-    const replacement = remaining[Math.min(index, remaining.length - 1)];
-    if (replacement) {
-      selectThread(replacement);
-      return;
-    }
-    intent.current += 1;
-    setDraft(undefined);
-    setEditing(undefined);
-    setSelectedThreadId(undefined);
-  };
+  const workspace = useWorkspace();
+  const { actions } = workspace;
   const model: SidebarModel = {
-    draft,
-    editing,
-    error,
-    loadingProjects,
-    loadingThreads:
-      selectedProjectId !== undefined &&
-      loadingThreadProjects.has(selectedProjectId),
-    projects,
-    selectedProjectId,
-    selectedThreadId,
-    threads,
+    draft: workspace.draft,
+    editing: workspace.editing,
+    error: workspace.error,
+    loadingProjects: workspace.loadingProjects,
+    loadingThreads: workspace.loadingThreads,
+    projects: workspace.projects,
+    selectedProjectId: workspace.selectedProjectId,
+    selectedThreadId: workspace.selectedThreadId,
+    threads: workspace.threads,
   };
-  const actions: SidebarActions = {
-    beginProject,
-    beginThread,
-    cancelDraft: () => {
-      intent.current += 1;
-      setDraft(undefined);
-    },
-    cancelRename: () => {
-      intent.current += 1;
-      setEditing(undefined);
-    },
-    createProject,
-    createThread,
-    copyThreadId: (id) => {
-      setError(undefined);
-      void navigator.clipboard
-        .writeText(id)
-        .catch(() => setError('Unable to copy the thread ID.'));
-    },
-    deleteEntity: setDeleting,
-    rename,
-    selectProject,
-    selectThread,
-    startRename: (entity) => {
-      intent.current += 1;
-      setDraft(undefined);
-      setEditing(entity);
-    },
+  const sidebarActions: SidebarActions = {
+    beginProject: actions.beginProject,
+    beginThread: actions.beginThread,
+    cancelDraft: actions.cancelDraft,
+    cancelRename: actions.cancelRename,
+    copyThreadId: actions.copyThreadId,
+    createProject: actions.createProject,
+    createThread: actions.createThread,
+    deleteEntity: actions.requestDelete,
+    rename: actions.rename,
+    selectProject: actions.selectProject,
+    selectThread: actions.selectThread,
+    startRename: actions.startRename,
   };
+  const { selectedThread } = workspace;
 
   return (
     <TooltipProvider>
@@ -437,37 +74,50 @@ export function App() {
           footer={<WorkspaceFooter />}
           header={
             <WorkspaceHeader
-              onCloseThread={closeThread}
-              onMoveThread={(sourceId, targetId, position) =>
-                setOpenThreads((current) =>
-                  moveThreadTab(current, sourceId, targetId, position),
-                )
-              }
+              onCloseThread={actions.closeThread}
+              onMoveThread={actions.moveThread}
               onRenameThread={(thread, name) =>
-                rename({ kind: 'thread', value: thread }, name)
+                actions.rename({ kind: 'thread', value: thread }, name)
               }
-              onSelectThread={selectThread}
-              selectedThreadId={selectedThreadId}
-              threads={openThreads}
+              onSelectThread={actions.selectThread}
+              selectedThreadId={workspace.selectedThreadId}
+              threads={workspace.openThreads}
             />
           }
-          sidebar={<ProjectSidebar actions={actions} model={model} />}
+          sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
           sidebarFooter={<WorkspaceSidebarFooter />}
           sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
-            <ThreadPane thread={selectedThread} />
+            <ThreadPane>
+              {selectedThread ? (
+                <Conversation key={selectedThread.id} thread={selectedThread} />
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <FileTextIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>No thread selected</EmptyTitle>
+                    <EmptyDescription>
+                      Select a thread to open its conversation.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </ThreadPane>
           </SidebarInset>
         </WorkspaceLayout>
         <DeleteDialog
-          entity={deleting}
-          pending={deletingPending}
-          onDelete={deleteEntity}
+          entity={workspace.deleting}
+          pending={workspace.deletingPending}
+          onDelete={actions.confirmDelete}
           onOpenChange={(open) => {
-            if (!open && !deletingPending) setDeleting(undefined);
+            if (!open) actions.dismissDelete();
           }}
         />
       </SidebarProvider>
+      <Toaster />
     </TooltipProvider>
   );
 }

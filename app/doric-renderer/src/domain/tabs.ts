@@ -1,4 +1,4 @@
-import type { Thread } from '@/domain/workspace';
+import type { Thread } from './workspace';
 
 export const tabsStorageKey = 'doric.tabs';
 
@@ -67,3 +67,27 @@ export const restoreTabs = async (
     openThreads[0];
   return { openThreads, selectedThread };
 };
+
+/**
+ * What the initial read of the saved tabs found.
+ *
+ * `none`     — nothing was stored.
+ * `restored` — the stored tabs were resolved against the backend.
+ * `failed`   — the read failed, so what is stored may still be intact.
+ */
+export type TabsLoad = 'none' | 'restored' | 'failed';
+
+/**
+ * Whether the tabs on screen may be written to storage.
+ *
+ * Nothing is written while the read is in flight. Once it settles a write
+ * proceeds, except after a read that failed: the tabs the hook holds are then
+ * the untouched ones, and writing them would erase what is still stored, so that
+ * first write waits for a change. Persistence itself does not stop — the change
+ * that arrives, and every change after it, is written — so a transient failure
+ * only delays the write-back instead of ending it for the session.
+ */
+export const shouldWriteTabs = (
+  load: TabsLoad | undefined,
+  changed: boolean,
+): boolean => load !== undefined && (load !== 'failed' || changed);

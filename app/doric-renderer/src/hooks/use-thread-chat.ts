@@ -46,8 +46,16 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   const [sendError, setSendError] = useState<string>();
 
   useEffect(() => {
+    // A new Thread reopens the surface: every piece of per-Thread state goes
+    // back to what a fresh mount would hold, so the hook is correct on its own
+    // instead of relying on the pane remounting it with a `key`. The reset reads
+    // the Thread of the render that changed it; the subscription restarts only
+    // when the id changes, so renaming a Thread does not reopen its log.
+    setRecord(thread);
     setProjection(emptyProjection);
     setError(undefined);
+    setSendError(undefined);
+    setSending(false);
     return window.doric.threads.watch(thread.id, 0, (update) => {
       if (update.kind === 'snapshot') {
         setProjection((current) =>

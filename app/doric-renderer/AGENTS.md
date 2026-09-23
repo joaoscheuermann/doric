@@ -9,7 +9,7 @@ renderer.
 ```
 src/
   components/
-    ui/          atoms: the vendored shadcn primitives
+    ui/          the vendored shadcn primitives (a vendor boundary, see below)
     molecules/   a few atoms composed into one small unit
     organisms/   one functional section of the app, with its own data
     templates/   arrangement only: layout and regions, no app state
@@ -37,13 +37,46 @@ Where a new file goes, in order:
 
 Two boundaries inside `components` matter and are easy to break:
 
-- `components/ui` is **vendored**. The shadcn CLI writes those files and
-  `components.json` points at them, so do not move, rename or reorganise that
-  folder; keep new primitives coming through the CLI. Its aliases (`utils`,
-  `lib`, `hooks`, `ui`) are part of that contract and must keep resolving to
+- `components/ui` is a **vendor boundary**, not a claim that every file in it is
+  one atom: `sidebar`, `field`, `tabs`, `context-menu`, `alert-dialog`, `sheet`,
+  `tooltip` and `resizable` are shadcn _families_ with providers, context and
+  composition. Read the folder as "written by the CLI, edited only through it",
+  so do not move, rename or reorganise it. Its aliases (`utils`, `lib`, `hooks`,
+  `ui`) in `components.json` are part of that contract and must keep resolving to
   paths that exist.
 - A `template` must not know a `view`, and a `molecule` must not know an
   `organism`. Data enters from above, through props or a hook.
+
+## Splitting code
+
+One file, one responsibility. When a file grows past what you can describe in a
+sentence, or past the 500-line rule the repository already states, split it along
+this line:
+
+**If a rule can be stated in terms of its arguments, it belongs in `domain/` or
+`utility/`, and it must have a test.**
+
+**If it needs React or the DOM, it belongs in `components/` or `hooks/`, and it is
+proven in the running app.**
+
+That criterion decides the cut, not taste. It exists because the test build is
+DOM-free (see Tests): a rule left inside a component or a hook cannot be tested at
+all, so the layer a piece of logic lands in decides whether it is verifiable.
+
+Signals that a file is hiding a rule:
+
+- a component that derives its own data (filtering, grouping, ordering, cascade)
+  before rendering it — the derivation is `domain/`;
+- a component that measures the DOM to decide something — keep the measurement,
+  move the decision out;
+- a hook whose options are several `setState` functions — that is a state machine
+  in disguise, so the transition belongs in `domain/` as a pure
+  `(state, input) => state`;
+- a view that owns orchestration beyond composing templates and calling hooks.
+
+When you split, do not change in the same step the contract a neighbour depends on
+(a template's props, an organism's model, a hook's options). The cut and the
+contract change are two moves, so that one of them can be reviewed on its own.
 
 ## Imports
 

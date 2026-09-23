@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { cn } from 'cn';
+import { cn } from '@/utility/utils';
 import { XIcon } from 'lucide-react';
 import { Dialog as SheetPrimitive } from 'radix-ui';
 import * as React from 'react';
