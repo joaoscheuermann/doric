@@ -158,6 +158,40 @@ describe('thread event projection', () => {
     assert.equal(projection.turns[0]?.inputRole, 'user');
   });
 
+  test('drops the turns a rewind discarded and keeps the survivors', () => {
+    const held = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'first',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', { type: 'text.delta', delta: 'answer one' }),
+      event(3, 'two', {
+        type: 'prompt.accepted',
+        text: 'second',
+        source: { kind: 'user' },
+      }),
+      event(4, 'two', { type: 'text.delta', delta: 'answer two' }),
+    ]);
+    // The rewind removed turn "two" and marked the boundary at sequence 2.
+    const after = projectEvents(held, [
+      event(5, 'two', { type: 'history.truncated', afterSequence: 2 }),
+      event(6, 'three', {
+        type: 'prompt.accepted',
+        text: 'edited',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.deepEqual(
+      after.turns.map(({ promptId }) => promptId),
+      ['one', 'three'],
+    );
+    assert.equal(after.turns[0]?.userMarkdown, 'first');
+    assert.equal(after.turns[1]?.userMarkdown, 'edited');
+    assert.ok(after.events.some(({ type }) => type === 'history.truncated'));
+  });
+
   test('keeps an accepted prompt visible when its recorded text is absent', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'prompt.accepted', source: { kind: 'user' } }),

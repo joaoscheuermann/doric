@@ -139,6 +139,7 @@ const toolStarted = (
 const project = (events: readonly ThreadEvent[]): readonly PromptTurn[] => {
   const turns = new Map<string, PromptTurn>();
   for (const item of events) {
+    if (record(item.event)?.type === 'history.truncated') continue;
     const current = turns.get(item.promptId) ?? {
       promptId: item.promptId,
       sequence: item.sequence,
@@ -259,11 +260,46 @@ const orderedUnique = (
   );
 };
 
+/**
+ * A rewind marker names the last surviving sequence and its own place in the log.
+ * The discarded range sits strictly between them, so everything at or below the
+ * boundary survives and the marker plus anything after it is new work.
+ */
+const truncation = (
+  event: ThreadEvent,
+):
+  | { readonly afterSequence: number; readonly sequence: number }
+  | undefined => {
+  const payload = record(event.event);
+  if (payload?.type !== 'history.truncated') return undefined;
+  const afterSequence = payload.afterSequence;
+  if (
+    typeof afterSequence !== 'number' ||
+    !Number.isSafeInteger(afterSequence) ||
+    afterSequence < 0
+  ) {
+    return undefined;
+  }
+  return { afterSequence, sequence: event.sequence };
+};
+
+/** Drops held events that a rewind already discarded. */
+const survivors = (events: readonly ThreadEvent[]): readonly ThreadEvent[] => {
+  const markers = events.flatMap((event) => truncation(event) ?? []);
+  if (markers.length === 0) return events;
+  return events.filter((event) =>
+    markers.every(
+      ({ afterSequence, sequence }) =>
+        !(event.sequence > afterSequence && event.sequence < sequence),
+    ),
+  );
+};
+
 export const projectEvents = (
   current: Projection,
   incoming: readonly ThreadEvent[],
 ): Projection => {
-  const events = orderedUnique(current.events, incoming);
+  const events = survivors(orderedUnique(current.events, incoming));
   return { events, turns: project(events) };
 };
 

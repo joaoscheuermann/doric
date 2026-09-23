@@ -101,6 +101,13 @@ contextBridge.exposeInMainWorld('doric', {
         ipcRenderer.send('doric:threads:unwatch');
       };
     },
+    rewind: (id: string, promptId: string, prompt: string) =>
+      invoke<{ readonly promptId: string }>(
+        'doric:threads:rewind',
+        id,
+        promptId,
+        prompt,
+      ),
     terminate: (id: string) => invoke<Thread>('doric:threads:terminate', id),
     delete: (id: string) => invoke<void>('doric:threads:delete', id),
   },

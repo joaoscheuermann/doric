@@ -102,6 +102,11 @@ export type WorkspaceApi = {
     ): Promise<Thread>;
     rename(id: string, name: string): Promise<Thread>;
     prompt(id: string, prompt: string): Promise<{ readonly promptId: string }>;
+    rewind(
+      id: string,
+      promptId: string,
+      prompt: string,
+    ): Promise<{ readonly promptId: string }>;
     watch(
       id: string,
       afterSequence: number,

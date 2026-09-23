@@ -238,6 +238,14 @@ export const workspaceApi = {
           body: body({ prompt }),
         }),
       ),
+    /** Replaces an earlier prompt and discards the turns after it. */
+    rewind: async (threadId: string, promptId: string, prompt: string) =>
+      promptReceiptFrom(
+        await request<unknown>(`/threads/${id(threadId)}/rewind`, {
+          method: 'POST',
+          body: body({ promptId, prompt }),
+        }),
+      ),
     terminate: (threadId: string) =>
       request<Thread>(`/threads/${id(threadId)}/terminate`, {
         method: 'POST',

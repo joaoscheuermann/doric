@@ -111,6 +111,18 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:rewind',
+    safe(
+      rendererUrl,
+      (value: unknown, promptId: unknown, nextPrompt: unknown) =>
+        workspaceApi.threads.rewind(
+          identifier(value),
+          identifier(promptId),
+          prompt(nextPrompt),
+        ),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:terminate',
     safe(rendererUrl, (value: unknown) =>
       workspaceApi.threads.terminate(identifier(value)),

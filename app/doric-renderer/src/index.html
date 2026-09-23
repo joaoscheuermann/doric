@@ -6,6 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <!-- The inline marker a pending comment paints over the excerpt it quotes.
+         It styles the range through the CSS Custom Highlight API, so the answer
+         itself is never modified. This one rule lives in the shell because
+         Tailwind's CSS optimizer mis-parses the Custom Highlight
+         pseudo-element. -->
+    <style>
+      ::highlight(comment) {
+        /* Lighter than a cursor selection: a commented excerpt is a settled
+           reference, not something waiting on the next keystroke. */
+        background-color: color-mix(
+          in oklab,
+          var(--muted-foreground) 22%,
+          transparent
+        );
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

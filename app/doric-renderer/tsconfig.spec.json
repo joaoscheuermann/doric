@@ -18,7 +18,7 @@
     "src/app/workspace.ts",
     "src/doric.d.ts",
     "src/chat/delegated.ts",
-    "src/chat/markdown-source.ts",
+    "src/chat/editing.ts",
     "src/chat/projector.ts",
     "src/chat/reveal.ts",
     "src/chat/shortcuts.ts",

@@ -165,6 +165,34 @@ describe('Thread HTTP boundary', () => {
     assert.equal(requests[1]?.init?.body, '{"prompt":"Do the work"}');
   });
 
+  test('rewinds a prompt through the existing route', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), init });
+      return Response.json({ promptId: 'next-prompt' }, { status: 202 });
+    };
+
+    try {
+      assert.deepEqual(
+        await workspaceApi.threads.rewind('thread-id', 'prompt-id', 'edited'),
+        { promptId: 'next-prompt' },
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(
+      requests[0]?.url,
+      'http://127.0.0.1:3000/threads/thread-id/rewind',
+    );
+    assert.equal(requests[0]?.init?.method, 'POST');
+    assert.equal(
+      requests[0]?.init?.body,
+      '{"promptId":"prompt-id","prompt":"edited"}',
+    );
+  });
+
   test('reports a deleted Thread as absent rather than as a failure', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>

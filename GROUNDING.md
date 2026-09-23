@@ -74,11 +74,27 @@ slot stays reserved in every row, so the column never moves. Rows render safe
 streaming Markdown without chat bubbles, tables, remote images, or raw HTML.
 Running prose uses a vendored Noto Serif, since the packaged CSP permits fonts
 from `self` only, while machine-facing rows stay sans and monospace.
-Its toolbar-free Slate editor preserves Markdown source and submits only with
-Command+Enter on macOS or Control+Enter on Windows. The composer mirrors Thread
-lifecycle state: a stopping, cancelled, or failed Thread is explained instead of
-accepting a prompt, and a prompt without a terminal event is shown as
-unanswered. The same durable event stream supplies
+Its toolbar-free Lexical editor holds each prose node as a Markdown document and
+submits only with Command+Enter on macOS or Control+Enter on Windows. The
+conversation reads as a
+document of prose nodes — each human prompt, each agent answer segment, and the
+draft — while `Thinking`, tool and delegated rows stay machine content outside
+the caret path, and an arrow key carries the caret — and the keyboard focus
+with it — into the neighbouring prose node at a node's edge. A saved prompt is
+editable in place: while its text
+differs from the durable projection that node is dirty and every node below it
+dims until the text matches again. The draft sends through `threads.prompt`,
+while an edited past prompt sends its text through `threads.rewind`, and sending
+discards the other pending edits and comments. An agent answer is caret
+navigable and selectable but never mutates — typing in it creates or extends a
+comment anchored at the caret or over the selected excerpt — one comment per
+excerpt, marked on the quoted range and shown under the Markdown block it is
+about, removable — and the pending comments are
+composed into a `## Comments` Markdown section appended to the prompt the
+renderer sends, so durable history records what was actually asked. The composer
+mirrors Thread lifecycle state: a stopping, cancelled, or failed Thread is
+explained instead of accepting a prompt, and a prompt without a terminal event
+is shown as unanswered. The same durable event stream supplies
 the agent's reasoning, its tool calls, and the input another Thread wrote for it
 as chronological segments: a `Result from thread <name>` or `Task from thread
 <name>` row collapses to a label plus the child's status and expands to the
