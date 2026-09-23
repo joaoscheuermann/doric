@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { ThreadEvent } from '../src/app/workspace';
 import {
   emptyProjection,
   projectEvents,
   type PromptTurn,
   type TextSegment,
   type ToolSegment,
-} from '../src/chat/projector';
+} from '../src/domain/projector';
+import type { ThreadEvent } from '../src/domain/workspace';
 
 const event = (
   sequence: number,

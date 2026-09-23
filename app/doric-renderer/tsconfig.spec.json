@@ -14,17 +14,12 @@
   },
   "exclude": [],
   "include": [
-    "src/app/connection.ts",
-    "src/app/workspace.ts",
+    "src/domain/connection.ts",
+    "src/domain/workspace.ts",
     "src/doric.d.ts",
-    "src/chat/delegated.ts",
-    "src/chat/editing.ts",
-    "src/chat/projector.ts",
-    "src/chat/reveal.ts",
-    "src/chat/shortcuts.ts",
-    "src/chat/tabs.ts",
-    "src/chat/thread-state.ts",
-    "src/chat/tool-display.ts",
+    "src/domain/delegated.ts",
+    "src/domain/projector.ts",
+    "src/domain/tabs.ts",
     "tests/**/*.ts"
   ]
 }

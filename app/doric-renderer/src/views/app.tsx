@@ -1,26 +1,22 @@
-import { DeleteDialog } from '@/components/delete-dialog';
+import { DeleteDialog } from '@/components/molecules/delete-dialog';
+import {
+  WorkspaceFooter,
+  WorkspaceSidebarFooter,
+} from '@/components/molecules/workspace-footer';
 import {
   ProjectSidebar,
   type SidebarActions,
   type SidebarModel,
-} from '@/components/project-sidebar';
-import { ThreadPane } from '@/components/thread-pane';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import {
-  WorkspaceFooter,
-  WorkspaceSidebarFooter,
-} from '@/components/workspace-footer';
+} from '@/components/organisms/project-sidebar';
 import {
   WorkspaceHeader,
   WorkspaceSidebarHeader,
-} from '@/components/workspace-header';
-import { WorkspaceLayout } from '@/components/workspace-layout';
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
-
-import { usePersistedTabs } from './use-persisted-tabs';
-import { useProjectEvents } from './use-project-events';
-import type { Draft, Entity, Project, Thread } from './workspace';
+} from '@/components/organisms/workspace-header';
+import { ThreadPane } from '@/components/templates/thread-pane';
+import { WorkspaceLayout } from '@/components/templates/workspace-layout';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import type { Draft, Entity, Project, Thread } from '@/domain/workspace';
 import {
   messageFrom,
   moveThreadTab,
@@ -29,7 +25,10 @@ import {
   threadSubtreeIds,
   upsert,
   withoutThreadSubtree,
-} from './workspace';
+} from '@/domain/workspace';
+import { usePersistedTabs } from '@/hooks/use-persisted-tabs';
+import { useProjectEvents } from '@/hooks/use-project-events';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -385,14 +384,6 @@ export function App() {
     setEditing(undefined);
     setSelectedThreadId(undefined);
   };
-  /** The cached tree is the source of Thread names for delegated rows. */
-  const threadName = (id: string): string | undefined => {
-    for (const threads of Object.values(threadsByProject)) {
-      const found = threads.find((thread) => thread.id === id);
-      if (found !== undefined) return found.name;
-    }
-    return undefined;
-  };
   const model: SidebarModel = {
     draft,
     editing,
@@ -465,7 +456,7 @@ export function App() {
           sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
-            <ThreadPane thread={selectedThread} threadName={threadName} />
+            <ThreadPane thread={selectedThread} />
           </SidebarInset>
         </WorkspaceLayout>
         <DeleteDialog

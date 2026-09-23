@@ -1,6 +1,6 @@
-import { limitName, messageFrom, nameError } from '@/app/workspace';
 import { Field, FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { limitName, messageFrom, nameError } from '@/domain/workspace';
 import { useEffect, useRef, useState } from 'react';
 
 type InlineNameProps = {

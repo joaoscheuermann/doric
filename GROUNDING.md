@@ -64,49 +64,17 @@ Projects and recursive Threads, supports inline create and rename, and exposes
 context actions for create, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. Selecting a Thread opens its durable
-event-derived conversation and a persistent header tab. The conversation is a
-centered reading column inside full-width rows: a human prompt and the prompt
-input wear a band that reaches the panel edges, while agent turns and delegated
-inputs stay bare, so the band itself distinguishes what the user wrote. The
-input's gutter holds a terminal prompt marker (`❯`) rather than an avatar, and
-the agent's rows carry a bare icon while the human's rows carry none; the gutter
-slot stays reserved in every row, so the column never moves. Rows render safe
-streaming Markdown without chat bubbles, tables, remote images, or raw HTML.
-Running prose uses a vendored Noto Serif, since the packaged CSP permits fonts
-from `self` only, while machine-facing rows stay sans and monospace.
-Its toolbar-free Lexical editor holds each prose node as a Markdown document and
-submits only with Command+Enter on macOS or Control+Enter on Windows. The
-conversation reads as a
-document of prose nodes — each human prompt, each agent answer segment, and the
-draft — while `Thinking`, tool and delegated rows stay machine content outside
-the caret path, and an arrow key carries the caret — and the keyboard focus
-with it — into the neighbouring prose node at a node's edge. A saved prompt is
-editable in place: while its text
-differs from the durable projection that node is dirty and every node below it
-dims until the text matches again. The draft sends through `threads.prompt`,
-while an edited past prompt sends its text through `threads.rewind`, and sending
-discards the other pending edits and comments. An agent answer is caret
-navigable and selectable but never mutates — typing in it creates or extends a
-comment anchored at the caret or over the selected excerpt — one comment per
-excerpt, marked on the quoted range and shown under the Markdown block it is
-about, removable — and the pending comments are
-composed into a `## Comments` Markdown section appended to the prompt the
-renderer sends, so durable history records what was actually asked. The composer
-mirrors Thread lifecycle state: a stopping, cancelled, or failed Thread is
-explained instead of accepting a prompt, and a prompt without a terminal event
-is shown as unanswered. The same durable event stream supplies
-the agent's reasoning, its tool calls, and the input another Thread wrote for it
-as chronological segments: a `Result from thread <name>` or `Task from thread
-<name>` row collapses to a label plus the child's status and expands to the
-sender's own words on the same monospace surface as tool payloads, verbatim
-rather than as Markdown, with the host's model-facing envelope removed and a
-deleted Thread falling back to its short id. A `Thinking`
-row and a `Call <tool>` row each toggle their payload from a chevron beside the
-label, and an expanded call shows `Input` and `Output` blocks on their own
-surface, with the result clamped behind `Show all`. Those secondary segments
-stay quieter than the answer through color alone, and the renderer keeps no
-second history. Agent text deltas and the grapheme-safe typewriter reveal remain
-separate states. The sidebar tree follows the selected Project's live
+event-derived conversation and a persistent header tab. The conversation surface is, for now, deliberately bare: the rendering of it is
+being rebuilt by hand. `useThreadChat` is the only reader of the durable event
+stream — it subscribes to the selected Thread, accumulates every event into one
+ordered log, projects that log into turns, and exposes both, the Thread's record
+and the send and rewind operations — and the surface itself is a plain input, a
+submit button and that log rendered verbatim as JSON, with no styling.
+`threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
+PostgreSQL Thread events remain the sole conversation-history source. Because that
+rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
+tool calls, delegated input or comments. The packaged CSP still permits fonts from
+`self` only, and the vendored Noto Serif stays in the repository for it. The sidebar tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh, while header tabs
 stay user-driven. Open-tab order and selection persist locally across app

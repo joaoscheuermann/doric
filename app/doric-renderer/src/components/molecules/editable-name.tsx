@@ -1,5 +1,5 @@
-import { messageFrom, nameError } from '@/app/workspace';
-import { cn } from '@/lib/utils';
+import { messageFrom, nameError } from '@/domain/workspace';
+import { cn } from '@/utility/utils';
 import { useEffect, useRef, useState } from 'react';
 
 type EditableNameProps = {

@@ -1,5 +1,3 @@
-import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react';
-
 import {
   type Project,
   type ProjectUpdate,
@@ -8,7 +6,8 @@ import {
   threadSubtreeIds,
   upsert,
   withoutThreadSubtree,
-} from './workspace';
+} from '@/domain/workspace';
+import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react';
 
 export type ProjectEventsOptions = {
   readonly projectId: string | undefined;

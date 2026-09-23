@@ -1,4 +1,4 @@
-import type { WorkspaceApi } from './app/workspace';
+import type { WorkspaceApi } from '@/domain/workspace';
 
 declare global {
   interface Window {

@@ -1,4 +1,4 @@
-import { connectionLabel } from '@/app/connection';
+import { connectionLabel } from '@/domain/connection';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
 
 export function WorkspaceSidebarFooter() {

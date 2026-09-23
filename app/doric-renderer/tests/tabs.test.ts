@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { Thread } from '../src/app/workspace';
-import { parseTabs, restoreTabs, serializeTabs } from '../src/chat/tabs';
+import { parseTabs, restoreTabs, serializeTabs } from '../src/domain/tabs';
+import type { Thread } from '../src/domain/workspace';
 
 const thread = (id: string): Thread => ({
   id,

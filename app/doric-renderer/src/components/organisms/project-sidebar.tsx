@@ -1,4 +1,5 @@
-import type { Draft, Entity, Project, Thread } from '@/app/workspace';
+import { EditableName } from '@/components/molecules/editable-name';
+import { InlineName } from '@/components/molecules/inline-name';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   ContextMenu,
@@ -24,6 +25,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
+import type { Draft, Entity, Project, Thread } from '@/domain/workspace';
 import { cn } from 'cn';
 import {
   AlertCircleIcon,
@@ -36,9 +38,6 @@ import {
   Trash2Icon,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-
-import { EditableName } from './editable-name';
-import { InlineName } from './inline-name';
 
 export type SidebarModel = {
   readonly draft?: Draft;

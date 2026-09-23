@@ -1,4 +1,3 @@
-import type { Entity } from '@/app/workspace';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import type { Entity } from '@/domain/workspace';
 
 type DeleteDialogProps = {
   readonly entity?: Entity;

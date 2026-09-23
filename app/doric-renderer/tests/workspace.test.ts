@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { connectionLabel } from '../src/app/connection';
+import { connectionLabel } from '../src/domain/connection';
 import {
   dropTargetFor,
   limitName,
@@ -13,7 +13,7 @@ import {
   threadSubtreeIds,
   upsert,
   withoutThreadSubtree,
-} from '../src/app/workspace';
+} from '../src/domain/workspace';
 
 const thread = (id: string, projectId: string): Thread => ({
   id,

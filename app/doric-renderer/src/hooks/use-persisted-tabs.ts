@@ -3,10 +3,9 @@ import {
   restoreTabs,
   serializeTabs,
   tabsStorageKey,
-} from '@/chat/tabs';
+} from '@/domain/tabs';
+import type { Thread } from '@/domain/workspace';
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
-
-import type { Thread } from './workspace';
 
 export type TabsOptions = {
   readonly isCurrent: () => boolean;

@@ -1,5 +1,4 @@
-import type { Thread } from '@/app/workspace';
-import { Conversation } from '@/chat/conversation';
+import { Conversation } from '@/components/organisms/conversation';
 import {
   Empty,
   EmptyDescription,
@@ -7,19 +6,18 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
+import type { Thread } from '@/domain/workspace';
 import { FileTextIcon } from 'lucide-react';
 
 export function ThreadPane({
   thread,
-  threadName,
 }: {
   readonly thread: Thread | undefined;
-  readonly threadName?: (id: string) => string | undefined;
 }) {
   return (
     <section aria-label="Thread conversation" className="flex min-h-0 flex-1">
       {thread ? (
-        <Conversation key={thread.id} thread={thread} threadName={threadName} />
+        <Conversation key={thread.id} thread={thread} />
       ) : (
         <Empty>
           <EmptyHeader>

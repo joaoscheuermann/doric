@@ -1,4 +1,4 @@
-import type { ConnectionStatus } from '@/app/connection';
+import type { ConnectionStatus } from '@/domain/connection';
 import { useSyncExternalStore } from 'react';
 
 const getSnapshot = (): ConnectionStatus => window.doric.connection.status();

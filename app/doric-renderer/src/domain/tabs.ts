@@ -1,4 +1,4 @@
-import type { Thread } from '@/app/workspace';
+import type { Thread } from '@/domain/workspace';
 
 export const tabsStorageKey = 'doric.tabs';
 

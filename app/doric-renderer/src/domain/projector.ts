@@ -1,4 +1,4 @@
-import type { ThreadEvent } from '@/app/workspace';
+import type { ThreadEvent } from '@/domain/workspace';
 
 import { type DelegatedInput, delegatedInput } from './delegated';
 

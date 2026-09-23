@@ -1,10 +1,14 @@
-import { type DropTarget, dropTargetFor, type Thread } from '@/app/workspace';
-import { EditableName } from '@/components/editable-name';
+import { EditableName } from '@/components/molecules/editable-name';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
+import {
+  type DropTarget,
+  dropTargetFor,
+  type Thread,
+} from '@/domain/workspace';
+import { cn } from '@/utility/utils';
 import { PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 

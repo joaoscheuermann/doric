@@ -7,7 +7,7 @@ import {
   shortId,
   threadLabel,
   withoutEnvelope,
-} from '../src/chat/delegated';
+} from '../src/domain/delegated';
 
 /** The envelope the host writes for a child result, taken from a real Thread. */
 const envelope = [
