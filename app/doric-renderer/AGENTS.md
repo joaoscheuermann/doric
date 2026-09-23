@@ -119,9 +119,13 @@ Two traps:
 - The test target does not clean `dist-tests`, so a test file you deleted keeps
   running from its stale build output. Remove `app/doric-renderer/dist-tests`
   after deleting one.
-- The dev server's type checker keeps a program cache across edits: after adding
-  a file it can report `TS6307 "not listed within the file list"` even though
-  `tsc` is clean and the `include` pattern is right. Restart the dev server.
+- The dev server's type checker keeps a program cache that outlives the files it
+  describes. When a module appears in the tree — you wrote it, or a merge brought
+  it in — it can report `TS6307 "not listed within the file list"` even though
+  `tsc` is clean and the `include` pattern is right, and it shows it as an overlay
+  that covers the application and swallows pointer input. Restart `npm run
+doric:dev` (and clear `node_modules/.cache` if it persists). `tsc` being happy
+  is not evidence that the checker is.
 
 ## Validate
 
