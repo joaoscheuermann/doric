@@ -2,9 +2,10 @@ import {
   emptyProjection,
   projectEvents,
   type PromptTurn,
+  sandboxWrites,
 } from '@/domain/projector';
 import { messageFrom, type Thread, type ThreadEvent } from '@/domain/workspace';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /** What a conversation surface needs from one Thread's chat. */
 export type ThreadChat = {
@@ -14,6 +15,11 @@ export type ThreadChat = {
   readonly events: readonly ThreadEvent[];
   /** The same log, projected into turns. */
   readonly turns: readonly PromptTurn[];
+  /**
+   * How many finished `write`, `edit` or `terminal` calls the log holds: the
+   * signal that the sandbox the Thread shares has changed.
+   */
+  readonly writes: number;
   /** A subscription failure, which the surface is expected to show. */
   readonly error: string | undefined;
   readonly sending: boolean;
@@ -110,10 +116,16 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     [record.id, send],
   );
 
+  const writes = useMemo(
+    () => sandboxWrites(projection.events),
+    [projection.events],
+  );
+
   return {
     thread: record,
     events: projection.events,
     turns: projection.turns,
+    writes,
     error,
     sending,
     sendError,

@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
+
 import express from 'express';
 
+import { registerHttpRoutes } from '../src/lib/http/app.js';
 import type {
   Page,
   Project,
   Thread,
   WorkspaceService,
 } from '../src/lib/workspace/types.js';
-import { registerHttpRoutes } from '../src/lib/http/app.js';
 
 const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
@@ -577,6 +578,20 @@ const serve = async (
           },
         };
       },
+      files: async () => ({ status: 'ready', path: '', entries: [] }),
+      file: async (_id, path) => ({
+        status: 'ready',
+        path,
+        content: '',
+        truncated: false,
+        binary: false,
+      }),
+      diff: async () => ({
+        status: 'ready',
+        repository: true,
+        diff: '',
+        changes: [],
+      }),
       ...overrides.projects,
     },
     threads: {

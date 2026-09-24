@@ -25,6 +25,65 @@ export type PromptReceipt = {
   readonly promptId: string;
 };
 
+/** A Project whose sandbox lease is not yet usable, or never will be. */
+export type ProjectLeaseState =
+  | 'missing'
+  | 'pending'
+  | 'expired'
+  | 'unavailable';
+
+export type ProjectFileEntry = {
+  readonly name: string;
+  readonly path: string;
+  readonly type: 'directory' | 'file';
+  readonly size?: number;
+};
+
+export type ProjectFileContent = {
+  readonly path: string;
+  readonly content: string;
+  readonly truncated: boolean;
+  readonly binary: boolean;
+};
+
+export type ProjectChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+
+export type ProjectChange = {
+  readonly path: string;
+  readonly status: ProjectChangeStatus;
+};
+
+export type ProjectDiff = {
+  readonly path?: string;
+  readonly repository: boolean;
+  readonly diff: string;
+  readonly changes: readonly ProjectChange[];
+};
+
+export type ProjectFilesResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectFileResult =
+  | { readonly status: 'ready'; readonly file: ProjectFileContent }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
 export const reasoningEfforts = [
   'none',
   'minimal',
@@ -193,6 +252,13 @@ export const messageFromErrorEnvelope = (value: unknown): string => {
   return error.message;
 };
 
+/** The error envelope's stable code, read beside the human message. */
+export const codeFromErrorEnvelope = (value: unknown): string | undefined => {
+  if (!isRecord(value) || !isRecord(value.error)) return undefined;
+  const code = value.error.code;
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+};
+
 const request = async <Value>(
   path: string,
   init?: RequestInit,
@@ -230,6 +296,206 @@ const request = async <Value>(
   } catch {
     throw new WorkspaceError('Doric returned an invalid response.');
   }
+};
+
+/**
+ * Every answer to a Project filesystem request, including the lease states the
+ * renderer renders instead of treating as failures.
+ */
+type ProjectAnswer =
+  | { readonly kind: 'ready'; readonly body: unknown }
+  | {
+      readonly kind: 'lease';
+      readonly state: ProjectLeaseState;
+      readonly retryAfterSeconds: number;
+    }
+  | { readonly kind: 'outcome'; readonly status: 'invalid_path' | 'not_found' };
+
+type ProjectOutcome = Exclude<ProjectAnswer, { kind: 'ready' }>;
+
+/** The shared non-ready arms every Project filesystem result carries. */
+const outcomeFrom = (
+  answer: ProjectOutcome,
+):
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' } => {
+  if (answer.kind === 'outcome') return { status: answer.status };
+  return answer.state === 'pending'
+    ? { status: 'pending', retryAfterSeconds: answer.retryAfterSeconds }
+    : { status: answer.state };
+};
+
+const retryAfterSeconds = (value: string | null): number => {
+  if (value === null || value.trim() === '') return 1;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : 1;
+};
+
+/**
+ * A status-aware request that returns the answer instead of throwing, so a
+ * pending or expired lease can reach the renderer as a state to render.
+ */
+const requestAnswer = async (
+  path: string,
+): Promise<{
+  readonly status: number;
+  readonly body: unknown;
+  readonly retryAfterSeconds: number;
+}> => {
+  let response: Response;
+  try {
+    response = await fetch(`${workspaceUrl}${path}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new WorkspaceError('Doric backend is unavailable.');
+  }
+
+  let body: unknown;
+  try {
+    body = response.status === 204 ? undefined : await response.json();
+  } catch {
+    throw new WorkspaceError('Doric returned an invalid response.');
+  }
+
+  return {
+    status: response.status,
+    body,
+    retryAfterSeconds: retryAfterSeconds(response.headers.get('Retry-After')),
+  };
+};
+
+const projectAnswer = (
+  status: number,
+  body: unknown,
+  seconds: number,
+): ProjectAnswer => {
+  switch (status) {
+    case 200:
+      return { kind: 'ready', body };
+    case 202:
+      return { kind: 'lease', state: 'pending', retryAfterSeconds: seconds };
+    case 409:
+      return {
+        kind: 'lease',
+        state: 'unavailable',
+        retryAfterSeconds: seconds,
+      };
+    case 410:
+      return { kind: 'lease', state: 'expired', retryAfterSeconds: seconds };
+    case 404:
+      return codeFromErrorEnvelope(body) === 'project_path_not_found'
+        ? { kind: 'outcome', status: 'not_found' }
+        : { kind: 'lease', state: 'missing', retryAfterSeconds: seconds };
+    case 422:
+      return { kind: 'outcome', status: 'invalid_path' };
+    default:
+      throw new WorkspaceError(messageFromErrorEnvelope(body), status);
+  }
+};
+
+const changeStatuses: readonly ProjectChangeStatus[] = [
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'untracked',
+];
+
+const fileEntryFrom = (value: unknown): ProjectFileEntry => {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== 'string' ||
+    typeof value.path !== 'string' ||
+    (value.type !== 'directory' && value.type !== 'file') ||
+    (value.size !== undefined && typeof value.size !== 'number')
+  ) {
+    return invalidResponse();
+  }
+  return value as ProjectFileEntry;
+};
+
+const fileContentFrom = (value: unknown): ProjectFileContent => {
+  if (
+    !isRecord(value) ||
+    typeof value.path !== 'string' ||
+    typeof value.content !== 'string' ||
+    typeof value.truncated !== 'boolean' ||
+    typeof value.binary !== 'boolean'
+  ) {
+    return invalidResponse();
+  }
+  return value as ProjectFileContent;
+};
+
+const changeFrom = (value: unknown): ProjectChange => {
+  if (
+    !isRecord(value) ||
+    typeof value.path !== 'string' ||
+    !changeStatuses.includes(value.status as ProjectChangeStatus)
+  ) {
+    return invalidResponse();
+  }
+  return { path: value.path, status: value.status as ProjectChangeStatus };
+};
+
+const diffFrom = (value: unknown): ProjectDiff => {
+  if (
+    !isRecord(value) ||
+    (value.path !== undefined && typeof value.path !== 'string') ||
+    typeof value.repository !== 'boolean' ||
+    typeof value.diff !== 'string' ||
+    !Array.isArray(value.changes)
+  ) {
+    return invalidResponse();
+  }
+  return {
+    ...(value.path === undefined ? {} : { path: value.path }),
+    repository: value.repository,
+    diff: value.diff,
+    changes: value.changes.map(changeFrom),
+  };
+};
+
+const filesResultFrom = (answer: ProjectAnswer): ProjectFilesResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  if (
+    !isRecord(answer.body) ||
+    typeof answer.body.path !== 'string' ||
+    !Array.isArray(answer.body.entries)
+  ) {
+    return invalidResponse();
+  }
+  return {
+    status: 'ready',
+    path: answer.body.path,
+    entries: answer.body.entries.map(fileEntryFrom),
+  };
+};
+
+const fileResultFrom = (answer: ProjectAnswer): ProjectFileResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  return { status: 'ready', file: fileContentFrom(answer.body) };
+};
+
+const diffResultFrom = (answer: ProjectAnswer): ProjectDiffResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  return { status: 'ready', diff: diffFrom(answer.body) };
+};
+
+/** A workspace-relative path as a query string; the root needs none. */
+const pathQuery = (value?: string): string =>
+  value === undefined || value === ''
+    ? ''
+    : `?path=${encodeURIComponent(value)}`;
+
+const answerAt = async (path: string): Promise<ProjectAnswer> => {
+  const response = await requestAnswer(path);
+  return projectAnswer(
+    response.status,
+    response.body,
+    response.retryAfterSeconds,
+  );
 };
 
 const id = (value: string): string => encodeURIComponent(value);
@@ -300,6 +566,29 @@ export const workspaceApi = {
   },
   projects: {
     list: () => allPages<Project>('/projects'),
+    /** Lists one workspace directory; an absent path names the root. */
+    files: async (
+      projectId: string,
+      path?: string,
+    ): Promise<ProjectFilesResult> =>
+      filesResultFrom(
+        await answerAt(`/projects/${id(projectId)}/files${pathQuery(path)}`),
+      ),
+    /** Reads one workspace file; an absent path names the root. */
+    file: async (projectId: string, path: string): Promise<ProjectFileResult> =>
+      fileResultFrom(
+        await answerAt(
+          `/projects/${id(projectId)}/files/content${pathQuery(path)}`,
+        ),
+      ),
+    /** Reads the workspace diff; an absent path names the root. */
+    diff: async (
+      projectId: string,
+      path?: string,
+    ): Promise<ProjectDiffResult> =>
+      diffResultFrom(
+        await answerAt(`/projects/${id(projectId)}/diff${pathQuery(path)}`),
+      ),
     create: (name: string) =>
       request<Project>('/projects', { method: 'POST', body: body({ name }) }),
     rename: (projectId: string, name: string) =>

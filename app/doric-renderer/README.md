@@ -99,6 +99,24 @@ The renderer has no direct network access to Doric. It uses the semantic
   Thread created by an agent appears in the sidebar without a reload. Header tabs
   stay user-driven: a live-created Thread is inserted after its siblings and is
   never opened as a tab.
+- The Project's sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files
+  tree and a Changes view. It belongs to the Project rather than to the selected
+  Thread, it only reads, and it holds every state a read can answer with —
+  `pending` with the host's retry hint, `expired`, `unavailable`, `missing`, a
+  refused path — as data, so an unusable sandbox is explained instead of failing.
+  The panel's tabs sit in its header in place of a title, its toggle stays at the
+  window's right corner whether the panel is expanded or collapsed (collapsed it
+  keeps a 3rem rail, so the control that reopens it never leaves the screen), and
+  its footer carries the open file's path — a chain too deep for that row
+  collapses its middle behind one trigger (`collapsedPath`) — with the file's byte
+  size and the one action the surface has.
+  `use-project-files.ts` owns the listings, the expansion, the open file and the
+  diff, and reads a directory only when it opens and the diff only when the
+  changes view is shown. There is no watcher: the panel re-reads on its own
+  refresh, and on `useThreadChat`'s `writes` growing, which counts the finished
+  `write`, `edit` and `terminal` calls in the Thread's log (`projector.ts`).
+  `domain/files.ts` holds the path rules, the diff classification and the
+  sentences the states show, and is covered by `tests/files.test.ts`.
 
 State that the live subscription and tab persistence own is isolated in
 `use-project-events.ts` and `use-persisted-tabs.ts`, which keeps `app.tsx` on the
@@ -114,6 +132,12 @@ Thread no longer exists. `ThreadUpdate` is a discriminated union with
 `project-updated`, `project-deleted`, and safe `error`. Both subscriptions share
 the Electron process's single Engine.IO connection.
 
+The sandbox surface reads through
+`projects.files(projectId, path)`, `projects.file(projectId, path)` and
+`projects.diff(projectId, path)`, where every path is workspace-relative and the
+empty one is the workspace root. Those results are typed next to `WorkspaceApi`
+in `domain/workspace.ts`, and a rejected call arrives as a thrown `Error`.
+
 ## Settings
 
 The settings modal is application-global, opened from the status line beside the
@@ -127,12 +151,13 @@ credential travels through the renderer.
 The host owns the configuration as a singleton with a revision, and the modal
 round-trips it: `window.doric.config.get()` seeds the draft when the dialog opens
 and `window.doric.config.update(configuration)` sends it back, returning the
-revision the host stored. Save is offered only when the draft differs from the
-host's copy and the host's own rules pass; a draft that would be refused is
-explained beside the button instead, because the same rules live in
-`src/domain/config.ts` and the host re-validates them. Closing the dialog discards
-an unsaved draft without a prompt, and a failed save keeps the draft and shows the
-host's message. Changing the execution model reaches new Projects only: a Project
+revision the host stored. There is no Save button — a change saves itself once
+typing settles (500 ms in `use-config.ts`), on a field blur, and on close, and
+the dialog's footer reports the revision, the update time and the save state
+instead of offering one. A draft the host would refuse is never sent and is
+explained above the section, because the same rules live in `src/domain/config.ts`
+and the host re-validates them; a failed save keeps the draft and shows the host's
+message. Changing the execution model reaches new Projects only: a Project
 keeps the configuration it was created with, and one already running keeps running
 as it was.
 

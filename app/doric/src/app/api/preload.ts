@@ -60,6 +60,60 @@ type Result<Value> =
   | { readonly ok: true; readonly value: Value }
   | { readonly ok: false; readonly error: string };
 
+type ProjectLeaseState = 'missing' | 'pending' | 'expired' | 'unavailable';
+
+type ProjectFileEntry = {
+  readonly name: string;
+  readonly path: string;
+  readonly type: 'directory' | 'file';
+  readonly size?: number;
+};
+
+type ProjectFileContent = {
+  readonly path: string;
+  readonly content: string;
+  readonly truncated: boolean;
+  readonly binary: boolean;
+};
+
+type ProjectChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+
+type ProjectChange = {
+  readonly path: string;
+  readonly status: ProjectChangeStatus;
+};
+
+type ProjectDiff = {
+  readonly path?: string;
+  readonly repository: boolean;
+  readonly diff: string;
+  readonly changes: readonly ProjectChange[];
+};
+
+type ProjectFilesResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+type ProjectFileResult =
+  | { readonly status: 'ready'; readonly file: ProjectFileContent }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+type ProjectDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
 const invoke = async <Value>(channel: string, ...args: unknown[]) => {
   const result = (await ipcRenderer.invoke(channel, ...args)) as Result<Value>;
   if (!result.ok) {
@@ -95,6 +149,12 @@ contextBridge.exposeInMainWorld('doric', {
   },
   projects: {
     list: () => invoke<readonly Project[]>('doric:projects:list'),
+    files: (projectId: string, path?: string) =>
+      invoke<ProjectFilesResult>('doric:projects:files', projectId, path),
+    file: (projectId: string, path: string) =>
+      invoke<ProjectFileResult>('doric:projects:file', projectId, path),
+    diff: (projectId: string, path?: string) =>
+      invoke<ProjectDiffResult>('doric:projects:diff', projectId, path),
     create: (name: string) => invoke<Project>('doric:projects:create', name),
     rename: (id: string, name: string) =>
       invoke<Project>('doric:projects:rename', id, name),

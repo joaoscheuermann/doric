@@ -1,8 +1,9 @@
 import type { ProviderMessage } from 'llms';
-import type { SandboxSshAccess } from 'sandbox';
+import type { SandboxEntry, SandboxSshAccess } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
+import type { ProjectChange } from './files.js';
 
 export type ProjectState =
   | 'queued'
@@ -89,13 +90,47 @@ export type InterruptResult =
   | 'missing'
   | 'inactive'
   | 'not_running';
+/** The lease-dependent outcomes every Project subresource can report. */
+export type ProjectLeaseState =
+  | 'missing'
+  | 'pending'
+  | 'unavailable'
+  | 'expired';
 export type ProjectSsh =
-  | { readonly status: 'pending' | 'unavailable' | 'expired' | 'missing' }
+  | { readonly status: ProjectLeaseState }
   | {
       readonly status: 'ready';
       readonly vmId: string;
       readonly ssh: SandboxSshAccess;
     };
+export type ProjectFiles =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly SandboxEntry[];
+    }
+  | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
+export type ProjectFile =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly content: string;
+      readonly truncated: boolean;
+      readonly binary: boolean;
+    }
+  | { readonly status: 'invalid_path' | 'not_found' | 'not_file' };
+export type ProjectDiff =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path?: string;
+      readonly repository: boolean;
+      readonly diff: string;
+      readonly changes: readonly ProjectChange[];
+    }
+  | { readonly status: 'invalid_path' | 'not_found' };
 
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
@@ -173,6 +208,9 @@ export interface WorkspaceService {
     terminate(id: string): Promise<Project | undefined>;
     delete(id: string): Promise<DeleteResult>;
     ssh(id: string): Promise<ProjectSsh>;
+    files(id: string, path?: string): Promise<ProjectFiles>;
+    file(id: string, path: string): Promise<ProjectFile>;
+    diff(id: string, path?: string): Promise<ProjectDiff>;
   };
   readonly threads: {
     create(

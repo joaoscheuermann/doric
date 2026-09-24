@@ -139,7 +139,14 @@ const session = (state: State): SandboxSession => ({
         ? (state.repoPath ?? state.root)
         : resolvePath(state.root, input.cwd);
 
-    return (await checked(state, { cmd: ['git', 'diff'], cwd })).stdout;
+    const paths = input.paths ?? [];
+
+    return (
+      await checked(state, {
+        cmd: ['git', 'diff', ...(paths.length === 0 ? [] : ['--', ...paths])],
+        cwd,
+      })
+    ).stdout;
   },
   ssh() {
     active(state);

@@ -8,7 +8,7 @@ export function WorkspaceSidebarFooter() {
     <div
       aria-hidden="true"
       data-slot="workspace-sidebar-footer"
-      className="h-6 shrink-0 border-t bg-sidebar"
+      className="h-8 shrink-0 border-t bg-sidebar"
     />
   );
 }
@@ -27,7 +27,7 @@ export function WorkspaceFooter({ onOpenSettings }: WorkspaceFooterProps) {
   return (
     <footer
       data-slot="workspace-footer"
-      className="flex h-6 shrink-0 items-center justify-end gap-1 border-t px-1 text-xs"
+      className="flex h-8 shrink-0 items-center justify-end gap-1 border-t px-2 text-xs"
     >
       <Button
         variant="ghost"

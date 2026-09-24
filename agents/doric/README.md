@@ -71,28 +71,31 @@ After a server restart, interrupted work is marked failed rather than resumed.
 
 ## REST API
 
-| Method    | Path                      | Success   | Purpose                                            |
-| --------- | ------------------------- | --------- | -------------------------------------------------- |
-| GET / PUT | `/config`                 | 200       | Read / replace credential-free configuration.      |
-| POST      | `/projects`               | 202       | Reserve an environment without a Thread or prompt. |
-| GET       | `/projects`               | 200       | List Projects.                                     |
-| GET       | `/projects/:id`           | 200       | Read public Project metadata.                      |
-| PATCH     | `/projects/:id`           | 200       | Rename a Project.                                  |
-| POST      | `/projects/:id/threads`   | 201       | Create a root or child Thread.                     |
-| GET       | `/projects/:id/threads`   | 200       | List Threads; optional `parentThreadId` filter.    |
-| GET       | `/projects/:id/ssh`       | 200 / 202 | Read private SSH access / wait for environment.    |
-| POST      | `/projects/:id/terminate` | 200       | Terminate the Project and its Threads.             |
-| DELETE    | `/projects/:id`           | 204       | Delete a terminal Project.                         |
-| GET       | `/threads/:id`            | 200       | Read public Thread metadata.                       |
-| PATCH     | `/threads/:id`            | 200       | Rename a Thread.                                   |
-| POST      | `/threads/:id/prompt`     | 202       | Enqueue human input; returns `promptId`.           |
-| POST      | `/threads/:id/rewind`     | 202       | Replace an earlier prompt and discard later turns. |
-| GET       | `/threads/:id/events`     | 200       | Replay durable events.                             |
-| POST      | `/threads/:id/interrupt`  | 200       | Interrupt the specified active prompt.             |
-| POST      | `/threads/:id/terminate`  | 200       | Terminate a Thread subtree.                        |
-| DELETE    | `/threads/:id`            | 204       | Delete a terminal subtree.                         |
-| GET       | `/vms`                    | 200       | List provisioned VM runtimes.                      |
-| GET       | `/vms/:id/ssh`            | 200       | Read SSH access associated with `projectId`.       |
+| Method    | Path                          | Success   | Purpose                                            |
+| --------- | ----------------------------- | --------- | -------------------------------------------------- |
+| GET / PUT | `/config`                     | 200       | Read / replace credential-free configuration.      |
+| POST      | `/projects`                   | 202       | Reserve an environment without a Thread or prompt. |
+| GET       | `/projects`                   | 200       | List Projects.                                     |
+| GET       | `/projects/:id`               | 200       | Read public Project metadata.                      |
+| PATCH     | `/projects/:id`               | 200       | Rename a Project.                                  |
+| POST      | `/projects/:id/threads`       | 201       | Create a root or child Thread.                     |
+| GET       | `/projects/:id/threads`       | 200       | List Threads; optional `parentThreadId` filter.    |
+| GET       | `/projects/:id/ssh`           | 200 / 202 | Read private SSH access / wait for environment.    |
+| GET       | `/projects/:id/files`         | 200 / 202 | List one workspace directory.                      |
+| GET       | `/projects/:id/files/content` | 200 / 202 | Read one workspace file as bounded text.           |
+| GET       | `/projects/:id/diff`          | 200 / 202 | Read the workspace Git diff and change list.       |
+| POST      | `/projects/:id/terminate`     | 200       | Terminate the Project and its Threads.             |
+| DELETE    | `/projects/:id`               | 204       | Delete a terminal Project.                         |
+| GET       | `/threads/:id`                | 200       | Read public Thread metadata.                       |
+| PATCH     | `/threads/:id`                | 200       | Rename a Thread.                                   |
+| POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.           |
+| POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns. |
+| GET       | `/threads/:id/events`         | 200       | Replay durable events.                             |
+| POST      | `/threads/:id/interrupt`      | 200       | Interrupt the specified active prompt.             |
+| POST      | `/threads/:id/terminate`      | 200       | Terminate a Thread subtree.                        |
+| DELETE    | `/threads/:id`                | 204       | Delete a terminal subtree.                         |
+| GET       | `/vms`                        | 200       | List provisioned VM runtimes.                      |
+| GET       | `/vms/:id/ssh`                | 200       | Read SSH access associated with `projectId`.       |
 
 Lists use `{ items, nextCursor? }`, with `limit` (1–100, default 50) and an
 exclusive UUID `cursor`. Page size does not limit total Projects or Threads.
@@ -146,6 +149,15 @@ truncated history; a `promptId` without a recorded turn in that Thread returns
 A stale interrupt returns `409 thread_not_running`, never cancelling a later
 execution. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
 pending, 409 when unavailable, and 410 when expired. SSH responses forbid caches.
+
+`GET /projects/:id/files`, `/files/content`, and `/diff` share those lease
+answers: `202` with `Retry-After: 1` while the environment is pending, `409`
+when unavailable, and `410` when expired. A workspace-relative `path` is
+normalised, resolved against the workspace root, and rejected with `422` when it
+escapes; a missing path is `404`. Content is capped at 256 KiB (`CONTENT_LIMIT_BYTES`)
+and reported with `truncated` and `binary` flags, so a binary file is never
+rendered as mangled text. A Git diff never contains untracked files, so the
+`changes` list supplies them alongside `diff`.
 
 The existing CLI now uses these operations:
 

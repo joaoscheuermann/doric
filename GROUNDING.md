@@ -96,10 +96,35 @@ footer shares that geometry
 and shows the Electron main process's Socket.IO connection status on the content
 side. The header names the selected Thread as a breadcrumb of its Project and
 the chain of Threads above it, and every part but the last selects what it
-names. A settings modal opened from the content footer edits the host's
-credential-free configuration — the configured providers, the execution model
-with its reasoning effort, and the execution turn limit — as a draft the user
-saves or discards, and it states plainly that a saved change applies to Projects
+names.
+
+A Project-scoped sandbox surface sits in a collapsible right-hand panel whose
+collapsed state is a narrow rail carrying its own toggle, so the one control that
+expands and collapses the panel stays at the window's right corner and never
+duplicates the sidebar's own toggle. It
+belongs to the selected Project rather than to the selected Thread, and it only
+reads: a Files tab shows the sandbox's directory tree and opens one file at a
+time in place of the tree, and a Changes tab shows the workspace Git diff with
+one row and one status badge per changed or untracked file. The tabs sit in the
+panel's header, in place of a title, and its footer carries the open file's path
+— a chain too deep for that row collapses its middle behind one trigger — the
+file's byte size, and the surface's only action, an explicit refresh. Directories
+are read
+when they are expanded and the diff only when the Changes tab is shown, because
+the sandbox belongs to the Project and may not be usable at all: a queued,
+failed or terminated Project explains itself — with the host's own retry hint
+when the lease is pending — instead of erroring. There is no filesystem watcher;
+the panel rereads on its own refresh, when the selected Project changes, and when
+the selected Thread's event stream reports a finished `write`, `edit` or
+`terminal` call, which is the signal that the agent changed the sandbox.
+
+A settings modal opened from the content footer edits the host's
+credential-free configuration — the configured providers as an editable table,
+the execution model with its reasoning effort, and the execution turn limit.
+There is no Save button: a valid change sends itself once typing settles, on a
+field blur, and on close, and the footer reports the revision and update time
+alongside the save state. The dialog states plainly that a saved change applies
+to Projects
 created afterwards, because a running Project keeps the configuration it had
 captured.
 
@@ -354,7 +379,13 @@ from `queued` to `failed`. Its capacity option is `maxSandboxes`, and a lease
 guards SSH access exactly as it guards other operations. `packages/sandbox` owns
 the provider-neutral
 `SandboxProvider` and `SandboxRuntime` boundary plus workspace, Git, file, diff,
-network-policy normalization, and disposed-session behavior. Every sandbox has
+network-policy normalization, and disposed-session behavior. It also owns the
+one implementation of the workspace visibility rules — root confinement,
+`.gitignore` handling with negation, hidden entries except `.agents`, and
+directories-first ordering — which the `/bundles/core` `tree` tool and Doric's
+Project file routes both consume, so neither can drift from the other; a scoped
+diff is expressed through `SandboxDiffInput.paths` rather than by callers
+building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
 effective egress requires IP-literal DNS. Doric explicitly provisions its agent
@@ -432,7 +463,15 @@ access, or reports unavailable or expired access after release. Private keys
 remain ephemeral provider-managed sandbox state and HTTP response data;
 provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
-HTTP responses prohibit caching. REST additionally owns `GET/PUT /config`,
+HTTP responses prohibit caching. The lease additionally backs three private
+Project subresources that prohibit caching and answer with the same lease
+states: `GET /projects/:id/files` lists one workspace directory, `GET
+/projects/:id/files/content` reads one workspace file up to a fixed byte cap
+with truncated/binary flags, and `GET /projects/:id/diff` returns the workspace
+Git diff together with a change list that includes untracked files. A
+workspace-relative path is normalised, resolved against the workspace root, and
+rejected when it escapes; the routes never log file content or diff bodies.
+REST additionally owns `GET/PUT /config`,
 named Project and Thread creation, rename through `PATCH`, cursor listing,
 detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
 rewind through `POST /threads/:id/rewind`, ordered event

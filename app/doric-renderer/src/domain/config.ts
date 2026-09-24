@@ -2,7 +2,7 @@
  * The credential-free configuration the host owns: the providers Doric may call,
  * the model execution uses, and how many turns one prompt may take. The host
  * re-validates every rule below and answers `422`, so this module's job is to
- * keep Save off and say why before a request leaves the renderer.
+ * say why a draft cannot be sent before a request leaves the renderer.
  */
 
 export const reasoningEfforts = [
@@ -140,7 +140,7 @@ const isSameProvider = (
 
 /**
  * Whether two configurations describe the same host state. The host owns the
- * configuration, so Save is offered only when the draft differs from the copy
+ * configuration, so a change is sent only when the draft differs from the copy
  * the host returned.
  */
 export const isSameConfiguration = (

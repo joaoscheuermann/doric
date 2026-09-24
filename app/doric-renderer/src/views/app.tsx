@@ -4,6 +4,7 @@ import {
   WorkspaceSidebarFooter,
 } from '@/components/molecules/workspace-footer';
 import { Conversation } from '@/components/organisms/conversation';
+import { ProjectFilesSidebar } from '@/components/organisms/project-files-sidebar';
 import {
   ProjectSidebar,
   type SidebarActions,
@@ -29,7 +30,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { FileTextIcon } from 'lucide-react';
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useCallback, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -40,6 +41,14 @@ export function App() {
   const workspace = useWorkspace();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { actions } = workspace;
+  // The sandbox panel, and the count of agent writes that tells it to reread
+  // what it shows: the Project owns the sandbox, the Thread only reports.
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [filesRevision, setFilesRevision] = useState(0);
+  const noteSandboxWrite = useCallback(
+    () => setFilesRevision((revision) => revision + 1),
+    [],
+  );
   const model: SidebarModel = {
     draft: workspace.draft,
     editing: workspace.editing,
@@ -85,6 +94,15 @@ export function App() {
         className="h-svh min-h-0 flex-col overflow-hidden"
       >
         <WorkspaceLayout
+          files={
+            <ProjectFilesSidebar
+              onToggle={() => setFilesOpen((open) => !open)}
+              open={filesOpen}
+              project={selectedProject}
+              revision={filesRevision}
+            />
+          }
+          filesOpen={filesOpen}
           footer={
             <WorkspaceFooter onOpenSettings={() => setSettingsOpen(true)} />
           }
@@ -96,6 +114,7 @@ export function App() {
               project={selectedProject}
             />
           }
+          onFilesOpenChange={setFilesOpen}
           sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
           sidebarFooter={<WorkspaceSidebarFooter />}
           sidebarHeader={<WorkspaceSidebarHeader />}
@@ -103,7 +122,11 @@ export function App() {
           <SidebarInset className="min-h-0">
             <ThreadPane>
               {selectedThread ? (
-                <Conversation key={selectedThread.id} thread={selectedThread} />
+                <Conversation
+                  key={selectedThread.id}
+                  onSandboxWrite={noteSandboxWrite}
+                  thread={selectedThread}
+                />
               ) : (
                 <Empty>
                   <EmptyHeader>

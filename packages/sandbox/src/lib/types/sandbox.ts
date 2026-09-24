@@ -123,7 +123,11 @@ export type CreateSandboxOptions = {
   readonly timeoutMs?: number;
 };
 
-export type SandboxDiffInput = { readonly cwd?: string };
+export type SandboxDiffInput = {
+  readonly cwd?: string;
+  /** Workspace-relative paths that scope the diff; the whole tree when omitted. */
+  readonly paths?: readonly string[];
+};
 
 export interface Sandbox {
   readonly id: string;

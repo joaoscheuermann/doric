@@ -35,10 +35,8 @@ type SettingsShellProps = {
   /** The id of the nav item whose section is showing. */
   readonly activeId: string;
   readonly children: ReactNode;
-  /** The actions under the scrolling content; the caller owns them. */
+  /** The facts and actions under the scrolling content; the caller owns them. */
   readonly footer: ReactNode;
-  /** Facts about the configuration, shown beside the breadcrumb when known. */
-  readonly meta?: ReactNode;
   readonly nav: readonly SettingsNavItem[];
   readonly onOpenChange: (open: boolean) => void;
   readonly onSelect: (id: string) => void;
@@ -49,14 +47,13 @@ type SettingsShellProps = {
 
 /**
  * The settings frame: a dialog holding a fixed nav, a breadcrumb over one
- * section, and a footer for the caller's actions. Nothing here knows which
- * sections exist or what they configure.
+ * section, and a footer for whatever the caller puts there. Nothing here knows
+ * which sections exist, what they configure, or what the footer carries.
  */
 export function SettingsShell({
   activeId,
   children,
   footer,
-  meta,
   nav,
   onOpenChange,
   onSelect,
@@ -75,7 +72,7 @@ export function SettingsShell({
             <SidebarContent>
               <SidebarGroup>
                 <SidebarGroupLabel>Settings</SidebarGroupLabel>
-                <SidebarMenu>
+                <SidebarMenu className="gap-1">
                   {nav.map((section) => {
                     const Icon = section.icon;
                     return (
@@ -106,14 +103,11 @@ export function SettingsShell({
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
-              {meta !== undefined && (
-                <div className="ml-auto text-xs text-muted-foreground">
-                  {meta}
-                </div>
-              )}
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-            <div className="shrink-0 border-t px-4 py-3">{footer}</div>
+            <div className="flex h-8 shrink-0 items-center border-t px-4">
+              {footer}
+            </div>
           </main>
         </SidebarProvider>
       </DialogContent>

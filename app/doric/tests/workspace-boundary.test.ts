@@ -10,6 +10,7 @@ import {
 import {
   name,
   prompt,
+  relativePath,
   senderIsAllowed,
   sequence,
 } from '../src/workspace/validation';
@@ -62,6 +63,30 @@ describe('workspace IPC validation', () => {
     assert.throws(() => prompt(' \n '), WorkspaceError);
     assert.throws(() => sequence(-1), WorkspaceError);
     assert.throws(() => sequence(1.5), WorkspaceError);
+  });
+
+  test('accepts a workspace-relative path and the workspace root', () => {
+    assert.equal(relativePath('src/workspace/api.ts'), 'src/workspace/api.ts');
+    assert.equal(relativePath(''), '');
+    assert.equal(relativePath(undefined), '');
+  });
+
+  test('rejects an absolute workspace path', () => {
+    assert.throws(() => relativePath('/etc/passwd'), WorkspaceError);
+  });
+
+  test('rejects a workspace path containing a parent segment', () => {
+    assert.throws(() => relativePath('../secrets'), WorkspaceError);
+    assert.throws(() => relativePath('src/../../secrets'), WorkspaceError);
+  });
+
+  test('rejects a workspace path containing a null character', () => {
+    assert.throws(() => relativePath('src/unsafe\0name'), WorkspaceError);
+  });
+
+  test('rejects a workspace path over 4096 characters', () => {
+    assert.equal(relativePath('a'.repeat(4096)).length, 4096);
+    assert.throws(() => relativePath('a'.repeat(4097)), WorkspaceError);
   });
 });
 
@@ -237,5 +262,208 @@ describe('Thread HTTP boundary', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+/** Stubs `fetch` with one answer and restores it afterwards. */
+const withAnswer = async <Value>(
+  answer: Response,
+  run: () => Promise<Value>,
+): Promise<Value> => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => answer;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+};
+
+describe('Project filesystem HTTP boundary', () => {
+  test('reads a directory, a file and a diff through the new routes', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), init });
+      if (requests.length === 1) {
+        return Response.json({
+          path: 'src',
+          entries: [
+            { name: 'a.ts', path: 'src/a.ts', type: 'file', size: 12 },
+            { name: 'sub', path: 'src/sub', type: 'directory' },
+          ],
+        });
+      }
+      if (requests.length === 2) {
+        return Response.json({
+          path: 'src/a.ts',
+          content: 'export {}',
+          truncated: false,
+          binary: false,
+        });
+      }
+      return Response.json({
+        repository: true,
+        diff: '@@ -1 +1 @@',
+        changes: [{ path: 'src/a.ts', status: 'modified' }],
+      });
+    };
+
+    try {
+      assert.deepEqual(await workspaceApi.projects.files('project-id', 'src'), {
+        status: 'ready',
+        path: 'src',
+        entries: [
+          { name: 'a.ts', path: 'src/a.ts', type: 'file', size: 12 },
+          { name: 'sub', path: 'src/sub', type: 'directory' },
+        ],
+      });
+      assert.deepEqual(
+        await workspaceApi.projects.file('project-id', 'src/a.ts'),
+        {
+          status: 'ready',
+          file: {
+            path: 'src/a.ts',
+            content: 'export {}',
+            truncated: false,
+            binary: false,
+          },
+        },
+      );
+      assert.deepEqual(await workspaceApi.projects.diff('project-id'), {
+        status: 'ready',
+        diff: {
+          repository: true,
+          diff: '@@ -1 +1 @@',
+          changes: [{ path: 'src/a.ts', status: 'modified' }],
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(
+      requests[0]?.url,
+      'http://127.0.0.1:3000/projects/project-id/files?path=src',
+    );
+    assert.equal(
+      requests[1]?.url,
+      'http://127.0.0.1:3000/projects/project-id/files/content?path=src%2Fa.ts',
+    );
+    assert.equal(
+      requests[2]?.url,
+      'http://127.0.0.1:3000/projects/project-id/diff',
+    );
+  });
+
+  test('omits the query entirely when the path names the workspace root', async () => {
+    const originalFetch = globalThis.fetch;
+    let url = '';
+    globalThis.fetch = async (input) => {
+      url = String(input);
+      return Response.json({ path: '', entries: [] });
+    };
+    try {
+      assert.deepEqual(await workspaceApi.projects.files('project-id'), {
+        status: 'ready',
+        path: '',
+        entries: [],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.equal(url, 'http://127.0.0.1:3000/projects/project-id/files');
+  });
+
+  test('reports a pending lease with the Retry-After delay', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { status: 'pending' },
+        { status: 202, headers: { 'Retry-After': '2' } },
+      ),
+      () => workspaceApi.projects.files('project-id'),
+    );
+
+    assert.deepEqual(result, { status: 'pending', retryAfterSeconds: 2 });
+  });
+
+  test('defaults the retry delay to one second when the header is absent', async () => {
+    const result = await withAnswer(
+      Response.json({ status: 'pending' }, { status: 202 }),
+      () => workspaceApi.projects.files('project-id'),
+    );
+
+    assert.deepEqual(result, { status: 'pending', retryAfterSeconds: 1 });
+  });
+
+  test('reports an expired lease', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { error: { code: 'project_path_expired', message: 'Expired.' } },
+        { status: 410 },
+      ),
+      () => workspaceApi.projects.diff('project-id'),
+    );
+
+    assert.deepEqual(result, { status: 'expired' });
+  });
+
+  test('reports an unavailable sandbox', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { error: { code: 'project_files_unavailable', message: 'Nope.' } },
+        { status: 409 },
+      ),
+      () => workspaceApi.projects.file('project-id', 'src/a.ts'),
+    );
+
+    assert.deepEqual(result, { status: 'unavailable' });
+  });
+
+  test('reports an unknown Project as missing', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { error: { code: 'project_not_found', message: 'Missing.' } },
+        { status: 404 },
+      ),
+      () => workspaceApi.projects.files('project-id'),
+    );
+
+    assert.deepEqual(result, { status: 'missing' });
+  });
+
+  test('reports an unknown workspace path as not found', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { error: { code: 'project_path_not_found', message: 'Missing.' } },
+        { status: 404 },
+      ),
+      () => workspaceApi.projects.file('project-id', 'src/nope.ts'),
+    );
+
+    assert.deepEqual(result, { status: 'not_found' });
+  });
+
+  test('reports an invalid workspace path', async () => {
+    const result = await withAnswer(
+      Response.json(
+        { error: { code: 'invalid_project_path', message: 'Invalid.' } },
+        { status: 422 },
+      ),
+      () => workspaceApi.projects.files('project-id', 'src/../etc'),
+    );
+
+    assert.deepEqual(result, { status: 'invalid_path' });
+  });
+
+  test('rejects a malformed ready answer', async () => {
+    await assert.rejects(
+      withAnswer(Response.json({ path: 'src', entries: 'not-an-array' }), () =>
+        workspaceApi.projects.files('project-id'),
+      ),
+      (error) =>
+        error instanceof WorkspaceError &&
+        error.message === 'Doric returned an invalid response.',
+    );
   });
 });

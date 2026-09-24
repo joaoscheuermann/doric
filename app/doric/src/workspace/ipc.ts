@@ -9,6 +9,7 @@ import {
   name,
   projectColor,
   prompt,
+  relativePath,
   senderIsAllowed,
   sequence,
 } from './validation';
@@ -61,6 +62,24 @@ export const registerWorkspaceHandlers = (
   ipcMain.handle(
     'doric:projects:list',
     safe(rendererUrl, workspaceApi.projects.list),
+  );
+  ipcMain.handle(
+    'doric:projects:files',
+    safe(rendererUrl, (value: unknown, path: unknown) =>
+      workspaceApi.projects.files(identifier(value), relativePath(path)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:projects:file',
+    safe(rendererUrl, (value: unknown, path: unknown) =>
+      workspaceApi.projects.file(identifier(value), relativePath(path)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:projects:diff',
+    safe(rendererUrl, (value: unknown, path: unknown) =>
+      workspaceApi.projects.diff(identifier(value), relativePath(path)),
+    ),
   );
   ipcMain.handle(
     'doric:projects:create',

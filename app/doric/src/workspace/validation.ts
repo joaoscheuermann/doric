@@ -6,6 +6,7 @@ import {
 } from './api';
 
 const maximumNameLength = 80;
+const maximumPathLength = 4096;
 const maximumIdentifierLength = 128;
 const maximumModelLength = 512;
 
@@ -87,6 +88,26 @@ export const projectColor = (value: unknown): string | undefined => {
 export const prompt = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new WorkspaceError('Enter a prompt before continuing.');
+  }
+  return value;
+};
+
+/**
+ * A workspace-relative path. `undefined` and `''` both name the workspace root
+ * and normalize to `''`, because a call without a path and a call for the root
+ * mean the same thing. The renderer is untrusted, so this is the first end of
+ * the two-end confinement; the host is the second.
+ */
+export const relativePath = (value: unknown): string => {
+  if (value === undefined) return '';
+  if (
+    typeof value !== 'string' ||
+    value.includes('\0') ||
+    value.length > maximumPathLength ||
+    value.startsWith('/') ||
+    value.split('/').includes('..')
+  ) {
+    throw new WorkspaceError('The workspace path is invalid.');
   }
   return value;
 };

@@ -130,6 +130,12 @@ export type WorkspaceApi = {
     setColor(id: string, color?: ProjectColor): Promise<Project>;
     terminate(id: string): Promise<Project>;
     delete(id: string): Promise<void>;
+    /** A directory of the Project's sandbox; `''` is the workspace root. */
+    files(projectId: string, path?: string): Promise<ProjectFilesResult>;
+    /** One file of the Project's sandbox, which the host may cut short. */
+    file(projectId: string, path: string): Promise<ProjectFileResult>;
+    /** The sandbox's diff against git, or the diff of one path inside it. */
+    diff(projectId: string, path?: string): Promise<ProjectDiffResult>;
     watch(
       projectId: string,
       listener: (update: ProjectUpdate) => void,
@@ -159,6 +165,73 @@ export type WorkspaceApi = {
     delete(id: string): Promise<void>;
   };
 };
+
+/**
+ * Why a Project's sandbox cannot be read. Each state is one the surface
+ * explains, so none of them is a thrown failure.
+ */
+export type ProjectLeaseState =
+  | 'missing'
+  | 'pending'
+  | 'expired'
+  | 'unavailable';
+
+/**
+ * The sandbox vocabulary: a directory's entries, one file's content, and the
+ * workspace diff a Project's Threads share. Every path is relative to the
+ * workspace root, which is the empty path.
+ */
+export type ProjectFileEntry = {
+  readonly name: string;
+  readonly path: string;
+  readonly type: 'directory' | 'file';
+  readonly size?: number;
+};
+
+export type ProjectFileContent = {
+  readonly path: string;
+  readonly content: string;
+  readonly truncated: boolean;
+  readonly binary: boolean;
+};
+
+export type ProjectChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+
+export type ProjectChange = {
+  readonly path: string;
+  readonly status: ProjectChangeStatus;
+};
+
+export type ProjectDiff = {
+  readonly path?: string;
+  readonly repository: boolean;
+  readonly diff: string;
+  readonly changes: readonly ProjectChange[];
+};
+
+export type ProjectFilesResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectFileResult =
+  | { readonly status: 'ready'; readonly file: ProjectFileContent }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
 
 export const threadsForProject = (
   threads: readonly Thread[],

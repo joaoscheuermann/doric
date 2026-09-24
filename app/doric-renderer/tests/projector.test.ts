@@ -5,6 +5,7 @@ import {
   emptyProjection,
   projectEvents,
   type PromptTurn,
+  sandboxWrites,
   type TextSegment,
   type ToolSegment,
 } from '../src/domain/projector';
@@ -427,5 +428,59 @@ describe('thread event projection', () => {
 
     assert.deepEqual(kinds(projection.turns[0]), []);
     assert.equal(answer(projection.turns[0]), '');
+  });
+});
+
+describe('sandbox writes in the log', () => {
+  const finished = (sequence: number, name: string): ThreadEvent =>
+    event(sequence, 'one', {
+      type: 'tool.finished',
+      call: call(`c${sequence}`, name),
+      record: { output: 'ok' },
+    });
+
+  test('counts the finished calls that can change the sandbox', () => {
+    assert.equal(
+      sandboxWrites([
+        finished(1, 'write'),
+        finished(2, 'edit'),
+        finished(3, 'terminal'),
+        finished(4, 'grep'),
+        finished(5, 'tree'),
+      ]),
+      3,
+    );
+  });
+
+  test('counts a call only once it has finished', () => {
+    assert.equal(
+      sandboxWrites([
+        event(1, 'one', {
+          type: 'tool.started',
+          call: call('c1', 'write'),
+        }),
+        event(2, 'one', {
+          type: 'tool.failed',
+          call: call('c1', 'write'),
+          error: { message: 'no' },
+        }),
+      ]),
+      0,
+    );
+  });
+
+  test('counts no write in a log that has none', () => {
+    assert.equal(
+      sandboxWrites([
+        event(1, 'one', {
+          type: 'prompt.accepted',
+          text: 'hi',
+          source: { kind: 'user' },
+        }),
+        event(2, 'one', { type: 'text.delta', delta: 'hello' }),
+      ]),
+      0,
+    );
+    assert.equal(sandboxWrites([]), 0);
   });
 });

@@ -1,13 +1,15 @@
 import { Button } from '@/components/ui/button';
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldTitle,
-} from '@/components/ui/field';
+import { FieldDescription, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   addProvider,
   type Configuration,
@@ -31,17 +33,37 @@ type ProviderRowProps = {
 };
 
 /**
- * One provider, edited in place. Credentials never travel through here: a row
- * names the environment variable that holds the key, not the key itself.
+ * One provider as a table row, edited in place. Credentials never travel
+ * through here: a cell names the environment variable that holds the key, not
+ * the key itself.
  */
 function ProviderRow({ index, onPatch, onRemove, provider }: ProviderRowProps) {
   const name = providerLabel(provider, index);
-  const id = (field: string) => `provider-${index}-${field}`;
 
   return (
-    <Field>
-      <div className="flex w-full items-center justify-between gap-2">
-        <FieldTitle>{name}</FieldTitle>
+    <TableRow>
+      <TableCell>
+        <Input
+          aria-label={`Id for ${name}`}
+          value={provider.id}
+          onChange={(event) => onPatch({ id: event.target.value })}
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          aria-label={`Base URL for ${name}`}
+          value={provider.baseUrl}
+          onChange={(event) => onPatch({ baseUrl: event.target.value })}
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          aria-label={`API key environment for ${name}`}
+          value={provider.apiKeyEnv}
+          onChange={(event) => onPatch({ apiKeyEnv: event.target.value })}
+        />
+      </TableCell>
+      <TableCell>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -50,46 +72,20 @@ function ProviderRow({ index, onPatch, onRemove, provider }: ProviderRowProps) {
         >
           <TrashIcon />
         </Button>
-      </div>
-      <FieldGroup className="gap-4">
-        <Field>
-          <FieldLabel htmlFor={id('id')}>Id</FieldLabel>
-          <Input
-            id={id('id')}
-            value={provider.id}
-            onChange={(event) => onPatch({ id: event.target.value })}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={id('base-url')}>Base URL</FieldLabel>
-          <Input
-            id={id('base-url')}
-            value={provider.baseUrl}
-            onChange={(event) => onPatch({ baseUrl: event.target.value })}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={id('api-key-env')}>
-            API key environment
-          </FieldLabel>
-          <Input
-            id={id('api-key-env')}
-            value={provider.apiKeyEnv}
-            onChange={(event) => onPatch({ apiKeyEnv: event.target.value })}
-          />
-          <FieldDescription>
-            The variable Doric reads the key from, such as OPENAI_API_KEY.
-          </FieldDescription>
-        </Field>
-      </FieldGroup>
-    </Field>
+      </TableCell>
+    </TableRow>
   );
 }
 
 /**
- * The providers the host may call. Each row is patched and removed by position,
- * which is the only identity a row has before its id is typed; the domain owns
- * what each edit does to the configuration.
+ * The providers the host may call, as an editable table. Each row is patched
+ * and removed by position, which is the only identity a row has before its id
+ * is typed; the domain owns what each edit does to the configuration.
+ *
+ * The table is the vendored `Table` primitive, not the TanStack-backed
+ * data-table stack: this list is a handful of rows with no sorting, filtering
+ * or pagination, so TanStack would add a runtime dependency to the Electron
+ * bundle for nothing. Interactive columns are the reason to reach for it.
  */
 export function SettingsProviders({ draft, onChange }: SettingsProvidersProps) {
   return (
@@ -98,15 +94,29 @@ export function SettingsProviders({ draft, onChange }: SettingsProvidersProps) {
         Every provider Doric may call. A row names the environment variable that
         holds its API key, so no credential is stored in this configuration.
       </FieldDescription>
-      {draft.providers.map((provider, index) => (
-        <ProviderRow
-          key={index}
-          index={index}
-          provider={provider}
-          onPatch={(patch) => onChange(updateProvider(draft, index, patch))}
-          onRemove={() => onChange(removeProvider(draft, index))}
-        />
-      ))}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Id</TableHead>
+            <TableHead>Base URL</TableHead>
+            <TableHead>API key environment</TableHead>
+            <TableHead className="w-10">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {draft.providers.map((provider, index) => (
+            <ProviderRow
+              key={index}
+              index={index}
+              provider={provider}
+              onPatch={(patch) => onChange(updateProvider(draft, index, patch))}
+              onRemove={() => onChange(removeProvider(draft, index))}
+            />
+          ))}
+        </TableBody>
+      </Table>
       <Separator />
       <Button
         variant="outline"

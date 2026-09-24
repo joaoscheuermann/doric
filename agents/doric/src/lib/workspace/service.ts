@@ -1,27 +1,38 @@
 import type { Logger } from 'pino';
+
+import { listSandboxDirectory, type Sandbox, workspacePathKind } from 'sandbox';
 import type { Sandpool } from 'sandpool';
 
-import type { ConfigService } from '../config/service.js';
 import { runDirectPrompt } from '../agents/direct/executor.js';
+import type { ConfigService } from '../config/service.js';
 import { randomProjectColor } from './colors.js';
+import { projectChanges, readProjectFile } from './files.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
-  subtreeIds,
   type ProjectRuntime,
+  subtreeIds,
   type ThreadExecution,
 } from './runtime.js';
 import {
   isTerminal,
+  type Project,
+  type ProjectDiff,
+  type ProjectFile,
+  type ProjectFiles,
+  type ProjectSsh,
   type ProjectStore,
   type ThreadStore,
   type WorkspacePublisher,
   type WorkspaceService,
-  type Project,
-  type ProjectSsh,
 } from './types.js';
 
 export type { ThreadExecution } from './runtime.js';
+
+/** The lease-dependent answer a Project subresource can give before its value. */
+type LeaseOutcome<Value> =
+  | { readonly status: 'missing' | 'pending' | 'unavailable' | 'expired' }
+  | { readonly status: 'ready'; readonly value: Value };
 
 type Options = {
   readonly projects: ProjectStore;
@@ -140,7 +151,16 @@ export const createWorkspaceService = ({
       });
     }
   };
-  const ssh = async (id: string): Promise<ProjectSsh> => {
+  /**
+   * Resolves a Project lease for one operation, so every lease-dependent
+   * subresource reports missing/pending/unavailable/expired identically. The
+   * closing check runs again after the operation, because disposal may have
+   * started or the lease may have been dropped while it ran.
+   */
+  const withLease = async <Value>(
+    id: string,
+    operation: (sandbox: Sandbox) => Promise<Value>,
+  ): Promise<LeaseOutcome<Value>> => {
     const runtime = runtimes.get(id);
     if (runtime === undefined) {
       const record = await projects.find(id);
@@ -155,13 +175,76 @@ export const createWorkspaceService = ({
     }
     if (runtime.closing) return { status: 'unavailable' };
     if (runtime.lease === undefined) return { status: 'pending' };
-    const access = await runtime.lease.sandbox.ssh();
-    // Disposal may have started during the provider call.
+    const value = await operation(runtime.lease.sandbox);
+    // Disposal may have started during the operation.
     if (runtime.closing || runtime.lease === undefined)
       return { status: 'unavailable' };
-    return access === undefined
+    return { status: 'ready', value };
+  };
+  const ssh = async (id: string): Promise<ProjectSsh> => {
+    const outcome = await withLease(id, async (sandbox) => ({
+      vmId: sandbox.id,
+      ssh: await sandbox.ssh(),
+    }));
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    return outcome.value.ssh === undefined
       ? { status: 'unavailable' }
-      : { status: 'ready', vmId: runtime.lease.sandbox.id, ssh: access };
+      : { status: 'ready', vmId: outcome.value.vmId, ssh: outcome.value.ssh };
+  };
+  const files = async (id: string, path?: string): Promise<ProjectFiles> => {
+    const outcome = await withLease(id, (sandbox) =>
+      listSandboxDirectory(sandbox, { path: path ?? '' }),
+    );
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    if (outcome.value.status === 'listed')
+      return {
+        status: 'ready',
+        path: outcome.value.path,
+        entries: outcome.value.entries,
+      };
+    if (outcome.value.status === 'missing') return { status: 'not_found' };
+    // `invalid_exclude` and `excluded_root` are unreachable: no excludes are sent.
+    return {
+      status:
+        outcome.value.status === 'not_directory'
+          ? 'not_directory'
+          : 'invalid_path',
+    };
+  };
+  const file = async (id: string, path: string): Promise<ProjectFile> => {
+    const outcome = await withLease(id, (sandbox) =>
+      readProjectFile(sandbox, path),
+    );
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    if (outcome.value.status === 'read')
+      return {
+        status: 'ready',
+        path,
+        content: outcome.value.content,
+        truncated: outcome.value.truncated,
+        binary: outcome.value.binary,
+      };
+    if (outcome.value.status === 'missing') return { status: 'not_found' };
+    return {
+      status: outcome.value.status === 'not_file' ? 'not_file' : 'invalid_path',
+    };
+  };
+  const diff = async (id: string, path?: string): Promise<ProjectDiff> => {
+    const outcome = await withLease(id, async (sandbox) => {
+      if (path !== undefined) {
+        const kind = await workspacePathKind(sandbox, path);
+        if (kind === 'escaped') return { status: 'invalid_path' as const };
+        if (kind === 'missing') return { status: 'not_found' as const };
+      }
+      const changes = await projectChanges(sandbox, path);
+      return {
+        status: 'ready' as const,
+        ...(path === undefined ? {} : { path }),
+        ...changes,
+      };
+    });
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    return outcome.value;
   };
   const changeProject = (
     id: string,
@@ -228,6 +311,9 @@ export const createWorkspaceService = ({
           return outcome;
         }),
       ssh,
+      files,
+      file,
+      diff,
     },
     threads: {
       create: (projectId, name, parentThreadId) =>
