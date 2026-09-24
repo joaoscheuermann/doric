@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
+import { projectColors } from '../lib/workspace/colors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
 import {
   conflict,
@@ -12,6 +13,9 @@ import {
 } from './workspace-input.js';
 
 const projectInput = z.object({ name: nameInput }).strict();
+const projectColorInput = z
+  .object({ color: z.enum([...projectColors]).nullable() })
+  .strict();
 const createInput = z
   .object({ name: nameInput, parentThreadId: z.uuid().optional() })
   .strict();
@@ -61,6 +65,27 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
     const project = await service.projects.rename(
       request.params.id,
       input.data.name,
+    );
+    if (project === undefined) {
+      missing(response, 'project');
+      return;
+    }
+    response.json(project);
+  });
+  router.patch('/:id/color', async (request, response) => {
+    const input = projectColorInput.safeParse(request.body ?? {});
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_project_color',
+        'A Project color from the palette, or null, is required.',
+      );
+      return;
+    }
+    const project = await service.projects.setColor(
+      request.params.id,
+      input.data.color ?? undefined,
     );
     if (project === undefined) {
       missing(response, 'project');

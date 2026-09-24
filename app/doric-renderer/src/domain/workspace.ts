@@ -1,8 +1,39 @@
 import type { ConnectionApi } from './connection';
 
+/**
+ * The colors a Project can be marked with. The vocabulary is the host's; this
+ * module also says how each one paints, so no surface invents a color name and
+ * an unassigned Project stays absent rather than falling back to a default.
+ */
+export const projectColors = [
+  'red',
+  'orange',
+  'amber',
+  'green',
+  'teal',
+  'blue',
+  'violet',
+  'pink',
+] as const;
+
+export type ProjectColor = (typeof projectColors)[number];
+
+/** The fill each palette color gives the Project's mark. */
+export const projectColorSwatch: Record<ProjectColor, string> = {
+  red: 'bg-red-500',
+  orange: 'bg-orange-500',
+  amber: 'bg-amber-500',
+  green: 'bg-green-500',
+  teal: 'bg-teal-500',
+  blue: 'bg-blue-500',
+  violet: 'bg-violet-500',
+  pink: 'bg-pink-500',
+};
+
 export type Project = {
   readonly id: string;
   readonly name: string;
+  readonly color?: ProjectColor;
   readonly state: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -85,6 +116,8 @@ export type WorkspaceApi = {
     list(): Promise<readonly Project[]>;
     create(name: string): Promise<Project>;
     rename(id: string, name: string): Promise<Project>;
+    /** Assigns a palette color, or clears it when none is named. */
+    setColor(id: string, color?: ProjectColor): Promise<Project>;
     terminate(id: string): Promise<Project>;
     delete(id: string): Promise<void>;
     watch(

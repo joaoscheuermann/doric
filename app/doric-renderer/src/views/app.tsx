@@ -61,6 +61,7 @@ export function App() {
     rename: actions.rename,
     selectProject: actions.selectProject,
     selectThread: actions.selectThread,
+    setProjectColor: actions.setProjectColor,
     startRename: actions.startRename,
   };
   const { selectedThread } = workspace;

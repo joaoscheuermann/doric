@@ -18,6 +18,7 @@ import {
   type Entity,
   messageFrom,
   type Project,
+  type ProjectColor,
   type Thread,
 } from '@/domain/workspace';
 import { useEffect, useRef, useState } from 'react';
@@ -39,6 +40,7 @@ export type WorkspaceActions = {
   readonly requestDelete: (entity: Entity) => void;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
+  readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
   readonly startRename: (entity: Entity) => void;
 };
 
@@ -311,6 +313,21 @@ export const useWorkspace = (): Workspace => {
     }
   };
 
+  const setProjectColor = async (
+    project: Project,
+    color?: ProjectColor,
+  ): Promise<void> => {
+    const key = `projects:color:${project.id}`;
+    const sequence = nextMutation(key);
+    try {
+      const updated = await window.doric.projects.setColor(project.id, color);
+      if (!mutationIsCurrent(key, sequence)) return;
+      setTree((current) => withProject(current, updated));
+    } catch (reason) {
+      failed(reason);
+    }
+  };
+
   const confirmDelete = async (): Promise<void> => {
     if (deleting === undefined) return;
     const entity = deleting;
@@ -371,6 +388,7 @@ export const useWorkspace = (): Workspace => {
     requestDelete: setDeleting,
     selectProject,
     selectThread,
+    setProjectColor,
     startRename: (entity) => {
       intent.current += 1;
       setDraft(undefined);

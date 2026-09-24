@@ -5,6 +5,7 @@ const pageLimit = 100;
 export type Project = {
   readonly id: string;
   readonly name: string;
+  readonly color?: string;
   readonly state: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -199,6 +200,12 @@ export const workspaceApi = {
       request<Project>(`/projects/${id(projectId)}`, {
         method: 'PATCH',
         body: body({ name }),
+      }),
+    /** Assigns a palette color, or clears it when none is named. */
+    setColor: (projectId: string, color?: string) =>
+      request<Project>(`/projects/${id(projectId)}/color`, {
+        method: 'PATCH',
+        body: body({ color: color ?? null }),
       }),
     terminate: (projectId: string) =>
       request<Project>(`/projects/${id(projectId)}/terminate`, {

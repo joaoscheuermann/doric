@@ -16,6 +16,7 @@ import {
   type ThreadStore,
   type WorkspacePublisher,
   type WorkspaceService,
+  type Project,
   type ProjectSsh,
 } from './types.js';
 
@@ -161,6 +162,19 @@ export const createWorkspaceService = ({
       ? { status: 'unavailable' }
       : { status: 'ready', vmId: runtime.lease.sandbox.id, ssh: access };
   };
+  const changeProject = (
+    id: string,
+    change: () => Promise<Project | undefined>,
+  ) =>
+    exclusive(id, async () => {
+      const value = await change();
+      if (value !== undefined) {
+        const runtime = runtimes.get(id);
+        if (runtime !== undefined) runtime.project = value;
+        publisher.projectUpdated(value);
+      }
+      return value;
+    });
   return {
     projects: {
       create: (name) =>
@@ -187,16 +201,9 @@ export const createWorkspaceService = ({
         }),
       find: async (id) => (await projects.find(id))?.project,
       list: (limit, cursor) => projects.list(limit, cursor),
-      rename: (id, name) =>
-        exclusive(id, async () => {
-          const value = await projects.rename(id, name);
-          if (value !== undefined) {
-            const runtime = runtimes.get(id);
-            if (runtime !== undefined) runtime.project = value;
-            publisher.projectUpdated(value);
-          }
-          return value;
-        }),
+      rename: (id, name) => changeProject(id, () => projects.rename(id, name)),
+      setColor: (id, color) =>
+        changeProject(id, () => projects.setColor(id, color)),
       terminate: (id) =>
         exclusive(id, async () => {
           const runtime = runtimes.get(id);

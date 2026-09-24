@@ -1,6 +1,7 @@
 import { DraftName } from '@/components/molecules/draft-name';
 import { EditableName } from '@/components/molecules/editable-name';
 import { ItemContextMenu } from '@/components/molecules/item-context-menu';
+import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import { RowAddAction } from '@/components/molecules/row-add-action';
 import {
   ThreadBranches,
@@ -26,14 +27,15 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { threadLevel } from '@/domain/thread-tree';
-import type { Draft, Entity, Project, Thread } from '@/domain/workspace';
+import type {
+  Draft,
+  Entity,
+  Project,
+  ProjectColor,
+  Thread,
+} from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import {
-  AlertCircleIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  PlusIcon,
-} from 'lucide-react';
+import { AlertCircleIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 
 export type SidebarModel = {
@@ -60,6 +62,7 @@ export type SidebarActions = {
   readonly rename: (entity: Entity, name: string) => Promise<void>;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
+  readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
   readonly startRename: (entity: Entity) => void;
 };
 
@@ -146,12 +149,16 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                 const expanded =
                   model.selectedProjectId === project.id &&
                   !collapsed.has(projectKey(project.id));
-                const ProjectIcon = expanded ? FolderOpenIcon : FolderIcon;
 
                 return (
                   <SidebarMenuItem key={project.id} className="w-full">
                     <ItemContextMenu
                       addLabel="New thread"
+                      color={{
+                        onSelect: (color) =>
+                          actions.setProjectColor(project, color),
+                        value: project.color,
+                      }}
                       deleteLabel="Delete project"
                       onAdd={() => {
                         expand(projectKey(project.id));
@@ -186,7 +193,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                               }
                             }}
                           >
-                            <ProjectIcon />
+                            <ProjectAvatar color={project.color} />
                             <EditableName
                               editing={
                                 model.editing?.kind === 'project' &&

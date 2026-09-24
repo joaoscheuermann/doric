@@ -2,6 +2,18 @@ import { WorkspaceError } from './api';
 
 const maximumNameLength = 80;
 
+/** The palette the host accepts; a client only ever names one of these. */
+const projectColors = [
+  'red',
+  'orange',
+  'amber',
+  'green',
+  'teal',
+  'blue',
+  'violet',
+  'pink',
+] as const;
+
 export const senderIsAllowed = (
   senderUrl: string | undefined,
   rendererUrl: string,
@@ -30,6 +42,18 @@ export const identifier = (value: unknown): string => {
     throw new WorkspaceError('The item identifier is invalid.');
   }
 
+  return value;
+};
+
+/** A palette color, or undefined when the color is being cleared. */
+export const projectColor = (value: unknown): string | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (
+    typeof value !== 'string' ||
+    !(projectColors as readonly string[]).includes(value)
+  ) {
+    throw new WorkspaceError('Choose a color from the palette.');
+  }
   return value;
 };
 

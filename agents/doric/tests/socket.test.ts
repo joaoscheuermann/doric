@@ -398,6 +398,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     create: unsupported,
     list: async () => ({ items: [project] }),
     rename: unsupported,
+    setColor: unsupported,
     setState: unsupported,
     delete: unsupported,
     reconcile: unsupported,

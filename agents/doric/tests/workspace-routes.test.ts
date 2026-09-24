@@ -136,6 +136,57 @@ test('accepts names containing up to 80 Unicode code points', async (t) => {
   }
 });
 
+test('assigns and clears a Project color from the fixed palette', async (t) => {
+  const host = await serve({
+    projects: {
+      setColor: async (id, color) =>
+        id === projectId
+          ? { ...project, ...(color === undefined ? {} : { color }) }
+          : undefined,
+    },
+  });
+  t.after(host.close);
+  const assigned = await host.request(`/projects/${projectId}/color`, 'PATCH', {
+    color: 'teal',
+  });
+  assert.equal(assigned.status, 200);
+  assert.equal(((await assigned.json()) as Project).color, 'teal');
+  const cleared = await host.request(`/projects/${projectId}/color`, 'PATCH', {
+    color: null,
+  });
+  assert.equal(cleared.status, 200);
+  assert.equal('color' in ((await cleared.json()) as Project), false);
+});
+
+test('rejects colors outside the palette and missing Projects', async (t) => {
+  const host = await serve({
+    projects: {
+      setColor: async (id) => (id === projectId ? project : undefined),
+    },
+  });
+  t.after(host.close);
+  for (const body of [
+    {},
+    { color: 'chartreuse' },
+    { color: 7 },
+    { color: 'red', extra: 1 },
+  ]) {
+    assert.equal(
+      (await host.request(`/projects/${projectId}/color`, 'PATCH', body))
+        .status,
+      422,
+    );
+  }
+  assert.equal(
+    (
+      await host.request(`/projects/${promptId}/color`, 'PATCH', {
+        color: 'red',
+      })
+    ).status,
+    404,
+  );
+});
+
 test('renames Projects and Threads with normalized names', async (t) => {
   const host = await serve({
     projects: {
@@ -335,6 +386,7 @@ test('rejects invalid project and thread IDs before handling resource operations
       [
         ['GET', ''],
         ['PATCH', ''],
+        ['PATCH', '/color'],
         ['DELETE', ''],
         ['GET', '/ssh'],
         ['GET', '/threads'],
@@ -504,6 +556,10 @@ const serve = async (
       list: async () => ({ items: [project] }),
       rename: async (id, name) =>
         id === projectId ? { ...project, name } : undefined,
+      setColor: async (id, color) =>
+        id === projectId
+          ? { ...project, ...(color === undefined ? {} : { color }) }
+          : undefined,
       terminate: async () => ({ ...project, state: 'cancelled' }),
       delete: async () => 'active',
       ssh: async (id) => {

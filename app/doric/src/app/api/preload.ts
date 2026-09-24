@@ -14,6 +14,7 @@ import {
 type Project = {
   readonly id: string;
   readonly name: string;
+  readonly color?: string;
   readonly state: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -66,6 +67,8 @@ contextBridge.exposeInMainWorld('doric', {
     create: (name: string) => invoke<Project>('doric:projects:create', name),
     rename: (id: string, name: string) =>
       invoke<Project>('doric:projects:rename', id, name),
+    setColor: (id: string, color?: string) =>
+      invoke<Project>('doric:projects:set-color', id, color),
     terminate: (id: string) => invoke<Project>('doric:projects:terminate', id),
     delete: (id: string) => invoke<void>('doric:projects:delete', id),
     watch: (projectId: string, listener: (update: ProjectUpdate) => void) => {

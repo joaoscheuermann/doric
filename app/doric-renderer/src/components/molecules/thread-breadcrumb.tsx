@@ -1,3 +1,4 @@
+import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -7,8 +8,8 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import type { Project, Thread } from '@/domain/workspace';
-import { FolderIcon, type LucideIcon, MessageSquareIcon } from 'lucide-react';
-import { Fragment } from 'react';
+import { MessageSquareIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 
 type ThreadBreadcrumbProps = {
   readonly onSelectProject: (project: Project) => void;
@@ -18,28 +19,37 @@ type ThreadBreadcrumbProps = {
   readonly project?: Project;
 };
 
-/** A crumb's mark and name: the icon says Project or Thread, the name truncates. */
+/**
+ * A crumb's mark and name. The mark carries the color or the kind; the name is
+ * the part that truncates when the path runs long.
+ */
 function CrumbLabel({
-  icon: Icon,
+  mark,
   name,
 }: {
-  readonly icon: LucideIcon;
+  readonly mark: ReactNode;
   readonly name: string;
 }) {
   return (
     <>
-      <Icon className="size-3.5 shrink-0" />
+      {mark}
       <span className="truncate">{name}</span>
     </>
   );
+}
+
+/** A Thread's mark: the same bubble its sidebar row carries. */
+function ThreadMark() {
+  return <MessageSquareIcon className="size-3.5 shrink-0" />;
 }
 
 /**
  * The selected Thread named by where it sits: its Project, then each ancestor
  * Thread, ending on the Thread itself. Every part but the last selects what it
  * names, so the path doubles as navigation; with no Thread selected the Project
- * is the last part. Each crumb carries the mark the sidebar gives its kind. It
- * derives nothing — the Project and the path arrive whole through props.
+ * is the last part. Each crumb carries the mark the sidebar gives its kind: a
+ * Project shows its color, a Thread its bubble. It derives nothing — the Project
+ * and the path arrive whole through props.
  */
 export function ThreadBreadcrumb({
   onSelectProject,
@@ -59,7 +69,10 @@ export function ThreadBreadcrumb({
           (current === undefined ? (
             <BreadcrumbItem>
               <BreadcrumbPage className="flex max-w-48 items-center gap-2">
-                <CrumbLabel icon={FolderIcon} name={project.name} />
+                <CrumbLabel
+                  mark={<ProjectAvatar color={project.color} />}
+                  name={project.name}
+                />
               </BreadcrumbPage>
             </BreadcrumbItem>
           ) : (
@@ -70,7 +83,10 @@ export function ThreadBreadcrumb({
                   onClick={() => onSelectProject(project)}
                   className="flex max-w-48 items-center gap-2"
                 >
-                  <CrumbLabel icon={FolderIcon} name={project.name} />
+                  <CrumbLabel
+                    mark={<ProjectAvatar color={project.color} />}
+                    name={project.name}
+                  />
                 </button>
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -85,7 +101,7 @@ export function ThreadBreadcrumb({
                   onClick={() => onSelectThread(thread)}
                   className="flex max-w-48 items-center gap-2"
                 >
-                  <CrumbLabel icon={MessageSquareIcon} name={thread.name} />
+                  <CrumbLabel mark={<ThreadMark />} name={thread.name} />
                 </button>
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -96,7 +112,7 @@ export function ThreadBreadcrumb({
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbPage className="flex max-w-48 items-center gap-2">
-                <CrumbLabel icon={MessageSquareIcon} name={current.name} />
+                <CrumbLabel mark={<ThreadMark />} name={current.name} />
               </BreadcrumbPage>
             </BreadcrumbItem>
           </>

@@ -1,6 +1,7 @@
 import type { Project as StoredProject } from '../../generated/prisma/client.js';
 import type { DoricConfig } from '../config/schema.js';
 import type { Database } from '../database.js';
+import { isProjectColor } from './colors.js';
 import type { Project, ProjectStore } from './types.js';
 import {
   before,
@@ -56,6 +57,16 @@ export const createProjectStore = (database: Database): ProjectStore => ({
     const result = await database.project.updateMany({
       where: { id },
       data: { name },
+    });
+    if (result.count === 0) return undefined;
+    const stored = await database.project.findUnique({ where: { id } });
+    return stored === null ? undefined : project(stored);
+  },
+
+  async setColor(id, color) {
+    const result = await database.project.updateMany({
+      where: { id },
+      data: { color: color ?? null },
     });
     if (result.count === 0) return undefined;
     const stored = await database.project.findUnique({ where: { id } });
@@ -121,6 +132,8 @@ export const createProjectStore = (database: Database): ProjectStore => ({
 const project = (stored: StoredProject): Project => ({
   id: stored.id,
   name: stored.name,
+  // Only the vocabulary this host writes ever reaches a client.
+  ...(isProjectColor(stored.color) ? { color: stored.color } : {}),
   state: states[stored.state],
   configRevision: stored.configRevision,
   ...timestamps(stored),

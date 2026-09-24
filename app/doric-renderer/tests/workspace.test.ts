@@ -5,6 +5,8 @@ import { connectionLabel } from '../src/domain/connection';
 import {
   limitName,
   nameError,
+  projectColors,
+  projectColorSwatch,
   type Thread,
   threadsForProject,
   threadSubtreeIds,
@@ -91,6 +93,18 @@ describe('workspace state helpers', () => {
       withoutThreadSubtree(values, root.id).map(({ id }) => id),
       ['sibling'],
     );
+  });
+});
+
+describe('project colors', () => {
+  test('paints every palette color and nothing else', () => {
+    assert.deepEqual(
+      Object.keys(projectColorSwatch).sort(),
+      [...projectColors].sort(),
+    );
+    for (const color of projectColors) {
+      assert.ok(projectColorSwatch[color].length > 0);
+    }
   });
 });
 

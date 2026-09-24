@@ -2,6 +2,7 @@ import type { ProviderMessage } from 'llms';
 import type { SandboxSshAccess } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
+import type { ProjectColor } from './colors.js';
 
 export type ProjectState =
   | 'queued'
@@ -13,6 +14,7 @@ export type ThreadState = ProjectState | 'running';
 export type Project = {
   readonly id: string;
   readonly name: string;
+  readonly color?: ProjectColor;
   readonly state: ProjectState;
   readonly configRevision: number;
   readonly errorCode?: string;
@@ -101,6 +103,10 @@ export interface ProjectStore {
   find(id: string): Promise<ProjectRecord | undefined>;
   list(limit: number, cursor?: string): Promise<Page<Project>>;
   rename(id: string, name: string): Promise<Project | undefined>;
+  setColor(
+    id: string,
+    color: ProjectColor | undefined,
+  ): Promise<Project | undefined>;
   setState(
     id: string,
     state: ProjectState,
@@ -156,6 +162,10 @@ export interface WorkspaceService {
     find(id: string): Promise<Project | undefined>;
     list(limit: number, cursor?: string): Promise<Page<Project>>;
     rename(id: string, name: string): Promise<Project | undefined>;
+    setColor(
+      id: string,
+      color: ProjectColor | undefined,
+    ): Promise<Project | undefined>;
     terminate(id: string): Promise<Project | undefined>;
     delete(id: string): Promise<DeleteResult>;
     ssh(id: string): Promise<ProjectSsh>;

@@ -161,6 +161,8 @@ Regras aprovadas:
   versão, validado também na persistência, impede ciclos e reparenting.
 - Projects e Threads têm nomes persistidos, aparados, sem NUL e com 1 a 80
   caracteres Unicode. Criação exige nome; rename preserva identidade e estado.
+- Um Project pode receber uma cor de uma paleta fixa do host; atribuir ou
+  limpar a cor não altera nome, identidade nem lifecycle.
 - Não há campo de controlador exclusivo nem tabelas Agent/Subagent.
 - Cada Thread mantém seu próprio histórico. Filhas recebem tarefa e contexto
   explícitos, sem cópia automática do histórico inteiro do pai.
@@ -276,6 +278,7 @@ usa `cancelling -> cancelled`; falha terminal de infraestrutura usa failed.
 | ------------------------- | ----------------------------------------- |
 | `/projects`               | Criar e listar Projects                   |
 | `/projects/:id`           | Consultar, renomear e excluir Project     |
+| `/projects/:id/color`     | Atribuir ou limpar a cor do Project       |
 | `/projects/:id/terminate` | Encerrar Project                          |
 | `/projects/:id/ssh`       | Consultar acesso efêmero do sandbox       |
 | `/projects/:id/threads`   | Criar e listar Threads do Project         |
@@ -286,7 +289,8 @@ usa `cancelling -> cancelled`; falha terminal de infraestrutura usa failed.
 | `/threads/:id/terminate`  | Encerrar Thread e subárvore               |
 
 Excluir Project terminal usa `DELETE /projects/:id`. Criação de Project e
-Thread exige um nome; `PATCH` renomeia sem alterar o lifecycle. O corpo de
+Thread exige um nome; `PATCH` renomeia sem alterar o lifecycle, e
+`PATCH /projects/:id/color` atribui ou limpa a cor do Project. O corpo de
 criação de Thread pode indicar um pai pertencente ao mesmo Project. Uma rota
 pública não deve aceitar origem privilegiada arbitrária no corpo.
 

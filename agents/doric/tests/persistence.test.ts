@@ -437,11 +437,12 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming and checkpoint migrations', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, and color migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
     '20260827000000_add_thread_checkpoints',
+    '20260923000000_add_project_color',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -469,6 +470,11 @@ test('ships the baseline followed by the incremental naming and checkpoint migra
     checkpoints,
     /ADD COLUMN "checkpoints" JSONB NOT NULL DEFAULT '\{\}';/u,
   );
+  const color = await readFile(
+    `${migrationDirectory}/20260923000000_add_project_color/migration.sql`,
+    'utf8',
+  );
+  assert.match(color, /ADD COLUMN "color" TEXT;/u);
 });
 
 test(

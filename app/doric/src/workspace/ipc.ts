@@ -6,6 +6,7 @@ import type { ProjectEventService } from './project-events';
 import {
   identifier,
   name,
+  projectColor,
   prompt,
   senderIsAllowed,
   sequence,
@@ -60,6 +61,15 @@ export const registerWorkspaceHandlers = (
     'doric:projects:rename',
     safe(rendererUrl, (value: unknown, nextName: unknown) =>
       workspaceApi.projects.rename(identifier(value), name(nextName)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:projects:set-color',
+    safe(rendererUrl, (value: unknown, nextColor: unknown) =>
+      workspaceApi.projects.setColor(
+        identifier(value),
+        projectColor(nextColor),
+      ),
     ),
   );
   ipcMain.handle(

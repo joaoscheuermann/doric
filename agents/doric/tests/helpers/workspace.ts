@@ -58,6 +58,14 @@ export const workspace = () => {
       notify();
       return project;
     },
+    setColor: async (id, color) => {
+      const record = projectRecords.get(id);
+      if (!record) return undefined;
+      const project = { ...record.project, color };
+      projectRecords.set(id, { ...record, project });
+      notify();
+      return project;
+    },
     setState: async (id, state, errorCode) => {
       const record = projectRecords.get(id);
       if (!record) return undefined;

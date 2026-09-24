@@ -68,6 +68,7 @@ model ModelConfiguration {
 model Project {
   id             String       @id @default(uuid()) @db.Uuid
   name           String
+  color          String?
   state          ProjectState @default(QUEUED)
   configRevision Int          @map("config_revision")
   configSnapshot Json         @map("config_snapshot") @db.JsonB

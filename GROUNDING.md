@@ -60,8 +60,9 @@ connection.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
-Projects and recursive Threads, supports inline create and rename, and exposes
-context actions for create, lifecycle-aware delete, and copying Thread IDs.
+Projects and recursive Threads, supports inline create and rename, marks each
+Project with a color chosen from a fixed palette, and exposes context actions
+for create, color, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. Selecting a Thread opens its durable
 event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
@@ -428,7 +429,7 @@ ordering between Threads; Project reconnection refreshes its snapshot and tree.
 and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
 PostgreSQL stores the singleton configuration, normalized provider/model rows,
-Project names and configuration snapshots, Thread names, parentage and
+Project names, colors and configuration snapshots, Thread names, parentage and
 provider-ready message history, and ordered JSONB Thread events. Before 1.0,
 approved schema changes may be consolidated into the clean Project/Thread
 baseline rather than retained as incremental migrations. Existing incompatible

@@ -1,3 +1,4 @@
+import { ProjectColorMenu } from '@/components/molecules/project-color-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -6,22 +7,29 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import type { ProjectColor } from '@/domain/workspace';
 import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 type ItemContextMenuProps = {
   readonly addLabel: string;
   readonly children: ReactNode;
+  /** Present only where the row owns a color, so thread rows omit the section. */
+  readonly color?: {
+    readonly onSelect: (color?: ProjectColor) => void;
+    readonly value?: ProjectColor;
+  };
   readonly deleteLabel: string;
   readonly onAdd: () => void;
   readonly onCopyId?: () => void;
   readonly onDelete: () => void;
 };
 
-/** The add/copy/delete menu wrapped around a project or thread row. */
+/** The add/copy/color/delete menu wrapped around a project or thread row. */
 export function ItemContextMenu({
   addLabel,
   children,
+  color,
   deleteLabel,
   onAdd,
   onCopyId,
@@ -43,6 +51,12 @@ export function ItemContextMenu({
             </ContextMenuItem>
           )}
         </ContextMenuGroup>
+        {color && (
+          <>
+            <ContextMenuSeparator />
+            <ProjectColorMenu onSelect={color.onSelect} value={color.value} />
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem variant="destructive" onSelect={onDelete}>
