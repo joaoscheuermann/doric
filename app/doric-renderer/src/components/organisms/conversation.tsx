@@ -13,6 +13,12 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import {
+  $getRoot,
+  DecoratorNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+} from 'lexical';
+import {
   AlertCircle,
   Check,
   ChevronDown,
@@ -20,13 +26,6 @@ import {
   Send,
   Wrench,
 } from 'lucide-react';
-import {
-  $getRoot,
-  DecoratorNode,
-  type NodeKey,
-  type LexicalEditor,
-  type SerializedLexicalNode,
-} from 'lexical';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 const statusLabel: Record<PromptStatus, string> = {
@@ -317,9 +316,8 @@ class ComposerNode extends DecoratorNode<ReactNode> {
       node.__key,
     );
   }
-  static override importJSON(
-    serializedNode: SerializedLexicalNode,
-  ): ComposerNode {
+  /** Nothing about this node survives serialization, so nothing is read. */
+  static override importJSON(): ComposerNode {
     return new ComposerNode(
       '',
       () => undefined,
@@ -536,7 +534,7 @@ const lexicalTheme = {
 const initialEditorConfig = {
   namespace: 'DoricConversation',
   nodes: [TurnNode, DraftNode, ComposerNode, ToolCallNode],
-  onError(error: Error, _editor: LexicalEditor) {
+  onError(error: Error) {
     throw error;
   },
   theme: lexicalTheme,
