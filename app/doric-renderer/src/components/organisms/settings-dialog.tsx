@@ -1,3 +1,4 @@
+import { SettingsCredentials } from '@/components/organisms/settings-credentials';
 import { SettingsExecution } from '@/components/organisms/settings-execution';
 import { SettingsProviders } from '@/components/organisms/settings-providers';
 import {
@@ -6,15 +7,21 @@ import {
 } from '@/components/templates/settings-shell';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { updatedAtLabel } from '@/domain/config';
+import { type Configuration, updatedAtLabel } from '@/domain/config';
 import { type Config, useConfig } from '@/hooks/use-config';
-import { AlertCircleIcon, ServerIcon, ZapIcon } from 'lucide-react';
+import {
+  AlertCircleIcon,
+  KeyRoundIcon,
+  ServerIcon,
+  ZapIcon,
+} from 'lucide-react';
 import { useState } from 'react';
 
 /** The sections this modal offers, in the order the nav lists them. */
 const sections = [
   { icon: ServerIcon, id: 'providers', label: 'Providers' },
   { icon: ZapIcon, id: 'execution', label: 'Execution' },
+  { icon: KeyRoundIcon, id: 'credentials', label: 'Credentials' },
 ] as const satisfies readonly SettingsNavItem[];
 
 type SectionId = (typeof sections)[number]['id'];
@@ -55,6 +62,29 @@ function saveState(
     return { destructive: false, text: 'Saved' };
   }
   return undefined;
+}
+
+/**
+ * The active section's own surface. The nav and this switch name the same ids,
+ * so a section is one nav entry and one case here.
+ */
+function Section({
+  draft,
+  id,
+  onChange,
+}: {
+  readonly draft: Configuration;
+  readonly id: SectionId;
+  readonly onChange: (next: Configuration) => void;
+}) {
+  switch (id) {
+    case 'providers':
+      return <SettingsProviders draft={draft} onChange={onChange} />;
+    case 'execution':
+      return <SettingsExecution draft={draft} onChange={onChange} />;
+    case 'credentials':
+      return <SettingsCredentials draft={draft} onChange={onChange} />;
+  }
 }
 
 /**
@@ -120,10 +150,8 @@ export function SettingsDialog({ onOpenChange, open }: SettingsDialogProps) {
         )}
         {draft === undefined ? (
           config.loading && <SectionSkeleton />
-        ) : current.id === 'providers' ? (
-          <SettingsProviders draft={draft} onChange={config.setDraft} />
         ) : (
-          <SettingsExecution draft={draft} onChange={config.setDraft} />
+          <Section draft={draft} id={current.id} onChange={config.setDraft} />
         )}
       </div>
     </SettingsShell>

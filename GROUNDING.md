@@ -119,14 +119,19 @@ the selected Thread's event stream reports a finished `write`, `edit` or
 `terminal` call, which is the signal that the agent changed the sandbox.
 
 A settings modal opened from the content footer edits the host's
-credential-free configuration — the configured providers as an editable table,
-the execution model with its reasoning effort, and the execution turn limit.
-There is no Save button: a valid change sends itself once typing settles, on a
-field blur, and on close, and the footer reports the revision and update time
-alongside the save state. The dialog states plainly that a saved change applies
-to Projects
-created afterwards, because a running Project keeps the configuration it had
-captured.
+configuration — the configured providers as an editable table, the execution
+model with its reasoning effort, the execution turn limit, and a Credentials
+section whose one block today is GitHub: the username and email the agent's git
+commands commit with, and a token. That token is the single secret this
+configuration holds, and it is write-only: the host answers whether it holds one
+and never the token, so the field always starts empty and an empty field keeps
+what is stored. Absent means leave alone, `null` means remove and a value means
+set, for the block and for the token alike, so no caller can delete a stored
+credential by omitting it. There is no Save button: a valid change sends itself
+once typing settles, on a field blur, and on close, and the footer reports the
+revision and update time alongside the save state. The dialog states plainly
+that a saved change applies to Projects created afterwards, because a running
+Project keeps the configuration it had captured.
 
 ### Project And Thread Contract
 
@@ -531,7 +536,15 @@ diagnostics, causes, or thrown values.
 Configuration, Project, and Thread routes remain unauthenticated on the existing
 `0.0.0.0` listener. Provider base URLs and credential environment names are
 intentionally configurable through the open PUT, so deployments must keep this
-listener on an isolated trusted network. Agent events intentionally expose
+listener on an isolated trusted network. That stored configuration is
+credential-free except for the one GitHub token it keeps for its operator:
+`PUT /config` is the only way to write it, `GET /config` answers `hasToken` in
+its place, and the host redacts the value from events, logs, and Thread replay
+instead of handing it to a tool. That GitHub block follows one rule in the open
+PUT — absent leaves it alone, `null` removes it, a value sets it — so no caller
+deletes the token by omission. The token therefore also travels in the
+captured configuration snapshot of every Project created after it was saved,
+where it stays inside the host. Agent events intentionally expose
 reasoning, provider replay, tool input/output, results, and serialized errors;
 configured credential values are redacted before persistence. Event bodies are
 never written to operational logs.
@@ -800,9 +813,11 @@ Keep tool behavior behind explicit, typed, testable interfaces. Do not add host
 command execution, network access, filesystem mutation, credential handling,
 persistence, or session behavior without explicit scope and validation.
 
-Credentials and secrets must not be persisted, printed, logged, or committed.
-Prefer dependency injection and explicit configuration objects for sensitive
-runtime inputs.
+Credentials and secrets must not be persisted, printed, logged, or committed,
+with one explicitly approved exception: the singleton configuration stores the
+GitHub token as its single secret, write-only over the API, redacted from events
+and logs, and kept out of tool payloads. Prefer dependency injection and
+explicit configuration objects for sensitive runtime inputs.
 
 Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
 `queued` to `ready` after sandbox acquisition; Threads wait for their Project

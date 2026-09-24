@@ -62,12 +62,13 @@ export function SettingsShell({
 }: SettingsShellProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[36rem] max-h-[85vh] overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="h-[44rem] max-h-[90vh] overflow-hidden p-0 sm:max-w-5xl">
         <DialogTitle className="sr-only">{title} settings</DialogTitle>
         <DialogDescription className="sr-only">
-          Configure how Doric runs prompts. Changes are saved to the host.
+          Configure the providers, execution and credentials Doric uses. Changes
+          are saved to the host.
         </DialogDescription>
-        <SidebarProvider className="items-start">
+        <SidebarProvider className="h-full min-h-0 items-start">
           <Sidebar collapsible="none" className="hidden md:flex">
             <SidebarContent>
               <SidebarGroup>
@@ -91,7 +92,7 @@ export function SettingsShell({
               </SidebarGroup>
             </SidebarContent>
           </Sidebar>
-          <main className="flex h-[36rem] max-h-[85vh] flex-1 flex-col overflow-hidden">
+          <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             {/* The dialog's own close button sits over the header's right edge. */}
             <header className="flex h-12 shrink-0 items-center gap-2 border-b pr-10 pl-4">
               <Breadcrumb>

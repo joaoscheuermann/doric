@@ -3,12 +3,24 @@ import test from 'node:test';
 import { pino } from 'pino';
 
 import {
+  createGeneration,
+  type Generation,
+} from '../src/lib/config/generation.js';
+import {
+  type ConfigInput,
   ConfigInputSchema,
+  type ConfigUpdate,
   defaultConfig,
   type DoricConfig,
+  publicConfig,
 } from '../src/lib/config/schema.js';
-import { createConfigService } from '../src/lib/config/service.js';
-import type { Generation } from '../src/lib/config/generation.js';
+import {
+  type ConfigService,
+  createConfigService,
+} from '../src/lib/config/service.js';
+import { eventJson } from '../src/lib/events/serialization.js';
+
+const identity = { username: 'octocat', email: 'octocat@example.com' };
 
 test('accepts the complete default configuration', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
@@ -52,6 +64,151 @@ test('rejects duplicate provider identifiers', () => {
   const invalid = structuredClone(defaultConfig);
   invalid.providers.push(structuredClone(invalid.providers[0]!));
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+test('accepts a GitHub identity with and without a token', () => {
+  const cases = [{ ...identity }, { ...identity, token: 'ghp_stored' }];
+
+  cases.forEach((github) => {
+    assert.equal(
+      ConfigInputSchema.safeParse({ ...defaultConfig, github }).success,
+      true,
+    );
+  });
+});
+
+test('rejects an invalid GitHub username, email, or token', () => {
+  const cases = [
+    { username: '', email: identity.email },
+    { username: 'a'.repeat(129), email: identity.email },
+    { username: identity.username, email: 'not-an-address' },
+    { username: identity.username, email: identity.email, token: '' },
+    {
+      username: identity.username,
+      email: identity.email,
+      token: 'line\nbreak',
+    },
+    {
+      username: identity.username,
+      email: identity.email,
+      token: 'x'.repeat(513),
+    },
+  ];
+
+  cases.forEach((github) => {
+    assert.equal(
+      ConfigInputSchema.safeParse({ ...defaultConfig, github }).success,
+      false,
+    );
+  });
+});
+
+test('rejects a GitHub block without both public identity fields', () => {
+  assert.equal(
+    ConfigInputSchema.safeParse({
+      ...defaultConfig,
+      github: { email: identity.email, token: 'ghp_stored' },
+    }).success,
+    false,
+  );
+});
+
+test('answers the public view of a configured snapshot without its token', () => {
+  const token = 'ghp_stored';
+  const view = publicConfig(snapshot(withGithub({ ...identity, token }), 3));
+
+  assert.deepEqual(view.configuration.github, { ...identity, hasToken: true });
+  assert.equal(JSON.stringify(view).includes(token), false);
+});
+
+test('reports a public-only GitHub identity without a token', () => {
+  const view = publicConfig(snapshot(withGithub({ ...identity }), 3));
+
+  assert.deepEqual(view.configuration.github, { ...identity, hasToken: false });
+});
+
+test('omits the GitHub block from the public view when it was never configured', () => {
+  const view = publicConfig(snapshot(defaultConfig, 1));
+
+  assert.equal('github' in view.configuration, false);
+});
+
+test('keeps the stored GitHub token when a replacement omits or nulls it', async () => {
+  const harness = await configHarness({
+    initial: withGithub({ ...identity, token: 'ghp_stored' }),
+  });
+
+  await harness.service.replace(update({ ...identity }));
+  assert.deepEqual(storedGithub(harness.service), {
+    ...identity,
+    token: 'ghp_stored',
+  });
+
+  await harness.service.replace(update({ ...identity, token: null }));
+  assert.deepEqual(storedGithub(harness.service), {
+    ...identity,
+    token: 'ghp_stored',
+  });
+});
+
+test('keeps the stored GitHub identity when a replacement omits the block', async () => {
+  const harness = await configHarness({
+    initial: withGithub({ ...identity, token: 'ghp_stored' }),
+  });
+
+  await harness.service.replace(update());
+  assert.deepEqual(storedGithub(harness.service), {
+    ...identity,
+    token: 'ghp_stored',
+  });
+});
+
+test('removes the stored GitHub block when a replacement nulls it', async () => {
+  const harness = await configHarness({
+    initial: withGithub({ ...identity, token: 'ghp_stored' }),
+  });
+
+  await harness.service.replace(update(null));
+  assert.equal(storedGithub(harness.service), undefined);
+});
+
+test('replaces a stored GitHub token and clears it on an empty string', async () => {
+  const harness = await configHarness({
+    initial: withGithub({ ...identity, token: 'ghp_stored' }),
+  });
+
+  await harness.service.replace(
+    update({ ...identity, token: 'ghp_replacement' }),
+  );
+  assert.deepEqual(storedGithub(harness.service), {
+    ...identity,
+    token: 'ghp_replacement',
+  });
+
+  await harness.service.replace(update({ ...identity, token: '' }));
+  assert.deepEqual(storedGithub(harness.service), { ...identity });
+});
+
+test('redacts the configured GitHub token from event values', async () => {
+  const token = 'ghp_stored';
+  const generation = await createGeneration({
+    snapshot: snapshot(withGithub({ ...identity, token }), 1),
+    bundles: [],
+    logger: pino({ enabled: false }),
+    environment: {},
+  });
+  const unconfigured = await createGeneration({
+    snapshot: snapshot(defaultConfig, 1),
+    bundles: [],
+    logger: pino({ enabled: false }),
+    environment: {},
+  });
+
+  assert.equal(generation.redactions().includes(token), true);
+  assert.equal(unconfigured.redactions().includes(token), false);
+  assert.deepEqual(eventJson({ output: token }, generation.redactions()), {
+    output: '[REDACTED]',
+  });
 });
 
 test('serializes concurrent replacements in request order', async () => {
@@ -110,12 +267,14 @@ test('keeps the active generation when persistent replacement fails', async () =
 });
 
 type ConfigHarnessOptions = {
+  readonly initial?: ConfigInput;
   readonly blockedBuild?: string;
   readonly failedBuild?: string;
   readonly failedWrite?: string;
 };
 
 const configHarness = async ({
+  initial = defaultConfig,
   blockedBuild,
   failedBuild,
   failedWrite,
@@ -127,8 +286,8 @@ const configHarness = async ({
     releaseBuild = resolve;
   });
   const store = {
-    load: async () => snapshot(defaultConfig, revision),
-    replace: async (configuration: typeof defaultConfig) => {
+    load: async () => snapshot(initial, revision),
+    replace: async (configuration: ConfigInput) => {
       const model = configuration.models.execution.model;
       if (model === failedWrite) throw new Error('store unavailable');
       writes.push(model);
@@ -161,8 +320,24 @@ const configured = (model: string) => {
   return config;
 };
 
+const withGithub = (
+  github: NonNullable<ConfigInput['github']>,
+): ConfigInput => ({
+  ...structuredClone(defaultConfig),
+  github,
+});
+
+const update = (github?: ConfigUpdate['github']): ConfigUpdate => ({
+  ...configured('replacement'),
+  ...(github === undefined ? {} : { github }),
+});
+
+/** The GitHub block the service most recently persisted. */
+const storedGithub = (service: ConfigService) =>
+  service.current().snapshot.configuration.github;
+
 const snapshot = (
-  configuration: typeof defaultConfig,
+  configuration: ConfigInput,
   revision: number,
 ): DoricConfig => ({
   configuration,

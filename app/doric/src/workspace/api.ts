@@ -111,6 +111,34 @@ export type Configuration = {
     };
   };
   readonly execution: { readonly maxTurns: number };
+  /** Absent when GitHub was never configured. */
+  readonly github?: GitHubConfiguration;
+};
+
+/**
+ * GitHub as the host answers it: whether a token is stored, never the token.
+ * A host that answered with one would have it dropped by `configurationFrom`,
+ * so a token cannot reach the renderer even by mistake.
+ */
+export type GitHubConfiguration = {
+  readonly username: string;
+  readonly email: string;
+  readonly hasToken: boolean;
+};
+
+/**
+ * The GitHub block a `PUT /config` sends. A token replaces the stored one,
+ * `null` or no key keeps it, and `''` clears it.
+ */
+export type GitHubInput = {
+  readonly username: string;
+  readonly email: string;
+  readonly token?: string | null;
+};
+
+/** The configuration a `PUT /config` replaces the host's copy with. */
+export type ConfigurationInput = Omit<Configuration, 'github'> & {
+  readonly github?: GitHubInput | null;
 };
 
 export type DoricConfiguration = {
@@ -175,6 +203,29 @@ const providerConfigurationFrom = (value: unknown): ProviderConfiguration => {
   return { id: value.id, baseUrl: value.baseUrl, apiKeyEnv: value.apiKeyEnv };
 };
 
+/**
+ * A GitHub block read back by known key, so the token the host never answers
+ * with — and anything else a host might add — is dropped here.
+ */
+const githubConfigurationFrom = (
+  value: unknown,
+): GitHubConfiguration | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    typeof value.username !== 'string' ||
+    typeof value.email !== 'string' ||
+    typeof value.hasToken !== 'boolean'
+  ) {
+    return invalidResponse();
+  }
+  return {
+    username: value.username,
+    email: value.email,
+    hasToken: value.hasToken,
+  };
+};
+
 const configurationFrom = (value: unknown): Configuration => {
   if (
     !isRecord(value) ||
@@ -196,10 +247,12 @@ const configurationFrom = (value: unknown): Configuration => {
     return invalidResponse();
   }
 
+  const github = githubConfigurationFrom(value.github);
   return {
     providers: value.providers.map(providerConfigurationFrom),
     models: { execution: { providerId, model, effort } },
     execution: { maxTurns: value.execution.maxTurns },
+    ...(github === undefined ? {} : { github }),
   };
 };
 
@@ -556,7 +609,7 @@ export const workspaceReady = (): Promise<unknown> => request<unknown>('/vms');
 export const workspaceApi = {
   config: {
     get: async () => doricConfigurationFrom(await request<unknown>('/config')),
-    update: async (configuration: Configuration) =>
+    update: async (configuration: ConfigurationInput) =>
       doricConfigurationFrom(
         await request<unknown>('/config', {
           method: 'PUT',

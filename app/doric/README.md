@@ -10,9 +10,15 @@ through a sandboxed, origin-checked preload bridge. The
 `/status`, `/threads`, and `/projects` namespaces share one process-long
 Engine.IO connection; the renderer never accesses any transport directly.
 
-The `config` namespace crosses the same boundary: `config.get` reads the
-credential-free host configuration, and `config.update` replaces it with a
-complete one, so a Settings surface needs no HTTP client of its own.
+The `config` namespace crosses the same boundary: `config.get` reads the host
+configuration, which is credential-free except for GitHub's username, email and
+write-only token — a token is answered as `hasToken` and never as itself — and
+`config.update` replaces the whole configuration with the one it is given, so a
+Settings surface needs no HTTP client of its own. The GitHub block is guarded
+before it is sent: it carries exactly `username`, `email` and an optional
+`token`, where an absent or `null` token keeps the stored one, `''` clears it and
+any other value replaces it. A token is never logged, never named in an error
+message and never part of what `config.get` answers with.
 
 Every Project filesystem call validates its workspace-relative path before it
 reaches the host — no absolute path, no `..` segment, no NUL character — and

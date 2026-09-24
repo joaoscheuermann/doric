@@ -1,19 +1,19 @@
 import { Router } from 'express';
 
-import { ConfigInputSchema } from '../lib/config/schema.js';
+import { ConfigUpdateSchema, publicConfig } from '../lib/config/schema.js';
 import type { ConfigService } from '../lib/config/service.js';
 import { sendError } from '../lib/http/errors.js';
 
-/** Exposes the credential-free singleton configuration without changing its schema. */
+/** Exposes the singleton configuration without its write-only GitHub token. */
 export const createConfigRouter = (service: ConfigService): Router => {
   const router = Router();
 
   router.get('/', (_request, response) =>
-    response.json(service.current().snapshot),
+    response.json(publicConfig(service.current().snapshot)),
   );
 
   router.put('/', async (request, response) => {
-    const parsed = ConfigInputSchema.safeParse(request.body);
+    const parsed = ConfigUpdateSchema.safeParse(request.body);
 
     if (!parsed.success) {
       sendError(
@@ -27,7 +27,7 @@ export const createConfigRouter = (service: ConfigService): Router => {
     }
 
     try {
-      response.json(await service.replace(parsed.data));
+      response.json(publicConfig(await service.replace(parsed.data)));
     } catch {
       sendError(
         response,

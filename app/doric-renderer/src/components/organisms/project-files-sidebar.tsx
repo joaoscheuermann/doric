@@ -4,6 +4,7 @@ import {
   FileTree,
   type FileTreeActions,
 } from '@/components/molecules/file-tree';
+import { FilesToggle } from '@/components/molecules/files-toggle';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Breadcrumb,
@@ -42,7 +43,7 @@ import {
   SidebarMenuSkeleton,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Toggle } from '@/components/ui/toggle';
 import {
   changeLetter,
   classifyDiff,
@@ -59,11 +60,10 @@ import {
 } from '@/hooks/use-project-files';
 import {
   AlertCircleIcon,
+  ArrowLeftIcon,
   FileDiffIcon,
   FilesIcon,
   FolderIcon,
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
   RefreshCwIcon,
 } from 'lucide-react';
 import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -71,7 +71,11 @@ import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
 type ProjectFilesSidebarProps = {
   /** Expands or collapses the panel. */
   readonly onToggle: () => void;
-  /** Whether the panel is expanded; collapsed it keeps only its own toggle. */
+  /**
+   * Whether the panel is expanded. A closed panel is not mounted: the layout
+   * draws this surface only while it is open, and carries the control that
+   * reopens it in the main header.
+   */
   readonly open: boolean;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
@@ -80,7 +84,7 @@ type ProjectFilesSidebarProps = {
 };
 
 /** The two things the panel can show. */
-type FilesTab = 'files' | 'changes';
+type PanelView = 'files' | 'changes';
 
 /**
  * The Project's sandbox, as a right-hand panel beside the conversation. It is
@@ -88,11 +92,12 @@ type FilesTab = 'files' | 'changes';
  * show, and never writes: the tree opens directories on demand, a file opens in
  * place of the tree, and the changes view lists the workspace diff.
  *
- * The tabs sit in the header in place of a title, because they name what the
- * panel is showing; the footer carries the path and byte size of the open file
- * and the one action the surface has. Collapsed, the panel keeps a narrow rail
- * whose only content is its toggle, so the control that opens it always sits at
- * the window's right corner and never duplicates the sidebar's own toggle.
+ * The two views are icon-only toggles in the header in place of a title, because
+ * they name what the panel is showing and select it, and an open file puts a
+ * back control at the header's left, which returns to the tree the file was
+ * opened from; the footer carries the path and byte size of the open file and
+ * the one action the surface has. The panel's own toggle closes it, and stays
+ * the last control at the header's corner.
  */
 export function ProjectFilesSidebar({
   onToggle,
@@ -100,113 +105,119 @@ export function ProjectFilesSidebar({
   project,
   revision,
 }: ProjectFilesSidebarProps) {
-  // A collapsed panel reads nothing: with no Project the hook stays idle.
+  // A closed panel reads nothing: with no Project the hook stays idle.
   const files = useProjectFiles({
     projectId: open ? project?.id : undefined,
     revision,
   });
-  const [tab, setTab] = useState<FilesTab>('files');
-  const toggle = (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={open ? 'Hide files' : 'Show files'}
-      className="mr-2 ml-auto shrink-0 [app-region:no-drag]"
-      onClick={onToggle}
-    >
-      {open ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
-    </Button>
-  );
-
-  if (!open) {
-    return (
-      <Sidebar collapsible="none" className="overflow-hidden">
-        <PanelHeader separator={false}>{toggle}</PanelHeader>
-      </Sidebar>
-    );
-  }
+  const [view, setView] = useState<PanelView>('files');
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden">
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as FilesTab)}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <PanelHeader>
-          <TabsList className="h-7! min-w-0 [app-region:no-drag]">
-            <TabsTrigger value="files">
-              <FilesIcon />
-              Files
-            </TabsTrigger>
-            <TabsTrigger value="changes">
-              <FileDiffIcon />
-              Changes
-            </TabsTrigger>
-          </TabsList>
-          {toggle}
-        </PanelHeader>
-        <SidebarContent className="overflow-hidden p-0">
-          <SidebarGroup className="h-full min-h-0 p-0">
-            <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
-              <TabsContent
-                value="files"
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <SandboxGate files={files} project={project}>
-                  <FilesView files={files} />
-                </SandboxGate>
-              </TabsContent>
-              <TabsContent
-                value="changes"
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <SandboxGate files={files} project={project}>
-                  <ChangesView files={files} />
-                </SandboxGate>
-              </TabsContent>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <FilesFooter files={files} />
-      </Tabs>
+      <PanelHeader>
+        {view === 'files' && files.selectedPath !== undefined && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back to files"
+            className="shrink-0 [app-region:no-drag]"
+            onClick={files.actions.closeFile}
+          >
+            <ArrowLeftIcon />
+          </Button>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
+          <ViewToggle
+            icon={<FilesIcon />}
+            label="Files"
+            onSelect={() => setView('files')}
+            selected={view === 'files'}
+          />
+          <ViewToggle
+            icon={<FileDiffIcon />}
+            label="Changes"
+            onSelect={() => setView('changes')}
+            selected={view === 'changes'}
+          />
+          <FilesToggle onToggle={onToggle} open />
+        </div>
+      </PanelHeader>
+      <SidebarContent className="overflow-hidden p-0">
+        <SidebarGroup className="h-full min-h-0 p-0">
+          <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
+            <SandboxGate files={files} project={project}>
+              {view === 'files' ? (
+                <FilesView files={files} />
+              ) : (
+                <ChangesView files={files} />
+              )}
+            </SandboxGate>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <FilesFooter files={files} />
     </Sidebar>
   );
 }
 
 /**
- * The panel's header strip: the drag region, its boundary, and whatever the
- * current state puts in it — the tabs and the toggle when expanded, only the
- * toggle when collapsed.
+ * One of the panel's two views, as an icon-only toggle sized for the h-8 header:
+ * the `sm` toggle with its horizontal padding dropped is the icon-sized one.
  *
- * The rule under it marks where content begins, so a header with nothing below
- * it draws none: the collapsed rail is a bare toggle in an h-8 strip, and a
- * boundary over empty space reads as a stray line.
+ * The view on screen is the highlighted one. The vendored Toggle supplies the
+ * pressed background; recolouring its pressed state to the sidebar's own accent,
+ * and the icon to that accent's foreground, is what makes an active view read as
+ * part of the panel rather than as a chip in another palette. Unselected, the
+ * icon stays muted.
+ *
+ * Pressing the view already on screen selects it again rather than clearing it,
+ * because the panel always shows one of the two.
  */
-function PanelHeader({
-  children,
-  separator = true,
+function ViewToggle({
+  icon,
+  label,
+  onSelect,
+  selected,
 }: {
-  readonly children?: ReactNode;
-  readonly separator?: boolean;
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly selected: boolean;
 }) {
+  return (
+    <Toggle
+      aria-label={label}
+      size="sm"
+      className="shrink-0 px-0! text-muted-foreground data-[state=on]:bg-sidebar-accent! data-[state=on]:text-sidebar-accent-foreground! [app-region:no-drag]"
+      pressed={selected}
+      onPressedChange={onSelect}
+    >
+      {icon}
+    </Toggle>
+  );
+}
+
+/**
+ * The panel's header strip: the drag region, its boundary, and the controls it
+ * carries — the two view toggles and the panel's own toggle, together at the
+ * right corner.
+ */
+function PanelHeader({ children }: { readonly children: ReactNode }) {
   return (
     <div
       data-slot="project-files-header"
       className="relative flex h-8 shrink-0 items-center bg-sidebar pl-2 [app-region:drag]"
     >
-      {separator && (
-        <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
-      )}
+      <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       {children}
     </div>
   );
 }
 
 /**
- * What the panel shows when the sandbox itself cannot be read. Both tabs share
+ * What the panel shows when the sandbox itself cannot be read. Both views share
  * one answer, because a queued, failed or terminated Project has no files and no
- * changes: the surface explains the Project instead of failing a tab at a time.
+ * changes: the surface explains the Project instead of failing a view at a time.
  */
 function SandboxGate({
   children,

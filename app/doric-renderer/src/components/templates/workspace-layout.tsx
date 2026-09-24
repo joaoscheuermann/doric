@@ -7,26 +7,18 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { type ReactNode, useLayoutEffect } from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 
-/**
- * The width the sandbox panel keeps when it is collapsed. It is a rail rather
- * than nothing at all, so the panel's own toggle stays at the window's right
- * corner and can always expand it again; it is wide enough for that toggle plus
- * its margin, which is why it is not narrower.
- */
-const FILES_RAIL_PX = 48;
-
 type WorkspaceLayoutProps = {
   readonly children: ReactNode;
   /**
-   * The Project's sandbox panel, after the main panel. It is always mounted,
-   * because its collapsed rail carries the toggle that expands it again; the
-   * panel itself reads nothing while it is collapsed. Absent when unsupported.
+   * The Project's sandbox panel, after the main panel. It is drawn only while
+   * that panel is open: closed, it is zero width and mounts nothing, so the main
+   * header is where the control that reopens it lives. Absent when unsupported.
    */
   readonly files?: ReactNode;
   /**
-   * Whether that panel is expanded. Collapsed, it keeps a narrow rail so its own
-   * toggle stays reachable at the window's right corner. Its open state is
-   * controlled, so dragging the panel shut and its toggle always agree.
+   * Whether that panel is expanded. Its open state is controlled, so dragging
+   * the panel shut and its toggle always agree; shut, it reports closed because
+   * its width is zero.
    */
   readonly filesOpen?: boolean;
   /** Reports that the panel was opened or closed, from its handle or elsewhere. */
@@ -110,15 +102,15 @@ export function WorkspaceLayout({
             panelRef={filesPanel}
             className="overflow-hidden"
             collapsible
-            collapsedSize={`${String(FILES_RAIL_PX)}px`}
+            collapsedSize={0}
             defaultSize="20rem"
             minSize="14rem"
             maxSize="30rem"
-            onResize={(size) =>
-              onFilesOpenChange?.(size.inPixels > FILES_RAIL_PX)
-            }
+            onResize={(size) => onFilesOpenChange?.(size.inPixels > 0)}
           >
-            <div className="flex h-full min-h-0 flex-col">{files}</div>
+            {filesOpen && (
+              <div className="flex h-full min-h-0 flex-col">{files}</div>
+            )}
           </ResizablePanel>
         </>
       )}

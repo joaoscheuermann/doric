@@ -45,6 +45,7 @@ export function App() {
   // what it shows: the Project owns the sandbox, the Thread only reports.
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesRevision, setFilesRevision] = useState(0);
+  const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
   const noteSandboxWrite = useCallback(
     () => setFilesRevision((revision) => revision + 1),
     [],
@@ -96,7 +97,7 @@ export function App() {
         <WorkspaceLayout
           files={
             <ProjectFilesSidebar
-              onToggle={() => setFilesOpen((open) => !open)}
+              onToggle={toggleFiles}
               open={filesOpen}
               project={selectedProject}
               revision={filesRevision}
@@ -108,8 +109,10 @@ export function App() {
           }
           header={
             <WorkspaceHeader
+              filesOpen={filesOpen}
               onSelectProject={actions.selectProject}
               onSelectThread={actions.selectThread}
+              onToggleFiles={toggleFiles}
               path={selectedThreadPath}
               project={selectedProject}
             />

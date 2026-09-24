@@ -1,5 +1,6 @@
 import {
   type Configuration,
+  configurationInput,
   configurationIssue,
   type DoricConfiguration,
   isSameConfiguration,
@@ -32,7 +33,9 @@ export type Config = {
  * There is no Save button, so the hook saves by itself: a valid change sends
  * itself once typing settles, and `flush` sends it at once for a field blur or
  * a close. A draft the host would refuse is never sent; a failed save surfaces
- * the host's message and keeps the user's draft.
+ * the host's message and keeps the user's draft. What a save sends is the
+ * draft as `configurationInput` reads it, which is where a write-only token
+ * becomes the body the host stores.
  */
 export const useConfig = (open: boolean): Config => {
   const [saved, setSaved] = useState<DoricConfiguration>();
@@ -86,7 +89,9 @@ export const useConfig = (open: boolean): Config => {
     setSaving(true);
     setError(undefined);
     try {
-      const updated = await window.doric.config.update(next);
+      const updated = await window.doric.config.update(
+        configurationInput(next),
+      );
       if (intent.current !== request) return;
       setSaved(updated);
       // Keep a draft the user changed while the request was in flight.

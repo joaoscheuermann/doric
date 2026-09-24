@@ -105,10 +105,11 @@ The renderer has no direct network access to Doric. It uses the semantic
   `pending` with the host's retry hint, `expired`, `unavailable`, `missing`, a
   refused path — as data, so an unusable sandbox is explained instead of failing.
   The panel's tabs sit in its header in place of a title, its toggle stays at the
-  window's right corner whether the panel is expanded or collapsed (collapsed it
-  keeps a 3rem rail, so the control that reopens it never leaves the screen), and
-  its footer carries the open file's path — a chain too deep for that row
-  collapses its middle behind one trigger (`collapsedPath`) — with the file's byte
+  window's right corner whether the panel is expanded or collapsed (collapsed the
+  panel is not mounted at all, and the main header carries the control that
+  reopens it), and an open file puts a back control at the header's left, with
+  its footer carrying the file's path — a chain too deep for that row
+  collapses its middle behind one trigger (`collapsedPath`) — the file's byte
   size and the one action the surface has.
   `use-project-files.ts` owns the listings, the expansion, the open file and the
   diff, and reads a directory only when it opens and the diff only when the
@@ -142,19 +143,36 @@ in `domain/workspace.ts`, and a rejected call arrives as a thrown `Error`.
 
 The settings modal is application-global, opened from the status line beside the
 connection label, so it is reachable whether or not a Project or Thread is
-selected. It shows only what the host actually stores, and all of it is
-credential-free: the providers Doric may call, the provider and model execution
-runs on, its reasoning effort, and the turn limit one prompt may take. A provider
-row names the environment variable holding its API key rather than the key, so no
-credential travels through the renderer.
+selected. It shows only what the host actually stores: the providers Doric may
+call, the provider and model execution runs on, its reasoning effort, the turn
+limit one prompt may take, and the Credentials section — today one `GitHub`
+block, holding the username, email and token the agent's git commands use inside
+a Project's sandbox. A provider row names the environment variable holding its
+API key rather than the key, so no provider credential travels through the
+renderer.
+
+The GitHub token is the one secret this surface handles, and it is write-only.
+The host answers whether it holds one and never the token, so the password field
+always starts empty, an empty field keeps whatever is stored, and the section
+says as much: the host stores the token, never sends it back, and the agent's
+git commands use it inside the sandbox. `tokenFieldText` and
+`storedTokenNotice` in `src/domain/config.ts` hold that wording and the rule it
+states, and `configurationInput` is what turns a draft into the body a save
+sends, where an empty token field becomes `null` — which keeps the stored token
+— rather than `''`, which clears it. The block itself follows the same three
+spellings as the token: absent leaves the stored credentials alone, `null`
+removes them, and a block sets them — so an emptied section sends `github: null`
+rather than dropping the key, because a secret must never be deletable by a
+caller that simply omitted it. Everything else on the surface stays
+credential-free.
 
 The host owns the configuration as a singleton with a revision, and the modal
 round-trips it: `window.doric.config.get()` seeds the draft when the dialog opens
-and `window.doric.config.update(configuration)` sends it back, returning the
-revision the host stored. There is no Save button — a change saves itself once
-typing settles (500 ms in `use-config.ts`), on a field blur, and on close, and
-the dialog's footer reports the revision, the update time and the save state
-instead of offering one. A draft the host would refuse is never sent and is
+and `window.doric.config.update(configurationInput(draft))` sends it back,
+returning the revision the host stored. There is no Save button — a change saves
+itself once typing settles (500 ms in `use-config.ts`), on a field blur, and on
+close, and the dialog's footer reports the revision, the update time and the save
+state instead of offering one. A draft the host would refuse is never sent and is
 explained above the section, because the same rules live in `src/domain/config.ts`
 and the host re-validates them; a failed save keeps the draft and shows the host's
 message. Changing the execution model reaches new Projects only: a Project

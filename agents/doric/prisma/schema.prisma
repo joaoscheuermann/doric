@@ -29,13 +29,16 @@ enum ThreadState {
 }
 
 model DoricConfiguration {
-  id         Int                     @id @default(1)
-  revision   Int                     @default(1)
-  generation String                  @db.Uuid
-  maxTurns   Int                     @map("max_turns")
-  updatedAt  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providers  ProviderConfiguration[]
-  models     ModelConfiguration[]
+  id             Int                     @id @default(1)
+  revision       Int                     @default(1)
+  generation     String                  @db.Uuid
+  maxTurns       Int                     @map("max_turns")
+  githubUsername String?                 @map("github_username")
+  githubEmail    String?                 @map("github_email")
+  githubToken    String?                 @map("github_token")
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providers      ProviderConfiguration[]
+  models         ModelConfiguration[]
 
   @@map("doric_configuration")
 }

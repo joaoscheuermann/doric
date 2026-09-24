@@ -460,12 +460,13 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming, checkpoint, and color migrations', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, color, and GitHub migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
     '20260827000000_add_thread_checkpoints',
     '20260923000000_add_project_color',
+    '20260924000000_add_github_credentials',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -498,6 +499,13 @@ test('ships the baseline followed by the incremental naming, checkpoint, and col
     'utf8',
   );
   assert.match(color, /ADD COLUMN "color" TEXT;/u);
+  const github = await readFile(
+    `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+    'utf8',
+  );
+  assert.match(github, /ADD COLUMN "github_email" TEXT,/u);
+  assert.match(github, /ADD COLUMN "github_token" TEXT,/u);
+  assert.match(github, /ADD COLUMN "github_username" TEXT;/u);
 });
 
 test(
@@ -679,6 +687,45 @@ for (const failure of [
     assert.deepEqual(schemas, new Set());
   });
 }
+
+integrationTest(
+  'round-trips the GitHub identity and its write-only token',
+  async ({ configs }) => {
+    const initial = await configs.load();
+    assert.equal(initial.configuration.github, undefined);
+
+    const configured = await configs.replace({
+      ...initial.configuration,
+      github: {
+        username: 'octocat',
+        email: 'octocat@example.com',
+        token: 'ghp_stored',
+      },
+    });
+    assert.deepEqual(configured.configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+      token: 'ghp_stored',
+    });
+    assert.deepEqual((await configs.load()).configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+      token: 'ghp_stored',
+    });
+
+    const cleared = await configs.replace({
+      ...initial.configuration,
+      github: { username: 'octocat', email: 'octocat@example.com' },
+    });
+    assert.deepEqual(cleared.configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+    });
+
+    const unconfigured = await configs.replace(initial.configuration);
+    assert.equal(unconfigured.configuration.github, undefined);
+  },
+);
 
 integrationTest(
   'installs a clean Project and Thread baseline without legacy tables or data',

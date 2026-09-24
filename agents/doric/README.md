@@ -73,7 +73,7 @@ After a server restart, interrupted work is marked failed rather than resumed.
 
 | Method    | Path                          | Success   | Purpose                                            |
 | --------- | ----------------------------- | --------- | -------------------------------------------------- |
-| GET / PUT | `/config`                     | 200       | Read / replace credential-free configuration.      |
+| GET / PUT | `/config`                     | 200       | Read / replace configuration and GitHub identity.  |
 | POST      | `/projects`                   | 202       | Reserve an environment without a Thread or prompt. |
 | GET       | `/projects`                   | 200       | List Projects.                                     |
 | GET       | `/projects/:id`               | 200       | Read public Project metadata.                      |
@@ -102,6 +102,20 @@ exclusive UUID `cursor`. Page size does not limit total Projects or Threads.
 Public metadata omits message history, prompts, credentials, and SSH keys.
 Errors use `{ error: { code, message } }`. Invalid IDs/cursors return 400,
 invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
+
+`GET /config` answers `{ configuration, revision, updatedAt }` and never the
+GitHub token: a configured identity reads back as
+`configuration.github = { username, email, hasToken }`, and `github` itself is
+absent until it is configured. `PUT /config` replaces the whole configuration
+and accepts those fields plus an optional `github: { username, email, token }`,
+where `username` and `email` are required together because an identity without
+them is useless, and the token is optional so a public-only identity is
+configurable. The GitHub block follows one rule: absent leaves the stored block
+alone, `null` removes it, and a value sets it. Inside a value, an absent or
+`null` token keeps the stored one, `""` clears just the token, and any other
+value replaces it, so a secret is never deleted by omission. Unknown keys stay
+rejected (`422 invalid_config`), and only configuration saved here reaches
+Projects created afterwards.
 
 ### Create and converse
 
@@ -289,8 +303,9 @@ Thread events. Apply migrations separately with `npx nx run doric:migrate`;
 startup does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and
 immutable-tree trigger. The following incremental migration adds and backfills
-Project and Thread names, and the next adds the per-turn provider-history
-checkpoints that rewind truncates. It does not convert Session data.
+Project and Thread names, the next adds the per-turn provider-history
+checkpoints that rewind truncates, then the Project color, and last the nullable
+GitHub identity and token columns. It does not convert Session data.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the
@@ -300,6 +315,14 @@ The API is unauthenticated. Keep it on an isolated trusted network, especially
 because SSH responses and execution replay contain sensitive material. Provider
 credential values belong in server environment variables, never configuration
 JSON or client requests.
+
+The one configuration secret is the GitHub token. The host stores it rather
+than handing it to a sandbox tool: it is write-only over the API, redacted from
+events and logs before persistence, and carried in the captured configuration
+snapshot of every Project created after it was saved, so a Project's own events
+redact it too. `PUT /config` treats the GitHub block as absent (leave it alone),
+`null` (remove it), or a value (set it), so no caller can delete the token by
+leaving the key out.
 
 ## Validation
 

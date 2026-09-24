@@ -48,6 +48,28 @@ type Configuration = {
     };
   };
   readonly execution: { readonly maxTurns: number };
+  readonly github?: GitHubConfiguration;
+};
+
+/** GitHub as the host answers it: whether a token is stored, never the token. */
+type GitHubConfiguration = {
+  readonly username: string;
+  readonly email: string;
+  readonly hasToken: boolean;
+};
+
+/**
+ * The GitHub block a configuration update sends: a token replaces the stored
+ * one, `null` or no key keeps it, and `''` clears it.
+ */
+type GitHubInput = {
+  readonly username: string;
+  readonly email: string;
+  readonly token?: string | null;
+};
+
+type ConfigurationInput = Omit<Configuration, 'github'> & {
+  readonly github?: GitHubInput;
 };
 
 type DoricConfiguration = {
@@ -144,7 +166,7 @@ contextBridge.exposeInMainWorld('doric', {
   },
   config: {
     get: () => invoke<DoricConfiguration>('doric:config:get'),
-    update: (configuration: Configuration) =>
+    update: (configuration: ConfigurationInput) =>
       invoke<DoricConfiguration>('doric:config:update', configuration),
   },
   projects: {

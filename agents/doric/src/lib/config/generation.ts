@@ -66,6 +66,11 @@ export const createGeneration = async ({
       credential(apiKeyEnv),
     );
 
+    const token = snapshot.configuration.github?.token;
+    // The stored GitHub token is the configuration's only secret, so no
+    // persisted history, event, or log line may carry it.
+    if (token !== undefined) credentials.add(token);
+
     return [...credentials];
   };
 
