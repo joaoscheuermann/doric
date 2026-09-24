@@ -129,7 +129,8 @@ curl -X POST -H 'content-type: application/json' \
 curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 ```
 
-Project creation requires `{ "name": "..." }`. Thread creation requires
+Project creation requires `{ "name": "..." }` and answers with the Project the
+host marked with a random color from its palette. Thread creation requires
 `{ "name": "..." }` and accepts an optional `parentThreadId`. Both PATCH
 operations require the same name-only body. Names are trimmed, reject NUL, and
 contain 1–80 Unicode characters. The prompt body accepts only `prompt`. Public

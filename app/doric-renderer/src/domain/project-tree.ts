@@ -51,6 +51,31 @@ export const withSelection = (
 ): ProjectTree => ({ ...tree, selection });
 
 /**
+ * The Projects whose Threads are on screen. Rows open and close one at a time:
+ * opening or closing one leaves every other row exactly as it was, so the
+ * sidebar never closes an item because another one opened.
+ */
+export type OpenProjects = ReadonlySet<string>;
+
+export const isProjectOpen = (open: OpenProjects, projectId: string): boolean =>
+  open.has(projectId);
+
+export const withProjectOpen = (
+  open: OpenProjects,
+  projectId: string,
+): OpenProjects => (open.has(projectId) ? open : new Set(open).add(projectId));
+
+export const withProjectToggled = (
+  open: OpenProjects,
+  projectId: string,
+): OpenProjects => {
+  const next = new Set(open);
+  if (next.has(projectId)) next.delete(projectId);
+  else next.add(projectId);
+  return next;
+};
+
+/**
  * The Projects the host listed, keeping the ones already known ahead of the new
  * ones, so a live addition never reorders the sidebar under the user.
  */

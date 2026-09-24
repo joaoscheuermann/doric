@@ -18,7 +18,7 @@ integrationTest(
   'creates projects without threads and captures immutable configuration',
   async ({ configs, projects, threads }) => {
     const initial = await configs.load();
-    const first = await projects.create('First project', initial);
+    const first = await projects.create('First project', initial, 'blue');
     assert.equal(first.project.name, 'First project');
     assert.deepEqual(await threads.listByProject(first.project.id), []);
     const replacement = structuredClone(initial.configuration);
@@ -26,6 +26,7 @@ integrationTest(
     const second = await projects.create(
       'Second project',
       await configs.replace(replacement),
+      'blue',
     );
     assert.deepEqual(
       (await projects.find(first.project.id))?.snapshot,
@@ -47,7 +48,11 @@ integrationTest(
 integrationTest(
   'persists independent provider-ready histories and exact redacted events',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create('Project', await configs.load());
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
     const root = (await threads.create(project.id, 'Root')).thread;
     const child = (await threads.create(project.id, 'Child', root.id)).thread;
     assert.equal(root.name, 'Root');
@@ -78,7 +83,11 @@ integrationTest(
 integrationTest(
   'serializes event sequences across independent clients and rolls back failed insertion',
   async ({ configs, projects, threads, second }) => {
-    const { project } = await projects.create('Project', await configs.load());
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
     const { thread } = await threads.create(project.id, 'Thread');
     const other = createThreadStore(second);
     await Promise.all(
@@ -120,7 +129,11 @@ integrationTest(
 integrationTest(
   'rewinds a Thread onto an earlier turn boundary without reusing sequences',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create('Project', await configs.load());
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
     const { thread } = await threads.create(project.id, 'Thread');
     const ids = [randomUUID(), randomUUID(), randomUUID()] as const;
     const messages = [
@@ -172,7 +185,11 @@ integrationTest(
 integrationTest(
   'preserves terminal and cancelling states and clears the active prompt when not running',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create('Project', await configs.load());
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
     const { thread } = await threads.create(project.id, 'Thread');
     await threads.setState(thread.id, 'ready');
     await threads.setState(thread.id, 'running', promptId);
@@ -210,10 +227,11 @@ integrationTest(
 integrationTest(
   'scopes pagination cursors to their project and parent',
   async ({ configs, projects, threads }) => {
-    const first = (await projects.create('First', await configs.load()))
+    const first = (await projects.create('First', await configs.load(), 'blue'))
       .project;
-    const second = (await projects.create('Second', await configs.load()))
-      .project;
+    const second = (
+      await projects.create('Second', await configs.load(), 'blue')
+    ).project;
     const root = (await threads.create(first.id, 'Root')).thread;
     const sibling = (await threads.create(first.id, 'Sibling')).thread;
     const children = await Promise.all([
@@ -249,10 +267,11 @@ integrationTest(
 integrationTest(
   'enforces same-project immutable acyclic parentage at the database boundary',
   async ({ configs, projects, threads, database }) => {
-    const first = (await projects.create('First', await configs.load()))
+    const first = (await projects.create('First', await configs.load(), 'blue'))
       .project;
-    const second = (await projects.create('Second', await configs.load()))
-      .project;
+    const second = (
+      await projects.create('Second', await configs.load(), 'blue')
+    ).project;
     const root = (await threads.create(first.id, 'Root')).thread;
     const child = (await threads.create(first.id, 'Child', root.id)).thread;
     await assert.rejects(
@@ -307,7 +326,11 @@ integrationTest(
 integrationTest(
   'deletes only fully terminal subtrees without affecting other roots',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create('Project', await configs.load());
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
     const root = (await threads.create(project.id, 'Root')).thread;
     const child = (await threads.create(project.id, 'Child', root.id)).thread;
     const grandchild = (
@@ -351,7 +374,7 @@ integrationTest(
       'failed',
       'cancelled',
     ] as const) {
-      const { project } = await projects.create('Project', snapshot);
+      const { project } = await projects.create('Project', snapshot, 'blue');
       // Create conversations before making their owner terminal.
       const threadCases = [];
       if (state === 'queued') {

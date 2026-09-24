@@ -57,13 +57,17 @@ export type Workspace = {
   readonly draft?: Draft;
   readonly editing?: Entity;
   readonly error?: string;
+  readonly loadingProjectThreads: ReadonlySet<string>;
   readonly loadingProjects: boolean;
-  readonly loadingThreads: boolean;
   readonly projects: readonly Project[];
   readonly selectedProjectId?: string;
   readonly selectedThread?: Thread;
   readonly selectedThreadId?: string;
-  readonly threads: readonly Thread[];
+  /**
+   * The Threads described for each Project, so every open row can render its own
+   * subtree instead of only the selected Project's.
+   */
+  readonly threadsByProject: Readonly<Record<string, readonly Thread[]>>;
 };
 
 export const useWorkspace = (): Workspace => {
@@ -400,7 +404,6 @@ export const useWorkspace = (): Workspace => {
   const selectedThreadId = tree.selection.threadId;
 
   const threads = threadsOf(tree, selectedProjectId);
-
   return {
     actions,
     deleting,
@@ -409,13 +412,11 @@ export const useWorkspace = (): Workspace => {
     editing,
     error,
     loadingProjects,
-    loadingThreads:
-      selectedProjectId !== undefined &&
-      loadingProjectThreads.has(selectedProjectId),
+    loadingProjectThreads,
     projects: tree.projects,
     selectedProjectId,
     selectedThread: threads.find((thread) => thread.id === selectedThreadId),
     selectedThreadId,
-    threads,
+    threadsByProject: tree.threadsByProject,
   };
 };

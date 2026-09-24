@@ -17,10 +17,11 @@ import {
 
 /** Persists environment snapshots independently from conversations. */
 export const createProjectStore = (database: Database): ProjectStore => ({
-  async create(name, snapshot) {
+  async create(name, snapshot, color) {
     const stored = await database.project.create({
       data: {
         name,
+        color,
         configRevision: snapshot.revision,
         configSnapshot: json(snapshot),
       },

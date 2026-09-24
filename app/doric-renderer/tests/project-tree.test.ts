@@ -7,10 +7,13 @@ import {
   forgetProject,
   forgetThread,
   isDescribed,
+  isProjectOpen,
   type ProjectTree,
   type Selection,
   threadsOf,
+  withProjectOpen,
   withProjects,
+  withProjectToggled,
   withSelection,
   withThreads,
 } from '../src/domain/project-tree';
@@ -279,5 +282,27 @@ describe('the removal of a Project', () => {
 
     assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
     assert.deepEqual(after.selection, { projectId: 'two', threadId: 'b' });
+  });
+});
+
+describe('project rows open one at a time', () => {
+  test('opening a Project leaves the open Projects as they were', () => {
+    const open = withProjectOpen(new Set(['one']), 'two');
+
+    assert.deepEqual([...open].sort(), ['one', 'two']);
+  });
+
+  test('toggling an open Project closes only that one', () => {
+    const open = withProjectToggled(new Set(['one', 'two']), 'one');
+
+    assert.deepEqual([...open].sort(), ['two']);
+    assert.equal(isProjectOpen(open, 'one'), false);
+    assert.equal(isProjectOpen(open, 'two'), true);
+  });
+
+  test('toggling a closed Project opens it beside the open ones', () => {
+    const open = withProjectToggled(new Set(['one']), 'three');
+
+    assert.deepEqual([...open].sort(), ['one', 'three']);
   });
 });

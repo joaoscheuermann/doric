@@ -43,11 +43,11 @@ export function App() {
     editing: workspace.editing,
     error: workspace.error,
     loadingProjects: workspace.loadingProjects,
-    loadingThreads: workspace.loadingThreads,
+    loadingProjectThreads: workspace.loadingProjectThreads,
     projects: workspace.projects,
     selectedProjectId: workspace.selectedProjectId,
     selectedThreadId: workspace.selectedThreadId,
-    threads: workspace.threads,
+    threadsByProject: workspace.threadsByProject,
   };
   const sidebarActions: SidebarActions = {
     beginProject: actions.beginProject,
@@ -71,7 +71,10 @@ export function App() {
   const selectedThreadPath =
     selectedThread === undefined
       ? []
-      : threadPath(workspace.threads, selectedThread.id);
+      : threadPath(
+          workspace.threadsByProject[selectedThread.projectId] ?? [],
+          selectedThread.id,
+        );
 
   return (
     <TooltipProvider>

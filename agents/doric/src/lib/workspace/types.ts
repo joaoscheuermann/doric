@@ -99,7 +99,11 @@ export type ProjectSsh =
 
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
-  create(name: string, snapshot: DoricConfig): Promise<ProjectRecord>;
+  create(
+    name: string,
+    snapshot: DoricConfig,
+    color: ProjectColor,
+  ): Promise<ProjectRecord>;
   find(id: string): Promise<ProjectRecord | undefined>;
   list(limit: number, cursor?: string): Promise<Page<Project>>;
   rename(id: string, name: string): Promise<Project | undefined>;

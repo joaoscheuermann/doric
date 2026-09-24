@@ -1,6 +1,7 @@
 import { EditableName } from '@/components/molecules/editable-name';
+import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import { indentation, TreeGuides } from '@/components/molecules/tree-guides';
-import { FolderIcon, MessageSquareIcon } from 'lucide-react';
+import { MessageSquareIcon } from 'lucide-react';
 
 type DraftNameProps = {
   readonly depth?: number;
@@ -11,7 +12,9 @@ type DraftNameProps = {
 
 /**
  * The row of an entity that is being created: its place in the tree (indentation
- * and guides), the icon for what it will be, and its name.
+ * and guides), the mark for what it will be, and its name. A Project wears the
+ * same color mark its row will wear — empty until the host marks it on creation —
+ * and a Thread wears the message icon its row wears.
  *
  * The name is the same component a rename uses — `EditableName` — opened with an
  * empty value, which is exactly what "this does not exist yet" means to it. The row
@@ -24,7 +27,7 @@ export function DraftName({
   onCancel,
   onSubmit,
 }: DraftNameProps) {
-  const DraftIcon = depth === undefined ? FolderIcon : MessageSquareIcon;
+  const draft = depth === undefined;
 
   return (
     <div
@@ -34,7 +37,7 @@ export function DraftName({
       }}
     >
       <TreeGuides depth={depth ?? 0} />
-      <DraftIcon />
+      {draft ? <ProjectAvatar /> : <MessageSquareIcon />}
       <EditableName
         editing
         label={label}

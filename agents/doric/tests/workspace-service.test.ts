@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import { isProjectColor } from '../src/lib/workspace/colors.js';
 import type {
   InputSource,
   Project,
@@ -57,6 +58,31 @@ test('creates, lists, and renames named Projects and Threads', async () => {
     await service.threads.rename(randomUUID(), 'Missing'),
     undefined,
   );
+  await service.dispose();
+});
+
+test('marks each new Project with a color from the host palette', async () => {
+  const harness = workspace();
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(),
+    execute: async () => 'done',
+  });
+  const projects = await Promise.all(
+    Array.from({ length: 3 }, (_, index) =>
+      service.projects.create(`Project ${index}`),
+    ),
+  );
+  for (const project of projects) {
+    assert.ok(
+      isProjectColor(project.color),
+      `expected a palette color, got ${String(project.color)}`,
+    );
+    assert.equal(
+      (await service.projects.find(project.id))?.color,
+      project.color,
+    );
+  }
   await service.dispose();
 });
 

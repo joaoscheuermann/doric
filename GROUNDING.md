@@ -56,15 +56,24 @@ The main process alone communicates with Doric HTTP and Socket.IO at
 selected-Thread event subscription, one selected-Project tree subscription, and
 connection status through a preload IPC boundary. The status, Thread, and
 Project namespaces share one process-long Socket.IO Manager and Engine.IO
-connection.
+connection. The renderer keeps the Threads it has read for each Project, so every
+open Project row renders its own subtree while live updates continue to follow
+the selected Project alone.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
 Projects and recursive Threads, supports inline create and rename, marks each
-Project with a color chosen from a fixed palette, and exposes context actions
+Project with a color the host assigns from a fixed palette when the Project is
+created, and shows that color with a chevron for the row's open state. Rows keep
+their own open state: opening one leaves the others exactly as they were and the
+selection never closes a row, so a Project's Threads stay on screen while another
+Project is opened or selected. Projects start closed; Threads start open over
+their children. The sidebar exposes context actions
 for create, color, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
-while blur discards it without an API call. Selecting a Thread opens its durable
+while blur discards it without an API call. The draft row wears the mark the
+entity will wear — the Project's color mark, empty until the host assigns it,
+and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
 event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
 being rebuilt by hand. `useThreadChat` is the only reader of the durable event
 stream — it subscribes to the selected Thread, accumulates every event into one

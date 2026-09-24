@@ -26,6 +26,12 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
+import {
+  isProjectOpen,
+  type OpenProjects,
+  withProjectOpen,
+  withProjectToggled,
+} from '@/domain/project-tree';
 import { threadLevel } from '@/domain/thread-tree';
 import type {
   Draft,
@@ -35,19 +41,19 @@ import type {
   Thread,
 } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import { AlertCircleIcon, PlusIcon } from 'lucide-react';
+import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 
 export type SidebarModel = {
   readonly draft?: Draft;
   readonly editing?: Entity;
   readonly error?: string;
+  readonly loadingProjectThreads: ReadonlySet<string>;
   readonly loadingProjects: boolean;
-  readonly loadingThreads: boolean;
   readonly projects: readonly Project[];
   readonly selectedProjectId?: string;
   readonly selectedThreadId?: string;
-  readonly threads: readonly Thread[];
+  readonly threadsByProject: Readonly<Record<string, readonly Thread[]>>;
 };
 
 export type SidebarActions = {
@@ -72,21 +78,30 @@ type ProjectSidebarProps = {
 };
 
 export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const projectKey = (id: string): string => `project:${id}`;
-  const expand = (id: string) =>
-    setCollapsed((current) => {
+  // Threads start open and close one row at a time; Projects start closed and
+  // open one row at a time. Neither state follows the selection, so opening an
+  // item never closes another.
+  const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [openProjects, setOpenProjects] = useState<OpenProjects>(new Set());
+  const expandThread = (id: string) =>
+    setCollapsedThreads((current) => {
       const next = new Set(current);
       next.delete(id);
       return next;
     });
-  const toggle = (id: string) =>
-    setCollapsed((current) => {
+  const toggleThread = (id: string) =>
+    setCollapsedThreads((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  const openProject = (id: string) =>
+    setOpenProjects((current) => withProjectOpen(current, id));
+  const toggleProject = (id: string) =>
+    setOpenProjects((current) => withProjectToggled(current, id));
   const threadActions: ThreadBranchesActions = {
     beginChild: (thread) => actions.beginThread(thread.projectId, thread.id),
     cancelDraft: actions.cancelDraft,
@@ -146,9 +161,17 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                 const selected =
                   model.selectedProjectId === project.id &&
                   model.selectedThreadId === undefined;
-                const expanded =
-                  model.selectedProjectId === project.id &&
-                  !collapsed.has(projectKey(project.id));
+                const expanded = isProjectOpen(openProjects, project.id);
+                const threads = model.threadsByProject[project.id] ?? [];
+                const level = threadLevel(threads, model.draft, project.id);
+                const showThreads = () => openProject(project.id);
+                const activate = () => {
+                  if (selected) toggleProject(project.id);
+                  else {
+                    showThreads();
+                    actions.selectProject(project);
+                  }
+                };
 
                 return (
                   <SidebarMenuItem key={project.id} className="w-full">
@@ -161,7 +184,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                       }}
                       deleteLabel="Delete project"
                       onAdd={() => {
-                        expand(projectKey(project.id));
+                        showThreads();
                         actions.beginThread(project.id);
                       }}
                       onDelete={() => actions.deleteEntity(entity)}
@@ -179,21 +202,22 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                           <div
                             role="treeitem"
                             tabIndex={0}
-                            onClick={() => {
-                              const key = projectKey(project.id);
-                              if (selected) toggle(key);
-                              else actions.selectProject(project);
-                            }}
+                            onClick={activate}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
-                                const key = projectKey(project.id);
-                                if (selected) toggle(key);
-                                else actions.selectProject(project);
+                                activate();
                               }
                             }}
                           >
                             <ProjectAvatar color={project.color} />
+                            <ChevronRightIcon
+                              aria-hidden
+                              className={cn(
+                                'transition-transform duration-[50ms] ease-out',
+                                expanded ? 'rotate-90' : 'rotate-0',
+                              )}
+                            />
                             <EditableName
                               editing={
                                 model.editing?.kind === 'project' &&
@@ -210,7 +234,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                         <RowAddAction
                           label={`New thread in ${project.name}`}
                           onAdd={() => {
-                            expand(projectKey(project.id));
+                            showThreads();
                             actions.beginThread(project.id);
                           }}
                         />
@@ -218,27 +242,24 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                     </ItemContextMenu>
                     {expanded && (
                       <SidebarMenuSub className={treeClassName}>
-                        {model.loadingThreads && model.threads.length === 0 && (
-                          <SidebarMenuSubItem className="w-full">
-                            <SidebarMenuSkeleton className="w-full" />
-                          </SidebarMenuSubItem>
-                        )}
+                        {model.loadingProjectThreads.has(project.id) &&
+                          threads.length === 0 && (
+                            <SidebarMenuSubItem className="w-full">
+                              <SidebarMenuSkeleton className="w-full" />
+                            </SidebarMenuSubItem>
+                          )}
                         <ThreadBranches
                           actions={threadActions}
-                          collapsed={collapsed}
+                          collapsed={collapsedThreads}
                           depth={1}
                           editingThreadId={
                             model.editing?.kind === 'thread'
                               ? model.editing.value.id
                               : undefined
                           }
-                          level={threadLevel(
-                            model.threads,
-                            model.draft,
-                            project.id,
-                          )}
-                          onExpand={expand}
-                          onToggle={toggle}
+                          level={level}
+                          onExpand={expandThread}
+                          onToggle={toggleThread}
                           selectedThreadId={model.selectedThreadId}
                         />
                       </SidebarMenuSub>

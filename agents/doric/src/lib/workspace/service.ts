@@ -3,6 +3,7 @@ import type { Sandpool } from 'sandpool';
 
 import type { ConfigService } from '../config/service.js';
 import { runDirectPrompt } from '../agents/direct/executor.js';
+import { randomProjectColor } from './colors.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
@@ -181,7 +182,11 @@ export const createWorkspaceService = ({
         exclusive('creation', async () => {
           if (disposed) throw new Error('Doric is shutting down.');
           const generation = config.current();
-          const record = await projects.create(name, generation.snapshot);
+          const record = await projects.create(
+            name,
+            generation.snapshot,
+            randomProjectColor(),
+          );
           const runtime: ProjectRuntime = {
             project: record.project,
             generation,

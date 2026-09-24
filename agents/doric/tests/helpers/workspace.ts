@@ -29,10 +29,11 @@ export const workspace = () => {
   };
   const now = new Date(0).toISOString();
   const projects: ProjectStore = {
-    create: async (name, snapshot) => {
+    create: async (name, snapshot, color) => {
       const project = {
         id: randomUUID(),
         name,
+        color,
         state: 'queued' as const,
         configRevision: snapshot.revision,
         createdAt: now,
