@@ -9,6 +9,7 @@ import {
   type SidebarActions,
   type SidebarModel,
 } from '@/components/organisms/project-sidebar';
+import { SettingsDialog } from '@/components/organisms/settings-dialog';
 import {
   WorkspaceHeader,
   WorkspaceSidebarHeader,
@@ -28,7 +29,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { FileTextIcon } from 'lucide-react';
-import { type CSSProperties } from 'react';
+import { type CSSProperties, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -37,6 +38,7 @@ const panelWidth = {
 
 export function App() {
   const workspace = useWorkspace();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { actions } = workspace;
   const model: SidebarModel = {
     draft: workspace.draft,
@@ -83,7 +85,9 @@ export function App() {
         className="h-svh min-h-0 flex-col overflow-hidden"
       >
         <WorkspaceLayout
-          footer={<WorkspaceFooter />}
+          footer={
+            <WorkspaceFooter onOpenSettings={() => setSettingsOpen(true)} />
+          }
           header={
             <WorkspaceHeader
               onSelectProject={actions.selectProject}
@@ -124,6 +128,7 @@ export function App() {
             if (!open) actions.dismissDelete();
           }}
         />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
       <Toaster />
     </TooltipProvider>

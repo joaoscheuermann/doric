@@ -114,6 +114,28 @@ Thread no longer exists. `ThreadUpdate` is a discriminated union with
 `project-updated`, `project-deleted`, and safe `error`. Both subscriptions share
 the Electron process's single Engine.IO connection.
 
+## Settings
+
+The settings modal is application-global, opened from the status line beside the
+connection label, so it is reachable whether or not a Project or Thread is
+selected. It shows only what the host actually stores, and all of it is
+credential-free: the providers Doric may call, the provider and model execution
+runs on, its reasoning effort, and the turn limit one prompt may take. A provider
+row names the environment variable holding its API key rather than the key, so no
+credential travels through the renderer.
+
+The host owns the configuration as a singleton with a revision, and the modal
+round-trips it: `window.doric.config.get()` seeds the draft when the dialog opens
+and `window.doric.config.update(configuration)` sends it back, returning the
+revision the host stored. Save is offered only when the draft differs from the
+host's copy and the host's own rules pass; a draft that would be refused is
+explained beside the button instead, because the same rules live in
+`src/domain/config.ts` and the host re-validates them. Closing the dialog discards
+an unsaved draft without a prompt, and a failed save keeps the draft and shows the
+host's message. Changing the execution model reaches new Projects only: a Project
+keeps the configuration it was created with, and one already running keeps running
+as it was.
+
 ## Development
 
 Use the combined Electron workflow from the repository root:

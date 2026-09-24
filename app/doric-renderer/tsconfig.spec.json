@@ -14,6 +14,7 @@
   },
   "exclude": [],
   "include": [
+    "src/domain/config.ts",
     "src/domain/connection.ts",
     "src/domain/workspace.ts",
     "src/doric.d.ts",

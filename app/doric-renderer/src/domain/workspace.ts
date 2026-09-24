@@ -1,3 +1,4 @@
+import type { Configuration, DoricConfiguration } from './config';
 import type { ConnectionApi } from './connection';
 
 /**
@@ -112,6 +113,15 @@ export type Entity =
 
 export type WorkspaceApi = {
   readonly connection: ConnectionApi;
+  /**
+   * The credential-free configuration the host owns, shared by every Project.
+   * `get` reads it and `update` writes it whole, returning the revision the host
+   * stored.
+   */
+  readonly config: {
+    get(): Promise<DoricConfiguration>;
+    update(configuration: Configuration): Promise<DoricConfiguration>;
+  };
   readonly projects: {
     list(): Promise<readonly Project[]>;
     create(name: string): Promise<Project>;
