@@ -73,3 +73,28 @@ export const isExpanded = (
   node: ThreadNode,
   collapsed: ReadonlySet<string>,
 ): boolean => node.expandable && !collapsed.has(node.thread.id);
+
+/**
+ * The chain of Threads from the outermost ancestor down to `threadId`, so a
+ * breadcrumb can name the path a Thread sits on. A Thread whose ancestors are
+ * not in `threads` stops there, and a cycle or an unknown id yields only what
+ * was actually walked rather than an unbounded loop.
+ */
+export const threadPath = (
+  threads: readonly Thread[],
+  threadId: string,
+): readonly Thread[] => {
+  const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  const path: Thread[] = [];
+  const seen = new Set<string>();
+  let current = byId.get(threadId);
+  while (current !== undefined && !seen.has(current.id)) {
+    seen.add(current.id);
+    path.unshift(current);
+    current =
+      current.parentThreadId === undefined
+        ? undefined
+        : byId.get(current.parentThreadId);
+  }
+  return path;
+};

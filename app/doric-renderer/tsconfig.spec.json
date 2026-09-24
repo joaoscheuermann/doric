@@ -19,7 +19,7 @@
     "src/doric.d.ts",
     "src/domain/delegated.ts",
     "src/domain/projector.ts",
-    "src/domain/tabs.ts",
+    "src/domain/selection.ts",
     "tests/**/*.ts"
   ]
 }

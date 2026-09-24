@@ -25,6 +25,7 @@ import {
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { threadPath } from '@/domain/thread-tree';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { FileTextIcon } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -63,6 +64,13 @@ export function App() {
     startRename: actions.startRename,
   };
   const { selectedThread } = workspace;
+  const selectedProject = workspace.projects.find(
+    (project) => project.id === workspace.selectedProjectId,
+  );
+  const selectedThreadPath =
+    selectedThread === undefined
+      ? []
+      : threadPath(workspace.threads, selectedThread.id);
 
   return (
     <TooltipProvider>
@@ -74,14 +82,10 @@ export function App() {
           footer={<WorkspaceFooter />}
           header={
             <WorkspaceHeader
-              onCloseThread={actions.closeThread}
-              onMoveThread={actions.moveThread}
-              onRenameThread={(thread, name) =>
-                actions.rename({ kind: 'thread', value: thread }, name)
-              }
+              onSelectProject={actions.selectProject}
               onSelectThread={actions.selectThread}
-              selectedThreadId={workspace.selectedThreadId}
-              threads={workspace.openThreads}
+              path={selectedThreadPath}
+              project={selectedProject}
             />
           }
           sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}

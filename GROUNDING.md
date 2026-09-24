@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-09-23
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -64,7 +64,7 @@ Projects and recursive Threads, supports inline create and rename, and exposes
 context actions for create, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. Selecting a Thread opens its durable
-event-derived conversation and a persistent header tab. The conversation surface is, for now, deliberately bare: the rendering of it is
+event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
 being rebuilt by hand. `useThreadChat` is the only reader of the durable event
 stream — it subscribes to the selected Thread, accumulates every event into one
 ordered log, projects that log into turns, and exposes both, the Thread's record
@@ -77,14 +77,16 @@ tool calls, delegated input or comments. The packaged CSP permits fonts from `se
 only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
 face. The sidebar tree follows the selected Project's live
 subscription, so a
-Thread created by an agent appears without a manual refresh, while header tabs
-stay user-driven. Open-tab order and selection persist locally across app
+Thread created by an agent appears without a manual refresh. The selected Thread
+persists locally across app
 restarts. One
 full-height resize handle owns the sidebar boundary across header and content
-and disappears when the sidebar closes. A segmented footer shares that geometry
+and disappears when the sidebar closes; it draws no grip of its own. A segmented
+footer shares that geometry
 and shows the Electron main process's Socket.IO connection status on the content
-side. Header tabs can be reordered, closed, selected, and double-clicked to
-rename their Thread.
+side. The header names the selected Thread as a breadcrumb of its Project and
+the chain of Threads above it, and every part but the last selects what it
+names.
 
 ### Project And Thread Contract
 

@@ -62,9 +62,6 @@ export function ThreadBranches({
         const { thread } = node;
         const selected = selectedThreadId === thread.id;
         const expanded = isExpanded(node, collapsed);
-        const ThreadIcon = node.expandable
-          ? ChevronRightIcon
-          : MessageSquareIcon;
         const addChild = () => {
           onExpand(thread.id);
           actions.beginChild(thread);
@@ -106,14 +103,16 @@ export function ThreadBranches({
                       }
                     }}
                   >
-                    <ThreadIcon
-                      className={cn(
-                        node.expandable &&
+                    <MessageSquareIcon />
+                    {node.expandable && (
+                      <ChevronRightIcon
+                        aria-hidden
+                        className={cn(
                           'transition-transform duration-[50ms] ease-out',
-                        node.expandable &&
-                          (expanded ? 'rotate-90' : 'rotate-0'),
-                      )}
-                    />
+                          expanded ? 'rotate-90' : 'rotate-0',
+                        )}
+                      />
+                    )}
                     <EditableName
                       editing={editingThreadId === thread.id}
                       label="Thread name"

@@ -51,7 +51,6 @@ export function WorkspaceLayout({
         </div>
       </ResizablePanel>
       <ResizableHandle
-        withHandle={open}
         disabled={!open}
         className={
           open

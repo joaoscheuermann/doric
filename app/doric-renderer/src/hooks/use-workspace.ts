@@ -1,13 +1,10 @@
 import {
   applyUpdate,
-  type Cascade,
   emptyTree,
   forgetProject,
-  forgetTabs,
   forgetThread,
   isDescribed,
   type ProjectTree,
-  replaceTab,
   type Selection,
   threadsOf,
   withProject,
@@ -20,14 +17,12 @@ import {
   type Draft,
   type Entity,
   messageFrom,
-  moveThreadTab,
-  openThreadTab,
   type Project,
   type Thread,
 } from '@/domain/workspace';
 import { useEffect, useRef, useState } from 'react';
 
-import { usePersistedTabs } from './use-persisted-tabs';
+import { usePersistedSelection } from './use-persisted-selection';
 import { useProjectEvents } from './use-project-events';
 
 export type WorkspaceActions = {
@@ -35,17 +30,11 @@ export type WorkspaceActions = {
   readonly beginThread: (projectId: string, parentThreadId?: string) => void;
   readonly cancelDraft: () => void;
   readonly cancelRename: () => void;
-  readonly closeThread: (id: string) => void;
   readonly confirmDelete: () => Promise<void>;
   readonly copyThreadId: (id: string) => void;
   readonly createProject: (name: string) => Promise<void>;
   readonly createThread: (name: string) => Promise<void>;
   readonly dismissDelete: () => void;
-  readonly moveThread: (
-    sourceId: string,
-    targetId: string,
-    position: 'before' | 'after',
-  ) => void;
   readonly rename: (entity: Entity, name: string) => Promise<void>;
   readonly requestDelete: (entity: Entity) => void;
   readonly selectProject: (project: Project) => void;
@@ -55,9 +44,9 @@ export type WorkspaceActions = {
 
 /**
  * Everything the workspace page shows and everything the user can ask it to do:
- * the Projects and Threads it knows, the open tabs, the dialogs in progress, and
- * the one error a failed request surfaces. The rules behind these transitions
- * are pure and live in `@/domain/project-tree`.
+ * the Projects and Threads it knows, the dialogs in progress, and the one error a
+ * failed request surfaces. The rules behind these transitions are pure and live
+ * in `@/domain/project-tree`.
  */
 export type Workspace = {
   readonly actions: WorkspaceActions;
@@ -68,7 +57,6 @@ export type Workspace = {
   readonly error?: string;
   readonly loadingProjects: boolean;
   readonly loadingThreads: boolean;
-  readonly openThreads: readonly Thread[];
   readonly projects: readonly Project[];
   readonly selectedProjectId?: string;
   readonly selectedThread?: Thread;
@@ -89,7 +77,7 @@ export const useWorkspace = (): Workspace => {
   const [error, setError] = useState<string>();
   /** Interaction intent, so work started before the last one cannot land after it. */
   const intent = useRef(0);
-  /** Interaction intent at mount, so a late tab restore cannot win. */
+  /** Interaction intent at mount, so a late selection restore cannot win. */
   const restoreIntent = useRef(intent.current);
   const loadSequences = useRef(new Map<string, number>());
   const mutationSequences = useRef(new Map<string, number>());
@@ -179,20 +167,18 @@ export const useWorkspace = (): Workspace => {
     };
   }, []);
 
-  const { openThreads, setOpenThreads, setSelectedThreadId } = usePersistedTabs(
-    {
-      isCurrent: () => intent.current === restoreIntent.current,
-      onRestore: (thread) => {
-        intent.current += 1;
-        select({ projectId: thread.projectId, threadId: thread.id });
-        void loadThreads(thread.projectId);
-      },
-      get: (id) => window.doric.threads.get(id),
+  const { setSelectedThreadId } = usePersistedSelection({
+    isCurrent: () => intent.current === restoreIntent.current,
+    onRestore: (thread) => {
+      intent.current += 1;
+      select({ projectId: thread.projectId, threadId: thread.id });
+      void loadThreads(thread.projectId);
     },
-  );
+    get: (id) => window.doric.threads.get(id),
+  });
 
   /**
-   * The tree owns the selection; the tab store keeps the copy it persists.
+   * The tree owns the selection; the selection store keeps the copy it persists.
    * Every selection change flows through here, so the persisted copy cannot
    * drift from the one the surfaces render.
    */
@@ -200,27 +186,12 @@ export const useWorkspace = (): Workspace => {
     setSelectedThreadId(tree.selection.threadId);
   }, [tree.selection.threadId, setSelectedThreadId]);
 
-  /**
-   * Forgets whatever a cascade took out of the tree and closes the tabs that
-   * followed it. The tree advances from its latest value so back-to-back
-   * updates are all kept, while the removal settles the tabs.
-   */
-  const forget = (cascade: (tree: ProjectTree) => Cascade): void => {
-    const { removal } = cascade(tree);
-    if (removal !== undefined) {
-      setOpenThreads((tabs) => forgetTabs(tabs, removal));
-    }
-    setTree((current) => cascade(current).tree);
-  };
-
   useProjectEvents({
     projectId: tree.selection.projectId,
-    onUpdate: (update) => {
-      if (update.kind === 'thread-updated') {
-        setOpenThreads((tabs) => replaceTab(tabs, update.thread));
-      }
-      forget((current) => applyUpdate(current, update));
-    },
+    onUpdate: (update) =>
+      // Every transition advances the tree from its latest value, so
+      // back-to-back updates are all kept.
+      setTree((current) => applyUpdate(current, update)),
     onError: setError,
   });
 
@@ -238,7 +209,6 @@ export const useWorkspace = (): Workspace => {
     setDraft(undefined);
     setEditing(undefined);
     select({ projectId: thread.projectId, threadId: thread.id });
-    setOpenThreads((current) => openThreadTab(current, thread));
     if (!isDescribed(tree, thread.projectId))
       void loadThreads(thread.projectId);
   };
@@ -301,7 +271,6 @@ export const useWorkspace = (): Workspace => {
         intent.current === operationIntent
       ) {
         select({ projectId: thread.projectId, threadId: thread.id });
-        setOpenThreads((current) => openThreadTab(current, thread));
         setDraft((current) =>
           current === operationDraft ? undefined : current,
         );
@@ -329,7 +298,6 @@ export const useWorkspace = (): Workspace => {
         if (!mutationIsCurrent(key, sequence)) return;
         invalidateLoads(thread.projectId);
         setTree((current) => withThread(current, thread));
-        setOpenThreads((current) => replaceTab(current, thread));
       }
       if (intent.current === operationIntent) {
         setEditing((current) =>
@@ -357,13 +325,13 @@ export const useWorkspace = (): Workspace => {
         await window.doric.projects.terminate(entity.value.id);
         await window.doric.projects.delete(entity.value.id);
         if (!mutationIsCurrent(key, sequence)) return;
-        forget((current) => forgetProject(current, entity.value.id));
+        setTree((current) => forgetProject(current, entity.value.id));
       } else {
         invalidateLoads(entity.value.projectId);
         await window.doric.threads.terminate(entity.value.id);
         await window.doric.threads.delete(entity.value.id);
         if (!mutationIsCurrent(key, sequence)) return;
-        forget((current) =>
+        setTree((current) =>
           forgetThread(current, entity.value.projectId, entity.value.id),
         );
         void loadThreads(entity.value.projectId);
@@ -374,24 +342,6 @@ export const useWorkspace = (): Workspace => {
     } finally {
       setDeletingPending(false);
     }
-  };
-
-  const closeThread = (id: string): void => {
-    const index = openThreads.findIndex((thread) => thread.id === id);
-    if (index === -1) return;
-    const remaining = openThreads.filter((thread) => thread.id !== id);
-    setOpenThreads(remaining);
-    if (tree.selection.threadId !== id) return;
-
-    const replacement = remaining[Math.min(index, remaining.length - 1)];
-    if (replacement) {
-      selectThread(replacement);
-      return;
-    }
-    intent.current += 1;
-    setDraft(undefined);
-    setEditing(undefined);
-    select({ projectId: tree.selection.projectId });
   };
 
   const actions: WorkspaceActions = {
@@ -405,7 +355,6 @@ export const useWorkspace = (): Workspace => {
       intent.current += 1;
       setEditing(undefined);
     },
-    closeThread,
     confirmDelete,
     copyThreadId: (id) => {
       setError(undefined);
@@ -417,11 +366,6 @@ export const useWorkspace = (): Workspace => {
     createThread,
     dismissDelete: () => {
       if (!deletingPending) setDeleting(undefined);
-    },
-    moveThread: (sourceId, targetId, position) => {
-      setOpenThreads((current) =>
-        moveThreadTab(current, sourceId, targetId, position),
-      );
     },
     rename,
     requestDelete: setDeleting,
@@ -437,6 +381,8 @@ export const useWorkspace = (): Workspace => {
   const selectedProjectId = tree.selection.projectId;
   const selectedThreadId = tree.selection.threadId;
 
+  const threads = threadsOf(tree, selectedProjectId);
+
   return {
     actions,
     deleting,
@@ -448,13 +394,10 @@ export const useWorkspace = (): Workspace => {
     loadingThreads:
       selectedProjectId !== undefined &&
       loadingProjectThreads.has(selectedProjectId),
-    openThreads,
     projects: tree.projects,
     selectedProjectId,
-    selectedThread: openThreads.find(
-      (thread) => thread.id === selectedThreadId,
-    ),
+    selectedThread: threads.find((thread) => thread.id === selectedThreadId),
     selectedThreadId,
-    threads: threadsOf(tree, selectedProjectId),
+    threads,
   };
 };

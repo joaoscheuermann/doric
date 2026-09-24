@@ -7,6 +7,7 @@ import {
   isExpanded,
   threadLevel,
   type ThreadNode,
+  threadPath,
 } from '../src/domain/thread-tree';
 import type { Thread } from '../src/domain/workspace';
 
@@ -149,6 +150,42 @@ describe('threadLevel', () => {
       'p',
     );
     assert.equal(other.nodes[0]!.children.draft, false);
+  });
+});
+
+describe('threadPath', () => {
+  const threads = [
+    thread('root', 'p'),
+    thread('child', 'p', 'root'),
+    thread('grandchild', 'p', 'child'),
+    thread('sibling', 'p', 'root'),
+  ];
+
+  test('names every ancestor from the outermost down to the Thread', () => {
+    assert.deepEqual(
+      threadPath(threads, 'grandchild').map(({ id }) => id),
+      ['root', 'child', 'grandchild'],
+    );
+  });
+
+  test('is a single entry for a Thread with no parent', () => {
+    assert.deepEqual(
+      threadPath(threads, 'root').map(({ id }) => id),
+      ['root'],
+    );
+  });
+
+  test('stops at a parent the list does not describe', () => {
+    const orphan = [thread('child', 'p', 'missing')];
+
+    assert.deepEqual(
+      threadPath(orphan, 'child').map(({ id }) => id),
+      ['child'],
+    );
+  });
+
+  test('is empty for a Thread the list does not know', () => {
+    assert.deepEqual(threadPath(threads, 'ghost'), []);
   });
 });
 

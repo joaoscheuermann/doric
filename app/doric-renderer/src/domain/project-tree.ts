@@ -34,21 +34,6 @@ export const emptyTree: ProjectTree = {
 /** The Project updates that describe the tree; a failure is reported, not reduced. */
 export type TreeUpdate = Exclude<ProjectUpdate, { readonly kind: 'error' }>;
 
-/**
- * What left the tree. A Project is named by identity so its Threads go with it
- * whether or not a cache ever listed them; Threads are named individually.
- */
-export type Removal = {
-  readonly projectId?: string;
-  readonly threadIds: ReadonlySet<string>;
-};
-
-/** A transition: the tree it leaves behind, and what it took out of it. */
-export type Cascade = {
-  readonly tree: ProjectTree;
-  readonly removal?: Removal;
-};
-
 /** Whether the host has described a Project's Threads. */
 export const isDescribed = (tree: ProjectTree, projectId: string): boolean =>
   tree.threadsByProject[projectId] !== undefined;
@@ -154,15 +139,12 @@ const replaceThreads = (
 export const forgetProject = (
   tree: ProjectTree,
   projectId: string,
-): Cascade => ({
-  tree: {
-    projects: tree.projects.filter((project) => project.id !== projectId),
-    threadsByProject: Object.fromEntries(
-      Object.entries(tree.threadsByProject).filter(([id]) => id !== projectId),
-    ),
-    selection: tree.selection.projectId === projectId ? {} : tree.selection,
-  },
-  removal: { projectId, threadIds: new Set() },
+): ProjectTree => ({
+  projects: tree.projects.filter((project) => project.id !== projectId),
+  threadsByProject: Object.fromEntries(
+    Object.entries(tree.threadsByProject).filter(([id]) => id !== projectId),
+  ),
+  selection: tree.selection.projectId === projectId ? {} : tree.selection,
 });
 
 /**
@@ -173,63 +155,44 @@ export const forgetThread = (
   tree: ProjectTree,
   projectId: string,
   threadId: string,
-): Cascade => {
+): ProjectTree => {
   const described = threadsOf(tree, projectId);
   const threadIds = threadSubtreeIds(described, threadId);
   return {
-    tree: {
-      ...replaceThreads(
-        tree,
-        projectId,
-        described.filter((thread) => !threadIds.has(thread.id)),
-      ),
-      selection:
-        tree.selection.threadId !== undefined &&
-        threadIds.has(tree.selection.threadId)
-          ? { projectId: tree.selection.projectId }
-          : tree.selection,
-    },
-    removal: { threadIds },
+    ...replaceThreads(
+      tree,
+      projectId,
+      described.filter((thread) => !threadIds.has(thread.id)),
+    ),
+    selection:
+      tree.selection.threadId !== undefined &&
+      threadIds.has(tree.selection.threadId)
+        ? { projectId: tree.selection.projectId }
+        : tree.selection,
   };
 };
 
 /** The transition a live Project update makes. */
-export const applyUpdate = (tree: ProjectTree, update: TreeUpdate): Cascade => {
+export const applyUpdate = (
+  tree: ProjectTree,
+  update: TreeUpdate,
+): ProjectTree => {
   switch (update.kind) {
     case 'snapshot':
-      return {
-        tree: withThreads(
-          tree,
-          update.snapshot.projectId,
-          update.snapshot.threads,
-        ),
-      };
+      return withThreads(
+        tree,
+        update.snapshot.projectId,
+        update.snapshot.threads,
+      );
     case 'thread-updated':
       // An agent-created Thread lands after its siblings instead of jumping to
       // the top, matching the creation order the server lists them in.
-      return { tree: withThread(tree, update.thread, 'last') };
+      return withThread(tree, update.thread, 'last');
     case 'thread-deleted':
       return forgetThread(tree, update.projectId, update.threadId);
     case 'project-updated':
-      return { tree: withProject(tree, update.project) };
+      return withProject(tree, update.project);
     case 'project-deleted':
       return forgetProject(tree, update.projectId);
   }
 };
-
-/** The open tabs after a removal: a Project's go by ownership, a Thread's by identity. */
-export const forgetTabs = (
-  tabs: readonly Thread[],
-  removal: Removal,
-): readonly Thread[] =>
-  tabs.filter(
-    (tab) =>
-      tab.projectId !== removal.projectId && !removal.threadIds.has(tab.id),
-  );
-
-/** The open tabs after a Thread changed, so an open copy keeps its place. */
-export const replaceTab = (
-  tabs: readonly Thread[],
-  thread: Thread,
-): readonly Thread[] =>
-  tabs.map((tab) => (tab.id === thread.id ? thread : tab));

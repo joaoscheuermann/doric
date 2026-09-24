@@ -5,11 +5,9 @@ import {
   applyUpdate,
   emptyTree,
   forgetProject,
-  forgetTabs,
   forgetThread,
   isDescribed,
   type ProjectTree,
-  replaceTab,
   type Selection,
   threadsOf,
   withProjects,
@@ -89,7 +87,7 @@ describe('the Project tree', () => {
       applyUpdate(before, {
         kind: 'snapshot',
         snapshot: { projectId: 'one', project: null, threads },
-      }).tree;
+      });
 
     assert.deepEqual(
       ids(threadsOf(snapshot([thread('current', 'one')]), 'one')),
@@ -111,7 +109,7 @@ describe('the Project tree', () => {
     const after = applyUpdate(before, {
       kind: 'thread-updated',
       thread: thread('third', 'one'),
-    }).tree;
+    });
 
     assert.deepEqual(ids(threadsOf(after, 'one')), [
       'first',
@@ -130,7 +128,7 @@ describe('the Project tree', () => {
     const after = applyUpdate(before, {
       kind: 'thread-updated',
       thread: renamed,
-    }).tree;
+    });
 
     assert.deepEqual(ids(threadsOf(after, 'one')), [
       'first',
@@ -146,7 +144,7 @@ describe('the Project tree', () => {
     const after = applyUpdate(before, {
       kind: 'project-updated',
       project: renamed,
-    }).tree;
+    });
 
     assert.deepEqual(after.projects, [renamed, project('two')]);
   });
@@ -180,27 +178,9 @@ describe('the removal of a Thread', () => {
   );
 
   test('takes the Thread and its subtree out of the Threads the host described', () => {
-    const cascade = forgetThread(described, 'one', 'parent');
+    const after = forgetThread(described, 'one', 'parent');
 
-    assert.deepEqual(ids(threadsOf(cascade.tree, 'one')), ['sibling']);
-    assert.ok(cascade.removal);
-    assert.deepEqual([...cascade.removal.threadIds].sort(), [
-      'child',
-      'grandchild',
-      'parent',
-    ]);
-  });
-
-  test('closes the open tabs of the Thread and its subtree', () => {
-    const tabs = [
-      thread('parent', 'one'),
-      thread('child', 'one', 'parent'),
-      thread('sibling', 'one'),
-    ];
-    const cascade = forgetThread(described, 'one', 'parent');
-
-    assert.ok(cascade.removal);
-    assert.deepEqual(ids(forgetTabs(tabs, cascade.removal)), ['sibling']);
+    assert.deepEqual(ids(threadsOf(after, 'one')), ['sibling']);
   });
 
   test('leaves the selection on the Project that owned it', () => {
@@ -209,36 +189,23 @@ describe('the removal of a Thread', () => {
       threadId: 'child',
     });
 
-    assert.deepEqual(forgetThread(selected, 'one', 'parent').tree.selection, {
+    assert.deepEqual(forgetThread(selected, 'one', 'parent').selection, {
       projectId: 'one',
     });
-    assert.deepEqual(forgetThread(selected, 'one', 'sibling').tree.selection, {
+    assert.deepEqual(forgetThread(selected, 'one', 'sibling').selection, {
       projectId: 'one',
       threadId: 'child',
     });
   });
 
-  test('reports the Threads a deletion update took, so their tabs can close', () => {
-    const tabs = [
-      thread('parent', 'one'),
-      thread('grandchild', 'one', 'child'),
-      thread('sibling', 'one'),
-    ];
-    const cascade = applyUpdate(described, {
+  test('applies a deletion update to the Thread and its subtree', () => {
+    const after = applyUpdate(described, {
       kind: 'thread-deleted',
       projectId: 'one',
       threadId: 'child',
     });
 
-    assert.deepEqual(ids(threadsOf(cascade.tree, 'one')), [
-      'parent',
-      'sibling',
-    ]);
-    assert.ok(cascade.removal);
-    assert.deepEqual(ids(forgetTabs(tabs, cascade.removal)), [
-      'parent',
-      'sibling',
-    ]);
+    assert.deepEqual(ids(threadsOf(after, 'one')), ['parent', 'sibling']);
   });
 
   test('leaves a Project whose Threads were never described undescribed', () => {
@@ -250,26 +217,10 @@ describe('the removal of a Thread', () => {
         threadId: 'ghost',
       },
     );
-    const cascade = forgetThread(undescribed, 'one', 'ghost');
+    const after = forgetThread(undescribed, 'one', 'ghost');
 
-    assert.equal(isDescribed(cascade.tree, 'one'), false);
-    assert.deepEqual(cascade.tree.selection, { projectId: 'one' });
-  });
-
-  test('keeps a renamed Thread in the open tab that shows it', () => {
-    const tabs = [
-      thread('first', 'one'),
-      thread('second', 'one'),
-      thread('third', 'one'),
-    ];
-    const renamed = { ...thread('second', 'one'), name: 'renamed' };
-
-    assert.deepEqual(ids(replaceTab(tabs, renamed)), [
-      'first',
-      'second',
-      'third',
-    ]);
-    assert.equal(replaceTab(tabs, renamed)[1], renamed);
+    assert.equal(isDescribed(after, 'one'), false);
+    assert.deepEqual(after.selection, { projectId: 'one' });
   });
 });
 
@@ -281,7 +232,7 @@ describe('the removal of a Project', () => {
       { projectId: 'one', threadId: 'thread' },
     );
 
-    assert.deepEqual(forgetProject(selected, 'one').tree.selection, {});
+    assert.deepEqual(forgetProject(selected, 'one').selection, {});
   });
 
   test('clears a selection pointing at it when the described Threads are stale', () => {
@@ -296,33 +247,12 @@ describe('the removal of a Project', () => {
       { projectId: 'one', threadId: 'thread' },
     );
 
-    assert.deepEqual(forgetProject(selected, 'one').tree.selection, {});
-    assert.deepEqual(forgetProject(withOtherThreads, 'one').tree.selection, {});
-  });
-
-  test('closes tabs owned by it, including Threads no cache described', () => {
-    const tabs = [
-      thread('cached', 'one'),
-      thread('uncached', 'one'),
-      thread('kept', 'two'),
-    ];
-    const cascade = forgetProject(
-      tree([project('one'), project('two')], {
-        one: [thread('cached', 'one')],
-      }),
-      'one',
-    );
-
-    assert.deepEqual(cascade.removal, {
-      projectId: 'one',
-      threadIds: new Set(),
-    });
-    assert.ok(cascade.removal);
-    assert.deepEqual(ids(forgetTabs(tabs, cascade.removal)), ['kept']);
+    assert.deepEqual(forgetProject(selected, 'one').selection, {});
+    assert.deepEqual(forgetProject(withOtherThreads, 'one').selection, {});
   });
 
   test('forgets the Project and the Threads described for it', () => {
-    const cascade = forgetProject(
+    const after = forgetProject(
       tree([project('one'), project('two')], {
         one: [thread('a', 'one')],
         two: [thread('b', 'two')],
@@ -330,9 +260,9 @@ describe('the removal of a Project', () => {
       'one',
     );
 
-    assert.deepEqual(cascade.tree.projects, [project('two')]);
-    assert.equal(isDescribed(cascade.tree, 'one'), false);
-    assert.deepEqual(ids(threadsOf(cascade.tree, 'two')), ['b']);
+    assert.deepEqual(after.projects, [project('two')]);
+    assert.equal(isDescribed(after, 'one'), false);
+    assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
   });
 
   test('leaves another Project\u2019s Threads and selection alone', () => {
@@ -345,7 +275,7 @@ describe('the removal of a Project', () => {
     const after = applyUpdate(before, {
       kind: 'project-deleted',
       projectId: 'one',
-    }).tree;
+    });
 
     assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
     assert.deepEqual(after.selection, { projectId: 'two', threadId: 'b' });
