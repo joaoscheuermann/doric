@@ -87,8 +87,9 @@ function ProviderRow({ index, onPatch, onRemove, provider }: ProviderRowProps) {
 }
 
 /**
- * The providers the host may call. Each row is patched by position and removed
- * by id; the domain owns what each edit does to the configuration.
+ * The providers the host may call. Each row is patched and removed by position,
+ * which is the only identity a row has before its id is typed; the domain owns
+ * what each edit does to the configuration.
  */
 export function SettingsProviders({ draft, onChange }: SettingsProvidersProps) {
   return (
@@ -103,7 +104,7 @@ export function SettingsProviders({ draft, onChange }: SettingsProvidersProps) {
           index={index}
           provider={provider}
           onPatch={(patch) => onChange(updateProvider(draft, index, patch))}
-          onRemove={() => onChange(removeProvider(draft, provider.id))}
+          onRemove={() => onChange(removeProvider(draft, index))}
         />
       ))}
       <Separator />

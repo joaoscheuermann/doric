@@ -31,7 +31,7 @@ export function WorkspaceFooter({ onOpenSettings }: WorkspaceFooterProps) {
     >
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label="Settings"
         onClick={onOpenSettings}
       >

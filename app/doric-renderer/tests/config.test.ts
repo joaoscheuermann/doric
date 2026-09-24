@@ -275,7 +275,7 @@ describe('provider transitions', () => {
         },
       },
     });
-    const next = removeProvider(base, 'openai');
+    const next = removeProvider(base, 0);
 
     assert.deepEqual(
       next.providers.map(({ id }) => id),
@@ -284,11 +284,29 @@ describe('provider transitions', () => {
     assert.equal(next.models.execution.providerId, 'anthropic');
   });
 
+  test('removes one of two rows that share an empty id', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider(''), provider('')],
+    });
+    const next = removeProvider(base, 2);
+
+    assert.deepEqual(
+      next.providers.map(({ id }) => id),
+      ['openai', ''],
+    );
+  });
+
+  test('leaves the configuration alone when no row is at that position', () => {
+    const base = configuration();
+
+    assert.deepEqual(removeProvider(base, 3), base);
+  });
+
   test('repoints the execution model at the first row left when its own is removed', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic')],
     });
-    const next = removeProvider(base, 'openai');
+    const next = removeProvider(base, 0);
 
     assert.deepEqual(
       next.providers.map(({ id }) => id),
@@ -299,7 +317,7 @@ describe('provider transitions', () => {
   });
 
   test('points the execution model at nothing when no provider is left', () => {
-    const next = removeProvider(configuration(), 'openai');
+    const next = removeProvider(configuration(), 0);
 
     assert.deepEqual(next.providers, []);
     assert.equal(next.models.execution.providerId, '');

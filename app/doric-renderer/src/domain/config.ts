@@ -199,19 +199,25 @@ export const updateProvider = (
 };
 
 /**
- * Drops a row by id. The execution model must keep naming a configured provider,
- * so when the removed row was the referenced one the reference moves to the
- * first row left, or to none when the list empties.
+ * Drops the row at a position, the same identity `updateProvider` addresses.
+ * A row is not addressable by id yet: an added row has none, and a row being
+ * typed may carry a duplicate, so an id would remove two rows at once. The
+ * execution model must keep naming a configured provider, so when the removed
+ * row was the referenced one the reference moves to the first row left, or to
+ * none when the list empties.
  */
 export const removeProvider = (
   configuration: Configuration,
-  id: string,
+  index: number,
 ): Configuration => {
+  const removed = configuration.providers[index];
+  if (removed === undefined) return configuration;
+
   const providers = configuration.providers.filter(
-    (provider) => provider.id !== id,
+    (_, current) => current !== index,
   );
   const next = { ...configuration, providers };
-  return configuration.models.execution.providerId === id
+  return configuration.models.execution.providerId === removed.id
     ? withExecutionProvider(next, providers[0]?.id ?? '')
     : next;
 };
