@@ -19,6 +19,13 @@ export type Generation = {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
+  /**
+   * Registers a secret the host learned after this generation was built — a
+   * rotated credential it wrote into a running sandbox — so it is redacted
+   * exactly like the ones the snapshot carried. A Project whose generation
+   * predates a rotation would otherwise persist the new token unredacted.
+   */
+  readonly registerSecret: (value: string) => void;
   readonly catalog: Catalog;
 };
 
@@ -78,6 +85,9 @@ export const createGeneration = async ({
     snapshot,
     providers,
     redactions,
+    registerSecret: (value) => {
+      if (value.length > 0) credentials.add(value);
+    },
     catalog: {
       skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),
       tools: bundles.flatMap(({ tools }) =>

@@ -1,5 +1,6 @@
+import { CodeView } from '@/components/molecules/code-view';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { truncationNotice } from '@/domain/files';
+import { fileLanguage, truncationNotice } from '@/domain/files';
 import type { ProjectFileContent } from '@/domain/workspace';
 
 type FileContentProps = {
@@ -7,27 +8,24 @@ type FileContentProps = {
 };
 
 /**
- * One file's text, readable and selectable: monospace in a scroll area, honest
- * about a payload the host cut short, and a sentence rather than mangled text
- * for a file that is not text at all. The file's path and size are the footer's
- * business.
+ * One file's text, readable and selectable: the editor the language of the
+ * file's path calls for, honest about a payload the host cut short, and a
+ * sentence rather than mangled text for a file that is not text at all.
  */
 export function FileContent({ file }: FileContentProps) {
   const notice = truncationNotice(file.truncated);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
-        {file.binary ? (
+      {file.binary ? (
+        <ScrollArea className="min-h-0 flex-1">
           <p className="p-3 text-xs text-muted-foreground">
             This is a binary file, so its contents are not shown.
           </p>
-        ) : (
-          <pre className="p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap select-text">
-            {file.content}
-          </pre>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      ) : (
+        <CodeView language={fileLanguage(file.path)} value={file.content} />
+      )}
       {notice !== undefined && (
         <p className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground">
           {notice}

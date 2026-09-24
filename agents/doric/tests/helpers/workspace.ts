@@ -293,6 +293,7 @@ export const workspace = () => {
           providers: new Map(),
           catalog: { skills: [], tools: [] },
           redactions: () => ['secret-value'],
+          registerSecret: () => undefined,
         }),
       } as never,
       logger: { debug: () => undefined, error: () => undefined } as never,
@@ -337,6 +338,8 @@ export type FakeSandboxOptions = {
  * - `wc -c <absolute paths>` reports each file's byte size;
  * - `head -c <n> -- <path>` returns the first `n` bytes of the file;
  * - `git status --porcelain [-- <path>]` fails when no repository is scripted;
+ * - `git config --global <key> <value>` succeeds and is recorded;
+ * - any other `sh -c <script>` succeeds as the workspace's own shell helper;
  * - `diff(input)` returns the scripted diff and records the input it received;
  * - `readFile(<absolute path>)` returns a file's content or rejects.
  *
@@ -408,7 +411,9 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   const exec = async (input: SandboxExecInput): Promise<SandboxExecResult> => {
     execs.push(input);
     const [command, ...args] = input.cmd;
-    if (command === 'sh') return ok(kindOf(args.at(-1) ?? root));
+    // The path test passes a positional argument; a shell helper does not.
+    if (command === 'sh')
+      return ok(args.length > 2 ? kindOf(args.at(-1) ?? root) : '');
     if (command === 'find') return ok(find(args));
     if (command === 'wc')
       return ok(
@@ -431,6 +436,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
       return repository
         ? ok(options.status ?? '')
         : bytesResult(new Uint8Array(), 128);
+    if (command === 'git' && args[0] === 'config') return ok('');
     throw new Error(`Unscripted sandbox command: ${input.cmd.join(' ')}`);
   };
 

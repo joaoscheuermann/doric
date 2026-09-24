@@ -104,11 +104,14 @@ expands and collapses the panel stays at the window's right corner and never
 duplicates the sidebar's own toggle. It
 belongs to the selected Project rather than to the selected Thread, and it only
 reads: a Files tab shows the sandbox's directory tree and opens one file at a
-time in place of the tree, and a Changes tab shows the workspace Git diff with
+time in place of the tree, its text rendered read-only by the Monaco editor
+bundled with the editor worker alone, and a Changes tab shows the workspace Git
+diff with
 one row and one status badge per changed or untracked file. The tabs sit in the
-panel's header, in place of a title, and its footer carries the open file's path
-— a chain too deep for that row collapses its middle behind one trigger — the
-file's byte size, and the surface's only action, an explicit refresh. Directories
+panel's header, in place of a title, and an open file puts its own name and a back
+control at that header's left; the footer carries the directory the file sits in
+— a chain too deep for that row collapses its middle behind one trigger — and the
+surface's only action, an explicit refresh. Directories
 are read
 when they are expanded and the diff only when the Changes tab is shown, because
 the sandbox belongs to the Project and may not be usable at all: a queued,
@@ -131,7 +134,9 @@ credential by omitting it. There is no Save button: a valid change sends itself
 once typing settles, on a field blur, and on close, and the footer reports the
 revision and update time alongside the save state. The dialog states plainly
 that a saved change applies to Projects created afterwards, because a running
-Project keeps the configuration it had captured.
+Project keeps the configuration it had captured — with one exception: the GitHub
+identity and token follow the current configuration, so a rotated token reaches
+a Project that is already running on its next prompt.
 
 ### Project And Thread Contract
 
@@ -544,7 +549,13 @@ instead of handing it to a tool. That GitHub block follows one rule in the open
 PUT — absent leaves it alone, `null` removes it, a value sets it — so no caller
 deletes the token by omission. The token therefore also travels in the
 captured configuration snapshot of every Project created after it was saved,
-where it stays inside the host. Agent events intentionally expose
+where it stays inside the host. The host applies that block to a Project's
+sandbox: the identity, and, when a token is configured, a `credential.helper
+store` credential file written 0600, when the lease is acquired and again
+whenever the current block differs from the one the sandbox holds, because a
+rotated token must reach a Project that is already running. The token travels
+only through the sandbox process environment, never through a tool argument, a
+tool result, an event, or a log line. Agent events intentionally expose
 reasoning, provider replay, tool input/output, results, and serialized errors;
 configured credential values are redacted before persistence. Event bodies are
 never written to operational logs.

@@ -45,7 +45,10 @@ export function SettingsCredentials({
       <FieldSet>
         <FieldLegend>GitHub</FieldLegend>
         <FieldDescription>
-          The GitHub identity the agent's git commands commit and push with.
+          The GitHub identity the agent's git commands commit and push with. It
+          applies to a Project's next prompt, including a Project that is
+          already running, so a rotated token is picked up without recreating
+          anything.
         </FieldDescription>
         <Field>
           <FieldLabel htmlFor="github-username">Username</FieldLabel>

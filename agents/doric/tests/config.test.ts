@@ -211,6 +211,29 @@ test('redacts the configured GitHub token from event values', async () => {
   });
 });
 
+test('redacts a rotated token a running Project learned after it was built', async () => {
+  const rotated = 'ghp_rotated_later';
+  const generation = await createGeneration({
+    snapshot: snapshot(defaultConfig, 1),
+    bundles: [],
+    logger: pino({ enabled: false }),
+    environment: {},
+  });
+
+  assert.equal(generation.redactions().includes(rotated), false);
+
+  generation.registerSecret(rotated);
+
+  assert.equal(generation.redactions().includes(rotated), true);
+  assert.deepEqual(eventJson({ output: rotated }, generation.redactions()), {
+    output: '[REDACTED]',
+  });
+
+  generation.registerSecret('');
+
+  assert.equal(generation.redactions().includes(''), false);
+});
+
 test('serializes concurrent replacements in request order', async () => {
   const harness = await configHarness({ blockedBuild: 'first' });
   const first = configured('first');
@@ -302,6 +325,7 @@ const configHarness = async ({
       snapshot: current,
       providers: new Map(),
       redactions: () => [],
+      registerSecret: () => undefined,
       catalog: { skills: [], tools: [] },
     } satisfies Generation;
   };

@@ -5,6 +5,7 @@ import type { Sandbox } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
 
 import type { Generation } from '../config/generation.js';
+import type { GithubIdentity } from './git.js';
 import type {
   InputSource,
   Project,
@@ -56,6 +57,8 @@ export type ProjectRuntime = {
   readonly threads: Map<string, ThreadRuntime>;
   closing: boolean;
   lease?: SandboxLease;
+  /** The GitHub block this sandbox last received; see `applyCurrentGithub`. */
+  appliedGithub?: GithubIdentity;
   acquisition?: Promise<void>;
   ending?: Promise<void>;
 };

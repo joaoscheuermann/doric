@@ -258,3 +258,25 @@
     height: 100%;
   }
 }
+
+/*
+ * Monaco's scrollbar slider is a plain `<div class="slider">` that no option can
+ * shape — the class is `.monaco-scrollable-element > .scrollbar > .slider`, in
+ * `node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css`
+ * — so the `ScrollAreaThumb` in `src/components/ui/scroll-area.tsx` has to be
+ * restated here. The rule sits outside `@layer base` because Monaco's stylesheet
+ * is unlayered and would win inside a layer.
+ *
+ * The thumb it restates is a pill whose painted width is the lane minus its
+ * inset: that lane is `w-2.5` (10px, the size the editor is configured with)
+ * less `p-px` and a transparent `border-l`, so the pill our scroll views show is
+ * 7px. The slider's own width is set from JavaScript, so the inset is drawn with
+ * a transparent border and `background-clip` rather than by widening it: the
+ * lane keeps its 10px of drag area and the pill inside it is the one the app
+ * draws. `box-sizing: border-box` comes from Tailwind's preflight.
+ */
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background-clip: padding-box;
+  border: 1.5px solid transparent;
+  border-radius: 9999px;
+}

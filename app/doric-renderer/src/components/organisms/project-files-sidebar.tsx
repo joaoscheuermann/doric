@@ -45,10 +45,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toggle } from '@/components/ui/toggle';
 import {
+  baseName,
   changeLetter,
   classifyDiff,
   collapsedPath,
   emptyDirectoryNotice,
+  parentPath,
   ROOT_PATH,
   sandboxNotice,
 } from '@/domain/files';
@@ -94,10 +96,11 @@ type PanelView = 'files' | 'changes';
  *
  * The two views are icon-only toggles in the header in place of a title, because
  * they name what the panel is showing and select it, and an open file puts a
- * back control at the header's left, which returns to the tree the file was
- * opened from; the footer carries the path and byte size of the open file and
- * the one action the surface has. The panel's own toggle closes it, and stays
- * the last control at the header's corner.
+ * back control and the file's own name at the header's left, which returns to
+ * the tree the file was opened from; the footer carries the directory the file
+ * sits in — the file itself is named above, so the chain stops at its directory
+ * — and the one action the surface has. The panel's own toggle closes it, and
+ * stays the last control at the header's corner.
  */
 export function ProjectFilesSidebar({
   onToggle,
@@ -116,15 +119,20 @@ export function ProjectFilesSidebar({
     <Sidebar collapsible="none" className="overflow-hidden">
       <PanelHeader>
         {view === 'files' && files.selectedPath !== undefined && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Back to files"
-            className="shrink-0 [app-region:no-drag]"
-            onClick={files.actions.closeFile}
-          >
-            <ArrowLeftIcon />
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Back to files"
+              className="shrink-0 [app-region:no-drag]"
+              onClick={files.actions.closeFile}
+            >
+              <ArrowLeftIcon />
+            </Button>
+            <span className="min-w-0 truncate font-mono text-xs">
+              {baseName(files.selectedPath)}
+            </span>
+          </>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
           <ViewToggle
@@ -277,13 +285,14 @@ function SandboxGate({
 }
 
 /**
- * The panel's footer: the path the open file sits at and how many bytes it has,
- * and the one action the surface has, since a read-only view has nothing to
- * submit. Every crumb above the file returns to the tree, where the directory it
- * selects is already open, because the file was reached through it.
+ * The panel's footer: the directory the open file sits in, and the one action the
+ * surface has, since a read-only view has nothing to submit. The file's own name
+ * is the header's business, so this chain stops at its directory; every crumb
+ * returns to the tree, where the directory it selects is already open, because
+ * the file was reached through it.
  */
 function FilesFooter({ files }: { readonly files: ProjectFiles }) {
-  const { actions, selectedSize, selectedPath } = files;
+  const { actions, selectedPath } = files;
 
   return (
     <footer
@@ -292,13 +301,8 @@ function FilesFooter({ files }: { readonly files: ProjectFiles }) {
     >
       <FileBreadcrumb
         onBack={actions.closeFile}
-        path={selectedPath ?? ROOT_PATH}
+        path={parentPath(selectedPath ?? ROOT_PATH)}
       />
-      {selectedPath !== undefined && selectedSize !== undefined && (
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {selectedSize} bytes
-        </span>
-      )}
       <Button
         variant="ghost"
         size="icon-sm"

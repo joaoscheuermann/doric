@@ -7,6 +7,7 @@ import { runDirectPrompt } from '../agents/direct/executor.js';
 import type { ConfigService } from '../config/service.js';
 import { randomProjectColor } from './colors.js';
 import { projectChanges, readProjectFile } from './files.js';
+import { applyGitIdentity, type GithubIdentity } from './git.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
@@ -33,6 +34,15 @@ export type { ThreadExecution } from './runtime.js';
 type LeaseOutcome<Value> =
   | { readonly status: 'missing' | 'pending' | 'unavailable' | 'expired' }
   | { readonly status: 'ready'; readonly value: Value };
+
+/** Whether a sandbox already received exactly this GitHub block. */
+const sameGithub = (
+  applied: GithubIdentity | undefined,
+  current: GithubIdentity | undefined,
+): boolean =>
+  applied?.username === current?.username &&
+  applied?.email === current?.email &&
+  applied?.token === current?.token;
 
 type Options = {
   readonly projects: ProjectStore;
@@ -134,6 +144,14 @@ export const createWorkspaceService = ({
   const acquire = async (runtime: ProjectRuntime) => {
     try {
       const lease = await pool.acquire({ signal: runtime.controller.signal });
+      // The captured block is what a fresh sandbox starts with, and the next
+      // prompt re-applies the current one when it has moved on.
+      const github = runtime.generation.snapshot.configuration.github;
+      await applyGitIdentity(lease.sandbox, github, {
+        logger,
+        projectId: runtime.project.id,
+      });
+      runtime.appliedGithub = github;
       await exclusive(runtime.project.id, async () => {
         runtime.lease = lease;
         if (runtime.closing) return;
@@ -149,6 +167,31 @@ export const createWorkspaceService = ({
         if (!runtime.closing)
           await endProject(runtime, 'sandbox_acquisition_failed');
       });
+    }
+  };
+  /**
+   * The GitHub identity and its credential follow the current configuration, so a
+   * rotated or newly saved token reaches a Project that is already running, while
+   * every other configuration value stays captured in the Project's generation.
+   * The block is compared with the one the sandbox last received, so an unchanged
+   * configuration never re-runs commands, and the writes stay off the project lock
+   * because a credential is not a lifecycle mutation.
+   */
+  const applyCurrentGithub = async (runtime: ProjectRuntime | undefined) => {
+    const sandbox = runtime?.lease?.sandbox;
+    if (runtime === undefined || sandbox === undefined || runtime.closing)
+      return;
+    const github = config.current().snapshot.configuration.github;
+    if (sameGithub(runtime.appliedGithub, github)) return;
+    await applyGitIdentity(sandbox, github, {
+      logger,
+      projectId: runtime.project.id,
+    });
+    runtime.appliedGithub = github;
+    // This Project's captured generation predates any rotation, so the new token
+    // is registered for redaction before anything can carry it into an event.
+    if (github?.token !== undefined) {
+      runtime.generation.registerSecret(github.token);
     }
   };
   /**
@@ -351,6 +394,9 @@ export const createWorkspaceService = ({
       prompt: async (id, prompt) => {
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
+        // New input is the point where a live sandbox catches up with a rotated
+        // or newly saved GitHub block, before the prompt is enqueued.
+        await applyCurrentGithub(runtimes.get(record.thread.projectId));
         return exclusive(record.thread.projectId, async () => {
           const project = runtimes.get(record.thread.projectId);
           const thread = project?.threads.get(id);
@@ -362,6 +408,8 @@ export const createWorkspaceService = ({
       rewind: async (id, promptId, prompt) => {
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
+        // A rewind enqueues its replacement input the same way a prompt does.
+        await applyCurrentGithub(runtimes.get(record.thread.projectId));
         return exclusive(record.thread.projectId, async () => {
           const project = runtimes.get(record.thread.projectId);
           const thread = project?.threads.get(id);

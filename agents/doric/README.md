@@ -324,6 +324,15 @@ redact it too. `PUT /config` treats the GitHub block as absent (leave it alone),
 `null` (remove it), or a value (set it), so no caller can delete the token by
 leaving the key out.
 
+The host applies that block to a Project's sandbox: `git config --global` for
+the identity, and, when a token is configured, `credential.helper store` plus a
+`~/.git-credentials` written 0600. That happens when a lease is acquired and
+again whenever the current block differs from the one the sandbox holds, because
+the GitHub block follows the current configuration while every other value stays
+captured per Project. The token travels only through the sandbox process
+environment, so it never appears in a tool argument, a tool result, an event, or
+a log line; a write that fails is a warning naming the Project and nothing else.
+
 ## Validation
 
 Run `npx nx run doric:test` for the host suite and `npx nx run agent:test`

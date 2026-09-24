@@ -1,6 +1,5 @@
 import {
   isWithin,
-  parentPath,
   ROOT_PATH,
   type SandboxStatus,
   toggleExpanded,
@@ -82,8 +81,6 @@ export type ProjectFiles = {
    */
   readonly sandbox: SandboxState;
   readonly selectedPath?: string;
-  /** The byte size the open file's parent listing reported, when it did. */
-  readonly selectedSize?: number;
 };
 
 /**
@@ -314,13 +311,6 @@ export const useProjectFiles = ({
     [closeFile, loadRequestedChanges, openFile, refresh, toggleDirectory],
   );
 
-  const selectedSize =
-    selectedPath === undefined
-      ? undefined
-      : listings[parentPath(selectedPath)]?.find(
-          (entry) => entry.path === selectedPath,
-        )?.size;
-
   return {
     actions,
     changes,
@@ -331,6 +321,5 @@ export const useProjectFiles = ({
     loading,
     sandbox,
     selectedPath,
-    selectedSize,
   };
 };

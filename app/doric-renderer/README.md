@@ -107,10 +107,11 @@ The renderer has no direct network access to Doric. It uses the semantic
   The panel's tabs sit in its header in place of a title, its toggle stays at the
   window's right corner whether the panel is expanded or collapsed (collapsed the
   panel is not mounted at all, and the main header carries the control that
-  reopens it), and an open file puts a back control at the header's left, with
-  its footer carrying the file's path — a chain too deep for that row
-  collapses its middle behind one trigger (`collapsedPath`) — the file's byte
-  size and the one action the surface has.
+  reopens it), and an open file puts a back control and the file's name at the
+  header's left, with the footer carrying the directory it sits in — a chain too
+  deep for that row collapses its middle behind one trigger (`collapsedPath`) —
+  and the one action the surface has. The file itself is named once, above, so
+  the footer's chain stops at its directory.
   `use-project-files.ts` owns the listings, the expansion, the open file and the
   diff, and reads a directory only when it opens and the diff only when the
   changes view is shown. There is no watcher: the panel re-reads on its own
@@ -118,6 +119,19 @@ The renderer has no direct network access to Doric. It uses the semantic
   `write`, `edit` and `terminal` calls in the Thread's log (`projector.ts`).
   `domain/files.ts` holds the path rules, the diff classification and the
   sentences the states show, and is covered by `tests/files.test.ts`.
+- The open file's text is the Monaco editor in read-only mode
+  (`components/molecules/code-view.tsx`): no minimap, no line highlight, no
+  wrapping, and the theme taken from the document's own `.dark` class, because
+  nothing switches it after startup. `domain/files.ts`'s `fileLanguage` names
+  the language from the path's extension alone — TypeScript, JavaScript,
+  Markdown, CSS, HTML, XML, YAML, Shell, SQL, Python and Rust — and `plaintext`
+  for everything else, JSON included: Monaco serves JSON as a worker-backed
+  language service, and this view bundles no language service at all. Only the
+  editor's own worker is bundled, as one same-origin chunk, so the packaged
+  policy's `script-src 'self'` still needs no `worker-src` exception. The
+  editor is created once per mounted file and disposed when the view unmounts,
+  and a later text reaches the model it already holds rather than a new editor.
+  The editor is what the renderer's main bundle now mostly consists of.
 
 State that the live subscription and tab persistence own is isolated in
 `use-project-events.ts` and `use-persisted-tabs.ts`, which keeps `app.tsx` on the
@@ -177,7 +191,9 @@ explained above the section, because the same rules live in `src/domain/config.t
 and the host re-validates them; a failed save keeps the draft and shows the host's
 message. Changing the execution model reaches new Projects only: a Project
 keeps the configuration it was created with, and one already running keeps running
-as it was.
+as it was. The GitHub block is the one exception: its identity and token follow
+the current configuration, so the host applies a rotated token to a Project that
+is already running, on that Project's next prompt.
 
 ## Development
 
