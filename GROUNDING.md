@@ -52,9 +52,9 @@ reusable agent loop remains in `packages/agent`.
 main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
 The main process alone communicates with Doric HTTP and Socket.IO at
-`127.0.0.1:3000` and exposes only semantic Project and Thread operations, one
-selected-Thread event subscription, one selected-Project tree subscription, and
-connection status through a preload IPC boundary. The status, Thread, and
+`127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
+operations, one selected-Thread event subscription, one selected-Project tree
+subscription, and connection status through a preload IPC boundary. The status, Thread, and
 Project namespaces share one process-long Socket.IO Manager and Engine.IO
 connection. The renderer keeps the Threads it has read for each Project, so every
 open Project row renders its own subtree while live updates continue to follow
@@ -96,7 +96,12 @@ footer shares that geometry
 and shows the Electron main process's Socket.IO connection status on the content
 side. The header names the selected Thread as a breadcrumb of its Project and
 the chain of Threads above it, and every part but the last selects what it
-names.
+names. A settings modal opened from the content footer edits the host's
+credential-free configuration — the configured providers, the execution model
+with its reasoning effort, and the execution turn limit — as a draft the user
+saves or discards, and it states plainly that a saved change applies to Projects
+created afterwards, because a running Project keeps the configuration it had
+captured.
 
 ### Project And Thread Contract
 
