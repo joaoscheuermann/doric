@@ -1,6 +1,33 @@
-import { WorkspaceError } from './api';
+import {
+  type Configuration,
+  type ReasoningEffort,
+  reasoningEfforts,
+  WorkspaceError,
+} from './api';
 
 const maximumNameLength = 80;
+const maximumIdentifierLength = 128;
+const maximumModelLength = 512;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const nonEmpty = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
+
+/** A trimmed string within the host's own limit for that field. */
+const bounded = (value: unknown, maximum: number): value is string =>
+  typeof value === 'string' &&
+  value.trim().length > 0 &&
+  value.trim().length <= maximum;
+
+const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
+  typeof value === 'string' &&
+  (reasoningEfforts as readonly string[]).includes(value);
+
+const invalidConfiguration = (): never => {
+  throw new WorkspaceError('The configuration is invalid.');
+};
 
 /** The palette the host accepts; a client only ever names one of these. */
 const projectColors = [
@@ -69,4 +96,64 @@ export const sequence = (value: unknown): number => {
     throw new WorkspaceError('The event cursor is invalid.');
   }
   return value;
+};
+
+const provider = (value: unknown): Configuration['providers'][number] => {
+  if (
+    !isRecord(value) ||
+    !bounded(value.id, maximumIdentifierLength) ||
+    !nonEmpty(value.baseUrl) ||
+    !nonEmpty(value.apiKeyEnv)
+  ) {
+    return invalidConfiguration();
+  }
+  return { id: value.id, baseUrl: value.baseUrl, apiKeyEnv: value.apiKeyEnv };
+};
+
+const executionModel = (
+  value: unknown,
+): Configuration['models']['execution'] => {
+  if (
+    !isRecord(value) ||
+    !bounded(value.providerId, maximumIdentifierLength) ||
+    !bounded(value.model, maximumModelLength) ||
+    !isReasoningEffort(value.effort)
+  ) {
+    return invalidConfiguration();
+  }
+  return {
+    providerId: value.providerId,
+    model: value.model,
+    effort: value.effort,
+  };
+};
+
+const maximumTurns = (value: unknown): number => {
+  if (!isRecord(value)) return invalidConfiguration();
+  const turns = value.maxTurns;
+  if (typeof turns !== 'number' || !Number.isSafeInteger(turns) || turns <= 0) {
+    return invalidConfiguration();
+  }
+  return turns;
+};
+
+const models = (value: unknown): Configuration['models'] => {
+  if (!isRecord(value)) return invalidConfiguration();
+  return { execution: executionModel(value.execution) };
+};
+
+/**
+ * Guards the renderer's configuration payload, the only way a Settings surface
+ * reaches the host. Uniqueness and cross-references stay the host's job, so this
+ * boundary only refuses a shape the host could never accept.
+ */
+export const configuration = (value: unknown): Configuration => {
+  if (!isRecord(value) || !Array.isArray(value.providers)) {
+    return invalidConfiguration();
+  }
+  return {
+    providers: value.providers.map(provider),
+    models: models(value.models),
+    execution: { maxTurns: maximumTurns(value.execution) },
+  };
 };

@@ -4,6 +4,7 @@ import { workspaceApi, WorkspaceError } from './api';
 import type { ThreadEventService } from './events';
 import type { ProjectEventService } from './project-events';
 import {
+  configuration,
   identifier,
   name,
   projectColor,
@@ -47,6 +48,16 @@ export const registerWorkspaceHandlers = (
   events: ThreadEventService,
   projects: ProjectEventService,
 ): void => {
+  ipcMain.handle(
+    'doric:config:get',
+    safe(rendererUrl, workspaceApi.config.get),
+  );
+  ipcMain.handle(
+    'doric:config:update',
+    safe(rendererUrl, (value: unknown) =>
+      workspaceApi.config.update(configuration(value)),
+    ),
+  );
   ipcMain.handle(
     'doric:projects:list',
     safe(rendererUrl, workspaceApi.projects.list),

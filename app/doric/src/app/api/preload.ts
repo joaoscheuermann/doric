@@ -30,6 +30,32 @@ type Thread = {
   readonly updatedAt: string;
 };
 
+type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
+type ProviderConfiguration = {
+  readonly id: string;
+  readonly baseUrl: string;
+  readonly apiKeyEnv: string;
+};
+
+type Configuration = {
+  readonly providers: readonly ProviderConfiguration[];
+  readonly models: {
+    readonly execution: {
+      readonly providerId: string;
+      readonly model: string;
+      readonly effort: ReasoningEffort;
+    };
+  };
+  readonly execution: { readonly maxTurns: number };
+};
+
+type DoricConfiguration = {
+  readonly configuration: Configuration;
+  readonly revision: number;
+  readonly updatedAt: string;
+};
+
 type Result<Value> =
   | { readonly ok: true; readonly value: Value }
   | { readonly ok: false; readonly error: string };
@@ -61,6 +87,11 @@ contextBridge.exposeInMainWorld('doric', {
   connection: {
     status: connection.status,
     subscribe: connection.subscribe,
+  },
+  config: {
+    get: () => invoke<DoricConfiguration>('doric:config:get'),
+    update: (configuration: Configuration) =>
+      invoke<DoricConfiguration>('doric:config:update', configuration),
   },
   projects: {
     list: () => invoke<readonly Project[]>('doric:projects:list'),

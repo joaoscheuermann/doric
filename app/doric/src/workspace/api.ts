@@ -25,6 +25,41 @@ export type PromptReceipt = {
   readonly promptId: string;
 };
 
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const;
+
+export type ReasoningEffort = (typeof reasoningEfforts)[number];
+
+export type ProviderConfiguration = {
+  readonly id: string;
+  readonly baseUrl: string;
+  readonly apiKeyEnv: string;
+};
+
+export type Configuration = {
+  readonly providers: readonly ProviderConfiguration[];
+  readonly models: {
+    readonly execution: {
+      readonly providerId: string;
+      readonly model: string;
+      readonly effort: ReasoningEffort;
+    };
+  };
+  readonly execution: { readonly maxTurns: number };
+};
+
+export type DoricConfiguration = {
+  readonly configuration: Configuration;
+  readonly revision: number;
+  readonly updatedAt: string;
+};
+
 type Page<Value> = {
   readonly items: readonly Value[];
   readonly nextCursor?: string;
@@ -62,6 +97,67 @@ const threadFrom = (value: unknown): Thread => {
     return invalidResponse();
   }
   return value as Thread;
+};
+
+const reasoningEffortValues = new Set<string>(reasoningEfforts);
+
+const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
+  typeof value === 'string' && reasoningEffortValues.has(value);
+
+const providerConfigurationFrom = (value: unknown): ProviderConfiguration => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.baseUrl !== 'string' ||
+    typeof value.apiKeyEnv !== 'string'
+  ) {
+    return invalidResponse();
+  }
+  return { id: value.id, baseUrl: value.baseUrl, apiKeyEnv: value.apiKeyEnv };
+};
+
+const configurationFrom = (value: unknown): Configuration => {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.providers) ||
+    !isRecord(value.models) ||
+    !isRecord(value.models.execution) ||
+    !isRecord(value.execution) ||
+    typeof value.execution.maxTurns !== 'number'
+  ) {
+    return invalidResponse();
+  }
+
+  const { providerId, model, effort } = value.models.execution;
+  if (
+    typeof providerId !== 'string' ||
+    typeof model !== 'string' ||
+    !isReasoningEffort(effort)
+  ) {
+    return invalidResponse();
+  }
+
+  return {
+    providers: value.providers.map(providerConfigurationFrom),
+    models: { execution: { providerId, model, effort } },
+    execution: { maxTurns: value.execution.maxTurns },
+  };
+};
+
+const doricConfigurationFrom = (value: unknown): DoricConfiguration => {
+  if (
+    !isRecord(value) ||
+    typeof value.revision !== 'number' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    return invalidResponse();
+  }
+
+  return {
+    configuration: configurationFrom(value.configuration),
+    revision: value.revision,
+    updatedAt: value.updatedAt,
+  };
 };
 
 const promptReceiptFrom = (value: unknown): PromptReceipt => {
@@ -192,6 +288,16 @@ const allPages = async <Value>(path: string): Promise<readonly Value[]> => {
 export const workspaceReady = (): Promise<unknown> => request<unknown>('/vms');
 
 export const workspaceApi = {
+  config: {
+    get: async () => doricConfigurationFrom(await request<unknown>('/config')),
+    update: async (configuration: Configuration) =>
+      doricConfigurationFrom(
+        await request<unknown>('/config', {
+          method: 'PUT',
+          body: body(configuration),
+        }),
+      ),
+  },
   projects: {
     list: () => allPages<Project>('/projects'),
     create: (name: string) =>
