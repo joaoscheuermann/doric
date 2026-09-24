@@ -24,8 +24,8 @@ import {
   $getRoot,
   DecoratorNode,
   type NodeKey,
+  type LexicalEditor,
   type SerializedLexicalNode,
-  type Spread,
 } from 'lexical';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -165,16 +165,31 @@ const ToolCallDecorator = ({
   );
 };
 
+type SerializedTurnNode = SerializedLexicalNode & {
+  readonly markdown: string;
+  readonly role: PromptTurn['inputRole'];
+  readonly status: PromptStatus;
+};
+
+type SerializedDraftNode = SerializedLexicalNode & {
+  readonly text: string;
+  readonly thinking: boolean;
+};
+
+type SerializedToolCallNode = SerializedLexicalNode & {
+  readonly segment: Extract<PromptSegment, { kind: 'tool' }>;
+};
+
 class TurnNode extends DecoratorNode<ReactNode> {
   __role: PromptTurn['inputRole'];
   __markdown: string;
   __status: PromptStatus;
 
-  static getType(): string {
+  static override getType(): string {
     return 'conversation-turn';
   }
 
-  static clone(node: TurnNode): TurnNode {
+  static override clone(node: TurnNode): TurnNode {
     return new TurnNode(
       node.__role,
       node.__markdown,
@@ -183,12 +198,8 @@ class TurnNode extends DecoratorNode<ReactNode> {
     );
   }
 
-  static importJSON(serializedNode: SerializedLexicalNode): TurnNode {
-    const { markdown, role, status } = serializedNode as Spread<{
-      markdown: string;
-      role: PromptTurn['inputRole'];
-      status: PromptStatus;
-    }>;
+  static override importJSON(serializedNode: SerializedLexicalNode): TurnNode {
+    const { markdown, role, status } = serializedNode as SerializedTurnNode;
     return $createTurnNode(role, markdown, status);
   }
 
@@ -204,7 +215,7 @@ class TurnNode extends DecoratorNode<ReactNode> {
     this.__status = status;
   }
 
-  exportJSON(): SerializedLexicalNode {
+  override exportJSON(): SerializedTurnNode {
     return {
       ...super.exportJSON(),
       markdown: this.__markdown,
@@ -215,15 +226,15 @@ class TurnNode extends DecoratorNode<ReactNode> {
     };
   }
 
-  createDOM(): HTMLElement {
+  override createDOM(): HTMLElement {
     return document.createElement('div');
   }
 
-  updateDOM(): false {
+  override updateDOM(): false {
     return false;
   }
 
-  decorate(): ReactNode {
+  override decorate(): ReactNode {
     return (
       <TurnDecorator
         markdown={this.__markdown}
@@ -244,19 +255,16 @@ class DraftNode extends DecoratorNode<ReactNode> {
   __text: string;
   __thinking: boolean;
 
-  static getType(): string {
+  static override getType(): string {
     return 'conversation-draft';
   }
 
-  static clone(node: DraftNode): DraftNode {
+  static override clone(node: DraftNode): DraftNode {
     return new DraftNode(node.__text, node.__thinking, node.__key);
   }
 
-  static importJSON(serializedNode: SerializedLexicalNode): DraftNode {
-    const { text, thinking } = serializedNode as Spread<{
-      text: string;
-      thinking: boolean;
-    }>;
+  static override importJSON(serializedNode: SerializedLexicalNode): DraftNode {
+    const { text, thinking } = serializedNode as SerializedDraftNode;
     return $createDraftNode(text, thinking);
   }
 
@@ -266,7 +274,7 @@ class DraftNode extends DecoratorNode<ReactNode> {
     this.__thinking = thinking;
   }
 
-  exportJSON(): SerializedLexicalNode {
+  override exportJSON(): SerializedDraftNode {
     return {
       ...super.exportJSON(),
       text: this.__text,
@@ -276,15 +284,15 @@ class DraftNode extends DecoratorNode<ReactNode> {
     };
   }
 
-  createDOM(): HTMLElement {
+  override createDOM(): HTMLElement {
     return document.createElement('div');
   }
 
-  updateDOM(): false {
+  override updateDOM(): false {
     return false;
   }
 
-  decorate(): ReactNode {
+  override decorate(): ReactNode {
     return <DraftDecorator text={this.__text} thinking={this.__thinking} />;
   }
 }
@@ -297,10 +305,10 @@ class ComposerNode extends DecoratorNode<ReactNode> {
   __onChange: (value: string) => void;
   __onSubmit: () => void;
   __sending: boolean;
-  static getType(): string {
+  static override getType(): string {
     return 'conversation-composer';
   }
-  static clone(node: ComposerNode): ComposerNode {
+  static override clone(node: ComposerNode): ComposerNode {
     return new ComposerNode(
       node.__value,
       node.__onChange,
@@ -309,7 +317,9 @@ class ComposerNode extends DecoratorNode<ReactNode> {
       node.__key,
     );
   }
-  static importJSON(serializedNode: SerializedLexicalNode): ComposerNode {
+  static override importJSON(
+    serializedNode: SerializedLexicalNode,
+  ): ComposerNode {
     return new ComposerNode(
       '',
       () => undefined,
@@ -330,16 +340,16 @@ class ComposerNode extends DecoratorNode<ReactNode> {
     this.__onSubmit = onSubmit;
     this.__sending = sending;
   }
-  exportJSON(): SerializedLexicalNode {
+  override exportJSON(): SerializedLexicalNode {
     return { ...super.exportJSON(), type: ComposerNode.getType(), version: 1 };
   }
-  createDOM(): HTMLElement {
+  override createDOM(): HTMLElement {
     return document.createElement('div');
   }
-  updateDOM(): false {
+  override updateDOM(): false {
     return false;
   }
-  decorate(): ReactNode {
+  override decorate(): ReactNode {
     return (
       <div className="rounded-xl border bg-card p-2 shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
         <textarea
@@ -393,18 +403,18 @@ const $createComposerNode = (
 class ToolCallNode extends DecoratorNode<ReactNode> {
   __segment: Extract<PromptSegment, { kind: 'tool' }>;
 
-  static getType(): string {
+  static override getType(): string {
     return 'conversation-tool-call';
   }
 
-  static clone(node: ToolCallNode): ToolCallNode {
+  static override clone(node: ToolCallNode): ToolCallNode {
     return new ToolCallNode(node.__segment, node.__key);
   }
 
-  static importJSON(serializedNode: SerializedLexicalNode): ToolCallNode {
-    const { segment } = serializedNode as Spread<{
-      segment: Extract<PromptSegment, { kind: 'tool' }>;
-    }>;
+  static override importJSON(
+    serializedNode: SerializedLexicalNode,
+  ): ToolCallNode {
+    const { segment } = serializedNode as SerializedToolCallNode;
     return $createToolCallNode(segment);
   }
 
@@ -416,7 +426,7 @@ class ToolCallNode extends DecoratorNode<ReactNode> {
     this.__segment = segment;
   }
 
-  exportJSON(): SerializedLexicalNode {
+  override exportJSON(): SerializedToolCallNode {
     return {
       ...super.exportJSON(),
       segment: this.__segment,
@@ -425,15 +435,15 @@ class ToolCallNode extends DecoratorNode<ReactNode> {
     };
   }
 
-  createDOM(): HTMLElement {
+  override createDOM(): HTMLElement {
     return document.createElement('div');
   }
 
-  updateDOM(): false {
+  override updateDOM(): false {
     return false;
   }
 
-  decorate(): ReactNode {
+  override decorate(): ReactNode {
     return <ToolCallDecorator segment={this.__segment} />;
   }
 }
@@ -451,22 +461,22 @@ const turnIdentity = (turn: PromptTurn): string =>
     )
     .join('|')}`;
 
-const sameDocument = (
-  turns: readonly PromptTurn[],
-  previous: readonly string[],
-): boolean => {
-  const current = turns.map(turnIdentity);
-  return (
-    current.length === previous.length &&
-    current.every((identity, index) => identity === previous[index])
-  );
-};
-
 const turnMarkdown = (turn: PromptTurn): string => {
   if (turn.userMarkdown.length > 0) return turn.userMarkdown;
   if (turn.delegated === undefined) return '';
   const { text } = turn.delegated;
   return text.length > 0 ? text : 'Delegated message';
+};
+
+const ReadOnlyConversation = () => {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => editor.setEditable(false), [editor]);
+  return (
+    <ContentEditable
+      aria-label="Conversation"
+      className="min-h-48 outline-none"
+    />
+  );
 };
 
 const TurnDocument = ({
@@ -484,16 +494,12 @@ const TurnDocument = ({
 }) => {
   const [editor] = useLexicalComposerContext();
   const identity = [...turns.map(turnIdentity), `composer:${draft}:${sending}`];
-  const rendered = useRef<readonly string[]>();
+  const rendered = useRef('');
 
   useEffect(() => {
-    if (
-      rendered.current !== undefined &&
-      sameDocument(turns, rendered.current)
-    ) {
-      return;
-    }
-    rendered.current = identity;
+    const documentIdentity = identity.join('\u0000');
+    if (rendered.current === documentIdentity) return;
+    rendered.current = documentIdentity;
 
     editor.update(() => {
       const root = $getRoot();
@@ -530,8 +536,8 @@ const lexicalTheme = {
 const initialEditorConfig = {
   namespace: 'DoricConversation',
   nodes: [TurnNode, DraftNode, ComposerNode, ToolCallNode],
-  onError(error: Error, editor: { setError(error: Error): void }) {
-    editor.setError(error);
+  onError(error: Error, _editor: LexicalEditor) {
+    throw error;
   },
   theme: lexicalTheme,
 } as const;
@@ -564,7 +570,6 @@ export function Conversation({
   };
 
   const error = chat.sendError ?? chat.error;
-  const canSend = !chat.sending && draft.trim().length > 0;
 
   return (
     <section className="flex min-h-0 w-full flex-1 flex-col bg-background">
@@ -572,13 +577,7 @@ export function Conversation({
         <div className="mx-auto w-full max-w-4xl px-5 pb-8">
           <LexicalComposer initialConfig={initialEditorConfig}>
             <RichTextPlugin
-              contentEditable={
-                <ContentEditable
-                  aria-label="Conversation"
-                  className="min-h-48 outline-none"
-                  editable={false}
-                />
-              }
+              contentEditable={<ReadOnlyConversation />}
               ErrorBoundary={LexicalErrorBoundary}
             />
             <TurnDocument
@@ -592,55 +591,11 @@ export function Conversation({
         </div>
       </ScrollArea>
 
-      <div className="border-t bg-background/95 px-5 py-3 backdrop-blur">
-        <div className="mx-auto w-full max-w-4xl">
-          {error ? (
-            <p className="mb-2 text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <form
-            className="rounded-xl border bg-card p-2 shadow-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20"
-            onSubmit={submit}
-          >
-            <textarea
-              aria-label="Message Agent"
-              className="min-h-16 w-full resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={chat.sending}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              placeholder="Ask Agent to build, fix, or explain anything…"
-              value={draft}
-            />
-            <div className="flex items-center justify-between gap-3 px-1 pt-1">
-              <span className="text-xs text-muted-foreground">
-                Enter to send · Shift+Enter for a new line
-              </span>
-              <Button
-                aria-label="Send message"
-                disabled={!canSend}
-                size="sm"
-                type="submit"
-              >
-                {chat.sending ? (
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="size-3.5 animate-spin"
-                  />
-                ) : (
-                  <Send aria-hidden="true" className="size-3.5" />
-                )}
-                Send
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
+      {error ? (
+        <p className="border-t px-5 py-2 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </section>
   );
 }
