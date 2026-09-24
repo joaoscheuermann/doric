@@ -40,7 +40,7 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<TreeOutput> =>
+  execute: (sandbox, host, input): Promise<TreeOutput> =>
     execute(sandbox.root, sandbox, input),
 });
 

@@ -85,6 +85,8 @@ commands.
   plus general execution skills.
 - [`bundles/git`](bundles/git/README.md) — structured Git execution and focused
   Git workflow skills.
+- [`bundles/threads`](bundles/threads/README.md) — child-thread delegation,
+  inspection, and steering through the per-prompt host facade.
 
 ### Libraries
 

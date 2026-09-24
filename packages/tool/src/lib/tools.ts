@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
 
 import { ToolErrorObject } from './classes/tool-error.js';
@@ -19,7 +20,7 @@ import type {
 } from './types/tool.js';
 import { asJsonObject, excerpt, isJsonValue } from './utils/json.js';
 
-/** Defines an inspectable tool factory that binds execution to a sandbox. */
+/** Defines an inspectable tool factory that binds execution to a sandbox and host facade. */
 export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
   options: DefineToolOptions<Input, Output>,
 ): ToolFactory<Input, Output> => {
@@ -39,14 +40,14 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     strict: options.strict ?? true,
   };
 
-  const factory = ((sandbox: Sandbox): Tool<Input, Output> => ({
+  const factory = ((sandbox: Sandbox, host: Host): Tool<Input, Output> => ({
     name: options.name,
     description: options.description,
     input: options.input,
     output: options.output,
     definition,
     execute: async (payload) => {
-      const result = await options.execute(sandbox, payload);
+      const result = await options.execute(sandbox, host, payload);
       const parsed = options.output.safeParse(result);
 
       if (parsed.success) {

@@ -126,16 +126,18 @@ Completion, failure, or cancellation of a delegated request automatically
 enqueues a correlated result for its parent: a ready parent runs it, a busy
 parent processes it in FIFO order, and a terminal parent is never reopened.
 Human follow-ups in a child do not bounce responses back to its parent.
-Host-bound coordination tools act only on direct children in the same Project;
-each child has its own history, not an automatic copy of its parent's history.
+The thread delegation tools act only on direct children in the same Project,
+reached through the per-prompt host facade; each child has its own history, not
+an automatic copy of its parent's history.
 
-Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts`,
-`agents/direct/prompts/system.ts`, and one module per coordination tool in
-`agents/direct/tools`. The system prompt file exports only one constant literal
-template string; dynamic bundle skills are appended by the executor, not encoded
-as arrays of prompt lines. Shared lifecycle and control contracts live in
-`workspace`; configuration, HTTP composition/errors, and event transport/safe
-serialization live in `config`, `http`, and `events` respectively. The database
+Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts` and
+`agents/direct/prompts/system.ts`; the former one-module-per-coordination-tool
+set now ships in `/bundles/threads`. The system prompt file exports only one
+constant literal template string; dynamic bundle skills are appended by the
+executor, not encoded as arrays of prompt lines. Shared lifecycle and control
+live in `workspace`: `runner.ts` builds the prompt-scoped host facade, and
+configuration, HTTP composition/errors, and event transport/safe serialization
+live in `config`, `http`, and `events` respectively. The database
 client and VM registry remain `database.ts` and `vms.ts` at the lib root.
 This organization does not change bundle ownership or runtime behavior.
 
@@ -150,13 +152,18 @@ cloning, commit preparation, conflict resolution, rebasing, remote
 synchronization, and linked worktrees. The Git tool executes structured argv
 directly without shell interpretation, forces non-interactive Git behavior,
 bounds stdout and stderr, and exposes no dedicated credential input.
+`/bundles/threads` owns the delegation tools `spawn_thread`, `list_threads`,
+`get_thread`, `send_to_thread`, `interrupt_thread`, and `terminate_thread` plus
+focused delegation, inspection, and steering skills.
 `packages/bundle` owns strict manifest validation and runtime loading.
 Doric loads only immediate bundle directories, in lexical order, from its
 built `dist/bundles` artifact. Manifests explicitly order every resource and
 carry `alwaysAvailable` flags for tools and skills. Runtime tools are compiled
 ESM `.js` default exports created through `packages/tool`; each export is an
-inspectable `ToolFactory` that Doric binds to a sandbox in its composition
-root. Runtime TypeScript is rejected. Skill `allowed-tools` references resolve
+inspectable `ToolFactory` that Doric binds, in its composition root, to a
+sandbox and to a per-prompt `Host` capability facade. The loader validates the
+definition, input, and output schemas and never inspects handler arity. Runtime
+TypeScript is rejected. Skill `allowed-tools` references resolve
 only within their declaring bundle. Bundle, skill, and tool-factory names are
 globally unique, and duplicates are rejected rather than aliased or
 deduplicated. `packages/bundle` publicly owns the JSON-Schema-compatible
@@ -172,6 +179,21 @@ results are output-validated before execution resolves, with sanitized
 `invalid_output` failures. Providers transmit only their supported tool fields
 and use `inputSchema` as function parameters. Model-generated graph nodes use
 tool metadata rather than executable tools or arbitrary tool input schemas.
+
+`packages/host` publicly owns the `Host` capability facade that every tool
+handler receives as its second argument, after the sandbox. It is types only: a
+bundle depends on this package for the contract, never on `agents/doric`
+internals, and the host implements it in the composition root. A `Host` is
+prompt-scoped; it closes over the calling prompt's Project and Thread, so
+`host.threads.*` reaches only that prompt's direct children and stops when the
+prompt ends. The only namespace today is `threads`; future namespaces
+(`config`, `vms`, `providers`) are added only for a concrete need, never as a
+state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch.
+Exposing a host facade to every tool handler is an approved tool-privilege
+expansion under HC-004 and HC-007: a bundle previously reached only the sandbox.
+Because a tool result goes to the model, the facade exposes capabilities, never
+credential reads; secrets stay in the environment. `loadBundles` still enforces
+globally unique names, so a bundle tool cannot collide with a host capability.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API
@@ -361,13 +383,16 @@ platforms reject Docker egress. SSH is disabled by default, uses per-sandbox
 Ed25519 user and host keys, is key-only, and binds to loopback unless an
 advertised remote binding is explicit.
 
-`agents/doric/.Dockerfile` reproducibly builds the agent and both built-in
-bundles, pinned Firecracker and jailer, Linux 6.18 guest kernel, static BusyBox
+`agents/doric/.Dockerfile` reproducibly builds the agent and every built-in
+bundle, pinned Firecracker and jailer, Linux 6.18 guest kernel, static BusyBox
 and Dropbear bootstrap, initramfs, OCI/ext4 tooling, networking tools, and
 OpenSSH client. Its Linux-only Compose profiles provide either the Docker
 socket plus host-network firewall access or KVM/TUN/cgroup/state/cache access
 without a Docker socket. The privileged Firecracker profile is a development
-and e2e harness, not a production isolation boundary. Doric acquires one pool
+and e2e harness, not a production isolation boundary. Local deploy credentials,
+including the PostgreSQL password, live only in the git-ignored
+`agents/doric/.env` (see `agents/doric/.env.example`); they are never committed
+or baked into the image. Doric acquires one pool
 lease when each persisted Project is created and retains it across all its
 Threads and prompts. It binds every bundle tool to that sandbox, propagates
 cancellation through acquisition and active provider calls, and releases the
@@ -731,8 +756,9 @@ Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
 and each FIFO input transitions `ready -> running -> ready`. Project and Thread
 termination use `cancelling -> cancelled`; acquisition or reconciliation
 failures use `failed`. A fresh Agent per prompt
-receives a fresh tool-call store, all sandbox-bound tools, the deterministic
-all-skills system prompt, host-bound child coordination tools, and
+receives a fresh tool-call store, every bundle tool bound to that sandbox and
+the per-prompt host facade, the deterministic
+all-skills system prompt, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials. Provider/tool failures

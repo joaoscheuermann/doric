@@ -45,7 +45,7 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<FindOutput> =>
+  execute: (sandbox, host, input): Promise<FindOutput> =>
     execute(sandbox.root, sandbox, input),
 });
 

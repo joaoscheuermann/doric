@@ -154,9 +154,9 @@ test('derives delegated Thread names without splitting Unicode characters', asyn
   const service = createWorkspaceService({
     ...harness.dependencies,
     pool: pool(),
-    execute: async ({ job, coordination }) => {
+    execute: async ({ job, host }) => {
       if (job.prompt === 'coordinate')
-        spawned.resolve(await coordination.spawn(prompt));
+        spawned.resolve(await host.threads.spawn(prompt));
       return 'done';
     },
   });
@@ -522,9 +522,9 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination }) => {
+      execute: async ({ job, host }) => {
         if (job.prompt === 'coordinate') {
-          spawned.resolve(await coordination.spawn('delegated'));
+          spawned.resolve(await host.threads.spawn('delegated'));
           await finishParent.promise;
         } else if (job.prompt === 'delegated') {
           childInputs.push(job.source);
@@ -594,9 +594,9 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination }) => {
+      execute: async ({ job, host }) => {
         if (job.prompt === 'coordinate') {
-          spawned.resolve(await coordination.spawn('delegated'));
+          spawned.resolve(await host.threads.spawn('delegated'));
         } else if (job.prompt === 'delegated') {
           childStarted.resolve();
           await finishChild.promise;

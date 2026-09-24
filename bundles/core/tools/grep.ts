@@ -63,7 +63,7 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<GrepOutput> =>
+  execute: (sandbox, host, input): Promise<GrepOutput> =>
     execute(sandbox.root, sandbox, input),
 });
 

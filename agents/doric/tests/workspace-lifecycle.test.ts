@@ -188,9 +188,9 @@ for (const outcome of ['failed', 'cancelled'] as const) {
       const service = createWorkspaceService({
         ...harness.dependencies,
         pool: pool(),
-        execute: async ({ job, coordination }) => {
+        execute: async ({ job, host }) => {
           if (job.prompt === 'coordinate') {
-            spawned.resolve(await coordination.spawn('child'));
+            spawned.resolve(await host.threads.spawn('child'));
           } else if (job.source.kind === 'parent') {
             started.resolve();
             await finish.promise;

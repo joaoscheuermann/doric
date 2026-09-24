@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ThreadCoordination } from '../src/lib/workspace/coordination.js';
+import type { ThreadControl } from 'host';
+
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { Thread, WorkspaceService } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
@@ -21,7 +22,7 @@ test(
   { timeout: 5000 },
   async () => {
     const harness = workspace();
-    const bound = deferred<ThreadCoordination>();
+    const bound = deferred<ThreadControl>();
     const parentFinish = deferred();
     const started = deferred();
     const settle = deferred();
@@ -35,9 +36,9 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination, signal }) => {
+      execute: async ({ job, host, signal }) => {
         if (job.prompt === 'parent') {
-          bound.resolve(coordination);
+          bound.resolve(host.threads);
           await parentFinish.promise;
         } else if (job.prompt === 'child') {
           activeSignal = signal;
@@ -98,12 +99,12 @@ test(
     const harness = workspace();
     const started = deferred();
     const finish = deferred();
-    let control!: ThreadCoordination;
+    let control!: ThreadControl;
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ coordination }) => {
-        control = coordination;
+      execute: async ({ host }) => {
+        control = host.threads;
         started.resolve();
         await finish.promise;
         return 'done';
@@ -148,7 +149,7 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination }) => {
+      execute: async ({ job, host }) => {
         if (job.source.kind === 'parent')
           return 'Evidence contains secret-value.';
         if (job.source.kind === 'result') {
@@ -156,7 +157,7 @@ test(
           result.resolve();
           return 'done';
         }
-        await coordination.spawn('inspect');
+        await host.threads.spawn('inspect');
         return 'delegated';
       },
     });

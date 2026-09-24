@@ -9,7 +9,6 @@ import {
 import type { ToolFactory } from 'tool';
 
 import type { DoricConfig } from './schema.js';
-import { coordinationNames } from '../agents/direct/tools/index.js';
 
 export type Catalog = {
   readonly skills: readonly Skill[];
@@ -37,13 +36,6 @@ export const createGeneration = async ({
   logger,
   environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
-  for (const bundle of bundles) {
-    for (const { factory } of bundle.tools) {
-      if (coordinationNames.some((name) => name === factory.name)) {
-        throw new Error('Bundle tool conflicts with a host coordination tool.');
-      }
-    }
-  }
   const credentials = new Set<string>();
 
   const credential = (name: string): string => {

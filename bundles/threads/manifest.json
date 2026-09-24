@@ -1,0 +1,44 @@
+{
+  "name": "threads",
+  "description": "Delegation capabilities for creating and steering direct child threads.",
+  "tools": [
+    {
+      "path": "tools/spawn-thread.js",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "tools/list-threads.js",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "tools/get-thread.js",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "tools/send-to-thread.js",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "tools/interrupt-thread.js",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "tools/terminate-thread.js",
+      "alwaysAvailable": true
+    }
+  ],
+  "skills": [
+    {
+      "path": "skills/thread-delegation/SKILL.md",
+      "alwaysAvailable": true
+    },
+    {
+      "path": "skills/thread-inspection/SKILL.md",
+      "alwaysAvailable": false
+    },
+    {
+      "path": "skills/thread-steering/SKILL.md",
+      "alwaysAvailable": false
+    }
+  ]
+}

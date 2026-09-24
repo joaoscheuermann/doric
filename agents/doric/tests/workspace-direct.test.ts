@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { loadBundles } from 'bundle';
 import type { ProviderRequest } from 'llms';
+import type { ToolFactory } from 'tool';
 
 import type { ConfigService } from '../src/lib/config/service.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
@@ -12,6 +14,13 @@ const finish = (text: string) => ({
   finish: { text, finishReason: 'stop' as const, toolCalls: [] },
 });
 
+// Thread tools ship in /bundles/threads and reach the host through the
+// per-prompt facade, so the catalog comes from the real built bundles.
+const catalogTools = async (): Promise<readonly ToolFactory[]> =>
+  (await loadBundles('agents/doric/dist/bundles')).flatMap(({ tools }) =>
+    tools.map(({ factory }) => factory),
+  );
+
 test(
   'executes delegated work through real Direct tools and resumes the parent automatically',
   { timeout: 5000 },
@@ -20,6 +29,11 @@ test(
     const resumed = deferred();
     const requests: ProviderRequest[] = [];
     const generation = (harness.dependencies.config as ConfigService).current();
+    const tools = await catalogTools();
+    assert.ok(
+      tools.some(({ name }) => name === 'spawn_thread'),
+      'the threads bundle must supply spawn_thread',
+    );
     const provider = {
       metadata: { id: 'local', name: 'local' },
       stream: async function* (request: ProviderRequest) {
@@ -62,6 +76,7 @@ test(
       config: {
         current: () => ({
           ...generation,
+          catalog: { skills: generation.catalog.skills, tools },
           providers: new Map([
             [
               generation.snapshot.configuration.models.execution.providerId,

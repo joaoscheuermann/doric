@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
+import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
 
 import {
@@ -15,6 +16,7 @@ import {
 } from '../src/index.js';
 
 const sandbox = { id: 'sandbox', root: '/workspace' } as Sandbox;
+const host = { threads: {} } as unknown as Host;
 
 test('exports a JSON-Schema-compatible tool definition schema', () => {
   const value = {
@@ -60,8 +62,10 @@ test('infers typed payloads from Zod schemas at compile time', async () => {
       query: z.string(),
       limit: z.number().optional(),
     }),
-    execute(received, payload) {
+    execute(received, host, payload) {
       assert.equal(received, sandbox);
+
+      assert.deepEqual(Object.keys(host), ['threads']);
 
       expectString(payload.query);
 
@@ -75,7 +79,7 @@ test('infers typed payloads from Zod schemas at compile time', async () => {
       return { query: payload.query, limit: payload.limit };
     },
   });
-  const tool = factory(sandbox);
+  const tool = factory(sandbox, host);
 
   assert.deepEqual(await tool.execute({ query: 'doric' }), {
     query: 'doric',
@@ -89,7 +93,7 @@ test('exposes metadata before binding and binds the supplied sandbox', async () 
     description: 'Search indexed context.',
     input: z.object({ query: z.string(), limit: z.number().int().min(1) }),
     output: z.string(),
-    execute: (received, { query, limit }) => {
+    execute: (received, host, { query, limit }) => {
       assert.equal(received, sandbox);
 
       return `${query}:${limit}`;
@@ -125,7 +129,10 @@ test('exposes metadata before binding and binds the supplied sandbox', async () 
 
   assert.equal(factory.definition.outputSchema.type, 'string');
 
-  assert.equal(await factory(sandbox).execute({ query: 'x', limit: 2 }), 'x:2');
+  assert.equal(
+    await factory(sandbox, host).execute({ query: 'x', limit: 2 }),
+    'x:2',
+  );
 });
 
 test('allows non-strict definitions when requested', () => {
@@ -134,7 +141,7 @@ test('allows non-strict definitions when requested', () => {
     input: z.object({ value: z.string() }),
     output: z.string(),
     strict: false,
-    execute: (_sandbox, { value }) => value,
+    execute: (_sandbox, host, { value }) => value,
   });
 
   assert.equal(tool.definition.strict, false);
@@ -194,14 +201,14 @@ test('preserves definition order and rejects duplicate names', () => {
   });
 
   assert.deepEqual(
-    createToolStorage([first(sandbox), second(sandbox)])
+    createToolStorage([first(sandbox, host), second(sandbox, host)])
       .definitions()
       .map((definition) => definition.name),
     ['first', 'second'],
   );
 
   assert.throws(
-    () => createToolStorage([first(sandbox), first(sandbox)]),
+    () => createToolStorage([first(sandbox, host), first(sandbox, host)]),
     (error: unknown) =>
       error instanceof ToolErrorObject && error.data.code === 'duplicate_tool',
   );
@@ -231,10 +238,10 @@ test('validates payloads before execution and supports async handlers', async ()
       name: 'add',
       input: z.object({ left: z.number(), right: z.number() }),
       output: z.number(),
-      async execute(_sandbox, { left, right }) {
+      async execute(_sandbox, host, { left, right }) {
         return left + right;
       },
-    })(sandbox),
+    })(sandbox, host),
   ]);
 
   assert.equal(
@@ -267,12 +274,12 @@ test('validates calls without executing handlers', () => {
       name: 'lookup',
       input: z.object({ query: z.string() }),
       output: z.string(),
-      execute(_sandbox, { query }) {
+      execute(_sandbox, host, { query }) {
         executions += 1;
 
         return query;
       },
-    })(sandbox),
+    })(sandbox, host),
   ]);
 
   assert.deepEqual(
@@ -301,7 +308,7 @@ test('throws typed errors for unknown tools invalid JSON and handler failures', 
       execute() {
         throw new Error('boom');
       },
-    })(sandbox),
+    })(sandbox, host),
   ]);
 
   await assert.rejects(
@@ -341,7 +348,7 @@ test('validates handler output without exposing the rejected value', async () =>
     input: z.object({ query: z.string() }),
     output: z.object({ results: z.array(z.string()) }).strict(),
     execute: () => ({ results: [42] }) as unknown as { results: string[] },
-  })(sandbox);
+  })(sandbox, host);
 
   await assert.rejects(tool.execute({ query: 'doric' }), (error: unknown) => {
     assert.ok(error instanceof ToolErrorObject);

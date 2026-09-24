@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/find.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
 describe('find tool', () => {
   test('returns matching files relative to the requested search path', async () => {
@@ -17,7 +17,7 @@ describe('find tool', () => {
 
     await write(root, 'src/c.txt', 'c');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '*.ts',
       path: 'src',
     });
@@ -42,7 +42,7 @@ describe('find tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '*.txt',
     });
 

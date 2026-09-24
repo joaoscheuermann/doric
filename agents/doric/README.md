@@ -14,15 +14,7 @@ There is no legacy Session or A2A API.
 src/lib/
 ├── agents/direct/
 │   ├── executor.ts
-│   ├── prompts/system.ts
-│   └── tools/
-│       ├── index.ts
-│       ├── spawn-thread.ts
-│       ├── send-to-thread.ts
-│       ├── list-threads.ts
-│       ├── get-thread.ts
-│       ├── interrupt-thread.ts
-│       └── terminate-thread.ts
+│   └── prompts/system.ts
 ├── config/
 │   ├── schema.ts
 │   ├── service.ts
@@ -33,7 +25,6 @@ src/lib/
 │   ├── service.ts
 │   ├── runtime.ts
 │   ├── runner.ts
-│   ├── coordination.ts
 │   ├── projects.ts
 │   ├── threads.ts
 │   └── storage.ts
@@ -48,9 +39,13 @@ src/lib/
 ```
 
 The Direct system prompt is one exported literal template string; the executor
-appends bundle skills in their declared order. Each coordination tool owns its
-definition, schemas, and adapter in one file. Shared lifecycle and authorization
-remain in `workspace`, behind the injected coordination contract.
+appends bundle skills in their declared order. The thread delegation tools
+(`spawn_thread`, `list_threads`, `get_thread`, `send_to_thread`,
+`interrupt_thread`, `terminate_thread`) ship in the `/bundles/threads` bundle and
+reach the host only through the per-prompt `Host` facade's `threads` namespace,
+whose contract lives in `packages/host`. Shared lifecycle and authorization
+remain in `workspace`: `runner.ts` builds the prompt-scoped facade, and every
+tool call acts only on the calling prompt's direct children in the same Project.
 Sandbox tools still belong to their existing bundles. HTTP routes and generated
 Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
 
@@ -234,6 +229,45 @@ its current prompt. They can trigger additional model/tool activity. The
 `--terminate` client option closes the entire Project after its submitted
 prompt ends, including any still-running descendants; omit it to keep those
 conversations available.
+
+## Docker deploy
+
+[`compose.yaml`](compose.yaml) runs the host with PostgreSQL. Copy
+[`.env.example`](.env.example) to `agents/doric/.env` and fill in real values;
+that file is git-ignored and is the only place these secrets should live.
+
+```sh
+cp agents/doric/.env.example agents/doric/.env   # then edit it
+cd agents/doric
+docker compose --profile docker build
+docker compose --profile docker up -d
+```
+
+Compose starts three services: `postgres` (durable volume), `migrate` (one-shot
+`prisma migrate deploy`), and `doric`. The `firecracker` profile replaces the
+Docker provider and needs `/dev/kvm` plus privileged mode. Confirm the deploy
+from the host log (`Bundles loaded` reports bundle, tool, and skill counts) and
+`GET /projects`.
+
+Two traps break the image build or the deployed catalog:
+
+- every bundle must also appear in `agents/doric/.Dockerfile`: its `tsc --build`
+  list and the resource copies. The Direct host loads whatever the image puts in
+  `agents/doric/dist/bundles`, so a bundle missing there is silently absent at
+  runtime;
+- `package-lock.json` must be generated with the npm major the build image runs
+  (`node:22-bookworm-slim` ships npm 10). A lock rewritten by a newer local npm
+  fails `npm ci` with `Missing: <package> from lock file`; regenerate it with
+  `npx npm@10 install --package-lock-only`.
+
+To replace the PostgreSQL password of an existing deployment without losing
+data, alter the role through the container's trusted local socket instead of
+recreating the volume:
+
+```sh
+docker exec -it doric-sandbox-postgres-1 \
+  psql -U doric -h 127.0.0.1 -d doric -c "ALTER ROLE doric WITH PASSWORD 'NEW'"
+```
 
 ## Persistence and security
 

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "host",
+  "projectType": "library",
+  "sourceRoot": "packages/host/src",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --build packages/host/tsconfig.json --emitDeclarationOnly"
+      }
+    }
+  },
+  "tags": []
+}

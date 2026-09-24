@@ -1,19 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createToolStorage, ToolErrorObject } from 'tool';
+import type { Host, ThreadControl } from 'host';
+import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 
-import {
-  coordinationNames,
-  createCoordinationTools,
-} from '../src/lib/agents/direct/tools/index.js';
-import type { ThreadCoordination } from '../src/lib/workspace/coordination.js';
+import get from '../tools/get-thread.js';
+import interrupt from '../tools/interrupt-thread.js';
+import list from '../tools/list-threads.js';
+import send from '../tools/send-to-thread.js';
+import spawn from '../tools/spawn-thread.js';
+import terminate from '../tools/terminate-thread.js';
 
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 
-test('exposes coordination tools in the established model-visible order', () => {
-  const tools = createCoordinationTools({} as never, {} as never);
+const host = (control: ThreadControl): Host => ({ threads: control });
+const tools = [spawn, list, get, send, interrupt, terminate] as const;
+
+test('exposes thread tools in the established model-visible order', () => {
   const expected = [
     'spawn_thread',
     'list_threads',
@@ -26,11 +30,10 @@ test('exposes coordination tools in the established model-visible order', () => 
     tools.map((tool) => tool.name),
     expected,
   );
-  assert.deepEqual(coordinationNames, expected);
 });
 
-test('preserves coordination arguments, defaults, and serialized results', async () => {
-  const control: ThreadCoordination = {
+test('preserves thread control arguments, defaults, and serialized results', async () => {
+  const control: ThreadControl = {
     spawn: async (prompt) => {
       assert.equal(prompt, ' task ');
       return { threadId, promptId };
@@ -61,9 +64,9 @@ test('preserves coordination arguments, defaults, and serialized results', async
     },
   };
   const storage = createToolStorage(
-    createCoordinationTools(control, {} as never),
+    tools.map((tool) => tool({} as never, host(control))),
   );
-  const execute = (name: string, payload: Record<string, string>) =>
+  const execute = (name: string, payload: ToolCall['payload']) =>
     storage.execute({ id: 'call', name, payload });
 
   assert.equal(
@@ -92,9 +95,9 @@ test('preserves coordination arguments, defaults, and serialized results', async
   );
 });
 
-test('rejects invalid coordination inputs at the tool boundary', async () => {
+test('rejects invalid thread control inputs at the tool boundary', async () => {
   const storage = createToolStorage(
-    createCoordinationTools({} as never, {} as never),
+    tools.map((tool) => tool({} as never, host({} as never))),
   );
   for (const [name, payload] of [
     ['spawn_thread', { prompt: '   ' }],
@@ -105,13 +108,12 @@ test('rejects invalid coordination inputs at the tool boundary', async () => {
     ['interrupt_thread', { threadId, promptId: 'invalid' }],
     ['terminate_thread', { threadId, extra: true }],
   ] as const) {
-    await assert.rejects(
-      storage.execute({ id: 'call', name, payload }),
-      (error: unknown) => {
-        assert.ok(error instanceof ToolErrorObject);
-        assert.equal(error.data.code, 'invalid_payload');
-        return true;
-      },
-    );
+    const call: ToolCall = { id: 'call', name, payload };
+
+    await assert.rejects(storage.execute(call), (error: unknown) => {
+      assert.ok(error instanceof ToolErrorObject);
+      assert.equal(error.data.code, 'invalid_payload');
+      return true;
+    });
   }
 });

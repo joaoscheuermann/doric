@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ThreadCoordination } from './coordination.js';
+import type { ThreadControl } from 'host';
+
 import { eventJson } from '../events/serialization.js';
 import { nameFromPrompt } from './names.js';
 import {
@@ -155,7 +156,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
           signal: active.controller.signal,
           store,
           publisher,
-          coordination: coordinate(project, thread, active.job),
+          host: { threads: coordinate(project, thread, active.job) },
         });
         active.controller.signal.throwIfAborted();
       } catch (error) {
@@ -343,7 +344,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     project: ProjectRuntime,
     parent: ThreadRuntime,
     job: PromptJob,
-  ): ThreadCoordination => {
+  ): ThreadControl => {
     const allowed = () => {
       if (
         project.closing ||

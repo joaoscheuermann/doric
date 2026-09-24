@@ -103,7 +103,7 @@ export const createTool = (
     description,
     input,
     output,
-    execute: (sandbox, input): Promise<TerminalOutput> =>
+    execute: (sandbox, host, input): Promise<TerminalOutput> =>
       execute(sandbox.root, sandbox, options.traceDir, input),
   });
 

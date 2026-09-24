@@ -1,8 +1,9 @@
 import type { Logger } from 'pino';
+
+import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
 
-import type { ThreadCoordination } from './coordination.js';
 import type { Generation } from '../config/generation.js';
 import type {
   InputSource,
@@ -33,7 +34,7 @@ export type ThreadExecution = (options: {
   readonly signal: AbortSignal;
   readonly store: ThreadStore;
   readonly publisher: WorkspacePublisher;
-  readonly coordination: ThreadCoordination;
+  readonly host: Host;
 }) => Promise<string>;
 export type ThreadRuntime = {
   thread: Thread;

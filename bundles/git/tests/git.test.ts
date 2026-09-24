@@ -14,7 +14,7 @@ describe('git tool', () => {
   test('executes structured Git arguments without a shell', async () => {
     const sandbox = fakeSandbox(result({ stdout: 'main\n' }));
 
-    const output = await createTool()(sandbox).execute({
+    const output = await createTool()(sandbox, {} as never).execute({
       args: ['branch', '--show-current'],
       working_directory: 'repo',
       timeout_ms: 5000,
@@ -48,7 +48,7 @@ describe('git tool', () => {
   test('uses the workspace root by default and caps the timeout', async () => {
     const sandbox = fakeSandbox(result());
 
-    await createTool()(sandbox).execute({
+    await createTool()(sandbox, {} as never).execute({
       args: ['status', '--short'],
       timeout_ms: 999_999,
     });
@@ -61,6 +61,7 @@ describe('git tool', () => {
   test('returns execution errors as observable Git failures', async () => {
     const output = await createTool()(
       fakeSandbox(new Error('exec failed')),
+      {} as never,
     ).execute({ args: ['status'] });
 
     assert.equal(output.success, false);
@@ -73,7 +74,10 @@ describe('git tool', () => {
   test('bounds large stdout while preserving its beginning and end', async () => {
     const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
 
-    const output = await createTool()(fakeSandbox(result({ stdout }))).execute({
+    const output = await createTool()(
+      fakeSandbox(result({ stdout })),
+      {} as never,
+    ).execute({
       args: ['log', '--oneline', '--all'],
     });
 

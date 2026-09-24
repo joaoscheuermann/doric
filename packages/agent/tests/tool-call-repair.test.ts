@@ -55,12 +55,12 @@ test('structured stream suppresses every provider event from a rejected executab
         name,
         input: z.object({ value: z.string() }),
         output: z.string(),
-        execute: (_sandbox, { value }) => {
+        execute: (_sandbox, host, { value }) => {
           executions += 1;
 
           return value;
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ),
   );
 
@@ -197,12 +197,12 @@ for (const mode of ['complete', 'stream'] as const) {
         name: 'lookup',
         input: z.object({ query: z.string() }),
         output: z.string(),
-        execute: (_sandbox, { query }) => {
+        execute: (_sandbox, host, { query }) => {
           executions += 1;
 
           return query;
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ]);
 
     const provider = createProvider({
