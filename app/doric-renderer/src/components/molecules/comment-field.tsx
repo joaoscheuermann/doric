@@ -40,12 +40,10 @@ export function CommentField({
 
   return (
     <div className="flex items-center gap-2 py-1">
-      {/* The identicon is a CSS background the surface sets, so nothing of it is
-          content. */}
       <span
+        aria-hidden
         className="doric-avatar doric-avatar-sm"
         data-kind="user"
-        aria-hidden
       />
       <Input
         ref={input}

@@ -19,9 +19,9 @@ export function CommentCard({
       </p>
       <div className="flex items-center gap-2">
         <span
+          aria-hidden
           className="doric-avatar doric-avatar-sm"
           data-kind="user"
-          aria-hidden
         />
         <p className="text-sm">{body}</p>
       </div>

@@ -60,7 +60,6 @@ export const turnChromeShapeOf = (turn: TurnNode): TurnChromeShape => ({
   status: turn.getStatus(),
   ...(turn.getLabel() === undefined ? {} : { label: turn.getLabel() }),
 });
-
 const emptyTurnShape = (): TurnShape => ({
   key: '',
   promptId: '',

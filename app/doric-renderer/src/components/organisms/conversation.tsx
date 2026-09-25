@@ -25,8 +25,9 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
-import { toSvg } from 'jdenticon';
 import { type CSSProperties, useEffect, useRef } from 'react';
+
+import userAvatar from '../../assets/user.png';
 
 /**
  * The editor-side effects, which need the composer's context to run: the document
@@ -51,13 +52,14 @@ function ConversationPlugins({
 }
 
 /**
- * The person's identicon, as a CSS value: the Thread's id is the seed, so the same
- * person wears the same mark inside one Thread. It is drawn as a background, not
- * as an element, because the avatar belongs to the chrome the document does not
- * manage — nothing of it is a node that could be selected, deleted or copyied.
+ * The person's mark, as a CSS value: the image the app ships, drawn as a
+ * background so nothing of it is a node of the document — it cannot be selected,
+ * deleted or copied, and no name has to be invented to draw it. Every place the
+ * person appears wears the same variable, which is why their avatar is the same
+ * picture in a turn, in a comment's card, and in the field a comment is written
+ * in.
  */
-const identicon = (seed: string): string =>
-  `url('data:image/svg+xml,${encodeURIComponent(toSvg(seed, 64))}')`;
+const avatarImage = (): string => `url('${String(userAvatar)}')`;
 
 const initialEditorConfig = {
   namespace: 'DoricConversation',
@@ -95,7 +97,7 @@ export function Conversation({
   }, [conversation.writes, onSandboxWrite]);
 
   const actions: ConversationActions = conversation.actions;
-  const avatar = identicon(thread.id) as CSSProperties['backgroundImage'];
+  const avatar = avatarImage() as CSSProperties['backgroundImage'];
 
   return (
     <section
@@ -105,7 +107,7 @@ export function Conversation({
       <ScrollArea className="min-h-0 flex-1">
         <div
           className="doric-conversation pb-10"
-          style={{ '--doric-identicon': avatar } as CSSProperties}
+          style={{ '--doric-avatar': avatar } as CSSProperties}
         >
           <LexicalComposer initialConfig={initialEditorConfig}>
             <ConversationActionsProvider value={actions}>

@@ -2,8 +2,6 @@ import { statusCue, type TurnRole } from '@/domain/conversation';
 import type { PromptStatus } from '@/domain/projector';
 import { setDOMUnmanaged } from 'lexical';
 
-import { statusDot } from './status-dot';
-
 /**
  * A turn's chrome: the avatar, the label naming another Thread's words, and the cue
  * that says the turn is still working. It is deliberately **not** content — DOM the
@@ -32,15 +30,99 @@ const CHROME = 'data-doric-chrome';
 const LABEL = 'data-doric-label';
 const ROW = 'data-doric-row';
 
-/** The avatar a turn wears: the person's identicon, or the agent's glyph. */
-const avatar = (role: TurnRole): HTMLElement => {
+/**
+ * A lucide icon's own geometry: one `[tag, attributes]` pair per shape it draws,
+ * the same `IconNode` shape the package uses. The values are copied from
+ * `lucide-react` v0.544.0, whose exported components keep them in a
+ * module-private `__iconNode` — reaching that would mean importing from the
+ * package's `dist/`, which a browser bundle should not do — so the icons the
+ * surface draws are inlined here instead.
+ */
+export type LucideShape = readonly [string, Readonly<Record<string, string>>];
+
+/** The agent's answer: it sparkles. */
+const SPARKLES: readonly LucideShape[] = [
+  [
+    'path',
+    {
+      d: 'M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z',
+    },
+  ],
+  ['path', { d: 'M20 2v4' }],
+  ['path', { d: 'M22 4h-4' }],
+  ['circle', { cx: '4', cy: '20', r: '2' }],
+];
+
+/**
+ * Draws a lucide icon as an inline `<svg>`: a turn's chrome is raw DOM, not a
+ * React node, so it cannot mount the package's component and its geometry is
+ * written with `createElementNS` instead. The viewBox and the strokes travel on
+ * the element, so the shape scales and paints on its own; `styles.css` only has
+ * to size and colour it.
+ */
+export const lucideIcon = (
+  shapes: readonly LucideShape[],
+  className: string,
+  size: string,
+): SVGSVGElement => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', size);
+  svg.setAttribute('height', size);
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', className);
+  for (const [tag, attributes] of shapes) {
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(attributes)) {
+      shape.setAttribute(name, value);
+    }
+    svg.append(shape);
+  }
+  return svg;
+};
+
+/**
+ * What a turn's mark stands for, which is not quite its role: the composer is a
+ * person's turn too, but it is the one they write in, so it reads apart from the
+ * turns they have already sent.
+ */
+type TurnKind = 'answer' | 'composer' | 'past';
+
+/**
+ * The icon each kind of turn wears. Only an agent's turn is an icon: a person's
+ * turns — the composer and the ones they already sent — wear the image the app
+ * ships for them, painted by the stylesheet, so a person always looks like the same
+ * person in every place they appear.
+ */
+const AVATAR_ICON: Readonly<
+  Record<Exclude<TurnKind, 'past' | 'composer'>, readonly LucideShape[]>
+> = { answer: SPARKLES };
+
+/** The kind of turn a shape describes, from the two fields the chrome carries. */
+const turnKind = (shape: TurnChromeShape): TurnKind => {
+  if (shape.draft) return 'composer';
+  return shape.role === 'agent' ? 'answer' : 'past';
+};
+
+/**
+ * The avatar a turn wears. Its element keeps the `doric-avatar` class and the
+ * `data-kind` the surface finds a turn's chrome by, and gains the `data-turn` the
+ * stylesheet reads; an agent's mark is an icon the chrome draws itself, and a
+ * person's is left empty for the stylesheet to paint with the image the app ships.
+ */
+const avatar = (shape: TurnChromeShape): HTMLElement => {
   const mark = document.createElement('span');
+  const kind = turnKind(shape);
   mark.className = 'doric-avatar';
-  mark.dataset.kind = role;
-  if (role === 'agent') {
-    const glyph = document.createElement('span');
-    glyph.className = 'doric-glyph';
-    mark.append(glyph);
+  mark.dataset.kind = shape.role;
+  mark.dataset.turn = kind;
+  if (kind === 'answer') {
+    mark.append(lucideIcon(AVATAR_ICON.answer, 'doric-icon', '1rem'));
   }
   return mark;
 };
@@ -139,9 +221,11 @@ export const paintTurnChrome = (
   if (body !== null && body.parentElement !== row) row.append(body);
 
   const cue = statusCue(shape.role, shape.status);
-  chrome.replaceChildren(avatar(shape.role));
-  if (cue !== undefined) chrome.append(statusDot(cue.label, cue.tone));
+  // A turn's state is not drawn: the surface stays minimal, and what a state would
+  // have said is carried on the chrome itself, where a reader can still find it.
+  chrome.replaceChildren(avatar(shape));
   chrome.dataset.status = cue?.tone ?? 'settled';
+  chrome.title = cue?.label ?? '';
 
   const label = dom.querySelector<HTMLElement>(`[${LABEL}]`);
   const drawn = label ?? sealed(piece('p', 'doric-label', LABEL));

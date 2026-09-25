@@ -11,7 +11,7 @@ import {
   type Spread,
 } from 'lexical';
 
-import { statusDot, type StatusTone } from './status-dot';
+import { lucideIcon, type LucideShape } from './turn-chrome';
 
 /**
  * The command a part's own head sends when it is clicked. A head is chrome — DOM
@@ -66,6 +66,45 @@ const bodies = new WeakMap<HTMLElement, HTMLElement>();
 const BODY = 'data-doric-body';
 const HEAD = 'data-doric-head';
 
+/**
+ * Which icon a part's head announces itself with. The value is also the head's
+ * `data-doric-icon`, so it is the one contract with `styles.css`: that sheet
+ * paints `[data-doric-icon='thinking']` and `[data-doric-icon='tool']`
+ * differently, and every icon the head draws wears `doric-icon` for its size.
+ */
+export type PartHeadIcon = 'thinking' | 'tool';
+
+/** Reasoning, a brain. The geometry is lucide's, copied as a `LucideShape`. */
+const BRAIN: readonly LucideShape[] = [
+  ['path', { d: 'M12 18V5' }],
+  ['path', { d: 'M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4' }],
+  ['path', { d: 'M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5' }],
+  ['path', { d: 'M17.997 5.125a4 4 0 0 1 2.526 5.77' }],
+  ['path', { d: 'M18 18a4 4 0 0 0 2-7.464' }],
+  ['path', { d: 'M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517' }],
+  ['path', { d: 'M6 18a4 4 0 0 1-2-7.464' }],
+  ['path', { d: 'M6.003 5.125a4 4 0 0 0-2.526 5.77' }],
+];
+
+/** A tool call, a wrench. */
+const WRENCH: readonly LucideShape[] = [
+  [
+    'path',
+    {
+      d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z',
+    },
+  ],
+];
+
+/** The fold's chevron; the head's own `data-open` turns it. */
+const CHEVRON: readonly LucideShape[] = [['path', { d: 'm9 18 6-6-6-6' }]];
+
+/** The icon each kind of head wears. */
+const HEAD_ICON: Readonly<Record<PartHeadIcon, readonly LucideShape[]>> = {
+  thinking: BRAIN,
+  tool: WRENCH,
+};
+
 /** The sentence a part's head shows, and whether it says anything at all. */
 const headText = (part: TurnPartNode): string | undefined => {
   if (part.getPartKind() === 'thinking') return 'Thinking';
@@ -74,15 +113,6 @@ const headText = (part: TurnPartNode): string | undefined => {
     return name.length === 0 ? 'Call' : `Call ${name}`;
   }
   return undefined;
-};
-
-/** How a tool call's state reads: the words behind the dot beside its name. */
-const toolTone = (
-  status: PartStatus,
-): { readonly label: string; readonly tone: StatusTone } => {
-  if (status === 'failed') return { label: 'Failed', tone: 'failed' };
-  if (status === 'running') return { label: 'Running', tone: 'active' };
-  return { label: 'Finished', tone: 'idle' };
 };
 
 const buildPartDOM = (part: TurnPartNode): HTMLElement => {
@@ -109,28 +139,26 @@ const buildPartDOM = (part: TurnPartNode): HTMLElement => {
 };
 
 /**
- * Writes a part's head: what it announces, and the state of a tool call. A text
- * part announces nothing and so keeps no head at all — which is what leaves a run
- * of prose reading as the paragraphs it is.
+ * Writes a part's head: the icon it is, what it announces, and the chevron that
+ * folds it. A text part announces nothing and so keeps no head at all — which is
+ * what leaves a run of prose reading as the paragraphs it is.
  */
 const paintHead = (dom: HTMLElement, part: TurnPartNode): void => {
   const head = dom.querySelector<HTMLElement>(`[${HEAD}]`);
   if (head === null) return;
-  const text = headText(part);
-  if (text === undefined) {
+  const kind = part.getPartKind();
+  if (kind === 'text') {
     head.remove();
     return;
   }
   const title = document.createElement('span');
-  title.textContent = text;
-  const chevron = document.createElement('span');
-  chevron.className = 'doric-part-chevron';
-  chevron.textContent = '\u25b8';
-  head.replaceChildren(title, chevron);
-  if (part.getPartKind() === 'tool') {
-    const state = toolTone(part.getStatus());
-    head.append(statusDot(state.label, state.tone));
-  }
+  title.textContent = headText(part) ?? '';
+  head.dataset.doricIcon = kind;
+  head.replaceChildren(
+    lucideIcon(HEAD_ICON[kind], 'doric-icon', '0.875rem'),
+    title,
+    lucideIcon(CHEVRON, 'doric-icon doric-part-chevron', '0.75rem'),
+  );
   head.dataset.open = String(part.isOpen());
   head.setAttribute('aria-expanded', String(part.isOpen()));
 };
