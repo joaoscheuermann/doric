@@ -169,7 +169,9 @@ The GitHub token is the one secret this surface handles, and it is write-only.
 The host answers whether it holds one and never the token, so the password field
 always starts empty, an empty field keeps whatever is stored, and the section
 says as much: the host stores the token, never sends it back, and the agent's
-git commands use it inside the sandbox. `tokenFieldText` and
+git commands use it inside the sandbox. The host writes the same token into the
+sandbox's `gh` hosts file, so the GitHub CLI is authenticated there too.
+`tokenFieldText` and
 `storedTokenNotice` in `src/domain/config.ts` hold that wording and the rule it
 states, and `configurationInput` is what turns a draft into the body a save
 sends, where an empty token field becomes `null` — which keeps the stored token

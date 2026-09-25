@@ -13,8 +13,8 @@ interface Configured {
   readonly token: string;
 }
 
-/** One identity plus credential write: two `git config`, the helper, the store. */
-const APPLY_COMMANDS = 4;
+/** One identity plus credential write: two `git config`, the helper, Git's store, `gh`. */
+const APPLY_COMMANDS = 5;
 
 const identity = (overrides: Partial<Configured> = {}): Configured => ({
   username: 'doric-agent',
@@ -118,16 +118,20 @@ const commands = (
   environment: ReturnType<typeof fakeSandbox>,
 ): readonly string[] => environment.execs.map(({ cmd }) => cmd.join(' '));
 
-/** The token may leave the host only in a sandbox process environment. */
-const assertCredentialIsEnvOnly = (
+/**
+ * The token may leave the host only through a sandbox process environment: one
+ * entry per secret write, and never a command line.
+ */
+const assertTokenIsEnvOnly = (
   environment: ReturnType<typeof fakeSandbox>,
   token: string,
+  writes: number,
 ): void => {
   const entries = environment.execs.flatMap(({ env }) => env ?? []);
   assert.equal(
     entries.filter((entry) => entry.includes(token)).length,
-    1,
-    'the token must appear in exactly one environment entry',
+    writes,
+    'each secret write must carry the token in exactly one environment entry',
   );
   assert.equal(
     commands(environment).some((cmd) => cmd.includes(token)),
@@ -141,7 +145,7 @@ test('applies the configured identity and credential to a leased sandbox', async
   const hostUnderTest = host(configured);
   await hostUnderTest.open();
 
-  const [name, email, helper, credential] = hostUnderTest.environment.execs;
+  const [name, email, helper, credential, gh] = hostUnderTest.environment.execs;
   assert.deepEqual(name?.cmd, [
     'git',
     'config',
@@ -179,7 +183,44 @@ test('applies the configured identity and credential to a leased sandbox', async
   assert.ok(script.includes('"$HOME/.git-credentials"'));
   assert.ok(script.includes('umask 077'));
   assert.ok(script.includes('printf'));
-  assertCredentialIsEnvOnly(hostUnderTest.environment, configured.token);
+
+  // The `gh` write reads its token and username from the environment too, so the
+  // sandbox's GitHub CLI is authenticated from the same configured block.
+  assert.deepEqual(gh?.cmd.slice(0, 2), ['sh', '-c']);
+  assert.deepEqual(gh?.env, [
+    `DORIC_GH_TOKEN=${configured.token}`,
+    `DORIC_GH_USERNAME=${configured.username}`,
+  ]);
+  const ghScript = gh?.cmd[2] ?? '';
+  assert.ok(ghScript.includes('umask 077'));
+  assert.ok(ghScript.includes('mkdir -p "$HOME/.config/gh"'));
+  assert.ok(ghScript.includes('"$HOME/.config/gh/hosts.yml"'));
+  assert.ok(ghScript.includes('github.com:'));
+  assert.ok(ghScript.includes('oauth_token: %s'));
+  assert.ok(ghScript.includes('user: %s'));
+  assert.ok(ghScript.includes('git_protocol: https'));
+  assert.ok(ghScript.includes('"$DORIC_GH_TOKEN"'));
+  assert.ok(ghScript.includes('"$DORIC_GH_USERNAME"'));
+  assertTokenIsEnvOnly(hostUnderTest.environment, configured.token, 2);
+});
+
+test('writes the gh hosts file only when a token is configured', async () => {
+  // The identity alone has no token, so neither secret file is written and the
+  // sandbox's GitHub CLI stays unauthenticated rather than holding an empty one.
+  const hostUnderTest = host({
+    username: 'doric-agent',
+    email: 'agent@example.com',
+  });
+  await hostUnderTest.open();
+
+  assert.deepEqual(commands(hostUnderTest.environment), [
+    'git config --global user.name doric-agent',
+    'git config --global user.email agent@example.com',
+  ]);
+  assert.equal(
+    hostUnderTest.environment.execs.some(({ cmd }) => cmd[0] === 'sh'),
+    false,
+  );
 });
 
 test('issues no Git command when no GitHub block is configured', async () => {
@@ -222,18 +263,20 @@ test('re-applies a rotated block and never an unchanged one', async () => {
   // just received has to be registered for redaction before an event can carry
   // it: the sandbox's credential file is readable by the agent's own tools.
   assert.deepEqual(hostUnderTest.registered, ['ghp_rotated_token']);
-  assert.deepEqual(hostUnderTest.environment.execs[4]?.cmd, [
+  assert.deepEqual(hostUnderTest.environment.execs[APPLY_COMMANDS]?.cmd, [
     'git',
     'config',
     '--global',
     'user.name',
     rotated.username,
   ]);
+  const [credential, gh] = hostUnderTest.environment.execs.slice(-2);
   assert.equal(
-    hostUnderTest.environment.execs[APPLY_COMMANDS * 2 - 1]?.env?.[0],
+    credential?.env?.[0],
     `DORIC_GIT_CREDENTIAL=https://${rotated.username}:${rotated.token}@github.com`,
   );
-  assertCredentialIsEnvOnly(hostUnderTest.environment, rotated.token);
+  assert.equal(gh?.env?.[0], `DORIC_GH_TOKEN=${rotated.token}`);
+  assertTokenIsEnvOnly(hostUnderTest.environment, rotated.token, 2);
 
   // The rotation is now the sandbox's block too, so nothing runs again.
   assert.equal(
@@ -263,7 +306,7 @@ test('applies a newly saved block to a Project that captured none', async () => 
     'accepted',
   );
   assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
-  assertCredentialIsEnvOnly(hostUnderTest.environment, saved.token);
+  assertTokenIsEnvOnly(hostUnderTest.environment, saved.token, 2);
 });
 
 test('applies the current block before a rewound prompt is enqueued', async () => {
@@ -280,7 +323,7 @@ test('applies the current block before a rewound prompt is enqueued', async () =
   );
   assert.equal(rewound.status, 'accepted');
   assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
-  assertCredentialIsEnvOnly(hostUnderTest.environment, saved.token);
+  assertTokenIsEnvOnly(hostUnderTest.environment, saved.token, 2);
 });
 
 test('keeps a prompt usable when the credential write fails, logging no secret', async () => {

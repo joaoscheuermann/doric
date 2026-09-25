@@ -67,6 +67,11 @@ services:
       DORIC_DATABASE_URL: postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}
       DORIC_HOST: 0.0.0.0
       DORIC_SANDBOX_PROVIDER: docker
+      # Sandboxes run the image built from agents/doric/.sandbox.Dockerfile, which
+      # ships git and gh (see "Docker deploy" in README.md). A missing local tag
+      # makes the provider's image pull fail rather than falling back to the
+      # plain Node image; publish the tag or set DORIC_SANDBOX_IMAGE to override.
+      DORIC_SANDBOX_IMAGE: ${DORIC_SANDBOX_IMAGE:-doric-sandbox:local}
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     depends_on:

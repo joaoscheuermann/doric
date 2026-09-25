@@ -16,14 +16,32 @@ interface Context {
 const CREDENTIAL_ENV = 'DORIC_GIT_CREDENTIAL';
 
 /**
+ * The two variables that carry the GitHub identity into the `gh` write. Passing
+ * them through the environment keeps the token out of argv, and writing a file
+ * rather than exporting `GH_TOKEN` keeps it out of the environment of every
+ * later command.
+ */
+const GH_TOKEN_ENV = 'DORIC_GH_TOKEN';
+const GH_USERNAME_ENV = 'DORIC_GH_USERNAME';
+
+/**
  * The credential write: one line copied from that environment variable, with
  * `umask 077` creating the store with mode 0600. The token never reaches argv.
  */
 const CREDENTIAL_SCRIPT = `umask 077 && printf '%s\\n' "$${CREDENTIAL_ENV}" > "$HOME/.git-credentials"`;
 
 /**
+ * The `gh` write: the `hosts.yml` `gh` reads for `github.com`, created under
+ * `umask 077` so it is 0600. `git_protocol: https` keeps `gh repo clone` on the
+ * credential store above, and the token and username reach the script only
+ * through the environment, as `printf` arguments rather than its format.
+ */
+const GH_HOSTS_SCRIPT = `umask 077 && mkdir -p "$HOME/.config/gh" && printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' "$${GH_TOKEN_ENV}" "$${GH_USERNAME_ENV}" > "$HOME/.config/gh/hosts.yml"`;
+
+/**
  * Applies the configured GitHub identity to one Project sandbox and, when a
- * token is configured, the credential store Git authenticates `github.com` with.
+ * token is configured, the credential store Git authenticates `github.com` with
+ * plus the `gh` hosts file that authenticates the same user's GitHub CLI.
  * Every effect goes through `sandbox.exec`, and the token travels only in that
  * process environment: no tool argument, result, event, or log line carries it.
  * The writes are idempotent, and any failure stays a warning that names the
@@ -45,6 +63,7 @@ export const applyGitIdentity = async (
 
     await configure(sandbox, 'credential.helper', 'store');
     await storeCredential(sandbox, github.username, github.token);
+    await authenticateGh(sandbox, github.username, github.token);
   } catch {
     logger.warn({ projectId }, 'GitHub identity could not be applied');
   }
@@ -77,4 +96,22 @@ const storeCredential = async (
   });
 
   if (result.exitCode !== 0) throw new Error('Git credential store failed');
+};
+
+/**
+ * Writes the `hosts.yml` the sandbox's GitHub CLI authenticates with, so `gh`
+ * and Git answer to the one credential applied to the lease.
+ */
+const authenticateGh = async (
+  sandbox: Sandbox,
+  username: string,
+  token: string,
+): Promise<void> => {
+  const result = await sandbox.exec({
+    cmd: ['sh', '-c', GH_HOSTS_SCRIPT],
+    env: [`${GH_TOKEN_ENV}=${token}`, `${GH_USERNAME_ENV}=${username}`],
+  });
+
+  if (result.exitCode !== 0)
+    throw new Error('GitHub CLI authentication failed');
 };

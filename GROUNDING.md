@@ -399,9 +399,15 @@ building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
 effective egress requires IP-literal DNS. Doric explicitly provisions its agent
-sandboxes from the multi-architecture `node:22-bookworm` image, which includes
-Git, with the `1.1.1.1` DNS resolver so selected Git skills can reach public
-remotes. `DORIC_SANDBOX_SSH=true` adds loopback-bound, dynamically allocated
+sandboxes from the image named by `DORIC_SANDBOX_IMAGE`, which defaults to the
+multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
+selected Git skills can reach public remotes. That default ships Git; the
+sandbox image Doric builds from `agents/doric/.sandbox.Dockerfile` ships Git and
+the GitHub CLI. The image is a deployment choice the host reads from its
+environment rather than a compiled-in value, and Firecracker resolves an
+anonymous public OCI image, so a locally built tag needs publishing, or the
+variable pointed at a public image, before that provider can use it.
+`DORIC_SANDBOX_SSH=true` adds loopback-bound, dynamically allocated
 user SSH access so a trusted same-host user can inspect the active Project
 sandbox. Native source runs default it off because provider SSH requires pinned
 host assets; the Doric runtime image and Compose profiles default it on and
@@ -551,11 +557,13 @@ deletes the token by omission. The token therefore also travels in the
 captured configuration snapshot of every Project created after it was saved,
 where it stays inside the host. The host applies that block to a Project's
 sandbox: the identity, and, when a token is configured, a `credential.helper
-store` credential file written 0600, when the lease is acquired and again
-whenever the current block differs from the one the sandbox holds, because a
-rotated token must reach a Project that is already running. The token travels
-only through the sandbox process environment, never through a tool argument, a
-tool result, an event, or a log line. Agent events intentionally expose
+store` credential file written 0600 plus the `~/.config/gh/hosts.yml` written
+0600 that authenticates the sandbox's GitHub CLI, when the lease is acquired and
+again whenever the current block differs from the one the sandbox holds, because
+a rotated token must reach a Project that is already running. Credentials are
+therefore applied per lease and never baked into the sandbox image. The token
+travels only through the sandbox process environment, never through a tool
+argument, a tool result, an event, or a log line. Agent events intentionally expose
 reasoning, provider replay, tool input/output, results, and serialized errors;
 configured credential values are redacted before persistence. Event bodies are
 never written to operational logs.

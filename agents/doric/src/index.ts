@@ -73,7 +73,11 @@ async function main() {
       : createDockerClient();
 
   const vms = createVmRegistry(sandboxProviderName, sandboxProvider);
-  const sandboxImage = 'node:22-bookworm';
+  // The image is a deployment choice, so it comes from the environment and
+  // defaults to the plain Node image an operator gets without building one. A
+  // named local tag that was never built fails the provider's pull instead of
+  // silently falling back to that default.
+  const sandboxImage = process.env.DORIC_SANDBOX_IMAGE ?? 'node:22-bookworm';
   const sandboxResources = {
     cpuCount: 1,
     memoryMiB: 512,

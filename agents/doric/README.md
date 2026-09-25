@@ -276,6 +276,23 @@ Docker provider and needs `/dev/kvm` plus privileged mode. Confirm the deploy
 from the host log (`Bundles loaded` reports bundle, tool, and skill counts) and
 `GET /projects`.
 
+The Docker profile runs sandboxes from the sandbox image built from
+[`.sandbox.Dockerfile`](.sandbox.Dockerfile), which adds the GitHub CLI to the
+base image's Git. Compose selects it through `DORIC_SANDBOX_IMAGE`
+(`doric-sandbox:local` by default) and the host otherwise provisions the plain
+`node:22-bookworm` image, so build the tag before `up`:
+
+```sh
+# from the repository root, before `docker compose --profile docker up`
+docker build -f agents/doric/.sandbox.Dockerfile -t doric-sandbox:local agents/doric
+```
+
+Build it first: the provider pulls an image only when it is absent locally, so a
+tag that was never built fails the pool's image pull instead of silently falling
+back to the plain Node image. The `firecracker` profile resolves an anonymous
+**public** OCI image rather than a local tag, so it can only use this image once
+the tag is published or `DORIC_SANDBOX_IMAGE` is pointed at a public image.
+
 Two traps break the image build or the deployed catalog:
 
 - every bundle must also appear in `agents/doric/.Dockerfile`: its `tsc --build`
@@ -326,7 +343,9 @@ leaving the key out.
 
 The host applies that block to a Project's sandbox: `git config --global` for
 the identity, and, when a token is configured, `credential.helper store` plus a
-`~/.git-credentials` written 0600. That happens when a lease is acquired and
+`~/.git-credentials` written 0600, and a `~/.config/gh/hosts.yml` written 0600 so
+the same token authenticates the sandbox's `gh`. That happens when a lease is
+acquired and
 again whenever the current block differs from the one the sandbox holds, because
 the GitHub block follows the current configuration while every other value stays
 captured per Project. The token travels only through the sandbox process
