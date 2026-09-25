@@ -42,22 +42,31 @@ The renderer has no direct network access to Doric. It uses the semantic
   `use-sealed-turns.ts` refuses every edit that would land in a turn nobody may
   write in, and the invariant in `use-conversation-document.ts` puts back anything
   that gets past it, because a turn on screen is a rendering of what the host
-  stored.
+  stored. The composer is the one exception, and deliberately: its words are the
+  person's own, not a rendering of anything, so there is no stored truth to put
+  back — what guards them is the refusal alone, and a repair never writes there.
 - Reasoning and tool calls are folds. A closed fold holds nothing: its content is
   simply not in the document, so `agentParts(turn, open)` decides it and the head
   reports a click as `TOGGLE_FOLD_COMMAND`, which `use-fold-command.ts` answers
   with the surface's state.
-- A comment is made on a span and lives in three places that agree:
-  `CommentedTextNode` marks the words, `CommentFieldNode` puts the field that edits
-  it below the block the span ends in, and `CommentCardNode` shows it back in the
-  person's next turn. `domain/comments.ts` owns the one format that carries a
-  comment to the host — a `# User comments` block above `# User request`, sent as
-  the same prompt — and `markdown-blocks.ts` keeps those nodes through every write
-  of the words beside them (`$setMarkdown`'s `keep`).
+- A comment is made on a span of the answer being answered, and it lives in three
+  places that agree: `CommentedTextNode` marks the words, `CommentFieldNode` puts
+  the field that edits it below the block the span ends in, and `CommentCardNode`
+  shows it back in the person's next turn. `domain/comments.ts` owns the one format
+  that carries a comment to the host — a `# User comments` block above
+  `# User request`, sent as the same prompt, and read back only when it is complete
+  enough to be nobody else's text — and `markdown-blocks.ts` keeps those nodes
+  through every write of the words beside them (`$setMarkdown`'s `keep`). What a
+  comment stores is the quoted words and nothing else, so a phrase an answer says
+  twice is marked where it says it first: the span is found again by its text, and
+  a selection that is not the answer's own prose — its reasoning, a tool's payload,
+  the person's own turn — offers nothing to comment on.
 - An earlier prompt is rewritten where it stands. Enter in one of the person's own
   sealed turns opens it (`use-edit-keys.ts`), the turns after it render translucent
-  because a resubmit discards them, Escape puts them back, and Cmd+Enter sends the
-  rewritten prompt with `threads.rewind` — carrying the comments the prompt already
+  because a resubmit discards them, Escape puts them back — including whatever
+  comment the person was writing before the edit began, which the edit holds apart
+  from its own (`ConversationState.editComments`) — and Cmd+Enter sends the
+  rewritten prompt with `threads.rewind`, carrying the comments the prompt already
   held, because rewriting a request must not throw away what was said about the
   answer.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a

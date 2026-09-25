@@ -139,6 +139,15 @@ const paintHead = (dom: HTMLElement, part: TurnPartNode): void => {
 const headOf = (dom: HTMLElement): HTMLElement | null =>
   dom.querySelector<HTMLElement>(`[${HEAD}]`);
 
+/**
+ * The head a part's row carries, or `null` when its DOM no longer has one. The
+ * surface reads it to decide whether a part on screen is still the part the log
+ * built — a part that announces itself has one control, and losing it would leave
+ * a fold nobody can open.
+ */
+export const partHeadOf = (dom: HTMLElement | null): HTMLElement | null =>
+  dom === null ? null : headOf(dom);
+
 export class TurnPartNode extends ElementNode {
   __partKey: string;
   __partKind: PartKind;

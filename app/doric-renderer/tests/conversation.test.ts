@@ -3,8 +3,6 @@ import { describe, test } from 'node:test';
 
 import {
   agentParts,
-  type ConversationState,
-  conversationState,
   type ConversationTurn,
   conversationTurns,
   documentSignature,
@@ -14,7 +12,6 @@ import {
   partSignature,
   statusCue,
 } from '../src/domain/conversation';
-import { fenced } from '../src/domain/markdown';
 import type { PromptStatus, PromptTurn } from '../src/domain/projector';
 
 const turn = (
@@ -401,77 +398,6 @@ describe('folding reasoning and tool calls', () => {
   });
 });
 
-describe('the surface state', () => {
-  test('adds a comment, rewrites a body, and leaves an unknown body alone', () => {
-    const added = conversationState(emptyConversationState, {
-      kind: 'comment-added',
-      comment: comment('c1', 'first'),
-    });
-    assert.deepEqual(added.comments, [comment('c1', 'first')]);
-    const rewritten = conversationState(added, {
-      kind: 'comment-body',
-      id: 'c1',
-      body: 'second',
-    });
-    assert.deepEqual(rewritten.comments, [comment('c1', 'second')]);
-    const untouched = conversationState(rewritten, {
-      kind: 'comment-body',
-      id: 'nope',
-      body: 'x',
-    });
-    assert.equal(untouched, rewritten);
-  });
-
-  test('removes a comment by its id', () => {
-    const state: ConversationState = {
-      ...emptyConversationState,
-      comments: [comment('c1', 'a'), comment('c2', 'b')],
-    };
-    assert.deepEqual(
-      conversationState(state, { kind: 'comment-removed', id: 'c1' }).comments,
-      [comment('c2', 'b')],
-    );
-  });
-
-  test('toggles a fold key on, then off', () => {
-    const opened = conversationState(emptyConversationState, {
-      kind: 'fold-toggled',
-      key: 'agent:a:seg:0',
-    });
-    assert.deepEqual([...opened.open], ['agent:a:seg:0']);
-    const closed = conversationState(opened, {
-      kind: 'fold-toggled',
-      key: 'agent:a:seg:0',
-    });
-    assert.deepEqual([...closed.open], []);
-  });
-
-  test('seeds the pending comments from the prompt being rewritten, and drops the edit when cancelled', () => {
-    const started = conversationState(emptyConversationState, {
-      kind: 'edit-started',
-      promptId: 'a',
-      comments: [comment('c1', 'held')],
-    });
-    assert.equal(started.editing, 'a');
-    assert.deepEqual(started.comments, [comment('c1', 'held')]);
-    const cancelled = conversationState(started, { kind: 'edit-cancelled' });
-    assert.equal(cancelled.editing, undefined);
-    assert.deepEqual(cancelled.comments, []);
-  });
-
-  test('clears the comments and the edit on submit, but keeps the folds', () => {
-    const state: ConversationState = {
-      editing: 'a',
-      open: new Set(['agent:a:seg:0']),
-      comments: [comment('c1', 'sent')],
-    };
-    const submitted = conversationState(state, { kind: 'submitted' });
-    assert.equal(submitted.editing, undefined);
-    assert.deepEqual(submitted.comments, []);
-    assert.deepEqual([...submitted.open], ['agent:a:seg:0']);
-  });
-});
-
 describe('the shape of the document', () => {
   test('names every block in order, so a mutation that lost one is visible', () => {
     const turns = conversationTurns([turn('a', 1)], emptyConversationState);
@@ -512,19 +438,5 @@ describe('how a turn reads beside its avatar', () => {
       statuses.map((status) => statusCue('agent', status)?.tone ?? 'quiet'),
       ['quiet', 'idle', 'active', 'failed', 'idle'],
     );
-  });
-});
-
-describe('markdown that will not be escaped by its own value', () => {
-  test('fences a value in three backticks, and names its language', () => {
-    assert.equal(fenced('{}', 'json'), '```json\n{}\n```');
-  });
-
-  test('uses a longer fence than any the value itself holds', () => {
-    assert.equal(fenced('a ``` b'), '````\na ``` b\n````');
-  });
-
-  test('keeps a value that holds nothing readable', () => {
-    assert.equal(fenced(''), '```\n\n```');
   });
 });

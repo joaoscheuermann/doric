@@ -46,13 +46,17 @@ export const quoteOf = (selectionText: string): string =>
   selectionText.trim().replace(/\s+/g, ' ');
 
 /**
- * One comment is one line, so a value is written as one: a line break becomes
- * the space it was typed as, and a `"` is escaped, because the closing quote is
- * the only character that could end the comment early. A quote is already one
- * line when it is stored, so both halves of a comment are written the same way.
+ * One comment is one line, so a value is written as one: a line break becomes the
+ * space it was typed as, and every `\` and `"` is escaped, because the closing
+ * quote is the only character that could end the comment early and a backslash is
+ * the only character that could escape it. Escaping both, in this order, is what
+ * makes the pair symmetrical: whatever a person writes, `unescaped` reads back.
  */
 const writtenLine = (value: string): string =>
-  value.replace(/\r\n|\r|\n/g, ' ').replace(/"/g, '\\"');
+  value
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
 
 /**
  * The prompt a person's request becomes once their comments go with it.
@@ -89,9 +93,11 @@ export const composePrompt = (
 const COMMENT_LINE = /^(\d+)\. "((?:[^"\\]|\\.)*)": (.*)$/;
 
 /**
- * The value a written line holds: the escapes the writer added, and no more.
+ * The value a written line holds: every escape the writer added, undone. A
+ * backslash before anything is that character, which is exact because the writer
+ * escaped every backslash of its own.
  */
-const unescaped = (value: string): string => value.replace(/\\"/g, '"');
+const unescaped = (value: string): string => value.replace(/\\(.)/g, '$1');
 
 /**
  * The request a text carries: everything after the first request heading and
@@ -108,35 +114,57 @@ const requestAfter = (lines: readonly string[], from: number): string => {
 };
 
 /**
+ * The comments and request a framed text carries, or nothing when the text is not
+ * framed at all.
+ *
+ * Framing is what a person's own request might imitate by accident, so it is only
+ * believed when it is complete: the heading, one or more comment lines and nothing
+ * else before the request heading, and a request line after it. A composed prompt
+ * always looks like that; a request that merely begins with the heading does not,
+ * and is therefore read as the request it is — which is what makes a request
+ * beginning with `# User comments` come back unchanged.
+ */
+const framed = (
+  lines: readonly string[],
+):
+  | { readonly comments: readonly PromptComment[]; readonly request: string }
+  | undefined => {
+  if (lines[0] !== COMMENTS_HEADING) return undefined;
+  const heading = lines.indexOf(REQUEST_HEADING, 1);
+  if (heading === -1) return undefined;
+  // The writer separates the block from the request with one blank line, and
+  // nothing else is a separator: a blank line anywhere else means this text is
+  // not something this module wrote.
+  const block = lines.slice(1, heading);
+  if (block.at(-1) === '') block.pop();
+  if (block.length === 0) return undefined;
+  const comments: PromptComment[] = [];
+  for (const line of block) {
+    const match = COMMENT_LINE.exec(line);
+    if (match === null) return undefined;
+    comments.push({
+      id: `parsed:${String(comments.length + 1)}`,
+      quote: unescaped(match[2] ?? ''),
+      body: unescaped(match[3] ?? ''),
+    });
+  }
+  return { comments, request: requestAfter(lines, heading) };
+};
+
+/**
  * What a sent prompt says, read back: the comments and the request.
  *
- * The comments block is only recognized at the very start of the text, because
- * that is where the writer put it, and a request is free to quote a numbered
- * line of its own. A comment stored with an empty body stays empty here: the
- * log held it that way, and reading it back is not the place to drop it.
+ * A text that is not framed is a request, whole — the log holds prompts the host
+ * was given and prompts a person typed, and only the framed ones carried comments.
+ * A comment stored with an empty body stays empty here: the log held it that way,
+ * and reading it back is not the place to drop it.
  */
 export const parsePrompt = (
   text: string,
 ): {
   readonly comments: readonly PromptComment[];
   readonly request: string;
-} => {
-  const lines = text.split('\n');
-  if (lines[0] !== COMMENTS_HEADING) return { comments: [], request: text };
-  const comments: PromptComment[] = [];
-  let index = 1;
-  while (index < lines.length) {
-    const match = COMMENT_LINE.exec(lines[index] ?? '');
-    if (match === null) break;
-    comments.push({
-      id: `parsed:${String(comments.length + 1)}`,
-      quote: unescaped(match[2] ?? ''),
-      body: unescaped(match[3] ?? ''),
-    });
-    index += 1;
-  }
-  return { comments, request: requestAfter(lines, index) };
-};
+} => framed(text.split('\n')) ?? { comments: [], request: text };
 
 /**
  * Where a stored quote appears in an answer's own text, if it does: the first

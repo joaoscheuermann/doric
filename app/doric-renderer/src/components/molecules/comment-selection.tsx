@@ -1,5 +1,3 @@
-import { SelectionToolbar } from '@/components/molecules/selection-toolbar';
-import { $isTurnNode, $turnOf } from '@/components/molecules/turn-node';
 import { type PromptComment, quoteOf } from '@/domain/comments';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -8,9 +6,30 @@ import {
   $isRangeSelection,
   COMMAND_PRIORITY_LOW,
   getDOMSelection,
+  type LexicalNode,
   SELECTION_CHANGE_COMMAND,
 } from 'lexical';
 import { useEffect, useState } from 'react';
+
+import { SelectionToolbar } from './selection-toolbar';
+import { $isTurnNode, $turnOf, type TurnNode } from './turn-node';
+import { $isTurnPartNode } from './turn-part-node';
+
+/**
+ * Whether a node's words are the answer's own prose: outside every part, or inside
+ * one that is a run of text. An opened fold's reasoning and a tool's payload are
+ * read, not commented on, so a selection that reaches into one is not a comment's
+ * business.
+ */
+const $inAnswerProse = (node: LexicalNode): boolean => {
+  let current: LexicalNode | null = node;
+  while (current !== null) {
+    if ($isTurnPartNode(current)) return current.getPartKind() === 'text';
+    if ($isTurnNode(current)) return true;
+    current = current.getParent();
+  }
+  return false;
+};
 
 /** Where the button that comments on a selection stands, and what it would say. */
 type CommentTarget = {
@@ -45,14 +64,40 @@ export function CommentSelection({
 
   useEffect(() => {
     /** The answer being answered: the last one in the document. */
-    const $lastAnswer = (): string | undefined => {
-      let key: string | undefined;
+    const $lastAnswer = (): TurnNode | undefined => {
+      let last: TurnNode | undefined;
       for (const child of $getRoot().getChildren()) {
-        if ($isTurnNode(child) && child.getTurnRole() === 'agent') {
-          key = child.getKey();
-        }
+        if ($isTurnNode(child) && child.getTurnRole() === 'agent') last = child;
       }
-      return key;
+      return last;
+    };
+
+    /**
+     * The quote this selection would comment on, or nothing when it is not a
+     * comment's business.
+     *
+     * The whole selection has to be in the answer being answered and in the words
+     * it actually says: a selection that reaches into the person's own turn, into
+     * an earlier answer, or into a fold's reasoning or a tool's payload cannot be
+     * found in the answer's prose, and a comment about it would have nothing to
+     * point at.
+     */
+    const $quoted = (): string | undefined => {
+      const selection = $getSelection();
+      if (!$isRangeSelection(selection) || selection.isCollapsed()) {
+        return undefined;
+      }
+      const answer = $lastAnswer();
+      if (answer === undefined) return undefined;
+      const anchor = $turnOf(selection.anchor.getNode());
+      const focus = $turnOf(selection.focus.getNode());
+      if (anchor?.getKey() !== answer.getKey()) return undefined;
+      if (focus?.getKey() !== answer.getKey()) return undefined;
+      for (const node of selection.getNodes()) {
+        if (!$inAnswerProse(node)) return undefined;
+      }
+      const text = quoteOf(selection.getTextContent());
+      return text.length === 0 ? undefined : text;
     };
 
     const measure = (): void => {
@@ -73,22 +118,7 @@ export function CommentSelection({
         setTarget(undefined);
         return;
       }
-      const quote = editor.getEditorState().read(() => {
-        const selection = $getSelection();
-        if (!$isRangeSelection(selection) || selection.isCollapsed()) {
-          return undefined;
-        }
-        const turn = $turnOf(selection.focus.getNode());
-        if (
-          turn === undefined ||
-          turn.getTurnRole() !== 'agent' ||
-          turn.getKey() !== $lastAnswer()
-        ) {
-          return undefined;
-        }
-        const text = quoteOf(selection.getTextContent());
-        return text.length === 0 ? undefined : text;
-      });
+      const quote = editor.getEditorState().read($quoted);
       if (quote === undefined) {
         setTarget(undefined);
         return;

@@ -1,16 +1,3 @@
-import {
-  $createCommentCardNode,
-  $createCommentFieldNode,
-  $isCommentCardNode,
-  $isCommentFieldNode,
-} from '@/components/molecules/comment-nodes';
-import {
-  $createCommentedTextNode,
-  $isCommentedTextNode,
-} from '@/components/molecules/commented-text-node';
-import type { TurnNode } from '@/components/molecules/turn-node';
-import { $isTurnNode } from '@/components/molecules/turn-node';
-import { $isTurnPartNode } from '@/components/molecules/turn-part-node';
 import { locateQuote, type PromptComment } from '@/domain/comments';
 import { collapsed } from '@/domain/markdown';
 import {
@@ -19,6 +6,20 @@ import {
   type LexicalNode,
   type TextNode,
 } from 'lexical';
+
+import {
+  $createCommentCardNode,
+  $createCommentFieldNode,
+  $isCommentCardNode,
+  $isCommentFieldNode,
+} from './comment-nodes';
+import {
+  $createCommentedTextNode,
+  $isCommentedTextNode,
+} from './commented-text-node';
+import type { TurnNode } from './turn-node';
+import { $isTurnNode } from './turn-node';
+import { $isTurnPartNode } from './turn-part-node';
 
 /**
  * The comment side of a turn's content: which spans are commented, the field that

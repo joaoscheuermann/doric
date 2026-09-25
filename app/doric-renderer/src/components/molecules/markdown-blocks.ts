@@ -1,14 +1,3 @@
-import {
-  CommentCardNode,
-  CommentFieldNode,
-} from '@/components/molecules/comment-nodes';
-import { CommentedTextNode } from '@/components/molecules/commented-text-node';
-import {
-  AgentTurnNode,
-  TurnNode,
-  UserTurnNode,
-} from '@/components/molecules/turn-node';
-import { TurnPartNode } from '@/components/molecules/turn-part-node';
 import { CodeNode } from '@lexical/code';
 import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
@@ -26,6 +15,11 @@ import {
   type LexicalNode,
 } from 'lexical';
 import remend from 'remend';
+
+import { CommentCardNode, CommentFieldNode } from './comment-nodes';
+import { CommentedTextNode } from './commented-text-node';
+import { AgentTurnNode, TurnNode, UserTurnNode } from './turn-node';
+import { TurnPartNode } from './turn-part-node';
 
 /**
  * The markdown a turn's words are written in, and the Lexical side of it: which

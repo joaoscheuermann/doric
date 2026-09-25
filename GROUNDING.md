@@ -89,13 +89,15 @@ in both directions: an answer's text is parsed into blocks as it arrives (its la
 half-written run healed so it renders mid-stream), and what the composer holds is
 exported back to markdown when it is sent. Only the composer takes words: every
 other turn refuses the edits that would land in it — and any that still gets
-through is put back from the log, because history is a rendering of what the host
-stored. Reasoning and tool calls render closed, and open into the document when a
-person unfolds them. A span of an answer can be commented on: the span is marked in
-the words themselves, the field that holds the comment sits below the line it ends
-on, and the comment travels with the person's next prompt — the prompt's own
-markdown carries a `# User comments` block the surface reads back into cards above
-their request, so nothing about a comment needs a second message or a schema. An
+through is put back from the log, for every turn that renders it, because history
+is a rendering of what the host stored rather than a copy of it that could drift.
+Reasoning and tool calls render closed, and open into the document when a person
+unfolds them. A span of the answer being answered can be commented on: the span is
+marked in the words themselves, the field that holds the comment sits below the
+line it ends on, and the comment travels with the person's next prompt — the
+prompt's own markdown carries a `# User comments` block the surface reads back into
+cards above their request, so nothing about a comment needs a second message or a
+schema. An
 earlier prompt can be rewritten where it stands: Enter opens it, the turns after it
 go translucent because a resubmit discards them, Escape puts them back, and
 Cmd+Enter sends the rewritten prompt through `threads.rewind`. The packaged CSP

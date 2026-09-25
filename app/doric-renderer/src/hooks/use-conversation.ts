@@ -99,15 +99,19 @@ export const useConversation = (thread: Thread): Conversation => {
       const request = markdown.trim();
       if (chat.sending || request.length === 0) return;
       // Rewriting a prompt sends the same kind of prompt: the edited words, with
-      // the comments the prompt already carried. The host discards what followed
-      // it, so a resubmit is a conversation that continues from there.
+      // the comments that prompt already carried. The host discards what followed
+      // it, so a resubmit is a conversation that continues from there — and the
+      // composer's draft is one of the things it discards, so the document empties
+      // it on the same signal a sent prompt uses.
       void chat
-        .rewind(promptId, composePrompt(state.comments, request))
+        .rewind(promptId, composePrompt(state.editComments, request))
         .then((accepted) => {
-          if (accepted) dispatch({ kind: 'submitted' });
+          if (!accepted) return;
+          setClear((count) => count + 1);
+          dispatch({ kind: 'submitted' });
         });
     },
-    [chat, dispatch, state.comments],
+    [chat, dispatch, state.editComments],
   );
 
   const beginEdit = useCallback(
@@ -115,7 +119,10 @@ export const useConversation = (thread: Thread): Conversation => {
       const turn = turns.find(
         (entry) => entry.role === 'user' && entry.promptId === promptId,
       );
-      if (turn === undefined) return;
+      // Only the person's own writing can be rewritten: a delegated input belongs
+      // to another Thread, and the composer is the draft itself, whose words are
+      // not in the log to be replaced.
+      if (turn === undefined || turn.draft || turn.label !== undefined) return;
       // The comments the prompt carried come back with it: rewriting the request
       // must not throw away what the person already said about the answer.
       dispatch({
@@ -137,7 +144,7 @@ export const useConversation = (thread: Thread): Conversation => {
       beginEdit,
       cancelEdit,
       commentBody: (id, body) => dispatch({ kind: 'comment-body', id, body }),
-      comments: state.comments,
+      comments: [...state.comments, ...state.editComments],
       removeComment: (id) => dispatch({ kind: 'comment-removed', id }),
       rewind,
       sending: chat.sending,
@@ -151,6 +158,7 @@ export const useConversation = (thread: Thread): Conversation => {
       dispatch,
       rewind,
       state.comments,
+      state.editComments,
       submit,
     ],
   );

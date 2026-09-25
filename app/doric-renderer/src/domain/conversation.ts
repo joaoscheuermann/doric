@@ -193,13 +193,22 @@ export type ConversationState = {
   readonly editing?: string;
   /** The fold keys the person opened. */
   readonly open: ReadonlySet<string>;
-  /** Comments written but not yet sent. */
+  /** Comments written but not yet sent, about the answer being answered. */
   readonly comments: readonly PromptComment[];
+  /**
+   * The comments the prompt being rewritten already carried. They are held apart
+   * from the comments above so that an edit is transactional: trying a rewrite and
+   * walking away from it must leave whatever the person was writing before it
+   * exactly as it was, and must not put a comment the log already holds back into
+   * the next prompt.
+   */
+  readonly editComments: readonly PromptComment[];
 };
 
 export const emptyConversationState: ConversationState = {
   open: new Set<string>(),
   comments: [],
+  editComments: [],
 };
 
 export type ConversationInput =
@@ -220,11 +229,12 @@ export type ConversationInput =
   | { readonly kind: 'submitted' };
 
 /**
- * The surface's one transition. `submitted` clears the comments and ends the
- * edit — a sent prompt carries them into the log, so keeping them would send
- * them twice — but keeps the folds, because folding is about reading, not about
- * what is in flight. `edit-started` seeds the pending comments from the prompt
- * being rewritten, so rewriting it does not lose the comments it already held.
+ * The surface's one transition. `submitted` clears the comments on both sides of
+ * an edit — the prompt that was accepted carried them into the log, so keeping
+ * them would send them twice — but keeps the folds, because folding is about
+ * reading and not about what is in flight. `edit-started` seeds the edit with the
+ * comments the prompt being rewritten already held, and `edit-cancelled` drops
+ * only those: an edit abandoned is an edit that never happened.
  */
 export const conversationState = (
   state: ConversationState,
@@ -233,19 +243,27 @@ export const conversationState = (
   switch (input.kind) {
     case 'comment-added':
       return { ...state, comments: [...state.comments, input.comment] };
-    case 'comment-body':
-      if (!state.comments.some((comment) => comment.id === input.id))
-        return state;
+    case 'comment-body': {
+      const holds = (list: readonly PromptComment[]): boolean =>
+        list.some((comment) => comment.id === input.id);
+      if (!holds(state.comments) && !holds(state.editComments)) return state;
+      const body = (list: readonly PromptComment[]): readonly PromptComment[] =>
+        list.map((comment) =>
+          comment.id === input.id ? { ...comment, body: input.body } : comment,
+        );
       return {
         ...state,
-        comments: state.comments.map((comment) =>
-          comment.id === input.id ? { ...comment, body: input.body } : comment,
-        ),
+        comments: body(state.comments),
+        editComments: body(state.editComments),
       };
+    }
     case 'comment-removed':
       return {
         ...state,
         comments: state.comments.filter((comment) => comment.id !== input.id),
+        editComments: state.editComments.filter(
+          (comment) => comment.id !== input.id,
+        ),
       };
     case 'fold-toggled': {
       const open = new Set(state.open);
@@ -254,15 +272,15 @@ export const conversationState = (
       return { ...state, open };
     }
     case 'edit-started':
-      return { ...state, editing: input.promptId, comments: input.comments };
+      return {
+        ...state,
+        editing: input.promptId,
+        editComments: input.comments,
+      };
     case 'edit-cancelled':
-      // Cancelling drops the comments the edit seeded as well: those are the
-      // prompt's own, already in the log, and keeping them editable would send
-      // them a second time. What the log holds still marks the answer, because
-      // that comes from the log rather than from here.
-      return { open: state.open, comments: [] };
+      return { ...state, editing: undefined, editComments: [] };
     case 'submitted':
-      return { open: state.open, comments: [] };
+      return { open: state.open, comments: [], editComments: [] };
   }
 };
 

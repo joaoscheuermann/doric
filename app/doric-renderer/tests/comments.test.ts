@@ -182,20 +182,19 @@ describe('reading a sent prompt back', () => {
     });
   });
 
-  test('ends the comments block at the first line that is not a numbered comment', () => {
+  test('reads a block that holds a line which is not a comment as a request', () => {
     const prompt = joined([
       COMMENTS_HEADING,
       '1. "kept": a note',
-      '2. "read too": another note',
       'a line that is not a comment',
-      '2. "not read": ignored',
+      REQUEST_HEADING,
+      'ask something',
     ]);
+    // Framing is only believed when it is complete, so this is a request — the
+    // heading is a request's own text, not this module's writing.
     assert.deepEqual(parsePrompt(prompt), {
-      comments: [
-        { id: 'parsed:1', quote: 'kept', body: 'a note' },
-        { id: 'parsed:2', quote: 'read too', body: 'another note' },
-      ],
-      request: 'a line that is not a comment\n2. "not read": ignored',
+      comments: [],
+      request: prompt,
     });
   });
 });
@@ -222,6 +221,72 @@ describe('where a quote sits in an answer', () => {
     assert.equal(
       locateQuote('the quick\n\nbrown fox jumps over', quote),
       undefined,
+    );
+  });
+});
+
+describe('framing that a request of its own cannot be mistaken for', () => {
+  test('reads a request that begins with the comments heading as a request', () => {
+    const request = '# User comments\nordinary request';
+    const parsed = parsePrompt(request);
+    assert.deepEqual(parsed.comments, []);
+    assert.equal(parsed.request, request);
+  });
+
+  test('keeps a request that begins with the heading when comments go with it', () => {
+    const comments: readonly PromptComment[] = [
+      { body: 'noted', id: 'c1', quote: 'say it' },
+    ];
+    const request = '# User comments\nordinary request';
+    const parsed = parsePrompt(composePrompt(comments, request));
+    assert.deepEqual(
+      parsed.comments.map((comment) => [comment.quote, comment.body]),
+      [['say it', 'noted']],
+    );
+    assert.equal(parsed.request, request);
+  });
+
+  test('does not read a heading and a stray line as framing', () => {
+    const text = '# User comments\nnot a comment line\n\n# User request\nask';
+    const parsed = parsePrompt(text);
+    assert.deepEqual(parsed.comments, []);
+    assert.equal(parsed.request, text);
+  });
+});
+
+describe('escaping a value that holds the escapes themselves', () => {
+  test('carries a quote that ends in a backslash', () => {
+    const comments: readonly PromptComment[] = [
+      { body: 'kept', id: 'c1', quote: 'a trailing backslash \\' },
+    ];
+    const parsed = parsePrompt(composePrompt(comments, 'ask'));
+    assert.deepEqual(
+      parsed.comments.map((comment) => comment.quote),
+      ['a trailing backslash \\'],
+    );
+    assert.equal(parsed.request, 'ask');
+  });
+
+  test('carries a quote and a body that hold an escaped quote', () => {
+    const comments: readonly PromptComment[] = [
+      { body: 'he said \\"no\\" twice', id: 'c1', quote: 'the \\"word\\"' },
+    ];
+    const parsed = parsePrompt(composePrompt(comments, 'ask'));
+    assert.deepEqual(
+      parsed.comments.map((comment) => [comment.quote, comment.body]),
+      [['the \\"word\\"', 'he said \\"no\\" twice']],
+    );
+  });
+
+  test('carries a body that holds a backslash and a line break', () => {
+    const body = ['C:', '\\', 'path', '\n', 'next line'].join('');
+    const comments: readonly PromptComment[] = [
+      { body, id: 'c1', quote: 'say it' },
+    ];
+    const parsed = parsePrompt(composePrompt(comments, 'ask'));
+    assert.deepEqual(
+      parsed.comments.map((comment) => comment.body),
+      ['C:\\path next line'],
     );
   });
 });

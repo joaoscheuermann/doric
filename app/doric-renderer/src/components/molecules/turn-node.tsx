@@ -93,6 +93,9 @@ const buildTurnDOM = (turn: TurnNode): HTMLElement => {
   label.className = 'doric-label';
   label.setAttribute(LABEL, '');
   label.contentEditable = 'false';
+  // Chrome is neither typed in nor selected: a person copying an answer must not
+  // carry a sentence this surface wrote about who wrote it.
+  label.style.userSelect = 'none';
 
   const row = document.createElement('div');
   row.className = 'doric-row';

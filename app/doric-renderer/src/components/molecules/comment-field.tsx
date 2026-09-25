@@ -1,8 +1,9 @@
-import { useConversationActions } from '@/components/molecules/conversation-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+
+import { useConversationActions } from './conversation-actions';
 
 /**
  * The editable half of a comment: the person's own words about a span of an
