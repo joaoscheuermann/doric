@@ -12,6 +12,7 @@ import {
   $createCommentFieldNode,
   $isCommentCardNode,
   $isCommentFieldNode,
+  type CommentFieldNode,
 } from './comment-nodes';
 import {
   $createCommentedTextNode,
@@ -72,9 +73,26 @@ const $isBlockContainer = (node: LexicalNode): boolean =>
   $isTurnNode(node) || $isTurnPartNode(node);
 
 /**
- * A turn's own text, and where each of its text nodes sits in it. Blocks are
- * joined the way a selection reads them, so a quote a person took across two
- * paragraphs is still found.
+ * Whether a node's words are the answer's own prose: outside every part, or inside
+ * one that is a run of text. An opened fold's reasoning and a tool's payload are
+ * read, not commented on, so a comment is never found in one — which matters when
+ * the same words appear there, because a mark that moved into a fold would leave
+ * the person's comment pointing at something they did not select.
+ */
+export const $inAnswerProse = (node: LexicalNode): boolean => {
+  let current: LexicalNode | null = node;
+  while (current !== null) {
+    if ($isTurnPartNode(current)) return current.getPartKind() === 'text';
+    if ($isTurnNode(current)) return true;
+    current = current.getParent();
+  }
+  return false;
+};
+
+/**
+ * A turn's own text, and where each of its text nodes sits in it. Blocks are joined
+ * the way a selection reads them, so a quote a person took across two paragraphs is
+ * still found.
  */
 const $textWithSpans = (
   turn: TurnNode,
@@ -83,6 +101,7 @@ const $textWithSpans = (
   const spans: TextSpan[] = [];
   let block: ElementNode | undefined;
   for (const node of turn.getAllTextNodes()) {
+    if (!$inAnswerProse(node)) continue;
     const owner = $blockOf(node);
     if (owner === undefined) continue;
     if (block !== undefined && owner !== block) text += '\n\n';
@@ -155,23 +174,39 @@ const $markSpan = (
 };
 
 /**
+ * The field a comment already has in this turn, wherever it is: a field is the
+ * one place a comment is written, so moving it to where its words now are must not
+ * leave a second one behind.
+ */
+const $fieldOf = (
+  turn: TurnNode,
+  commentId: string,
+): CommentFieldNode | undefined => {
+  for (const container of [turn, ...turn.getChildren()]) {
+    if (!(container instanceof ElementNode)) continue;
+    for (const child of container.getChildren()) {
+      if ($isCommentFieldNode(child) && child.getCommentId() === commentId) {
+        return child;
+      }
+    }
+  }
+  return undefined;
+};
+
+/**
  * Puts one comment's field right below the block it belongs to, and gives the
  * caret to a field that did not exist yet: a comment just made is a comment about
  * to be written, and needing a second click to start would be a step nobody asked
  * for.
  */
-const $placeField = (block: ElementNode, commentId: string): void => {
-  const parent = block.getParent();
-  if (parent === null || !(parent instanceof ElementNode)) return;
-  let field = parent
-    .getChildren()
-    .find(
-      (child) =>
-        $isCommentFieldNode(child) && child.getCommentId() === commentId,
-    );
-  if (field === undefined) {
-    field = $createCommentFieldNode(commentId).setFocused(true);
-  }
+const $placeField = (
+  turn: TurnNode,
+  block: ElementNode,
+  commentId: string,
+): void => {
+  const field =
+    $fieldOf(turn, commentId) ??
+    $createCommentFieldNode(commentId).setFocused(true);
   block.insertAfter(field);
 };
 
@@ -218,7 +253,7 @@ export const $applyCommentMarks = (
     if (start === undefined || last === undefined) continue;
     const block = $markSpan(spans, start, last + 1, mark.id);
     if (block === undefined || !pending.has(mark.id)) continue;
-    $placeField(block, mark.id);
+    $placeField(turn, block, mark.id);
   }
 
   // A field whose comment is still being written stays where it is even when its

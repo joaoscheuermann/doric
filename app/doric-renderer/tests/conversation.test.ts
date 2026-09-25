@@ -10,6 +10,7 @@ import {
   emptyConversationState,
   foldKey,
   partSignature,
+  partsSignature,
   statusCue,
 } from '../src/domain/conversation';
 import type { PromptStatus, PromptTurn } from '../src/domain/projector';
@@ -395,6 +396,81 @@ describe('folding reasoning and tool calls', () => {
       key: 'seg:0',
       markdown: 'answer',
     });
+  });
+});
+
+describe('which comments an answer is still writing', () => {
+  const held = (id: string, body: string) => ({ body, id, quote: 'say it' });
+  const carried = (promptId: string, text: string) =>
+    turn(promptId, 1, { userMarkdown: text });
+  const composed = (body: string) =>
+    `# User comments\n1. "say it": ${body}\n\n# User request\nask`;
+
+  test('gives fields to the last answer only, from the comments not yet sent', () => {
+    const turns = conversationTurns([carried('a', 'ask')], {
+      ...emptyConversationState,
+      comments: [held('c1', 'mine')],
+    });
+    assert.deepEqual(agentOf(turns).fields, [held('c1', 'mine')]);
+  });
+
+  test('gives no fields to an answer whose comments already travelled', () => {
+    const turns = conversationTurns(
+      [carried('a', 'ask'), carried('b', composed('sent'))],
+      emptyConversationState,
+    );
+    assert.deepEqual(agentOf(turns).marks, [held('parsed:1', 'sent')]);
+    assert.deepEqual(agentOf(turns).fields, []);
+  });
+
+  test('gives fields only to the answer the edit is about, not to every answer numbered the same', () => {
+    // Three prompts whose parsed comments are all numbered from one, so three
+    // answers carry a `parsed:1`. Editing the second prompt brings its comment
+    // back as a field on the answer before it — and on no other answer.
+    const turns = conversationTurns(
+      [
+        carried('a', 'ask'),
+        carried('b', composed('second')),
+        carried('c', composed('third')),
+      ],
+      {
+        ...emptyConversationState,
+        editing: 'b',
+        editComments: [held('parsed:1', 'second')],
+      },
+    );
+    const [, first, , second, , third] = turns;
+    assert.deepEqual(first?.fields, [held('parsed:1', 'second')]);
+    assert.deepEqual(second?.fields, []);
+    assert.deepEqual(third?.fields, []);
+    // Every answer still shows the mark of the comment that names it.
+    assert.deepEqual(second?.marks, [held('parsed:1', 'third')]);
+  });
+});
+
+describe("the shape of a turn's parts", () => {
+  test('names each part in order, so a part that lost its place is visible', () => {
+    const turns = conversationTurns(
+      [turn('a', 1, { segments: [thinking('why'), tool('call-1')] })],
+      emptyConversationState,
+    );
+    assert.equal(
+      partsSignature(agentOf(turns), new Set()),
+      'thinking:seg:0\u0000tool:seg:1',
+    );
+  });
+
+  test('keeps a closed fold in the shape, because its head is still a control', () => {
+    const turns = conversationTurns(
+      [turn('a', 1, { segments: [thinking('why')] })],
+      emptyConversationState,
+    );
+    const agent = agentOf(turns);
+    assert.equal(partsSignature(agent, new Set()), 'thinking:seg:0');
+    assert.equal(
+      partsSignature(agent, new Set(['agent:a:seg:0'])),
+      'thinking:seg:0',
+    );
   });
 });
 

@@ -50,6 +50,12 @@ export const useConversation = (thread: Thread): Conversation => {
   const [clear, setClear] = useState(0);
   /** Names the comments made in this session, so no two ever share a name. */
   const made = useRef(0);
+  /**
+   * Whether a prompt is already on its way, from the moment it is asked for rather
+   * than from the next render: two keystrokes in one batch must not send the same
+   * comment-bearing prompt twice.
+   */
+  const inFlight = useRef(false);
 
   const dispatch = useCallback(
     (input: Parameters<typeof conversationState>[1]) => {
@@ -77,21 +83,37 @@ export const useConversation = (thread: Thread): Conversation => {
     [dispatch],
   );
 
+  /** Sends one prompt, and never two at once. */
+  const sendOnce = useCallback(
+    (work: () => Promise<boolean>, done: () => void): void => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      void work()
+        .then((accepted) => {
+          if (accepted) done();
+        })
+        .finally(() => {
+          inFlight.current = false;
+        });
+    },
+    [],
+  );
+
   const submit = useCallback(
     (markdown: string): void => {
       const request = markdown.trim();
       if (chat.sending || request.length === 0) return;
       // A comment is not a second message: it is the same prompt, sent with the
       // request it was written about, in the format `parsePrompt` reads back.
-      void chat
-        .prompt(composePrompt(state.comments, request))
-        .then((accepted) => {
-          if (!accepted) return;
+      sendOnce(
+        () => chat.prompt(composePrompt(state.comments, request)),
+        () => {
           setClear((count) => count + 1);
           dispatch({ kind: 'submitted' });
-        });
+        },
+      );
     },
-    [chat, dispatch, state.comments],
+    [chat, dispatch, sendOnce, state.comments],
   );
 
   const rewind = useCallback(
@@ -103,15 +125,15 @@ export const useConversation = (thread: Thread): Conversation => {
       // it, so a resubmit is a conversation that continues from there — and the
       // composer's draft is one of the things it discards, so the document empties
       // it on the same signal a sent prompt uses.
-      void chat
-        .rewind(promptId, composePrompt(state.editComments, request))
-        .then((accepted) => {
-          if (!accepted) return;
+      sendOnce(
+        () => chat.rewind(promptId, composePrompt(state.editComments, request)),
+        () => {
           setClear((count) => count + 1);
           dispatch({ kind: 'submitted' });
-        });
+        },
+      );
     },
-    [chat, dispatch, state.editComments],
+    [chat, dispatch, sendOnce, state.editComments],
   );
 
   const beginEdit = useCallback(

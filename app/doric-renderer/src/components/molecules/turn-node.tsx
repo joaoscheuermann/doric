@@ -1,4 +1,4 @@
-import { statusCue, type TurnRole } from '@/domain/conversation';
+import type { TurnRole } from '@/domain/conversation';
 import type { PromptStatus } from '@/domain/projector';
 import {
   $createParagraphNode,
@@ -8,22 +8,20 @@ import {
   type NodeKey,
   type ParagraphNode,
   type SerializedElementNode,
-  setDOMUnmanaged,
   type Spread,
 } from 'lexical';
 
-import { statusDot } from './status-dot';
+import {
+  buildTurnDOM,
+  paintTurnChrome,
+  turnBodyOf,
+  type TurnChromeShape,
+} from './turn-chrome';
 
 /**
  * A turn of the conversation, as the document holds it: one block whose children
- * are the pieces the log states, whatever its author.
- *
- * Its chrome — the avatar, the label naming another Thread's words, the cue that
- * says the turn is still working — is deliberately **not** part of it. The chrome
- * is DOM the turn owns outside the range Lexical manages (see `getDOMSlot`), so
- * it is in no node, no serialization and no copy, nothing can delete it, and the
- * caret has no position to stop in: the three bugs that come from making a
- * decoration a node of the document.
+ * are the pieces the log states, whatever its author. What it wears — its avatar,
+ * its author label, its state cue — is chrome, and lives in `turn-chrome.ts`.
  */
 
 export type SerializedTurnNode = Spread<
@@ -51,99 +49,17 @@ export type TurnShape = {
   readonly dimmed?: boolean;
 };
 
-/** Where each turn's managed children live, keyed by the turn's own DOM. */
-const bodies = new WeakMap<HTMLElement, HTMLElement>();
-
-const BODY = 'data-doric-body';
-const CHROME = 'data-doric-chrome';
-const LABEL = 'data-doric-label';
-
-/** The avatar a turn wears: the person's identicon, or the agent's glyph. */
-const avatar = (role: TurnRole): HTMLElement => {
-  const mark = document.createElement('span');
-  mark.className = 'doric-avatar';
-  mark.dataset.kind = role;
-  if (role === 'agent') {
-    const glyph = document.createElement('span');
-    glyph.className = 'doric-glyph';
-    mark.append(glyph);
-  }
-  return mark;
-};
-
 /**
- * The cue a turn's state reads as. Only a turn that is still working, or that
- * ended without finishing, says anything: a finished turn wears its avatar alone.
+ * The chrome a turn's own fields describe, in the shape the chrome draws from. The
+ * surface reads it too, to put a turn's chrome back where it stands.
  */
-
-/**
- * The turn's DOM: a column that reads as one measure of prose, with the avatar in
- * the gutter beside it and, above both when another Thread wrote the words, the
- * sentence that says so.
- *
- * Nothing here is written by Lexical: the managed children go into the body (see
- * `getDOMSlot`), so the chrome can be repainted — a turn that starts working and
- * then finishes — without touching one content node or the caret inside it.
- */
-const buildTurnDOM = (turn: TurnNode): HTMLElement => {
-  const dom = document.createElement('div');
-  dom.className = 'doric-turn';
-
-  const label = document.createElement('p');
-  label.className = 'doric-label';
-  label.setAttribute(LABEL, '');
-  label.contentEditable = 'false';
-  // Chrome is neither typed in nor selected: a person copying an answer must not
-  // carry a sentence this surface wrote about who wrote it.
-  label.style.userSelect = 'none';
-
-  const row = document.createElement('div');
-  row.className = 'doric-row';
-
-  const chrome = document.createElement('div');
-  chrome.className = 'doric-chrome';
-  chrome.setAttribute(CHROME, '');
-  // A caret has no business in the chrome: it is not editable, and it is not
-  // selected with the words beside it either, so a selection never carries a
-  // decoration out of the conversation.
-  chrome.contentEditable = 'false';
-  chrome.style.userSelect = 'none';
-
-  const body = document.createElement('div');
-  body.className = 'doric-body';
-  body.setAttribute(BODY, '');
-
-  row.append(chrome, body);
-  dom.append(label, row);
-  // The decoration is the one thing Lexical must not treat as a stranger in its
-  // own DOM: unmarked, its mutation observer evicts it as unknown DOM.
-  setDOMUnmanaged(label);
-  setDOMUnmanaged(row);
-  setDOMUnmanaged(chrome);
-  bodies.set(dom, body);
-  paintChrome(dom, turn);
-  return dom;
-};
-
-/** Writes the turn's chrome: who wrote it, whether it still works, where from. */
-const paintChrome = (dom: HTMLElement, turn: TurnNode): void => {
-  dom.dataset.role = turn.getTurnRole();
-  dom.dataset.draft = String(turn.isDraft());
-  dom.dataset.dimmed = String(turn.isDimmed());
-  const chrome = dom.querySelector<HTMLElement>(`[${CHROME}]`);
-  if (chrome !== null) {
-    const cue = statusCue(turn.getTurnRole(), turn.getStatus());
-    chrome.replaceChildren(avatar(turn.getTurnRole()));
-    if (cue !== undefined) chrome.append(statusDot(cue.label, cue.tone));
-    chrome.dataset.status = cue?.tone ?? 'settled';
-  }
-  const label = dom.querySelector<HTMLElement>(`[${LABEL}]`);
-  if (label !== null) {
-    const text = turn.getLabel();
-    label.textContent = text ?? '';
-    label.hidden = text === undefined;
-  }
-};
+export const turnChromeShapeOf = (turn: TurnNode): TurnChromeShape => ({
+  dimmed: turn.isDimmed(),
+  draft: turn.isDraft(),
+  role: turn.getTurnRole(),
+  status: turn.getStatus(),
+  ...(turn.getLabel() === undefined ? {} : { label: turn.getLabel() }),
+});
 
 const emptyTurnShape = (): TurnShape => ({
   key: '',
@@ -167,10 +83,10 @@ const turnShapeOf = (node: TurnNode): TurnShape => ({
 });
 
 /**
- * Carries what Lexical's own clone does not know about. A clone exists so a
- * setter can write without touching the version another reference holds, so it
- * has to bring every field of this node — a clone that dropped them would be a
- * node that had silently forgotten which turn it is.
+ * Carries what Lexical's own clone does not know about. A clone exists so a setter
+ * can write without touching the version another reference holds, so it has to
+ * bring every field of this node — a clone that dropped them would be a node that
+ * had silently forgotten which turn it is.
  */
 const carryTurnState = <Node extends TurnNode>(from: Node, to: Node): Node => {
   to.__applied = from.__applied;
@@ -365,7 +281,7 @@ export class TurnNode extends ElementNode {
   }
 
   override createDOM(): HTMLElement {
-    return buildTurnDOM(this);
+    return buildTurnDOM(turnChromeShapeOf(this));
   }
 
   /**
@@ -391,7 +307,7 @@ export class TurnNode extends ElementNode {
       previous.__draft !== this.__draft ||
       previous.__dimmed !== this.__dimmed
     ) {
-      paintChrome(dom, this);
+      paintTurnChrome(dom, turnChromeShapeOf(this));
     }
     return false;
   }
@@ -403,7 +319,7 @@ export class TurnNode extends ElementNode {
    * content children only.
    */
   override getDOMSlot(element: HTMLElement): ElementDOMSlot<HTMLElement> {
-    const body = bodies.get(element);
+    const body = turnBodyOf(element);
     if (body === undefined) return super.getDOMSlot(element);
     return super.getDOMSlot(element).withElement(body);
   }
@@ -429,13 +345,6 @@ export class TurnNode extends ElementNode {
 
 export const $createTurnNode = (shape: TurnShape): TurnNode =>
   new TurnNode(shape);
-
-/**
- * A turn's chrome, or `null` when its DOM no longer carries one: the surface reads
- * it to decide whether a row on screen is still the row the log built.
- */
-export const turnChromeOf = (dom: HTMLElement | null): HTMLElement | null =>
-  dom === null ? null : dom.querySelector<HTMLElement>(`[${CHROME}]`);
 
 export const $isTurnNode = (node: LexicalNode): node is TurnNode =>
   node instanceof TurnNode;

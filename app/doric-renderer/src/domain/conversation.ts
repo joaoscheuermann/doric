@@ -63,6 +63,14 @@ export type ConversationTurn = {
    * reaches the model: it rides the next prompt, which is what names it.
    */
   readonly marks?: readonly PromptComment[];
+  /**
+   * An agent turn: which of those comments the person is still writing, and so
+   * which of them the editor gives an editable field rather than a mark alone.
+   * A comment that travelled with a prompt is read, not edited — the place it was
+   * written is the answer it was taken from — so only the composer's pending
+   * comments and the ones an edit brought back are fields.
+   */
+  readonly fields?: readonly PromptComment[];
 };
 
 /**
@@ -285,31 +293,65 @@ export const conversationState = (
 };
 
 /**
- * The comments of the next user turn after `index`, or none when there is no
- * later user turn. For an agent turn that follower is the user turn of the next
- * prompt, or the composer for the last answer, which is how a comment travels
- * with the prompt that follows the answer it is about.
+ * The user turn that follows an agent turn: the next prompt, or the composer for
+ * the last answer. It is what a comment on that answer travels with, and what says
+ * which of an answer's comments are still being written.
  */
-const followingComments = (
+const followerOf = (
   list: readonly ConversationTurn[],
   index: number,
-): readonly PromptComment[] => {
+): ConversationTurn | undefined => {
   for (let position = index + 1; position < list.length; position += 1) {
     const turn = list[position];
-    if (turn.role === 'user') return turn.comments ?? [];
+    if (turn.role === 'user') return turn;
   }
+  return undefined;
+};
+
+/**
+ * The comments of an answer that the person is still writing.
+ *
+ * They are the follower's own comments, and only while the follower is one of the
+ * two turns a comment can be written from: the composer, or the prompt being
+ * rewritten. Matching comments by id alone would not do — every prompt numbers its
+ * parsed comments from one, so two prompts both hold a `parsed:1` and an edit would
+ * put an editable field on an answer nobody is commenting on.
+ */
+const followingFields = (
+  list: readonly ConversationTurn[],
+  index: number,
+  state: ConversationState,
+): readonly PromptComment[] => {
+  const follower = followerOf(list, index);
+  if (follower === undefined) return [];
+  if (follower.draft) return state.comments;
+  if (follower.writable) return state.editComments;
   return [];
 };
+
+/**
+ * The shape of a turn's parts, in order: what the editor must hold for a turn to
+ * still be the turn the log states. A closed fold holds no words, so without this
+ * a deleted fold — and the control that opens it — would look like an intact turn.
+ */
+export const partsSignature = (
+  turn: ConversationTurn,
+  open: ReadonlySet<string>,
+): string =>
+  agentParts(turn, open)
+    .map((part) => `${part.kind}:${part.key}`)
+    .join('\u0000');
 
 /**
  * The turns a log renders, in order, with the composer last, as a function of
  * what the person is doing. A turn the log has not accepted yet is not rendered:
  * nothing durable holds its words.
  *
- * The state decides two things a turn cannot know about itself: whether it may
- * be written in (only the composer, or the prompt being rewritten) and whether a
+ * The state decides three things a turn cannot know about itself: whether it may
+ * be written in (only the composer, or the prompt being rewritten), whether a
  * resubmit would discard it (every turn after the one being edited, and the
- * composer while an edit is in progress).
+ * composer while an edit is in progress), and which comments on an answer are
+ * still being written rather than read.
  */
 export const conversationTurns = (
   turns: readonly PromptTurn[],
@@ -338,11 +380,15 @@ export const conversationTurns = (
     ...settled,
     draftTurn(state.comments, state.editing !== undefined),
   ];
-  return list.map((turn, index) =>
-    turn.role === 'agent'
-      ? { ...turn, marks: followingComments(list, index) }
-      : turn,
-  );
+  return list.map((turn, index) => {
+    if (turn.role !== 'agent') return turn;
+    const follower = followerOf(list, index);
+    return {
+      ...turn,
+      marks: follower?.comments ?? [],
+      fields: followingFields(list, index, state),
+    };
+  });
 };
 
 /**

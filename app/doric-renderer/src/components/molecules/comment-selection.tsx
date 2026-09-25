@@ -6,30 +6,13 @@ import {
   $isRangeSelection,
   COMMAND_PRIORITY_LOW,
   getDOMSelection,
-  type LexicalNode,
   SELECTION_CHANGE_COMMAND,
 } from 'lexical';
 import { useEffect, useState } from 'react';
 
+import { $inAnswerProse } from './comment-marks';
 import { SelectionToolbar } from './selection-toolbar';
 import { $isTurnNode, $turnOf, type TurnNode } from './turn-node';
-import { $isTurnPartNode } from './turn-part-node';
-
-/**
- * Whether a node's words are the answer's own prose: outside every part, or inside
- * one that is a run of text. An opened fold's reasoning and a tool's payload are
- * read, not commented on, so a selection that reaches into one is not a comment's
- * business.
- */
-const $inAnswerProse = (node: LexicalNode): boolean => {
-  let current: LexicalNode | null = node;
-  while (current !== null) {
-    if ($isTurnPartNode(current)) return current.getPartKind() === 'text';
-    if ($isTurnNode(current)) return true;
-    current = current.getParent();
-  }
-  return false;
-};
 
 /** Where the button that comments on a selection stands, and what it would say. */
 type CommentTarget = {

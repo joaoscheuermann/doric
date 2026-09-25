@@ -54,13 +54,16 @@ The renderer has no direct network access to Doric. It uses the semantic
   the field that edits it below the block the span ends in, and `CommentCardNode`
   shows it back in the person's next turn. `domain/comments.ts` owns the one format
   that carries a comment to the host — a `# User comments` block above
-  `# User request`, sent as the same prompt, and read back only when it is complete
-  enough to be nobody else's text — and `markdown-blocks.ts` keeps those nodes
-  through every write of the words beside them (`$setMarkdown`'s `keep`). What a
-  comment stores is the quoted words and nothing else, so a phrase an answer says
-  twice is marked where it says it first: the span is found again by its text, and
-  a selection that is not the answer's own prose — its reasoning, a tool's payload,
-  the person's own turn — offers nothing to comment on.
+  `# User request`, sent as the same prompt, and read back only when it is shaped
+  exactly like what the writer writes (a heading, comments numbered from one
+  without a gap, and a request line), so a request that merely begins with the
+  heading stays a request — and `markdown-blocks.ts` keeps those nodes through
+  every write of the words beside them (`$setMarkdown`'s `keep`). What a comment
+  stores is the quoted words and nothing else, so a phrase an answer says twice is
+  marked where it says it first, and a request that _is_ that block is read as
+  comments: the format is the one the person reads, in-band by choice. A comment is
+  never found in a fold's reasoning or a tool's payload, and a selection that
+  reaches into one offers nothing to comment on.
 - An earlier prompt is rewritten where it stands. Enter in one of the person's own
   sealed turns opens it (`use-edit-keys.ts`), the turns after it render translucent
   because a resubmit discards them, Escape puts them back — including whatever

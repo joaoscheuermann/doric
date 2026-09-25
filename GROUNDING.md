@@ -97,7 +97,9 @@ marked in the words themselves, the field that holds the comment sits below the
 line it ends on, and the comment travels with the person's next prompt — the
 prompt's own markdown carries a `# User comments` block the surface reads back into
 cards above their request, so nothing about a comment needs a second message or a
-schema. An
+schema. What a comment stores is the quoted words, so an answer that says the same
+phrase twice is marked where it says it first, and a request that is itself exactly
+that block is read as comments: the format is the one the person reads. An
 earlier prompt can be rewritten where it stands: Enter opens it, the turns after it
 go translucent because a resubmit discards them, Escape puts them back, and
 Cmd+Enter sends the rewritten prompt through `threads.rewind`. The packaged CSP

@@ -93,6 +93,17 @@ export const composePrompt = (
 const COMMENT_LINE = /^(\d+)\. "((?:[^"\\]|\\.)*)": (.*)$/;
 
 /**
+ * The number a comment line carries, or nothing when it is not one. The numbers
+ * must start at one and count up without a gap, because that is what this module
+ * writes: a block numbered any other way is a person's own text that happens to
+ * look like this one, and reading it as comments would take their words apart.
+ */
+const commentNumber = (line: string, expected: number): string | undefined => {
+  const match = COMMENT_LINE.exec(line);
+  return match !== null && match[1] === String(expected) ? line : undefined;
+};
+
+/**
  * The value a written line holds: every escape the writer added, undone. A
  * backslash before anything is that character, which is exact because the writer
  * escaped every backslash of its own.
@@ -140,12 +151,13 @@ const framed = (
   if (block.length === 0) return undefined;
   const comments: PromptComment[] = [];
   for (const line of block) {
-    const match = COMMENT_LINE.exec(line);
-    if (match === null) return undefined;
+    const numbered = commentNumber(line, comments.length + 1);
+    if (numbered === undefined) return undefined;
+    const match = COMMENT_LINE.exec(numbered);
     comments.push({
       id: `parsed:${String(comments.length + 1)}`,
-      quote: unescaped(match[2] ?? ''),
-      body: unescaped(match[3] ?? ''),
+      quote: unescaped(match?.[2] ?? ''),
+      body: unescaped(match?.[3] ?? ''),
     });
   }
   return { comments, request: requestAfter(lines, heading) };

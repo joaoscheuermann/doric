@@ -7,10 +7,14 @@ import {
 } from '@/components/molecules/comment-marks';
 import { $setMarkdown } from '@/components/molecules/markdown-blocks';
 import {
+  paintTurnChrome,
+  turnChromeOf,
+} from '@/components/molecules/turn-chrome';
+import {
   $createAgentTurnNode,
   $createUserTurnNode,
   $isTurnNode,
-  turnChromeOf,
+  turnChromeShapeOf,
   type TurnNode,
 } from '@/components/molecules/turn-node';
 import {
@@ -19,13 +23,13 @@ import {
   partHeadOf,
   type TurnPartNode,
 } from '@/components/molecules/turn-part-node';
-import type { PromptComment } from '@/domain/comments';
 import {
   agentParts,
   type ConversationState,
   type ConversationTurn,
   documentSignature,
   partSignature,
+  partsSignature,
   type TurnPart,
 } from '@/domain/conversation';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -190,7 +194,7 @@ const $applyTurn = (
     }
   } else if (turn.role === 'agent') {
     const rewrote = $applyParts(editor, node, agentParts(turn, state.open));
-    const fields = pendingFields(turn, state);
+    const fields = turn.fields ?? [];
     const marks = marksSignature(turn.marks ?? [], fields);
     // Marks are found in the answer's own words, so a write of those words takes
     // them with it: every rewrite re-marks, in the same update, and only a turn
@@ -211,17 +215,6 @@ const $applyTurn = (
 
   node.setAppliedText(node.getTextContent());
 };
-
-/** The comments a turn's marks include that the person is still writing. */
-const pendingFields = (
-  turn: ConversationTurn,
-  state: ConversationState,
-): readonly PromptComment[] =>
-  (turn.marks ?? []).filter(
-    (mark) =>
-      state.comments.some((comment) => comment.id === mark.id) ||
-      state.editComments.some((comment) => comment.id === mark.id),
-  );
 
 /** Whether a part states that its content is shown; a text run has no fold. */
 const isOpenPart = (part: TurnPart): boolean =>
@@ -268,8 +261,18 @@ const $reconcile = (
   const existing = new Map<string, TurnNode>();
   for (const child of root.getChildren()) {
     if (!$isTurnNode(child)) continue;
-    const chrome = turnChromeOf(editor.getElementByKey(child.getKey()));
-    if (chrome !== null) existing.set(child.getTurnKey(), child);
+    const dom = editor.getElementByKey(child.getKey());
+    if (turnChromeOf(dom) === null) {
+      // A row that lost its chrome is not the row the log built, so it is rebuilt
+      // from the log — except the composer, whose words are the person's: its
+      // chrome is put back where it stands instead.
+      if (child.isDraft() && dom !== null) {
+        paintTurnChrome(dom, turnChromeShapeOf(child));
+      } else {
+        continue;
+      }
+    }
+    existing.set(child.getTurnKey(), child);
   }
 
   const wanted = turns.map((turn) => {
@@ -318,16 +321,18 @@ const $reconcile = (
 /**
  * Whether the document still holds what the log states: the same turns, in the
  * same order, each still carrying the text the surface built into it, the chrome
- * that is not content at all, and — for the parts that have one — the head its own
- * control lives on.
+ * that is not content at all, the parts the log gives it — a closed fold holds no
+ * words, so a deleted fold would otherwise look intact — and, for the parts that
+ * announce themselves, the head their own control lives on.
  *
- * The composer is not checked: its words are the person's, never a rendering of
- * the log, so there is nothing to compare them to. What keeps the composer honest
- * is that the refusals leave no edit standing in the first place.
+ * The composer's words are not compared: they are the person's, never a rendering
+ * of the log, so there is nothing to compare them to. Its chrome is checked, and a
+ * repair puts that back in place without touching what the person wrote.
  */
 const documentIsIntact = (
   editor: LexicalEditor,
   turns: readonly ConversationTurn[],
+  open: ReadonlySet<string>,
 ): boolean => {
   const children = $getRoot().getChildren();
   const held = children
@@ -344,16 +349,26 @@ const documentIsIntact = (
     if (turnChromeOf(editor.getElementByKey(child.getKey())) === null) {
       return false;
     }
-    for (const part of child.getChildren()) {
-      if (!$isTurnPartNode(part)) continue;
-      // A part that announces itself has one control, and losing it would leave
-      // a fold nobody can open while the part still looks intact.
-      if (part.getPartKind() === 'text') continue;
-      if (partHeadOf(editor.getElementByKey(part.getKey())) === null) {
-        return false;
+    if (child.isDraft()) continue;
+    const turn = turns.find((entry) => entry.key === child.getTurnKey());
+    if (turn === undefined) return false;
+    // Only an agent turn has parts: a person's turn holds its words directly, and
+    // the comparison below covers those.
+    if (turn.role === 'agent') {
+      const parts = child
+        .getChildren()
+        .flatMap((part) => ($isTurnPartNode(part) ? [part] : []));
+      const held = parts
+        .map((part) => `${part.getPartKind()}:${part.getPartKey()}`)
+        .join('\u0000');
+      if (held !== partsSignature(turn, open)) return false;
+      for (const part of parts) {
+        if (part.getPartKind() === 'text') continue;
+        if (partHeadOf(editor.getElementByKey(part.getKey())) === null) {
+          return false;
+        }
       }
     }
-    if (child.isDraft()) continue;
     // A turn nobody may write in must still hold the words the log gave it.
     if (
       !child.isWritable() &&
@@ -398,7 +413,7 @@ export const useConversationDocument = (
       if (payload.tags.has(WRITE_TAG)) return;
       const { clear: epoch, state: current, turns: derived } = latest.current;
       const intact = payload.editorState.read(() =>
-        documentIsIntact(editor, derived),
+        documentIsIntact(editor, derived, current.open),
       );
       if (intact) return;
       editor.update(() => {
