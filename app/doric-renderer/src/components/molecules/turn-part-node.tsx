@@ -1,0 +1,269 @@
+import type { TurnPart } from '@/domain/conversation';
+import {
+  type ElementDOMSlot,
+  ElementNode,
+  type NodeKey,
+  type SerializedElementNode,
+  setDOMUnmanaged,
+  type Spread,
+} from 'lexical';
+
+import { statusDot, type StatusTone } from './status-dot';
+
+/**
+ * One piece of a turn: a run of the answer, a run of the model's reasoning, or a
+ * tool call. It is the unit a streaming answer rewrites — the run it is still
+ * appending to — so every other part keeps its nodes, its DOM and the caret.
+ *
+ * Its head (`Thinking`, `Call write`) is chrome, exactly like a turn's avatar: DOM
+ * the part owns outside the range Lexical manages, so it is not a node, cannot be
+ * deleted or selected, and holds no caret position. Only the part's content lives
+ * in the managed range.
+ */
+
+export type PartKind = TurnPart['kind'];
+
+/** How a tool call reads while it runs, and after. */
+export type PartStatus = 'running' | 'finished' | 'failed';
+
+export type SerializedTurnPartNode = Spread<
+  {
+    applied: string;
+    callId: string;
+    kind: PartKind;
+    name: string;
+    partKey: string;
+    status: PartStatus;
+  },
+  SerializedElementNode
+>;
+
+export type PartShape = {
+  readonly key: string;
+  readonly kind: PartKind;
+  readonly name?: string;
+  readonly status?: PartStatus;
+  readonly callId?: string;
+};
+
+/** Where each part's managed children live, keyed by the part's own DOM. */
+const bodies = new WeakMap<HTMLElement, HTMLElement>();
+
+const BODY = 'data-doric-body';
+const HEAD = 'data-doric-head';
+
+/** The sentence a part's head shows, and whether it says anything at all. */
+const headText = (part: TurnPartNode): string | undefined => {
+  if (part.getPartKind() === 'thinking') return 'Thinking';
+  if (part.getPartKind() === 'tool') {
+    const name = part.getName();
+    return name.length === 0 ? 'Call' : `Call ${name}`;
+  }
+  return undefined;
+};
+
+/** How a tool call's state reads: the words behind the dot beside its name. */
+const toolTone = (
+  status: PartStatus,
+): { readonly label: string; readonly tone: StatusTone } => {
+  if (status === 'failed') return { label: 'Failed', tone: 'failed' };
+  if (status === 'running') return { label: 'Running', tone: 'active' };
+  return { label: 'Finished', tone: 'idle' };
+};
+
+const buildPartDOM = (part: TurnPartNode): HTMLElement => {
+  const dom = document.createElement('div');
+  dom.className = 'doric-part';
+  dom.dataset.part = part.getPartKind();
+
+  const head = document.createElement('div');
+  head.className = 'doric-part-head';
+  head.setAttribute(HEAD, '');
+  head.contentEditable = 'false';
+  head.style.userSelect = 'none';
+  setDOMUnmanaged(head);
+
+  const body = document.createElement('div');
+  body.className = 'doric-part-body';
+  body.setAttribute(BODY, '');
+
+  dom.append(head, body);
+  bodies.set(dom, body);
+  paintHead(dom, part);
+  return dom;
+};
+
+/**
+ * Writes a part's head: what it announces, and the state of a tool call. A text
+ * part announces nothing and so keeps no head at all — which is what leaves a run
+ * of prose reading as the paragraphs it is.
+ */
+const paintHead = (dom: HTMLElement, part: TurnPartNode): void => {
+  const head = dom.querySelector<HTMLElement>(`[${HEAD}]`);
+  if (head === null) return;
+  const text = headText(part);
+  if (text === undefined) {
+    head.remove();
+    return;
+  }
+  const title = document.createElement('span');
+  title.textContent = text;
+  const chevron = document.createElement('span');
+  chevron.className = 'doric-part-chevron';
+  chevron.textContent = '\u25b8';
+  head.replaceChildren(title, chevron);
+  if (part.getPartKind() === 'tool') {
+    const state = toolTone(part.getStatus());
+    head.append(statusDot(state.label, state.tone));
+  }
+};
+
+export class TurnPartNode extends ElementNode {
+  __partKey: string;
+  __partKind: PartKind;
+  __name: string;
+  __status: PartStatus;
+  __callId: string;
+  /** The signature whose blocks this part currently holds; `''` never built. */
+  __applied: string;
+
+  static override getType(): string {
+    return 'doric-part';
+  }
+
+  static override clone(node: TurnPartNode): TurnPartNode {
+    const copy = new TurnPartNode(
+      {
+        key: node.__partKey,
+        kind: node.__partKind,
+        name: node.__name,
+        status: node.__status,
+        callId: node.__callId,
+      },
+      node.__key,
+    );
+    copy.__applied = node.__applied;
+    return copy;
+  }
+
+  /** A part from JSON carries no log data: the surface rebuilds it. */
+  static override importJSON(): TurnPartNode {
+    return new TurnPartNode({ key: '', kind: 'text' });
+  }
+
+  constructor(shape: PartShape, key?: NodeKey) {
+    super(key);
+    this.__partKey = shape.key;
+    this.__partKind = shape.kind;
+    this.__name = shape.name ?? '';
+    this.__status = shape.status ?? 'running';
+    this.__callId = shape.callId ?? '';
+    this.__applied = '';
+  }
+
+  override exportJSON(): SerializedTurnPartNode {
+    return {
+      ...super.exportJSON(),
+      applied: this.__applied,
+      callId: this.__callId,
+      kind: this.__partKind,
+      name: this.__name,
+      partKey: this.__partKey,
+      status: this.__status,
+    };
+  }
+
+  getPartKey(): string {
+    return this.getLatest().__partKey;
+  }
+
+  setPartKey(value: string): this {
+    const node = this.getWritable();
+    node.__partKey = value;
+    return node;
+  }
+
+  getPartKind(): PartKind {
+    return this.getLatest().__partKind;
+  }
+
+  setPartKind(value: PartKind): this {
+    const node = this.getWritable();
+    node.__partKind = value;
+    return node;
+  }
+
+  getName(): string {
+    return this.getLatest().__name;
+  }
+
+  setName(value: string): this {
+    const node = this.getWritable();
+    node.__name = value;
+    return node;
+  }
+
+  getStatus(): PartStatus {
+    return this.getLatest().__status;
+  }
+
+  setStatus(value: PartStatus): this {
+    const node = this.getWritable();
+    node.__status = value;
+    return node;
+  }
+
+  getCallId(): string {
+    return this.getLatest().__callId;
+  }
+
+  setCallId(value: string): this {
+    const node = this.getWritable();
+    node.__callId = value;
+    return node;
+  }
+
+  getApplied(): string {
+    return this.getLatest().__applied;
+  }
+
+  setApplied(value: string): this {
+    const node = this.getWritable();
+    node.__applied = value;
+    return node;
+  }
+
+  override createDOM(): HTMLElement {
+    return buildPartDOM(this);
+  }
+
+  /** Repaints the head in place; the part's content DOM is never rebuilt. */
+  override updateDOM(previous: TurnPartNode, dom: HTMLElement): boolean {
+    if (
+      previous.getPartKind() !== this.getPartKind() ||
+      previous.getName() !== this.getName() ||
+      previous.getStatus() !== this.getStatus()
+    ) {
+      paintHead(dom, this);
+    }
+    dom.dataset.status = this.getStatus();
+    return false;
+  }
+
+  /** The part's content lives in its body, beside the head it announces itself in. */
+  override getDOMSlot(element: HTMLElement): ElementDOMSlot<HTMLElement> {
+    const body = bodies.get(element);
+    if (body === undefined) return super.getDOMSlot(element);
+    return super.getDOMSlot(element).withElement(body);
+  }
+
+  override canBeEmpty(): boolean {
+    return true;
+  }
+}
+
+export const $createTurnPartNode = (shape: PartShape): TurnPartNode =>
+  new TurnPartNode(shape);
+
+export const $isTurnPartNode = (node: unknown): node is TurnPartNode =>
+  node instanceof TurnPartNode;

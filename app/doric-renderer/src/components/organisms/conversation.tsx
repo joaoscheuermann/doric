@@ -1,17 +1,72 @@
+import {
+  type ConversationActions,
+  ConversationActionsProvider,
+} from '@/components/molecules/conversation-actions';
+import {
+  conversationNodes,
+  markdownTheme,
+} from '@/components/molecules/markdown-blocks';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import type { ConversationTurn } from '@/domain/conversation';
 import type { Thread } from '@/domain/workspace';
-import { useThreadChat } from '@/hooks/use-thread-chat';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { useComposerShortcut } from '@/hooks/use-composer-shortcut';
+import { useConversation } from '@/hooks/use-conversation';
+import { useConversationDocument } from '@/hooks/use-conversation-document';
+import { useSealedTurns } from '@/hooks/use-sealed-turns';
+import { TRANSFORMERS } from '@lexical/markdown';
+import { LexicalComposer } from '@lexical/react/LexicalComposer';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
+import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
+import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
+import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { toSvg } from 'jdenticon';
+import { type CSSProperties, useEffect, useRef } from 'react';
 
 /**
- * A bare stand-in for the conversation surface: a prompt input, a submit button,
- * and every event the Thread holds, verbatim. It is deliberately unstyled and
- * deliberately dumb — it exists so the rendering of prose, reasoning, tool calls
- * and comments can be built by hand on top of `useThreadChat`, which owns the
- * subscription, the log and the sending.
+ * The editor-side effects, which need the composer's context to run: the document
+ * that follows the log, the rule that only the composer takes words, and the
+ * shortcut that sends what it holds.
+ */
+function ConversationPlugins({
+  clear,
+  turns,
+}: {
+  readonly clear: number;
+  readonly turns: readonly ConversationTurn[];
+}) {
+  useConversationDocument(turns, clear);
+  useSealedTurns();
+  useComposerShortcut();
+  return null;
+}
+
+/**
+ * The person's identicon, as a CSS value: the Thread's id is the seed, so the same
+ * person wears the same mark inside one Thread. It is drawn as a background, not
+ * as an element, because the avatar belongs to the chrome the document does not
+ * manage — nothing of it is a node that could be selected, deleted or copyied.
+ */
+const identicon = (seed: string): string =>
+  `url('data:image/svg+xml,${encodeURIComponent(toSvg(seed, 64))}')`;
+
+const initialEditorConfig = {
+  namespace: 'DoricConversation',
+  nodes: [...conversationNodes],
+  onError(error: Error): void {
+    throw error;
+  },
+  theme: markdownTheme,
+};
+
+/**
+ * The Thread's conversation, as one Lexical document whose blocks are the turns:
+ * the person's words, the agent's answer as it arrives, the reasoning behind it
+ * and every tool call, with the composer last so the caret and the words being
+ * typed live in the same document the durable log is rendered into.
  *
- * `onSandboxWrite` is additive: this surface stays the bare stand-in it is
- * today and ignores it unless someone hands it over, and then it is called only
- * when the log grows a write to the sandbox the Project's Threads share.
+ * Its layout is a column of prose with the avatar beside each turn — shadcn's
+ * tokens and the vendored serif for reading, and nothing that positions text by
+ * hand.
  */
 export function Conversation({
   onSandboxWrite,
@@ -20,51 +75,54 @@ export function Conversation({
   readonly thread: Thread;
   readonly onSandboxWrite?: () => void;
 }) {
-  const chat = useThreadChat(thread);
-  const [draft, setDraft] = useState('');
+  const conversation = useConversation(thread);
   /** The write count already reported, so a recount is not a new write. */
-  const reported = useRef(chat.writes);
+  const reported = useRef(conversation.writes);
 
   useEffect(() => {
-    if (chat.writes > reported.current) onSandboxWrite?.();
-    reported.current = chat.writes;
-  }, [chat.writes, onSandboxWrite]);
+    if (conversation.writes > reported.current) onSandboxWrite?.();
+    reported.current = conversation.writes;
+  }, [conversation.writes, onSandboxWrite]);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    void chat.prompt(draft).then((accepted) => {
-      if (accepted) setDraft('');
-    });
-  };
+  const actions: ConversationActions = conversation.actions;
+  const avatar = identicon(thread.id) as CSSProperties['backgroundImage'];
 
   return (
-    <div className="min-h-0 w-full flex-1 overflow-auto p-4">
-      <form onSubmit={submit}>
-        <input
-          aria-label="Prompt"
-          disabled={chat.sending}
-          onChange={(event) => setDraft(event.target.value)}
-          value={draft}
-        />
-        <button disabled={chat.sending} type="submit">
-          Send
-        </button>
-      </form>
-      {chat.sendError === undefined ? null : (
-        <p role="alert">{chat.sendError}</p>
+    <section
+      aria-label="Thread conversation"
+      className="flex min-h-0 w-full flex-1 flex-col bg-background"
+    >
+      <ScrollArea className="min-h-0 flex-1">
+        <div
+          className="doric-conversation pb-10"
+          style={{ '--doric-identicon': avatar } as CSSProperties}
+        >
+          <LexicalComposer initialConfig={initialEditorConfig}>
+            <ConversationActionsProvider value={actions}>
+              <RichTextPlugin
+                contentEditable={
+                  <ContentEditable
+                    aria-label="Conversation"
+                    className="outline-none"
+                  />
+                }
+                ErrorBoundary={LexicalErrorBoundary}
+              />
+              <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
+              <ConversationPlugins
+                clear={conversation.clear}
+                turns={conversation.turns}
+              />
+            </ConversationActionsProvider>
+          </LexicalComposer>
+        </div>
+      </ScrollArea>
+
+      {conversation.error === undefined ? null : (
+        <p className="border-t px-4 py-2 text-sm text-destructive" role="alert">
+          {conversation.error}
+        </p>
       )}
-      {chat.error === undefined ? null : <p role="alert">{chat.error}</p>}
-      <p>
-        {chat.thread.name} — state {chat.thread.state} — {chat.turns.length}{' '}
-        turn(s), {chat.events.length} event(s)
-      </p>
-      <ol>
-        {chat.events.map((event) => (
-          <li key={`${event.promptId}:${event.sequence}`}>
-            <pre>{JSON.stringify(event, null, 2)}</pre>
-          </li>
-        ))}
-      </ol>
-    </div>
+    </section>
   );
 }

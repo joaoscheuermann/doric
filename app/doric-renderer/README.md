@@ -3,8 +3,8 @@
 `doric-renderer` is the React, Tailwind CSS, Radix, and shadcn/ui surface loaded
 by `doric-app`. Its compact sidebar creates, selects, renames, and deletes named
 Projects and recursive Threads. The selected Thread displays its durable event
-history and accepts serial prompts through a bare composer that shows the
-Thread's own log verbatim while the conversation is rebuilt by hand. The document
+history as a rendered conversation — prose, reasoning, and tool calls, with the
+composer always the last turn — and sends serial prompts with `Cmd+Enter`. The document
 starts with shadcn's `.dark` theme before React renders, using the repository's
 warm neutral and green-accent OKLCH palette.
 
@@ -20,12 +20,30 @@ The renderer has no direct network access to Doric. It uses the semantic
 - `threads.watch(id, afterSequence, listener)` supplies the initial durable
   event snapshot and ordered live events. The renderer projects those events by
   `promptId`; it does not persist a second message history.
-- The surface above that projection is, for now, deliberately bare: a prompt
-  input, a submit button, and the Thread's own log rendered verbatim as JSON,
-  with no styling. `use-thread-chat.ts` owns the subscription, the log and the
-  sending, and the surface only reads them. It is a stand-in while the rendering
-  of prose, reasoning, tool calls, delegated input and comments is rebuilt by
-  hand, so it promises no shape yet for any of them.
+- The surface above that projection is one Lexical document whose blocks are the
+  turns, with the composer last. `domain/conversation.ts` derives the turns and
+  their parts from the log (a part is one run of the answer, of the reasoning, or
+  one tool call) and owns every rule the reading rests on: which turn is writable,
+  how a state reads beside an avatar, and what shape the document must have.
+  `use-conversation.ts` exposes the derived turns and the one action, and
+  `use-conversation-document.ts` writes them into the editor in place — a turn and
+  a part each keep their node, and only the run an answer is still appending to is
+  rebuilt, which is what leaves the caret where the person put it.
+- Markdown is the document's language in both directions. An answer's markdown is
+  parsed into blocks as it streams, with its last half-written run healed by
+  `remend`; the composer is written in the editor and exported back to markdown
+  when it is sent. `components/molecules/markdown-blocks.ts` holds the node
+  registry, the theme and both conversions, and `domain/markdown.ts` holds how a
+  tool's payload becomes a code block it cannot escape from.
+- A turn's chrome — the avatar, the label naming another Thread's words, the state
+  dot, and each part's `Thinking`/`Call …` head — is deliberately not content: it
+  is DOM the node owns outside the range Lexical manages (`getDOMSlot`), so it is
+  in no node, no copy and no selection, and the caret has no position to stop in.
+  `use-sealed-turns.ts` refuses every edit that would land in a turn nobody may
+  write in, and the invariant in `use-conversation-document.ts` puts back anything
+  that gets past it, because a turn on screen is a rendering of what the host
+  stored. Comments on an answer's spans, editing an earlier prompt in place, and
+  folding reasoning and tool calls are the next steps of this surface.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
   Thread created by an agent appears in the sidebar without a reload.
 - The Project's sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files

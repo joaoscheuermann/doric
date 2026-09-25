@@ -74,18 +74,27 @@ Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
 and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
-event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
-being rebuilt by hand. `useThreadChat` is the only reader of the durable event
+event-derived conversation; the header names it.
+`useThreadChat` is the only reader of the durable event
 stream — it subscribes to the selected Thread, accumulates every event into one
 ordered log, projects that log into turns, and exposes both, the Thread's record
-and the send and rewind operations — and the surface itself is a plain input, a
-submit button and that log rendered verbatim as JSON, with no styling.
-`threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
-PostgreSQL Thread events remain the sole conversation-history source. Because that
-rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
-tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
+and the send and rewind operations. `threads.prompt` carries a new prompt and
+`threads.rewind` replaces a past one. PostgreSQL Thread events remain the sole
+conversation-history source, so the conversation is rendered, never stored: one
+Lexical document whose blocks are the turns — the person's words, the agent's
+answer as it streams, its reasoning and each tool call — with the composer last,
+in a column of prose whose avatar, author label and state dot are chrome outside
+the managed document rather than nodes of it. Markdown is the document's language
+in both directions: an answer's text is parsed into blocks as it arrives (its last
+half-written run healed so it renders mid-stream), and what the composer holds is
+exported back to markdown when it is sent. Only the composer takes words: every
+other turn refuses the edits that would land in it — and any that still gets
+through is put back from the log, because history is a rendering of what the host
+stored. Answers, reasoning and tool calls render; comments on an answer's spans,
+editing an earlier prompt in place, and folding reasoning and tool calls are the
+next steps of this surface. The packaged CSP permits fonts from `self`
 only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
-face. The sidebar tree follows the selected Project's live
+face; the person's avatar is a jdenticon drawn from the Thread's id. The sidebar tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh. The selected Thread
 persists locally across app

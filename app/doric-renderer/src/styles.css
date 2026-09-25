@@ -260,6 +260,279 @@
 }
 
 /*
+ * The conversation surface.
+ *
+ * Every rule here belongs to a block's *chrome* — the gutter the avatar sits in,
+ * the measure the words are read at, the prose itself — and none of it places
+ * text by hand: a turn is a column, its avatar sits beside it in the gutter, and
+ * the words are the column. That is what keeps the layout honest: a decoration
+ * cannot push a line, and a line cannot move a decoration.
+ *
+ * The names a Lexical theme can point at (`doric-paragraph`, `doric-code`, …) are
+ * defined here so the prose is styled in one place instead of a class per node.
+ */
+@layer components {
+  .doric-row {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  .doric-turn {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1rem;
+  }
+
+  /* The person's own words read on the app's muted surface, as their turn. */
+  .doric-turn[data-role='user'] {
+    background: var(--muted);
+  }
+
+  .doric-chrome {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    width: 1.75rem;
+    padding-top: 0.15rem;
+  }
+
+  .doric-avatar {
+    display: block;
+    width: 1.75rem;
+    height: 1.75rem;
+    background-color: var(--muted);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+
+  /* The person's identicon, drawn as a background so nothing of it is content. */
+  .doric-avatar[data-kind='user'] {
+    background-image: var(--doric-identicon);
+  }
+
+  /* The agent's mark: one glyph, painted in the theme's own colour. */
+  .doric-avatar[data-kind='agent'] .doric-glyph {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: var(--muted-foreground);
+    -webkit-mask-image: var(--doric-bot);
+    mask-image: var(--doric-bot);
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 0.875rem;
+    mask-size: 0.875rem;
+  }
+
+  .doric-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 45rem;
+  }
+
+  /* A sentence naming where the words came from, aligned with the text column. */
+  .doric-label {
+    width: 100%;
+    max-width: 47.5rem;
+    margin-inline: auto;
+    padding-left: 2.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+
+  .doric-dot {
+    display: block;
+    width: 0.375rem;
+    height: 0.375rem;
+    flex: none;
+    background: var(--muted-foreground);
+    border-radius: 9999px;
+  }
+
+  .doric-dot[data-tone='active'] {
+    background: var(--primary);
+    animation: doric-pulse 1.4s ease-in-out infinite;
+  }
+
+  .doric-dot[data-tone='failed'] {
+    background: var(--destructive);
+  }
+
+  @keyframes doric-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* Reasoning and tool calls: their own block, set apart from the answer. */
+  .doric-part[data-part='thinking'] {
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+  }
+
+  .doric-part[data-part='thinking'] .doric-body,
+  .doric-part[data-part='thinking'] .doric-part-body {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+  }
+
+  .doric-part[data-part='tool'] {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .doric-part-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+
+  .doric-part-chevron {
+    font-size: 0.625rem;
+  }
+
+  /* The measure the words are read at, and the space between blocks. */
+  .doric-body > :where(*) + :where(*),
+  .doric-part-body > :where(*) + :where(*) {
+    margin-top: 0.75rem;
+  }
+
+  .doric-turn[data-role='agent'] .doric-body {
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+
+  .doric-paragraph {
+    margin: 0;
+  }
+
+  .doric-h1,
+  .doric-h2,
+  .doric-h3,
+  .doric-h4,
+  .doric-h5,
+  .doric-h6 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .doric-h1 {
+    font-size: 1.5rem;
+  }
+
+  .doric-h2 {
+    font-size: 1.25rem;
+  }
+
+  .doric-h3 {
+    font-size: 1.125rem;
+  }
+
+  .doric-h4,
+  .doric-h5,
+  .doric-h6 {
+    font-size: 1rem;
+  }
+
+  .doric-ul,
+  .doric-ol {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  .doric-ul {
+    list-style: disc;
+  }
+
+  .doric-ol {
+    list-style: decimal;
+  }
+
+  .doric-li {
+    margin-top: 0.25rem;
+  }
+
+  .doric-quote {
+    margin: 0;
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  .doric-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .doric-inline-code {
+    padding: 0.1em 0.3em;
+    background: var(--muted);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .doric-code {
+    display: block;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .doric-bold {
+    font-weight: 600;
+  }
+
+  .doric-italic {
+    font-style: italic;
+  }
+
+  .doric-underline {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .doric-strikethrough {
+    text-decoration: line-through;
+  }
+}
+
+/*
+ * The agent's mark, as a mask: the shape of a robot, painted in whatever colour
+ * the theme gives it. It is a data URI in the shell because no Tailwind utility
+ * can carry one, and the packaged policy already allows images from `data:`.
+ */
+.doric-avatar[data-kind='agent'] {
+  --doric-bot: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M12 8V4H8%22/%3E%3Crect width=%2216%22 height=%2212%22 x=%224%22 y=%228%22 rx=%222%22/%3E%3Cpath d=%22M2 14h2%22/%3E%3Cpath d=%22M20 14h2%22/%3E%3Cpath d=%22M15 13v2%22/%3E%3Cpath d=%22M9 13v2%22/%3E%3C/svg%3E');
+}
+/*
  * Monaco's scrollbar slider is a plain `<div class="slider">` that no option can
  * shape — the class is `.monaco-scrollable-element > .scrollbar > .slider`, in
  * `node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css`
