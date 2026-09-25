@@ -42,8 +42,24 @@ The renderer has no direct network access to Doric. It uses the semantic
   `use-sealed-turns.ts` refuses every edit that would land in a turn nobody may
   write in, and the invariant in `use-conversation-document.ts` puts back anything
   that gets past it, because a turn on screen is a rendering of what the host
-  stored. Comments on an answer's spans, editing an earlier prompt in place, and
-  folding reasoning and tool calls are the next steps of this surface.
+  stored.
+- Reasoning and tool calls are folds. A closed fold holds nothing: its content is
+  simply not in the document, so `agentParts(turn, open)` decides it and the head
+  reports a click as `TOGGLE_FOLD_COMMAND`, which `use-fold-command.ts` answers
+  with the surface's state.
+- A comment is made on a span and lives in three places that agree:
+  `CommentedTextNode` marks the words, `CommentFieldNode` puts the field that edits
+  it below the block the span ends in, and `CommentCardNode` shows it back in the
+  person's next turn. `domain/comments.ts` owns the one format that carries a
+  comment to the host — a `# User comments` block above `# User request`, sent as
+  the same prompt — and `markdown-blocks.ts` keeps those nodes through every write
+  of the words beside them (`$setMarkdown`'s `keep`).
+- An earlier prompt is rewritten where it stands. Enter in one of the person's own
+  sealed turns opens it (`use-edit-keys.ts`), the turns after it render translucent
+  because a resubmit discards them, Escape puts them back, and Cmd+Enter sends the
+  rewritten prompt with `threads.rewind` — carrying the comments the prompt already
+  held, because rewriting a request must not throw away what was said about the
+  answer.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
   Thread created by an agent appears in the sidebar without a reload.
 - The Project's sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files

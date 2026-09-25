@@ -90,9 +90,16 @@ half-written run healed so it renders mid-stream), and what the composer holds i
 exported back to markdown when it is sent. Only the composer takes words: every
 other turn refuses the edits that would land in it — and any that still gets
 through is put back from the log, because history is a rendering of what the host
-stored. Answers, reasoning and tool calls render; comments on an answer's spans,
-editing an earlier prompt in place, and folding reasoning and tool calls are the
-next steps of this surface. The packaged CSP permits fonts from `self`
+stored. Reasoning and tool calls render closed, and open into the document when a
+person unfolds them. A span of an answer can be commented on: the span is marked in
+the words themselves, the field that holds the comment sits below the line it ends
+on, and the comment travels with the person's next prompt — the prompt's own
+markdown carries a `# User comments` block the surface reads back into cards above
+their request, so nothing about a comment needs a second message or a schema. An
+earlier prompt can be rewritten where it stands: Enter opens it, the turns after it
+go translucent because a resubmit discards them, Escape puts them back, and
+Cmd+Enter sends the rewritten prompt through `threads.rewind`. The packaged CSP
+permits fonts from `self`
 only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
 face; the person's avatar is a jdenticon drawn from the Thread's id. The sidebar tree follows the selected Project's live
 subscription, so a

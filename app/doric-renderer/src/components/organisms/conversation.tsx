@@ -1,3 +1,4 @@
+import { CommentSelection } from '@/components/molecules/comment-selection';
 import {
   type ConversationActions,
   ConversationActionsProvider,
@@ -7,11 +8,16 @@ import {
   markdownTheme,
 } from '@/components/molecules/markdown-blocks';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { ConversationTurn } from '@/domain/conversation';
+import type {
+  ConversationState,
+  ConversationTurn,
+} from '@/domain/conversation';
 import type { Thread } from '@/domain/workspace';
 import { useComposerShortcut } from '@/hooks/use-composer-shortcut';
 import { useConversation } from '@/hooks/use-conversation';
 import { useConversationDocument } from '@/hooks/use-conversation-document';
+import { useEditKeys } from '@/hooks/use-edit-keys';
+import { useFoldCommand } from '@/hooks/use-fold-command';
 import { useSealedTurns } from '@/hooks/use-sealed-turns';
 import { TRANSFORMERS } from '@lexical/markdown';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
@@ -24,19 +30,23 @@ import { type CSSProperties, useEffect, useRef } from 'react';
 
 /**
  * The editor-side effects, which need the composer's context to run: the document
- * that follows the log, the rule that only the composer takes words, and the
- * shortcut that sends what it holds.
+ * that follows the log, the rule that only the composer takes words, the shortcut
+ * that sends what it holds, and the answer a fold's own head asks for.
  */
 function ConversationPlugins({
   clear,
+  state,
   turns,
 }: {
   readonly clear: number;
+  readonly state: ConversationState;
   readonly turns: readonly ConversationTurn[];
 }) {
-  useConversationDocument(turns, clear);
+  useConversationDocument(turns, state, clear);
   useSealedTurns();
-  useComposerShortcut();
+  useComposerShortcut(state.editing);
+  useEditKeys(state.editing);
+  useFoldCommand();
   return null;
 }
 
@@ -111,8 +121,10 @@ export function Conversation({
               <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
               <ConversationPlugins
                 clear={conversation.clear}
+                state={conversation.state}
                 turns={conversation.turns}
               />
+              <CommentSelection addComment={conversation.addComment} />
             </ConversationActionsProvider>
           </LexicalComposer>
         </div>

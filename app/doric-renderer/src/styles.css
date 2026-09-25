@@ -290,6 +290,15 @@
     background: var(--muted);
   }
 
+  /*
+   * A turn waiting in a history a resubmit replaces. It is still there and still
+   * readable — the person is rewriting what came before it — but it is no longer
+   * what is being said, and it takes no words.
+   */
+  .doric-turn[data-dimmed='true'] {
+    opacity: 0.4;
+  }
+
   .doric-chrome {
     display: flex;
     flex: none;
@@ -397,13 +406,34 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    padding: 0;
+    border: 0;
+    background: none;
     color: var(--muted-foreground);
+    cursor: pointer;
+    font: inherit;
     font-size: 0.75rem;
     line-height: 1.5;
   }
 
+  .doric-part-head:hover {
+    color: var(--foreground);
+  }
+
+  .doric-part-head:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
   .doric-part-chevron {
     font-size: 0.625rem;
+    transition: transform 120ms ease;
+  }
+
+  /* The chevron turns to point down once the fold it names is open. */
+  .doric-part-head[data-open='true'] .doric-part-chevron {
+    transform: rotate(90deg);
   }
 
   /* The measure the words are read at, and the space between blocks. */
@@ -521,6 +551,69 @@
 
   .doric-strikethrough {
     text-decoration: line-through;
+  }
+
+  /*
+   * A commented span. The highlight and its rule are cloned per line box, so a
+   * selection that spans three lines reads as one mark rather than one per line,
+   * and the mark is a text node inside the answer: it travels with the words it
+   * belongs to when the answer reflows.
+   */
+  .doric-commented-text {
+    padding-bottom: 1px;
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+    border-bottom: 2px solid var(--primary);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  /* The field a comment is written in, below the line it was taken from. */
+  .doric-comment-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background: color-mix(in oklch, var(--primary) 14%, transparent);
+    border-left: 4px solid var(--primary);
+  }
+
+  /* The same comment, read back in the prompt that carried it. */
+  .doric-comment-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: color-mix(in oklch, var(--primary) 14%, transparent);
+    border-left: 4px solid var(--primary);
+  }
+
+  .doric-comment-quote {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .doric-comment-body {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* The gutter avatar, at the size a comment wears it. */
+  .doric-avatar-sm {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /* The one control a selection shows: comment on it. */
+  .doric-selection-toolbar {
+    position: fixed;
+    z-index: 20;
+    transform: translate(-50%, -100%);
   }
 }
 

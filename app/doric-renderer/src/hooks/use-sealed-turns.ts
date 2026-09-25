@@ -57,6 +57,19 @@ const $selectionIsSealed = (): boolean => {
   );
 };
 
+/**
+ * Whether Enter here would rewrite a prompt rather than write in one: the caret is
+ * in one of the person's own earlier turns, which is history they may replace.
+ */
+const $enterRewrites = (): boolean => {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return false;
+  const turn = $turnOf(selection.anchor.getNode());
+  return (
+    turn !== undefined && !turn.isWritable() && turn.getTurnRole() === 'user'
+  );
+};
+
 export const useSealedTurns = (): void => {
   const [editor] = useLexicalComposerContext();
 
@@ -73,9 +86,15 @@ export const useSealedTurns = (): void => {
      * Enter in a sealed turn would only ever insert, so it is refused — but a
      * modified Enter is a command for the surface to act on (submitting the
      * conversation), not a word to write, so it is left alone.
+     *
+     * An earlier turn of the person's own is the other exception, and it is theirs
+     * to make: Enter there means rewriting that prompt, which `use-edit-keys`
+     * answers. Letting it through here is what keeps that one key meaning one thing
+     * — this hook refuses writing, not rewriting.
      */
     const refuseEnter = (event: KeyboardEvent | null): boolean => {
       if (event !== null && (event.metaKey || event.ctrlKey)) return false;
+      if ($enterRewrites()) return false;
       return refuseKey(event);
     };
 
@@ -83,7 +102,18 @@ export const useSealedTurns = (): void => {
     // Lexical turns the native event into `BEFORE_INPUT_COMMAND`, and refusing
     // the command stops the edit inside the editor; preventing the event stops
     // the browser from writing into the contenteditable behind the editor's back.
+    //
+    // A comment's own field is a real `<input>` inside the chrome, and its words
+    // are not the document's — this rule is about the document's — so a control's
+    // own edits pass through.
     const onBeforeInput = (event: Event): void => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, select') !== null
+      ) {
+        return;
+      }
       const isSealed = editor.getEditorState().read($selectionIsSealed);
       if (isSealed) event.preventDefault();
     };

@@ -1,3 +1,10 @@
+import {
+  $applyCommentCards,
+  $applyCommentMarks,
+  $isCommentNode,
+  cardsSignature,
+  marksSignature,
+} from '@/components/molecules/comment-marks';
 import { $setMarkdown } from '@/components/molecules/markdown-blocks';
 import {
   $createAgentTurnNode,
@@ -11,8 +18,10 @@ import {
   $isTurnPartNode,
   type TurnPartNode,
 } from '@/components/molecules/turn-part-node';
+import type { PromptComment } from '@/domain/comments';
 import {
   agentParts,
+  type ConversationState,
   type ConversationTurn,
   documentSignature,
   partSignature,
@@ -21,6 +30,7 @@ import {
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $addUpdateTag,
+  $getNodeByKey,
   $getRoot,
   type LexicalEditor,
   type RootNode,
@@ -57,9 +67,13 @@ const $applyTurnFields = (node: TurnNode, turn: ConversationTurn): void => {
   if (node.getPromptId() !== turn.promptId) node.setPromptId(turn.promptId);
   if (node.getTurnRole() !== turn.role) node.setTurnRole(turn.role);
   if (node.isDraft() !== turn.draft) node.setDraft(turn.draft);
-  if (node.isWritable() !== turn.writable) node.setWritable(turn.writable);
+  // A dimmed turn waits in a history a resubmit replaces, so nothing writes
+  // there — not even the composer, which is a place until an edit begins.
+  const writable = turn.writable && !turn.dimmed;
+  if (node.isWritable() !== writable) node.setWritable(writable);
   if (node.getStatus() !== turn.status) node.setStatus(turn.status);
   if (node.getLabel() !== turn.label) node.setLabel(turn.label);
+  if (node.isDimmed() !== turn.dimmed) node.setDimmed(turn.dimmed);
 };
 
 const $applyPartFields = (node: TurnPartNode, part: TurnPart): void => {
@@ -76,58 +90,79 @@ const $applyPartFields = (node: TurnPartNode, part: TurnPart): void => {
  * signature changed is rebuilt — the trailing run while an answer streams, and
  * nothing else.
  *
- * Only the last part of a still-streaming turn is healed: that is the one the
- * model may have left half-written (`**bold`), and the only one where a missing
- * closing marker is what it is rather than what it means.
+ * A closed fold holds nothing: its content is not in the document at all, which is
+ * why closing one is a write and not a hidden block. Only the last part of a
+ * still-streaming turn is healed — that is the one the model may have left
+ * half-written (`**bold`), and the only one where a missing closing marker is what
+ * it is rather than what it means.
  */
-const $applyParts = (turn: TurnNode, derived: readonly TurnPart[]): void => {
+const $applyParts = (turn: TurnNode, derived: readonly TurnPart[]): boolean => {
   const existing = new Map<string, TurnPartNode>();
   for (const child of turn.getChildren()) {
     if ($isTurnPartNode(child)) existing.set(child.getPartKey(), child);
   }
 
   const streaming = turn.getStatus() === 'streaming';
+  let rewrote = false;
   const wanted = derived.map((part, index) => {
     const node =
       existing.get(part.key) ??
       $createTurnPartNode({ key: part.key, kind: part.kind });
     $applyPartFields(node, part);
-    const signature = partSignature(part);
+    if (node.isOpen() !== isOpenPart(part)) node.setOpen(isOpenPart(part));
+    const signature = `${partSignature(part)}#${isOpenPart(part) ? 'open' : 'closed'}`;
     if (node.getApplied() !== signature) {
       const heal =
         streaming && part.kind !== 'tool' && index === derived.length - 1;
-      $setMarkdown(node, part.markdown, heal);
+      const content =
+        part.kind !== 'text' && part.open !== true ? '' : part.markdown;
+      $setMarkdown(node, content, { heal, keep: $isCommentNode });
       node.setApplied(signature);
+      rewrote = true;
     }
     return node;
   });
 
   const children = turn.getChildren();
+  const keys = wanted.map((node) => node.getKey());
+  // Identity is the node's key, not the object: writing any field gives the node
+  // a new instance with the same key, so comparing instances would call every
+  // write a change of structure and move the DOM — and the caret inside it.
   const same =
-    children.length === wanted.length &&
-    children.every((child, index) => child === wanted[index]);
-  if (same) return;
+    children.length === keys.length &&
+    children.every((child, index) => child.getKey() === keys[index]);
+  if (same) return rewrote;
 
-  for (const node of wanted) {
+  const ordered = keys.flatMap((key) => {
+    const node = $getNodeByKey(key);
+    return node !== null && $isTurnPartNode(node) ? [node] : [];
+  });
+
+  for (const node of ordered) {
     if (node.getParent() !== null) node.remove();
   }
   for (const child of children) {
-    if (child.getParent() !== null && !wanted.includes(child as TurnPartNode)) {
+    if (
+      child.getParent() !== null &&
+      !ordered.includes(child as TurnPartNode)
+    ) {
       child.remove();
     }
   }
-  turn.splice(0, 0, wanted);
+  turn.splice(0, 0, ordered);
+  return rewrote;
 };
 
 /**
  * Writes one turn, and only what it states differently. A person's turn renders
- * its words; an agent's turn renders its parts; the composer's content is the
- * person's own, so the document writes in it only to clear it once a prompt was
- * accepted.
+ * its words and the comments it carried; an agent's turn renders its parts and the
+ * comments the words are about; the composer's content is the person's own, so the
+ * document writes in it only to clear it once a prompt was accepted.
  */
 const $applyTurn = (
   node: TurnNode,
   turn: ConversationTurn,
+  state: ConversationState,
   clear: number,
 ): void => {
   $applyTurnFields(node, turn);
@@ -139,14 +174,41 @@ const $applyTurn = (
       node.setApplied(applied);
     }
   } else if (turn.role === 'agent') {
-    $applyParts(node, agentParts(turn));
-  } else if (node.getApplied() !== turn.markdown) {
-    $setMarkdown(node, turn.markdown);
-    node.setApplied(turn.markdown);
+    const rewrote = $applyParts(node, agentParts(turn, state.open));
+    const fields = pendingFields(turn, state);
+    const marks = marksSignature(turn.marks ?? [], fields);
+    // Marks are found in the answer's own words, so a write of those words takes
+    // them with it: every rewrite re-marks, in the same update, and only a turn
+    // whose words were left alone can keep the marks it already has.
+    if (rewrote || node.getAppliedMarks() !== marks) {
+      $applyCommentMarks(node, turn.marks ?? [], fields);
+      node.setAppliedMarks(marks);
+    }
+  } else {
+    const comments = turn.comments ?? [];
+    const signature = `${turn.markdown}#${cardsSignature(comments)}`;
+    if (node.getApplied() !== signature) {
+      $setMarkdown(node, turn.markdown, { keep: $isCommentNode });
+      $applyCommentCards(node, comments);
+      node.setApplied(signature);
+    }
   }
 
   node.setAppliedText(node.getTextContent());
 };
+
+/** The comments a turn's marks include that the person is still writing. */
+const pendingFields = (
+  turn: ConversationTurn,
+  state: ConversationState,
+): readonly PromptComment[] =>
+  (turn.marks ?? []).filter((mark) =>
+    state.comments.some((comment) => comment.id === mark.id),
+  );
+
+/** Whether a part states that its content is shown; a text run has no fold. */
+const isOpenPart = (part: TurnPart): boolean =>
+  part.kind === 'text' ? true : part.open;
 
 const createTurnNode = (turn: ConversationTurn): TurnNode => {
   const shape = {
@@ -155,6 +217,7 @@ const createTurnNode = (turn: ConversationTurn): TurnNode => {
     draft: turn.draft,
     writable: turn.writable,
     status: turn.status,
+    dimmed: turn.dimmed,
     ...(turn.label === undefined ? {} : { label: turn.label }),
   };
   return turn.role === 'user'
@@ -169,12 +232,21 @@ const createTurnNode = (turn: ConversationTurn): TurnNode => {
  *
  * A row whose chrome is gone is not reused — its words may be intact but its
  * avatar and its status are not — so the turn is rebuilt from the log instead.
+ *
+ * `repair` says this write is putting a turn back rather than following the log, so
+ * every turn nobody may write in is written out again from what the log says, even
+ * where its own signature says it already matches. That is the whole point of the
+ * invariant: the words on screen may have been changed without the log changing,
+ * and only a write can take them back. The composer is left alone — its words are
+ * the person's, and a repair is not a reason to empty them.
  */
 const $reconcile = (
   editor: LexicalEditor,
   root: RootNode,
   turns: readonly ConversationTurn[],
+  state: ConversationState,
   clear: number,
+  repair = false,
 ): void => {
   const existing = new Map<string, TurnNode>();
   for (const child of root.getChildren()) {
@@ -185,25 +257,38 @@ const $reconcile = (
 
   const wanted = turns.map((turn) => {
     const node = existing.get(turn.key) ?? createTurnNode(turn);
-    $applyTurn(node, turn, clear);
+    if (repair && !turn.draft && !turn.writable) {
+      node.setApplied(null);
+      node.setAppliedMarks(null);
+    }
+    $applyTurn(node, turn, state, clear);
     return node;
   });
 
   const children = root.getChildren();
+  const keys = wanted.map((node) => node.getKey());
+  // Identity is the node's key, not the object: writing any field gives the node
+  // a new instance with the same key, so comparing instances would call every
+  // write a change of structure, re-insert every turn, and take the caret with it.
   const same =
-    children.length === wanted.length &&
-    children.every((child, index) => child === wanted[index]);
+    children.length === keys.length &&
+    children.every((child, index) => child.getKey() === keys[index]);
   if (same) return;
 
-  for (const node of wanted) {
+  const ordered = keys.flatMap((key) => {
+    const node = $getNodeByKey(key);
+    return node !== null && $isTurnNode(node) ? [node] : [];
+  });
+
+  for (const node of ordered) {
     if (node.getParent() !== null) node.remove();
   }
   for (const child of children) {
-    if (child.getParent() !== null && !wanted.includes(child as TurnNode)) {
+    if (child.getParent() !== null && !ordered.includes(child as TurnNode)) {
       child.remove();
     }
   }
-  root.splice(0, 0, wanted);
+  root.splice(0, 0, ordered);
 };
 
 /**
@@ -247,30 +332,39 @@ const documentIsIntact = (
  */
 export const useConversationDocument = (
   turns: readonly ConversationTurn[],
+  state: ConversationState,
   clear: number,
 ): void => {
   const [editor] = useLexicalComposerContext();
-  const latest = useRef({ clear, turns });
-  latest.current = { clear, turns };
+  const latest = useRef({ clear, state, turns });
+  latest.current = { clear, state, turns };
+  /** Whether an edit was in progress, so its end can put the turn back. */
+  const wasEditing = useRef(state.editing !== undefined);
 
   useEffect(() => {
+    const editing = state.editing !== undefined;
+    // An edit that ended puts its turn back to being a rendering of the log, and
+    // whatever was typed into it has to go back with it: nothing else would ever
+    // write in a turn that just became sealed again.
+    const restore = wasEditing.current && !editing;
+    wasEditing.current = editing;
     editor.update(() => {
       $addUpdateTag(WRITE_TAG);
-      $reconcile(editor, $getRoot(), turns, clear);
+      $reconcile(editor, $getRoot(), turns, state, clear, restore);
     });
-  }, [clear, editor, turns]);
+  }, [clear, editor, state, turns]);
 
   useEffect(() => {
     const inspect = (payload: UpdateListenerPayload): void => {
       if (payload.tags.has(WRITE_TAG)) return;
-      const { clear: epoch, turns: derived } = latest.current;
+      const { clear: epoch, state: current, turns: derived } = latest.current;
       const intact = payload.editorState.read(() =>
         documentIsIntact(editor, derived),
       );
       if (intact) return;
       editor.update(() => {
         $addUpdateTag(WRITE_TAG);
-        $reconcile(editor, $getRoot(), derived, epoch);
+        $reconcile(editor, $getRoot(), derived, current, epoch, true);
       });
     };
     return editor.registerUpdateListener(inspect);

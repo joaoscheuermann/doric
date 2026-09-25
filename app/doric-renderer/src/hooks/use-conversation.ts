@@ -1,60 +1,166 @@
 import type { ConversationActions } from '@/components/molecules/conversation-actions';
+import { composePrompt, type PromptComment } from '@/domain/comments';
 import {
+  type ConversationState,
+  conversationState,
   type ConversationTurn,
   conversationTurns,
+  emptyConversationState,
 } from '@/domain/conversation';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
-/** What the conversation surface reads and the one thing it can do. */
+/** What the conversation surface reads and what it can be asked to do. */
 export type Conversation = {
   readonly turns: readonly ConversationTurn[];
   readonly actions: ConversationActions;
+  /** What the person is doing: pending comments, folds, the prompt being edited. */
+  readonly state: ConversationState;
+  /**
+   * Writes a comment on a span of an answer and reports it, so the document can
+   * put the field that holds it below the line it was taken from. A comment exists
+   * as soon as it is made — its body may still be empty — because the field has to
+   * have something to edit.
+   */
+  readonly addComment: (quote: string) => PromptComment;
   /** A subscription or send failure, which the surface is expected to show. */
   readonly error: string | undefined;
   /**
    * How many prompts have been accepted. The document reads it to know when the
-   * composer must be emptied — the one write the surface makes in the person's
-   * own words, and only after they were sent.
+   * composer must be emptied — the one write the surface makes in the person's own
+   * words, and only after they were sent.
    */
   readonly clear: number;
   /**
-   * How many finished `write`, `edit` or `terminal` calls the log holds: the
-   * signal that the sandbox the Thread shares has changed.
+   * How many finished `write`, `edit` or `terminal` calls the log holds: the signal
+   * that the sandbox the Thread shares has changed.
    */
   readonly writes: number;
 };
 
 /**
  * The conversation's own state, and the only place it is decided: which turns the
- * log renders, what the composer sends, and when the composer is emptied. It
+ * log renders, what the composer sends, and what the person is doing to it. It
  * renders nothing — the surface reads it and the document follows it.
  */
 export const useConversation = (thread: Thread): Conversation => {
   const chat = useThreadChat(thread);
+  const [state, setState] = useState<ConversationState>(emptyConversationState);
   const [clear, setClear] = useState(0);
+  /** Names the comments made in this session, so no two ever share a name. */
+  const made = useRef(0);
+
+  const dispatch = useCallback(
+    (input: Parameters<typeof conversationState>[1]) => {
+      setState((current) => conversationState(current, input));
+    },
+    [],
+  );
+
+  const turns = useMemo(
+    () => conversationTurns(chat.turns, state),
+    [chat.turns, state],
+  );
+
+  const addComment = useCallback(
+    (quote: string): PromptComment => {
+      made.current += 1;
+      const comment: PromptComment = {
+        body: '',
+        id: `comment:${String(made.current)}`,
+        quote,
+      };
+      dispatch({ kind: 'comment-added', comment });
+      return comment;
+    },
+    [dispatch],
+  );
 
   const submit = useCallback(
     (markdown: string): void => {
-      if (chat.sending || markdown.trim().length === 0) return;
-      void chat.prompt(markdown).then((accepted) => {
-        if (accepted) setClear((count) => count + 1);
+      const request = markdown.trim();
+      if (chat.sending || request.length === 0) return;
+      // A comment is not a second message: it is the same prompt, sent with the
+      // request it was written about, in the format `parsePrompt` reads back.
+      void chat
+        .prompt(composePrompt(state.comments, request))
+        .then((accepted) => {
+          if (!accepted) return;
+          setClear((count) => count + 1);
+          dispatch({ kind: 'submitted' });
+        });
+    },
+    [chat, dispatch, state.comments],
+  );
+
+  const rewind = useCallback(
+    (promptId: string, markdown: string): void => {
+      const request = markdown.trim();
+      if (chat.sending || request.length === 0) return;
+      // Rewriting a prompt sends the same kind of prompt: the edited words, with
+      // the comments the prompt already carried. The host discards what followed
+      // it, so a resubmit is a conversation that continues from there.
+      void chat
+        .rewind(promptId, composePrompt(state.comments, request))
+        .then((accepted) => {
+          if (accepted) dispatch({ kind: 'submitted' });
+        });
+    },
+    [chat, dispatch, state.comments],
+  );
+
+  const beginEdit = useCallback(
+    (promptId: string): void => {
+      const turn = turns.find(
+        (entry) => entry.role === 'user' && entry.promptId === promptId,
+      );
+      if (turn === undefined) return;
+      // The comments the prompt carried come back with it: rewriting the request
+      // must not throw away what the person already said about the answer.
+      dispatch({
+        comments: turn.comments ?? [],
+        kind: 'edit-started',
+        promptId,
       });
     },
-    [chat],
+    [dispatch, turns],
+  );
+
+  const cancelEdit = useCallback(
+    () => dispatch({ kind: 'edit-cancelled' }),
+    [dispatch],
   );
 
   const actions = useMemo<ConversationActions>(
-    () => ({ sending: chat.sending, submit }),
-    [chat.sending, submit],
+    () => ({
+      beginEdit,
+      cancelEdit,
+      commentBody: (id, body) => dispatch({ kind: 'comment-body', id, body }),
+      comments: state.comments,
+      removeComment: (id) => dispatch({ kind: 'comment-removed', id }),
+      rewind,
+      sending: chat.sending,
+      submit,
+      toggleFold: (key) => dispatch({ kind: 'fold-toggled', key }),
+    }),
+    [
+      beginEdit,
+      cancelEdit,
+      chat.sending,
+      dispatch,
+      rewind,
+      state.comments,
+      submit,
+    ],
   );
-  const turns = useMemo(() => conversationTurns(chat.turns), [chat.turns]);
 
   return {
     actions,
+    addComment,
     clear,
     error: chat.sendError ?? chat.error,
+    state,
     turns,
     writes: chat.writes,
   };

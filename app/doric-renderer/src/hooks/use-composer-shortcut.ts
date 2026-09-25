@@ -18,11 +18,25 @@ const $composer = (): TurnNode | undefined => {
 };
 
 /**
- * Cmd+Enter sends the conversation, wherever the caret happens to be: the words
- * being sent are the composer's, which is why the shortcut reads them from the
- * document rather than from a copy of them kept beside it.
+ * The turn being rewritten: the person's own earlier prompt, which is the words
+ * Cmd+Enter replaces when an edit is in progress rather than a draft.
  */
-export const useComposerShortcut = (): void => {
+const $edited = (promptId: string): TurnNode | undefined => {
+  for (const child of $getRoot().getChildren()) {
+    if (!$isTurnNode(child)) continue;
+    if (child.getTurnRole() === 'user' && child.getPromptId() === promptId) {
+      return child;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Cmd+Enter sends the conversation, wherever the caret happens to be: the words
+ * being sent are read from the document — the composer's, or the edited prompt's
+ * when one is being rewritten — because the document is what holds them.
+ */
+export const useComposerShortcut = (editing: string | undefined): void => {
   const [editor] = useLexicalComposerContext();
   const actions = useConversationActions();
 
@@ -34,13 +48,14 @@ export const useComposerShortcut = (): void => {
         if (event === null || !(event.metaKey || event.ctrlKey)) return false;
         event.preventDefault();
         const markdown = editor.getEditorState().read(() => {
-          const composer = $composer();
-          return composer === undefined ? '' : $markdownOf(composer).trim();
+          const target = editing === undefined ? $composer() : $edited(editing);
+          return target === undefined ? '' : $markdownOf(target).trim();
         });
-        actions.submit(markdown);
+        if (editing === undefined) actions.submit(markdown);
+        else actions.rewind(editing, markdown);
         return true;
       },
       COMMAND_PRIORITY_HIGH,
     );
-  }, [actions, editor]);
+  }, [actions, editing, editor]);
 };

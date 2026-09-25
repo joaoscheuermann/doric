@@ -33,6 +33,7 @@ export type SerializedTurnNode = Spread<
     promptId: string;
     draft: boolean;
     writable: boolean;
+    dimmed: boolean;
     status: PromptStatus;
     label?: string;
   },
@@ -47,6 +48,7 @@ export type TurnShape = {
   readonly writable: boolean;
   readonly status: PromptStatus;
   readonly label?: string;
+  readonly dimmed?: boolean;
 };
 
 /** Where each turn's managed children live, keyed by the turn's own DOM. */
@@ -124,6 +126,7 @@ const buildTurnDOM = (turn: TurnNode): HTMLElement => {
 const paintChrome = (dom: HTMLElement, turn: TurnNode): void => {
   dom.dataset.role = turn.getTurnRole();
   dom.dataset.draft = String(turn.isDraft());
+  dom.dataset.dimmed = String(turn.isDimmed());
   const chrome = dom.querySelector<HTMLElement>(`[${CHROME}]`);
   if (chrome !== null) {
     const cue = statusCue(turn.getTurnRole(), turn.getStatus());
@@ -156,6 +159,7 @@ const turnShapeOf = (node: TurnNode): TurnShape => ({
   draft: node.__draft,
   writable: node.__writable,
   status: node.__status,
+  dimmed: node.__dimmed,
   ...(node.__label === undefined ? {} : { label: node.__label }),
 });
 
@@ -167,6 +171,7 @@ const turnShapeOf = (node: TurnNode): TurnShape => ({
  */
 const carryTurnState = <Node extends TurnNode>(from: Node, to: Node): Node => {
   to.__applied = from.__applied;
+  to.__appliedMarks = from.__appliedMarks;
   to.__appliedText = from.__appliedText;
   return to;
 };
@@ -179,8 +184,12 @@ export class TurnNode extends ElementNode {
   __writable: boolean;
   __status: PromptStatus;
   __label?: string;
+  /** Set while this turn waits in a history a resubmit will discard. */
+  __dimmed: boolean;
   /** The signature this turn's own children were built from; `null` never built. */
   __applied: string | null;
+  /** The signature of the comment marks this turn carries; `null` never built. */
+  __appliedMarks: string | null;
   /** The text the turn held when it was last built, checked for tampering. */
   __appliedText: string;
 
@@ -216,7 +225,9 @@ export class TurnNode extends ElementNode {
     this.__writable = shape.writable;
     this.__status = shape.status;
     this.__label = shape.label;
+    this.__dimmed = shape.dimmed ?? false;
     this.__applied = null;
+    this.__appliedMarks = null;
     this.__appliedText = '';
   }
 
@@ -224,6 +235,7 @@ export class TurnNode extends ElementNode {
     return {
       ...super.exportJSON(),
       draft: this.__draft,
+      dimmed: this.__dimmed,
       promptId: this.__promptId,
       role: this.__role,
       status: this.__status,
@@ -304,6 +316,30 @@ export class TurnNode extends ElementNode {
     return node;
   }
 
+  /**
+   * Whether this turn waits in a history a resubmit discards. The surface shows it
+   * translucent: those words are still there, but they are not what is being said.
+   */
+  isDimmed(): boolean {
+    return this.getLatest().__dimmed;
+  }
+
+  setDimmed(value: boolean): this {
+    const node = this.getWritable();
+    node.__dimmed = value;
+    return node;
+  }
+
+  getAppliedMarks(): string | null {
+    return this.getLatest().__appliedMarks;
+  }
+
+  setAppliedMarks(value: string | null): this {
+    const node = this.getWritable();
+    node.__appliedMarks = value;
+    return node;
+  }
+
   getApplied(): string | null {
     return this.getLatest().__applied;
   }
@@ -334,12 +370,23 @@ export class TurnNode extends ElementNode {
    * the turn's content DOM, and the caret inside it, down with it. Fields that
    * changed are written by hand; the DOM is Lexical's to leave alone.
    */
+  /**
+   * Repaints the chrome and never rebuilds the element: rebuilding it would take
+   * the turn's content DOM, and the caret inside it, down with it. Fields that
+   * changed are written by hand; the DOM is Lexical's to leave alone.
+   *
+   * The comparison reads the *previous* node's own fields rather than through its
+   * getters: every getter here answers with `getLatest()`, which is this node, so
+   * asking the previous node what it held would only ever repeat the answer this
+   * one gives — and a chrome that never repainted is exactly what that looks like.
+   */
   override updateDOM(previous: TurnNode, dom: HTMLElement): boolean {
     if (
-      previous.getTurnRole() !== this.getTurnRole() ||
-      previous.getStatus() !== this.getStatus() ||
-      previous.getLabel() !== this.getLabel() ||
-      previous.isDraft() !== this.isDraft()
+      previous.__role !== this.__role ||
+      previous.__status !== this.__status ||
+      previous.__label !== this.__label ||
+      previous.__draft !== this.__draft ||
+      previous.__dimmed !== this.__dimmed
     ) {
       paintChrome(dom, this);
     }

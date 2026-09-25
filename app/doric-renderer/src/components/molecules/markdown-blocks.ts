@@ -1,4 +1,9 @@
 import {
+  CommentCardNode,
+  CommentFieldNode,
+} from '@/components/molecules/comment-nodes';
+import { CommentedTextNode } from '@/components/molecules/commented-text-node';
+import {
   AgentTurnNode,
   TurnNode,
   UserTurnNode,
@@ -30,7 +35,8 @@ import remend from 'remend';
 
 /**
  * Every node type the conversation document may hold: the turn and part nodes the
- * surface renders its own blocks with, and the nodes markdown parses into.
+ * surface renders its own blocks with, the comment's own nodes, and the nodes
+ * markdown parses into.
  *
  * `CodeHighlightNode` is deliberately absent: this surface shows code, it does
  * not colour it.
@@ -40,6 +46,9 @@ export const conversationNodes: readonly Klass<LexicalNode>[] = [
   UserTurnNode,
   AgentTurnNode,
   TurnPartNode,
+  CommentedTextNode,
+  CommentFieldNode,
+  CommentCardNode,
   HeadingNode,
   QuoteNode,
   ListNode,
@@ -88,16 +97,32 @@ export const markdownTheme: EditorThemeClasses = {
  * `heal` closes the half-written markdown a stream delivers (`**bold` and the
  * like) so an answer renders while it is still arriving; it is off by default,
  * because a tool's payload is data and must reach the document exactly as it is.
+ *
+ * `keep` names the children this write must not touch — the comment fields and
+ * cards that live beside the words rather than in them. They survive the write and
+ * are placed again by the caller, because where they belong is stated by the
+ * comment, not by the markdown.
  */
 export const $setMarkdown = (
   container: ElementNode,
   markdown: string,
-  heal = false,
+  options: {
+    readonly heal?: boolean;
+    readonly keep?: (node: LexicalNode) => boolean;
+  } = {},
 ): void => {
+  const keep = options.keep;
+  const kept = container
+    .getChildren()
+    .filter((child) => keep?.(child) === true);
   container.clear();
-  const source = heal && markdown.length > 0 ? remend(markdown) : markdown;
+  const source =
+    options.heal === true && markdown.length > 0 ? remend(markdown) : markdown;
   if (source.length > 0) {
     $convertFromMarkdownString(source, TRANSFORMERS, container);
+  }
+  if (kept.length > 0) {
+    container.append(...kept);
   }
   if (container.getChildrenSize() === 0) {
     container.append($createParagraphNode());

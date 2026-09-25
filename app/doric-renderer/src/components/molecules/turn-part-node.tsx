@@ -1,7 +1,10 @@
 import type { TurnPart } from '@/domain/conversation';
 import {
+  createCommand,
   type ElementDOMSlot,
   ElementNode,
+  getNearestEditorFromDOMNode,
+  type LexicalCommand,
   type NodeKey,
   type SerializedElementNode,
   setDOMUnmanaged,
@@ -9,6 +12,16 @@ import {
 } from 'lexical';
 
 import { statusDot, type StatusTone } from './status-dot';
+
+/**
+ * The command a part's own head sends when it is clicked. A head is chrome — DOM
+ * the node owns outside the range Lexical manages — so it cannot read the
+ * surface's actions the way a React-rendered block does; it names the part by its
+ * node key instead, and the surface answers with the fold that key means.
+ */
+export const TOGGLE_FOLD_COMMAND: LexicalCommand<string> = createCommand(
+  'TOGGLE_FOLD_COMMAND',
+);
 
 /**
  * One piece of a turn: a run of the answer, a run of the model's reasoning, or a
@@ -44,6 +57,7 @@ export type PartShape = {
   readonly name?: string;
   readonly status?: PartStatus;
   readonly callId?: string;
+  readonly open?: boolean;
 };
 
 /** Where each part's managed children live, keyed by the part's own DOM. */
@@ -76,7 +90,8 @@ const buildPartDOM = (part: TurnPartNode): HTMLElement => {
   dom.className = 'doric-part';
   dom.dataset.part = part.getPartKind();
 
-  const head = document.createElement('div');
+  const head = document.createElement('button');
+  head.type = 'button';
   head.className = 'doric-part-head';
   head.setAttribute(HEAD, '');
   head.contentEditable = 'false';
@@ -116,7 +131,13 @@ const paintHead = (dom: HTMLElement, part: TurnPartNode): void => {
     const state = toolTone(part.getStatus());
     head.append(statusDot(state.label, state.tone));
   }
+  head.dataset.open = String(part.isOpen());
+  head.setAttribute('aria-expanded', String(part.isOpen()));
 };
+
+/** The head of a part's DOM, when it still has one. */
+const headOf = (dom: HTMLElement): HTMLElement | null =>
+  dom.querySelector<HTMLElement>(`[${HEAD}]`);
 
 export class TurnPartNode extends ElementNode {
   __partKey: string;
@@ -124,6 +145,8 @@ export class TurnPartNode extends ElementNode {
   __name: string;
   __status: PartStatus;
   __callId: string;
+  /** Whether the person unfolded this part's content. */
+  __open: boolean;
   /** The signature whose blocks this part currently holds; `''` never built. */
   __applied: string;
 
@@ -143,6 +166,7 @@ export class TurnPartNode extends ElementNode {
       node.__key,
     );
     copy.__applied = node.__applied;
+    copy.__open = node.__open;
     return copy;
   }
 
@@ -158,6 +182,7 @@ export class TurnPartNode extends ElementNode {
     this.__name = shape.name ?? '';
     this.__status = shape.status ?? 'running';
     this.__callId = shape.callId ?? '';
+    this.__open = shape.open ?? false;
     this.__applied = '';
   }
 
@@ -223,6 +248,16 @@ export class TurnPartNode extends ElementNode {
     return node;
   }
 
+  isOpen(): boolean {
+    return this.getLatest().__open;
+  }
+
+  setOpen(value: boolean): this {
+    const node = this.getWritable();
+    node.__open = value;
+    return node;
+  }
+
   getApplied(): string {
     return this.getLatest().__applied;
   }
@@ -234,19 +269,36 @@ export class TurnPartNode extends ElementNode {
   }
 
   override createDOM(): HTMLElement {
-    return buildPartDOM(this);
+    const dom = buildPartDOM(this);
+    // The head reports the click and nothing else: which part it belongs to is
+    // the node's own key, so the surface never has to trust a stale reference.
+    headOf(dom)?.addEventListener('click', () => {
+      // A DOM handler runs outside any editor context, so the editor is found
+      // from the DOM the head belongs to rather than carried in a field.
+      getNearestEditorFromDOMNode(dom)?.dispatchCommand(
+        TOGGLE_FOLD_COMMAND,
+        this.getKey(),
+      );
+    });
+    return dom;
   }
 
-  /** Repaints the head in place; the part's content DOM is never rebuilt. */
+  /**
+   * Repaints the head in place; the part's content DOM is never rebuilt. The
+   * comparison reads the previous node's own fields, because every getter here
+   * answers with the latest node — which is this one.
+   */
   override updateDOM(previous: TurnPartNode, dom: HTMLElement): boolean {
     if (
-      previous.getPartKind() !== this.getPartKind() ||
-      previous.getName() !== this.getName() ||
-      previous.getStatus() !== this.getStatus()
+      previous.__partKind !== this.__partKind ||
+      previous.__name !== this.__name ||
+      previous.__status !== this.__status ||
+      previous.__open !== this.__open
     ) {
       paintHead(dom, this);
     }
     dom.dataset.status = this.getStatus();
+    dom.dataset.open = String(this.isOpen());
     return false;
   }
 
