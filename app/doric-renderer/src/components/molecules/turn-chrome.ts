@@ -40,17 +40,19 @@ const ROW = 'data-doric-row';
  */
 export type LucideShape = readonly [string, Readonly<Record<string, string>>];
 
-/** The agent's answer: it sparkles. */
-const SPARKLES: readonly LucideShape[] = [
-  [
-    'path',
-    {
-      d: 'M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z',
-    },
-  ],
-  ['path', { d: 'M20 2v4' }],
-  ['path', { d: 'M22 4h-4' }],
-  ['circle', { cx: '4', cy: '20', r: '2' }],
+/**
+ * The agent's mark: the robot, at the same 24-unit grid the rest of the surface's
+ * icons use. It is the one icon that is not a lucide shape, so its geometry is
+ * written here as strokes: two eyes under a rounded head, with the antenna and the
+ * ears that make it read as a machine rather than a face.
+ */
+const ROBOT: readonly LucideShape[] = [
+  ['path', { d: 'M12 8V4H8' }],
+  ['rect', { width: '16', height: '12', x: '4', y: '8', rx: '2' }],
+  ['path', { d: 'M2 14h2' }],
+  ['path', { d: 'M20 14h2' }],
+  ['path', { d: 'M15 13v2' }],
+  ['path', { d: 'M9 13v2' }],
 ];
 
 /**
@@ -101,7 +103,7 @@ type TurnKind = 'answer' | 'composer' | 'past';
  */
 const AVATAR_ICON: Readonly<
   Record<Exclude<TurnKind, 'past' | 'composer'>, readonly LucideShape[]>
-> = { answer: SPARKLES };
+> = { answer: ROBOT };
 
 /** The kind of turn a shape describes, from the two fields the chrome carries. */
 const turnKind = (shape: TurnChromeShape): TurnKind => {

@@ -67,43 +67,13 @@ const BODY = 'data-doric-body';
 const HEAD = 'data-doric-head';
 
 /**
- * Which icon a part's head announces itself with. The value is also the head's
- * `data-doric-icon`, so it is the one contract with `styles.css`: that sheet
- * paints `[data-doric-icon='thinking']` and `[data-doric-icon='tool']`
- * differently, and every icon the head draws wears `doric-icon` for its size.
+ * Which kind of part a head announces, when it announces one at all: a text run
+ * has no head, so it has no kind.
  */
-export type PartHeadIcon = 'thinking' | 'tool';
-
-/** Reasoning, a brain. The geometry is lucide's, copied as a `LucideShape`. */
-const BRAIN: readonly LucideShape[] = [
-  ['path', { d: 'M12 18V5' }],
-  ['path', { d: 'M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4' }],
-  ['path', { d: 'M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5' }],
-  ['path', { d: 'M17.997 5.125a4 4 0 0 1 2.526 5.77' }],
-  ['path', { d: 'M18 18a4 4 0 0 0 2-7.464' }],
-  ['path', { d: 'M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517' }],
-  ['path', { d: 'M6 18a4 4 0 0 1-2-7.464' }],
-  ['path', { d: 'M6.003 5.125a4 4 0 0 0-2.526 5.77' }],
-];
-
-/** A tool call, a wrench. */
-const WRENCH: readonly LucideShape[] = [
-  [
-    'path',
-    {
-      d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z',
-    },
-  ],
-];
+export type PartHeadKind = Exclude<PartKind, 'text'>;
 
 /** The fold's chevron; the head's own `data-open` turns it. */
 const CHEVRON: readonly LucideShape[] = [['path', { d: 'm9 18 6-6-6-6' }]];
-
-/** The icon each kind of head wears. */
-const HEAD_ICON: Readonly<Record<PartHeadIcon, readonly LucideShape[]>> = {
-  thinking: BRAIN,
-  tool: WRENCH,
-};
 
 /** The sentence a part's head shows, and whether it says anything at all. */
 const headText = (part: TurnPartNode): string | undefined => {
@@ -153,9 +123,7 @@ const paintHead = (dom: HTMLElement, part: TurnPartNode): void => {
   }
   const title = document.createElement('span');
   title.textContent = headText(part) ?? '';
-  head.dataset.doricIcon = kind;
   head.replaceChildren(
-    lucideIcon(HEAD_ICON[kind], 'doric-icon', '0.875rem'),
     title,
     lucideIcon(CHEVRON, 'doric-icon doric-part-chevron', '0.75rem'),
   );
