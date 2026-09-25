@@ -196,3 +196,29 @@ Add or inspect components through the project-aware shadcn CLI:
 npx shadcn@latest info --json -c app/doric-renderer
 npx shadcn@latest add COMPONENT -c app/doric-renderer
 ```
+
+### The conversation harness
+
+The test target is DOM-free, so the rules the conversation rests on — where the
+caret may stand, what a sealed turn refuses, which selection offers a comment,
+what a closed fold holds — have no runnable proof but the running app, and have
+twice been checked only by hand. `tools/conversation-harness.html` is that proof
+kept: a page that mounts `Conversation` alone, against a stub `window.doric` and a
+small scripted log (`tools/conversation-harness.tsx`). The dev server serves the
+page from `tools/`, and `webpack.config.js` adds the page's bundle as a second
+entry only outside a production build, so the packaged renderer is unchanged.
+
+```console
+npm run nxe:serve:frontend # then open http://localhost:4200/tools/conversation-harness.html
+node app/doric-renderer/tools/conversation-drive.mjs
+```
+
+The driver starts that server if nothing answers at the URL's origin, drives a
+headless Chrome over the DevTools protocol, and prints a JSON report with a
+screenshot (`SHOT`, default `/tmp/doric-conversation-harness.png`; `DORIC_URL`
+targets another page). It checks that every turn rendered with its chrome and
+avatar, that typing in the composer inserts text while typing in a sealed answer
+changes nothing, that a selection in the last answer offers the Comment button
+and one in an earlier answer does not, that opening a fold shows its content and
+closing it leaves nothing inside, and that the composer sends what it holds. It
+fails loudly if a step cannot run.

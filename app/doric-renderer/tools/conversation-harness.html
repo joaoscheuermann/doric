@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Doric conversation harness</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <!--
+      The harness page: the conversation surface on the app's own stylesheet and
+      runtime, with nothing of the workspace around it. The dev server serves this
+      directory under `/tools`, so the page is reachable at
+      `/tools/conversation-harness.html` without being part of the build.
+
+      The files below are named rather than hashed because `outputHashing` is `none`
+      outside a production build, which is the only build that has them at all. They
+      are absolute because this page has no `<base>`: the dev server serves the
+      build's output from the origin root.
+    -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/runtime.js"></script>
+    <script type="module" src="/conversation-harness.js"></script>
+  </body>
+</html>
