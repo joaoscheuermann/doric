@@ -3,7 +3,8 @@
 `doric-renderer` is the React, Tailwind CSS, Radix, and shadcn/ui surface loaded
 by `doric-app`. Its compact sidebar creates, selects, renames, and deletes named
 Projects and recursive Threads. The selected Thread displays its durable event
-history and accepts serial prompts through a Lexical Markdown editor. The document
+history and accepts serial prompts through a bare composer that shows the
+Thread's own log verbatim while the conversation is rebuilt by hand. The document
 starts with shadcn's `.dark` theme before React renders, using the repository's
 warm neutral and green-accent OKLCH palette.
 
@@ -19,86 +20,14 @@ The renderer has no direct network access to Doric. It uses the semantic
 - `threads.watch(id, afterSequence, listener)` supplies the initial durable
   event snapshot and ordered live events. The renderer projects those events by
   `promptId`; it does not persist a second message history.
-- Lexical holds each prose node as a Markdown document, and the document's own
-  transformers are the interchange: an edited prompt is exported back to Markdown
-  through them, so uncommon source may normalize on the way out.
-- The conversation is a document of prose nodes — each human prompt, each agent
-  answer segment, and the draft — while thinking, tool and delegated rows stay
-  machine content outside the caret path. A saved prompt is editable in place on
-  the same editor (`document.tsx`, `mode: 'write'`). While its
-  text differs from the projection the node is dirty and every node below it dims
-  until the text matches again (`editing.ts`, `dirtyIndex`). The draft submits
-  through `threads.prompt`; an edited past prompt submits its text through
-  `threads.rewind`, and either send discards the other pending edits and
-  comments. An agent answer is caret navigable and selectable but never mutates
-  (`mode: 'read'`): the surface stays editable so the caret works, and refuses
-  every command that would rewrite the document, so typing creates or extends a
-  comment anchored at the caret or over the selected excerpt, marked inline
-  through the CSS Custom Highlight API (the rule lives in `index.html` because
-  Tailwind's optimizer mis-parses the Custom Highlight pseudo-element) and listed
-  below the node, removable. Every mounted answer publishes its ranges into
-  `comment-highlight.ts`, which merges them under the one name the shell styles,
-  so one node's marker never replaces another's. Sending
-  composes the pending comments into a `## Comments` Markdown section appended to
-  the prompt, so durable history records what was actually asked.
-  `turn-node.tsx` keeps one renderer for every state, so opening a node never
-  changes how its text looks.
-- Arrow keys carry the caret between prose nodes at a node's edge, horizontally
-  and vertically: the neighbour receives the caret at its start or end and the
-  keyboard focus moves with it, so the next key belongs to the node the caret is
-  in (`editing.ts`, `caretTarget`; `caret.ts` decides whether the caret still
-  sits on the first or last rendered line, measuring the caret's own block when
-  the caret reports no rect — an empty line). Machine rows are not prose nodes,
-  so the caret steps over thinking, tool and delegated rows.
-- The answer surface renders safe Markdown (no raw HTML, images, or tables) and
-  reveals a streaming answer through the grapheme-safe typewriter in `reveal.ts`.
-- Local storage contains only the versioned open-tab order and selection.
-  Startup validates every saved ID with `threads.get` and drops Threads the
-  backend reports as absent. A failed lookup aborts restoration and leaves the
-  saved tabs untouched for the next launch.
-- The composer follows the durable lifecycle. A Thread that is stopping,
-  cancelled, or failed replaces the editor with an explanation, and a prompt
-  that never produced a terminal event is shown as unanswered. A failed Project
-  blocks every Thread beneath it, because the Project owns the sandbox lease.
-- Running prose — a human prompt, an agent answer, the draft — is set in Noto
-  Serif, vendored from Google Fonts under the SIL Open Font License (`src/assets/fonts`,
-  license beside the files) because the packaged app's CSP allows fonts from
-  `self` only. Thinking, tool and delegated rows stay sans and monospace, so the
-  secondary machine-facing content never inherits the serif face.
-- The conversation is a centered reading column (`MessageColumn`, `max-w-3xl`)
-  inside full-width rows. A human prompt and the prompt input wear a band that
-  reaches the panel edges; agent turns and delegated inputs stay bare, so the
-  band is what marks the user's own text. The gutter slot is reserved in every
-  row so all text shares one column: the agent shows a bare icon there, the human
-  shows nothing, and the input shows a terminal prompt marker (`❯`, monospace),
-  which also keeps a draft visually distinct from saved history. The input's
-  placeholder is overlaid on the editor's first line (`document.tsx`), because
-  Lexical renders it as a sibling after the surface and a block element would
-  otherwise take a line of its own.
-- A turn whose input was written by another Thread (a child's `result` or a
-  parent's instruction) carries it as a delegated value rather than a user
-  prompt: `Result from thread <name> · <status>` collapsed to a label, expanding
-  to the sender's words on the shared payload surface (`payload.tsx`, the same
-  monospace box as tool input and output) rather than as Markdown. The name comes
-  from the cached tree the live Project
-  subscription maintains, and a Thread it no longer knows falls back to its short
-  id. `delegated.ts` strips the host's model-facing envelope before display and
-  only when its header is present, so unknown text is shown verbatim.
-- A turn is projected as ordered segments, not one string: a `thinking` run, a
-  text run, and one segment per tool call, so `text → tool → text` keeps its
-  chronology. Reasoning and tool rows are secondary content at the conversation's
-  own type size — a `Thinking` row and a `Call <tool>` row toggle their payload
-  from a chevron beside the label (`Call` in medium weight, the tool name in
-  monospace), and only the active call carries a pulsing dot. Arguments appear
-  only in the expanded `Input`; an expanded call shows `Input` and `Output`
-  blocks on their own surface, rendered as plain monospace text rather than
-  Markdown, so a table in tool output cannot lose content; a long result is
-  clamped behind `Show all`. A call still open when the
-  turn ends reports `no result recorded`.
+- The surface above that projection is, for now, deliberately bare: a prompt
+  input, a submit button, and the Thread's own log rendered verbatim as JSON,
+  with no styling. `use-thread-chat.ts` owns the subscription, the log and the
+  sending, and the surface only reads them. It is a stand-in while the rendering
+  of prose, reasoning, tool calls, delegated input and comments is rebuilt by
+  hand, so it promises no shape yet for any of them.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
-  Thread created by an agent appears in the sidebar without a reload. Header tabs
-  stay user-driven: a live-created Thread is inserted after its siblings and is
-  never opened as a tab.
+  Thread created by an agent appears in the sidebar without a reload.
 - The Project's sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files
   tree and a Changes view. It belongs to the Project rather than to the selected
   Thread, it only reads, and it holds every state a read can answer with —
@@ -133,9 +62,10 @@ The renderer has no direct network access to Doric. It uses the semantic
   and a later text reaches the model it already holds rather than a new editor.
   The editor is what the renderer's main bundle now mostly consists of.
 
-State that the live subscription and tab persistence own is isolated in
-`use-project-events.ts` and `use-persisted-tabs.ts`, which keeps `app.tsx` on the
-composition and layout side.
+State that the live subscription and the persisted selection own is isolated in
+`use-project-events.ts` and `use-persisted-selection.ts`, and the conversation's
+own in `hooks/use-thread-chat.ts`, which keeps `app.tsx` on the composition and
+layout side.
 
 The preload conversation contract also exposes
 `threads.prompt(id, markdown): Promise<{ promptId: string }>`,
