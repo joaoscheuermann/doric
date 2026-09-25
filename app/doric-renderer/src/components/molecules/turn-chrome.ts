@@ -57,16 +57,27 @@ const piece = (
 };
 
 /**
- * A decoration Lexical must not treat as a stranger in its own DOM: unmarked, its
- * mutation observer evicts it as unknown DOM. It is also neither typed in nor
- * selected, so a person copying an answer never carries a decoration this surface
- * drew.
+ * DOM Lexical must not treat as a stranger in its own DOM: unmarked, its mutation
+ * observer evicts it as unknown DOM.
  */
-const decoration = (node: HTMLElement): HTMLElement => {
-  node.contentEditable = 'false';
-  node.style.userSelect = 'none';
+const unmanaged = <Element extends HTMLElement>(node: Element): Element => {
   setDOMUnmanaged(node);
   return node;
+};
+
+/**
+ * A piece of chrome: unmanaged, and neither typed in nor selected, so a person
+ * copying an answer never carries a decoration this surface drew.
+ *
+ * Chrome is sealed this way and the row that *holds* the turn's body is not, which
+ * is the whole difference: `contenteditable="false"` applies to a whole subtree, so
+ * sealing the row would make everything inside it — the words themselves —
+ * uneditable, and the caret would have nowhere to stand.
+ */
+const sealed = <Element extends HTMLElement>(node: Element): Element => {
+  node.contentEditable = 'false';
+  node.style.userSelect = 'none';
+  return unmanaged(node);
 };
 
 /**
@@ -84,9 +95,9 @@ export const buildTurnDOM = (shape: TurnChromeShape): HTMLElement => {
   dom.className = 'doric-turn';
 
   const body = piece('div', 'doric-body', BODY);
-  const row = decoration(piece('div', 'doric-row', ROW));
-  row.append(decoration(piece('div', 'doric-chrome', CHROME)), body);
-  dom.append(decoration(piece('p', 'doric-label', LABEL)), row);
+  const row = unmanaged(piece('div', 'doric-row', ROW));
+  row.append(sealed(piece('div', 'doric-chrome', CHROME)), body);
+  dom.append(sealed(piece('p', 'doric-label', LABEL)), row);
 
   bodies.set(dom, body);
   paintTurnChrome(dom, shape);
@@ -120,10 +131,10 @@ export const paintTurnChrome = (
 
   const row =
     dom.querySelector<HTMLElement>(`[${ROW}]`) ??
-    dom.appendChild(decoration(piece('div', 'doric-row', ROW)));
+    unmanaged(dom.appendChild(piece('div', 'doric-row', ROW)));
   const body = bodies.get(dom) ?? row.querySelector<HTMLElement>(`[${BODY}]`);
   const chrome =
-    turnChromeOf(dom) ?? decoration(piece('div', 'doric-chrome', CHROME));
+    turnChromeOf(dom) ?? sealed(piece('div', 'doric-chrome', CHROME));
   if (chrome.parentElement !== row) row.prepend(chrome);
   if (body !== null && body.parentElement !== row) row.append(body);
 
@@ -133,7 +144,7 @@ export const paintTurnChrome = (
   chrome.dataset.status = cue?.tone ?? 'settled';
 
   const label = dom.querySelector<HTMLElement>(`[${LABEL}]`);
-  const drawn = label ?? decoration(piece('p', 'doric-label', LABEL));
+  const drawn = label ?? sealed(piece('p', 'doric-label', LABEL));
   if (label === null) dom.prepend(drawn);
   drawn.textContent = shape.label ?? '';
   drawn.hidden = shape.label === undefined;
