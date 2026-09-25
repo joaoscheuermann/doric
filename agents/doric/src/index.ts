@@ -2,25 +2,27 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadBundles } from 'bundle';
-import { createDockerClient } from 'docker';
 import express from 'express';
-import { createFirecrackerClient } from 'firecracker';
 import pino from 'pino';
 import pretty from 'pino-pretty';
+import { Server as SocketServer } from 'socket.io';
+
+import { loadBundles } from 'bundle';
+import { createDockerClient } from 'docker';
+import { createFirecrackerClient } from 'firecracker';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
-import { Server as SocketServer } from 'socket.io';
 
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
 import { createDatabase } from './lib/database.js';
-import { registerHttpRoutes } from './lib/http/app.js';
-import { createWorkspaceService } from './lib/workspace/service.js';
-import { createProjectStore } from './lib/workspace/projects.js';
-import { createThreadStore } from './lib/workspace/threads.js';
 import { createWorkspaceSocket } from './lib/events/socket.js';
+import { registerStatusSocket } from './lib/events/status.js';
+import { registerHttpRoutes } from './lib/http/app.js';
 import { createVmRegistry } from './lib/vms.js';
+import { createProjectStore } from './lib/workspace/projects.js';
+import { createWorkspaceService } from './lib/workspace/service.js';
+import { createThreadStore } from './lib/workspace/threads.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -71,7 +73,11 @@ async function main() {
       : createDockerClient();
 
   const vms = createVmRegistry(sandboxProviderName, sandboxProvider);
-  const sandboxImage = 'node:22-bookworm';
+  // The image is a deployment choice, so it comes from the environment and
+  // defaults to the plain Node image an operator gets without building one. A
+  // named local tag that was never built fails the provider's pull instead of
+  // silently falling back to that default.
+  const sandboxImage = process.env.DORIC_SANDBOX_IMAGE ?? 'node:22-bookworm';
   const sandboxResources = {
     cpuCount: 1,
     memoryMiB: 512,
@@ -155,6 +161,7 @@ async function main() {
   const interruptedProjects = await projects.reconcile();
   const interrupted = { interruptedThreads, interruptedProjects };
   startup.info(interrupted, 'Project and thread reconciliation complete');
+  registerStatusSocket(io);
   const publisher = createWorkspaceSocket(io, projects, threads);
   const service = createWorkspaceService({
     projects,
@@ -175,7 +182,7 @@ async function main() {
     },
   });
   startup.info(
-    { socketNamespaces: ['/projects', '/threads'] },
+    { socketNamespaces: ['/status', '/projects', '/threads'] },
     'Network interfaces configured',
   );
 

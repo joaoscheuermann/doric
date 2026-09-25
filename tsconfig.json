@@ -62,6 +62,18 @@
     },
     {
       "path": "./packages/victor"
+    },
+    {
+      "path": "./app/doric-renderer"
+    },
+    {
+      "path": "./app/doric"
+    },
+    {
+      "path": "./bundles/threads"
+    },
+    {
+      "path": "./packages/host"
     }
   ]
 }

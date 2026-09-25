@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/grep.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
 describe('grep tool', () => {
   test('finds matching lines with requested context and glob filtering', async () => {
@@ -19,7 +19,7 @@ describe('grep tool', () => {
 
     await write(root, 'src/two.txt', 'Target\n');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: 'Target',
       path: 'src',
       glob: '*.ts',
@@ -42,7 +42,7 @@ describe('grep tool', () => {
   test('returns a structured error for invalid regular expressions', async () => {
     const root = await workspace('grep-invalid-regex');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '[',
     });
 
@@ -62,7 +62,7 @@ describe('grep tool', () => {
 
     await write(root, 'keep.txt', 'Target\n');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: 'Target',
       glob: '*.txt',
     });

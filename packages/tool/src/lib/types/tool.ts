@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 
+import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
 
 import type { ToolDefinitionSchema } from '../schemas/definition.js';
@@ -61,6 +62,7 @@ export type ToolFactoryHandler<
   Output extends ToolOutput,
 > = (
   sandbox: Sandbox,
+  host: Host,
   payload: z.output<Input>,
 ) => z.input<Output> | Promise<z.input<Output>>;
 
@@ -80,7 +82,7 @@ export type ToolFactory<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
 > = {
-  (sandbox: Sandbox): Tool<Input, Output>;
+  (sandbox: Sandbox, host: Host): Tool<Input, Output>;
   readonly name: string;
   readonly description?: string;
   readonly input: Input;

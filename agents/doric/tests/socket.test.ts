@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
-import { io as connect, type Socket } from 'socket.io-client';
-import { Server as SocketServer } from 'socket.io';
 
-import { createWorkspaceSocket } from '../src/lib/events/socket.js';
+import { Server as SocketServer } from 'socket.io';
+import { io as connect, Manager, type Socket } from 'socket.io-client';
+
 import { defaultConfig } from '../src/lib/config/schema.js';
+import { createWorkspaceSocket } from '../src/lib/events/socket.js';
+import { registerStatusSocket } from '../src/lib/events/status.js';
 import type {
   Project,
+  ProjectStore,
   Thread,
   ThreadEvent,
-  ProjectStore,
   ThreadStore,
 } from '../src/lib/workspace/types.js';
 
@@ -19,6 +21,7 @@ const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 const project: Project = {
   id: projectId,
+  name: 'Project',
   state: 'ready',
   configRevision: 1,
   createdAt: '',
@@ -27,6 +30,7 @@ const project: Project = {
 const thread: Thread = {
   id: threadId,
   projectId,
+  name: 'Thread',
   state: 'ready',
   lastSequence: 2,
   createdAt: '',
@@ -40,6 +44,35 @@ const event = (sequence: number): ThreadEvent => ({
   type: 'text.delta',
   event: { type: 'text.delta', delta: `part-${sequence}` },
   createdAt: '',
+});
+
+void test('accepts a status connection without subscription parameters', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const socket = host.connect('/status');
+  t.after(() => socket.close());
+  await next(socket, 'connect');
+  assert.equal(socket.connected, true);
+});
+
+void test('multiplexes status and workspace namespaces over one Engine.IO connection', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const manager = new Manager(host.url, {
+    transports: ['websocket'],
+    reconnection: false,
+  });
+  const status = manager.socket('/status');
+  const workspace = manager.socket('/threads', { auth: { threadId } });
+  t.after(() => {
+    status.close();
+    workspace.close();
+  });
+  await Promise.all([
+    next(status, 'connect'),
+    next(workspace, 'thread:snapshot'),
+  ]);
+  assert.equal(host.engineConnections(), 1);
 });
 
 test('replays ordered durable history then delivers project-scoped live events', async (t) => {
@@ -243,16 +276,35 @@ test('handles a durable replay rejection after the subscriber disconnects', asyn
   assert.equal(snapshot.thread.id, threadId);
 });
 
-test('rejects invalid subscriptions and does not expose the removed namespace', async (t) => {
+test('rejects invalid auth and does not expose the removed namespace', async (t) => {
   const host = await serve();
   t.after(host.close);
-  for (const [namespace, query] of [
+  for (const [namespace, auth] of [
     ['/threads', {}],
     ['/threads', { threadId, afterSequence: -1 }],
     ['/projects', { projectId: 'bad' }],
     ['/sessions', { sessionId: threadId }],
   ] as const) {
-    const socket = host.connect(namespace, query);
+    const socket = host.connect(namespace, auth);
+    await next(socket, 'connect_error');
+    assert.equal(socket.connected, false);
+    socket.close();
+  }
+});
+
+void test('rejects legacy query-only workspace subscriptions', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  for (const [namespace, query] of [
+    ['/threads', { threadId }],
+    ['/projects', { projectId }],
+  ] as const) {
+    const socket = connect(`${host.url}${namespace}`, {
+      transports: ['websocket'],
+      forceNew: true,
+      reconnection: false,
+      query,
+    });
     await next(socket, 'connect_error');
     assert.equal(socket.connected, false);
     socket.close();
@@ -261,7 +313,11 @@ test('rejects invalid subscriptions and does not expose the removed namespace', 
 
 test('routes live notifications only to the subscribed Thread and Project', async (t) => {
   const host = await serve({
-    find: async (id) => ({ thread: { ...thread, id }, messages: [] }),
+    find: async (id) => ({
+      thread: { ...thread, id },
+      messages: [],
+      checkpoints: {},
+    }),
   });
   t.after(host.close);
   for (const [namespace, key, name, publish] of [
@@ -327,6 +383,10 @@ test('routes live notifications only to the subscribed Thread and Project', asyn
 const serve = async (overrides: Partial<ThreadStore> = {}) => {
   const server = createServer();
   const io = new SocketServer(server);
+  let engineConnections = 0;
+  io.engine.on('connection', () => {
+    engineConnections += 1;
+  });
   const unsupported = async (): Promise<never> => {
     throw new Error('Unexpected write during observation.');
   };
@@ -337,40 +397,49 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     }),
     create: unsupported,
     list: async () => ({ items: [project] }),
+    rename: unsupported,
+    setColor: unsupported,
     setState: unsupported,
     delete: unsupported,
     reconcile: unsupported,
   };
   const threads: ThreadStore = {
-    find: async () => ({ thread, messages: [] }),
+    find: async () => ({ thread, messages: [], checkpoints: {} }),
     eventsAfter: async (_id: string, cursor: number) =>
       [event(1), event(2)].filter((value) => value.sequence > cursor),
     listByProject: async () => [thread],
     list: async () => ({ items: [thread] }),
     create: unsupported,
+    rename: unsupported,
     setState: unsupported,
     saveMessages: unsupported,
+    saveCheckpoint: unsupported,
+    rewind: unsupported,
     appendEvent: unsupported,
     deleteSubtree: unsupported,
     reconcile: unsupported,
     ...overrides,
   };
+  registerStatusSocket(io);
   const publisher = createWorkspaceSocket(io, projects, threads);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
+  const url = `http://127.0.0.1:${address.port}`;
   return {
     io,
     publisher,
+    url,
+    engineConnections: () => engineConnections,
     connect: (
       namespace: string,
-      query: Readonly<Record<string, string | number>>,
+      auth: Readonly<Record<string, string | number>> = {},
     ) =>
-      connect(`http://127.0.0.1:${address.port}${namespace}`, {
+      connect(`${url}${namespace}`, {
         transports: ['websocket'],
         forceNew: true,
         reconnection: false,
-        query,
+        auth,
       }),
     close: () => new Promise<void>((resolve) => io.close(() => resolve())),
   };

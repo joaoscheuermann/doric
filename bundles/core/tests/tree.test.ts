@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/tree.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
 describe('tree tool', () => {
   test('renders ascii tree and includes .agents while hiding other dot paths', async () => {
@@ -19,7 +19,7 @@ describe('tree tool', () => {
 
     await write(root, 'visible.txt', 'visible');
 
-    const output = await factory(createFakeSandbox(root)).execute({
+    const output = await factory(createFakeSandbox(root), fakeHost()).execute({
       path: '.',
     });
 
@@ -45,7 +45,7 @@ describe('tree tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const output = await factory(createFakeSandbox(root)).execute({
+    const output = await factory(createFakeSandbox(root), fakeHost()).execute({
       path: '.',
     });
 

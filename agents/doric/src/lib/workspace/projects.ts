@@ -1,6 +1,7 @@
 import type { Project as StoredProject } from '../../generated/prisma/client.js';
 import type { DoricConfig } from '../config/schema.js';
 import type { Database } from '../database.js';
+import { isProjectColor } from './colors.js';
 import type { Project, ProjectStore } from './types.js';
 import {
   before,
@@ -16,9 +17,11 @@ import {
 
 /** Persists environment snapshots independently from conversations. */
 export const createProjectStore = (database: Database): ProjectStore => ({
-  async create(snapshot) {
+  async create(name, snapshot, color) {
     const stored = await database.project.create({
       data: {
+        name,
+        color,
         configRevision: snapshot.revision,
         configSnapshot: json(snapshot),
       },
@@ -49,6 +52,26 @@ export const createProjectStore = (database: Database): ProjectStore => ({
       take: limit + 1,
     });
     return page(records.map(project), limit);
+  },
+
+  async rename(id, name) {
+    const result = await database.project.updateMany({
+      where: { id },
+      data: { name },
+    });
+    if (result.count === 0) return undefined;
+    const stored = await database.project.findUnique({ where: { id } });
+    return stored === null ? undefined : project(stored);
+  },
+
+  async setColor(id, color) {
+    const result = await database.project.updateMany({
+      where: { id },
+      data: { color: color ?? null },
+    });
+    if (result.count === 0) return undefined;
+    const stored = await database.project.findUnique({ where: { id } });
+    return stored === null ? undefined : project(stored);
   },
 
   async setState(id, state, errorCode) {
@@ -109,6 +132,9 @@ export const createProjectStore = (database: Database): ProjectStore => ({
 
 const project = (stored: StoredProject): Project => ({
   id: stored.id,
+  name: stored.name,
+  // Only the vocabulary this host writes ever reaches a client.
+  ...(isProjectColor(stored.color) ? { color: stored.color } : {}),
   state: states[stored.state],
   configRevision: stored.configRevision,
   ...timestamps(stored),

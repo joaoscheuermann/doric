@@ -25,10 +25,14 @@ test(
       pool: pool(),
       execute: async () => 'done',
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const create = async (parentId?: string) => {
-      const result = await service.threads.create(project.id, parentId);
+      const result = await service.threads.create(
+        project.id,
+        'Thread',
+        parentId,
+      );
       assert.ok(result.status === 'created');
       return result.thread;
     };
@@ -52,7 +56,7 @@ test(
     assert.deepEqual(new Set(deleted), new Set(subtree.map(({ id }) => id)));
     for (const id of deleted) {
       assert.equal(
-        (await service.threads.create(project.id, id)).status,
+        (await service.threads.create(project.id, 'Child', id)).status,
         'invalid_parent',
       );
     }
@@ -97,7 +101,7 @@ test(
       } as never,
       execute: async () => 'done',
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     assert.equal((await service.projects.ssh(project.id)).status, 'pending');
     assert.equal(await service.sshForVm('leased-vm'), undefined);
     acquired.resolve();
@@ -148,10 +152,10 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     const ids: string[] = [];
     for (const index of [0, 1]) {
-      const created = await service.threads.create(project.id);
+      const created = await service.threads.create(project.id, 'Thread');
       assert.ok(created.status === 'created');
       ids.push(created.thread.id);
       await service.threads.prompt(created.thread.id, String(index));
@@ -184,9 +188,9 @@ for (const outcome of ['failed', 'cancelled'] as const) {
       const service = createWorkspaceService({
         ...harness.dependencies,
         pool: pool(),
-        execute: async ({ job, coordination }) => {
+        execute: async ({ job, host }) => {
           if (job.prompt === 'coordinate') {
-            spawned.resolve(await coordination.spawn('child'));
+            spawned.resolve(await host.threads.spawn('child'));
           } else if (job.source.kind === 'parent') {
             started.resolve();
             await finish.promise;
@@ -197,8 +201,8 @@ for (const outcome of ['failed', 'cancelled'] as const) {
           return 'done';
         },
       });
-      const project = await service.projects.create();
-      const parent = await service.threads.create(project.id);
+      const project = await service.projects.create('Project');
+      const parent = await service.threads.create(project.id, 'Parent');
       assert.ok(parent.status === 'created');
       const request = await service.threads.prompt(
         parent.thread.id,

@@ -12,7 +12,6 @@ import {
   type ThreadExecution,
 } from '../../workspace/runtime.js';
 import { systemPrompt } from './prompts/system.js';
-import { createCoordinationTools } from './tools/index.js';
 
 /** Common Direct policy for human chats and delegated child chats. */
 export const directSystemPrompt = (skills: readonly Skill[]): string => {
@@ -49,7 +48,7 @@ export const runDirectPrompt: ThreadExecution = async ({
   signal,
   store,
   publisher,
-  coordination,
+  host,
 }) => {
   signal.throwIfAborted();
   const record = await store.find(thread.id).catch(() => {
@@ -63,10 +62,9 @@ export const runDirectPrompt: ThreadExecution = async ({
     model: execution.model,
     effort: execution.effort,
     system: directSystemPrompt(generation.catalog.skills),
-    tools: createToolStorage([
-      ...generation.catalog.tools.map((factory) => factory(sandbox)),
-      ...createCoordinationTools(coordination, sandbox),
-    ]),
+    tools: createToolStorage(
+      generation.catalog.tools.map((factory) => factory(sandbox, host)),
+    ),
     toolCalls: createToolCallStorage(),
     messages,
   });

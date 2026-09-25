@@ -8,12 +8,13 @@ import { describe, test } from 'node:test';
 import type { SandboxSession } from 'sandbox';
 
 import factory from '../tools/write.js';
+import { fakeHost } from './fake-sandbox.js';
 
 describe('write tool', () => {
   test('creates parent directories and returns byte count with diff', async () => {
     const sandbox = await fakeSandbox('write');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(sandbox, fakeHost()).execute({
       path: 'notes/today.txt',
       content: 'hello',
     });
@@ -39,7 +40,7 @@ describe('write tool', () => {
   test('rejects empty paths with structured error output', async () => {
     const sandbox = await fakeSandbox('write-empty');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(sandbox, fakeHost()).execute({
       path: '',
       content: 'hello',
     });

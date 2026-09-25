@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["tools/**/*.ts", "tests/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/tool"
+    },
+    {
+      "path": "../../packages/sandbox"
+    },
+    {
+      "path": "../../packages/host"
+    }
+  ]
+}

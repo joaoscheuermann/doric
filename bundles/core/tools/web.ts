@@ -89,7 +89,7 @@ export const createTool = (
     description,
     input,
     output,
-    execute: (_sandbox, input): Promise<WebOutput> =>
+    execute: (sandbox, host, input): Promise<WebOutput> =>
       execute(input, options.fetch ?? fetch, requestTimeout(options)),
   });
 

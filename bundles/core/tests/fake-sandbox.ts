@@ -2,6 +2,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import hostPath from 'node:path';
 import { posix as sandboxPath } from 'node:path';
 
+import type { Host } from 'host';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 export const WORKSPACE_ROOT = '/workspace';
@@ -198,3 +199,6 @@ const normalizePath = (value: string): string => {
 
 const unsupported = (): Error =>
   new Error('Fake sandbox method not implemented');
+
+/** Tool tests never reach host capabilities; the facade only has to exist. */
+export const fakeHost = (): Host => ({ threads: {} as never });

@@ -59,7 +59,8 @@ export const createTool = (): ToolFactory<typeof input, typeof output> =>
     description,
     input,
     output,
-    execute: (sandbox, input): Promise<GitOutput> => execute(sandbox, input),
+    execute: (sandbox, host, input): Promise<GitOutput> =>
+      execute(sandbox, input),
   });
 
 export default createTool();

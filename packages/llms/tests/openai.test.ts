@@ -523,8 +523,8 @@ test('accepts tool definitions from shared tool storage', () => {
       description: 'Lookup context',
       input: z.object({ query: z.string() }),
       output: z.string(),
-      execute: (_sandbox, { query }) => query,
-    })(undefined as never),
+      execute: (_sandbox, host, { query }) => query,
+    })(undefined as never, undefined as never),
   ]);
 
   const body = openAiBody(

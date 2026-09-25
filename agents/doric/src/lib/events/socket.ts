@@ -8,11 +8,11 @@ import type {
   WorkspacePublisher,
 } from '../workspace/types.js';
 
-const threadQuery = z.object({
+const threadAuth = z.object({
   threadId: z.uuid(),
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
-const projectQuery = z.object({ projectId: z.uuid() });
+const projectAuth = z.object({ projectId: z.uuid() });
 type Notice = { readonly name: string; readonly value: unknown };
 type Subscription = {
   ready: boolean;
@@ -33,19 +33,17 @@ export const createWorkspaceSocket = (
   const threadNamespace = io.of('/threads');
   const projectNamespace = io.of('/projects');
   threadNamespace.use((socket, next) => {
-    const input = threadQuery.safeParse(socket.handshake.query);
+    const input = threadAuth.safeParse(socket.handshake.auth);
     next(input.success ? undefined : new Error('Invalid thread subscription.'));
   });
   projectNamespace.use((socket, next) => {
-    const input = projectQuery.safeParse(socket.handshake.query);
+    const input = projectAuth.safeParse(socket.handshake.auth);
     next(
       input.success ? undefined : new Error('Invalid project subscription.'),
     );
   });
   threadNamespace.on('connection', (socket) => {
-    const { threadId, afterSequence } = threadQuery.parse(
-      socket.handshake.query,
-    );
+    const { threadId, afterSequence } = threadAuth.parse(socket.handshake.auth);
     const subscription = subscribe(
       threadSubscriptions,
       threadId,
@@ -55,7 +53,7 @@ export const createWorkspaceSocket = (
     void replayThread(socket, subscription, threadId, afterSequence);
   });
   projectNamespace.on('connection', (socket) => {
-    const { projectId } = projectQuery.parse(socket.handshake.query);
+    const { projectId } = projectAuth.parse(socket.handshake.auth);
     const subscription = subscribe(projectSubscriptions, projectId, socket, 0);
     void replayProject(socket, subscription, projectId);
   });

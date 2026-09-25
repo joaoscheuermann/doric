@@ -1,0 +1,647 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+/* Noto Serif is vendored from Google Fonts (SIL Open Font License, see
+   src/assets/fonts/NotoSerif-OFL.txt) because the packaged app's CSP allows
+   fonts from 'self' only. */
+@font-face {
+  font-family: 'Noto Serif';
+  font-style: italic;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/noto-serif-latin-ext-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Noto Serif';
+  font-style: italic;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/noto-serif-latin-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Noto Serif';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/noto-serif-latin-ext-normal.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Noto Serif';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/noto-serif-latin-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.9232 0.0026 48.7171);
+  --foreground: oklch(0.2795 0.0368 260.031);
+  --card: oklch(0.9699 0.0013 106.4238);
+  --card-foreground: oklch(0.2795 0.0368 260.031);
+  --popover: oklch(0.9699 0.0013 106.4238);
+  --popover-foreground: oklch(0.2795 0.0368 260.031);
+  --primary: oklch(0.5854 0.2041 277.1173);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.8687 0.0043 56.366);
+  --secondary-foreground: oklch(0.4461 0.0263 256.8018);
+  --muted: oklch(0.9232 0.0026 48.7171);
+  --muted-foreground: oklch(0.551 0.0234 264.3637);
+  --accent: oklch(0.9376 0.026 321.9388);
+  --accent-foreground: oklch(0.3729 0.0306 259.7328);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.8687 0.0043 56.366);
+  --input: oklch(0.8687 0.0043 56.366);
+  --ring: oklch(0.5854 0.2041 277.1173);
+  --chart-1: oklch(0.5854 0.2041 277.1173);
+  --chart-2: oklch(0.5106 0.2301 276.9656);
+  --chart-3: oklch(0.4568 0.2146 277.0229);
+  --chart-4: oklch(0.3984 0.1773 277.3662);
+  --chart-5: oklch(0.3588 0.1354 278.6973);
+  --sidebar: oklch(0.8687 0.0043 56.366);
+  --sidebar-foreground: oklch(0.2795 0.0368 260.031);
+  --sidebar-primary: oklch(0.5854 0.2041 277.1173);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9376 0.026 321.9388);
+  --sidebar-accent-foreground: oklch(0.3729 0.0306 259.7328);
+  --sidebar-border: oklch(0.8687 0.0043 56.366);
+  --sidebar-ring: oklch(0.5854 0.2041 277.1173);
+  --font-sans: Plus Jakarta Sans, sans-serif;
+  --font-serif: 'Noto Serif', serif;
+  --font-mono: Roboto Mono, monospace;
+  --radius: 0.25rem;
+  --shadow-x: 2px;
+  --shadow-y: 2px;
+  --shadow-blur: 10px;
+  --shadow-spread: 4px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(240 4% 60%);
+  --shadow-2xs: 2px 2px 10px 4px hsl(240 4% 60% / 0.09);
+  --shadow-xs: 2px 2px 10px 4px hsl(240 4% 60% / 0.09);
+  --shadow-sm:
+    2px 2px 10px 4px hsl(240 4% 60% / 0.18),
+    2px 1px 2px 3px hsl(240 4% 60% / 0.18);
+  --shadow:
+    2px 2px 10px 4px hsl(240 4% 60% / 0.18),
+    2px 1px 2px 3px hsl(240 4% 60% / 0.18);
+  --shadow-md:
+    2px 2px 10px 4px hsl(240 4% 60% / 0.18),
+    2px 2px 4px 3px hsl(240 4% 60% / 0.18);
+  --shadow-lg:
+    2px 2px 10px 4px hsl(240 4% 60% / 0.18),
+    2px 4px 6px 3px hsl(240 4% 60% / 0.18);
+  --shadow-xl:
+    2px 2px 10px 4px hsl(240 4% 60% / 0.18),
+    2px 8px 10px 3px hsl(240 4% 60% / 0.18);
+  --shadow-2xl: 2px 2px 10px 4px hsl(240 4% 60% / 0.45);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: oklch(0.2244 0.0074 67.437);
+  --foreground: oklch(0.9288 0.0126 255.5078);
+  --card: oklch(0.2801 0.008 59.3379);
+  --card-foreground: oklch(0.9288 0.0126 255.5078);
+  --popover: oklch(0.2801 0.008 59.3379);
+  --popover-foreground: oklch(0.9288 0.0126 255.5078);
+  --primary: oklch(0.7648 0.2164 148.8852);
+  --primary-foreground: oklch(0.2244 0.0074 67.437);
+  --secondary: oklch(0.3359 0.0077 59.4197);
+  --secondary-foreground: oklch(0.8717 0.0093 258.3382);
+  --muted: oklch(0.2287 0.0074 67.4469);
+  --muted-foreground: oklch(0.7137 0.0192 261.3246);
+  --accent: oklch(0.3896 0.0074 59.4734);
+  --accent-foreground: oklch(0.8717 0.0093 258.3382);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(0.2244 0.0074 67.437);
+  --border: oklch(0.3359 0.0077 59.4197);
+  --input: oklch(0.3359 0.0077 59.4197);
+  --ring: oklch(0.6801 0.1583 276.9349);
+  --chart-1: oklch(0.6801 0.1583 276.9349);
+  --chart-2: oklch(0.5854 0.2041 277.1173);
+  --chart-3: oklch(0.5106 0.2301 276.9656);
+  --chart-4: oklch(0.4568 0.2146 277.0229);
+  --chart-5: oklch(0.3984 0.1773 277.3662);
+  --sidebar: oklch(0.2523 0.0077 63.3875);
+  --sidebar-foreground: oklch(0.9288 0.0126 255.5078);
+  --sidebar-primary: oklch(0.6801 0.1583 276.9349);
+  --sidebar-primary-foreground: oklch(0.2244 0.0074 67.437);
+  --sidebar-accent: oklch(0.305 0.008 61);
+  --sidebar-accent-foreground: oklch(0.8717 0.0093 258.3382);
+  --sidebar-border: oklch(0.3359 0.0077 59.4197);
+  --sidebar-ring: oklch(0.6801 0.1583 276.9349);
+  --font-sans: Plus Jakarta Sans, sans-serif;
+  --font-serif: 'Noto Serif', serif;
+  --font-mono: Roboto Mono, monospace;
+  --radius: 0.25rem;
+  --shadow-x: 2px;
+  --shadow-y: 2px;
+  --shadow-blur: 10px;
+  --shadow-spread: 4px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 2px 2px 10px 4px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 2px 2px 10px 4px hsl(0 0% 0% / 0.09);
+  --shadow-sm:
+    2px 2px 10px 4px hsl(0 0% 0% / 0.18), 2px 1px 2px 3px hsl(0 0% 0% / 0.18);
+  --shadow:
+    2px 2px 10px 4px hsl(0 0% 0% / 0.18), 2px 1px 2px 3px hsl(0 0% 0% / 0.18);
+  --shadow-md:
+    2px 2px 10px 4px hsl(0 0% 0% / 0.18), 2px 2px 4px 3px hsl(0 0% 0% / 0.18);
+  --shadow-lg:
+    2px 2px 10px 4px hsl(0 0% 0% / 0.18), 2px 4px 6px 3px hsl(0 0% 0% / 0.18);
+  --shadow-xl:
+    2px 2px 10px 4px hsl(0 0% 0% / 0.18), 2px 8px 10px 3px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 2px 2px 10px 4px hsl(0 0% 0% / 0.45);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground select-none;
+    margin: 0;
+    font-family: var(--font-sans);
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    @apply select-text;
+  }
+
+  [contenteditable='true'][data-placeholder]:empty::before {
+    color: var(--muted-foreground);
+    content: attr(data-placeholder);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+}
+
+/*
+ * The conversation surface.
+ *
+ * Every rule here belongs to a block's *chrome* — the gutter the avatar sits in,
+ * the measure the words are read at, the prose itself — and none of it places
+ * text by hand: a turn is a column, its avatar sits beside it in the gutter, and
+ * the words are the column. That is what keeps the layout honest: a decoration
+ * cannot push a line, and a line cannot move a decoration.
+ *
+ * The names a Lexical theme can point at (`doric-paragraph`, `doric-code`, …) are
+ * defined here so the prose is styled in one place instead of a class per node.
+ */
+@layer components {
+  .doric-row {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  .doric-turn {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1rem;
+  }
+
+  /* The person's own words read on the app's muted surface, as their turn. */
+  .doric-turn[data-role='user'] {
+    background: var(--muted);
+  }
+
+  /*
+   * A turn waiting in a history a resubmit replaces. It is still there and still
+   * readable — the person is rewriting what came before it — but it is no longer
+   * what is being said, and it takes no words.
+   */
+  .doric-turn[data-dimmed='true'] {
+    opacity: 0.4;
+  }
+
+  /*
+   * The gutter a turn's chrome sits in, and the gap that keeps the words a fixed
+   * distance from it whatever size the mark is. The vertical alignment of a mark
+   * with the first line of prose is not a margin here: it is padding on the words'
+   * own column, so a turn with a head of its own — a fold — still keeps its label
+   * against the words rather than against the space above them.
+   */
+  .doric-chrome {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    width: 1.25rem;
+  }
+
+  /*
+   * The agent's mark: one icon, drawn by the node and painted by the theme. The
+   * person's mark is the image the app ships, painted by the turn's own variable
+   * (`--doric-avatar`), so a person looks the same wherever they appear and
+   * nothing of their picture is a node of the document.
+   */
+  .doric-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--muted-foreground);
+    background-color: var(--muted);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border-radius: 9999px;
+  }
+
+  .doric-avatar[data-kind='user'] {
+    background-color: transparent;
+    background-image: var(--doric-avatar);
+  }
+
+  .doric-avatar .doric-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  /* The gutter avatar, at the size a comment wears it. */
+  .doric-avatar-sm {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /*
+   * The words' column, and the room every mark needs above its first line: a turn
+   * with chrome starts a little lower so that mark — an avatar, a fold's icon, a
+   * status dot — lines up with the first line of prose instead of the row's top.
+   */
+  .doric-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 45rem;
+    padding-top: 0.25rem;
+  }
+
+  /* A sentence naming where the words came from, aligned with the text column. */
+  .doric-label {
+    width: 100%;
+    max-width: 47.5rem;
+    margin-inline: auto;
+    padding-left: 2.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+
+  /*
+   * A mark, and nothing around it: reasoning and tool calls are quiet labels above
+   * what they hold, so they need no room of their own between one another.
+   */
+  .doric-part {
+    margin-top: 0;
+  }
+
+  .doric-part[data-part='thinking'] .doric-body,
+  .doric-part[data-part='thinking'] .doric-part-body {
+    color: var(--muted-foreground);
+  }
+
+  .doric-part[data-part='tool'] .doric-code {
+    background: var(--background);
+  }
+
+  .doric-part-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0;
+    border: 0;
+    background: none;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.5;
+  }
+
+  .doric-part-head:hover {
+    color: var(--foreground);
+  }
+
+  .doric-part-head:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  .doric-part-chevron {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: none;
+    color: inherit;
+    transition: transform 120ms ease;
+  }
+
+  /* The chevron turns to point down once the fold it names is open. */
+  .doric-part-head[data-open='true'] .doric-part-chevron {
+    transform: rotate(90deg);
+  }
+
+  /*
+   * A fold's own label takes no colour of its own: the chevron beside it says which
+   * part it is, and a label that changed colour would read as a state.
+   */
+  .doric-part-head:hover .doric-part-chevron {
+    color: inherit;
+  }
+
+  /*
+   * The space between the blocks inside one run — the paragraphs of an answer, the
+   * paragraphs of reasoning — and none between runs: a fold follows the words it
+   * belongs to, so a part starts where the last line ended.
+   */
+  .doric-body > :where(*) + :where(*),
+  .doric-part-body > :where(*) + :where(*) {
+    margin-top: 0.75rem;
+  }
+
+  /*
+   * One run's last line and the next run's label. This is room *inside* the block
+   * that follows, not a margin on it, so two runs cannot both ask for it and leave
+   * a blank line between them.
+   */
+  .doric-part-body > :where(*) {
+    margin-top: 0.75rem;
+  }
+
+  .doric-turn[data-role='agent'] .doric-body {
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+
+  .doric-paragraph {
+    margin: 0;
+  }
+
+  .doric-h1,
+  .doric-h2,
+  .doric-h3,
+  .doric-h4,
+  .doric-h5,
+  .doric-h6 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .doric-h1 {
+    font-size: 1.5rem;
+  }
+
+  .doric-h2 {
+    font-size: 1.25rem;
+  }
+
+  .doric-h3 {
+    font-size: 1.125rem;
+  }
+
+  .doric-h4,
+  .doric-h5,
+  .doric-h6 {
+    font-size: 1rem;
+  }
+
+  .doric-ul,
+  .doric-ol {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  .doric-ul {
+    list-style: disc;
+  }
+
+  .doric-ol {
+    list-style: decimal;
+  }
+
+  .doric-li {
+    margin-top: 0.25rem;
+  }
+
+  .doric-quote {
+    margin: 0;
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  .doric-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .doric-inline-code {
+    padding: 0.1em 0.3em;
+    background: var(--muted);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .doric-code {
+    display: block;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .doric-bold {
+    font-weight: 600;
+  }
+
+  .doric-italic {
+    font-style: italic;
+  }
+
+  .doric-underline {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .doric-strikethrough {
+    text-decoration: line-through;
+  }
+
+  /*
+   * A commented span. The highlight and its rule are cloned per line box, so a
+   * selection that spans three lines reads as one mark rather than one per line,
+   * and the mark is a text node inside the answer: it travels with the words it
+   * belongs to when the answer reflows.
+   */
+  .doric-commented-text {
+    padding-bottom: 1px;
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+    border-bottom: 2px solid var(--primary);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  /* The field a comment is written in, below the line it was taken from. */
+  .doric-comment-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background: color-mix(in oklch, var(--primary) 14%, transparent);
+    border-left: 4px solid var(--primary);
+  }
+
+  /* The same comment, read back in the prompt that carried it. */
+  .doric-comment-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: color-mix(in oklch, var(--primary) 14%, transparent);
+    border-left: 4px solid var(--primary);
+  }
+
+  .doric-comment-quote {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .doric-comment-body {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* The one control a selection shows: comment on it. */
+  .doric-selection-toolbar {
+    position: fixed;
+    z-index: 20;
+    transform: translate(-50%, -100%);
+  }
+}
+
+/*
+ * Monaco's scrollbar slider is a plain `<div class="slider">` that no option can
+ * shape — the class is `.monaco-scrollable-element > .scrollbar > .slider`, in
+ * `node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css`
+ * — so the `ScrollAreaThumb` in `src/components/ui/scroll-area.tsx` has to be
+ * restated here. The rule sits outside `@layer base` because Monaco's stylesheet
+ * is unlayered and would win inside a layer.
+ *
+ * The thumb it restates is a pill whose painted width is the lane minus its
+ * inset: that lane is `w-2.5` (10px, the size the editor is configured with)
+ * less `p-px` and a transparent `border-l`, so the pill our scroll views show is
+ * 7px. The slider's own width is set from JavaScript, so the inset is drawn with
+ * a transparent border and `background-clip` rather than by widening it: the
+ * lane keeps its 10px of drag area and the pill inside it is the one the app
+ * draws. `box-sizing: border-box` comes from Tailwind's preflight.
+ */
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background-clip: padding-box;
+  border: 1.5px solid transparent;
+  border-radius: 9999px;
+}

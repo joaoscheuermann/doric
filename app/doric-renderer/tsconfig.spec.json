@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "exclude": [],
+  "include": [
+    "src/domain/config.ts",
+    "src/domain/connection.ts",
+    "src/domain/workspace.ts",
+    "src/doric.d.ts",
+    "src/domain/conversation.ts",
+    "src/domain/comments.ts",
+    "src/domain/delegated.ts",
+    "src/domain/files.ts",
+    "src/domain/markdown.ts",
+    "src/domain/projector.ts",
+    "src/domain/selection.ts",
+    "src/utility/oklch.ts",
+    "tests/**/*.ts"
+  ]
+}

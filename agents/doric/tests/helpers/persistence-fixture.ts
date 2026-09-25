@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
@@ -34,18 +34,26 @@ type Connection = {
 const defaults = {
   connect: (connectionString: string): Connection =>
     new pg.Client({ connectionString, connectionTimeoutMillis: 5000 }),
-  migration: () =>
-    readFile(
-      `${migrationDirectory}/20260825000000_initial/migration.sql`,
-      'utf8',
-    ),
+  migration: async () => {
+    const migrations = (await readdir(migrationDirectory))
+      .filter((entry) => entry !== 'migration_lock.toml')
+      .sort();
+    return (
+      await Promise.all(
+        migrations.map((entry) =>
+          readFile(`${migrationDirectory}/${entry}/migration.sql`, 'utf8'),
+        ),
+      )
+    ).join('\n');
+  },
 };
 
 /** Owns only its fresh schema and connections, including partial setup failures. */
 export async function persistenceFixture(
   connectionString: string,
-  boundary = defaults,
+  overrides: Partial<typeof defaults> = {},
 ) {
+  const boundary = { ...defaults, ...overrides };
   const cleanup = cleanupStack();
   try {
     const schema = `persistence_${randomUUID().replaceAll('-', '')}`;
@@ -67,7 +75,12 @@ export async function persistenceFixture(
       cleanup.defer(() => database.$disconnect());
       return database;
     };
-    return { database: client(), second: client(), close: cleanup.close };
+    return {
+      database: client(),
+      second: client(),
+      migrate: (migration: string) => sql.query(migration),
+      close: cleanup.close,
+    };
   } catch (error) {
     try {
       await cleanup.close();

@@ -9,7 +9,6 @@ import {
 import type { ToolFactory } from 'tool';
 
 import type { DoricConfig } from './schema.js';
-import { coordinationNames } from '../agents/direct/tools/index.js';
 
 export type Catalog = {
   readonly skills: readonly Skill[];
@@ -20,6 +19,13 @@ export type Generation = {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
+  /**
+   * Registers a secret the host learned after this generation was built — a
+   * rotated credential it wrote into a running sandbox — so it is redacted
+   * exactly like the ones the snapshot carried. A Project whose generation
+   * predates a rotation would otherwise persist the new token unredacted.
+   */
+  readonly registerSecret: (value: string) => void;
   readonly catalog: Catalog;
 };
 
@@ -37,13 +43,6 @@ export const createGeneration = async ({
   logger,
   environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
-  for (const bundle of bundles) {
-    for (const { factory } of bundle.tools) {
-      if (coordinationNames.some((name) => name === factory.name)) {
-        throw new Error('Bundle tool conflicts with a host coordination tool.');
-      }
-    }
-  }
   const credentials = new Set<string>();
 
   const credential = (name: string): string => {
@@ -74,6 +73,11 @@ export const createGeneration = async ({
       credential(apiKeyEnv),
     );
 
+    const token = snapshot.configuration.github?.token;
+    // The stored GitHub token is the configuration's only secret, so no
+    // persisted history, event, or log line may carry it.
+    if (token !== undefined) credentials.add(token);
+
     return [...credentials];
   };
 
@@ -81,6 +85,9 @@ export const createGeneration = async ({
     snapshot,
     providers,
     redactions,
+    registerSecret: (value) => {
+      if (value.length > 0) credentials.add(value);
+    },
     catalog: {
       skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),
       tools: bundles.flatMap(({ tools }) =>

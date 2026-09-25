@@ -30,6 +30,7 @@ RUN npm ci --ignore-scripts \
       agents/doric/tsconfig.lib.json \
       bundles/core/tsconfig.json \
       bundles/git/tsconfig.json \
+      bundles/threads/tsconfig.json \
       --force \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
@@ -40,7 +41,9 @@ RUN npm ci --ignore-scripts \
  && cp bundles/core/manifest.json bundles/core/package.json agents/doric/dist/bundles/core/ \
  && cp -R bundles/core/skills agents/doric/dist/bundles/core/ \
  && cp bundles/git/manifest.json bundles/git/package.json agents/doric/dist/bundles/git/ \
- && cp -R bundles/git/skills agents/doric/dist/bundles/git/
+ && cp -R bundles/git/skills agents/doric/dist/bundles/git/ \
+ && cp bundles/threads/manifest.json bundles/threads/package.json agents/doric/dist/bundles/threads/ \
+ && cp -R bundles/threads/skills agents/doric/dist/bundles/threads/
 
 # Migration only needs the compiled workspace.
 FROM ${BASE_IMAGE} AS agent-runtime

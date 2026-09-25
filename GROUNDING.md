@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-09-23
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -48,6 +48,116 @@ product scope and current files support the change.
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
+`app/doric` is the Electron desktop application. Its sandboxed, context-isolated
+main process is paired with the React renderer in `app/doric-renderer`; the
+renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
+The main process alone communicates with Doric HTTP and Socket.IO at
+`127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
+operations, one selected-Thread event subscription, one selected-Project tree
+subscription, and connection status through a preload IPC boundary. The status, Thread, and
+Project namespaces share one process-long Socket.IO Manager and Engine.IO
+connection. The renderer keeps the Threads it has read for each Project, so every
+open Project row renders its own subtree while live updates continue to follow
+the selected Project alone.
+The macOS workspace window retains always-visible native traffic lights over a
+renderer-owned draggable title bar. Splash, native theme, and renderer default
+to dark before React starts. The compact, resizable shadcn sidebar lists named
+Projects and recursive Threads, supports inline create and rename, marks each
+Project with a color the host assigns from a fixed palette when the Project is
+created, and shows that color with a chevron for the row's open state. Rows keep
+their own open state: opening one leaves the others exactly as they were and the
+selection never closes a row, so a Project's Threads stay on screen while another
+Project is opened or selected. Projects start closed; Threads start open over
+their children. The sidebar exposes context actions
+for create, color, lifecycle-aware delete, and copying Thread IDs.
+Creation starts as a focused local draft: an empty submission stays in place,
+while blur discards it without an API call. The draft row wears the mark the
+entity will wear — the Project's color mark, empty until the host assigns it,
+and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
+event-derived conversation; the header names it.
+`useThreadChat` is the only reader of the durable event
+stream — it subscribes to the selected Thread, accumulates every event into one
+ordered log, projects that log into turns, and exposes both, the Thread's record
+and the send and rewind operations. `threads.prompt` carries a new prompt and
+`threads.rewind` replaces a past one. PostgreSQL Thread events remain the sole
+conversation-history source, so the conversation is rendered, never stored: one
+Lexical document whose blocks are the turns — the person's words, the agent's
+answer as it streams, its reasoning and each tool call — with the composer last,
+in a column of prose whose avatar, author label and state dot are chrome outside
+the managed document rather than nodes of it. Markdown is the document's language
+in both directions: an answer's text is parsed into blocks as it arrives (its last
+half-written run healed so it renders mid-stream), and what the composer holds is
+exported back to markdown when it is sent. Only the composer takes words: every
+other turn refuses the edits that would land in it — and any that still gets
+through is put back from the log, for every turn that renders it, because history
+is a rendering of what the host stored rather than a copy of it that could drift.
+Reasoning and tool calls render closed, and open into the document when a person
+unfolds them. A span of the answer being answered can be commented on: the span is
+marked in the words themselves, the field that holds the comment sits below the
+line it ends on, and the comment travels with the person's next prompt — the
+prompt's own markdown carries a `# User comments` block the surface reads back into
+cards above their request, so nothing about a comment needs a second message or a
+schema. What a comment stores is the quoted words, so an answer that says the same
+phrase twice is marked where it says it first, and a request that is itself exactly
+that block is read as comments: the format is the one the person reads. An
+earlier prompt can be rewritten where it stands: Enter opens it, the turns after it
+go translucent because a resubmit discards them, Escape puts them back, and
+Cmd+Enter sends the rewritten prompt through `threads.rewind`. The packaged CSP
+permits fonts from `self`
+only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
+face; the person's avatar is a jdenticon drawn from the Thread's id. The sidebar tree follows the selected Project's live
+subscription, so a
+Thread created by an agent appears without a manual refresh. The selected Thread
+persists locally across app
+restarts. One
+full-height resize handle owns the sidebar boundary across header and content
+and disappears when the sidebar closes; it draws no grip of its own. A segmented
+footer shares that geometry
+and shows the Electron main process's Socket.IO connection status on the content
+side. The header names the selected Thread as a breadcrumb of its Project and
+the chain of Threads above it, and every part but the last selects what it
+names.
+
+A Project-scoped sandbox surface sits in a collapsible right-hand panel whose
+collapsed state is a narrow rail carrying its own toggle, so the one control that
+expands and collapses the panel stays at the window's right corner and never
+duplicates the sidebar's own toggle. It
+belongs to the selected Project rather than to the selected Thread, and it only
+reads: a Files tab shows the sandbox's directory tree and opens one file at a
+time in place of the tree, its text rendered read-only by the Monaco editor
+bundled with the editor worker alone, and a Changes tab shows the workspace Git
+diff with
+one row and one status badge per changed or untracked file. The tabs sit in the
+panel's header, in place of a title, and an open file puts its own name and a back
+control at that header's left; the footer carries the directory the file sits in
+— a chain too deep for that row collapses its middle behind one trigger — and the
+surface's only action, an explicit refresh. Directories
+are read
+when they are expanded and the diff only when the Changes tab is shown, because
+the sandbox belongs to the Project and may not be usable at all: a queued,
+failed or terminated Project explains itself — with the host's own retry hint
+when the lease is pending — instead of erroring. There is no filesystem watcher;
+the panel rereads on its own refresh, when the selected Project changes, and when
+the selected Thread's event stream reports a finished `write`, `edit` or
+`terminal` call, which is the signal that the agent changed the sandbox.
+
+A settings modal opened from the content footer edits the host's
+configuration — the configured providers as an editable table, the execution
+model with its reasoning effort, the execution turn limit, and a Credentials
+section whose one block today is GitHub: the username and email the agent's git
+commands commit with, and a token. That token is the single secret this
+configuration holds, and it is write-only: the host answers whether it holds one
+and never the token, so the field always starts empty and an empty field keeps
+what is stored. Absent means leave alone, `null` means remove and a value means
+set, for the block and for the token alike, so no caller can delete a stored
+credential by omitting it. There is no Save button: a valid change sends itself
+once typing settles, on a field blur, and on close, and the footer reports the
+revision and update time alongside the save state. The dialog states plainly
+that a saved change applies to Projects created afterwards, because a running
+Project keeps the configuration it had captured — with one exception: the GitHub
+identity and token follow the current configuration, so a rotated token reaches
+a Project that is already running on its next prompt.
+
 ### Project And Thread Contract
 
 The host architecture replaces Session with a Project that owns
@@ -65,10 +175,11 @@ the existing sandbox-pool capacity governs Projects, not Threads.
 
 The migration replaces the Session-facing APIs and clients without legacy
 compatibility adapters. Creating a Project and creating a Thread are separate
-operations: new Projects start without a conversation. The approved database
-cutover uses one clean Project/Thread baseline with no Session schema or data
-conversion path. Existing legacy databases must be explicitly recreated before
-deployment; neither startup nor migrations silently reset an existing database.
+operations: new Projects start without a conversation. Before 1.0, approved
+schema changes may be consolidated into one clean Project/Thread baseline
+without data-conversion or incremental-migration guarantees. Incompatible
+legacy development databases must be explicitly recreated; neither startup nor
+migrations silently reset an existing database.
 
 The Project/Thread implementation replaces the former Session contract.
 The architecture, migration plan, and acceptance criteria are recorded in
@@ -84,16 +195,18 @@ Completion, failure, or cancellation of a delegated request automatically
 enqueues a correlated result for its parent: a ready parent runs it, a busy
 parent processes it in FIFO order, and a terminal parent is never reopened.
 Human follow-ups in a child do not bounce responses back to its parent.
-Host-bound coordination tools act only on direct children in the same Project;
-each child has its own history, not an automatic copy of its parent's history.
+The thread delegation tools act only on direct children in the same Project,
+reached through the per-prompt host facade; each child has its own history, not
+an automatic copy of its parent's history.
 
-Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts`,
-`agents/direct/prompts/system.ts`, and one module per coordination tool in
-`agents/direct/tools`. The system prompt file exports only one constant literal
-template string; dynamic bundle skills are appended by the executor, not encoded
-as arrays of prompt lines. Shared lifecycle and control contracts live in
-`workspace`; configuration, HTTP composition/errors, and event transport/safe
-serialization live in `config`, `http`, and `events` respectively. The database
+Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts` and
+`agents/direct/prompts/system.ts`; the former one-module-per-coordination-tool
+set now ships in `/bundles/threads`. The system prompt file exports only one
+constant literal template string; dynamic bundle skills are appended by the
+executor, not encoded as arrays of prompt lines. Shared lifecycle and control
+live in `workspace`: `runner.ts` builds the prompt-scoped host facade, and
+configuration, HTTP composition/errors, and event transport/safe serialization
+live in `config`, `http`, and `events` respectively. The database
 client and VM registry remain `database.ts` and `vms.ts` at the lib root.
 This organization does not change bundle ownership or runtime behavior.
 
@@ -108,13 +221,18 @@ cloning, commit preparation, conflict resolution, rebasing, remote
 synchronization, and linked worktrees. The Git tool executes structured argv
 directly without shell interpretation, forces non-interactive Git behavior,
 bounds stdout and stderr, and exposes no dedicated credential input.
+`/bundles/threads` owns the delegation tools `spawn_thread`, `list_threads`,
+`get_thread`, `send_to_thread`, `interrupt_thread`, and `terminate_thread` plus
+focused delegation, inspection, and steering skills.
 `packages/bundle` owns strict manifest validation and runtime loading.
 Doric loads only immediate bundle directories, in lexical order, from its
 built `dist/bundles` artifact. Manifests explicitly order every resource and
 carry `alwaysAvailable` flags for tools and skills. Runtime tools are compiled
 ESM `.js` default exports created through `packages/tool`; each export is an
-inspectable `ToolFactory` that Doric binds to a sandbox in its composition
-root. Runtime TypeScript is rejected. Skill `allowed-tools` references resolve
+inspectable `ToolFactory` that Doric binds, in its composition root, to a
+sandbox and to a per-prompt `Host` capability facade. The loader validates the
+definition, input, and output schemas and never inspects handler arity. Runtime
+TypeScript is rejected. Skill `allowed-tools` references resolve
 only within their declaring bundle. Bundle, skill, and tool-factory names are
 globally unique, and duplicates are rejected rather than aliased or
 deduplicated. `packages/bundle` publicly owns the JSON-Schema-compatible
@@ -130,6 +248,21 @@ results are output-validated before execution resolves, with sanitized
 `invalid_output` failures. Providers transmit only their supported tool fields
 and use `inputSchema` as function parameters. Model-generated graph nodes use
 tool metadata rather than executable tools or arbitrary tool input schemas.
+
+`packages/host` publicly owns the `Host` capability facade that every tool
+handler receives as its second argument, after the sandbox. It is types only: a
+bundle depends on this package for the contract, never on `agents/doric`
+internals, and the host implements it in the composition root. A `Host` is
+prompt-scoped; it closes over the calling prompt's Project and Thread, so
+`host.threads.*` reaches only that prompt's direct children and stops when the
+prompt ends. The only namespace today is `threads`; future namespaces
+(`config`, `vms`, `providers`) are added only for a concrete need, never as a
+state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch.
+Exposing a host facade to every tool handler is an approved tool-privilege
+expansion under HC-004 and HC-007: a bundle previously reached only the sandbox.
+Because a tool result goes to the model, the facade exposes capabilities, never
+credential reads; secrets stay in the environment. `loadBundles` still enforces
+globally unique names, so a bundle tool cannot collide with a host capability.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API
@@ -276,13 +409,25 @@ from `queued` to `failed`. Its capacity option is `maxSandboxes`, and a lease
 guards SSH access exactly as it guards other operations. `packages/sandbox` owns
 the provider-neutral
 `SandboxProvider` and `SandboxRuntime` boundary plus workspace, Git, file, diff,
-network-policy normalization, and disposed-session behavior. Every sandbox has
+network-policy normalization, and disposed-session behavior. It also owns the
+one implementation of the workspace visibility rules — root confinement,
+`.gitignore` handling with negation, hidden entries except `.agents`, and
+directories-first ordering — which the `/bundles/core` `tree` tool and Doric's
+Project file routes both consume, so neither can drift from the other; a scoped
+diff is expressed through `SandboxDiffInput.paths` rather than by callers
+building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
 effective egress requires IP-literal DNS. Doric explicitly provisions its agent
-sandboxes from the multi-architecture `node:22-bookworm` image, which includes
-Git, with the `1.1.1.1` DNS resolver so selected Git skills can reach public
-remotes. `DORIC_SANDBOX_SSH=true` adds loopback-bound, dynamically allocated
+sandboxes from the image named by `DORIC_SANDBOX_IMAGE`, which defaults to the
+multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
+selected Git skills can reach public remotes. That default ships Git; the
+sandbox image Doric builds from `agents/doric/.sandbox.Dockerfile` ships Git and
+the GitHub CLI. The image is a deployment choice the host reads from its
+environment rather than a compiled-in value, and Firecracker resolves an
+anonymous public OCI image, so a locally built tag needs publishing, or the
+variable pointed at a public image, before that provider can use it.
+`DORIC_SANDBOX_SSH=true` adds loopback-bound, dynamically allocated
 user SSH access so a trusted same-host user can inspect the active Project
 sandbox. Native source runs default it off because provider SSH requires pinned
 host assets; the Doric runtime image and Compose profiles default it on and
@@ -319,13 +464,16 @@ platforms reject Docker egress. SSH is disabled by default, uses per-sandbox
 Ed25519 user and host keys, is key-only, and binds to loopback unless an
 advertised remote binding is explicit.
 
-`agents/doric/.Dockerfile` reproducibly builds the agent and both built-in
-bundles, pinned Firecracker and jailer, Linux 6.18 guest kernel, static BusyBox
+`agents/doric/.Dockerfile` reproducibly builds the agent and every built-in
+bundle, pinned Firecracker and jailer, Linux 6.18 guest kernel, static BusyBox
 and Dropbear bootstrap, initramfs, OCI/ext4 tooling, networking tools, and
 OpenSSH client. Its Linux-only Compose profiles provide either the Docker
 socket plus host-network firewall access or KVM/TUN/cgroup/state/cache access
 without a Docker socket. The privileged Firecracker profile is a development
-and e2e harness, not a production isolation boundary. Doric acquires one pool
+and e2e harness, not a production isolation boundary. Local deploy credentials,
+including the PostgreSQL password, live only in the git-ignored
+`agents/doric/.env` (see `agents/doric/.env.example`); they are never committed
+or baked into the image. Doric acquires one pool
 lease when each persisted Project is created and retains it across all its
 Threads and prompts. It binds every bundle tool to that sandbox, propagates
 cancellation through acquisition and active provider calls, and releases the
@@ -343,29 +491,50 @@ returns the selected provider, owning live Project ID, and complete
 `SandboxSshAccess` only while that VM is leased to an active Project;
 idle, releasing, and disposed VMs never expose access. The registry wraps the
 provider at the composition boundary and the workspace service owns the
-process-local lease association. `POST /projects` accepts no prompt and includes
-a stable Project SSH subresource link while preserving asynchronous queued
-creation.
+process-local lease association. `POST /projects` accepts only a display name,
+not a prompt, and includes a stable Project SSH subresource link while
+preserving asynchronous queued creation.
 That subresource reports pending acquisition, returns the active VM and SSH
 access, or reports unavailable or expired access after release. Private keys
 remain ephemeral provider-managed sandbox state and HTTP response data;
 provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
-HTTP responses prohibit caching. REST additionally owns `GET/PUT /config`,
-Project and Thread creation, cursor listing, detail, FIFO prompt acceptance
-through `POST /threads/:id/prompt`, ordered event replay with an optional
-exclusive `afterSequence`, targeted prompt interruption, idempotent termination,
-and terminal-only deletion. `/projects` owns environments and `/threads` owns
-conversations; there are no `/sessions` routes or compatibility aliases.
-Public Project and Thread list/detail representations contain identity, state,
-ownership, timestamps, applicable revision/sequence and sanitized error codes,
-not prompts, messages, events, results, or SSH credentials.
+HTTP responses prohibit caching. The lease additionally backs three private
+Project subresources that prohibit caching and answer with the same lease
+states: `GET /projects/:id/files` lists one workspace directory, `GET
+/projects/:id/files/content` reads one workspace file up to a fixed byte cap
+with truncated/binary flags, and `GET /projects/:id/diff` returns the workspace
+Git diff together with a change list that includes untracked files. A
+workspace-relative path is normalised, resolved against the workspace root, and
+rejected when it escapes; the routes never log file content or diff bodies.
+REST additionally owns `GET/PUT /config`,
+named Project and Thread creation, rename through `PATCH`, cursor listing,
+detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
+rewind through `POST /threads/:id/rewind`, ordered event
+replay with an optional exclusive `afterSequence`, targeted prompt interruption,
+idempotent termination, and terminal-only deletion. Each Thread turn records the
+provider-history length it started from, so rewind truncates that history
+exactly at a turn boundary, removes the edited turn and every later turn from
+the durable event log, drops their checkpoints, and then accepts the edited text
+as a normal human input. Rewind refuses while the Thread is running or has
+queued input, so the FIFO queue never executes on truncated history. Project and
+Thread names
+are trimmed, exclude NUL, and contain 1 to 80 Unicode code points. `/projects`
+owns environments and `/threads` owns conversations; there are no `/sessions`
+routes or compatibility aliases. Public Project and Thread list/detail
+representations contain identity, name, state, ownership, timestamps,
+applicable revision/sequence and sanitized error codes, not prompts, messages,
+events, results, or SSH credentials.
 
-Socket.IO uses separate `/projects` and `/threads` namespaces. Project
-subscriptions expose environment and tree updates; Thread subscriptions use
-`threadId` and optional `afterSequence` for durable playback followed by live
-events without a replay/live gap. Each Thread event is
-`{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
+Socket.IO uses separate `/status`, `/projects`, and `/threads` namespaces.
+`/status` accepts no subscription input or application payload and provides the
+long-lived connectivity signal consumed by the Electron main process. Project
+and Thread subscription parameters travel through namespace-scoped handshake
+auth so clients can multiplex those sockets with `/status` through one Manager
+and one Engine.IO transport. Project subscriptions expose environment and tree
+updates; Thread subscriptions use `threadId` and optional `afterSequence` for
+durable playback followed by live events without a replay/live gap. Each Thread
+event is `{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
 PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.
@@ -374,11 +543,14 @@ ordering between Threads; Project reconnection refreshes its snapshot and tree.
 and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
 PostgreSQL stores the singleton configuration, normalized provider/model rows,
-Project configuration snapshots, Thread parentage and provider-ready message
-history, and ordered JSONB Thread events. The initial migration creates this
-schema from an empty database. Session-era migrations and data-conversion SQL
-are removed as part of the approved cutover. Startup marks every non-terminal Project and Thread
-failed with the sanitized `process_interrupted` code; events remain replayable.
+Project names, colors and configuration snapshots, Thread names, parentage and
+provider-ready message history, and ordered JSONB Thread events. Before 1.0,
+approved schema changes may be consolidated into the clean Project/Thread
+baseline rather than retained as incremental migrations. Existing incompatible
+development databases must be explicitly recreated. Session-era migrations and
+data-conversion SQL are removed as part of the approved cutover.
+Startup marks every non-terminal Project and Thread failed with the sanitized
+`process_interrupted` code; events remain replayable.
 Physical Thread deletion requires its entire subtree to be terminal; Project
 deletion requires every Thread terminal and cascades to its Threads and events.
 The local Compose surface pins PostgreSQL 18.4, mounts its PostgreSQL-18 volume
@@ -395,7 +567,23 @@ diagnostics, causes, or thrown values.
 Configuration, Project, and Thread routes remain unauthenticated on the existing
 `0.0.0.0` listener. Provider base URLs and credential environment names are
 intentionally configurable through the open PUT, so deployments must keep this
-listener on an isolated trusted network. Agent events intentionally expose
+listener on an isolated trusted network. That stored configuration is
+credential-free except for the one GitHub token it keeps for its operator:
+`PUT /config` is the only way to write it, `GET /config` answers `hasToken` in
+its place, and the host redacts the value from events, logs, and Thread replay
+instead of handing it to a tool. That GitHub block follows one rule in the open
+PUT — absent leaves it alone, `null` removes it, a value sets it — so no caller
+deletes the token by omission. The token therefore also travels in the
+captured configuration snapshot of every Project created after it was saved,
+where it stays inside the host. The host applies that block to a Project's
+sandbox: the identity, and, when a token is configured, a `credential.helper
+store` credential file written 0600 plus the `~/.config/gh/hosts.yml` written
+0600 that authenticates the sandbox's GitHub CLI, when the lease is acquired and
+again whenever the current block differs from the one the sandbox holds, because
+a rotated token must reach a Project that is already running. Credentials are
+therefore applied per lease and never baked into the sandbox image. The token
+travels only through the sandbox process environment, never through a tool
+argument, a tool result, an event, or a log line. Agent events intentionally expose
 reasoning, provider replay, tool input/output, results, and serialized errors;
 configured credential values are redacted before persistence. Event bodies are
 never written to operational logs.
@@ -664,17 +852,20 @@ Keep tool behavior behind explicit, typed, testable interfaces. Do not add host
 command execution, network access, filesystem mutation, credential handling,
 persistence, or session behavior without explicit scope and validation.
 
-Credentials and secrets must not be persisted, printed, logged, or committed.
-Prefer dependency injection and explicit configuration objects for sensitive
-runtime inputs.
+Credentials and secrets must not be persisted, printed, logged, or committed,
+with one explicitly approved exception: the singleton configuration stores the
+GitHub token as its single secret, write-only over the API, redacted from events
+and logs, and kept out of tool payloads. Prefer dependency injection and
+explicit configuration objects for sensitive runtime inputs.
 
 Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
 `queued` to `ready` after sandbox acquisition; Threads wait for their Project
 and each FIFO input transitions `ready -> running -> ready`. Project and Thread
 termination use `cancelling -> cancelled`; acquisition or reconciliation
 failures use `failed`. A fresh Agent per prompt
-receives a fresh tool-call store, all sandbox-bound tools, the deterministic
-all-skills system prompt, host-bound child coordination tools, and
+receives a fresh tool-call store, every bundle tool bound to that sandbox and
+the per-prompt host facade, the deterministic
+all-skills system prompt, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials. Provider/tool failures
@@ -682,11 +873,17 @@ return the Thread to `ready`; history or event persistence failures fail the
 Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue
 even if cancellation-state persistence fails.
-Doric adds `prompt.accepted`, `prompt.finished`, `agent.failed`, and
-`agent.cancelled` events around the Agent stream. `prompt.finished` carries
-the input source, terminal status, and response text; successful completion
-requires history persistence. Clients use it, not the inner `agent.finished`,
-to acknowledge prompt completion.
+Doric adds `history.truncated`, `prompt.accepted`, `prompt.finished`,
+`agent.failed`, and
+`agent.cancelled` events around the Agent stream. `prompt.accepted` carries the
+input text and its source after the standard configured-credential redaction.
+`prompt.finished` carries the input source, terminal status, and response text;
+successful completion requires history persistence. Clients use it, not the
+inner `agent.finished`, to acknowledge prompt completion. `history.truncated`
+carries `{ type, afterSequence }`, where `afterSequence` is the sequence of the
+last surviving event or `0` when none survives; it is appended before the
+replacement input is accepted, and sequence numbers are never reused, so the
+discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
 Arbitrary Agent event values are converted to JSON without dropping reasoning,

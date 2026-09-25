@@ -51,7 +51,11 @@ test('enforces the official TypeScript array style', async () => {
 });
 
 test('reports unhandled promises in bundle entrypoints', async () => {
-  for (const filePath of ['bundles/core/index.mts', 'bundles/git/index.mts']) {
+  for (const filePath of [
+    'bundles/core/index.mts',
+    'bundles/git/index.mts',
+    'bundles/threads/index.mts',
+  ]) {
     const [result] = await lint.lintText(
       'export function start() { Promise.resolve(1); }',
       { filePath },

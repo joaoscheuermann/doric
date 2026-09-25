@@ -12,6 +12,7 @@ import type {
 } from 'sandbox';
 
 import { createTool } from '../tools/terminal.js';
+import { fakeHost } from './fake-sandbox.js';
 
 type FakeSandbox = SandboxSession & {
   readonly execs: SandboxExecInput[];
@@ -21,7 +22,7 @@ describe('terminal tool', () => {
   test('executes a command from the requested sandbox working directory', async () => {
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: "printf 'hello'",
       working_directory: 'repo/src',
       timeout_ms: 5000,
@@ -49,7 +50,7 @@ describe('terminal tool', () => {
   test('uses the sandbox workspace root by default and caps timeout', async () => {
     const sandbox = fakeSandbox(execResult());
 
-    await createTool()(sandbox).execute({
+    await createTool()(sandbox, fakeHost()).execute({
       command: 'pwd',
       timeout_ms: 999_999,
     });
@@ -71,7 +72,7 @@ describe('terminal tool', () => {
       }),
     );
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'sleep 1',
       timeout_ms: 10,
     });
@@ -86,7 +87,7 @@ describe('terminal tool', () => {
   test('returns sandbox execution errors as compact terminal output', async () => {
     const sandbox = fakeSandbox(new Error('container exec failed'));
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'echo hello',
       timeout_ms: 5000,
     });
@@ -106,7 +107,7 @@ describe('terminal tool', () => {
       }),
     );
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'npm test',
       timeout_ms: 5000,
     });
@@ -125,7 +126,10 @@ describe('terminal tool', () => {
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
     try {
-      const result = await createTool({ traceDir })(sandbox).execute({
+      const result = await createTool({ traceDir })(
+        sandbox,
+        fakeHost(),
+      ).execute({
         command: 'echo hello',
       });
       const rawOutputRef = result.raw_output_ref;

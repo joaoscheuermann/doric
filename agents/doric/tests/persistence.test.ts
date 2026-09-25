@@ -18,11 +18,16 @@ integrationTest(
   'creates projects without threads and captures immutable configuration',
   async ({ configs, projects, threads }) => {
     const initial = await configs.load();
-    const first = await projects.create(initial);
+    const first = await projects.create('First project', initial, 'blue');
+    assert.equal(first.project.name, 'First project');
     assert.deepEqual(await threads.listByProject(first.project.id), []);
     const replacement = structuredClone(initial.configuration);
     replacement.models.execution.model = 'replacement';
-    const second = await projects.create(await configs.replace(replacement));
+    const second = await projects.create(
+      'Second project',
+      await configs.replace(replacement),
+      'blue',
+    );
     assert.deepEqual(
       (await projects.find(first.project.id))?.snapshot,
       initial,
@@ -32,6 +37,10 @@ integrationTest(
         .execution.model,
       'replacement',
     );
+    assert.equal(
+      (await projects.rename(first.project.id, 'Renamed project'))?.name,
+      'Renamed project',
+    );
     assert.equal('configSnapshot' in first.project, false);
   },
 );
@@ -39,9 +48,18 @@ integrationTest(
 integrationTest(
   'persists independent provider-ready histories and exact redacted events',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(await configs.load());
-    const root = (await threads.create(project.id)).thread;
-    const child = (await threads.create(project.id, root.id)).thread;
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const root = (await threads.create(project.id, 'Root')).thread;
+    const child = (await threads.create(project.id, 'Child', root.id)).thread;
+    assert.equal(root.name, 'Root');
+    assert.equal(
+      (await threads.rename(child.id, 'Renamed child'))?.name,
+      'Renamed child',
+    );
     const messages = [
       {
         role: 'assistant' as const,
@@ -65,8 +83,12 @@ integrationTest(
 integrationTest(
   'serializes event sequences across independent clients and rolls back failed insertion',
   async ({ configs, projects, threads, second }) => {
-    const { project } = await projects.create(await configs.load());
-    const { thread } = await threads.create(project.id);
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
     const other = createThreadStore(second);
     await Promise.all(
       Array.from({ length: 12 }, (_, index) =>
@@ -105,10 +127,70 @@ integrationTest(
 );
 
 integrationTest(
+  'rewinds a Thread onto an earlier turn boundary without reusing sequences',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    const ids = [randomUUID(), randomUUID(), randomUUID()] as const;
+    const messages = [
+      { role: 'user' as const, content: 'first' },
+      { role: 'assistant' as const, content: 'first answer' },
+      { role: 'user' as const, content: 'second' },
+      { role: 'assistant' as const, content: 'second answer' },
+      { role: 'user' as const, content: 'third' },
+      { role: 'assistant' as const, content: 'third answer' },
+    ];
+    // Each turn checkpoints the provider history it reads, then appends its own.
+    for (const [index, promptId] of ids.entries()) {
+      await threads.saveCheckpoint(thread.id, promptId);
+      await threads.appendEvent(thread.id, promptId, {
+        type: 'prompt.accepted',
+      });
+      await threads.saveMessages(thread.id, messages.slice(0, (index + 1) * 2));
+    }
+    assert.deepEqual((await threads.find(thread.id))?.checkpoints, {
+      [ids[0]]: 0,
+      [ids[1]]: 2,
+      [ids[2]]: 4,
+    });
+
+    const marker = await threads.rewind(thread.id, ids[1]);
+
+    assert.equal(marker?.sequence, 4);
+    assert.equal(marker?.type, 'history.truncated');
+    assert.deepEqual(marker?.event, {
+      type: 'history.truncated',
+      afterSequence: 1,
+    });
+    assert.deepEqual(
+      (await threads.eventsAfter(thread.id, 0)).map(({ sequence }) => sequence),
+      [1, 4],
+    );
+    const restored = (await threads.find(thread.id))!;
+    assert.equal(restored.thread.lastSequence, 4);
+    assert.deepEqual(restored.messages, messages.slice(0, 2));
+    assert.deepEqual(restored.checkpoints, { [ids[0]]: 0 });
+    // Removed turns lost their checkpoint, so they cannot be rewound again.
+    assert.equal(await threads.rewind(thread.id, ids[1]), undefined);
+    assert.equal(await threads.rewind(thread.id, ids[2]), undefined);
+    assert.equal(await threads.rewind(thread.id, randomUUID()), undefined);
+    assert.equal(await threads.rewind(randomUUID(), ids[0]), undefined);
+  },
+);
+
+integrationTest(
   'preserves terminal and cancelling states and clears the active prompt when not running',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(await configs.load());
-    const { thread } = await threads.create(project.id);
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
     await threads.setState(thread.id, 'ready');
     await threads.setState(thread.id, 'running', promptId);
     assert.equal(
@@ -145,15 +227,18 @@ integrationTest(
 integrationTest(
   'scopes pagination cursors to their project and parent',
   async ({ configs, projects, threads }) => {
-    const first = (await projects.create(await configs.load())).project;
-    const second = (await projects.create(await configs.load())).project;
-    const root = (await threads.create(first.id)).thread;
-    const sibling = (await threads.create(first.id)).thread;
+    const first = (await projects.create('First', await configs.load(), 'blue'))
+      .project;
+    const second = (
+      await projects.create('Second', await configs.load(), 'blue')
+    ).project;
+    const root = (await threads.create(first.id, 'Root')).thread;
+    const sibling = (await threads.create(first.id, 'Sibling')).thread;
     const children = await Promise.all([
-      threads.create(first.id, root.id),
-      threads.create(first.id, root.id),
+      threads.create(first.id, 'First child', root.id),
+      threads.create(first.id, 'Second child', root.id),
     ]);
-    const foreign = (await threads.create(second.id)).thread;
+    const foreign = (await threads.create(second.id, 'Foreign')).thread;
     assert.deepEqual((await threads.list(first.id, 10, foreign.id)).items, []);
     assert.deepEqual(
       (await threads.list(first.id, 10, sibling.id, root.id)).items,
@@ -182,13 +267,20 @@ integrationTest(
 integrationTest(
   'enforces same-project immutable acyclic parentage at the database boundary',
   async ({ configs, projects, threads, database }) => {
-    const first = (await projects.create(await configs.load())).project;
-    const second = (await projects.create(await configs.load())).project;
-    const root = (await threads.create(first.id)).thread;
-    const child = (await threads.create(first.id, root.id)).thread;
+    const first = (await projects.create('First', await configs.load(), 'blue'))
+      .project;
+    const second = (
+      await projects.create('Second', await configs.load(), 'blue')
+    ).project;
+    const root = (await threads.create(first.id, 'Root')).thread;
+    const child = (await threads.create(first.id, 'Child', root.id)).thread;
     await assert.rejects(
       database.thread.create({
-        data: { projectId: second.id, parentThreadId: root.id },
+        data: {
+          projectId: second.id,
+          name: 'Invalid child',
+          parentThreadId: root.id,
+        },
       }),
     );
     await assert.rejects(
@@ -206,7 +298,12 @@ integrationTest(
     const self = randomUUID();
     await assert.rejects(
       database.thread.create({
-        data: { id: self, projectId: first.id, parentThreadId: self },
+        data: {
+          id: self,
+          projectId: first.id,
+          name: 'Self',
+          parentThreadId: self,
+        },
       }),
     );
     const a = randomUUID();
@@ -214,8 +311,8 @@ integrationTest(
     await assert.rejects(
       database.thread.createMany({
         data: [
-          { id: a, projectId: first.id, parentThreadId: b },
-          { id: b, projectId: first.id, parentThreadId: a },
+          { id: a, projectId: first.id, name: 'A', parentThreadId: b },
+          { id: b, projectId: first.id, name: 'B', parentThreadId: a },
         ],
       }),
     );
@@ -229,11 +326,17 @@ integrationTest(
 integrationTest(
   'deletes only fully terminal subtrees without affecting other roots',
   async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(await configs.load());
-    const root = (await threads.create(project.id)).thread;
-    const child = (await threads.create(project.id, root.id)).thread;
-    const grandchild = (await threads.create(project.id, child.id)).thread;
-    const sibling = (await threads.create(project.id)).thread;
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const root = (await threads.create(project.id, 'Root')).thread;
+    const child = (await threads.create(project.id, 'Child', root.id)).thread;
+    const grandchild = (
+      await threads.create(project.id, 'Grandchild', child.id)
+    ).thread;
+    const sibling = (await threads.create(project.id, 'Sibling')).thread;
     await threads.appendEvent(grandchild.id, promptId, { type: 'saved' });
     await threads.setState(root.id, 'cancelled');
     assert.equal(await threads.deleteSubtree(root.id), 'active');
@@ -271,7 +374,7 @@ integrationTest(
       'failed',
       'cancelled',
     ] as const) {
-      const { project } = await projects.create(snapshot);
+      const { project } = await projects.create('Project', snapshot, 'blue');
       // Create conversations before making their owner terminal.
       const threadCases = [];
       if (state === 'queued') {
@@ -283,7 +386,7 @@ integrationTest(
           'failed',
           'cancelled',
         ] as const) {
-          const { thread } = await threads.create(project.id);
+          const { thread } = await threads.create(project.id, 'Thread');
           const messages = [
             {
               role: 'user' as const,
@@ -357,9 +460,13 @@ integrationTest(
   },
 );
 
-test('ships only the approved clean baseline and migration lock metadata', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, color, and GitHub migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
+    '20260826000000_add_project_thread_names',
+    '20260827000000_add_thread_checkpoints',
+    '20260923000000_add_project_color',
+    '20260924000000_add_github_credentials',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -371,7 +478,165 @@ test('ships only the approved clean baseline and migration lock metadata', async
     'utf8',
   );
   assert.doesNotMatch(sql, /session/iu);
+  const naming = await readFile(
+    `${migrationDirectory}/20260826000000_add_project_thread_names/migration.sql`,
+    'utf8',
+  );
+  assert.match(naming, /ADD COLUMN "name" TEXT;/u);
+  assert.match(naming, /UPDATE "project" SET "name"/u);
+  assert.match(naming, /UPDATE "thread" SET "name"/u);
+  assert.match(naming, /ALTER COLUMN "name" SET NOT NULL/u);
+  const checkpoints = await readFile(
+    `${migrationDirectory}/20260827000000_add_thread_checkpoints/migration.sql`,
+    'utf8',
+  );
+  assert.match(
+    checkpoints,
+    /ADD COLUMN "checkpoints" JSONB NOT NULL DEFAULT '\{\}';/u,
+  );
+  const color = await readFile(
+    `${migrationDirectory}/20260923000000_add_project_color/migration.sql`,
+    'utf8',
+  );
+  assert.match(color, /ADD COLUMN "color" TEXT;/u);
+  const github = await readFile(
+    `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+    'utf8',
+  );
+  assert.match(github, /ADD COLUMN "github_email" TEXT,/u);
+  assert.match(github, /ADD COLUMN "github_token" TEXT,/u);
+  assert.match(github, /ADD COLUMN "github_username" TEXT;/u);
 });
+
+test(
+  'upgrades existing related Project and Thread rows with names and data intact',
+  { skip: connectionString === undefined },
+  async () => {
+    assert.ok(connectionString);
+    const baseline = await readFile(
+      `${migrationDirectory}/20260825000000_initial/migration.sql`,
+      'utf8',
+    );
+    const naming = await readFile(
+      `${migrationDirectory}/20260826000000_add_project_thread_names/migration.sql`,
+      'utf8',
+    );
+    const resources = await persistenceFixture(connectionString, {
+      migration: async () => baseline,
+    });
+    const projectId = randomUUID();
+    const rootId = randomUUID();
+    const childId = randomUUID();
+    try {
+      await resources.database.$executeRaw`
+        INSERT INTO project (
+          id, state, config_revision, config_snapshot, updated_at, started_at
+        ) VALUES (
+          ${projectId}::uuid, 'READY', 7, '{"revision":7}'::jsonb,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )`;
+      await resources.database.$executeRaw`
+        INSERT INTO thread (
+          id, project_id, state, messages, updated_at
+        ) VALUES (
+          ${rootId}::uuid, ${projectId}::uuid, 'READY',
+          '[{"role":"user","content":"root history"}]'::jsonb,
+          CURRENT_TIMESTAMP
+        )`;
+      await resources.database.$executeRaw`
+        INSERT INTO thread (
+          id, project_id, parent_thread_id, state, messages, active_prompt_id,
+          last_sequence, updated_at, started_at
+        ) VALUES (
+          ${childId}::uuid, ${projectId}::uuid, ${rootId}::uuid, 'RUNNING',
+          '[{"role":"user","content":"child history"}]'::jsonb,
+          ${promptId}::uuid, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )`;
+      await resources.database.$executeRaw`
+        INSERT INTO thread_event (
+          project_id, thread_id, prompt_id, sequence, type, event
+        ) VALUES (
+          ${projectId}::uuid, ${childId}::uuid, ${promptId}::uuid, 1,
+          'prompt.accepted', '{"type":"prompt.accepted"}'::jsonb
+        )`;
+
+      await resources.migrate(naming);
+
+      const projects = await resources.database.$queryRaw<
+        {
+          id: string;
+          name: string;
+          state: string;
+          config_revision: number;
+          config_snapshot: unknown;
+        }[]
+      >`SELECT id, name, state, config_revision, config_snapshot FROM project`;
+      assert.deepEqual(projects, [
+        {
+          id: projectId,
+          name: `Project ${projectId}`,
+          state: 'READY',
+          config_revision: 7,
+          config_snapshot: { revision: 7 },
+        },
+      ]);
+      const threads = await resources.database.$queryRaw<
+        {
+          id: string;
+          project_id: string;
+          parent_thread_id: string | null;
+          name: string;
+          state: string;
+          messages: unknown;
+          active_prompt_id: string | null;
+          last_sequence: number;
+        }[]
+      >`SELECT id, project_id, parent_thread_id, name, state, messages,
+          active_prompt_id, last_sequence
+        FROM thread ORDER BY parent_thread_id NULLS FIRST`;
+      assert.deepEqual(threads, [
+        {
+          id: rootId,
+          project_id: projectId,
+          parent_thread_id: null,
+          name: `Thread ${rootId}`,
+          state: 'READY',
+          messages: [{ role: 'user', content: 'root history' }],
+          active_prompt_id: null,
+          last_sequence: 0,
+        },
+        {
+          id: childId,
+          project_id: projectId,
+          parent_thread_id: rootId,
+          name: `Thread ${childId}`,
+          state: 'RUNNING',
+          messages: [{ role: 'user', content: 'child history' }],
+          active_prompt_id: promptId,
+          last_sequence: 1,
+        },
+      ]);
+      assert.equal(await resources.database.threadEvent.count(), 1);
+      const columns = await resources.database.$queryRaw<
+        { table_name: string; is_nullable: string }[]
+      >`SELECT table_name, is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND column_name = 'name'
+          AND table_name IN ('project', 'thread')
+        ORDER BY table_name`;
+      assert.deepEqual(columns, [
+        { table_name: 'project', is_nullable: 'NO' },
+        { table_name: 'thread', is_nullable: 'NO' },
+      ]);
+      await assert.rejects(
+        resources.database.$executeRaw`
+          UPDATE project SET name = NULL WHERE id = ${projectId}::uuid`,
+      );
+    } finally {
+      await resources.close();
+    }
+  },
+);
 
 for (const failure of [
   'admin connect',
@@ -422,6 +687,45 @@ for (const failure of [
     assert.deepEqual(schemas, new Set());
   });
 }
+
+integrationTest(
+  'round-trips the GitHub identity and its write-only token',
+  async ({ configs }) => {
+    const initial = await configs.load();
+    assert.equal(initial.configuration.github, undefined);
+
+    const configured = await configs.replace({
+      ...initial.configuration,
+      github: {
+        username: 'octocat',
+        email: 'octocat@example.com',
+        token: 'ghp_stored',
+      },
+    });
+    assert.deepEqual(configured.configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+      token: 'ghp_stored',
+    });
+    assert.deepEqual((await configs.load()).configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+      token: 'ghp_stored',
+    });
+
+    const cleared = await configs.replace({
+      ...initial.configuration,
+      github: { username: 'octocat', email: 'octocat@example.com' },
+    });
+    assert.deepEqual(cleared.configuration.github, {
+      username: 'octocat',
+      email: 'octocat@example.com',
+    });
+
+    const unconfigured = await configs.replace(initial.configuration);
+    assert.equal(unconfigured.configuration.github, undefined);
+  },
+);
 
 integrationTest(
   'installs a clean Project and Thread baseline without legacy tables or data',

@@ -29,13 +29,16 @@ enum ThreadState {
 }
 
 model DoricConfiguration {
-  id         Int                     @id @default(1)
-  revision   Int                     @default(1)
-  generation String                  @db.Uuid
-  maxTurns   Int                     @map("max_turns")
-  updatedAt  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providers  ProviderConfiguration[]
-  models     ModelConfiguration[]
+  id             Int                     @id @default(1)
+  revision       Int                     @default(1)
+  generation     String                  @db.Uuid
+  maxTurns       Int                     @map("max_turns")
+  githubUsername String?                 @map("github_username")
+  githubEmail    String?                 @map("github_email")
+  githubToken    String?                 @map("github_token")
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providers      ProviderConfiguration[]
+  models         ModelConfiguration[]
 
   @@map("doric_configuration")
 }
@@ -67,6 +70,8 @@ model ModelConfiguration {
 
 model Project {
   id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  color          String?
   state          ProjectState @default(QUEUED)
   configRevision Int          @map("config_revision")
   configSnapshot Json         @map("config_snapshot") @db.JsonB
@@ -85,8 +90,10 @@ model Thread {
   id             String        @id @default(uuid()) @db.Uuid
   projectId      String        @map("project_id") @db.Uuid
   parentThreadId String?       @map("parent_thread_id") @db.Uuid
+  name           String
   state          ThreadState   @default(QUEUED)
   messages       Json          @default("[]") @db.JsonB
+  checkpoints    Json          @default("{}") @db.JsonB
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")

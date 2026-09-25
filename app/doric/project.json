@@ -1,0 +1,64 @@
+{
+  "name": "doric-app",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "app/doric/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx-electron:build",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/app/doric",
+        "main": "app/doric/src/main.ts",
+        "tsConfig": "app/doric/tsconfig.app.json",
+        "assets": ["app/doric/src/assets"]
+      },
+      "configurations": {
+        "production": {
+          "optimization": true,
+          "extractLicenses": true,
+          "inspect": false
+        }
+      }
+    },
+    "serve": {
+      "executor": "nx-electron:execute",
+      "options": {
+        "buildTarget": "doric-app:build"
+      }
+    },
+    "package": {
+      "executor": "nx-electron:package",
+      "options": {
+        "name": "doric",
+        "frontendProject": "doric-renderer",
+        "sourcePath": "dist/app",
+        "outputPath": "dist/packages",
+        "prepackageOnly": true
+      }
+    },
+    "make": {
+      "executor": "nx-electron:make",
+      "options": {
+        "name": "doric",
+        "frontendProject": "doric-renderer",
+        "sourcePath": "dist/app",
+        "outputPath": "dist/executables"
+      }
+    },
+    "lint": {
+      "command": "eslint app/doric"
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p app/doric/tsconfig.spec.json",
+          "node --test app/doric/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

@@ -1,7 +1,9 @@
 import type { ProviderMessage } from 'llms';
-import type { SandboxSshAccess } from 'sandbox';
+import type { SandboxEntry, SandboxSshAccess } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
+import type { ProjectColor } from './colors.js';
+import type { ProjectChange } from './files.js';
 
 export type ProjectState =
   | 'queued'
@@ -12,6 +14,8 @@ export type ProjectState =
 export type ThreadState = ProjectState | 'running';
 export type Project = {
   readonly id: string;
+  readonly name: string;
+  readonly color?: ProjectColor;
   readonly state: ProjectState;
   readonly configRevision: number;
   readonly errorCode?: string;
@@ -24,6 +28,7 @@ export type Thread = {
   readonly id: string;
   readonly projectId: string;
   readonly parentThreadId?: string;
+  readonly name: string;
   readonly state: ThreadState;
   readonly lastSequence: number;
   readonly activePromptId?: string;
@@ -62,6 +67,7 @@ export type ProjectRecord = {
 export type ThreadRecord = {
   readonly thread: Thread;
   readonly messages: readonly ProviderMessage[];
+  readonly checkpoints: Readonly<Record<string, number>>;
 };
 export type Page<Value> = {
   readonly items: readonly Value[];
@@ -74,24 +80,72 @@ export type ThreadResult =
 export type PromptResult =
   | { readonly status: 'accepted'; readonly promptId: string }
   | { readonly status: 'missing' | 'inactive' };
+export type RewindResult =
+  | { readonly status: 'accepted'; readonly promptId: string }
+  | {
+      readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
+    };
 export type InterruptResult =
   | 'interrupted'
   | 'missing'
   | 'inactive'
   | 'not_running';
+/** The lease-dependent outcomes every Project subresource can report. */
+export type ProjectLeaseState =
+  | 'missing'
+  | 'pending'
+  | 'unavailable'
+  | 'expired';
 export type ProjectSsh =
-  | { readonly status: 'pending' | 'unavailable' | 'expired' | 'missing' }
+  | { readonly status: ProjectLeaseState }
   | {
       readonly status: 'ready';
       readonly vmId: string;
       readonly ssh: SandboxSshAccess;
     };
+export type ProjectFiles =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly SandboxEntry[];
+    }
+  | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
+export type ProjectFile =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly content: string;
+      readonly truncated: boolean;
+      readonly binary: boolean;
+    }
+  | { readonly status: 'invalid_path' | 'not_found' | 'not_file' };
+export type ProjectDiff =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path?: string;
+      readonly repository: boolean;
+      readonly diff: string;
+      readonly changes: readonly ProjectChange[];
+    }
+  | { readonly status: 'invalid_path' | 'not_found' };
 
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
-  create(snapshot: DoricConfig): Promise<ProjectRecord>;
+  create(
+    name: string,
+    snapshot: DoricConfig,
+    color: ProjectColor,
+  ): Promise<ProjectRecord>;
   find(id: string): Promise<ProjectRecord | undefined>;
   list(limit: number, cursor?: string): Promise<Page<Project>>;
+  rename(id: string, name: string): Promise<Project | undefined>;
+  setColor(
+    id: string,
+    color: ProjectColor | undefined,
+  ): Promise<Project | undefined>;
   setState(
     id: string,
     state: ProjectState,
@@ -101,7 +155,11 @@ export interface ProjectStore {
   reconcile(): Promise<number>;
 }
 export interface ThreadStore {
-  create(projectId: string, parentThreadId?: string): Promise<ThreadRecord>;
+  create(
+    projectId: string,
+    name: string,
+    parentThreadId?: string,
+  ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
   list(
     projectId: string,
@@ -110,6 +168,7 @@ export interface ThreadStore {
     parentThreadId?: string,
   ): Promise<Page<Thread>>;
   listByProject(projectId: string): Promise<readonly Thread[]>;
+  rename(id: string, name: string): Promise<Thread | undefined>;
   setState(
     id: string,
     state: ThreadState,
@@ -117,6 +176,9 @@ export interface ThreadStore {
     errorCode?: string,
   ): Promise<Thread | undefined>;
   saveMessages(id: string, messages: readonly ProviderMessage[]): Promise<void>;
+  saveCheckpoint(id: string, promptId: string): Promise<void>;
+  /** Removes the prompt's turn and every later one, returning its marker event. */
+  rewind(id: string, promptId: string): Promise<ThreadEvent | undefined>;
   appendEvent(
     id: string,
     promptId: string,
@@ -135,15 +197,27 @@ export interface WorkspacePublisher {
 }
 export interface WorkspaceService {
   readonly projects: {
-    create(): Promise<Project>;
+    create(name: string): Promise<Project>;
     find(id: string): Promise<Project | undefined>;
     list(limit: number, cursor?: string): Promise<Page<Project>>;
+    rename(id: string, name: string): Promise<Project | undefined>;
+    setColor(
+      id: string,
+      color: ProjectColor | undefined,
+    ): Promise<Project | undefined>;
     terminate(id: string): Promise<Project | undefined>;
     delete(id: string): Promise<DeleteResult>;
     ssh(id: string): Promise<ProjectSsh>;
+    files(id: string, path?: string): Promise<ProjectFiles>;
+    file(id: string, path: string): Promise<ProjectFile>;
+    diff(id: string, path?: string): Promise<ProjectDiff>;
   };
   readonly threads: {
-    create(projectId: string, parentThreadId?: string): Promise<ThreadResult>;
+    create(
+      projectId: string,
+      name: string,
+      parentThreadId?: string,
+    ): Promise<ThreadResult>;
     find(id: string): Promise<Thread | undefined>;
     list(
       projectId: string,
@@ -151,7 +225,9 @@ export interface WorkspaceService {
       cursor?: string,
       parentThreadId?: string,
     ): Promise<Page<Thread> | undefined>;
+    rename(id: string, name: string): Promise<Thread | undefined>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
+    rewind(id: string, promptId: string, prompt: string): Promise<RewindResult>;
     events(
       id: string,
       afterSequence: number,

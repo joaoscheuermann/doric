@@ -28,6 +28,7 @@
     "docker": "0.0.1",
     "express": "^5.2.1",
     "firecracker": "0.0.1",
+    "host": "0.0.1",
     "llms": "0.0.1",
     "messages": "0.0.1",
     "oauth": "0.0.1",

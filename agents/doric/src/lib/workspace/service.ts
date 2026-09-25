@@ -1,25 +1,48 @@
 import type { Logger } from 'pino';
+
+import { listSandboxDirectory, type Sandbox, workspacePathKind } from 'sandbox';
 import type { Sandpool } from 'sandpool';
 
-import type { ConfigService } from '../config/service.js';
 import { runDirectPrompt } from '../agents/direct/executor.js';
+import type { ConfigService } from '../config/service.js';
+import { randomProjectColor } from './colors.js';
+import { projectChanges, readProjectFile } from './files.js';
+import { applyGitIdentity, type GithubIdentity } from './git.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
-  subtreeIds,
   type ProjectRuntime,
+  subtreeIds,
   type ThreadExecution,
 } from './runtime.js';
 import {
   isTerminal,
+  type Project,
+  type ProjectDiff,
+  type ProjectFile,
+  type ProjectFiles,
+  type ProjectSsh,
   type ProjectStore,
   type ThreadStore,
   type WorkspacePublisher,
   type WorkspaceService,
-  type ProjectSsh,
 } from './types.js';
 
 export type { ThreadExecution } from './runtime.js';
+
+/** The lease-dependent answer a Project subresource can give before its value. */
+type LeaseOutcome<Value> =
+  | { readonly status: 'missing' | 'pending' | 'unavailable' | 'expired' }
+  | { readonly status: 'ready'; readonly value: Value };
+
+/** Whether a sandbox already received exactly this GitHub block. */
+const sameGithub = (
+  applied: GithubIdentity | undefined,
+  current: GithubIdentity | undefined,
+): boolean =>
+  applied?.username === current?.username &&
+  applied?.email === current?.email &&
+  applied?.token === current?.token;
 
 type Options = {
   readonly projects: ProjectStore;
@@ -98,15 +121,17 @@ export const createWorkspaceService = ({
             errorCode = 'sandbox_release_failed';
           }
         }
-        try {
-          await setProject(
-            runtime,
-            errorCode === undefined ? 'cancelled' : 'failed',
-            errorCode,
-          );
-        } finally {
-          runtimes.delete(runtime.project.id);
-        }
+        await exclusive(runtime.project.id, async () => {
+          try {
+            await setProject(
+              runtime,
+              errorCode === undefined ? 'cancelled' : 'failed',
+              errorCode,
+            );
+          } finally {
+            runtimes.delete(runtime.project.id);
+          }
+        });
       })
       .catch(() => {
         logger.error(
@@ -119,6 +144,14 @@ export const createWorkspaceService = ({
   const acquire = async (runtime: ProjectRuntime) => {
     try {
       const lease = await pool.acquire({ signal: runtime.controller.signal });
+      // The captured block is what a fresh sandbox starts with, and the next
+      // prompt re-applies the current one when it has moved on.
+      const github = runtime.generation.snapshot.configuration.github;
+      await applyGitIdentity(lease.sandbox, github, {
+        logger,
+        projectId: runtime.project.id,
+      });
+      runtime.appliedGithub = github;
       await exclusive(runtime.project.id, async () => {
         runtime.lease = lease;
         if (runtime.closing) return;
@@ -136,7 +169,41 @@ export const createWorkspaceService = ({
       });
     }
   };
-  const ssh = async (id: string): Promise<ProjectSsh> => {
+  /**
+   * The GitHub identity and its credential follow the current configuration, so a
+   * rotated or newly saved token reaches a Project that is already running, while
+   * every other configuration value stays captured in the Project's generation.
+   * The block is compared with the one the sandbox last received, so an unchanged
+   * configuration never re-runs commands, and the writes stay off the project lock
+   * because a credential is not a lifecycle mutation.
+   */
+  const applyCurrentGithub = async (runtime: ProjectRuntime | undefined) => {
+    const sandbox = runtime?.lease?.sandbox;
+    if (runtime === undefined || sandbox === undefined || runtime.closing)
+      return;
+    const github = config.current().snapshot.configuration.github;
+    if (sameGithub(runtime.appliedGithub, github)) return;
+    await applyGitIdentity(sandbox, github, {
+      logger,
+      projectId: runtime.project.id,
+    });
+    runtime.appliedGithub = github;
+    // This Project's captured generation predates any rotation, so the new token
+    // is registered for redaction before anything can carry it into an event.
+    if (github?.token !== undefined) {
+      runtime.generation.registerSecret(github.token);
+    }
+  };
+  /**
+   * Resolves a Project lease for one operation, so every lease-dependent
+   * subresource reports missing/pending/unavailable/expired identically. The
+   * closing check runs again after the operation, because disposal may have
+   * started or the lease may have been dropped while it ran.
+   */
+  const withLease = async <Value>(
+    id: string,
+    operation: (sandbox: Sandbox) => Promise<Value>,
+  ): Promise<LeaseOutcome<Value>> => {
     const runtime = runtimes.get(id);
     if (runtime === undefined) {
       const record = await projects.find(id);
@@ -151,21 +218,101 @@ export const createWorkspaceService = ({
     }
     if (runtime.closing) return { status: 'unavailable' };
     if (runtime.lease === undefined) return { status: 'pending' };
-    const access = await runtime.lease.sandbox.ssh();
-    // Disposal may have started during the provider call.
+    const value = await operation(runtime.lease.sandbox);
+    // Disposal may have started during the operation.
     if (runtime.closing || runtime.lease === undefined)
       return { status: 'unavailable' };
-    return access === undefined
-      ? { status: 'unavailable' }
-      : { status: 'ready', vmId: runtime.lease.sandbox.id, ssh: access };
+    return { status: 'ready', value };
   };
+  const ssh = async (id: string): Promise<ProjectSsh> => {
+    const outcome = await withLease(id, async (sandbox) => ({
+      vmId: sandbox.id,
+      ssh: await sandbox.ssh(),
+    }));
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    return outcome.value.ssh === undefined
+      ? { status: 'unavailable' }
+      : { status: 'ready', vmId: outcome.value.vmId, ssh: outcome.value.ssh };
+  };
+  const files = async (id: string, path?: string): Promise<ProjectFiles> => {
+    const outcome = await withLease(id, (sandbox) =>
+      listSandboxDirectory(sandbox, { path: path ?? '' }),
+    );
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    if (outcome.value.status === 'listed')
+      return {
+        status: 'ready',
+        path: outcome.value.path,
+        entries: outcome.value.entries,
+      };
+    if (outcome.value.status === 'missing') return { status: 'not_found' };
+    // `invalid_exclude` and `excluded_root` are unreachable: no excludes are sent.
+    return {
+      status:
+        outcome.value.status === 'not_directory'
+          ? 'not_directory'
+          : 'invalid_path',
+    };
+  };
+  const file = async (id: string, path: string): Promise<ProjectFile> => {
+    const outcome = await withLease(id, (sandbox) =>
+      readProjectFile(sandbox, path),
+    );
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    if (outcome.value.status === 'read')
+      return {
+        status: 'ready',
+        path,
+        content: outcome.value.content,
+        truncated: outcome.value.truncated,
+        binary: outcome.value.binary,
+      };
+    if (outcome.value.status === 'missing') return { status: 'not_found' };
+    return {
+      status: outcome.value.status === 'not_file' ? 'not_file' : 'invalid_path',
+    };
+  };
+  const diff = async (id: string, path?: string): Promise<ProjectDiff> => {
+    const outcome = await withLease(id, async (sandbox) => {
+      if (path !== undefined) {
+        const kind = await workspacePathKind(sandbox, path);
+        if (kind === 'escaped') return { status: 'invalid_path' as const };
+        if (kind === 'missing') return { status: 'not_found' as const };
+      }
+      const changes = await projectChanges(sandbox, path);
+      return {
+        status: 'ready' as const,
+        ...(path === undefined ? {} : { path }),
+        ...changes,
+      };
+    });
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    return outcome.value;
+  };
+  const changeProject = (
+    id: string,
+    change: () => Promise<Project | undefined>,
+  ) =>
+    exclusive(id, async () => {
+      const value = await change();
+      if (value !== undefined) {
+        const runtime = runtimes.get(id);
+        if (runtime !== undefined) runtime.project = value;
+        publisher.projectUpdated(value);
+      }
+      return value;
+    });
   return {
     projects: {
-      create: () =>
+      create: (name) =>
         exclusive('creation', async () => {
           if (disposed) throw new Error('Doric is shutting down.');
           const generation = config.current();
-          const record = await projects.create(generation.snapshot);
+          const record = await projects.create(
+            name,
+            generation.snapshot,
+            randomProjectColor(),
+          );
           const runtime: ProjectRuntime = {
             project: record.project,
             generation,
@@ -185,6 +332,9 @@ export const createWorkspaceService = ({
         }),
       find: async (id) => (await projects.find(id))?.project,
       list: (limit, cursor) => projects.list(limit, cursor),
+      rename: (id, name) => changeProject(id, () => projects.rename(id, name)),
+      setColor: (id, color) =>
+        changeProject(id, () => projects.setColor(id, color)),
       terminate: (id) =>
         exclusive(id, async () => {
           const runtime = runtimes.get(id);
@@ -204,9 +354,12 @@ export const createWorkspaceService = ({
           return outcome;
         }),
       ssh,
+      files,
+      file,
+      diff,
     },
     threads: {
-      create: (projectId, parentThreadId) =>
+      create: (projectId, name, parentThreadId) =>
         exclusive(projectId, async () => {
           const runtime = runtimes.get(projectId);
           if (runtime === undefined)
@@ -216,22 +369,53 @@ export const createWorkspaceService = ({
                   ? ('missing' as const)
                   : ('inactive' as const),
             };
-          return runner.create(runtime, parentThreadId);
+          return runner.create(runtime, name, parentThreadId);
         }),
       find: async (id) => (await threads.find(id))?.thread,
       list: async (projectId, limit, cursor, parentThreadId) =>
         (await projects.find(projectId)) === undefined
           ? undefined
           : threads.list(projectId, limit, cursor, parentThreadId),
+      rename: async (id, name) => {
+        const record = await threads.find(id);
+        if (record === undefined) return undefined;
+        return exclusive(record.thread.projectId, async () => {
+          const value = await threads.rename(id, name);
+          if (value !== undefined) {
+            const runtime = runtimes
+              .get(record.thread.projectId)
+              ?.threads.get(id);
+            if (runtime !== undefined) runtime.thread = value;
+            publisher.threadUpdated(value);
+          }
+          return value;
+        });
+      },
       prompt: async (id, prompt) => {
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
+        // New input is the point where a live sandbox catches up with a rotated
+        // or newly saved GitHub block, before the prompt is enqueued.
+        await applyCurrentGithub(runtimes.get(record.thread.projectId));
         return exclusive(record.thread.projectId, async () => {
           const project = runtimes.get(record.thread.projectId);
           const thread = project?.threads.get(id);
           if (project === undefined || thread === undefined)
             return { status: 'inactive' as const };
           return runner.enqueue(project, thread, prompt, { kind: 'user' });
+        });
+      },
+      rewind: async (id, promptId, prompt) => {
+        const record = await threads.find(id);
+        if (record === undefined) return { status: 'missing' };
+        // A rewind enqueues its replacement input the same way a prompt does.
+        await applyCurrentGithub(runtimes.get(record.thread.projectId));
+        return exclusive(record.thread.projectId, async () => {
+          const project = runtimes.get(record.thread.projectId);
+          const thread = project?.threads.get(id);
+          if (project === undefined || thread === undefined)
+            return { status: 'inactive' as const };
+          return runner.rewind(project, thread, promptId, prompt);
         });
       },
       events: async (id, afterSequence) => {

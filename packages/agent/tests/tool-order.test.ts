@@ -45,7 +45,7 @@ for (const mode of ['complete', 'stream'] as const) {
 
           return 'first result';
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
       defineTool({
         name: 'second',
         input: z.object({}),
@@ -55,7 +55,7 @@ for (const mode of ['complete', 'stream'] as const) {
 
           return 'second result';
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ]);
 
     const provider = createProvider({

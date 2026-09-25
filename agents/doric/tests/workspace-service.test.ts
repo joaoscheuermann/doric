@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import { isProjectColor } from '../src/lib/workspace/colors.js';
 import type {
   InputSource,
+  Project,
+  Thread,
   WorkspaceService,
 } from '../src/lib/workspace/types.js';
 import { deferred, pool, sandbox, workspace } from './helpers/workspace.js';
@@ -13,11 +17,186 @@ const createThread = async (
   projectId: string,
   parentId?: string,
 ) => {
-  const result = await service.threads.create(projectId, parentId);
+  const result = await service.threads.create(projectId, 'Thread', parentId);
   assert.equal(result.status, 'created');
   if (result.status !== 'created') throw new Error('Thread creation failed');
   return result.thread;
 };
+
+test('creates, lists, and renames named Projects and Threads', async () => {
+  const harness = workspace();
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(),
+    execute: async () => 'done',
+  });
+  const project = await service.projects.create('Initial project');
+  const thread = await createThread(service, project.id);
+  assert.equal(project.name, 'Initial project');
+  assert.equal(thread.name, 'Thread');
+  assert.equal(
+    (await service.projects.rename(project.id, 'Renamed project'))?.name,
+    'Renamed project',
+  );
+  assert.equal(
+    (await service.threads.rename(thread.id, 'Renamed thread'))?.name,
+    'Renamed thread',
+  );
+  assert.equal(
+    (await service.projects.list(10)).items[0]?.name,
+    'Renamed project',
+  );
+  assert.equal(
+    (await service.threads.list(project.id, 10))?.items[0]?.name,
+    'Renamed thread',
+  );
+  assert.equal(
+    await service.projects.rename(randomUUID(), 'Missing'),
+    undefined,
+  );
+  assert.equal(
+    await service.threads.rename(randomUUID(), 'Missing'),
+    undefined,
+  );
+  await service.dispose();
+});
+
+test('marks each new Project with a color from the host palette', async () => {
+  const harness = workspace();
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(),
+    execute: async () => 'done',
+  });
+  const projects = await Promise.all(
+    Array.from({ length: 3 }, (_, index) =>
+      service.projects.create(`Project ${index}`),
+    ),
+  );
+  for (const project of projects) {
+    assert.ok(
+      isProjectColor(project.color),
+      `expected a palette color, got ${String(project.color)}`,
+    );
+    assert.equal(
+      (await service.projects.find(project.id))?.color,
+      project.color,
+    );
+  }
+  await service.dispose();
+});
+
+test('serializes Project rename with terminal state publication', async () => {
+  const harness = workspace();
+  const stateCaptured = deferred();
+  const releaseState = deferred();
+  const updates: Project[] = [];
+  const setState = harness.projects.setState;
+  harness.projects.setState = async (...args) => {
+    const value = await setState(...args);
+    if (args[1] === 'cancelled') {
+      stateCaptured.resolve();
+      await releaseState.promise;
+    }
+    return value;
+  };
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    publisher: {
+      ...harness.publisher,
+      projectUpdated: (value) => {
+        updates.push(value);
+        harness.publisher.projectUpdated(value);
+      },
+    },
+    pool: pool(),
+    execute: async () => 'done',
+  });
+  const project = await service.projects.create('Initial');
+  await harness.projectState(project.id, 'ready');
+  await service.projects.terminate(project.id);
+  await stateCaptured.promise;
+  let renameSettled = false;
+  const rename = service.projects.rename(project.id, 'Renamed').finally(() => {
+    renameSettled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renameSettled, false);
+  releaseState.resolve();
+  assert.equal((await rename)?.name, 'Renamed');
+  await service.dispose();
+  assert.equal(updates.at(-1)?.name, 'Renamed');
+  assert.equal((await service.projects.find(project.id))?.name, 'Renamed');
+});
+
+test('serializes Thread rename with terminal state publication', async () => {
+  const harness = workspace();
+  const stateCaptured = deferred();
+  const releaseState = deferred();
+  const updates: Thread[] = [];
+  const setState = harness.threads.setState;
+  harness.threads.setState = async (...args) => {
+    const value = await setState(...args);
+    if (args[1] === 'cancelled') {
+      stateCaptured.resolve();
+      await releaseState.promise;
+    }
+    return value;
+  };
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    publisher: {
+      ...harness.publisher,
+      threadUpdated: (value) => {
+        updates.push(value);
+        harness.publisher.threadUpdated(value);
+      },
+    },
+    pool: pool(),
+    execute: async () => 'done',
+  });
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const thread = await createThread(service, project.id);
+  await service.threads.terminate(thread.id);
+  await stateCaptured.promise;
+  let renameSettled = false;
+  const rename = service.threads.rename(thread.id, 'Renamed').finally(() => {
+    renameSettled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renameSettled, false);
+  releaseState.resolve();
+  assert.equal((await rename)?.name, 'Renamed');
+  assert.equal(updates.at(-1)?.name, 'Renamed');
+  assert.equal((await service.threads.find(thread.id))?.name, 'Renamed');
+  await service.dispose();
+});
+
+test('derives delegated Thread names without splitting Unicode characters', async () => {
+  const harness = workspace();
+  const spawned = deferred<{ threadId: string; promptId: string }>();
+  const prompt = '😀'.repeat(81);
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(),
+    execute: async ({ job, host }) => {
+      if (job.prompt === 'coordinate')
+        spawned.resolve(await host.threads.spawn(prompt));
+      return 'done';
+    },
+  });
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const parent = await createThread(service, project.id);
+  await service.threads.prompt(parent.id, 'coordinate');
+  const child = await spawned.promise;
+  assert.equal(
+    (await service.threads.find(child.threadId))?.name,
+    '😀'.repeat(80),
+  );
+  await service.dispose();
+});
 
 test(
   'shares one Project lease while Threads run independently and each preserves FIFO',
@@ -55,7 +234,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const first = await createThread(service, project.id);
     const other = await createThread(service, project.id);
@@ -115,7 +294,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const parent = await createThread(service, project.id);
     const child = await createThread(service, project.id, parent.id);
@@ -155,7 +334,7 @@ test(
       pool: pool(),
       execute: async () => 'done',
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const root = await createThread(service, project.id);
     const child = await createThread(service, project.id, root.id);
@@ -181,7 +360,7 @@ test(
         'inactive',
       );
       assert.notEqual(
-        (await service.threads.create(project.id, thread.id)).status,
+        (await service.threads.create(project.id, 'Child', thread.id)).status,
         'created',
       );
     }
@@ -217,7 +396,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const thread = await createThread(service, project.id);
     await service.threads.prompt(thread.id, 'work');
@@ -227,7 +406,10 @@ test(
     await service.projects.terminate(project.id);
     await aborted.promise;
     assert.equal(releases, 0);
-    assert.equal((await service.threads.create(project.id)).status, 'inactive');
+    assert.equal(
+      (await service.threads.create(project.id, 'Thread')).status,
+      'inactive',
+    );
     assert.equal(
       (await service.threads.prompt(thread.id, 'later')).status,
       'inactive',
@@ -263,7 +445,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const thread = await createThread(service, project.id);
     const failed = await service.threads.prompt(thread.id, 'broken');
@@ -301,7 +483,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const threads = await Promise.all(
       Array.from({ length: count }, () => createThread(service, project.id)),
@@ -333,13 +515,16 @@ test(
       } as never,
       execute: async () => 'unused',
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'failed');
     assert.equal(
       (await service.projects.find(project.id))?.errorCode,
       'sandbox_acquisition_failed',
     );
-    assert.equal((await service.threads.create(project.id)).status, 'inactive');
+    assert.equal(
+      (await service.threads.create(project.id, 'Thread')).status,
+      'inactive',
+    );
     assert.equal((await service.projects.ssh(project.id)).status, 'expired');
     await service.dispose();
   },
@@ -363,9 +548,9 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination }) => {
+      execute: async ({ job, host }) => {
         if (job.prompt === 'coordinate') {
-          spawned.resolve(await coordination.spawn('delegated'));
+          spawned.resolve(await host.threads.spawn('delegated'));
           await finishParent.promise;
         } else if (job.prompt === 'delegated') {
           childInputs.push(job.source);
@@ -386,7 +571,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const parent = await createThread(service, project.id);
     const request = await service.threads.prompt(parent.id, 'coordinate');
@@ -435,9 +620,9 @@ test(
     const service = createWorkspaceService({
       ...harness.dependencies,
       pool: pool(),
-      execute: async ({ job, coordination }) => {
+      execute: async ({ job, host }) => {
         if (job.prompt === 'coordinate') {
-          spawned.resolve(await coordination.spawn('delegated'));
+          spawned.resolve(await host.threads.spawn('delegated'));
         } else if (job.prompt === 'delegated') {
           childStarted.resolve();
           await finishChild.promise;
@@ -445,7 +630,7 @@ test(
         return 'done';
       },
     });
-    const project = await service.projects.create();
+    const project = await service.projects.create('Project');
     await harness.projectState(project.id, 'ready');
     const parent = await createThread(service, project.id);
     await service.threads.prompt(parent.id, 'coordinate');
@@ -454,7 +639,8 @@ test(
     await harness.threadState(parent.id, 'ready');
     await service.threads.terminate(parent.id);
     assert.notEqual(
-      (await service.threads.create(project.id, child.threadId)).status,
+      (await service.threads.create(project.id, 'Grandchild', child.threadId))
+        .status,
       'created',
     );
     finishChild.resolve();

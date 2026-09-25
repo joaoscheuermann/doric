@@ -7,6 +7,7 @@ import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
 import factory from '../tools/write.js';
+import { fakeHost } from './fake-sandbox.js';
 
 test('binds a core tool to a lease and rejects operations after release', async () => {
   const files = new Map<string, string>();
@@ -54,7 +55,7 @@ test('binds a core tool to a lease and rejects operations after release', async 
   try {
     const lease = await pool.acquire();
 
-    const result = await factory(lease.sandbox).execute({
+    const result = await factory(lease.sandbox, fakeHost()).execute({
       path: 'result.md',
       content: '# Result',
     });

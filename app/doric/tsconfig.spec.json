@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "src/connection/**/*.ts",
+    "src/startup/splash.ts",
+    "src/workspace/api.ts",
+    "src/workspace/config.ts",
+    "src/workspace/events.ts",
+    "src/workspace/project-events.ts",
+    "src/workspace/validation.ts",
+    "tests/**/*.ts"
+  ]
+}

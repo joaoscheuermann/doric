@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE "project" ADD COLUMN "color" TEXT;
+
+COMMIT;

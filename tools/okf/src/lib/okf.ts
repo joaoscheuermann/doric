@@ -94,7 +94,7 @@ export const createTool = (options: OkfToolOptions) =>
     description,
     input,
     output,
-    execute: (sandbox, input): Promise<OkfSearchOutput> =>
+    execute: (sandbox, host, input): Promise<OkfSearchOutput> =>
       execute({ ...options, sandbox }, input),
   });
 

@@ -241,7 +241,7 @@ const directHarness = (
         signal,
         store: store as never,
         publisher: { event: () => undefined } as never,
-        coordination: {} as never,
+        host: { threads: {} } as never,
       }),
   };
 };

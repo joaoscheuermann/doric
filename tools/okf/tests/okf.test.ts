@@ -29,7 +29,9 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'authentication architecture' });
+    })(fake.session, { threads: {} } as never).execute({
+      query: 'authentication architecture',
+    });
 
     assert.deepEqual(
       output.results.map((result) => result.conceptId),
@@ -70,7 +72,10 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'users', bundle: 'project' });
+    })(fake.session, { threads: {} } as never).execute({
+      query: 'users',
+      bundle: 'project',
+    });
 
     assert.deepEqual(output.results[0], {
       bundle: 'project',
@@ -113,7 +118,7 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'searchable' });
+    })(fake.session, { threads: {} } as never).execute({ query: 'searchable' });
 
     assert.deepEqual(
       output.results.map((result) => result.conceptId),
@@ -134,7 +139,10 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'private', bundle: '../skills' });
+    })(fake.session, { threads: {} } as never).execute({
+      query: 'private',
+      bundle: '../skills',
+    });
 
     assert.match(output.error ?? '', /Invalid bundle name/u);
 
@@ -165,7 +173,7 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'needle' });
+    })(fake.session, { threads: {} } as never).execute({ query: 'needle' });
 
     assert.equal(output.total, 0);
 
@@ -176,7 +184,9 @@ describe('OKF search tool', () => {
 
     const missing = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(missingFake.session).execute({ query: 'anything' });
+    })(missingFake.session, { threads: {} } as never).execute({
+      query: 'anything',
+    });
 
     assert.match(missing.error ?? '', /bundle root not found/u);
 
@@ -204,7 +214,10 @@ describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session).execute({ query: 'needle', limit: 1 });
+    })(fake.session, { threads: {} } as never).execute({
+      query: 'needle',
+      limit: 1,
+    });
 
     assert.equal(output.results.length, 1);
 

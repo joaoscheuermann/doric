@@ -8,6 +8,7 @@ import { describe, test } from 'node:test';
 import type { SandboxSession } from 'sandbox';
 
 import factory from '../tools/edit.js';
+import { fakeHost } from './fake-sandbox.js';
 
 describe('edit tool', () => {
   test('updates a unique exact match and returns first changed line', async () => {
@@ -18,7 +19,7 @@ describe('edit tool', () => {
       'one\noldCall();\nthree\n',
     );
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(sandbox, fakeHost()).execute({
       path: 'src/lib.ts',
       edits: [{ oldText: 'oldCall();', newText: 'newCall();' }],
     });
@@ -48,7 +49,7 @@ describe('edit tool', () => {
 
     await sandbox.seed('/workspace/repo/same.txt', 'same\nsame\n');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(sandbox, fakeHost()).execute({
       path: 'same.txt',
       edits: [{ oldText: 'same', newText: 'changed' }],
     });
@@ -65,7 +66,7 @@ describe('edit tool', () => {
 
     await sandbox.mkdir('/workspace/repo/src');
 
-    const tool = factory(sandbox);
+    const tool = factory(sandbox, fakeHost());
 
     const missing = await tool.execute({
       path: 'missing.txt',
