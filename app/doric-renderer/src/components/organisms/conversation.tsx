@@ -150,7 +150,14 @@ export function Conversation({
             render={
               <Button
                 aria-label="Jump to latest"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-md"
+                // The primitive decides whether there is anywhere to jump: it
+                // marks the button inert — `data-active="false"` — once the
+                // transcript is already at the end. `data-[active=false]:hidden`
+                // lets that state take the button out of the layout instead of
+                // leaving a dead control floating over the words. No shadow: the
+                // control sits on the prose, and a drop shadow over text is
+                // exactly what made it read as furniture.
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 data-[active=false]:hidden"
                 size="icon"
                 variant="secondary"
               />
