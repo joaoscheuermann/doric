@@ -285,9 +285,13 @@
     padding: 0.75rem 1rem;
   }
 
-  /* The person's own words read on the app's muted surface, as their turn. */
+  /*
+   * The person's own words read on a surface of their own, as their turn. It is
+   * `--secondary` and not `--muted` because in this palette `--muted` is the
+   * same colour as `--background` — a turn painted in it would be the page.
+   */
   .doric-turn[data-role='user'] {
-    background: var(--muted);
+    background: var(--secondary);
   }
 
   /*
@@ -329,7 +333,9 @@
     width: 1.25rem;
     height: 1.25rem;
     color: var(--muted-foreground);
-    background-color: var(--muted);
+    /* The mark needs a surface to sit on: `--muted` is the page here, so the
+       circle it would be painted in is not a circle. */
+    background-color: var(--secondary);
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -344,6 +350,17 @@
   .doric-avatar .doric-icon {
     width: 0.875rem;
     height: 0.875rem;
+  }
+
+  /*
+   * The one state a turn draws. A turn that failed wears the destructive colour,
+   * because it is the one a person has to know about and nothing in its words
+   * says so. The other tones say nothing on purpose: `idle` covers both a turn
+   * waiting its turn and one the person cancelled, and those are not the same
+   * thing to paint the same colour, so neither is painted.
+   */
+  .doric-chrome[data-status='failed'] .doric-avatar {
+    color: var(--destructive);
   }
 
   /* The gutter avatar, at the size a comment wears it. */
@@ -364,12 +381,17 @@
     padding-top: 0.25rem;
   }
 
-  /* A sentence naming where the words came from, aligned with the text column. */
+  /*
+   * A sentence naming where the words came from, aligned with the text column.
+   * The measure it shares is the body's (`45rem`) plus the gutter the chrome and
+   * the row's gap take (`1.25rem + 0.75rem = 2rem`), and it is indented by that
+   * same gutter so the label's first letter stands where the prose's does.
+   */
   .doric-label {
     width: 100%;
-    max-width: 47.5rem;
+    max-width: 47rem;
     margin-inline: auto;
-    padding-left: 2.5rem;
+    padding-left: 2rem;
     color: var(--muted-foreground);
     font-size: 0.75rem;
     line-height: 1.5;
@@ -383,6 +405,15 @@
     margin-top: 0;
   }
 
+  /*
+   * A fold that is closed holds nothing, and says so by taking up nothing. The
+   * body is not removed from the document — the caret and the comment fields
+   * live in it — so it is the box that goes, not the blocks.
+   */
+  .doric-part[data-open='false'] .doric-part-body {
+    display: none;
+  }
+
   .doric-part[data-part='thinking'] .doric-body,
   .doric-part[data-part='thinking'] .doric-part-body {
     color: var(--muted-foreground);
@@ -390,6 +421,16 @@
 
   .doric-part[data-part='tool'] .doric-code {
     background: var(--background);
+  }
+
+  /*
+   * The one state a fold draws. A part that failed is not quieter than one that
+   * finished — it is the one a person has to know about — so it takes the
+   * destructive colour the rest of the app uses to say that. `running` and
+   * `finished` say nothing: the words below already say whether they are done.
+   */
+  .doric-part[data-status='failed'] .doric-part-head {
+    color: var(--destructive);
   }
 
   .doric-part-head {
@@ -602,18 +643,34 @@
     border-left: 4px solid var(--primary);
   }
 
+  /* The span a comment was taken from, quoted above the words about it. */
   .doric-comment-quote {
+    margin: 0;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border);
     color: var(--muted-foreground);
     font-size: 0.8125rem;
     line-height: 1.5;
   }
 
+  /* The words about it, beside the person who wrote them. */
   .doric-comment-body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.875rem;
     line-height: 1.5;
+  }
+
+  .doric-comment-body > :where(*) {
+    margin: 0;
+  }
+
+  /* A card's two halves: the quote, then the words. */
+  .doric-comment-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
   /* The one control a selection shows: comment on it. */
