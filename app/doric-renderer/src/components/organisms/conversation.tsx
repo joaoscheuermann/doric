@@ -7,6 +7,7 @@ import {
   conversationNodes,
   markdownTheme,
 } from '@/components/molecules/markdown-blocks';
+import { Button } from '@/components/ui/button';
 import type {
   ConversationState,
   ConversationTurn,
@@ -26,6 +27,7 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { MessageScroller } from '@shadcn/react/message-scroller';
+import { ArrowDownIcon } from 'lucide-react';
 import { type CSSProperties, useEffect, useRef } from 'react';
 
 import userAvatar from '../../assets/user.png';
@@ -109,8 +111,11 @@ export function Conversation({
       className="flex min-h-0 w-full flex-1 flex-col bg-background"
     >
       <MessageScroller.Provider autoScroll defaultScrollPosition="end">
-        <MessageScroller.Root className="min-h-0 flex-1">
-          <MessageScroller.Viewport aria-label="Conversation transcript">
+        <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col">
+          <MessageScroller.Viewport
+            aria-label="Conversation transcript"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
             <MessageScroller.Content>
               <div
                 className="doric-conversation pb-10"
@@ -140,7 +145,19 @@ export function Conversation({
               </div>
             </MessageScroller.Content>
           </MessageScroller.Viewport>
-          <MessageScroller.Button />
+          <MessageScroller.Button
+            direction="end"
+            render={
+              <Button
+                aria-label="Jump to latest"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-md"
+                size="icon"
+                variant="secondary"
+              />
+            }
+          >
+            <ArrowDownIcon />
+          </MessageScroller.Button>
         </MessageScroller.Root>
       </MessageScroller.Provider>
 
