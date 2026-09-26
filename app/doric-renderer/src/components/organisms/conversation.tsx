@@ -7,7 +7,6 @@ import {
   conversationNodes,
   markdownTheme,
 } from '@/components/molecules/markdown-blocks';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type {
   ConversationState,
   ConversationTurn,
@@ -16,6 +15,7 @@ import type { Thread } from '@/domain/workspace';
 import { useComposerShortcut } from '@/hooks/use-composer-shortcut';
 import { useConversation } from '@/hooks/use-conversation';
 import { useConversationDocument } from '@/hooks/use-conversation-document';
+import { useComposerFocus } from '@/hooks/use-conversation-focus';
 import { useEditKeys } from '@/hooks/use-edit-keys';
 import { useFoldCommand } from '@/hooks/use-fold-command';
 import { useSealedTurns } from '@/hooks/use-sealed-turns';
@@ -25,6 +25,7 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { MessageScroller } from '@shadcn/react/message-scroller';
 import { type CSSProperties, useEffect, useRef } from 'react';
 
 import userAvatar from '../../assets/user.png';
@@ -37,13 +38,16 @@ import userAvatar from '../../assets/user.png';
 function ConversationPlugins({
   clear,
   state,
+  threadId,
   turns,
 }: {
   readonly clear: number;
   readonly state: ConversationState;
+  readonly threadId: string;
   readonly turns: readonly ConversationTurn[];
 }) {
   useConversationDocument(turns, state, clear);
+  useComposerFocus(threadId);
   useSealedTurns();
   useComposerShortcut(state.editing);
   useEditKeys(state.editing);
@@ -104,33 +108,41 @@ export function Conversation({
       aria-label="Thread conversation"
       className="flex min-h-0 w-full flex-1 flex-col bg-background"
     >
-      <ScrollArea className="min-h-0 flex-1">
-        <div
-          className="doric-conversation pb-10"
-          style={{ '--doric-avatar': avatar } as CSSProperties}
-        >
-          <LexicalComposer initialConfig={initialEditorConfig}>
-            <ConversationActionsProvider value={actions}>
-              <RichTextPlugin
-                contentEditable={
-                  <ContentEditable
-                    aria-label="Conversation"
-                    className="outline-none"
-                  />
-                }
-                ErrorBoundary={LexicalErrorBoundary}
-              />
-              <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-              <ConversationPlugins
-                clear={conversation.clear}
-                state={conversation.state}
-                turns={conversation.turns}
-              />
-              <CommentSelection addComment={conversation.addComment} />
-            </ConversationActionsProvider>
-          </LexicalComposer>
-        </div>
-      </ScrollArea>
+      <MessageScroller.Provider autoScroll defaultScrollPosition="end">
+        <MessageScroller.Root className="min-h-0 flex-1">
+          <MessageScroller.Viewport aria-label="Conversation transcript">
+            <MessageScroller.Content>
+              <div
+                className="doric-conversation pb-10"
+                style={{ '--doric-avatar': avatar } as CSSProperties}
+              >
+                <LexicalComposer initialConfig={initialEditorConfig}>
+                  <ConversationActionsProvider value={actions}>
+                    <RichTextPlugin
+                      contentEditable={
+                        <ContentEditable
+                          aria-label="Conversation"
+                          className="outline-none"
+                        />
+                      }
+                      ErrorBoundary={LexicalErrorBoundary}
+                    />
+                    <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
+                    <ConversationPlugins
+                      clear={conversation.clear}
+                      state={conversation.state}
+                      threadId={thread.id}
+                      turns={conversation.turns}
+                    />
+                    <CommentSelection addComment={conversation.addComment} />
+                  </ConversationActionsProvider>
+                </LexicalComposer>
+              </div>
+            </MessageScroller.Content>
+          </MessageScroller.Viewport>
+          <MessageScroller.Button />
+        </MessageScroller.Root>
+      </MessageScroller.Provider>
 
       {conversation.error === undefined ? null : (
         <p className="border-t px-4 py-2 text-sm text-destructive" role="alert">
