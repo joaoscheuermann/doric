@@ -17,6 +17,7 @@ import { useComposerShortcut } from '@/hooks/use-composer-shortcut';
 import { useConversation } from '@/hooks/use-conversation';
 import { useConversationDocument } from '@/hooks/use-conversation-document';
 import { useComposerFocus } from '@/hooks/use-conversation-focus';
+import { useComposerHeight } from '@/hooks/use-composer-height';
 import { useEditKeys } from '@/hooks/use-edit-keys';
 import { useFoldCommand } from '@/hooks/use-fold-command';
 import { useSealedTurns } from '@/hooks/use-sealed-turns';
@@ -104,11 +105,23 @@ export function Conversation({
 
   const actions: ConversationActions = conversation.actions;
   const avatar = avatarImage() as CSSProperties['backgroundImage'];
+  /**
+   * The element that learns the composer's height.
+   *
+   * It is the section and not `MessageScroller.Root` on purpose: the primitive
+   * writes its own ref onto that div *before* spreading the props it was given,
+   * so a `ref` passed here would land after it and replace the registration it
+   * depends on. A custom property set on the section is inherited by the button
+   * anyway, so the section is both the safe place to measure from and enough.
+   */
+  const frame = useRef<HTMLElement>(null);
+  useComposerHeight(frame.current);
 
   return (
     <section
       aria-label="Thread conversation"
       className="flex min-h-0 w-full flex-1 flex-col bg-background"
+      ref={frame}
     >
       <MessageScroller.Provider
         autoScroll
@@ -161,10 +174,10 @@ export function Conversation({
                 aria-label="Jump to latest"
                 // Sits above the pinned composer, not on top of it: a jump
                 // control that covers the input is the one anti-pattern every
-                // reference in the research names. The composer's height is not
-                // known to CSS here, so the offset is the reader's line box plus
-                // the composer it floats over.
-                className="absolute bottom-[9.5rem] left-1/2 -translate-x-1/2 data-[active=false]:hidden"
+                // reference in the research names. The offset comes from the
+                // composer's measured height rather than a guess, because the
+                // composer is a line when empty and a paragraph once written.
+                className="doric-jump absolute left-1/2 -translate-x-1/2 data-[active=false]:hidden"
                 size="icon"
                 variant="secondary"
               />

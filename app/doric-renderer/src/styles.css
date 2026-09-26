@@ -719,6 +719,20 @@
     z-index: 20;
     transform: translate(-50%, -100%);
   }
+
+  /*
+   * The jump control, clear of the pinned composer.
+   *
+   * The offset is the composer's measured height, published by
+   * `useComposerHeight`, plus a line of breathing room. A fixed number cannot be
+   * right here: the composer is one line when empty and a paragraph once
+   * written, so a constant either floats the button in dead space or lands it
+   * on the input. `0px` is the fallback for the frames before the composer
+   * exists, which puts the button at the bottom edge rather than nowhere.
+   */
+  .doric-jump {
+    bottom: calc(var(--doric-composer-height, 0px) + 0.75rem);
+  }
 }
 
 /*
