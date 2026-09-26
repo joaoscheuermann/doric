@@ -289,6 +289,7 @@
    * The person's own words read on a surface of their own, as their turn. It is
    * `--secondary` and not `--muted` because in this palette `--muted` is the
    * same colour as `--background` — a turn painted in it would be the page.
+   * The alpha keeps it a band the words read against, not a second surface.
    */
   .doric-turn[data-role='user'] {
     background: oklch(from var(--secondary) l c h / 0.25);
@@ -304,11 +305,11 @@
   }
 
   /*
-   * The gutter a turn's chrome sits in, and the gap that keeps the words a fixed
-   * distance from it whatever size the mark is. The vertical alignment of a mark
-   * with the first line of prose is not a margin here: it is padding on the words'
-   * own column, so a turn with a head of its own — a fold — still keeps its label
-   * against the words rather than against the space above them.
+   * The gutter a turn's chrome sits in, the gap that keeps the words a fixed
+   * distance from it whatever size the mark is, and the little room that puts a
+   * mark against the first line of prose instead of the row's top. That room
+   * lives here rather than on the words' column, so a turn with a head of its
+   * own — a fold — still keeps its label against the words.
    */
   .doric-chrome {
     display: flex;
@@ -371,9 +372,10 @@
   }
 
   /*
-   * The words' column, and the room every mark needs above its first line: a turn
-   * with chrome starts a little lower so that mark — an avatar, a fold's icon, a
-   * status dot — lines up with the first line of prose instead of the row's top.
+   * The words' column. The room every mark needs above its first line is the
+   * chrome's own `padding-top`, not one here: the mark lines up with the first
+   * line of prose by sitting where the words start, and a fold's own head
+   * still keeps its label against the words rather than the space above them.
    */
   .doric-body {
     flex: 1 1 auto;
