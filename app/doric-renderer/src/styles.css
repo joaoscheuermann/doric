@@ -504,16 +504,30 @@
     line-height: 1.75;
   }
 
-  .doric-paragraph {
+  /*
+   * The blocks themselves, and the room between them.
+   *
+   * Every reset here is wrapped in `:where()`, which is what keeps it at
+   * specificity zero on purpose. These rules say what a block *is*; the two
+   * rules above say how much room the block *before* it leaves. At equal
+   * specificity the later rule wins, so an unwrapped `margin: 0` here would
+   * silently erase the `margin-top` the flow depends on — which is exactly
+   * what happened: every markdown block rendered flush against the one
+   * before it, because `.doric-h1 { margin: 0 }` came after
+   * `.doric-part-body > *`. A reset that outranks the rhythm cannot express
+   * "no margin of my own" without also cancelling the rhythm, and the
+   * browser is the only place that disagreement shows up.
+   */
+  :where(.doric-paragraph) {
     margin: 0;
   }
 
-  .doric-h1,
-  .doric-h2,
-  .doric-h3,
-  .doric-h4,
-  .doric-h5,
-  .doric-h6 {
+  :where(.doric-h1),
+  :where(.doric-h2),
+  :where(.doric-h3),
+  :where(.doric-h4),
+  :where(.doric-h5),
+  :where(.doric-h6) {
     margin: 0;
     font-family: var(--font-serif);
     font-weight: 600;
@@ -538,25 +552,27 @@
     font-size: 1rem;
   }
 
-  .doric-ul,
-  .doric-ol {
+  :where(.doric-ul),
+  :where(.doric-ol) {
     margin: 0;
     padding-left: 1.25rem;
   }
 
-  .doric-ul {
+  :where(.doric-ul) {
     list-style: disc;
   }
 
-  .doric-ol {
+  :where(.doric-ol) {
     list-style: decimal;
   }
 
-  .doric-li {
+  /* A list item keeps its own small gap from the one above it, the way a
+     paragraph would, rather than the run's full block rhythm. */
+  :where(.doric-li) {
     margin-top: 0.25rem;
   }
 
-  .doric-quote {
+  :where(.doric-quote) {
     margin: 0;
     border-left: 2px solid var(--border);
     padding-left: 0.75rem;
@@ -578,7 +594,7 @@
     font-size: 0.875em;
   }
 
-  .doric-code {
+  :where(.doric-code) {
     display: block;
     margin: 0;
     padding: 0.5rem 0.75rem;
