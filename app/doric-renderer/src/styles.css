@@ -282,12 +282,39 @@
   .doric-turn {
     display: flex;
     flex-direction: column;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1rem;
   }
 
-  /* The person's own words read on the app's muted surface, as their turn. */
+  /*
+   * The person's own words read on a surface of their own, as their turn. It is
+   * `--secondary` and not `--muted` because in this palette `--muted` is the
+   * same colour as `--background` — a turn painted in it would be the page.
+   * The alpha keeps it a band the words read against, not a second surface.
+   */
   .doric-turn[data-role='user'] {
-    background: var(--muted);
+    background: oklch(from var(--secondary) l c h / 0.15);
+  }
+
+  /*
+   * The composer sticks to the bottom of the transcript.
+   *
+   * Every other chat pins the composer and lets the messages move behind it,
+   * because the composer is where the conversation goes next: a reader who has
+   * scrolled back through the history still has to be able to answer. Ours is a
+   * turn in the same document — the caret and the words being typed live in it,
+   * so it cannot be lifted out of the flow the way a separate input can — but
+   * `position: sticky` does the same job without moving a node: it leaves the
+   * composer in the document and lets the transcript scroll under it.
+   *
+   * The surface has to be opaque for that to work, which is why this one turn
+   * paints the same band *composited over the page* instead of in alpha. A
+   * translucent composer is a window: the messages scroll visibly behind it.
+   */
+  .doric-turn[data-draft='true'] {
+    position: sticky;
+    z-index: 1;
+    bottom: 0;
+    background: color-mix(in oklch, var(--secondary) 25%, var(--background));
   }
 
   /*
@@ -300,11 +327,11 @@
   }
 
   /*
-   * The gutter a turn's chrome sits in, and the gap that keeps the words a fixed
-   * distance from it whatever size the mark is. The vertical alignment of a mark
-   * with the first line of prose is not a margin here: it is padding on the words'
-   * own column, so a turn with a head of its own — a fold — still keeps its label
-   * against the words rather than against the space above them.
+   * The gutter a turn's chrome sits in, the gap that keeps the words a fixed
+   * distance from it whatever size the mark is, and the little room that puts a
+   * mark against the first line of prose instead of the row's top. That room
+   * lives here rather than on the words' column, so a turn with a head of its
+   * own — a fold — still keeps its label against the words.
    */
   .doric-chrome {
     display: flex;
@@ -313,6 +340,7 @@
     align-items: center;
     gap: 0.25rem;
     width: 1.25rem;
+    padding-top: 2px;
   }
 
   /*
@@ -329,7 +357,9 @@
     width: 1.25rem;
     height: 1.25rem;
     color: var(--muted-foreground);
-    background-color: var(--muted);
+    /* The mark needs a surface to sit on: `--muted` is the page here, so the
+       circle it would be painted in is not a circle. */
+    background-color: var(--secondary);
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -346,6 +376,17 @@
     height: 0.875rem;
   }
 
+  /*
+   * The one state a turn draws. A turn that failed wears the destructive colour,
+   * because it is the one a person has to know about and nothing in its words
+   * says so. The other tones say nothing on purpose: `idle` covers both a turn
+   * waiting its turn and one the person cancelled, and those are not the same
+   * thing to paint the same colour, so neither is painted.
+   */
+  .doric-chrome[data-status='failed'] .doric-avatar {
+    color: var(--destructive);
+  }
+
   /* The gutter avatar, at the size a comment wears it. */
   .doric-avatar-sm {
     width: 1rem;
@@ -353,23 +394,28 @@
   }
 
   /*
-   * The words' column, and the room every mark needs above its first line: a turn
-   * with chrome starts a little lower so that mark — an avatar, a fold's icon, a
-   * status dot — lines up with the first line of prose instead of the row's top.
+   * The words' column. The room every mark needs above its first line is the
+   * chrome's own `padding-top`, not one here: the mark lines up with the first
+   * line of prose by sitting where the words start, and a fold's own head
+   * still keeps its label against the words rather than the space above them.
    */
   .doric-body {
     flex: 1 1 auto;
     min-width: 0;
     max-width: 45rem;
-    padding-top: 0.25rem;
   }
 
-  /* A sentence naming where the words came from, aligned with the text column. */
+  /*
+   * A sentence naming where the words came from, aligned with the text column.
+   * The measure it shares is the body's (`45rem`) plus the gutter the chrome and
+   * the row's gap take (`1.25rem + 0.75rem = 2rem`), and it is indented by that
+   * same gutter so the label's first letter stands where the prose's does.
+   */
   .doric-label {
     width: 100%;
-    max-width: 47.5rem;
+    max-width: 47rem;
     margin-inline: auto;
-    padding-left: 2.5rem;
+    padding-left: 2rem;
     color: var(--muted-foreground);
     font-size: 0.75rem;
     line-height: 1.5;
@@ -383,6 +429,15 @@
     margin-top: 0;
   }
 
+  /*
+   * A fold that is closed holds nothing, and says so by taking up nothing. The
+   * body is not removed from the document — the caret and the comment fields
+   * live in it — so it is the box that goes, not the blocks.
+   */
+  .doric-part[data-open='false'] .doric-part-body {
+    display: none;
+  }
+
   .doric-part[data-part='thinking'] .doric-body,
   .doric-part[data-part='thinking'] .doric-part-body {
     color: var(--muted-foreground);
@@ -390,6 +445,16 @@
 
   .doric-part[data-part='tool'] .doric-code {
     background: var(--background);
+  }
+
+  /*
+   * The one state a fold draws. A part that failed is not quieter than one that
+   * finished — it is the one a person has to know about — so it takes the
+   * destructive colour the rest of the app uses to say that. `running` and
+   * `finished` say nothing: the words below already say whether they are done.
+   */
+  .doric-part[data-status='failed'] .doric-part-head {
+    color: var(--destructive);
   }
 
   .doric-part-head {
@@ -443,7 +508,7 @@
    */
   .doric-body > :where(*) + :where(*),
   .doric-part-body > :where(*) + :where(*) {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
   }
 
   /*
@@ -461,16 +526,30 @@
     line-height: 1.75;
   }
 
-  .doric-paragraph {
+  /*
+   * The blocks themselves, and the room between them.
+   *
+   * Every reset here is wrapped in `:where()`, which is what keeps it at
+   * specificity zero on purpose. These rules say what a block *is*; the two
+   * rules above say how much room the block *before* it leaves. At equal
+   * specificity the later rule wins, so an unwrapped `margin: 0` here would
+   * silently erase the `margin-top` the flow depends on — which is exactly
+   * what happened: every markdown block rendered flush against the one
+   * before it, because `.doric-h1 { margin: 0 }` came after
+   * `.doric-part-body > *`. A reset that outranks the rhythm cannot express
+   * "no margin of my own" without also cancelling the rhythm, and the
+   * browser is the only place that disagreement shows up.
+   */
+  :where(.doric-paragraph) {
     margin: 0;
   }
 
-  .doric-h1,
-  .doric-h2,
-  .doric-h3,
-  .doric-h4,
-  .doric-h5,
-  .doric-h6 {
+  :where(.doric-h1),
+  :where(.doric-h2),
+  :where(.doric-h3),
+  :where(.doric-h4),
+  :where(.doric-h5),
+  :where(.doric-h6) {
     margin: 0;
     font-family: var(--font-serif);
     font-weight: 600;
@@ -495,25 +574,27 @@
     font-size: 1rem;
   }
 
-  .doric-ul,
-  .doric-ol {
+  :where(.doric-ul),
+  :where(.doric-ol) {
     margin: 0;
     padding-left: 1.25rem;
   }
 
-  .doric-ul {
+  :where(.doric-ul) {
     list-style: disc;
   }
 
-  .doric-ol {
+  :where(.doric-ol) {
     list-style: decimal;
   }
 
-  .doric-li {
+  /* A list item keeps its own small gap from the one above it, the way a
+     paragraph would, rather than the run's full block rhythm. */
+  :where(.doric-li) {
     margin-top: 0.25rem;
   }
 
-  .doric-quote {
+  :where(.doric-quote) {
     margin: 0;
     border-left: 2px solid var(--border);
     padding-left: 0.75rem;
@@ -535,7 +616,7 @@
     font-size: 0.875em;
   }
 
-  .doric-code {
+  :where(.doric-code) {
     display: block;
     margin: 0;
     padding: 0.5rem 0.75rem;
@@ -602,12 +683,17 @@
     border-left: 4px solid var(--primary);
   }
 
+  /* The span a comment was taken from, quoted above the words about it. */
   .doric-comment-quote {
+    margin: 0;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border);
     color: var(--muted-foreground);
     font-size: 0.8125rem;
     line-height: 1.5;
   }
 
+  /* The words about it, beside the person who wrote them. */
   .doric-comment-body {
     display: flex;
     align-items: center;
@@ -616,12 +702,61 @@
     line-height: 1.5;
   }
 
+  .doric-comment-body > :where(*) {
+    margin: 0;
+  }
+
+  /* A card's two halves: the quote, then the words. */
+  .doric-comment-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
   /* The one control a selection shows: comment on it. */
   .doric-selection-toolbar {
     position: fixed;
     z-index: 20;
     transform: translate(-50%, -100%);
   }
+
+  /*
+   * The jump control, clear of the pinned composer.
+   *
+   * The offset is the composer's measured height, published by
+   * `useComposerHeight`, plus a line of breathing room. A fixed number cannot be
+   * right here: the composer is one line when empty and a paragraph once
+   * written, so a constant either floats the button in dead space or lands it
+   * on the input. `0px` is the fallback for the frames before the composer
+   * exists, which puts the button at the bottom edge rather than nowhere.
+   */
+  /*
+   * The jump control, stuck to the bottom of the transcript and lifted by exactly
+   * the composer's measured height. It is `sticky` and not `absolute` because the
+   * viewport clips what it scrolls: an absolutely positioned child would be
+   * scrolled away with the words, and this control exists to be reachable while
+   * the bottom is out of view.
+   */
+  .doric-jump {
+    position: sticky;
+    bottom: calc(var(--doric-composer-height, 0px) + 0.75rem);
+    margin-left: auto;
+    margin-right: auto;
+    width: fit-content;
+  }
+}
+
+/*
+ * The room every conversation leaves above its end.
+ *
+ * It is one control's worth of height, not a visual choice: the jump control above
+ * overlaps the last words when the two are the only things there, so the transcript
+ * ends with enough room for the control to stand clear of what it would otherwise
+ * cover. It sits outside `@layer components` because Tailwind's own utilities are
+ * unlayered too, and a `pb-*` on the same element would otherwise win by order.
+ */
+.doric-conversation {
+  padding-bottom: calc(var(--doric-composer-height, 0px) + 4rem);
 }
 
 /*

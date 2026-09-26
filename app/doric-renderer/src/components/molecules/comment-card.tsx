@@ -13,17 +13,15 @@ export function CommentCard({
   readonly body: string;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <p className="border-l-2 border-border pl-2 text-sm text-muted-foreground">
-        “{quote}”
-      </p>
-      <div className="flex items-center gap-2">
+    <div className="doric-comment-card-body">
+      <p className="doric-comment-quote">“{quote}”</p>
+      <div className="doric-comment-body">
         <span
           aria-hidden
           className="doric-avatar doric-avatar-sm"
           data-kind="user"
         />
-        <p className="text-sm">{body}</p>
+        <p>{body}</p>
       </div>
     </div>
   );
