@@ -21,29 +21,45 @@ export function useComposerFocus(threadId: string): void {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    editor.update(() => {
-      const composer = document.querySelector<HTMLElement>(
-        '.doric-turn[data-draft="true"] [data-doric-body]',
-      );
-      // Nothing to focus yet: the composer is written into the document by the
-      // reconcile that follows this mount, so the first frames have no turn.
-      if (composer === null) return;
+    let timer = 0;
+    const focus = (): void => {
+      editor.update(() => {
+        const composer = document.querySelector<HTMLElement>(
+          '.doric-turn[data-draft="true"] [data-doric-body]',
+        );
+        // Nothing to focus yet: the composer is written into the document by the
+        // reconcile that follows this mount, so the first frames have no turn —
+        // which is why this keeps trying for a moment rather than once.
+        if (composer === null) return;
 
-      const root = editor.getRootElement();
-      // A conversation that is not on screen is not one a person is answering, and
-      // the surface decides when it is shown.
-      if (root !== null && root.offsetParent === null) return;
+        const root = editor.getRootElement();
+        // A conversation that is not on screen is not one a person is answering,
+        // and the surface decides when it is shown.
+        if (root !== null && root.offsetParent === null) return;
 
-      const selection = $getSelection();
-      if (!$isRangeSelection(selection)) return;
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return;
 
-      // Only the end: the composer opens empty, and a caret in the middle of an
-      // answer the person is reading would be a caret they did not ask for.
-      const last = selection.getNodes().at(-1);
-      if (last === undefined) return;
-      last.selectEnd();
-      $setSelection(selection);
-      composer.focus({ preventScroll: true });
-    });
+        // Only the end: the composer opens empty, and a caret in the middle of an
+        // answer the person is reading would be a caret they did not ask for.
+        const last = selection.getNodes().at(-1);
+        if (last === undefined) return;
+        last.selectEnd();
+        $setSelection(selection);
+        // The scroller owns where the viewport is, and focusing without asking it
+        // to leave well alone would scroll the transcript to the caret — the one
+        // place it must not jump to by itself.
+        composer.focus({ preventScroll: true });
+        window.clearInterval(timer);
+      });
+    };
+
+    focus();
+    const until = Date.now() + 2000;
+    timer = window.setInterval(() => {
+      if (Date.now() > until) window.clearInterval(timer);
+      else focus();
+    }, 100);
+    return () => window.clearInterval(timer);
   }, [editor, threadId]);
 }

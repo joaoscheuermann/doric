@@ -292,7 +292,7 @@
    * The alpha keeps it a band the words read against, not a second surface.
    */
   .doric-turn[data-role='user'] {
-    background: oklch(from var(--secondary) l c h / 0.25);
+    background: oklch(from var(--secondary) l c h / 0.15);
   }
 
   /*
@@ -730,9 +730,33 @@
    * on the input. `0px` is the fallback for the frames before the composer
    * exists, which puts the button at the bottom edge rather than nowhere.
    */
+  /*
+   * The jump control, stuck to the bottom of the transcript and lifted by exactly
+   * the composer's measured height. It is `sticky` and not `absolute` because the
+   * viewport clips what it scrolls: an absolutely positioned child would be
+   * scrolled away with the words, and this control exists to be reachable while
+   * the bottom is out of view.
+   */
   .doric-jump {
+    position: sticky;
     bottom: calc(var(--doric-composer-height, 0px) + 0.75rem);
+    margin-left: auto;
+    margin-right: auto;
+    width: fit-content;
   }
+}
+
+/*
+ * The room every conversation leaves above its end.
+ *
+ * It is one control's worth of height, not a visual choice: the jump control above
+ * overlaps the last words when the two are the only things there, so the transcript
+ * ends with enough room for the control to stand clear of what it would otherwise
+ * cover. It sits outside `@layer components` because Tailwind's own utilities are
+ * unlayered too, and a `pb-*` on the same element would otherwise win by order.
+ */
+.doric-conversation {
+  padding-bottom: calc(var(--doric-composer-height, 0px) + 4rem);
 }
 
 /*

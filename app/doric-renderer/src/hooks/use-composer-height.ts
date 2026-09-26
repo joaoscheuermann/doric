@@ -18,8 +18,9 @@ export function useComposerHeight(target: HTMLElement | null): void {
   useEffect(() => {
     if (target === null) return;
 
-    // The composer is written into the document by the reconcile that follows
-    // the first render, so the first frames have no turn to measure.
+    let stopped = false;
+    let timer = 0;
+
     const composer = (): HTMLElement | null =>
       target.querySelector<HTMLElement>('.doric-turn[data-draft="true"]');
 
@@ -34,30 +35,52 @@ export function useComposerHeight(target: HTMLElement | null): void {
       );
     };
 
-    const first = composer();
-    publish(first);
-
     // One observer on the transcript, re-attached when the composer node is
-    // replaced: Lexical keeps the same element while the turn holds the same
-    // key, and a new composer is a new element, so watching the child is what
-    // survives a resubmit.
+    // replaced: Lexical keeps the same element while the turn holds the same key,
+    // and a new composer is a new element, so watching the child is what survives a
+    // resubmit.
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) publish(entry.target as HTMLElement);
     });
-    if (first !== null) observer.observe(first);
+
+    const observe = (element: HTMLElement): void => {
+      publish(element);
+      observer.observe(element);
+    };
+
+    // The composer is written into the document by the reconcile that follows the
+    // first render, so the first frames have no turn to measure — and a conversation
+    // that opens before its log arrives has none for a while. One attempt per tenth
+    // of a second until it appears, then never again: the observer above is what
+    // keeps the measurement current after that.
+    const watch = (): void => {
+      if (stopped) return;
+      const element = composer();
+      if (element === null) {
+        timer = window.setTimeout(watch, 100);
+        return;
+      }
+      first = element;
+      observe(element);
+    };
 
     // A resubmit swaps the turn. MutationObserver is cheaper than polling here:
     // the tree changes only when the log does.
+    let first: HTMLElement | null = null;
     const mutations = new MutationObserver(() => {
       const current = composer();
       if (current === null || current === first) return;
+      first = current;
       observer.disconnect();
-      observer.observe(current);
-      publish(current);
+      observe(current);
     });
+
+    watch();
     mutations.observe(target, { childList: true, subtree: true });
 
     return () => {
+      stopped = true;
+      window.clearTimeout(timer);
       observer.disconnect();
       mutations.disconnect();
     };

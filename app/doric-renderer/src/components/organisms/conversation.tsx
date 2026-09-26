@@ -13,11 +13,11 @@ import type {
   ConversationTurn,
 } from '@/domain/conversation';
 import type { Thread } from '@/domain/workspace';
+import { useComposerHeight } from '@/hooks/use-composer-height';
 import { useComposerShortcut } from '@/hooks/use-composer-shortcut';
 import { useConversation } from '@/hooks/use-conversation';
 import { useConversationDocument } from '@/hooks/use-conversation-document';
 import { useComposerFocus } from '@/hooks/use-conversation-focus';
-import { useComposerHeight } from '@/hooks/use-composer-height';
 import { useEditKeys } from '@/hooks/use-edit-keys';
 import { useFoldCommand } from '@/hooks/use-fold-command';
 import { useSealedTurns } from '@/hooks/use-sealed-turns';
@@ -106,22 +106,20 @@ export function Conversation({
   const actions: ConversationActions = conversation.actions;
   const avatar = avatarImage() as CSSProperties['backgroundImage'];
   /**
-   * The element that learns the composer's height.
+   * The element the composer's height is measured from.
    *
-   * It is the section and not `MessageScroller.Root` on purpose: the primitive
-   * writes its own ref onto that div *before* spreading the props it was given,
-   * so a `ref` passed here would land after it and replace the registration it
-   * depends on. A custom property set on the section is inherited by the button
-   * anyway, so the section is both the safe place to measure from and enough.
+   * It is the element the jump button sticks to — the scrolling viewport, which is
+   * an ancestor of the button — so the custom property the measurement is written
+   * on is inherited by the one control that reads it, and nothing else is asked to
+   * know about the composer at all.
    */
-  const frame = useRef<HTMLElement>(null);
-  useComposerHeight(frame.current);
+  const viewport = useRef<HTMLDivElement>(null);
+  useComposerHeight(viewport.current);
 
   return (
     <section
       aria-label="Thread conversation"
       className="flex min-h-0 w-full flex-1 flex-col bg-background"
-      ref={frame}
     >
       <MessageScroller.Provider
         autoScroll
@@ -134,13 +132,21 @@ export function Conversation({
         scrollEdgeThreshold={150}
       >
         <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col">
+          {/*
+           * The scroll container is its own layer, and the root only positions the
+           * control over it, because a sticky descendant cannot escape the
+           * viewport's own clipping: the button belongs to the element that scrolls,
+           * and the button is what watches the composer's height to know how much
+           * room to stand clear of.
+           */}
           <MessageScroller.Viewport
             aria-label="Conversation transcript"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            ref={viewport}
           >
             <MessageScroller.Content>
               <div
-                className="doric-conversation pb-10"
+                className="doric-conversation"
                 style={{ '--doric-avatar': avatar } as CSSProperties}
               >
                 <LexicalComposer initialConfig={initialEditorConfig}>
@@ -166,25 +172,25 @@ export function Conversation({
                 </LexicalComposer>
               </div>
             </MessageScroller.Content>
+            <MessageScroller.Button
+              direction="end"
+              render={
+                <Button
+                  aria-label="Jump to latest"
+                  // Sits above the pinned composer, not on top of it: a jump
+                  // control that covers the input is the one anti-pattern every
+                  // reference in the research names. The offset comes from the
+                  // composer's measured height rather than a guess, because the
+                  // composer is a line when empty and a paragraph once written.
+                  className="doric-jump absolute left-1/2 -translate-x-1/2 data-[active=false]:hidden"
+                  size="icon"
+                  variant="secondary"
+                />
+              }
+            >
+              <ArrowDownIcon />
+            </MessageScroller.Button>
           </MessageScroller.Viewport>
-          <MessageScroller.Button
-            direction="end"
-            render={
-              <Button
-                aria-label="Jump to latest"
-                // Sits above the pinned composer, not on top of it: a jump
-                // control that covers the input is the one anti-pattern every
-                // reference in the research names. The offset comes from the
-                // composer's measured height rather than a guess, because the
-                // composer is a line when empty and a paragraph once written.
-                className="doric-jump absolute left-1/2 -translate-x-1/2 data-[active=false]:hidden"
-                size="icon"
-                variant="secondary"
-              />
-            }
-          >
-            <ArrowDownIcon />
-          </MessageScroller.Button>
         </MessageScroller.Root>
       </MessageScroller.Provider>
 
