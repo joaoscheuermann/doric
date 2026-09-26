@@ -282,7 +282,7 @@
   .doric-turn {
     display: flex;
     flex-direction: column;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1rem;
   }
 
   /*
@@ -291,7 +291,7 @@
    * same colour as `--background` — a turn painted in it would be the page.
    */
   .doric-turn[data-role='user'] {
-    background: var(--secondary);
+    background: oklch(from var(--secondary) l c h / 0.25);
   }
 
   /*
@@ -317,6 +317,7 @@
     align-items: center;
     gap: 0.25rem;
     width: 1.25rem;
+    padding-top: 2px;
   }
 
   /*
@@ -378,7 +379,6 @@
     flex: 1 1 auto;
     min-width: 0;
     max-width: 45rem;
-    padding-top: 0.25rem;
   }
 
   /*
@@ -484,7 +484,7 @@
    */
   .doric-body > :where(*) + :where(*),
   .doric-part-body > :where(*) + :where(*) {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
   }
 
   /*
