@@ -110,7 +110,16 @@ export function Conversation({
       aria-label="Thread conversation"
       className="flex min-h-0 w-full flex-1 flex-col bg-background"
     >
-      <MessageScroller.Provider autoScroll defaultScrollPosition="end">
+      <MessageScroller.Provider
+        autoScroll
+        defaultScrollPosition="end"
+        // The primitive's own default is 8px, which reads as "one accidental
+        // wheel notch and the thread stops following". Every chat that has tuned
+        // this lands near the same buffer: MUI ships 150px, and a reader who has
+        // nudged the scroll is still reading, not leaving. The same number
+        // decides when the jump button appears, so the two agree by construction.
+        scrollEdgeThreshold={150}
+      >
         <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col">
           <MessageScroller.Viewport
             aria-label="Conversation transcript"
@@ -150,14 +159,12 @@ export function Conversation({
             render={
               <Button
                 aria-label="Jump to latest"
-                // The primitive decides whether there is anywhere to jump: it
-                // marks the button inert — `data-active="false"` — once the
-                // transcript is already at the end. `data-[active=false]:hidden`
-                // lets that state take the button out of the layout instead of
-                // leaving a dead control floating over the words. No shadow: the
-                // control sits on the prose, and a drop shadow over text is
-                // exactly what made it read as furniture.
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 data-[active=false]:hidden"
+                // Sits above the pinned composer, not on top of it: a jump
+                // control that covers the input is the one anti-pattern every
+                // reference in the research names. The composer's height is not
+                // known to CSS here, so the offset is the reader's line box plus
+                // the composer it floats over.
+                className="absolute bottom-[9.5rem] left-1/2 -translate-x-1/2 data-[active=false]:hidden"
                 size="icon"
                 variant="secondary"
               />

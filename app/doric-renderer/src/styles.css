@@ -296,6 +296,28 @@
   }
 
   /*
+   * The composer sticks to the bottom of the transcript.
+   *
+   * Every other chat pins the composer and lets the messages move behind it,
+   * because the composer is where the conversation goes next: a reader who has
+   * scrolled back through the history still has to be able to answer. Ours is a
+   * turn in the same document — the caret and the words being typed live in it,
+   * so it cannot be lifted out of the flow the way a separate input can — but
+   * `position: sticky` does the same job without moving a node: it leaves the
+   * composer in the document and lets the transcript scroll under it.
+   *
+   * The surface has to be opaque for that to work, which is why this one turn
+   * paints the same band *composited over the page* instead of in alpha. A
+   * translucent composer is a window: the messages scroll visibly behind it.
+   */
+  .doric-turn[data-draft='true'] {
+    position: sticky;
+    z-index: 1;
+    bottom: 0;
+    background: color-mix(in oklch, var(--secondary) 25%, var(--background));
+  }
+
+  /*
    * A turn waiting in a history a resubmit replaces. It is still there and still
    * readable — the person is rewriting what came before it — but it is no longer
    * what is being said, and it takes no words.
