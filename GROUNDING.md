@@ -74,38 +74,18 @@ Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
 and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
-event-derived conversation; the header names it.
-`useThreadChat` is the only reader of the durable event
+event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
+being rebuilt by hand. `useThreadChat` is the only reader of the durable event
 stream — it subscribes to the selected Thread, accumulates every event into one
 ordered log, projects that log into turns, and exposes both, the Thread's record
-and the send and rewind operations. `threads.prompt` carries a new prompt and
-`threads.rewind` replaces a past one. PostgreSQL Thread events remain the sole
-conversation-history source, so the conversation is rendered, never stored: one
-Lexical document whose blocks are the turns — the person's words, the agent's
-answer as it streams, its reasoning and each tool call — with the composer last,
-in a column of prose whose avatar, author label and state dot are chrome outside
-the managed document rather than nodes of it. Markdown is the document's language
-in both directions: an answer's text is parsed into blocks as it arrives (its last
-half-written run healed so it renders mid-stream), and what the composer holds is
-exported back to markdown when it is sent. Only the composer takes words: every
-other turn refuses the edits that would land in it — and any that still gets
-through is put back from the log, for every turn that renders it, because history
-is a rendering of what the host stored rather than a copy of it that could drift.
-Reasoning and tool calls render closed, and open into the document when a person
-unfolds them. A span of the answer being answered can be commented on: the span is
-marked in the words themselves, the field that holds the comment sits below the
-line it ends on, and the comment travels with the person's next prompt — the
-prompt's own markdown carries a `# User comments` block the surface reads back into
-cards above their request, so nothing about a comment needs a second message or a
-schema. What a comment stores is the quoted words, so an answer that says the same
-phrase twice is marked where it says it first, and a request that is itself exactly
-that block is read as comments: the format is the one the person reads. An
-earlier prompt can be rewritten where it stands: Enter opens it, the turns after it
-go translucent because a resubmit discards them, Escape puts them back, and
-Cmd+Enter sends the rewritten prompt through `threads.rewind`. The packaged CSP
-permits fonts from `self`
+and the send and rewind operations — and the surface itself is a plain input, a
+submit button and that log rendered verbatim as JSON, with no styling.
+`threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
+PostgreSQL Thread events remain the sole conversation-history source. Because that
+rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
+tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
 only, and Noto Serif under `src/assets/fonts` is the repository's only vendored
-face; the person's avatar is a jdenticon drawn from the Thread's id. The sidebar tree follows the selected Project's live
+face. The sidebar tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh. The selected Thread
 persists locally across app
