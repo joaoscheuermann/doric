@@ -39,6 +39,12 @@ export type ProjectFileEntry = {
   readonly size?: number;
 };
 
+/** One tree node: a file, or a directory that carries its own children. */
+export type ProjectTreeNode = ProjectFileEntry & {
+  /** Present for directories; empty when every child is hidden or ignored. */
+  readonly children?: readonly ProjectTreeNode[];
+};
+
 export type ProjectFileContent = {
   readonly path: string;
   readonly content: string;
@@ -70,6 +76,15 @@ export type ProjectFilesResult =
       readonly status: 'ready';
       readonly path: string;
       readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectTreeResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectTreeNode[];
     }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
@@ -468,6 +483,18 @@ const fileEntryFrom = (value: unknown): ProjectFileEntry => {
   return value as ProjectFileEntry;
 };
 
+/**
+ * One tree node, read the way `fileEntryFrom` reads an entry and then, for a
+ * directory, its children in the same shape. A directory's `children` is
+ * present even when empty, which is what tells a directory apart from a file.
+ */
+const treeNodeFrom = (value: unknown): ProjectTreeNode => {
+  const entry = fileEntryFrom(value);
+  if (!isRecord(value) || value.children === undefined) return entry;
+  if (!Array.isArray(value.children)) return invalidResponse();
+  return { ...entry, children: value.children.map(treeNodeFrom) };
+};
+
 const fileContentFrom = (value: unknown): ProjectFileContent => {
   if (
     !isRecord(value) ||
@@ -523,6 +550,22 @@ const filesResultFrom = (answer: ProjectAnswer): ProjectFilesResult => {
     status: 'ready',
     path: answer.body.path,
     entries: answer.body.entries.map(fileEntryFrom),
+  };
+};
+
+const treeResultFrom = (answer: ProjectAnswer): ProjectTreeResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  if (
+    !isRecord(answer.body) ||
+    typeof answer.body.path !== 'string' ||
+    !Array.isArray(answer.body.entries)
+  ) {
+    return invalidResponse();
+  }
+  return {
+    status: 'ready',
+    path: answer.body.path,
+    entries: answer.body.entries.map(treeNodeFrom),
   };
 };
 
@@ -633,6 +676,17 @@ export const workspaceApi = {
         await answerAt(
           `/projects/${id(projectId)}/files/content${pathQuery(path)}`,
         ),
+      ),
+    /**
+     * Reads the whole sandbox tree in one request. Its own route keeps
+     * `files` — one directory level — as it was.
+     */
+    tree: async (
+      projectId: string,
+      path?: string,
+    ): Promise<ProjectTreeResult> =>
+      treeResultFrom(
+        await answerAt(`/projects/${id(projectId)}/tree${pathQuery(path)}`),
       ),
     /** Reads the workspace diff; an absent path names the root. */
     diff: async (

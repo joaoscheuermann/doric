@@ -1,14 +1,9 @@
-import {
-  isWithin,
-  ROOT_PATH,
-  type SandboxStatus,
-  toggleExpanded,
-} from '@/domain/files';
+import { ROOT_PATH, type SandboxStatus, toggleExpanded } from '@/domain/files';
 import {
   messageFrom,
   type ProjectDiff,
   type ProjectFileContent,
-  type ProjectFileEntry,
+  type ProjectTreeNode,
 } from '@/domain/workspace';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -39,13 +34,6 @@ export type ReadState<Value> =
   | { readonly status: 'ready'; readonly value: Value }
   | { readonly status: SandboxStatus; readonly retryAfterSeconds?: number };
 
-/** What the sandbox's directory reads answered: readable, or why it is not. */
-export type SandboxState =
-  | { readonly status: 'idle' }
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready' }
-  | { readonly status: SandboxStatus; readonly retryAfterSeconds?: number };
-
 export type ProjectFilesActions = {
   readonly closeFile: () => void;
   /** Reads the workspace diff; the changes view is what asks for it. */
@@ -57,7 +45,7 @@ export type ProjectFilesActions = {
 
 /**
  * Everything the sandbox surface shows for one Project, and everything the user
- * can ask it to do: the listings it holds, what is expanded, the one open file,
+ * can ask it to do: the whole tree it holds, what is expanded, the one open file,
  * the workspace diff, and the reasons any of those may be unavailable.
  */
 export type ProjectFiles = {
@@ -66,20 +54,19 @@ export type ProjectFiles = {
   readonly changes: ReadState<ProjectDiff>;
   /** The last rejected read; the panel shows it and Refresh tries again. */
   readonly error?: string;
+  /**
+   * The directories the user has opened. This is view state, not read state: the
+   * whole tree is already held, so expanding a directory only decides what the
+   * tree draws.
+   */
   readonly expanded: ReadonlySet<string>;
   /** The open file's content, or why there is none. */
   readonly file: ReadState<ProjectFileContent>;
-  /** The entries per directory path, for the directories the host answered. */
-  readonly listings: Readonly<Record<string, readonly ProjectFileEntry[]>>;
-  /** The directories whose listing is still on its way. */
-  readonly loading: ReadonlySet<string>;
   /**
-   * What the sandbox's directory reads answered. A directory that answers with
-   * anything but its entries replaces this, so the panel explains the sandbox
-   * rather than the tree explaining one row of it; a refused file or diff is
-   * explained where it was asked for instead.
+   * The whole sandbox tree, read once. Its presence is also what says the sandbox
+   * is readable, because one read settles both questions at the same time.
    */
-  readonly sandbox: SandboxState;
+  readonly tree: ReadState<readonly ProjectTreeNode[]>;
   readonly selectedPath?: string;
 };
 
@@ -89,20 +76,19 @@ export type ProjectFiles = {
  * everything the previous one answered.
  *
  * Two things drive it: the Project, which starts the surface over and reads the
- * root of the new sandbox, and `revision` growing, which rereads everything on
- * screen because the agent has just written to the sandbox. There is no watcher;
- * the surface reads on demand and never writes.
+ * whole tree of the new sandbox in one request, and `revision` growing, which
+ * rereads what is on screen because the agent has just written to the sandbox.
+ * There is no watcher: the surface reads on demand and never writes, and one
+ * file's content is read only when it is opened.
  */
 export const useProjectFiles = ({
   projectId,
   revision,
 }: ProjectFilesOptions): ProjectFiles => {
-  const [listings, setListings] = useState<
-    Readonly<Record<string, readonly ProjectFileEntry[]>>
-  >({});
-  const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
+  const [tree, setTree] = useState<ReadState<readonly ProjectTreeNode[]>>({
+    status: 'loading',
+  });
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [sandbox, setSandbox] = useState<SandboxState>({ status: 'loading' });
   const [selectedPath, setSelectedPath] = useState<string>();
   const [file, setFile] = useState<ReadState<ProjectFileContent>>({
     status: 'idle',
@@ -129,37 +115,23 @@ export const useProjectFiles = ({
       sequences.current.get(key) === sequence;
   }, []);
 
-  const loadDirectory = useCallback(
-    async (project: string, path: string): Promise<void> => {
-      const stillCurrent = begin(path);
-      setLoading((current) => new Set([...current, path]));
+  const loadTree = useCallback(
+    async (project: string): Promise<void> => {
+      const stillCurrent = begin(ROOT_PATH);
       try {
-        const result = await window.doric.projects.files(project, path);
+        const result = await window.doric.projects.tree(project, ROOT_PATH);
         if (!stillCurrent()) return;
-        if (result.status === 'ready') {
-          setListings((current) => ({
-            ...current,
-            // A directory nests only what it contains, so an entry the host put
-            // beside it is dropped rather than shown in the wrong level.
-            [path]: result.entries.filter((entry) =>
-              isWithin(entry.path, path),
-            ),
-          }));
-          if (path === ROOT_PATH) setSandbox({ status: 'ready' });
-        } else {
-          setSandbox(result);
-        }
+        setTree(
+          result.status === 'ready'
+            ? { status: 'ready', value: result.entries }
+            : result,
+        );
       } catch (reason) {
-        if (stillCurrent()) setError(messageFrom(reason));
-      } finally {
-        if (stillCurrent()) {
-          setLoading((current) => {
-            if (!current.has(path)) return current;
-            const next = new Set(current);
-            next.delete(path);
-            return next;
-          });
-        }
+        if (!stillCurrent()) return;
+        setTree((current) =>
+          current.status === 'ready' ? current : { status: 'loading' },
+        );
+        setError(messageFrom(reason));
       }
     },
     [begin],
@@ -215,16 +187,14 @@ export const useProjectFiles = ({
   /** Rereads everything the surface is currently showing. */
   const reload = useCallback((): void => {
     if (projectId === undefined) return;
-    void loadDirectory(projectId, ROOT_PATH);
-    for (const path of expanded) void loadDirectory(projectId, path);
+    void loadTree(projectId);
     if (selectedPath !== undefined) void loadFile(projectId, selectedPath);
     if (changes.status !== 'idle') void loadChanges(projectId);
   }, [
     changes.status,
-    expanded,
     loadChanges,
-    loadDirectory,
     loadFile,
+    loadTree,
     projectId,
     selectedPath,
   ]);
@@ -233,20 +203,18 @@ export const useProjectFiles = ({
   // answer the previous Project still owes is dropped when it arrives.
   useEffect(() => {
     generation.current += 1;
-    setListings({});
-    setLoading(new Set());
     setExpanded(new Set());
     setSelectedPath(undefined);
     setFile({ status: 'idle' });
     setChanges({ status: 'idle' });
     setError(undefined);
     if (projectId === undefined) {
-      setSandbox({ status: 'idle' });
+      setTree({ status: 'idle' });
       return;
     }
-    setSandbox({ status: 'loading' });
-    void loadDirectory(projectId, ROOT_PATH);
-  }, [loadDirectory, projectId]);
+    setTree({ status: 'loading' });
+    void loadTree(projectId);
+  }, [loadTree, projectId]);
 
   // The agent wrote to the sandbox, so what the surface shows may be stale.
   useEffect(() => {
@@ -255,22 +223,13 @@ export const useProjectFiles = ({
     reload();
   }, [reload, revision]);
 
+  /**
+   * A directory is only shown or hidden: the whole tree is already held, so
+   * expanding one reads nothing.
+   */
   const toggleDirectory = useCallback(
-    (path: string): void => {
-      const next = toggleExpanded(expanded, path);
-      setExpanded(next);
-      // A directory is read when it opens for the first time; a listing the
-      // surface already holds is kept, so closing and opening is free.
-      if (
-        projectId !== undefined &&
-        next.has(path) &&
-        listings[path] === undefined &&
-        !loading.has(path)
-      ) {
-        void loadDirectory(projectId, path);
-      }
-    },
-    [expanded, listings, loadDirectory, loading, projectId],
+    (path: string): void => setExpanded(toggleExpanded(expanded, path)),
+    [expanded],
   );
 
   const openFile = useCallback(
@@ -317,9 +276,7 @@ export const useProjectFiles = ({
     error,
     expanded,
     file,
-    listings,
-    loading,
-    sandbox,
+    tree,
     selectedPath,
   };
 };

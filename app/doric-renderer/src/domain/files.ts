@@ -26,13 +26,6 @@ export const baseName = (path: string): string => {
   return separator === -1 ? path : path.slice(separator + 1);
 };
 
-/**
- * Whether `path` names `dir` itself or something below it. The root contains
- * every path, its own included.
- */
-export const isWithin = (path: string, dir: string): boolean =>
-  dir === ROOT_PATH || path === dir || path.startsWith(`${dir}/`);
-
 export type PathSegment = {
   readonly name: string;
   readonly path: string;

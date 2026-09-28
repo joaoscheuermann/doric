@@ -134,6 +134,13 @@ export type WorkspaceApi = {
     files(projectId: string, path?: string): Promise<ProjectFilesResult>;
     /** One file of the Project's sandbox, which the host may cut short. */
     file(projectId: string, path: string): Promise<ProjectFileResult>;
+    /**
+     * The whole sandbox tree in one read, with each directory's children nested.
+     * The file tree surface draws from this, so opening it reads the workspace
+     * once rather than one directory per expansion; a file's content is still
+     * read on demand, through `file`.
+     */
+    tree(projectId: string, path?: string): Promise<ProjectTreeResult>;
     /** The sandbox's diff against git, or the diff of one path inside it. */
     diff(projectId: string, path?: string): Promise<ProjectDiffResult>;
     watch(
@@ -188,6 +195,12 @@ export type ProjectFileEntry = {
   readonly size?: number;
 };
 
+/** One tree node: a file, or a directory that carries its own children. */
+export type ProjectTreeNode = ProjectFileEntry & {
+  /** Present for directories; empty when every child is hidden or ignored. */
+  readonly children?: readonly ProjectTreeNode[];
+};
+
 export type ProjectFileContent = {
   readonly path: string;
   readonly content: string;
@@ -219,6 +232,16 @@ export type ProjectFilesResult =
       readonly status: 'ready';
       readonly path: string;
       readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
+/** The whole sandbox tree in one read, with each directory's children nested. */
+export type ProjectTreeResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectTreeNode[];
     }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };

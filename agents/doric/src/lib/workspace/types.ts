@@ -1,5 +1,5 @@
 import type { ProviderMessage } from 'llms';
-import type { SandboxEntry, SandboxSshAccess } from 'sandbox';
+import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
@@ -111,6 +111,21 @@ export type ProjectFiles =
       readonly entries: readonly SandboxEntry[];
     }
   | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
+/**
+ * The whole sandbox tree in one read: the root's entries, and each directory's
+ * own entries nested inside it. It is what the file tree surface draws, so that
+ * opening it reads the workspace once rather than one directory per expansion.
+ * A file's content is still read on demand, which is why a node carries no
+ * content of its own.
+ */
+export type ProjectTree =
+  | { readonly status: ProjectLeaseState }
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly SandboxTreeNode[];
+    }
+  | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
 export type ProjectFile =
   | { readonly status: ProjectLeaseState }
   | {
@@ -210,6 +225,8 @@ export interface WorkspaceService {
     ssh(id: string): Promise<ProjectSsh>;
     files(id: string, path?: string): Promise<ProjectFiles>;
     file(id: string, path: string): Promise<ProjectFile>;
+    /** The whole sandbox tree in one read; `/files` stays the single level. */
+    tree(id: string, path?: string): Promise<ProjectTree>;
     diff(id: string, path?: string): Promise<ProjectDiff>;
   };
   readonly threads: {

@@ -1,27 +1,11 @@
 import { DiffView } from '@/components/molecules/diff-view';
-import { FileContent } from '@/components/molecules/file-content';
 import {
   FileTree,
   type FileTreeActions,
 } from '@/components/molecules/file-tree';
 import { FilesToggle } from '@/components/molecules/files-toggle';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Breadcrumb,
-  BreadcrumbEllipsis,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Empty,
   EmptyDescription,
@@ -45,44 +29,32 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toggle } from '@/components/ui/toggle';
 import {
-  baseName,
   changeLetter,
   classifyDiff,
-  collapsedPath,
   emptyDirectoryNotice,
-  parentPath,
-  ROOT_PATH,
   sandboxNotice,
 } from '@/domain/files';
-import type { Project, ProjectFileContent } from '@/domain/workspace';
-import {
-  type ProjectFiles,
-  type ReadState,
-  useProjectFiles,
-} from '@/hooks/use-project-files';
+import type { Project } from '@/domain/workspace';
+import type { ProjectFiles } from '@/hooks/use-project-files';
 import {
   AlertCircleIcon,
-  ArrowLeftIcon,
   FileDiffIcon,
   FilesIcon,
   FolderIcon,
   RefreshCwIcon,
 } from 'lucide-react';
-import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 type ProjectFilesSidebarProps = {
+  /**
+   * The Project's sandbox, read by the view that also feeds the file viewer, so
+   * the two surfaces share one read of the same file.
+   */
+  readonly files: ProjectFiles;
   /** Expands or collapses the panel. */
   readonly onToggle: () => void;
-  /**
-   * Whether the panel is expanded. A closed panel is not mounted: the layout
-   * draws this surface only while it is open, and carries the control that
-   * reopens it in the main header.
-   */
-  readonly open: boolean;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
-  /** Grows whenever the agent writes to the sandbox. */
-  readonly revision: number;
 };
 
 /** The two things the panel can show. */
@@ -91,49 +63,25 @@ type PanelView = 'files' | 'changes';
 /**
  * The Project's sandbox, as a right-hand panel beside the conversation. It is
  * scoped to the Project, not to the selected Thread, reads nothing it does not
- * show, and never writes: the tree opens directories on demand, a file opens in
- * place of the tree, and the changes view lists the workspace diff.
+ * show, and never writes: the tree opens directories on demand and the changes
+ * view lists the workspace diff. A file is not shown here — selecting one opens
+ * the file viewer panel that sits beside this one, so the tree it was opened
+ * from stays where it is.
  *
  * The two views are icon-only toggles in the header in place of a title, because
- * they name what the panel is showing and select it, and an open file puts a
- * back control and the file's own name at the header's left, which returns to
- * the tree the file was opened from; the footer carries the directory the file
- * sits in — the file itself is named above, so the chain stops at its directory
- * — and the one action the surface has. The panel's own toggle closes it, and
- * stays the last control at the header's corner.
+ * they name what the panel is showing and select it. The panel's own toggle
+ * closes it, and stays the last control at the header's corner.
  */
 export function ProjectFilesSidebar({
+  files,
   onToggle,
-  open,
   project,
-  revision,
 }: ProjectFilesSidebarProps) {
-  // A closed panel reads nothing: with no Project the hook stays idle.
-  const files = useProjectFiles({
-    projectId: open ? project?.id : undefined,
-    revision,
-  });
   const [view, setView] = useState<PanelView>('files');
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden">
       <PanelHeader>
-        {view === 'files' && files.selectedPath !== undefined && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Back to files"
-              className="shrink-0 [app-region:no-drag]"
-              onClick={files.actions.closeFile}
-            >
-              <ArrowLeftIcon />
-            </Button>
-            <span className="min-w-0 truncate font-mono text-xs">
-              {baseName(files.selectedPath)}
-            </span>
-          </>
-        )}
         <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
           <ViewToggle
             icon={<FilesIcon />}
@@ -227,6 +175,12 @@ function PanelHeader({ children }: { readonly children: ReactNode }) {
  * one answer, because a queued, failed or terminated Project has no files and no
  * changes: the surface explains the Project instead of failing a view at a time.
  */
+/**
+ * What the panel shows when the sandbox itself cannot be read. Both views share
+ * one answer, because a queued, failed or terminated Project has no files and no
+ * changes: the surface explains the Project instead of failing a view at a time.
+ * One tree read settles both what the sandbox holds and whether it is readable.
+ */
 function SandboxGate({
   children,
   files,
@@ -236,6 +190,8 @@ function SandboxGate({
   readonly files: ProjectFiles;
   readonly project?: Project;
 }) {
+  const { tree } = files;
+
   if (project === undefined) {
     return (
       <PanelState
@@ -244,7 +200,7 @@ function SandboxGate({
       />
     );
   }
-  if (files.sandbox.status === 'idle' || files.sandbox.status === 'loading') {
+  if (tree.status === 'idle' || tree.status === 'loading') {
     // A Project with no sandbox read yet is answered above, so this is a read
     // on its way — and the error, when there is one, is what failed it.
     if (files.error !== undefined) {
@@ -258,13 +214,10 @@ function SandboxGate({
     }
     return <MenuSkeleton />;
   }
-  if (files.sandbox.status !== 'ready') {
+  if (tree.status !== 'ready') {
     return (
       <PanelState
-        description={sandboxNotice(
-          files.sandbox.status,
-          files.sandbox.retryAfterSeconds,
-        )}
+        description={sandboxNotice(tree.status, tree.retryAfterSeconds)}
         title="No files to show"
       />
     );
@@ -285,31 +238,23 @@ function SandboxGate({
 }
 
 /**
- * The panel's footer: the directory the open file sits in, and the one action the
- * surface has, since a read-only view has nothing to submit. The file's own name
- * is the header's business, so this chain stops at its directory; every crumb
- * returns to the tree, where the directory it selects is already open, because
- * the file was reached through it.
+ * The panel's footer: the one action the surface has, since a read-only view has
+ * nothing to submit. The open file's own chain is the file viewer's footer, which
+ * is the surface that shows the file.
  */
 function FilesFooter({ files }: { readonly files: ProjectFiles }) {
-  const { actions, selectedPath } = files;
-
   return (
     <footer
       data-slot="project-files-footer"
       className="flex h-8 shrink-0 items-center gap-2 border-t px-3"
     >
-      <FileBreadcrumb
-        onBack={actions.closeFile}
-        path={parentPath(selectedPath ?? ROOT_PATH)}
-      />
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label="Refresh files"
-        disabled={files.sandbox.status !== 'ready'}
+        disabled={files.tree.status !== 'ready'}
         className="ml-auto shrink-0"
-        onClick={actions.refresh}
+        onClick={files.actions.refresh}
       >
         <RefreshCwIcon />
       </Button>
@@ -317,20 +262,20 @@ function FilesFooter({ files }: { readonly files: ProjectFiles }) {
   );
 }
 
-/** The directory tree, or the open file in its place; the footer names the path. */
+/**
+ * The directory tree, read whole. A file row selects, which opens the file viewer
+ * beside this panel rather than replacing the tree, so what was opened stays
+ * reachable.
+ */
 function FilesView({ files }: { readonly files: ProjectFiles }) {
-  const { actions, selectedPath } = files;
+  const { actions, selectedPath, tree } = files;
   const treeActions: FileTreeActions = {
     open: actions.openFile,
     toggle: actions.toggleDirectory,
   };
 
-  if (selectedPath !== undefined) {
-    return <FileBody file={files.file} />;
-  }
-
-  const entries = files.listings[ROOT_PATH];
-  if (entries === undefined || entries.length === 0) {
+  const entries = tree.status === 'ready' ? tree.value : [];
+  if (entries.length === 0) {
     return <PanelState description={emptyDirectoryNotice} title="No files" />;
   }
 
@@ -342,114 +287,10 @@ function FilesView({ files }: { readonly files: ProjectFiles }) {
           depth={0}
           entries={entries}
           expanded={files.expanded}
-          listings={files.listings}
-          loading={files.loading}
           selectedPath={selectedPath}
         />
       </SidebarMenu>
     </ScrollArea>
-  );
-}
-
-/**
- * The open file's content, or what the surface is waiting for instead. The file's
- * path and byte size belong to the footer, so this is only the text.
- */
-function FileBody({ file }: { readonly file: ReadState<ProjectFileContent> }) {
-  if (file.status === 'ready') return <FileContent file={file.value} />;
-  if (file.status === 'idle' || file.status === 'loading')
-    return <ContentSkeleton />;
-  return (
-    <PanelState
-      description={sandboxNotice(file.status, file.retryAfterSeconds)}
-      title="This file cannot be shown"
-    />
-  );
-}
-
-/**
- * The chain from the workspace root to the open file, or just the workspace root
- * when no file is open. It lives in the footer so the reading column keeps its
- * full height, and a chain too deep for that row puts its middle behind one
- * trigger instead of clipping it: the rule that decides what collapses is
- * `domain/files.ts`'s `collapsedPath`. Every crumb above the file returns to the
- * tree, where the directory it selects is already open, because the file was
- * reached through it; the last crumb is the file itself, and it truncates when
- * it alone is wider than the row.
- */
-function FileBreadcrumb({
-  onBack,
-  path,
-}: {
-  readonly onBack: () => void;
-  readonly path: string;
-}) {
-  const { hidden, leading, trailing } = collapsedPath(path);
-  const crumbs = [leading, ...trailing];
-
-  return (
-    <Breadcrumb className="min-w-0 overflow-hidden">
-      <BreadcrumbList className="flex-nowrap gap-1 text-xs">
-        <BreadcrumbItem className="shrink-0">
-          <BreadcrumbLink asChild>
-            <button type="button" className="font-mono" onClick={onBack}>
-              {leading.name}
-            </button>
-          </BreadcrumbLink>
-        </BreadcrumbItem>
-        {hidden.length > 0 && (
-          <>
-            <BreadcrumbSeparator className="shrink-0" />
-            <BreadcrumbItem className="shrink-0">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  aria-label="Show the hidden path"
-                  className="flex items-center gap-1"
-                >
-                  <BreadcrumbEllipsis />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {hidden.map((segment) => (
-                    <DropdownMenuItem
-                      key={segment.path}
-                      className="font-mono"
-                      onSelect={onBack}
-                    >
-                      {segment.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </BreadcrumbItem>
-          </>
-        )}
-        {crumbs.slice(1).map((segment, index, shown) => {
-          const last = index === shown.length - 1;
-          return (
-            <Fragment key={segment.path}>
-              <BreadcrumbSeparator className="shrink-0" />
-              <BreadcrumbItem className={last ? 'min-w-0' : 'shrink-0'}>
-                {last ? (
-                  <BreadcrumbPage className="min-w-0 truncate font-mono">
-                    {segment.name}
-                  </BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink asChild>
-                    <button
-                      type="button"
-                      className="font-mono"
-                      onClick={onBack}
-                    >
-                      {segment.name}
-                    </button>
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-            </Fragment>
-          );
-        })}
-      </BreadcrumbList>
-    </Breadcrumb>
   );
 }
 

@@ -4,6 +4,7 @@ import {
   WorkspaceSidebarFooter,
 } from '@/components/molecules/workspace-footer';
 import { Conversation } from '@/components/organisms/conversation';
+import { FileViewer } from '@/components/organisms/file-viewer';
 import { ProjectFilesSidebar } from '@/components/organisms/project-files-sidebar';
 import {
   ProjectSidebar,
@@ -28,6 +29,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
+import { useProjectFiles } from '@/hooks/use-project-files';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { FileTextIcon } from 'lucide-react';
 import { type CSSProperties, useCallback, useState } from 'react';
@@ -41,9 +43,10 @@ export function App() {
   const workspace = useWorkspace();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { actions } = workspace;
-  // The sandbox panel, and the count of agent writes that tells it to reread
-  // what it shows: the Project owns the sandbox, the Thread only reports.
-  const [filesOpen, setFilesOpen] = useState(false);
+  // The sandbox panel starts open, and stays where the user leaves it; the
+  // count of agent writes below is what tells it to reread what it shows: the
+  // Project owns the sandbox, the Thread only reports.
+  const [filesOpen, setFilesOpen] = useState(true);
   const [filesRevision, setFilesRevision] = useState(0);
   const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
   const noteSandboxWrite = useCallback(
@@ -87,6 +90,14 @@ export function App() {
           workspace.threadsByProject[selectedThread.projectId] ?? [],
           selectedThread.id,
         );
+  // The sandbox and the file viewer show the same read: a closed panel reads
+  // nothing, and the file viewer is drawn from the one file this holds.
+  const files = useProjectFiles({
+    projectId: filesOpen ? selectedProject?.id : undefined,
+    revision: filesRevision,
+  });
+  const openFilePath = files.selectedPath;
+  const closeFile = files.actions.closeFile;
 
   return (
     <TooltipProvider>
@@ -97,13 +108,21 @@ export function App() {
         <WorkspaceLayout
           files={
             <ProjectFilesSidebar
+              files={files}
               onToggle={toggleFiles}
-              open={filesOpen}
               project={selectedProject}
-              revision={filesRevision}
             />
           }
           filesOpen={filesOpen}
+          fileViewer={
+            openFilePath === undefined ? undefined : (
+              <FileViewer
+                file={files.file}
+                onClose={closeFile}
+                path={openFilePath}
+              />
+            )
+          }
           footer={
             <WorkspaceFooter onOpenSettings={() => setSettingsOpen(true)} />
           }

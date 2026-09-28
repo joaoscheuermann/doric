@@ -36,6 +36,101 @@ const withService = async (options: FakeSandboxOptions = {}) => {
   };
 };
 
+test('lists the whole workspace as one nested tree', async (t) => {
+  const harness = await withService({
+    entries: [
+      { path: 'README.md', content: 'hello' },
+      { path: 'src/a.ts', content: 'abc' },
+      { path: 'src/deep/b.ts', content: 'abcd' },
+    ],
+  });
+  t.after(harness.dispose);
+
+  // A tree node carries no size: one recursive walk measures nothing, which is
+  // part of why the whole tree is one cheap read.
+  assert.deepEqual(await harness.service.projects.tree(harness.projectId), {
+    status: 'ready',
+    path: '',
+    entries: [
+      {
+        name: 'src',
+        path: 'src',
+        type: 'directory',
+        children: [
+          {
+            name: 'deep',
+            path: 'src/deep',
+            type: 'directory',
+            children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+          },
+          { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+        ],
+      },
+      { name: 'README.md', path: 'README.md', type: 'file' },
+    ],
+  });
+});
+
+test('reads the tree from a subdirectory and refuses a path outside it', async (t) => {
+  const harness = await withService({
+    entries: [{ path: 'src/deep/b.ts', content: 'abcd' }],
+  });
+  t.after(harness.dispose);
+
+  assert.deepEqual(
+    await harness.service.projects.tree(harness.projectId, 'src'),
+    {
+      status: 'ready',
+      path: 'src',
+      entries: [
+        {
+          name: 'deep',
+          path: 'src/deep',
+          type: 'directory',
+          children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    await harness.service.projects.tree(harness.projectId, '../outside'),
+    { status: 'invalid_path' },
+  );
+  assert.deepEqual(
+    await harness.service.projects.tree(harness.projectId, 'nope'),
+    { status: 'not_found' },
+  );
+});
+
+test('keeps the files route listing one level while the tree nests', async (t) => {
+  const harness = await withService({
+    entries: [{ path: 'src/deep/b.ts', content: 'abcd' }],
+  });
+  t.after(harness.dispose);
+
+  const listing = await harness.service.projects.files(
+    harness.projectId,
+    'src',
+  );
+  assert.equal(listing.status, 'ready');
+  if (listing.status !== 'ready') throw new Error('expected a listing');
+  assert.deepEqual(listing.entries, [
+    { name: 'deep', path: 'src/deep', type: 'directory' },
+  ]);
+
+  const tree = await harness.service.projects.tree(harness.projectId, 'src');
+  assert.equal(tree.status, 'ready');
+  if (tree.status !== 'ready') throw new Error('expected a tree');
+  assert.deepEqual(tree.entries, [
+    {
+      name: 'deep',
+      path: 'src/deep',
+      type: 'directory',
+      children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+    },
+  ]);
+});
+
 test('lists a workspace directory with names, relative paths, types and sizes', async (t) => {
   const harness = await withService({
     entries: [
@@ -210,6 +305,7 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
         truncated: false,
         binary: false,
       }),
+      tree: async () => ({ status: 'ready', path: '', entries: [] }),
       diff: async () => ({
         status: 'ready',
         repository: true,
@@ -262,6 +358,72 @@ test('serves a scoped directory listing from the files route', async (t) => {
   });
 });
 
+test('serves the whole tree, nested, from the tree route', async (t) => {
+  let received: string | undefined;
+  const host = await serve({
+    tree: async (_id, path) => {
+      received = path;
+      return {
+        status: 'ready',
+        path: '',
+        entries: [
+          {
+            name: 'src',
+            path: 'src',
+            type: 'directory',
+            children: [
+              { name: 'a.ts', path: 'src/a.ts', type: 'file', size: 3 },
+            ],
+          },
+          { name: 'README.md', path: 'README.md', type: 'file', size: 9 },
+        ],
+      };
+    },
+  });
+  t.after(host.close);
+
+  const response = await host.request(`/projects/${projectId}/tree`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(received, undefined);
+  assert.deepEqual(await response.json(), {
+    path: '',
+    entries: [
+      {
+        name: 'src',
+        path: 'src',
+        type: 'directory',
+        children: [{ name: 'a.ts', path: 'src/a.ts', type: 'file', size: 3 }],
+      },
+      { name: 'README.md', path: 'README.md', type: 'file', size: 9 },
+    ],
+  });
+});
+
+test('rejects an escaping tree path with 422 and a missing one with 404', async (t) => {
+  const escaping = await serve({
+    tree: async () => ({ status: 'invalid_path' }),
+  });
+  t.after(escaping.close);
+  const rejected = await escaping.request(
+    `/projects/${projectId}/tree?path=../x`,
+  );
+  assert.equal(rejected.status, 422);
+  assert.equal(
+    ((await rejected.json()) as ErrorBody).error.code,
+    'invalid_project_path',
+  );
+
+  const absent = await serve({ tree: async () => ({ status: 'not_found' }) });
+  t.after(absent.close);
+  const missing = await absent.request(`/projects/${projectId}/tree?path=nope`);
+  assert.equal(missing.status, 404);
+  assert.equal(
+    ((await missing.json()) as ErrorBody).error.code,
+    'project_path_not_found',
+  );
+});
+
 test('rejects an escaping path with 422 and a missing path with 404', async (t) => {
   const escaping = await serve({
     files: async () => ({ status: 'invalid_path' }),
@@ -298,6 +460,16 @@ for (const [status, expected] of [
     const host = await serve({ files: async () => ({ status }) });
     t.after(host.close);
     const response = await host.request(`/projects/${projectId}/files`);
+    assert.equal(response.status, expected);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    if (status === 'pending')
+      assert.equal(response.headers.get('retry-after'), '1');
+  });
+
+  test(`reports ${status} for the tree route without caching`, async (t) => {
+    const host = await serve({ tree: async () => ({ status }) });
+    t.after(host.close);
+    const response = await host.request(`/projects/${projectId}/tree`);
     assert.equal(response.status, expected);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     if (status === 'pending')

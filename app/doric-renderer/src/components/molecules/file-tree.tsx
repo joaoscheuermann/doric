@@ -7,12 +7,11 @@ import {
 import {
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { emptyDirectoryNotice } from '@/domain/files';
-import type { ProjectFileEntry } from '@/domain/workspace';
+import type { ProjectTreeNode } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
 
@@ -24,30 +23,25 @@ export type FileTreeActions = {
 type FileTreeProps = {
   readonly actions: FileTreeActions;
   readonly depth: number;
-  readonly entries: readonly ProjectFileEntry[];
+  readonly entries: readonly ProjectTreeNode[];
   readonly expanded: ReadonlySet<string>;
-  readonly listings: Readonly<Record<string, readonly ProjectFileEntry[]>>;
-  readonly loading: ReadonlySet<string>;
   readonly selectedPath?: string;
 };
 
 /**
  * One level of a Project's sandbox, recursing into the directories that are
- * open. It reads nothing itself: the entries, what is expanded, the listings
- * already held and the row actions all arrive through props.
+ * open. The whole tree arrives through `entries`, so this reads nothing and
+ * asks for nothing: expanding a directory only decides what is drawn.
  *
  * A directory is a row that expands — on click, Enter, Space or ArrowRight —
- * and collapses on ArrowLeft; a file is a row that selects. A directory the
- * user has never opened, and that is not being read, renders no children at
- * all, which is what makes expansion lazy.
+ * and collapses on ArrowLeft; a file is a row that selects. A directory that is
+ * not expanded renders no children at all.
  */
 export function FileTree({
   actions,
   depth,
   entries,
   expanded,
-  listings,
-  loading,
   selectedPath,
 }: FileTreeProps) {
   return (
@@ -60,7 +54,7 @@ export function FileTree({
           if (directory) actions.toggle(entry.path);
           else actions.open(entry.path);
         };
-        const children = directory ? listings[entry.path] : undefined;
+        const children = directory ? (entry.children ?? []) : [];
 
         return (
           <SidebarMenuItem
@@ -118,12 +112,7 @@ export function FileTree({
             </div>
             {open && (
               <SidebarMenuSub role="group" className={treeClassName}>
-                {children === undefined && loading.has(entry.path) && (
-                  <SidebarMenuSubItem role="presentation" className="w-full">
-                    <SidebarMenuSkeleton className="w-full" />
-                  </SidebarMenuSubItem>
-                )}
-                {children !== undefined && children.length === 0 && (
+                {children.length === 0 ? (
                   <SidebarMenuSubItem
                     role="presentation"
                     className="w-full py-1 text-xs text-muted-foreground"
@@ -131,15 +120,12 @@ export function FileTree({
                   >
                     {emptyDirectoryNotice}
                   </SidebarMenuSubItem>
-                )}
-                {children !== undefined && children.length > 0 && (
+                ) : (
                   <FileTree
                     actions={actions}
                     depth={depth + 1}
                     entries={children}
                     expanded={expanded}
-                    listings={listings}
-                    loading={loading}
                     selectedPath={selectedPath}
                   />
                 )}

@@ -126,6 +126,20 @@ type ProjectFilesResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+/** One tree node: a file, or a directory that carries its own children. */
+type ProjectTreeNode = ProjectFileEntry & {
+  readonly children?: readonly ProjectTreeNode[];
+};
+
+type ProjectTreeResult =
+  | {
+      readonly status: 'ready';
+      readonly path: string;
+      readonly entries: readonly ProjectTreeNode[];
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
 type ProjectFileResult =
   | { readonly status: 'ready'; readonly file: ProjectFileContent }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
@@ -175,6 +189,8 @@ contextBridge.exposeInMainWorld('doric', {
       invoke<ProjectFilesResult>('doric:projects:files', projectId, path),
     file: (projectId: string, path: string) =>
       invoke<ProjectFileResult>('doric:projects:file', projectId, path),
+    tree: (projectId: string, path?: string) =>
+      invoke<ProjectTreeResult>('doric:projects:tree', projectId, path),
     diff: (projectId: string, path?: string) =>
       invoke<ProjectDiffResult>('doric:projects:diff', projectId, path),
     create: (name: string) => invoke<Project>('doric:projects:create', name),

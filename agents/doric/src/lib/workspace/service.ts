@@ -1,6 +1,11 @@
 import type { Logger } from 'pino';
 
-import { listSandboxDirectory, type Sandbox, workspacePathKind } from 'sandbox';
+import {
+  listSandboxDirectory,
+  listSandboxTree,
+  type Sandbox,
+  workspacePathKind,
+} from 'sandbox';
 import type { Sandpool } from 'sandpool';
 
 import { runDirectPrompt } from '../agents/direct/executor.js';
@@ -23,6 +28,7 @@ import {
   type ProjectFiles,
   type ProjectSsh,
   type ProjectStore,
+  type ProjectTree,
   type ThreadStore,
   type WorkspacePublisher,
   type WorkspaceService,
@@ -254,6 +260,26 @@ export const createWorkspaceService = ({
           : 'invalid_path',
     };
   };
+  const tree = async (id: string, path?: string): Promise<ProjectTree> => {
+    const outcome = await withLease(id, (sandbox) =>
+      listSandboxTree(sandbox, { path: path ?? '' }),
+    );
+    if (outcome.status !== 'ready') return { status: outcome.status };
+    if (outcome.value.status === 'listed')
+      return {
+        status: 'ready',
+        path: outcome.value.path,
+        entries: outcome.value.entries,
+      };
+    if (outcome.value.status === 'missing') return { status: 'not_found' };
+    // `invalid_exclude` and `excluded_root` are unreachable: no excludes are sent.
+    return {
+      status:
+        outcome.value.status === 'not_directory'
+          ? 'not_directory'
+          : 'invalid_path',
+    };
+  };
   const file = async (id: string, path: string): Promise<ProjectFile> => {
     const outcome = await withLease(id, (sandbox) =>
       readProjectFile(sandbox, path),
@@ -356,6 +382,7 @@ export const createWorkspaceService = ({
       ssh,
       files,
       file,
+      tree,
       diff,
     },
     threads: {

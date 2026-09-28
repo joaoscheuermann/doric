@@ -98,23 +98,27 @@ side. The header names the selected Thread as a breadcrumb of its Project and
 the chain of Threads above it, and every part but the last selects what it
 names.
 
-A Project-scoped sandbox surface sits in a collapsible right-hand panel whose
-collapsed state is a narrow rail carrying its own toggle, so the one control that
-expands and collapses the panel stays at the window's right corner and never
-duplicates the sidebar's own toggle. It
+A Project-scoped sandbox surface sits in a resizable right-hand panel that starts
+open, and whose collapsed state is a narrow rail carrying its own toggle, so the
+one control that expands and collapses the panel stays at the window's right
+corner and never duplicates the sidebar's own toggle. It
 belongs to the selected Project rather than to the selected Thread, and it only
-reads: a Files tab shows the sandbox's directory tree and opens one file at a
-time in place of the tree, its text rendered read-only by the Monaco editor
-bundled with the editor worker alone, and a Changes tab shows the workspace Git
+reads: a Files tab shows the sandbox's whole directory tree, read in one request,
+and a Changes tab shows the workspace Git
 diff with
 one row and one status badge per changed or untracked file. The tabs sit in the
-panel's header, in place of a title, and an open file puts its own name and a back
-control at that header's left; the footer carries the directory the file sits in
-— a chain too deep for that row collapses its middle behind one trigger — and the
-surface's only action, an explicit refresh. Directories
-are read
-when they are expanded and the diff only when the Changes tab is shown, because
-the sandbox belongs to the Project and may not be usable at all: a queued,
+panel's header, in place of a title, and the panel's footer carries the surface's
+only action, an explicit refresh. Selecting a file opens it in a division of its
+own — resizable, between the conversation and the sandbox panel — whose header
+names the file and carries the one control it has, closing it, at the right
+corner, whose footer states the chain the file was reached through, a chain too
+deep for that row collapsing its middle behind one trigger, and whose text is
+rendered read-only by the Monaco editor
+bundled with the editor worker alone. The division is mounted only while a file
+is open, so closing it takes no width. Because the whole tree arrives in one
+read, expanding a directory reads nothing and is pure view state; only a file's
+content is read on demand, and the diff only when the Changes tab is shown. The
+sandbox belongs to the Project and may not be usable at all: a queued,
 failed or terminated Project explains itself — with the host's own retry hint
 when the lease is pending — instead of erroring. There is no filesystem watcher;
 the panel rereads on its own refresh, when the selected Project changes, and when
@@ -479,11 +483,14 @@ access, or reports unavailable or expired access after release. Private keys
 remain ephemeral provider-managed sandbox state and HTTP response data;
 provider disposal owns their key-file cleanup. They are never persisted in
 Doric's database, logged, included in lists, or emitted through Socket.IO. SSH
-HTTP responses prohibit caching. The lease additionally backs three private
+HTTP responses prohibit caching. The lease additionally backs four private
 Project subresources that prohibit caching and answer with the same lease
-states: `GET /projects/:id/files` lists one workspace directory, `GET
-/projects/:id/files/content` reads one workspace file up to a fixed byte cap
-with truncated/binary flags, and `GET /projects/:id/diff` returns the workspace
+states: `GET /projects/:id/files` lists one workspace directory with per-file
+sizes, `GET /projects/:id/tree` lists the whole workspace as one nested tree in a
+single read — each directory carrying its own `children` and no per-file size,
+because one recursive walk measures nothing — `GET /projects/:id/files/content`
+reads one workspace file up to a fixed byte cap with truncated/binary flags, and
+`GET /projects/:id/diff` returns the workspace
 Git diff together with a change list that includes untracked files. A
 workspace-relative path is normalised, resolved against the workspace root, and
 rejected when it escapes; the routes never log file content or diff bodies.

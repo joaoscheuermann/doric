@@ -10,7 +10,6 @@ import {
   diffStat,
   emptyDirectoryNotice,
   fileLanguage,
-  isWithin,
   joinPath,
   parentPath,
   pathSegments,
@@ -77,13 +76,6 @@ describe('sandbox paths', () => {
     assert.equal(baseName('src/app.ts'), 'app.ts');
     assert.equal(baseName('app.ts'), 'app.ts');
     assert.equal(baseName(ROOT_PATH), ROOT_PATH);
-  });
-
-  test('keeps a path within its directory and nothing beside it', () => {
-    assert.equal(isWithin('src/app.ts', 'src'), true);
-    assert.equal(isWithin('src', 'src'), true);
-    assert.equal(isWithin('src/app.ts', ROOT_PATH), true);
-    assert.equal(isWithin('srcx/app.ts', 'src'), false);
   });
 
   test('names every segment from the workspace root down to the path', () => {

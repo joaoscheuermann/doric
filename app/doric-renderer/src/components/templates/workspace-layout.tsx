@@ -21,6 +21,12 @@ type WorkspaceLayoutProps = {
    * its width is zero.
    */
   readonly filesOpen?: boolean;
+  /**
+   * The open file, as a division of its own between the main panel and the
+   * sandbox panel. It is mounted only while a file is open, so its presence here
+   * is its open state: no file, no division, and no width to report.
+   */
+  readonly fileViewer?: ReactNode;
   /** Reports that the panel was opened or closed, from its handle or elsewhere. */
   readonly onFilesOpenChange?: (open: boolean) => void;
   readonly footer: ReactNode;
@@ -34,6 +40,7 @@ export function WorkspaceLayout({
   children,
   files,
   filesOpen = false,
+  fileViewer,
   footer,
   header,
   onFilesOpenChange,
@@ -88,6 +95,24 @@ export function WorkspaceLayout({
           {footer}
         </div>
       </ResizablePanel>
+      {fileViewer !== undefined && (
+        <>
+          {/*
+            The division exists only while a file is open, so the handle has
+            nothing to disable: closing the file unmounts it, and the file's own
+            control is what closes it.
+          */}
+          <ResizableHandle className="[app-region:no-drag]" />
+          <ResizablePanel
+            className="overflow-hidden"
+            defaultSize="34rem"
+            minSize="18rem"
+            maxSize="60rem"
+          >
+            <div className="flex h-full min-h-0 flex-col">{fileViewer}</div>
+          </ResizablePanel>
+        </>
+      )}
       {files !== undefined && (
         <>
           <ResizableHandle

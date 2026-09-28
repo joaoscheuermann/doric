@@ -251,6 +251,43 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
       'The Project path is not a directory.',
     );
   });
+  router.get('/:id/tree', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const input = pathQuery.safeParse(request.query);
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_project_path',
+        'The Project path is invalid.',
+      );
+      return;
+    }
+    const result = await service.projects.tree(
+      request.params.id,
+      input.data.path,
+    );
+    if (leaseResponse(response, result.status)) return;
+    if (result.status === 'ready') {
+      response.json({ path: result.path, entries: result.entries });
+      return;
+    }
+    if (result.status === 'not_found') {
+      sendError(
+        response,
+        404,
+        'project_path_not_found',
+        'The Project path was not found.',
+      );
+      return;
+    }
+    sendError(
+      response,
+      422,
+      'invalid_project_path',
+      'The Project path is not a directory.',
+    );
+  });
   router.get('/:id/files/content', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     const input = pathInput.safeParse(request.query.path);

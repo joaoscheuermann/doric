@@ -33,21 +33,33 @@ The renderer has no direct network access to Doric. It uses the semantic
   Thread, it only reads, and it holds every state a read can answer with —
   `pending` with the host's retry hint, `expired`, `unavailable`, `missing`, a
   refused path — as data, so an unusable sandbox is explained instead of failing.
-  The panel's tabs sit in its header in place of a title, its toggle stays at the
-  window's right corner whether the panel is expanded or collapsed (collapsed the
-  panel is not mounted at all, and the main header carries the control that
-  reopens it), and an open file puts a back control and the file's name at the
-  header's left, with the footer carrying the directory it sits in — a chain too
-  deep for that row collapses its middle behind one trigger (`collapsedPath`) —
-  and the one action the surface has. The file itself is named once, above, so
-  the footer's chain stops at its directory.
-  `use-project-files.ts` owns the listings, the expansion, the open file and the
-  diff, and reads a directory only when it opens and the diff only when the
-  changes view is shown. There is no watcher: the panel re-reads on its own
-  refresh, and on `useThreadChat`'s `writes` growing, which counts the finished
-  `write`, `edit` and `terminal` calls in the Thread's log (`projector.ts`).
-  `domain/files.ts` holds the path rules, the diff classification and the
-  sentences the states show, and is covered by `tests/files.test.ts`.
+  The panel starts open, its tabs sit in its header in place of a title, and its
+  toggle stays at the window's right corner whether the panel is expanded or
+  collapsed (collapsed the panel is not mounted at all, and the main header
+  carries the control that reopens it).
+  `use-project-files.ts` owns the tree, the expansion, the open file and the
+  diff. The whole tree arrives in one read through `projects.tree`, so expanding
+  a directory reads nothing: `expanded` is view state over a tree already held,
+  and only a file's content is read on demand, when it is opened. The diff is
+  read only when the changes view is first shown. There is no watcher: the panel
+  re-reads on its own refresh, and on `useThreadChat`'s `writes` growing, which
+  counts the finished `write`, `edit` and `terminal` calls in the Thread's log
+  (`projector.ts`). `domain/files.ts` holds the path rules, the diff
+  classification and the sentences the states show, and is covered by
+  `tests/files.test.ts`.
+- Selecting a file opens the file viewer (`components/organisms/file-viewer.tsx`)
+  as a resizable division of its own between the conversation and the sandbox
+  panel, so the tree it was opened from stays where it is. Its header names the
+  file and carries the one control it has — closing it, at the right corner — and
+  its footer states the chain the file was reached through, where a chain too
+  deep for that row collapses its middle behind one trigger (`FileBreadcrumb`,
+  from `collapsedPath`). Closing it unmounts the division entirely, so a closed
+  viewer takes no width and reports nothing.
+- `projects.tree(projectId, path?)` is the whole sandbox tree in one request,
+  with each directory's own entries nested under `children` and no per-file
+  `size`, because one recursive walk measures nothing: that is what makes the
+  whole tree cheap to read. `projects.files(projectId, path?)` stays the single
+  directory level it always was, with sizes, and is what other callers keep.
 - The open file's text is the Monaco editor in read-only mode
   (`components/molecules/code-view.tsx`): no minimap, no line highlight, no
   wrapping, and the theme taken from the document's own `.dark` class, because
@@ -78,10 +90,11 @@ Thread no longer exists. `ThreadUpdate` is a discriminated union with
 the Electron process's single Engine.IO connection.
 
 The sandbox surface reads through
-`projects.files(projectId, path)`, `projects.file(projectId, path)` and
-`projects.diff(projectId, path)`, where every path is workspace-relative and the
-empty one is the workspace root. Those results are typed next to `WorkspaceApi`
-in `domain/workspace.ts`, and a rejected call arrives as a thrown `Error`.
+`projects.tree(projectId, path?)`, `projects.file(projectId, path)`,
+`projects.files(projectId, path)` and `projects.diff(projectId, path)`, where
+every path is workspace-relative and the empty one is the workspace root. Those
+results are typed next to `WorkspaceApi` in `domain/workspace.ts`, and a rejected
+call arrives as a thrown `Error`.
 
 ## Settings
 

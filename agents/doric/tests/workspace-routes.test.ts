@@ -586,6 +586,7 @@ const serve = async (
         truncated: false,
         binary: false,
       }),
+      tree: async () => ({ status: 'ready', path: '', entries: [] }),
       diff: async () => ({
         status: 'ready',
         repository: true,

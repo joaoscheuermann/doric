@@ -76,6 +76,12 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:projects:tree',
+    safe(rendererUrl, (value: unknown, path: unknown) =>
+      workspaceApi.projects.tree(identifier(value), relativePath(path)),
+    ),
+  );
+  ipcMain.handle(
     'doric:projects:diff',
     safe(rendererUrl, (value: unknown, path: unknown) =>
       workspaceApi.projects.diff(identifier(value), relativePath(path)),
