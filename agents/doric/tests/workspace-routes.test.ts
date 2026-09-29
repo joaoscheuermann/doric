@@ -11,6 +11,7 @@ import type {
   Thread,
   WorkspaceService,
 } from '../src/lib/workspace/types.js';
+import { credentialResolver } from './helpers/workspace.js';
 
 const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
@@ -587,12 +588,7 @@ const serve = async (
         binary: false,
       }),
       tree: async () => ({ status: 'ready', path: '', entries: [] }),
-      diff: async () => ({
-        status: 'ready',
-        repository: true,
-        diff: '',
-        changes: [],
-      }),
+      diff: async () => ({ status: 'ready', repositories: [] }),
       ...overrides.projects,
     },
     threads: {
@@ -629,6 +625,7 @@ const serve = async (
   };
   registerHttpRoutes(app, {
     config: { current: unsupported, replace: unsupported },
+    credentials: credentialResolver(),
     service,
     vms: { list: () => [], find: () => undefined, ssh: service.sshForVm },
   });

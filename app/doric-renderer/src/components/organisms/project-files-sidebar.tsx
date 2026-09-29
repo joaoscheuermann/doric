@@ -294,7 +294,7 @@ function FilesView({ files }: { readonly files: ProjectFiles }) {
   );
 }
 
-/** The changed files, then the diff they add up to. */
+/** The changed files, grouped by repository, each under its own sticky header. */
 function ChangesView({ files }: { readonly files: ProjectFiles }) {
   const { actions, changes } = files;
   const { loadChanges } = actions;
@@ -305,8 +305,15 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
     loadChanges();
   }, [loadChanges]);
 
-  const classified = useMemo(
-    () => (changes.status === 'ready' ? classifyDiff(changes.value) : []),
+  const repositories = useMemo(
+    () =>
+      changes.status === 'ready'
+        ? changes.value.repositories.map((repository) => ({
+            path: repository.path,
+            changes: repository.changes,
+            files: classifyDiff(repository.diff),
+          }))
+        : [],
     [changes],
   );
 
@@ -327,15 +334,19 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
       />
     );
   }
-  if (!changes.value.repository) {
+  if (repositories.length === 0) {
     return (
       <PanelState
-        description="This workspace is not a git repository."
-        title="No repository"
+        description="This workspace holds no git repository."
+        title="No repositories"
       />
     );
   }
-  if (changes.value.changes.length === 0) {
+
+  const changed = repositories.filter(
+    (repository) => repository.changes.length > 0,
+  );
+  if (changed.length === 0) {
     return (
       <PanelState
         description="This workspace has no uncommitted changes."
@@ -345,29 +356,36 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="max-h-48 shrink-0">
-        <SidebarMenu className="w-full gap-0 py-1">
-          {changes.value.changes.map((change) => (
-            <SidebarMenuItem key={change.path} className="w-full">
-              <SidebarMenuButton
-                asChild
-                size="sm"
-                className="h-7 w-full rounded-none px-3 pr-8"
-              >
-                <div>
-                  <span className="truncate font-mono">{change.path}</span>
-                </div>
-              </SidebarMenuButton>
-              <SidebarMenuBadge>{changeLetter(change.status)}</SidebarMenuBadge>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
-      </ScrollArea>
-      <ScrollArea className="min-h-0 flex-1">
-        <DiffView files={classified} />
-      </ScrollArea>
-    </div>
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="flex min-w-0 flex-col">
+        {changed.map((repository) => (
+          <section key={repository.path} className="flex flex-col">
+            <h3 className="sticky top-0 z-10 border-y bg-sidebar px-3 py-1.5 font-mono text-xs">
+              {repository.path === '' ? '.' : repository.path}
+            </h3>
+            <SidebarMenu className="w-full gap-0 py-1">
+              {repository.changes.map((change) => (
+                <SidebarMenuItem key={change.path} className="w-full">
+                  <SidebarMenuButton
+                    asChild
+                    size="sm"
+                    className="h-7 w-full rounded-none px-3 pr-8"
+                  >
+                    <div>
+                      <span className="truncate font-mono">{change.path}</span>
+                    </div>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge>
+                    {changeLetter(change.status)}
+                  </SidebarMenuBadge>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+            <DiffView files={repository.files} />
+          </section>
+        ))}
+      </div>
+    </ScrollArea>
   );
 }
 

@@ -15,6 +15,8 @@ import { createSandpool } from 'sandpool';
 
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
+import { createCredentialService } from './lib/credentials/service.js';
+import { createCredentialStore } from './lib/credentials/store.js';
 import { createDatabase } from './lib/database.js';
 import { createWorkspaceSocket } from './lib/events/socket.js';
 import { registerStatusSocket } from './lib/events/status.js';
@@ -136,10 +138,16 @@ async function main() {
     },
     'Bundles loaded',
   );
+  startupStage = 'credential_activation';
+  startup.info('Activating stored credentials');
+  const credentials = await createCredentialService({
+    store: createCredentialStore(database),
+  });
   startupStage = 'configuration_activation';
   startup.info('Activating Doric configuration');
   const config = await createConfigService({
     store: createConfigStore(database),
+    credentials,
     bundles,
     logger,
   });
@@ -167,6 +175,7 @@ async function main() {
     projects,
     threads,
     config,
+    credentials,
     pool,
     publisher,
     logger,
@@ -174,6 +183,7 @@ async function main() {
 
   registerHttpRoutes(app, {
     config,
+    credentials,
     service,
     vms: {
       list: vms.list,

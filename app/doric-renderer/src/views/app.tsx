@@ -11,7 +11,6 @@ import {
   type SidebarActions,
   type SidebarModel,
 } from '@/components/organisms/project-sidebar';
-import { SettingsDialog } from '@/components/organisms/settings-dialog';
 import {
   WorkspaceHeader,
   WorkspaceSidebarHeader,
@@ -41,7 +40,6 @@ const panelWidth = {
 
 export function App() {
   const workspace = useWorkspace();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const { actions } = workspace;
   // The sandbox panel starts open, and stays where the user leaves it; the
   // count of agent writes below is what tells it to reread what it shows: the
@@ -124,7 +122,9 @@ export function App() {
             )
           }
           footer={
-            <WorkspaceFooter onOpenSettings={() => setSettingsOpen(true)} />
+            <WorkspaceFooter
+              onOpenSettings={() => void window.doric.settings.open()}
+            />
           }
           header={
             <WorkspaceHeader
@@ -173,7 +173,6 @@ export function App() {
             if (!open) actions.dismissDelete();
           }}
         />
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
       <Toaster />
     </TooltipProvider>

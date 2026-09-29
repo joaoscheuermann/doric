@@ -20,6 +20,11 @@ export type Config = {
   /** The first reason the host would refuse the draft, if any. */
   readonly issue?: string;
   readonly loading: boolean;
+  /**
+   * What the last save the host accepted answered, and how many have landed. A
+   * surface announcing saves reads the revision, because two saves that stored
+   * the same value carry different ones.
+   */
   readonly saved?: DoricConfiguration;
   readonly saving: boolean;
   readonly setDraft: (next: Configuration) => void;

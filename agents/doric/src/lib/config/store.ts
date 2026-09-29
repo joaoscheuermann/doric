@@ -61,9 +61,8 @@ export const createConfigStore = (database: Database): ConfigStore => ({
             revision: { increment: 1 },
             generation: randomUUID(),
             maxTurns: config.execution.maxTurns,
-            githubUsername: config.github?.username ?? null,
-            githubEmail: config.github?.email ?? null,
-            githubToken: config.github?.token ?? null,
+            gitCredentialId: config.gitCredentialId ?? null,
+            githubCredentialId: config.githubCredentialId ?? null,
           },
           include: { providers: true, models: true },
         });
@@ -83,10 +82,9 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
       `Stored Doric model role is missing: ${ModelRole.EXECUTION}`,
     );
 
-  const github = githubFrom(stored);
   const configuration = ConfigInputSchema.parse({
     providers: stored.providers
-      .map(({ id, baseUrl, apiKeyEnv }) => ({ id, baseUrl, apiKeyEnv }))
+      .map(({ id, baseUrl, credentialId }) => ({ id, baseUrl, credentialId }))
       .sort((left, right) => left.id.localeCompare(right.id)),
     models: {
       execution: {
@@ -96,30 +94,17 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
       },
     },
     execution: { maxTurns: stored.maxTurns },
-    ...(github === undefined ? {} : { github }),
+    ...(stored.gitCredentialId === null
+      ? {}
+      : { gitCredentialId: stored.gitCredentialId }),
+    ...(stored.githubCredentialId === null
+      ? {}
+      : { githubCredentialId: stored.githubCredentialId }),
   });
 
   return {
     configuration,
     revision: stored.revision,
     updatedAt: stored.updatedAt.toISOString(),
-  };
-};
-
-/**
- * An identity without both of its public fields is not configurable, so an
- * incomplete pair reads back as unconfigured.
- */
-const githubFrom = ({
-  githubUsername,
-  githubEmail,
-  githubToken,
-}: StoredConfig): ConfigInput['github'] => {
-  if (githubUsername === null || githubEmail === null) return undefined;
-
-  return {
-    username: githubUsername,
-    email: githubEmail,
-    ...(githubToken === null ? {} : { token: githubToken }),
   };
 };

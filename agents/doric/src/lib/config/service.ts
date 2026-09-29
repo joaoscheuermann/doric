@@ -1,60 +1,64 @@
 import type { Bundle } from 'bundle';
 import type { Logger } from 'pino';
 
-import type { ConfigInput, ConfigUpdate, DoricConfig } from './schema.js';
+import type { CredentialKind } from '../credentials/kind.js';
+import type { CredentialService } from '../credentials/service.js';
+import type { ConfigInput, DoricConfig } from './schema.js';
 import type { ConfigStore } from './store.js';
 import { createGeneration, type Generation } from './generation.js';
 
+/**
+ * A configuration whose credential references are not usable. It is caller
+ * input, not a host failure, so the route answers it as an invalid config.
+ */
+export class ConfigCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigCredentialError';
+  }
+}
+
 export type ConfigService = {
   current(): Generation;
-  replace(update: ConfigUpdate): Promise<DoricConfig>;
+  replace(config: ConfigInput): Promise<DoricConfig>;
 };
 
 type ConfigServiceOptions = {
   readonly store: ConfigStore;
+  readonly credentials: CredentialService;
   readonly bundles: readonly Bundle[];
   readonly logger: Logger;
-  readonly environment?: NodeJS.ProcessEnv;
   readonly buildGeneration?: typeof createGeneration;
 };
 
 /** Initializes and serializes atomic configuration-generation replacements. */
 export const createConfigService = async ({
   store,
+  credentials,
   bundles,
   logger,
-  environment,
   buildGeneration = createGeneration,
 }: ConfigServiceOptions): Promise<ConfigService> => {
   let active = await buildGeneration({
     snapshot: await store.load(),
+    credentials,
     bundles,
     logger,
-    environment,
   });
   let tail = Promise.resolve();
 
   return {
     current: () => active,
-    replace(update) {
+    replace(config) {
       const replacement = tail.then(async () => {
-        const github = resolveGithub(
-          update.github,
-          active.snapshot.configuration.github,
-        );
-        const configuration: ConfigInput = {
-          providers: update.providers,
-          models: update.models,
-          execution: update.execution,
-          ...(github === undefined ? {} : { github }),
-        };
+        requireCredentials(config, credentials);
         const candidate = await buildGeneration({
-          snapshot: { configuration, revision: 0, updatedAt: '' },
+          snapshot: { configuration: config, revision: 0, updatedAt: '' },
+          credentials,
           bundles,
           logger,
-          environment,
         });
-        const snapshot = await store.replace(configuration);
+        const snapshot = await store.replace(config);
         active = { ...candidate, snapshot };
         return snapshot;
       });
@@ -69,33 +73,53 @@ export const createConfigService = async ({
 };
 
 /**
- * Resolves the write-only GitHub block against the stored configuration. Absent
- * means "leave it alone", `null` means "remove it", and a value means "set it",
- * so neither an older client nor an explicit removal can be confused with one
- * another. Inside a value, an absent or `null` token keeps the stored one and
- * `''` clears it. The store always receives a complete internal configuration.
+ * A provider authenticates with an `API_TOKEN` and nothing else, the Git
+ * identity is the `GIT` kind's alone, and the GitHub integration needs another
+ * `API_TOKEN`. A reference is rejected before it is activated, so no stored
+ * configuration can point at a credential of the wrong kind.
  */
-const resolveGithub = (
-  update: ConfigUpdate['github'],
-  stored: ConfigInput['github'],
-): ConfigInput['github'] => {
-  if (update === undefined) return stored;
-  if (update === null) return undefined;
+const requireCredentials = (
+  configuration: ConfigInput,
+  credentials: CredentialService,
+): void => {
+  for (const provider of configuration.providers)
+    requireKind(
+      credentials,
+      provider.credentialId,
+      'API_TOKEN',
+      `Provider ${provider.id}`,
+    );
 
-  const token = resolveToken(update.token, stored?.token);
-
-  return {
-    username: update.username,
-    email: update.email,
-    ...(token === undefined ? {} : { token }),
-  };
+  requireKind(
+    credentials,
+    configuration.gitCredentialId,
+    'GIT',
+    'The Git identity',
+  );
+  requireKind(
+    credentials,
+    configuration.githubCredentialId,
+    'API_TOKEN',
+    'The GitHub credential',
+  );
 };
 
-const resolveToken = (
-  requested: string | null | undefined,
-  stored: string | undefined,
-): string | undefined => {
-  if (requested === undefined || requested === null) return stored;
+const requireKind = (
+  credentials: CredentialService,
+  id: string | undefined,
+  kind: CredentialKind,
+  label: string,
+): void => {
+  if (id === undefined) return;
 
-  return requested === '' ? undefined : requested;
+  const credential = credentials.find(id);
+  if (credential === undefined)
+    throw new ConfigCredentialError(
+      `${label} references a credential that is not stored.`,
+    );
+
+  if (credential.kind !== kind)
+    throw new ConfigCredentialError(
+      `${label} must reference a ${kind} credential, not a ${credential.kind} one.`,
+    );
 };

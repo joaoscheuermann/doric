@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 
 import {
   listSandboxDirectory,
+  listSandboxRepos,
   listSandboxTree,
   workspacePathKind,
 } from '../src/index.js';
@@ -201,6 +202,77 @@ describe('workspace listing', () => {
       },
       { name: 'README.md', path: 'README.md', type: 'file' },
     ]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+});
+
+describe('workspace repositories', () => {
+  test('finds each repository, stopping at a nested boundary', async () => {
+    const root = await workspace('repos-nested');
+
+    await write(root, 'outer/.git/HEAD', 'ref: refs/heads/main');
+    await write(root, 'outer/inner/.git/HEAD', 'ref: refs/heads/main');
+    await write(root, 'sibling/.git/HEAD', 'ref: refs/heads/main');
+    await write(root, 'plain/file.txt', 'plain');
+
+    const result = await listSandboxRepos(createLocalSandbox(root));
+
+    // `outer/inner` is inside `outer`, so the outer boundary claims it and Git
+    // reports it there as one gitlink rather than as its own files.
+    assert.deepEqual(result, {
+      status: 'listed',
+      path: '',
+      repositories: [{ path: 'outer' }, { path: 'sibling' }],
+    });
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test('matches a .git file, as a submodule or a linked worktree writes it', async () => {
+    const root = await workspace('repos-worktree');
+
+    await write(root, 'worktree/.git', 'gitdir: /elsewhere/.git/worktrees/wt');
+    await write(root, 'worktree/file.txt', 'worktree');
+
+    const result = await listSandboxRepos(createLocalSandbox(root));
+
+    assert.deepEqual(result, {
+      status: 'listed',
+      path: '',
+      repositories: [{ path: 'worktree' }],
+    });
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test('finds the workspace root as a repository when it is one', async () => {
+    const root = await workspace('repos-root');
+
+    await write(root, '.git/HEAD', 'ref: refs/heads/main');
+    await write(root, 'nested/.git/HEAD', 'ref: refs/heads/main');
+
+    const result = await listSandboxRepos(createLocalSandbox(root));
+
+    assert.deepEqual(result, {
+      status: 'listed',
+      path: '',
+      repositories: [{ path: '' }],
+    });
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test('reports no repository for a workspace without one', async () => {
+    const root = await workspace('repos-none');
+
+    await write(root, 'src/main.ts', 'main');
+
+    assert.deepEqual(await listSandboxRepos(createLocalSandbox(root)), {
+      status: 'listed',
+      path: '',
+      repositories: [],
+    });
 
     await rm(root, { recursive: true, force: true });
   });

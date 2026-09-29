@@ -11,6 +11,17 @@ enum ModelRole {
   EXECUTION
 }
 
+/**
+ * The closed set of credential kinds. The kind fixes the field set a row may
+ * carry, which is why the invariant lives in the credentials domain rule rather
+ * than in a row-level database constraint.
+ */
+enum CredentialKind {
+  API_TOKEN
+  USERNAME_PASSWORD
+  GIT
+}
+
 enum ProjectState {
   QUEUED
   READY
@@ -29,26 +40,49 @@ enum ThreadState {
 }
 
 model DoricConfiguration {
-  id             Int                     @id @default(1)
-  revision       Int                     @default(1)
-  generation     String                  @db.Uuid
-  maxTurns       Int                     @map("max_turns")
-  githubUsername String?                 @map("github_username")
-  githubEmail    String?                 @map("github_email")
-  githubToken    String?                 @map("github_token")
-  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providers      ProviderConfiguration[]
-  models         ModelConfiguration[]
+  id                 Int                     @id @default(1)
+  revision           Int                     @default(1)
+  generation         String                  @db.Uuid
+  maxTurns           Int                     @map("max_turns")
+  gitCredentialId    String?                 @map("git_credential_id") @db.Uuid
+  githubCredentialId String?                 @map("github_credential_id") @db.Uuid
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  gitCredential      Credential?             @relation("GitCredential", fields: [gitCredentialId], references: [id], onDelete: Restrict)
+  githubCredential   Credential?             @relation("GithubCredential", fields: [githubCredentialId], references: [id], onDelete: Restrict)
+  providers          ProviderConfiguration[]
+  models             ModelConfiguration[]
 
   @@map("doric_configuration")
+}
+
+/**
+ * One named credential. A provider key and the GitHub token are both
+ * `API_TOKEN` rows whose secret is stored as a versioned ciphertext envelope.
+ */
+model Credential {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  kind                 CredentialKind
+  name                 String
+  username             String?
+  email                String?
+  secret               String?
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providers            ProviderConfiguration[]
+  gitConfigurations    DoricConfiguration[]    @relation("GitCredential")
+  githubConfigurations DoricConfiguration[]    @relation("GithubCredential")
+
+  @@unique([kind, name])
+  @@map("credential")
 }
 
 model ProviderConfiguration {
   configurationId Int                  @map("configuration_id")
   id              String
   baseUrl         String               @map("base_url")
-  apiKeyEnv       String               @map("api_key_env")
+  credentialId    String               @map("credential_id") @db.Uuid
   configuration   DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  credential      Credential           @relation(fields: [credentialId], references: [id], onDelete: Restrict)
   models          ModelConfiguration[]
 
   @@id([configurationId, id])

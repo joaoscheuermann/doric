@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 
-import { type Sandbox, workspacePathKind } from 'sandbox';
+import { listSandboxRepos, type Sandbox, workspacePathKind } from 'sandbox';
 
 /** The largest text payload the content route returns. */
 export const CONTENT_LIMIT_BYTES = 262_144;
@@ -52,47 +52,55 @@ export type ProjectChange = {
   readonly path: string;
   readonly status: ProjectChangeStatus;
 };
-export type ProjectChanges = {
-  readonly repository: boolean;
+export type ProjectChangeSet = {
+  readonly path: string;
   readonly diff: string;
   readonly changes: readonly ProjectChange[];
 };
 
 /**
- * The workspace's Git state: the tracked diff plus every change, including the
- * untracked files. The changes list cannot come from `Sandbox.diff`, because a
- * diff never contains untracked files, so it is read through `exec`; the diff
- * itself still goes through the `Sandbox` contract. Both describe the sandbox's
- * default working directory, which is the workspace root, where the agent
- * writes.
+ * The workspace's Git state, one entry per repository it holds: each repository's
+ * tracked diff plus its own change list, including the untracked files. The
+ * changes list cannot come from `Sandbox.diff`, because a diff never contains
+ * untracked files, so it is read through `exec` at the repository root; the diff
+ * itself still goes through the `Sandbox` contract, scoped to that same root.
+ * Discovery stops at each repository boundary, so a repository nested in another
+ * is left to the outer one, exactly as Git reports it.
  */
 export const projectChanges = async (
   sandbox: Sandbox,
-  path?: string,
-): Promise<ProjectChanges> => {
-  const status = await sandbox.exec({
-    cmd: [
-      'git',
-      'status',
-      '--porcelain',
-      ...(path === undefined ? [] : ['--', path]),
-    ],
-  });
+): Promise<readonly ProjectChangeSet[]> => {
+  const repos = await listSandboxRepos(sandbox);
 
-  // A non-zero exit means the workspace holds no repository.
-  if (status.exitCode !== 0)
-    return { repository: false, diff: '', changes: [] };
+  // A workspace root that is missing or not a directory holds no repository.
+  if (repos.status !== 'listed') return [];
 
-  const diff = await sandbox.diff(path === undefined ? {} : { paths: [path] });
+  const entries = await Promise.all(
+    repos.repositories.map(
+      async ({ path }): Promise<ProjectChangeSet | undefined> => {
+        // `-C` sets the repository; the workspace root is git's own default.
+        const cwd = path === '' ? sandbox.root : path;
 
-  return {
-    repository: true,
-    diff,
-    changes: status.stdout.split('\n').flatMap((line) => {
-      const change = parseChange(line);
-      return change === undefined ? [] : [change];
-    }),
-  };
+        const status = await sandbox.exec({
+          cmd: ['git', '-C', cwd, 'status', '--porcelain'],
+        });
+
+        // A non-zero exit means git refused to read this repository.
+        if (status.exitCode !== 0) return undefined;
+
+        return {
+          path,
+          diff: await sandbox.diff({ cwd }),
+          changes: status.stdout.split('\n').flatMap((line) => {
+            const change = parseChange(line);
+            return change === undefined ? [] : [change];
+          }),
+        };
+      },
+    ),
+  );
+
+  return entries.filter((entry) => entry !== undefined);
 };
 
 /** One porcelain line: two status characters, a space, then the path. */

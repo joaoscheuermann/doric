@@ -1,8 +1,4 @@
-import type {
-  ProjectChangeStatus,
-  ProjectDiff,
-  ProjectLeaseState,
-} from './workspace';
+import type { ProjectChangeStatus, ProjectLeaseState } from './workspace';
 
 /** The workspace root: every path this surface carries is relative to it. */
 export const ROOT_PATH = '';
@@ -144,8 +140,8 @@ const lineKind = (line: string, inHunk: boolean): DiffLineKind => {
  * not a line of a hunk stay `meta` lines; text before the first header belongs
  * to no file and is dropped.
  */
-export const classifyDiff = (diff: ProjectDiff): readonly DiffFile[] => {
-  const text = diff.diff.endsWith('\n') ? diff.diff.slice(0, -1) : diff.diff;
+export const classifyDiff = (diff: string): readonly DiffFile[] => {
+  const text = diff.endsWith('\n') ? diff.slice(0, -1) : diff;
   const files: DiffFile[] = [];
   let path: string | undefined;
   let lines: DiffLine[] = [];

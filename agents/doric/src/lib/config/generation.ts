@@ -8,6 +8,7 @@ import {
 } from 'llms';
 import type { ToolFactory } from 'tool';
 
+import type { CredentialService } from '../credentials/service.js';
 import type { DoricConfig } from './schema.js';
 
 export type Catalog = {
@@ -22,8 +23,9 @@ export type Generation = {
   /**
    * Registers a secret the host learned after this generation was built — a
    * rotated credential it wrote into a running sandbox — so it is redacted
-   * exactly like the ones the snapshot carried. A Project whose generation
-   * predates a rotation would otherwise persist the new token unredacted.
+   * exactly like the ones the credential store already holds. A Project whose
+   * generation predates a rotation would otherwise persist the new token
+   * unredacted.
    */
   readonly registerSecret: (value: string) => void;
   readonly catalog: Catalog;
@@ -31,29 +33,23 @@ export type Generation = {
 
 type GenerationOptions = {
   readonly snapshot: DoricConfig;
+  readonly credentials: CredentialService;
   readonly bundles: readonly Bundle[];
   readonly logger: Logger;
-  readonly environment?: NodeJS.ProcessEnv;
 };
 
-/** Builds one provider and bundle generation captured by new Projects. */
+/**
+ * Builds one provider and bundle generation captured by new Projects. Provider
+ * keys are read from the credential store on every call, so a rotated key
+ * reaches a Project that is already running.
+ */
 export const createGeneration = async ({
   snapshot,
+  credentials,
   bundles,
   logger,
-  environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
-  const credentials = new Set<string>();
-
-  const credential = (name: string): string => {
-    const value = environment[name] ?? '';
-
-    if (value.length > 0) {
-      credentials.add(value);
-    }
-
-    return value;
-  };
+  const registered = new Set<string>();
 
   const providers = new Map(
     snapshot.configuration.providers.map((provider) => [
@@ -61,32 +57,22 @@ export const createGeneration = async ({
       createOpenAiCompatibleProvider({
         transport: createFetchTransport(),
         baseUrl: provider.baseUrl,
-        apiKey: () => credential(provider.apiKeyEnv),
+        apiKey: () => credentials.find(provider.credentialId)?.secret ?? '',
         identity: { id: provider.id, name: provider.id },
         logger,
       }),
     ]),
   );
 
-  const redactions = () => {
-    snapshot.configuration.providers.forEach(({ apiKeyEnv }) =>
-      credential(apiKeyEnv),
-    );
-
-    const token = snapshot.configuration.github?.token;
-    // The stored GitHub token is the configuration's only secret, so no
-    // persisted history, event, or log line may carry it.
-    if (token !== undefined) credentials.add(token);
-
-    return [...credentials];
-  };
-
   return {
     snapshot,
     providers,
-    redactions,
+    // Every stored secret is redacted, so no persisted history, event, tool
+    // result, or log line can carry one, and a rotation is covered the moment
+    // the store holds it.
+    redactions: () => [...credentials.secrets(), ...registered],
     registerSecret: (value) => {
-      if (value.length > 0) credentials.add(value);
+      if (value.length > 0) registered.add(value);
     },
     catalog: {
       skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),

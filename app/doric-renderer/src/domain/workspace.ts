@@ -1,4 +1,10 @@
-import type { ConfigurationInput, DoricConfiguration } from './config';
+import type {
+  ConfigurationInput,
+  Credential,
+  CredentialCreate,
+  CredentialUpdate,
+  DoricConfiguration,
+} from './config';
 import type { ConnectionApi } from './connection';
 
 /**
@@ -114,6 +120,20 @@ export type Entity =
 export type WorkspaceApi = {
   readonly connection: ConnectionApi;
   /**
+   * The settings surface is its own window; `open` shows it, or focuses the one
+   * already open rather than duplicating it.
+   */
+  readonly settings: {
+    /** Shows the settings window, or focuses the one already open. */
+    open(): Promise<void>;
+    /**
+     * Settles a change still waiting on the save debounce, which is what the
+     * main process's held-back close is waiting for. Returns its own
+     * unsubscribe.
+     */
+    onFlush(listener: () => void | Promise<void>): () => void;
+  };
+  /**
    * The configuration the host owns, shared by every Project. `get` reads it —
    * never with a stored GitHub token, only whether one exists — and `update`
    * writes it whole, returning the revision the host stored.
@@ -121,6 +141,17 @@ export type WorkspaceApi = {
   readonly config: {
     get(): Promise<DoricConfiguration>;
     update(configuration: ConfigurationInput): Promise<DoricConfiguration>;
+  };
+  /**
+   * The host's credential store. The secret never crosses this boundary in
+   * either direction: a create or patch sends one, and every answer is the
+   * public view, where `hasSecret` stands in for the value.
+   */
+  readonly credentials: {
+    list(): Promise<readonly Credential[]>;
+    create(input: CredentialCreate): Promise<Credential>;
+    update(id: string, input: CredentialUpdate): Promise<Credential>;
+    remove(id: string): Promise<void>;
   };
   readonly projects: {
     list(): Promise<readonly Project[]>;
@@ -220,11 +251,16 @@ export type ProjectChange = {
   readonly status: ProjectChangeStatus;
 };
 
-export type ProjectDiff = {
-  readonly path?: string;
-  readonly repository: boolean;
+export type ProjectChangeSet = {
+  readonly path: string;
   readonly diff: string;
   readonly changes: readonly ProjectChange[];
+};
+
+/** Every Git repository in the sandbox: one entry per repository. */
+export type ProjectDiff = {
+  readonly path?: string;
+  readonly repositories: readonly ProjectChangeSet[];
 };
 
 export type ProjectFilesResult =

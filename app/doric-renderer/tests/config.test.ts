@@ -4,31 +4,53 @@ import { describe, test } from 'node:test';
 import {
   addProvider,
   type Configuration,
-  configurationInput,
   configurationIssue,
+  type Credential,
+  credentialCreate,
+  credentialDraftOf,
+  credentialFields,
+  credentialIssue,
+  credentialKindLabel,
+  credentialLabel,
+  credentialsOfKind,
+  credentialUpdate,
   effortLabel,
-  type GitHubConfiguration,
-  type GitHubInput,
+  emptyCredentialDraft,
+  emptyProviderDraft,
   isSameConfiguration,
+  isUsableChoice,
   type ProviderConfiguration,
+  providerDraftOf,
+  providerIssue,
   providerLabel,
+  providerRows,
   type ReasoningEffort,
   reasoningEfforts,
   removeProvider,
-  storedTokenNotice,
-  tokenFieldText,
+  replaceProvider,
   turnsFromInput,
+  updateCredentialChoice,
   updatedAtLabel,
-  updateGitHub,
   updateModel,
   updateProvider,
   updateTurnLimit,
 } from '../src/domain/config';
 
+/** A stored credential of the kind the id names, as the host would answer it. */
+const credential = (
+  id: string,
+  kind: Credential['kind'] = 'API_TOKEN',
+): Credential => ({
+  id,
+  kind,
+  name: id,
+  hasSecret: true,
+});
+
 const provider = (id: string): ProviderConfiguration => ({
   id,
   baseUrl: 'https://api.example.com',
-  apiKeyEnv: `${id.toUpperCase()}_API_KEY`,
+  credentialId: `${id}-credential`,
 });
 
 /** A configuration the host would accept, which each case then breaks once. */
@@ -53,16 +75,7 @@ const withProviders = (
   providers: readonly ProviderConfiguration[],
 ): Configuration => ({ ...base, providers });
 
-/** A GitHub block the host would accept, which each case then breaks once. */
-const gitHub = (
-  overrides: Partial<GitHubConfiguration> = {},
-): GitHubConfiguration => ({
-  username: 'octocat',
-  email: 'octocat@example.com',
-  hasToken: false,
-  ...overrides,
-});
-
+/** A configuration the host would accept, which each case then breaks once. */
 describe('configuration rules', () => {
   test('accepts a configuration the host would accept', () => {
     assert.equal(configurationIssue(configuration()), undefined);
@@ -77,7 +90,7 @@ describe('configuration rules', () => {
             {
               id,
               baseUrl: 'http://localhost:11434',
-              apiKeyEnv: 'OPENAI_API_KEY',
+              credentialId: 'c'.repeat(128),
             },
           ],
           models: {
@@ -144,17 +157,15 @@ describe('configuration rules', () => {
     );
   });
 
-  test('requires an API-key environment variable name', () => {
-    for (const apiKeyEnv of ['openai', 'OPENAI_KEY', 'openai_api_key']) {
-      assert.equal(
-        configurationIssue(
-          withProviders(configuration(), [
-            { ...provider('openai'), apiKeyEnv },
-          ]),
-        ),
-        'Enter the API-key environment variable for openai, like OPENAI_API_KEY.',
-      );
-    }
+  test('requires a credential reference on every provider', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), credentialId: '' },
+        ]),
+      ),
+      'Choose the credential openai authenticates with.',
+    );
   });
 
   test('requires the execution model to name a configured provider', () => {
@@ -208,183 +219,269 @@ describe('configuration rules', () => {
   });
 });
 
-describe('GitHub credential rules', () => {
-  test('accepts a configuration that configures no GitHub credentials', () => {
+describe('credential choice rules', () => {
+  test('accepts a configuration that names no credentials', () => {
     assert.equal(configurationIssue(configuration()), undefined);
   });
 
-  test('accepts credentials the host would accept', () => {
-    assert.equal(
-      configurationIssue(configuration({ github: gitHub() })),
-      undefined,
-    );
-  });
-
-  test('accepts an empty block as no credentials, so nothing has to be filled in', () => {
-    const empty = configuration({
-      github: { username: ' ', email: '', hasToken: false },
-    });
-
-    assert.equal(configurationIssue(empty), undefined);
-  });
-
-  test('accepts a username, an email and a token at the host bounds', () => {
-    const github = gitHub({
-      username: 'u'.repeat(128),
-      email: `${'e'.repeat(242)}@example.com`,
-      token: 't'.repeat(512),
-    });
-
-    assert.equal(configurationIssue(configuration({ github })), undefined);
-  });
-
-  test('requires a username once the section holds anything', () => {
-    for (const username of ['', '   ', 'u'.repeat(129)]) {
-      assert.equal(
-        configurationIssue(configuration({ github: gitHub({ username }) })),
-        'Enter a GitHub username between 1 and 128 characters.',
-      );
-    }
-  });
-
-  test('requires an email address', () => {
-    for (const email of [
-      '',
-      '   ',
-      'octocat',
-      'octocat@example',
-      'octo cat@example.com',
-      `${'e'.repeat(243)}@example.com`,
-    ]) {
-      assert.equal(
-        configurationIssue(configuration({ github: gitHub({ email }) })),
-        'Enter a GitHub email address.',
-      );
-    }
-  });
-
-  test('asks for the identity a token belongs to', () => {
-    const tokenOnly = configuration({
-      github: { username: '', email: '', hasToken: false, token: 'ghp_typed' },
-    });
-
-    assert.equal(
-      configurationIssue(tokenOnly),
-      'Enter a GitHub username between 1 and 128 characters.',
-    );
-  });
-
-  test('refuses a token carrying whitespace rather than trimming it', () => {
-    for (const token of [
-      'ghp_secret\n',
-      'ghp secret',
-      ' ghp_secret',
-      'ghp_secret\t',
-    ]) {
-      assert.equal(
-        configurationIssue(configuration({ github: gitHub({ token }) })),
-        'Enter a GitHub token with no spaces or line breaks, or leave the field empty.',
-      );
-    }
-  });
-
-  test('refuses a token past the host bound', () => {
+  test('requires a credential for every provider', () => {
     assert.equal(
       configurationIssue(
-        configuration({ github: gitHub({ token: 't'.repeat(513) }) }),
+        withProviders(configuration(), [
+          { ...provider('openai'), credentialId: '' },
+        ]),
       ),
-      'Enter a GitHub token of at most 512 characters.',
+      'Choose the credential openai authenticates with.',
+    );
+  });
+
+  test('holds for a configuration that names both choices', () => {
+    assert.equal(
+      configurationIssue(
+        configuration({
+          gitCredentialId: 'identity',
+          githubCredentialId: 'token',
+        }),
+      ),
+      undefined,
     );
   });
 });
 
-describe('GitHub credential transitions', () => {
-  test('names the token field as empty until someone types in it', () => {
-    assert.equal(tokenFieldText(undefined), '');
-    assert.equal(tokenFieldText(gitHub()), '');
-    assert.equal(tokenFieldText(gitHub({ hasToken: true })), '');
+describe('credential store vocabulary', () => {
+  test('names each kind for a reader', () => {
+    assert.equal(credentialKindLabel('API_TOKEN'), 'API token');
     assert.equal(
-      tokenFieldText(gitHub({ hasToken: true, token: 'ghp_typed' })),
-      'ghp_typed',
+      credentialKindLabel('USERNAME_PASSWORD'),
+      'Username and password',
+    );
+    assert.equal(credentialKindLabel('GIT'), 'Git identity');
+  });
+
+  test('states the fields each kind carries', () => {
+    assert.deepEqual(credentialFields('API_TOKEN'), ['secret']);
+    assert.deepEqual(credentialFields('USERNAME_PASSWORD'), [
+      'username',
+      'secret',
+    ]);
+    assert.deepEqual(credentialFields('GIT'), ['username', 'email']);
+  });
+
+  test('offers only the credentials of the kind an integration needs', () => {
+    const stored = [
+      credential('token', 'API_TOKEN'),
+      credential('identity', 'GIT'),
+      credential('registry', 'USERNAME_PASSWORD'),
+    ];
+
+    assert.deepEqual(
+      credentialsOfKind(stored, 'GIT').map(({ id }) => id),
+      ['identity'],
+    );
+    assert.deepEqual(
+      credentialsOfKind(stored, 'API_TOKEN').map(({ id }) => id),
+      ['token'],
     );
   });
 
-  test('says whether the host already holds a token', () => {
+  test('labels a credential by name, with its username when it has one', () => {
+    assert.equal(credentialLabel(credential('token')), 'token');
     assert.equal(
-      storedTokenNotice(gitHub({ hasToken: true })),
-      'A token is stored; leave this field empty to keep it.',
+      credentialLabel({
+        ...credential('identity', 'GIT'),
+        username: 'octocat',
+      }),
+      'identity (octocat)',
     );
-    assert.equal(storedTokenNotice(gitHub()), 'No token is stored yet.');
-    assert.equal(storedTokenNotice(undefined), 'No token is stored yet.');
   });
 
-  test('creates the block on the first field and patches only what it is given', () => {
-    const created = updateGitHub(configuration(), { username: 'octocat' });
-    assert.deepEqual(created.github, {
-      username: 'octocat',
-      email: '',
-      hasToken: false,
-    });
+  test('accepts a choice only while the store still holds that credential', () => {
+    const stored = [
+      credential('token', 'API_TOKEN'),
+      credential('identity', 'GIT'),
+    ];
 
-    const patched = updateGitHub(created, { token: 'ghp_typed' });
-    assert.deepEqual(patched.github, {
-      username: 'octocat',
-      email: '',
-      hasToken: false,
-      token: 'ghp_typed',
-    });
+    assert.equal(isUsableChoice(stored, 'token', 'API_TOKEN'), true);
+    // The kind an integration needs is part of the choice, not just the id.
+    assert.equal(isUsableChoice(stored, 'identity', 'API_TOKEN'), false);
+    assert.equal(isUsableChoice(stored, undefined, 'API_TOKEN'), false);
+    assert.equal(isUsableChoice(stored, 'deleted', 'API_TOKEN'), false);
   });
+});
 
-  test('keeps a stored token, and what the field says about it, while a field is typed in', () => {
-    const base = configuration({ github: gitHub({ hasToken: true }) });
-    const next = updateGitHub(base, { email: 'other@example.com' });
-
-    assert.equal(next.github?.hasToken, true);
-    assert.equal(tokenFieldText(next.github), '');
+describe('credential drafts', () => {
+  test('accepts a draft that satisfies its kind', () => {
     assert.equal(
-      storedTokenNotice(next.github),
-      'A token is stored; leave this field empty to keep it.',
+      credentialIssue({
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        secret: 'sk_x',
+      }),
+      undefined,
+    );
+    assert.equal(
+      credentialIssue({
+        kind: 'USERNAME_PASSWORD',
+        name: 'registry',
+        username: 'octocat',
+        secret: 'hunter2',
+      }),
+      undefined,
+    );
+    assert.equal(
+      credentialIssue({
+        kind: 'GIT',
+        name: 'github',
+        username: 'octocat',
+        email: 'octocat@example.com',
+      }),
+      undefined,
     );
   });
 
-  test('sends a kept token as null and a typed token as itself', () => {
-    const kept = configurationInput(
-      configuration({ github: gitHub({ hasToken: true }) }),
+  test('names the fields a kind still needs', () => {
+    assert.equal(
+      credentialIssue({ kind: 'API_TOKEN', name: 'openrouter' }),
+      'A API token credential needs secret.',
     );
-    const stored: GitHubInput = {
-      username: 'octocat',
-      email: 'octocat@example.com',
-      token: null,
-    };
-    assert.deepEqual(kept.github, stored);
-
-    const typed = configurationInput(
-      configuration({ github: gitHub({ token: 'ghp_typed' }) }),
+    assert.equal(
+      credentialIssue({ kind: 'GIT', name: 'github', username: 'octocat' }),
+      'A Git identity credential needs email.',
     );
-    assert.deepEqual(typed.github, { ...stored, token: 'ghp_typed' });
   });
 
-  test('sends the rest of the configuration as the draft holds it', () => {
-    const input = configurationInput(
-      configuration({ github: gitHub({ token: 'ghp_typed' }) }),
+  test('refuses a field the kind does not carry', () => {
+    assert.equal(
+      credentialIssue({
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        secret: 'sk_x',
+        username: 'octocat',
+      }),
+      'A API token credential carries no username.',
     );
-
-    assert.deepEqual(input.providers, configuration().providers);
-    assert.equal(input.models.execution.providerId, 'openai');
-    assert.equal(input.models.execution.model, 'gpt-5');
-    assert.equal(input.execution.maxTurns, 8);
+    assert.equal(
+      credentialIssue({
+        kind: 'GIT',
+        name: 'github',
+        username: 'octocat',
+        email: 'octocat@example.com',
+        secret: 'sk_x',
+      }),
+      'A Git identity credential carries no secret.',
+    );
   });
 
-  test('removes a block the user emptied, rather than omitting the key', () => {
-    // Omission means "leave it alone", so clearing the section has to say so.
-    const cleared = configuration({
-      github: { username: ' ', email: '', hasToken: true },
+  test('requires a name within the host bound', () => {
+    assert.equal(
+      credentialIssue({ kind: 'API_TOKEN', name: '  ', secret: 'sk_x' }),
+      'Enter a name between 1 and 128 characters.',
+    );
+    assert.equal(
+      credentialIssue({
+        kind: 'API_TOKEN',
+        name: 'n'.repeat(129),
+        secret: 'sk_x',
+      }),
+      'Enter a name between 1 and 128 characters.',
+    );
+  });
+
+  test('refuses a secret carrying whitespace rather than trimming it', () => {
+    assert.equal(
+      credentialIssue({
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        secret: 'sk_x\nsk_y',
+      }),
+      'Enter a secret with no spaces or line breaks.',
+    );
+  });
+
+  test('refuses an email the host would refuse', () => {
+    assert.equal(
+      credentialIssue({
+        kind: 'GIT',
+        name: 'github',
+        username: 'octocat',
+        email: 'not-an-address',
+      }),
+      'Enter an email address.',
+    );
+  });
+
+  test('creates only the fields the kind carries', () => {
+    assert.deepEqual(
+      credentialCreate({
+        kind: 'API_TOKEN',
+        name: '  openrouter  ',
+        secret: 'sk_x',
+        username: 'ignored',
+      }),
+      { kind: 'API_TOKEN', name: 'openrouter', secret: 'sk_x' },
+    );
+    assert.deepEqual(
+      credentialCreate({
+        kind: 'GIT',
+        name: 'github',
+        username: ' octocat ',
+        email: ' octocat@example.com ',
+      }),
+      {
+        kind: 'GIT',
+        name: 'github',
+        username: 'octocat',
+        email: 'octocat@example.com',
+      },
+    );
+  });
+
+  test('keeps a stored secret when the edit field is left empty', () => {
+    const stored = { ...credential('openrouter'), name: 'openrouter' };
+
+    assert.deepEqual(credentialUpdate(credentialDraftOf(stored), stored), {
+      name: 'openrouter',
+      secret: null,
     });
+  });
 
-    assert.deepEqual(configurationInput(cleared), {
-      ...configuration(),
-      github: null,
-    });
+  test('sets a secret the edit field carries', () => {
+    const stored = { ...credential('openrouter'), name: 'openrouter' };
+    const draft = { ...credentialDraftOf(stored), secret: 'sk_rotated' };
+
+    assert.equal(credentialUpdate(draft, stored).secret, 'sk_rotated');
+  });
+
+  test('omits the fields the edited kind does not carry', () => {
+    const stored = { ...credential('identity', 'GIT'), username: 'octocat' };
+
+    const patch = credentialUpdate(credentialDraftOf(stored), stored);
+
+    // Absent, not `''`: the host reads `''` as a cleared field, and a cleared
+    // field is still one the credential carries, so `GIT` refuses the patch.
+    assert.ok(!('secret' in patch));
+    assert.equal(patch.username, 'octocat');
+  });
+
+  test('sends the fields its kind carries and no others', () => {
+    const stored = { ...credential('token'), name: 'token' };
+    const draft = { ...credentialDraftOf(stored), secret: 'sk_x' };
+
+    const patch = credentialUpdate(draft, stored);
+
+    assert.deepEqual(Object.keys(patch).sort(), ['name', 'secret']);
+    assert.equal(patch.secret, 'sk_x');
+  });
+
+  test('never reads a stored secret into the draft that edits it', () => {
+    const draft = credentialDraftOf({ ...credential('token'), name: 'token' });
+
+    assert.equal(draft.secret, undefined);
+    assert.equal(draft.id, 'token');
+  });
+
+  test('opens a blank draft that asks for exactly its kind', () => {
+    assert.deepEqual(emptyCredentialDraft('GIT'), { kind: 'GIT', name: '' });
   });
 });
 
@@ -401,13 +498,13 @@ describe('configuration comparison', () => {
       withProviders(base, [
         { ...provider('openai'), baseUrl: 'https://other.example.com' },
       ]),
-      withProviders(base, [
-        { ...provider('openai'), apiKeyEnv: 'OTHER_API_KEY' },
-      ]),
+      withProviders(base, [{ ...provider('openai'), credentialId: 'other' }]),
       updateModel(base, { providerId: 'anthropic' }),
       updateModel(base, { model: 'gpt-5-mini' }),
       updateModel(base, { effort: 'high' }),
       updateTurnLimit(base, 16),
+      updateCredentialChoice(base, 'gitCredentialId', 'identity'),
+      updateCredentialChoice(base, 'githubCredentialId', 'token'),
     ];
 
     for (const candidate of changed) {
@@ -415,48 +512,23 @@ describe('configuration comparison', () => {
     }
   });
 
-  test('compares the GitHub block, including the token the field holds', () => {
-    const base = configuration({ github: gitHub({ hasToken: true }) });
-
-    assert.ok(
-      isSameConfiguration(
-        base,
-        configuration({ github: gitHub({ hasToken: true }) }),
-      ),
-    );
-
-    const changed: readonly Configuration[] = [
-      configuration(),
-      configuration({ github: gitHub() }),
-      configuration({ github: gitHub({ hasToken: true, username: 'hubot' }) }),
-      configuration({
-        github: gitHub({ hasToken: true, email: 'other@example.com' }),
-      }),
-      configuration({ github: gitHub({ hasToken: true, token: 'ghp_typed' }) }),
-    ];
-
-    for (const candidate of changed) {
-      assert.equal(isSameConfiguration(base, candidate), false);
-    }
-  });
-
-  test('holds for a cleared GitHub block and no block at all', () => {
+  test('holds for a configuration that names no credentials', () => {
     assert.ok(
       isSameConfiguration(
         configuration(),
-        configuration({ github: { username: '', email: '', hasToken: false } }),
+        configuration({ gitCredentialId: undefined }),
       ),
     );
   });
 });
 
 describe('provider transitions', () => {
-  test('appends an unnamed row without disturbing the execution model', () => {
-    const next = addProvider(configuration());
+  test('appends the provider the dialog filled in', () => {
+    const next = addProvider(configuration(), provider('anthropic'));
 
     assert.deepEqual(
       next.providers.map(({ id }) => id),
-      ['openai', ''],
+      ['openai', 'anthropic'],
     );
     assert.equal(next.models.execution.providerId, 'openai');
   });
@@ -492,6 +564,37 @@ describe('provider transitions', () => {
     const next = updateProvider(base, 1, { id: 'azure' });
 
     assert.equal(next.models.execution.providerId, 'openai');
+  });
+
+  test('replaces every field of one row, and no other row', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic')],
+    });
+    const next = replaceProvider(base, 0, {
+      id: 'azure',
+      baseUrl: 'https://azure.internal',
+      credentialId: 'azure-credential',
+    });
+
+    assert.deepEqual(next.providers[0], {
+      id: 'azure',
+      baseUrl: 'https://azure.internal',
+      credentialId: 'azure-credential',
+    });
+    assert.deepEqual(next.providers[1], provider('anthropic'));
+  });
+
+  test('carries the execution reference along when a replaced row is renamed', () => {
+    const next = replaceProvider(configuration(), 0, provider('azure'));
+
+    assert.equal(next.providers[0].id, 'azure');
+    assert.equal(next.models.execution.providerId, 'azure');
+  });
+
+  test('leaves the configuration alone when no row is at that position', () => {
+    const base = configuration();
+
+    assert.deepEqual(replaceProvider(base, 3, provider('azure')), base);
   });
 
   test('removes a row the execution model does not name', () => {
@@ -552,6 +655,127 @@ describe('provider transitions', () => {
     assert.deepEqual(next.providers, []);
     assert.equal(next.models.execution.providerId, '');
     assert.equal(next.execution.maxTurns, 8);
+  });
+});
+
+describe('provider rows', () => {
+  test('gives each provider the place it holds in the list', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic'), provider('azure')],
+    });
+
+    assert.deepEqual(
+      providerRows(base).map(({ index }) => index),
+      [0, 1, 2],
+    );
+    assert.deepEqual(
+      providerRows(base).map(({ provider: row }) => row.id),
+      ['openai', 'anthropic', 'azure'],
+    );
+  });
+
+  test('draws no row for a list holding no providers', () => {
+    assert.deepEqual(providerRows(configuration({ providers: [] })), []);
+  });
+
+  test('addresses the provider a row names, not the place the table drew it', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic'), provider('azure')],
+    });
+    // A descending sort draws the last provider first, so the first row on
+    // screen is the last provider in the list.
+    const drawn = [...providerRows(base)].reverse();
+
+    const next = updateProvider(base, drawn[0].index, {
+      baseUrl: 'https://azure.internal',
+    });
+
+    assert.equal(next.providers[2].baseUrl, 'https://azure.internal');
+    assert.equal(next.providers[0].baseUrl, 'https://api.example.com');
+  });
+
+  test('removes the provider a row names when the rows are drawn out of order', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic'), provider('azure')],
+    });
+    const drawn = [...providerRows(base)].reverse();
+
+    const next = removeProvider(base, drawn[0].index);
+
+    assert.deepEqual(
+      next.providers.map(({ id }) => id),
+      ['openai', 'anthropic'],
+    );
+  });
+
+  test('keeps a filtered row addressed to the provider it names', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic'), provider('azure')],
+    });
+    const kept = providerRows(base).filter(
+      ({ provider: row }) => row.id !== 'anthropic',
+    );
+
+    const next = removeProvider(base, kept[1].index);
+
+    assert.deepEqual(
+      next.providers.map(({ id }) => id),
+      ['openai', 'anthropic'],
+    );
+  });
+});
+
+describe('provider drafts', () => {
+  test('opens a draft on the provider at the position it was drawn at', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('anthropic')],
+    });
+
+    assert.deepEqual(providerDraftOf(base, 1), {
+      ...provider('anthropic'),
+      index: 1,
+    });
+  });
+
+  test('opens no draft for a position holding no provider', () => {
+    assert.equal(providerDraftOf(configuration(), 3), undefined);
+  });
+
+  test('adds a draft that names no provider until it is filled in', () => {
+    assert.deepEqual(emptyProviderDraft(), {
+      id: '',
+      baseUrl: '',
+      credentialId: '',
+    });
+  });
+
+  test('accepts a draft the host would accept', () => {
+    assert.equal(providerIssue(provider('openai')), undefined);
+  });
+
+  test('refuses an unnamed or overlong id', () => {
+    assert.equal(
+      providerIssue({ ...provider('openai'), id: '  ' }),
+      'Enter an id between 1 and 128 characters for every provider.',
+    );
+    assert.equal(
+      providerIssue({ ...provider('openai'), id: 'p'.repeat(129) }),
+      'Enter an id between 1 and 128 characters for every provider.',
+    );
+  });
+
+  test('refuses anything but an http base URL', () => {
+    assert.equal(
+      providerIssue({ ...provider('openai'), baseUrl: 'api.example.com' }),
+      'Enter an http:// or https:// base URL for openai.',
+    );
+  });
+
+  test('refuses a provider that authenticates with nothing', () => {
+    assert.equal(
+      providerIssue({ ...provider('openai'), credentialId: '' }),
+      'Choose the credential openai authenticates with.',
+    );
   });
 });
 

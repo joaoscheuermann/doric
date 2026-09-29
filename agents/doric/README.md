@@ -20,6 +20,12 @@ src/lib/
 │   ├── service.ts
 │   ├── store.ts
 │   └── generation.ts
+├── credentials/
+│   ├── kind.ts
+│   ├── resolve.ts
+│   ├── secret.ts
+│   ├── service.ts
+│   └── store.ts
 ├── workspace/
 │   ├── types.ts
 │   ├── service.ts
@@ -71,31 +77,35 @@ After a server restart, interrupted work is marked failed rather than resumed.
 
 ## REST API
 
-| Method    | Path                          | Success   | Purpose                                            |
-| --------- | ----------------------------- | --------- | -------------------------------------------------- |
-| GET / PUT | `/config`                     | 200       | Read / replace configuration and GitHub identity.  |
-| POST      | `/projects`                   | 202       | Reserve an environment without a Thread or prompt. |
-| GET       | `/projects`                   | 200       | List Projects.                                     |
-| GET       | `/projects/:id`               | 200       | Read public Project metadata.                      |
-| PATCH     | `/projects/:id`               | 200       | Rename a Project.                                  |
-| POST      | `/projects/:id/threads`       | 201       | Create a root or child Thread.                     |
-| GET       | `/projects/:id/threads`       | 200       | List Threads; optional `parentThreadId` filter.    |
-| GET       | `/projects/:id/ssh`           | 200 / 202 | Read private SSH access / wait for environment.    |
-| GET       | `/projects/:id/files`         | 200 / 202 | List one workspace directory.                      |
-| GET       | `/projects/:id/files/content` | 200 / 202 | Read one workspace file as bounded text.           |
-| GET       | `/projects/:id/diff`          | 200 / 202 | Read the workspace Git diff and change list.       |
-| POST      | `/projects/:id/terminate`     | 200       | Terminate the Project and its Threads.             |
-| DELETE    | `/projects/:id`               | 204       | Delete a terminal Project.                         |
-| GET       | `/threads/:id`                | 200       | Read public Thread metadata.                       |
-| PATCH     | `/threads/:id`                | 200       | Rename a Thread.                                   |
-| POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.           |
-| POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns. |
-| GET       | `/threads/:id/events`         | 200       | Replay durable events.                             |
-| POST      | `/threads/:id/interrupt`      | 200       | Interrupt the specified active prompt.             |
-| POST      | `/threads/:id/terminate`      | 200       | Terminate a Thread subtree.                        |
-| DELETE    | `/threads/:id`                | 204       | Delete a terminal subtree.                         |
-| GET       | `/vms`                        | 200       | List provisioned VM runtimes.                      |
-| GET       | `/vms/:id/ssh`                | 200       | Read SSH access associated with `projectId`.       |
+| Method    | Path                          | Success   | Purpose                                                |
+| --------- | ----------------------------- | --------- | ------------------------------------------------------ |
+| GET / PUT | `/config`                     | 200       | Read / replace configuration.                          |
+| GET       | `/credentials`                | 200       | List named credentials without their secrets.          |
+| POST      | `/credentials`                | 201       | Create a named credential.                             |
+| PATCH     | `/credentials/:id`            | 200       | Rename, re-identify, or re-secret a credential.        |
+| DELETE    | `/credentials/:id`            | 204 / 409 | Delete an unreferenced credential / refuse one in use. |
+| POST      | `/projects`                   | 202       | Reserve an environment without a Thread or prompt.     |
+| GET       | `/projects`                   | 200       | List Projects.                                         |
+| GET       | `/projects/:id`               | 200       | Read public Project metadata.                          |
+| PATCH     | `/projects/:id`               | 200       | Rename a Project.                                      |
+| POST      | `/projects/:id/threads`       | 201       | Create a root or child Thread.                         |
+| GET       | `/projects/:id/threads`       | 200       | List Threads; optional `parentThreadId` filter.        |
+| GET       | `/projects/:id/ssh`           | 200 / 202 | Read private SSH access / wait for environment.        |
+| GET       | `/projects/:id/files`         | 200 / 202 | List one workspace directory.                          |
+| GET       | `/projects/:id/files/content` | 200 / 202 | Read one workspace file as bounded text.               |
+| GET       | `/projects/:id/diff`          | 200 / 202 | Read the workspace Git diff and change list.           |
+| POST      | `/projects/:id/terminate`     | 200       | Terminate the Project and its Threads.                 |
+| DELETE    | `/projects/:id`               | 204       | Delete a terminal Project.                             |
+| GET       | `/threads/:id`                | 200       | Read public Thread metadata.                           |
+| PATCH     | `/threads/:id`                | 200       | Rename a Thread.                                       |
+| POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.               |
+| POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns.     |
+| GET       | `/threads/:id/events`         | 200       | Replay durable events.                                 |
+| POST      | `/threads/:id/interrupt`      | 200       | Interrupt the specified active prompt.                 |
+| POST      | `/threads/:id/terminate`      | 200       | Terminate a Thread subtree.                            |
+| DELETE    | `/threads/:id`                | 204       | Delete a terminal subtree.                             |
+| GET       | `/vms`                        | 200       | List provisioned VM runtimes.                          |
+| GET       | `/vms/:id/ssh`                | 200       | Read SSH access associated with `projectId`.           |
 
 Lists use `{ items, nextCursor? }`, with `limit` (1–100, default 50) and an
 exclusive UUID `cursor`. Page size does not limit total Projects or Threads.
@@ -103,19 +113,26 @@ Public metadata omits message history, prompts, credentials, and SSH keys.
 Errors use `{ error: { code, message } }`. Invalid IDs/cursors return 400,
 invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
 
-`GET /config` answers `{ configuration, revision, updatedAt }` and never the
-GitHub token: a configured identity reads back as
-`configuration.github = { username, email, hasToken }`, and `github` itself is
-absent until it is configured. `PUT /config` replaces the whole configuration
-and accepts those fields plus an optional `github: { username, email, token }`,
-where `username` and `email` are required together because an identity without
-them is useless, and the token is optional so a public-only identity is
-configurable. The GitHub block follows one rule: absent leaves the stored block
-alone, `null` removes it, and a value sets it. Inside a value, an absent or
-`null` token keeps the stored one, `""` clears just the token, and any other
-value replaces it, so a secret is never deleted by omission. Unknown keys stay
-rejected (`422 invalid_config`), and only configuration saved here reaches
-Projects created afterwards.
+`GET /config` answers `{ configuration, revision, updatedAt }`. The stored
+configuration holds no secret: a provider names the `API_TOKEN` credential it
+authenticates with, and `gitCredentialId` / `githubCredentialId` name the `GIT`
+identity and the `API_TOKEN` GitHub uses. `PUT /config` replaces the whole
+configuration and accepts that same shape, so what it answers is what it
+accepts. Unknown keys stay rejected (`422 invalid_config`), and a reference that
+names an unstored credential or the wrong kind is rejected with the same code.
+Only configuration saved here reaches Projects created afterwards.
+
+`/credentials` owns the credential store. `GET /credentials` answers
+`[{ id, kind, name, username?, email?, hasSecret }]` and never a secret.
+`POST` takes a `kind` of `API_TOKEN` (`secret`), `USERNAME_PASSWORD` (`username`
+and `secret`), or `GIT` (`username` and `email`), and rejects a field the kind
+does not carry. `PATCH` follows one rule per field: absent or `null` keeps it,
+`''` clears it, and a value sets it; `kind` is immutable (`409
+credential_kind_immutable`), a name already used by the kind is `409`, and a
+credential a provider or the configuration references is `409
+credential_referenced` on delete. Secrets are stored as AES-256-GCM envelopes
+under `DORIC_CREDENTIAL_KEY` (32 base64-encoded bytes); the host refuses to start
+when a stored secret exists and that key is missing or unusable.
 
 ### Create and converse
 
@@ -321,8 +338,9 @@ startup does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and
 immutable-tree trigger. The following incremental migration adds and backfills
 Project and Thread names, the next adds the per-turn provider-history
-checkpoints that rewind truncates, then the Project color, and last the nullable
-GitHub identity and token columns. It does not convert Session data.
+checkpoints that rewind truncates, then the Project color, the nullable
+GitHub identity and token columns, and last the credential store that replaces
+them. It does not convert Session data.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the
@@ -330,24 +348,30 @@ host nor the baseline deletes or resets an existing database automatically.
 
 The API is unauthenticated. Keep it on an isolated trusted network, especially
 because SSH responses and execution replay contain sensitive material. Provider
-credential values belong in server environment variables, never configuration
+credential values belong in the credential store, never configuration
 JSON or client requests.
 
-The one configuration secret is the GitHub token. The host stores it rather
-than handing it to a sandbox tool: it is write-only over the API, redacted from
-events and logs before persistence, and carried in the captured configuration
-snapshot of every Project created after it was saved, so a Project's own events
-redact it too. `PUT /config` treats the GitHub block as absent (leave it alone),
-`null` (remove it), or a value (set it), so no caller can delete the token by
-leaving the key out.
+The host owns one credential store for every secret it holds. Each credential is
+named and has a kind that fixes its fields: `API_TOKEN` is authentication, which
+a provider key and the GitHub token both are, `USERNAME_PASSWORD` is
+authentication with a name, and `GIT` is the identity the agent's git commands
+commit with and holds no secret. A secret is stored as an AES-256-GCM envelope
+under `DORIC_CREDENTIAL_KEY` and is never answered over the API; the host
+redacts every stored secret from events and logs before persistence and keeps it
+out of tool payloads. The credential store is created by migration from the
+former provider environment names and the former GitHub columns, so every
+provider keeps its row with a credential whose secret is empty until its
+operator fills it, and the former plaintext GitHub token is re-entered once.
 
-The host applies that block to a Project's sandbox: `git config --global` for
-the identity, and, when a token is configured, `credential.helper store` plus a
+The host applies the Git identity and the GitHub token to a Project's sandbox:
+`git config --global` for the identity, and, when a token is configured,
+`credential.helper store` plus a
 `~/.git-credentials` written 0600, and a `~/.config/gh/hosts.yml` written 0600 so
-the same token authenticates the sandbox's `gh`. That happens when a lease is
+the token authenticates the sandbox's `gh`. That happens when a lease is
 acquired and
-again whenever the current block differs from the one the sandbox holds, because
-the GitHub block follows the current configuration while every other value stays
+again whenever the current pair differs from the one the sandbox holds, because
+the chosen credentials follow the current configuration while every other value
+stays
 captured per Project. The token travels only through the sandbox process
 environment, so it never appears in a tool argument, a tool result, an event, or
 a log line; a write that fails is a warning naming the Project and nothing else.

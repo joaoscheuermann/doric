@@ -16,12 +16,8 @@ const provider = z
           message: 'Provider baseUrl must use HTTP or HTTPS.',
         },
       ),
-    apiKeyEnv: z
-      .string()
-      .regex(
-        /^[A-Z][A-Z0-9_]*_API_KEY$/u,
-        'Invalid provider API key environment name.',
-      ),
+    /** The stored `API_TOKEN` credential that authenticates this provider. */
+    credentialId: z.uuid(),
   })
   .strict();
 
@@ -38,31 +34,6 @@ const providers = z.array(provider).min(1);
 const models = z.object({ execution: reasoningModel }).strict();
 
 const execution = z.object({ maxTurns: limit }).strict();
-
-const githubToken = z
-  .string()
-  .min(1)
-  .max(512)
-  .refine((value) => !/[\r\n]/u.test(value), {
-    message: 'A GitHub token cannot contain line breaks.',
-  });
-
-const githubFields = {
-  username: z.string().trim().min(1).max(128),
-  email: z.string().trim().max(256).pipe(z.email()),
-};
-
-const github = z
-  .object({ ...githubFields, token: githubToken.optional() })
-  .strict();
-
-/** `null` and an absent token keep the stored one; `''` clears it. */
-const githubUpdate = z
-  .object({
-    ...githubFields,
-    token: z.union([githubToken, z.literal(''), z.null()]).optional(),
-  })
-  .strict();
 
 type ProviderReferences = {
   readonly providers: readonly { readonly id: string }[];
@@ -100,36 +71,24 @@ const referencesKnownProviders = (
 /**
  * Complete configuration exactly as the host persists it.
  *
- * The GitHub token is the single secret the stored configuration holds, and it
- * is write-only over the API: `ConfigUpdateSchema` is the only shape that
- * accepts one from a client, and `publicConfig` answers `hasToken` in its
- * place, because Configuration routes are unauthenticated. The host redacts the
- * value from events and logs and never hands it to a tool.
+ * A provider and each of the two GitHub-related integrations name a stored
+ * credential by id, and the stored configuration holds no secret of its own, so
+ * `GET /config` answers the same shape `PUT /config` accepts. An absent choice is
+ * the unconfigured form, and the service refuses a reference that names a
+ * missing credential or the wrong kind before it is activated.
  */
 export const ConfigInputSchema = z
-  .object({ providers, models, execution, github: github.optional() })
-  .strict()
-  .superRefine(referencesKnownProviders);
-
-/**
- * The `PUT /config` body. The GitHub block follows one rule for both itself and
- * its token: absent means "leave it alone", `null` means "remove it", and a
- * value means "set it". A secret therefore cannot be deleted by omission, and a
- * caller that does not know the field leaves it intact.
- */
-export const ConfigUpdateSchema = z
   .object({
     providers,
     models,
     execution,
-    github: githubUpdate.nullable().optional(),
+    gitCredentialId: z.uuid().optional(),
+    githubCredentialId: z.uuid().optional(),
   })
   .strict()
   .superRefine(referencesKnownProviders);
 
 export type ConfigInput = z.output<typeof ConfigInputSchema>;
-
-export type ConfigUpdate = z.output<typeof ConfigUpdateSchema>;
 
 export type DoricConfig = {
   readonly configuration: ConfigInput;
@@ -137,47 +96,18 @@ export type DoricConfig = {
   readonly updatedAt: string;
 };
 
-export type PublicGithub = {
-  readonly username: string;
-  readonly email: string;
-  readonly hasToken: boolean;
-};
-
-export type PublicConfig = {
-  readonly configuration: Omit<ConfigInput, 'github'> & {
-    readonly github?: PublicGithub;
-  };
-  readonly revision: number;
-  readonly updatedAt: string;
-};
-
-/** The API view of a snapshot: the GitHub token becomes `hasToken`. */
-export const publicConfig = (snapshot: DoricConfig): PublicConfig => {
-  const { github: configured, ...configuration } = snapshot.configuration;
-
-  return {
-    ...snapshot,
-    configuration: {
-      ...configuration,
-      ...(configured === undefined
-        ? {}
-        : {
-            github: {
-              username: configured.username,
-              email: configured.email,
-              hasToken: configured.token !== undefined,
-            },
-          }),
-    },
-  };
-};
+/**
+ * The credential the baseline migration seeds for the seeded provider, so the
+ * stored configuration and this default agree.
+ */
+const baselineCredentialId = '00000000-0000-4000-8000-000000000002';
 
 export const defaultConfig: ConfigInput = {
   providers: [
     {
       id: 'openrouter',
       baseUrl: 'https://openrouter.ai/api/v1',
-      apiKeyEnv: 'OPENROUTER_API_KEY',
+      credentialId: baselineCredentialId,
     },
   ],
   models: {

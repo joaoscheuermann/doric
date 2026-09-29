@@ -13,8 +13,10 @@ export const nameInput = z
   .transform(normalizeName)
   .refine(isValidName);
 export const idInput = z.uuid();
+/** The named resources whose routes answer the same validation and conflict shape. */
+type Resource = 'project' | 'thread' | 'credential';
 export const validateId =
-  (kind: 'project' | 'thread'): RequestHandler =>
+  (kind: Resource): RequestHandler =>
   (request, response, next) => {
     if (!idInput.safeParse(request.params.id).success) {
       sendError(
@@ -27,13 +29,9 @@ export const validateId =
     }
     next();
   };
-export const missing = (response: Response, kind: 'project' | 'thread') =>
+export const missing = (response: Response, kind: Resource) =>
   sendError(response, 404, `${kind}_not_found`, `The ${kind} was not found.`);
-export const conflict = (
-  response: Response,
-  kind: 'project' | 'thread',
-  reason: string,
-) =>
+export const conflict = (response: Response, kind: Resource, reason: string) =>
   sendError(
     response,
     409,

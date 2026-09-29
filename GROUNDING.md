@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-09-23
+Last reviewed: 2026-09-25
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -104,9 +104,10 @@ one control that expands and collapses the panel stays at the window's right
 corner and never duplicates the sidebar's own toggle. It
 belongs to the selected Project rather than to the selected Thread, and it only
 reads: a Files tab shows the sandbox's whole directory tree, read in one request,
-and a Changes tab shows the workspace Git
-diff with
-one row and one status badge per changed or untracked file. The tabs sit in the
+and a Changes tab shows every Git repository the workspace tree holds, each
+repository's root as a sticky header over that repository's own changed or
+untracked files — one row and one status badge each — and the repository's own
+diff. The tabs sit in the
 panel's header, in place of a title, and the panel's footer carries the surface's
 only action, an explicit refresh. Selecting a file opens it in a division of its
 own — resizable, between the conversation and the sandbox panel — whose header
@@ -125,22 +126,26 @@ the panel rereads on its own refresh, when the selected Project changes, and whe
 the selected Thread's event stream reports a finished `write`, `edit` or
 `terminal` call, which is the signal that the agent changed the sandbox.
 
-A settings modal opened from the content footer edits the host's
-configuration — the configured providers as an editable table, the execution
-model with its reasoning effort, the execution turn limit, and a Credentials
-section whose one block today is GitHub: the username and email the agent's git
-commands commit with, and a token. That token is the single secret this
-configuration holds, and it is write-only: the host answers whether it holds one
-and never the token, so the field always starts empty and an empty field keeps
-what is stored. Absent means leave alone, `null` means remove and a value means
-set, for the block and for the token alike, so no caller can delete a stored
-credential by omitting it. There is no Save button: a valid change sends itself
-once typing settles, on a field blur, and on close, and the footer reports the
-revision and update time alongside the save state. The dialog states plainly
-that a saved change applies to Projects created afterwards, because a running
-Project keeps the configuration it had captured — with one exception: the GitHub
-identity and token follow the current configuration, so a rotated token reaches
-a Project that is already running on its next prompt.
+A settings window opened from the content footer — its own `BrowserWindow`
+loading a page that mounts the settings surface alone, with no conversation,
+sidebar or Thread — edits the host's configuration: the configured providers as
+an editable table, the execution model with its reasoning effort, the execution
+turn limit, and a Credentials section over the host's credential store. A
+credential is named and has one of a closed set of kinds that fixes its fields:
+`API_TOKEN` is authentication, which a provider key and the GitHub token both
+are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
+alone, the username and email the agent's git commands commit with, which is why
+it holds no secret at all. A secret is write-only: the host answers whether a
+credential holds one and never the secret, so the field always starts empty, an
+empty field keeps what is stored, and a value sets it. There is no Save button: a
+valid change sends itself once typing settles, on a field blur, and as the window
+closes, and the footer reports the revision and update time alongside the save
+state. The window states plainly that a saved change applies to Projects created
+afterwards, because a running Project keeps the configuration it had captured —
+with one exception: the credential the configuration names for the Git identity
+and the credential it names for GitHub authentication follow the current
+configuration, so a rotated secret reaches a Project that is already running on
+its next prompt.
 
 ### Project And Thread Contract
 
@@ -245,7 +250,7 @@ state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch
 Exposing a host facade to every tool handler is an approved tool-privilege
 expansion under HC-004 and HC-007: a bundle previously reached only the sandbox.
 Because a tool result goes to the model, the facade exposes capabilities, never
-credential reads; secrets stay in the environment. `loadBundles` still enforces
+credential reads; secrets stay in the host's credential store. `loadBundles` still enforces
 globally unique names, so a bundle tool cannot collide with a host capability.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
@@ -372,13 +377,26 @@ key, and resolves fused-score ties by that key. It has no persistence or
 provider integration.
 
 `agents/doric` receives complete singleton configuration replacements through
-`PUT /config`. It persists only provider IDs, HTTP(S) base URLs,
-credential environment-variable names ending in `_API_KEY`, one
-`models.execution` profile, and `execution.maxTurns`. Credential values remain
-process environment inputs. Each Project created by `POST /projects`
-captures the active configuration generation and an immutable JSONB snapshot;
-later replacements affect only new Projects. Every Thread uses its Project's
-captured generation.
+`PUT /config`. It persists only provider IDs, HTTP(S) base URLs, credential
+references, one `models.execution` profile, and `execution.maxTurns`. Each
+Project created by `POST /projects` captures the active configuration generation
+and an immutable JSONB snapshot; later replacements affect only new Projects.
+Every Thread uses its Project's captured generation.
+
+`agents/doric` owns a credential store: named `credential` rows of a closed kind
+set, where the kind fixes the field set. `API_TOKEN` is authentication and the
+provider keys and GitHub token are both ones; `USERNAME_PASSWORD` is
+authentication with a name; and `GIT` is identity alone and therefore holds no
+secret. `credentialFields` in `src/lib/credentials` is the one rule the Zod
+input schemas and the service validation both derive from, so a value the kind
+forbids is rejected before it is stored. A secret is stored as a versioned
+AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`, a base64 32-byte key, so the
+key can rotate later. The host refuses to start when a stored secret exists and
+that key is missing or unusable, and it never serves an unreadable secret as an
+empty one. References resolve two ways: a provider or configuration reference
+names a credential by id, and an unconfigured integration asks for the kind it
+needs, where no match leaves it off and several matches are a refusal to guess
+rather than a silent first match.
 
 `packages/sandpool` owns process-local `SandboxSession` capacity, FIFO leasing,
 background warming, bounded factory-attempt batches, replacement, and disposal.
@@ -393,7 +411,8 @@ from `queued` to `failed`. Its capacity option is `maxSandboxes`, and a lease
 guards SSH access exactly as it guards other operations. `packages/sandbox` owns
 the provider-neutral
 `SandboxProvider` and `SandboxRuntime` boundary plus workspace, Git, file, diff,
-network-policy normalization, and disposed-session behavior. It also owns the
+repository discovery, network-policy normalization, and disposed-session
+behavior. It also owns the
 one implementation of the workspace visibility rules — root confinement,
 `.gitignore` handling with negation, hidden entries except `.agents`, and
 directories-first ordering — which the `/bundles/core` `tree` tool and Doric's
@@ -490,11 +509,14 @@ sizes, `GET /projects/:id/tree` lists the whole workspace as one nested tree in 
 single read — each directory carrying its own `children` and no per-file size,
 because one recursive walk measures nothing — `GET /projects/:id/files/content`
 reads one workspace file up to a fixed byte cap with truncated/binary flags, and
-`GET /projects/:id/diff` returns the workspace
-Git diff together with a change list that includes untracked files. A
+`GET /projects/:id/diff` returns one entry per Git repository in the workspace
+tree — each repository's root path, its diff, and its change list, including
+untracked files — with discovery stopping at each repository boundary, exactly
+as Git reports a nested repository. A
 workspace-relative path is normalised, resolved against the workspace root, and
 rejected when it escapes; the routes never log file content or diff bodies.
-REST additionally owns `GET/PUT /config`,
+REST additionally owns `GET/PUT /config`, the `/credentials` create, list,
+patch, and delete surface,
 named Project and Thread creation, rename through `PATCH`, cursor listing,
 detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
 rewind through `POST /threads/:id/rewind`, ordered event
@@ -529,9 +551,15 @@ ordering between Threads; Project reconnection refreshes its snapshot and tree.
 `agents/doric` owns its Prisma ORM 7 schema, generated client configuration,
 and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
 client per process and never applies migrations implicitly during HTTP startup.
-PostgreSQL stores the singleton configuration, normalized provider/model rows,
+PostgreSQL stores the singleton configuration, the credential store, normalized
+provider/model rows,
 Project names, colors and configuration snapshots, Thread names, parentage and
-provider-ready message history, and ordered JSONB Thread events. Before 1.0,
+provider-ready message history, and ordered JSONB Thread events. The credential
+store is populated by migration from the former provider environment
+variables and the former plaintext GitHub identity columns; a provider keeps its
+row and receives a named `API_TOKEN` credential whose secret is empty until its
+operator supplies a key, and a legacy GitHub token is not carried as plaintext
+because AES-256-GCM only runs in the host, so its operator re-enters it once. Before 1.0,
 approved schema changes may be consolidated into the clean Project/Thread
 baseline rather than retained as incremental migrations. Existing incompatible
 development databases must be explicitly recreated. Session-era migrations and
@@ -549,30 +577,34 @@ selection, PostgreSQL client initialization, sandbox limits, bundle resource
 counts, active configuration revision and model profiles, Project/Thread
 reconciliation, mounted interfaces, and listener readiness. Startup failures
 identify only the active bootstrap stage; they do not retain or emit database
-or provider URLs, credential environment names or values, prompts, caught
+or provider URLs, credential values, prompts, caught
 diagnostics, causes, or thrown values.
-Configuration, Project, and Thread routes remain unauthenticated on the existing
-`0.0.0.0` listener. Provider base URLs and credential environment names are
+Configuration, Project, Thread, and Credential routes remain unauthenticated on
+the existing
+`0.0.0.0` listener. Provider base URLs and credential references are
 intentionally configurable through the open PUT, so deployments must keep this
-listener on an isolated trusted network. That stored configuration is
-credential-free except for the one GitHub token it keeps for its operator:
-`PUT /config` is the only way to write it, `GET /config` answers `hasToken` in
-its place, and the host redacts the value from events, logs, and Thread replay
-instead of handing it to a tool. That GitHub block follows one rule in the open
-PUT — absent leaves it alone, `null` removes it, a value sets it — so no caller
-deletes the token by omission. The token therefore also travels in the
-captured configuration snapshot of every Project created after it was saved,
-where it stays inside the host. The host applies that block to a Project's
-sandbox: the identity, and, when a token is configured, a `credential.helper
+listener on an isolated trusted network. The stored configuration holds no
+secret at all: it names the credential each provider and each GitHub-related
+integration uses, and `GET /config` answers exactly the shape `PUT /config`
+accepts. Each named credential is a different resource whose secret never
+appears in a response — `GET /credentials` answers whether one exists — and whose
+value is redacted from events, logs, and Thread replay instead of being handed to
+a tool. The credential routes follow one rule: an absent or `null` field keeps
+what is stored, `''` clears it, and a value sets it, while a kind is immutable
+after create and a credential a provider or the configuration references cannot
+be deleted. The named credentials therefore also reach a Project through the
+configuration generation it captured. The host applies the Git identity and the
+GitHub token to a Project's sandbox separately: `git config user.name/user.email`
+for the identity, and, when a token is configured, a `credential.helper
 store` credential file written 0600 plus the `~/.config/gh/hosts.yml` written
 0600 that authenticates the sandbox's GitHub CLI, when the lease is acquired and
-again whenever the current block differs from the one the sandbox holds, because
-a rotated token must reach a Project that is already running. Credentials are
+again whenever the current pair differs from the one the sandbox holds, because
+a rotated secret must reach a Project that is already running. Credentials are
 therefore applied per lease and never baked into the sandbox image. The token
 travels only through the sandbox process environment, never through a tool
 argument, a tool result, an event, or a log line. Agent events intentionally expose
 reasoning, provider replay, tool input/output, results, and serialized errors;
-configured credential values are redacted before persistence. Event bodies are
+configurable credential values are redacted before persistence. Event bodies are
 never written to operational logs.
 
 Sandpool and each repository-owned LLM provider require an injected
@@ -839,10 +871,11 @@ Keep tool behavior behind explicit, typed, testable interfaces. Do not add host
 command execution, network access, filesystem mutation, credential handling,
 persistence, or session behavior without explicit scope and validation.
 
-Credentials and secrets must not be persisted, printed, logged, or committed,
-with one explicitly approved exception: the singleton configuration stores the
-GitHub token as its single secret, write-only over the API, redacted from events
-and logs, and kept out of tool payloads. Prefer dependency injection and
+Credentials and secrets must not be printed, logged, or committed, and must not
+be persisted outside one explicitly approved place: the host's credential store,
+which keeps each secret as an AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`,
+answers only whether one exists over the API, redacts it from events and logs,
+and keeps it out of tool payloads. Prefer dependency injection and
 explicit configuration objects for sensitive runtime inputs.
 
 Doric Direct Thread replay is durable in PostgreSQL. Projects transition from

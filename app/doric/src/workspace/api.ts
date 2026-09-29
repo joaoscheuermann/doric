@@ -64,11 +64,16 @@ export type ProjectChange = {
   readonly status: ProjectChangeStatus;
 };
 
-export type ProjectDiff = {
-  readonly path?: string;
-  readonly repository: boolean;
+export type ProjectChangeSet = {
+  readonly path: string;
   readonly diff: string;
   readonly changes: readonly ProjectChange[];
+};
+
+/** Every Git repository in the sandbox: one entry per repository. */
+export type ProjectDiff = {
+  readonly path?: string;
+  readonly repositories: readonly ProjectChangeSet[];
 };
 
 export type ProjectFilesResult =
@@ -113,7 +118,57 @@ export type ReasoningEffort = (typeof reasoningEfforts)[number];
 export type ProviderConfiguration = {
   readonly id: string;
   readonly baseUrl: string;
-  readonly apiKeyEnv: string;
+  /** The `API_TOKEN` credential this provider authenticates with. */
+  readonly credentialId: string;
+};
+
+/**
+ * The kind of a stored credential. A kind is a closed set that fixes which
+ * fields the credential carries, and it is immutable once the credential
+ * exists.
+ */
+export const credentialKinds = [
+  'API_TOKEN',
+  'USERNAME_PASSWORD',
+  'GIT',
+] as const;
+
+export type CredentialKind = (typeof credentialKinds)[number];
+
+/**
+ * A stored credential as the host answers it. `hasSecret` stands in for the
+ * secret itself, which never leaves the host: this is the shape every renderer
+ * reads, so no view can hold a credential value.
+ */
+export type Credential = {
+  readonly id: string;
+  readonly kind: CredentialKind;
+  readonly name: string;
+  readonly username?: string;
+  readonly email?: string;
+  readonly hasSecret: boolean;
+};
+
+/** The fields a create names, validated against the kind's field set by the host. */
+export type CredentialCreate = {
+  readonly kind: CredentialKind;
+  readonly name: string;
+  readonly username?: string;
+  readonly email?: string;
+  readonly secret?: string;
+};
+
+/**
+ * The fields a patch may name. Every one follows the same rule — absent or
+ * `null` keeps what is stored, `''` clears it, and a value sets it — so a
+ * secret is never cleared by a caller that did not mean to.
+ */
+export type CredentialUpdate = {
+  readonly kind?: CredentialKind;
+  readonly name?: string;
+  readonly username?: string | null;
+  readonly email?: string | null;
+  readonly secret?: string | null;
 };
 
 export type Configuration = {
@@ -126,34 +181,10 @@ export type Configuration = {
     };
   };
   readonly execution: { readonly maxTurns: number };
-  /** Absent when GitHub was never configured. */
-  readonly github?: GitHubConfiguration;
-};
-
-/**
- * GitHub as the host answers it: whether a token is stored, never the token.
- * A host that answered with one would have it dropped by `configurationFrom`,
- * so a token cannot reach the renderer even by mistake.
- */
-export type GitHubConfiguration = {
-  readonly username: string;
-  readonly email: string;
-  readonly hasToken: boolean;
-};
-
-/**
- * The GitHub block a `PUT /config` sends. A token replaces the stored one,
- * `null` or no key keeps it, and `''` clears it.
- */
-export type GitHubInput = {
-  readonly username: string;
-  readonly email: string;
-  readonly token?: string | null;
-};
-
-/** The configuration a `PUT /config` replaces the host's copy with. */
-export type ConfigurationInput = Omit<Configuration, 'github'> & {
-  readonly github?: GitHubInput | null;
+  /** The `GIT` credential the agent's git commands commit as. */
+  readonly gitCredentialId?: string;
+  /** The `API_TOKEN` credential the sandbox authenticates GitHub with. */
+  readonly githubCredentialId?: string;
 };
 
 export type DoricConfiguration = {
@@ -161,6 +192,13 @@ export type DoricConfiguration = {
   readonly revision: number;
   readonly updatedAt: string;
 };
+
+/**
+ * The configuration a `PUT /config` sends. The body is a plain replacement, so
+ * it is exactly the shape `GET /config` answers: nothing is write-only any more,
+ * because no secret travels with the configuration.
+ */
+export type ConfigurationInput = Configuration;
 
 type Page<Value> = {
   readonly items: readonly Value[];
@@ -211,34 +249,52 @@ const providerConfigurationFrom = (value: unknown): ProviderConfiguration => {
     !isRecord(value) ||
     typeof value.id !== 'string' ||
     typeof value.baseUrl !== 'string' ||
-    typeof value.apiKeyEnv !== 'string'
-  ) {
-    return invalidResponse();
-  }
-  return { id: value.id, baseUrl: value.baseUrl, apiKeyEnv: value.apiKeyEnv };
-};
-
-/**
- * A GitHub block read back by known key, so the token the host never answers
- * with — and anything else a host might add — is dropped here.
- */
-const githubConfigurationFrom = (
-  value: unknown,
-): GitHubConfiguration | undefined => {
-  if (value === undefined) return undefined;
-  if (
-    !isRecord(value) ||
-    typeof value.username !== 'string' ||
-    typeof value.email !== 'string' ||
-    typeof value.hasToken !== 'boolean'
+    typeof value.credentialId !== 'string'
   ) {
     return invalidResponse();
   }
   return {
-    username: value.username,
-    email: value.email,
-    hasToken: value.hasToken,
+    id: value.id,
+    baseUrl: value.baseUrl,
+    credentialId: value.credentialId,
   };
+};
+
+const credentialKindValues = new Set<string>(credentialKinds);
+
+const isCredentialKind = (value: unknown): value is CredentialKind =>
+  typeof value === 'string' && credentialKindValues.has(value);
+
+/**
+ * A credential read back by known key. The secret is not among them, so a host
+ * that answered with one would have it dropped here rather than reaching a view.
+ */
+const credentialFrom = (value: unknown): Credential => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.name !== 'string' ||
+    !isCredentialKind(value.kind) ||
+    typeof value.hasSecret !== 'boolean' ||
+    (value.username !== undefined && typeof value.username !== 'string') ||
+    (value.email !== undefined && typeof value.email !== 'string')
+  ) {
+    return invalidResponse();
+  }
+  return {
+    id: value.id,
+    kind: value.kind,
+    name: value.name,
+    ...(value.username === undefined ? {} : { username: value.username }),
+    ...(value.email === undefined ? {} : { email: value.email }),
+    hasSecret: value.hasSecret,
+  };
+};
+
+/** A reference the configuration names, or nothing when it names none. */
+const credentialReferenceFrom = (value: unknown): string | undefined => {
+  if (value === undefined) return undefined;
+  return typeof value === 'string' ? value : invalidResponse();
 };
 
 const configurationFrom = (value: unknown): Configuration => {
@@ -262,12 +318,14 @@ const configurationFrom = (value: unknown): Configuration => {
     return invalidResponse();
   }
 
-  const github = githubConfigurationFrom(value.github);
+  const gitCredentialId = credentialReferenceFrom(value.gitCredentialId);
+  const githubCredentialId = credentialReferenceFrom(value.githubCredentialId);
   return {
     providers: value.providers.map(providerConfigurationFrom),
     models: { execution: { providerId, model, effort } },
     execution: { maxTurns: value.execution.maxTurns },
-    ...(github === undefined ? {} : { github }),
+    ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
+    ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
   };
 };
 
@@ -519,21 +577,33 @@ const changeFrom = (value: unknown): ProjectChange => {
   return { path: value.path, status: value.status as ProjectChangeStatus };
 };
 
-const diffFrom = (value: unknown): ProjectDiff => {
+const changeSetFrom = (value: unknown): ProjectChangeSet => {
   if (
     !isRecord(value) ||
-    (value.path !== undefined && typeof value.path !== 'string') ||
-    typeof value.repository !== 'boolean' ||
+    typeof value.path !== 'string' ||
     typeof value.diff !== 'string' ||
     !Array.isArray(value.changes)
   ) {
     return invalidResponse();
   }
   return {
-    ...(value.path === undefined ? {} : { path: value.path }),
-    repository: value.repository,
+    path: value.path,
     diff: value.diff,
     changes: value.changes.map(changeFrom),
+  };
+};
+
+const diffFrom = (value: unknown): ProjectDiff => {
+  if (
+    !isRecord(value) ||
+    (value.path !== undefined && typeof value.path !== 'string') ||
+    !Array.isArray(value.repositories)
+  ) {
+    return invalidResponse();
+  }
+  return {
+    ...(value.path === undefined ? {} : { path: value.path }),
+    repositories: value.repositories.map(changeSetFrom),
   };
 };
 
@@ -659,6 +729,34 @@ export const workspaceApi = {
           body: body(configuration),
         }),
       ),
+  },
+  /**
+   * The host's credential store. The list answers every credential in its
+   * public shape, and no call here ever receives or sends a stored secret back:
+   * a create or patch carries one, and the answer to either is the public view.
+   */
+  credentials: {
+    list: async (): Promise<readonly Credential[]> => {
+      const listed = await request<unknown>('/credentials');
+      if (!Array.isArray(listed)) return invalidResponse();
+      return listed.map(credentialFrom);
+    },
+    create: async (input: CredentialCreate): Promise<Credential> =>
+      credentialFrom(
+        await request<unknown>('/credentials', {
+          method: 'POST',
+          body: body(input),
+        }),
+      ),
+    update: async (id_: string, input: CredentialUpdate): Promise<Credential> =>
+      credentialFrom(
+        await request<unknown>(`/credentials/${id(id_)}`, {
+          method: 'PATCH',
+          body: body(input),
+        }),
+      ),
+    remove: (id_: string) =>
+      request<void>(`/credentials/${id(id_)}`, { method: 'DELETE' }),
   },
   projects: {
     list: () => allPages<Project>('/projects'),

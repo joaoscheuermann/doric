@@ -25,15 +25,19 @@ const thread = {
 };
 
 describe('workspace IPC origin', () => {
-  const rendererUrl = 'http://localhost:4200/';
+  const allowedUrls = [
+    'http://localhost:4200/',
+    'http://localhost:4200/settings.html',
+  ];
 
-  test('accepts only the exact renderer URL', () => {
-    assert.equal(senderIsAllowed(rendererUrl, rendererUrl), true);
+  test('accepts only the exact allowed window URLs', () => {
+    assert.equal(senderIsAllowed(allowedUrls[0], allowedUrls), true);
+    assert.equal(senderIsAllowed(allowedUrls[1], allowedUrls), true);
     assert.equal(
-      senderIsAllowed('http://localhost:4200/other', rendererUrl),
+      senderIsAllowed('http://localhost:4200/other', allowedUrls),
       false,
     );
-    assert.equal(senderIsAllowed(undefined, rendererUrl), false);
+    assert.equal(senderIsAllowed(undefined, allowedUrls), false);
   });
 });
 
@@ -303,9 +307,13 @@ describe('Project filesystem HTTP boundary', () => {
         });
       }
       return Response.json({
-        repository: true,
-        diff: '@@ -1 +1 @@',
-        changes: [{ path: 'src/a.ts', status: 'modified' }],
+        repositories: [
+          {
+            path: 'repo',
+            diff: '@@ -1 +1 @@',
+            changes: [{ path: 'src/a.ts', status: 'modified' }],
+          },
+        ],
       });
     };
 
@@ -333,9 +341,13 @@ describe('Project filesystem HTTP boundary', () => {
       assert.deepEqual(await workspaceApi.projects.diff('project-id'), {
         status: 'ready',
         diff: {
-          repository: true,
-          diff: '@@ -1 +1 @@',
-          changes: [{ path: 'src/a.ts', status: 'modified' }],
+          repositories: [
+            {
+              path: 'repo',
+              diff: '@@ -1 +1 @@',
+              changes: [{ path: 'src/a.ts', status: 'modified' }],
+            },
+          ],
         },
       });
     } finally {

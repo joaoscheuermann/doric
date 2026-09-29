@@ -19,13 +19,6 @@ import {
   toggleExpanded,
   truncationNotice,
 } from '../src/domain/files';
-import type { ProjectDiff } from '../src/domain/workspace';
-
-const diffOf = (diff: string): ProjectDiff => ({
-  repository: true,
-  diff,
-  changes: [],
-});
 
 const kinds = (file: DiffFile | undefined): readonly string[] =>
   (file?.lines ?? []).map(({ kind }) => kind);
@@ -132,7 +125,7 @@ describe('sandbox paths', () => {
 
 describe('diff classification', () => {
   test('splits a multi-file diff on its headers, in order', () => {
-    const files = classifyDiff(diffOf(multiFileDiff));
+    const files = classifyDiff(multiFileDiff);
 
     assert.deepEqual(
       files.map(({ path }) => path),
@@ -141,7 +134,7 @@ describe('diff classification', () => {
   });
 
   test('reads hunk lines as adds, removes and context without their marker', () => {
-    const [file] = classifyDiff(diffOf(multiFileDiff));
+    const [file] = classifyDiff(multiFileDiff);
 
     assert.deepEqual(kinds(file), [
       'meta',
@@ -164,7 +157,7 @@ describe('diff classification', () => {
   });
 
   test('keeps a hunk header, a mode line and the no-newline marker as meta', () => {
-    const files = classifyDiff(diffOf(multiFileDiff));
+    const files = classifyDiff(multiFileDiff);
     const newFile = files[1];
     const renamed = files[2];
 
@@ -190,22 +183,20 @@ describe('diff classification', () => {
   });
 
   test('names a rename by the path the file view can open', () => {
-    const renamed = classifyDiff(diffOf(multiFileDiff))[2];
+    const renamed = classifyDiff(multiFileDiff)[2];
 
     assert.equal(renamed?.path, 'src/new-name.ts');
   });
 
   test('reads a quoted header, as git writes a path it cannot print plainly', () => {
     const files = classifyDiff(
-      diffOf(
-        [
-          'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
-          'index 6666666..7777777 100644',
-          '@@ -1 +1 @@',
-          '-old',
-          '+new',
-        ].join('\n'),
-      ),
+      [
+        'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
+        'index 6666666..7777777 100644',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n'),
     );
 
     assert.deepEqual(
@@ -217,15 +208,13 @@ describe('diff classification', () => {
 
   test('drops the text that belongs to no file', () => {
     const files = classifyDiff(
-      diffOf(
-        [
-          'warning: something',
-          'diff --git a/one b/one',
-          '@@ -1 +1 @@',
-          '-a',
-          '+b',
-        ].join('\n'),
-      ),
+      [
+        'warning: something',
+        'diff --git a/one b/one',
+        '@@ -1 +1 @@',
+        '-a',
+        '+b',
+      ].join('\n'),
     );
 
     assert.equal(files.length, 1);
@@ -233,25 +222,21 @@ describe('diff classification', () => {
   });
 
   test('reads a diff that carries no trailing newline', () => {
-    const files = classifyDiff(
-      diffOf('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b'),
-    );
+    const files = classifyDiff('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b');
 
     assert.deepEqual(kinds(files[0]), ['meta', 'remove', 'add']);
   });
 
   test('reports no file for an empty diff', () => {
-    assert.deepEqual(classifyDiff(diffOf('')), []);
+    assert.deepEqual(classifyDiff(''), []);
   });
 
   test('counts added and removed lines across every file', () => {
-    const files = classifyDiff(diffOf(multiFileDiff));
+    const files = classifyDiff(multiFileDiff);
 
     assert.deepEqual(diffStat(files), { added: 5, removed: 2 });
     assert.deepEqual(
-      diffStat(
-        classifyDiff(diffOf('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b')),
-      ),
+      diffStat(classifyDiff('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b')),
       { added: 1, removed: 1 },
     );
     assert.deepEqual(diffStat([]), { added: 0, removed: 0 });

@@ -9,6 +9,7 @@ import { CONTENT_LIMIT_BYTES } from '../src/lib/workspace/files.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { WorkspaceService } from '../src/lib/workspace/types.js';
 import {
+  credentialResolver,
   fakeSandbox,
   type FakeSandboxOptions,
   pool,
@@ -238,30 +239,48 @@ test('reports a missing file and a directory read as content', async (t) => {
   );
 });
 
-test('parses the changes list from git status and passes the diff through', async (t) => {
+test('returns one entry per repository, each with its own changes and diff', async (t) => {
   const harness = await withService({
-    entries: [{ path: 'src/a.ts', content: 'x' }],
-    status:
-      '?? src/new.ts\n M src/a.ts\nA  src/b.ts\nD  src/gone.ts\nR  old.ts -> new.ts\n',
-    diff: 'diff --git a/src/a.ts b/src/a.ts\n',
+    repositories: [
+      {
+        path: 'alpha',
+        status:
+          '?? src/new.ts\n M src/a.ts\nA  src/b.ts\nD  src/gone.ts\nR  old.ts -> new.ts\n',
+        diff: 'diff --git a/src/a.ts b/src/a.ts\n',
+      },
+      {
+        path: 'beta',
+        status: ' M lib/b.ts\n',
+        diff: 'diff --git a/lib/b.ts b/lib/b.ts\n',
+      },
+    ],
   });
   t.after(harness.dispose);
 
   assert.deepEqual(await harness.service.projects.diff(harness.projectId), {
     status: 'ready',
-    repository: true,
-    diff: 'diff --git a/src/a.ts b/src/a.ts\n',
-    changes: [
-      { path: 'src/new.ts', status: 'untracked' },
-      { path: 'src/a.ts', status: 'modified' },
-      { path: 'src/b.ts', status: 'added' },
-      { path: 'src/gone.ts', status: 'deleted' },
-      { path: 'new.ts', status: 'renamed' },
+    repositories: [
+      {
+        path: 'alpha',
+        diff: 'diff --git a/src/a.ts b/src/a.ts\n',
+        changes: [
+          { path: 'src/new.ts', status: 'untracked' },
+          { path: 'src/a.ts', status: 'modified' },
+          { path: 'src/b.ts', status: 'added' },
+          { path: 'src/gone.ts', status: 'deleted' },
+          { path: 'new.ts', status: 'renamed' },
+        ],
+      },
+      {
+        path: 'beta',
+        diff: 'diff --git a/lib/b.ts b/lib/b.ts\n',
+        changes: [{ path: 'lib/b.ts', status: 'modified' }],
+      },
     ],
   });
 });
 
-test('reports no repository when git status fails', async (t) => {
+test('reports no repositories when the workspace holds none', async (t) => {
   const harness = await withService({
     entries: [{ path: 'a.ts', content: 'x' }],
   });
@@ -269,27 +288,24 @@ test('reports no repository when git status fails', async (t) => {
 
   assert.deepEqual(await harness.service.projects.diff(harness.projectId), {
     status: 'ready',
-    repository: false,
-    diff: '',
-    changes: [],
+    repositories: [],
   });
 });
 
-test('scopes the diff to the requested path', async (t) => {
+test('echoes a requested path without scoping the repositories', async (t) => {
   const harness = await withService({
-    entries: [{ path: 'src/a.ts', content: 'x' }],
-    status: ' M src/a.ts\n',
+    repositories: [{ path: 'alpha', status: ' M src/a.ts\n' }],
   });
   t.after(harness.dispose);
 
   const result = await harness.service.projects.diff(
     harness.projectId,
-    'src/a.ts',
+    'alpha',
   );
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') throw new Error('expected a ready diff');
-  assert.equal(result.path, 'src/a.ts');
-  assert.deepEqual(harness.environment.diffs, [{ paths: ['src/a.ts'] }]);
+  assert.equal(result.path, 'alpha');
+  assert.deepEqual(harness.environment.diffs, [{ cwd: 'alpha' }]);
 });
 
 type ErrorBody = { error: { code: string } };
@@ -306,12 +322,7 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
         binary: false,
       }),
       tree: async () => ({ status: 'ready', path: '', entries: [] }),
-      diff: async () => ({
-        status: 'ready',
-        repository: true,
-        diff: '',
-        changes: [],
-      }),
+      diff: async () => ({ status: 'ready', repositories: [] }),
       ...overrides,
     },
   } as unknown as WorkspaceService;
@@ -321,6 +332,7 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
   };
   registerHttpRoutes(app, {
     config: { current: unsupported, replace: unsupported },
+    credentials: credentialResolver(),
     service,
     vms: { list: () => [], find: () => undefined, ssh: async () => undefined },
   });
@@ -539,9 +551,13 @@ test('serves the diff and echoes a scoped path', async (t) => {
     diff: async (_id, path) => ({
       status: 'ready',
       ...(path === undefined ? {} : { path }),
-      repository: true,
-      diff: 'diff --git a/a.ts b/a.ts\n',
-      changes: [{ path: 'a.ts', status: 'modified' }],
+      repositories: [
+        {
+          path: 'alpha',
+          diff: 'diff --git a/a.ts b/a.ts\n',
+          changes: [{ path: 'a.ts', status: 'modified' }],
+        },
+      ],
     }),
   });
   t.after(host.close);
@@ -550,9 +566,13 @@ test('serves the diff and echoes a scoped path', async (t) => {
   assert.equal(whole.status, 200);
   assert.equal(whole.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await whole.json(), {
-    repository: true,
-    diff: 'diff --git a/a.ts b/a.ts\n',
-    changes: [{ path: 'a.ts', status: 'modified' }],
+    repositories: [
+      {
+        path: 'alpha',
+        diff: 'diff --git a/a.ts b/a.ts\n',
+        changes: [{ path: 'a.ts', status: 'modified' }],
+      },
+    ],
   });
 
   const scoped = await host.request(`/projects/${projectId}/diff?path=a.ts`);

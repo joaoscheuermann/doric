@@ -3,7 +3,7 @@ import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
-import type { ProjectChange } from './files.js';
+import type { ProjectChangeSet } from './files.js';
 
 export type ProjectState =
   | 'queued'
@@ -141,9 +141,7 @@ export type ProjectDiff =
   | {
       readonly status: 'ready';
       readonly path?: string;
-      readonly repository: boolean;
-      readonly diff: string;
-      readonly changes: readonly ProjectChange[];
+      readonly repositories: readonly ProjectChangeSet[];
     }
   | { readonly status: 'invalid_path' | 'not_found' };
 

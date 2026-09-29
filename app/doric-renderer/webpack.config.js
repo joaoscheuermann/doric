@@ -1,6 +1,57 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
 const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
+const { readFileSync } = require('fs');
 const { join } = require('path');
+
+/**
+ * Nx writes one page for the `index` option, so the settings window's page is
+ * written here instead. `settings.html` receives only the settings entry's own
+ * scripts and styles — never the main window's — so the second window mounts the
+ * settings surface alone, and a hashed production build still gets the right
+ * filenames.
+ */
+class SettingsPagePlugin {
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('SettingsPagePlugin', (compilation) => {
+      compilation.hooks.processAssets.tap(
+        {
+          name: 'SettingsPagePlugin',
+          stage:
+            compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_INLINE,
+        },
+        () => {
+          // The runtime and the global stylesheet both belong to every page;
+          // the settings entry is this page's own code.
+          const files = new Set(
+            ['runtime', 'styles', 'settings'].flatMap(
+              (name) => compilation.entrypoints.get(name)?.getFiles() ?? [],
+            ),
+          );
+          const scripts = [...files].filter((file) => file.endsWith('.js'));
+          const styles = [...files].filter((file) => file.endsWith('.css'));
+          const html = readFileSync(join(__dirname, 'src', 'settings.html'))
+            .toString()
+            .replace(
+              '</head>',
+              `${styles
+                .map((file) => `<link rel="stylesheet" href="${file}" />`)
+                .join('')}</head>`,
+            )
+            .replace(
+              '</body>',
+              `${scripts
+                .map((file) => `<script type="module" src="${file}"></script>`)
+                .join('')}</body>`,
+            );
+          compilation.emitAsset(
+            'settings.html',
+            new compiler.webpack.sources.RawSource(html),
+          );
+        },
+      );
+    });
+  }
+}
 
 module.exports = {
   // rehype-harden publishes a map for src/index.ts without shipping that source.
@@ -32,6 +83,9 @@ module.exports = {
       tsConfig: './tsconfig.app.json',
       compiler: 'babel',
       main: './src/main.tsx',
+      additionalEntryPoints: [
+        { entryName: 'settings', entryPath: './src/settings.tsx' },
+      ],
       index: './src/index.html',
       baseHref: './',
       // Vendored fonts are emitted by css-loader with content hashes; copying
@@ -54,5 +108,6 @@ module.exports = {
       // See: https://react-svgr.com/
       // svgr: false
     }),
+    new SettingsPagePlugin(),
   ],
 };

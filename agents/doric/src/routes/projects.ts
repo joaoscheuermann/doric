@@ -347,9 +347,7 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
     if (result.status === 'ready') {
       response.json({
         ...(result.path === undefined ? {} : { path: result.path }),
-        repository: result.repository,
-        diff: result.diff,
-        changes: result.changes,
+        repositories: result.repositories,
       });
       return;
     }

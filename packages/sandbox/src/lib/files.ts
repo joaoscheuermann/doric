@@ -4,6 +4,8 @@ import type {
   SandboxEntry,
   SandboxListInput,
   SandboxListResult,
+  SandboxRepo,
+  SandboxReposResult,
   SandboxTreeNode,
   SandboxTreeResult,
   WorkspacePathKind,
@@ -98,6 +100,74 @@ export const listSandboxTree = async (
     entries: tree(sandbox, root.path, entries),
   };
 };
+
+/**
+ * The Git repositories in the workspace, found by the `.git` marker that sits at
+ * every repository root — a directory for an ordinary clone, a file for a
+ * submodule or a linked worktree. Each `.git` is pruned, so nothing inside it is
+ * read, and the result stops at the outermost repository boundary: a repository
+ * nested in another is left to the outer one, exactly as Git reports it, so a
+ * nested repository's files are never listed twice.
+ */
+export const listSandboxRepos = async (
+  sandbox: Sandbox,
+): Promise<SandboxReposResult> => {
+  const kind = await pathKind(sandbox, sandbox.root, sandbox.root);
+
+  if (kind === 'missing') {
+    return { status: 'missing' };
+  }
+
+  if (kind !== 'directory') {
+    return { status: 'not_directory' };
+  }
+
+  const result = await sandbox.exec({
+    cwd: sandbox.root,
+    cmd: ['find', sandbox.root, '(', '-name', '.git', ')', '-prune', '-print'],
+  });
+
+  if (result.exitCode !== 0) {
+    return { status: 'missing' };
+  }
+
+  return {
+    status: 'listed',
+    path: '',
+    repositories: repositoryRoots(sandbox, lines(result.stdout)),
+  };
+};
+
+/**
+ * The repository roots the `.git` markers name, as workspace-relative paths,
+ * sorted and reduced to the outermost of any nesting. An ancestor always sorts
+ * before the paths under it, so one pass keeps each boundary and drops the
+ * repositories found inside it.
+ */
+const repositoryRoots = (
+  sandbox: Sandbox,
+  markers: readonly string[],
+): readonly SandboxRepo[] => {
+  const roots = [
+    ...new Set(
+      markers.map((marker) =>
+        relative(sandbox.root, path.dirname(normalize(marker))),
+      ),
+    ),
+  ].sort();
+
+  return roots.reduce<SandboxRepo[]>((kept, path) => {
+    if (!kept.some((repo) => under(repo.path, path))) {
+      kept.push({ path });
+    }
+
+    return kept;
+  }, []);
+};
+
+/** Whether `path` is `root` itself or lies under it; the workspace root holds all. */
+const under = (root: string, path: string): boolean =>
+  root === '' || path === root || path.startsWith(`${root}/`);
 
 /** Reports what a workspace-relative path is, without reading its content. */
 export const workspacePathKind = async (

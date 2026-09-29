@@ -4,6 +4,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { defaultConfig } from '../src/lib/config/schema.js';
 import { createConfigStore } from '../src/lib/config/store.js';
+import { createCredentialService } from '../src/lib/credentials/service.js';
+import { createCredentialStore } from '../src/lib/credentials/store.js';
 import { createProjectStore } from '../src/lib/workspace/projects.js';
 import { createThreadStore } from '../src/lib/workspace/threads.js';
 import {
@@ -13,6 +15,8 @@ import {
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const promptId = randomUUID();
+/** 32 zero bytes, base64. A fixed test key, never a deployed one. */
+const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 integrationTest(
   'creates projects without threads and captures immutable configuration',
@@ -460,13 +464,14 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming, checkpoint, color, and GitHub migrations', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, and credential migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
     '20260827000000_add_thread_checkpoints',
     '20260923000000_add_project_color',
     '20260924000000_add_github_credentials',
+    '20260925000000_add_credential_store',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -506,6 +511,21 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
   assert.match(github, /ADD COLUMN "github_email" TEXT,/u);
   assert.match(github, /ADD COLUMN "github_token" TEXT,/u);
   assert.match(github, /ADD COLUMN "github_username" TEXT;/u);
+  const store = await readFile(
+    `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+    'utf8',
+  );
+  assert.match(
+    store,
+    /CREATE TYPE "CredentialKind" AS ENUM \('API_TOKEN', 'USERNAME_PASSWORD', 'GIT'\);/u,
+  );
+  assert.match(store, /CREATE TABLE "credential"/u);
+  assert.match(store, /ADD COLUMN "git_credential_id" UUID,/u);
+  assert.match(store, /ADD COLUMN "credential_id" UUID;/u);
+  // Every legacy column is dropped only after its value is carried over.
+  const drop = store.indexOf('DROP COLUMN "github_username"');
+  assert.ok(drop > store.indexOf('INSERT INTO "credential"'));
+  assert.match(store, /DROP COLUMN "api_key_env";/u);
 });
 
 test(
@@ -688,42 +708,150 @@ for (const failure of [
   });
 }
 
-integrationTest(
-  'round-trips the GitHub identity and its write-only token',
-  async ({ configs }) => {
-    const initial = await configs.load();
-    assert.equal(initial.configuration.github, undefined);
+test(
+  'carries configured GitHub data and every provider into the credential store',
+  { skip: connectionString === undefined },
+  async () => {
+    assert.ok(connectionString);
+    const baseline = await readFile(
+      `${migrationDirectory}/20260825000000_initial/migration.sql`,
+      'utf8',
+    );
+    const github = await readFile(
+      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+      'utf8',
+    );
+    const store = await readFile(
+      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+      'utf8',
+    );
+    const resources = await persistenceFixture(connectionString, {
+      migration: async () => `${baseline}\n${github}`,
+    });
+    try {
+      await resources.database.$executeRaw`
+        UPDATE doric_configuration SET
+          github_username = 'octocat',
+          github_email = 'octocat@example.com',
+          github_token = 'ghp_legacy_plaintext'
+        WHERE id = 1`;
 
-    const configured = await configs.replace({
-      ...initial.configuration,
-      github: {
-        username: 'octocat',
-        email: 'octocat@example.com',
-        token: 'ghp_stored',
-      },
-    });
-    assert.deepEqual(configured.configuration.github, {
-      username: 'octocat',
-      email: 'octocat@example.com',
-      token: 'ghp_stored',
-    });
-    assert.deepEqual((await configs.load()).configuration.github, {
-      username: 'octocat',
-      email: 'octocat@example.com',
-      token: 'ghp_stored',
-    });
+      await resources.migrate(store);
 
-    const cleared = await configs.replace({
-      ...initial.configuration,
-      github: { username: 'octocat', email: 'octocat@example.com' },
-    });
-    assert.deepEqual(cleared.configuration.github, {
-      username: 'octocat',
-      email: 'octocat@example.com',
-    });
+      // The identity is carried value for value, the token keeps its row but not
+      // its plaintext, and the provider keeps its own row under the old name.
+      const credentials = await resources.database.$queryRaw<
+        {
+          kind: string;
+          name: string;
+          username: string | null;
+          email: string | null;
+          secret: string | null;
+        }[]
+      >`SELECT kind, name, username, email, secret FROM credential
+        ORDER BY kind, name`;
+      assert.deepEqual(credentials, [
+        {
+          kind: 'API_TOKEN',
+          name: 'OPENROUTER_API_KEY',
+          username: null,
+          email: null,
+          secret: '',
+        },
+        {
+          kind: 'API_TOKEN',
+          name: 'github',
+          username: null,
+          email: null,
+          secret: '',
+        },
+        {
+          kind: 'GIT',
+          name: 'github',
+          username: 'octocat',
+          email: 'octocat@example.com',
+          secret: null,
+        },
+      ]);
+      assert.equal(
+        JSON.stringify(credentials).includes('ghp_legacy_plaintext'),
+        false,
+      );
 
-    const unconfigured = await configs.replace(initial.configuration);
-    assert.equal(unconfigured.configuration.github, undefined);
+      const providers = await resources.database.$queryRaw<
+        { id: string; credential_id: string }[]
+      >`SELECT id, credential_id FROM provider_configuration`;
+      assert.deepEqual(providers, [
+        {
+          id: 'openrouter',
+          credential_id: '00000000-0000-4000-8000-000000000002',
+        },
+      ]);
+
+      const configuration = await resources.database.$queryRaw<
+        { git_credential_id: string; github_credential_id: string }[]
+      >`SELECT git_credential_id, github_credential_id FROM doric_configuration`;
+      assert.deepEqual(configuration, [
+        {
+          git_credential_id: '00000000-0000-4000-8000-000000000003',
+          github_credential_id: '00000000-0000-4000-8000-000000000004',
+        },
+      ]);
+
+      // The legacy columns are gone, and a referenced credential cannot go.
+      await assert.rejects(
+        resources.database
+          .$queryRaw`SELECT api_key_env FROM provider_configuration`,
+      );
+      await assert.rejects(
+        resources.database.$executeRaw`DELETE FROM credential
+          WHERE id = '00000000-0000-4000-8000-000000000002'::uuid`,
+      );
+    } finally {
+      await resources.close();
+    }
+  },
+);
+
+test(
+  'leaves an unconfigured GitHub block unconfigured',
+  { skip: connectionString === undefined },
+  async () => {
+    assert.ok(connectionString);
+    const baseline = await readFile(
+      `${migrationDirectory}/20260825000000_initial/migration.sql`,
+      'utf8',
+    );
+    const github = await readFile(
+      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+      'utf8',
+    );
+    const store = await readFile(
+      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+      'utf8',
+    );
+    const resources = await persistenceFixture(connectionString, {
+      migration: async () => `${baseline}\n${github}`,
+    });
+    try {
+      await resources.migrate(store);
+
+      const credentials = await resources.database.credential.findMany({
+        orderBy: { name: 'asc' },
+      });
+      assert.deepEqual(
+        credentials.map(({ kind, name, secret }) => ({ kind, name, secret })),
+        [{ kind: 'API_TOKEN', name: 'OPENROUTER_API_KEY', secret: '' }],
+      );
+      const configuration =
+        await resources.database.doricConfiguration.findUniqueOrThrow({
+          where: { id: 1 },
+        });
+      assert.equal(configuration.gitCredentialId, null);
+      assert.equal(configuration.githubCredentialId, null);
+    } finally {
+      await resources.close();
+    }
   },
 );
 
@@ -736,6 +864,7 @@ integrationTest(
     assert.deepEqual(
       tables.map(({ tablename }) => tablename),
       [
+        'credential',
         'doric_configuration',
         'model_configuration',
         'project',
@@ -751,6 +880,114 @@ integrationTest(
     await assert.rejects(database.$executeRaw`
       INSERT INTO doric_configuration (id, revision, generation, max_turns, updated_at)
       SELECT 2, revision, generation, max_turns, updated_at FROM doric_configuration WHERE id = 1`);
+  },
+);
+
+integrationTest(
+  'encrypts a credential secret at rest and answers only whether it exists',
+  async ({ credentials, database }) => {
+    const created = await credentials.create({
+      kind: 'API_TOKEN',
+      name: 'openrouter',
+      secret: 'sk_live_value',
+    });
+    assert.equal(created.status, 'saved');
+    if (created.status !== 'saved') return;
+
+    const row = await database.credential.findUniqueOrThrow({
+      where: { id: created.credential.id },
+    });
+    assert.match(row.secret ?? '', /^v1:/u);
+    assert.equal(row.secret?.includes('sk_live_value'), false);
+    assert.deepEqual(credentials.secrets(), ['sk_live_value']);
+  },
+);
+
+integrationTest(
+  'refuses to serve a stored secret without the key that wrote it',
+  async ({ credentials, database }) => {
+    await credentials.create({
+      kind: 'API_TOKEN',
+      name: 'openrouter',
+      secret: 'sk_live_value',
+    });
+
+    await assert.rejects(
+      createCredentialService({
+        store: createCredentialStore(database),
+        environment: {},
+      }),
+    );
+  },
+);
+
+integrationTest(
+  'keeps a credential a provider or the configuration references',
+  async ({ credentials, configs }) => {
+    // The seeded provider credential is referenced by the seeded provider.
+    assert.equal(
+      await credentials.remove(defaultConfig.providers[0].credentialId),
+      'referenced',
+    );
+    // A name a kind already uses is a conflict, not a second credential.
+    assert.deepEqual(
+      await credentials.create({
+        kind: 'API_TOKEN',
+        name: 'OPENROUTER_API_KEY',
+        secret: 'sk_other',
+      }),
+      { status: 'conflict' },
+    );
+
+    const created = await credentials.create({
+      kind: 'GIT',
+      name: 'github',
+      username: 'octocat',
+      email: 'octocat@example.com',
+    });
+    assert.equal(created.status, 'saved');
+    if (created.status !== 'saved') return;
+
+    await configs.replace({
+      ...defaultConfig,
+      gitCredentialId: created.credential.id,
+    });
+    assert.equal(await credentials.remove(created.credential.id), 'referenced');
+
+    // Clearing the choice releases it, so it can be deleted exactly once.
+    await configs.replace(defaultConfig);
+    assert.equal(await credentials.remove(created.credential.id), 'deleted');
+    assert.equal(await credentials.remove(created.credential.id), 'missing');
+  },
+);
+
+integrationTest(
+  'round-trips the configured credential choices',
+  async ({ credentials, configs }) => {
+    const created = await credentials.create({
+      kind: 'GIT',
+      name: 'github',
+      username: 'octocat',
+      email: 'octocat@example.com',
+    });
+    assert.equal(created.status, 'saved');
+    if (created.status !== 'saved') return;
+
+    const configured = await configs.replace({
+      ...defaultConfig,
+      gitCredentialId: created.credential.id,
+    });
+    assert.equal(
+      configured.configuration.gitCredentialId,
+      created.credential.id,
+    );
+    assert.equal(
+      (await configs.load()).configuration.gitCredentialId,
+      created.credential.id,
+    );
+
+    const cleared = await configs.replace(defaultConfig);
+    assert.equal(cleared.configuration.gitCredentialId, undefined);
   },
 );
 
@@ -774,6 +1011,10 @@ async function fixture() {
   return {
     ...resources,
     configs: createConfigStore(database),
+    credentials: await createCredentialService({
+      store: createCredentialStore(database),
+      environment: { DORIC_CREDENTIAL_KEY: credentialKey },
+    }),
     projects: createProjectStore(database),
     threads: createThreadStore(database),
   };

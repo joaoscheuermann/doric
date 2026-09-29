@@ -41,6 +41,7 @@ import {
   persistenceFixture,
 } from './helpers/persistence-fixture.js';
 import { inbox } from './helpers/socket-inbox.js';
+import { credentialResolver } from './helpers/workspace.js';
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const enabled = connectionString && process.env.DORIC_TEST_SANDBOX === 'true';
@@ -163,14 +164,11 @@ test(
     );
     const config = await createConfigService({
       store: createConfigStore(database),
+      credentials: credentialResolver(),
       bundles,
       logger,
-      environment: {},
       buildGeneration: async (options) => {
-        const generation = await createGeneration({
-          ...options,
-          environment: {},
-        });
+        const generation = await createGeneration(options);
         return {
           ...generation,
           providers: new Map([
@@ -211,6 +209,7 @@ test(
       projects,
       threads,
       config,
+      credentials: credentialResolver(),
       pool,
       logger,
       publisher: createWorkspaceSocket(sockets, projects, threads),
@@ -218,6 +217,7 @@ test(
     cleanup.defer(() => service.dispose());
     registerHttpRoutes(app, {
       config,
+      credentials: credentialResolver(),
       service,
       vms: {
         list: vms.list,

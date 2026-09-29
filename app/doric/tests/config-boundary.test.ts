@@ -13,12 +13,12 @@ const valid: Configuration = {
     {
       id: 'openrouter',
       baseUrl: 'https://openrouter.ai/api/v1',
-      apiKeyEnv: 'OPENROUTER_API_KEY',
+      credentialId: '00000000-0000-4000-8000-000000000001',
     },
     {
       id: 'local',
       baseUrl: 'http://127.0.0.1:1234/v1',
-      apiKeyEnv: 'LOCAL_API_KEY',
+      credentialId: '00000000-0000-4000-8000-000000000002',
     },
   ],
   models: {
@@ -60,15 +60,11 @@ const turns = (maxTurns: unknown) => ({
   execution: { maxTurns },
 });
 
-/** A GitHub block a save may send, which each case then breaks once. */
-const githubBlock = (overrides: Record<string, unknown> = {}) => ({
-  username: 'octocat',
-  email: 'octocat@example.com',
-  token: null,
+/** A configuration naming both credential choices, which cases then break once. */
+const withChoices = (overrides: Record<string, unknown>) => ({
+  ...valid,
   ...overrides,
 });
-
-const withGitHub = (github: unknown) => ({ ...valid, github });
 
 describe('Configuration validation', () => {
   test('forwards a valid configuration as a new object holding only its known keys', () => {
@@ -98,7 +94,9 @@ describe('Configuration validation', () => {
     ['an empty provider id', provider({ id: '' })],
     ['a whitespace-only provider id', provider({ id: '   ' })],
     ['a provider id over 128 characters', provider({ id: 'a'.repeat(129) })],
-    ['an empty API key environment name', provider({ apiKeyEnv: '' })],
+    ['an empty credential reference', provider({ credentialId: '' })],
+    ['a missing credential reference', provider({ credentialId: undefined })],
+    ['a non-string credential reference', provider({ credentialId: 7 })],
     ['a missing models section', { ...valid, models: undefined }],
     ['models as an array', { ...valid, models: [] }],
     ['missing execution models', { ...valid, models: {} }],
@@ -125,74 +123,44 @@ describe('Configuration validation', () => {
   }
 });
 
-describe('GitHub configuration boundary', () => {
-  test('accepts a block that names a username and an email', () => {
-    assert.deepEqual(
-      configuration(withGitHub(githubBlock())).github,
-      githubBlock(),
-    );
-  });
-
-  test('reads an absent token as null, which keeps the stored one', () => {
-    const named = { username: 'octocat', email: 'octocat@example.com' };
-
-    assert.deepEqual(configuration(withGitHub(named)).github, githubBlock());
-    assert.deepEqual(
-      configuration(withGitHub({ ...named, token: undefined })).github,
-      githubBlock(),
-    );
-  });
-
-  test('passes an empty token through, which clears the stored one', () => {
-    assert.deepEqual(
-      configuration(withGitHub(githubBlock({ token: '' }))).github,
-      githubBlock({ token: '' }),
-    );
-  });
-
-  test('passes a replacement token through unchanged', () => {
-    const token = 'ghp_example1234567890';
-
-    assert.equal(
-      configuration(withGitHub(githubBlock({ token }))).github?.token,
-      token,
-    );
-  });
-
-  test('treats an absent block as none configured', () => {
-    assert.equal('github' in configuration(valid), false);
-    assert.equal('github' in configuration(withGitHub(undefined)), false);
-  });
-
-  test('passes an explicit null through as the removal instruction', () => {
-    // Absent leaves the stored block alone, so removal has its own spelling.
-    assert.deepEqual(configuration({ ...valid, github: null }), {
-      ...configuration(valid),
-      github: null,
+describe('credential choice boundary', () => {
+  test('accepts a configuration that names both choices', () => {
+    const named = withChoices({
+      gitCredentialId: '00000000-0000-4000-8000-000000000010',
+      githubCredentialId: '00000000-0000-4000-8000-000000000011',
     });
+
+    assert.deepEqual(configuration(named), named);
+  });
+
+  test('treats an absent choice as none configured', () => {
+    assert.equal('gitCredentialId' in configuration(valid), false);
+    assert.equal('githubCredentialId' in configuration(valid), false);
+  });
+
+  test('reads an empty or null choice as none, because neither is a reference', () => {
+    assert.equal(
+      'gitCredentialId' in configuration(withChoices({ gitCredentialId: '' })),
+      false,
+    );
+    assert.equal(
+      'githubCredentialId' in
+        configuration(withChoices({ githubCredentialId: null })),
+      false,
+    );
   });
 
   const malformed: ReadonlyArray<readonly [string, unknown]> = [
-    ['a GitHub block that is not an object', withGitHub('github')],
-    ['an unknown key inside it', githubBlock({ password: 'hunter2' })],
-    ['a missing username', { email: 'octocat@example.com' }],
-    ['a blank username', githubBlock({ username: '   ' })],
+    ['a numeric choice', withChoices({ gitCredentialId: 7 })],
+    ['an object choice', withChoices({ githubCredentialId: { id: 'x' } })],
     [
-      'a username over 128 characters',
-      githubBlock({ username: 'u'.repeat(129) }),
+      'a choice over the identifier bound',
+      withChoices({ gitCredentialId: 'a'.repeat(129) }),
     ],
-    ['a missing email', { username: 'octocat' }],
-    ['a blank email', githubBlock({ email: '   ' })],
-    ['an email that is not an address', githubBlock({ email: 'octocat' })],
     [
-      'an email over 254 characters',
-      githubBlock({ email: `${'e'.repeat(243)}@example.com` }),
+      'a choice carrying a NUL byte',
+      withChoices({ gitCredentialId: 'a\u0000b' }),
     ],
-    ['a token carrying a newline', githubBlock({ token: 'ghp_secret\n' })],
-    ['a token carrying a space', githubBlock({ token: 'ghp secret' })],
-    ['a token over 512 characters', githubBlock({ token: 't'.repeat(513) })],
-    ['a token that is not text', githubBlock({ token: 42 })],
-    ['a token that is an object', githubBlock({ token: { value: 'ghp' } })],
   ];
 
   for (const [scenario, value] of malformed) {
@@ -200,27 +168,83 @@ describe('GitHub configuration boundary', () => {
       assert.throws(() => configuration(value), invalidConfiguration);
     });
   }
+});
 
-  test('never names the token it refused', () => {
-    const secret = 'ghp_do_not_echo_me';
-    const refused = [
-      githubBlock({ token: `${secret}\n` }),
-      githubBlock({ token: secret.repeat(50) }),
-      githubBlock({ token: 42, note: secret }),
-      githubBlock({ email: secret, token: secret }),
-    ];
-
-    for (const block of refused) {
-      assert.throws(
-        () => configuration(withGitHub(block)),
-        (error: unknown) => {
-          assert.ok(error instanceof WorkspaceError);
-          assert.equal(error.message, 'The configuration is invalid.');
-          assert.equal(error.message.includes(secret), false);
-          return true;
-        },
-      );
+describe('credential response boundary', () => {
+  const answer = async (body: unknown) => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => Response.json(body);
+    try {
+      return await workspaceApi.credentials.list();
+    } finally {
+      globalThis.fetch = originalFetch;
     }
+  };
+
+  test('reads a credential without ever carrying a secret', async () => {
+    const listed = await answer([
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        hasSecret: true,
+      },
+    ]);
+
+    assert.deepEqual(listed, [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        hasSecret: true,
+      },
+    ]);
+  });
+
+  test('drops a secret a host answered with, so it can never be rendered back', async () => {
+    const listed = await answer([
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        hasSecret: true,
+        secret: 'sk_leaked',
+      },
+    ]);
+
+    assert.equal('secret' in (listed[0] ?? {}), false);
+    assert.equal(JSON.stringify(listed).includes('sk_leaked'), false);
+  });
+
+  test('refuses a credential whose kind is outside the closed set', async () => {
+    await assert.rejects(
+      answer([
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          kind: 'CERTIFICATE',
+          name: 'openrouter',
+          hasSecret: true,
+        },
+      ]),
+      invalidResponse,
+    );
+  });
+
+  test('refuses a credential missing the flag that stands in for its secret', async () => {
+    await assert.rejects(
+      answer([
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          kind: 'API_TOKEN',
+          name: 'openrouter',
+        },
+      ]),
+      invalidResponse,
+    );
+  });
+
+  test('refuses a list that is not an array', async () => {
+    await assert.rejects(answer({ items: [] }), invalidResponse);
   });
 });
 
@@ -274,40 +298,33 @@ describe('Configuration HTTP boundary', () => {
     assert.equal(requests[0]?.init?.body, JSON.stringify(input));
   });
 
-  test('reads a GitHub block back as its username, email and stored-token flag', async () => {
+  test('reads the credential choices a host answered with', async () => {
     const originalFetch = globalThis.fetch;
-    const github = {
-      username: 'octocat',
-      email: 'octocat@example.com',
-      hasToken: true,
+    const choices = {
+      gitCredentialId: '00000000-0000-4000-8000-000000000010',
+      githubCredentialId: '00000000-0000-4000-8000-000000000011',
     };
     globalThis.fetch = async () =>
-      Response.json({ ...snapshot, configuration: { ...valid, github } });
+      Response.json({ ...snapshot, configuration: { ...valid, ...choices } });
 
     try {
       const read = await workspaceApi.config.get();
-      assert.deepEqual(read.configuration.github, github);
+      assert.deepEqual(read.configuration, { ...valid, ...choices });
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  test('drops a token a host answered with, so it can never be rendered back', async () => {
+  test('refuses a choice that is null, which is not a reference the host sends', async () => {
     const originalFetch = globalThis.fetch;
-    const github = {
-      username: 'octocat',
-      email: 'octocat@example.com',
-      hasToken: true,
-    };
     globalThis.fetch = async () =>
       Response.json({
         ...snapshot,
-        configuration: { ...valid, github: { ...github, token: 'ghp_leaked' } },
+        configuration: { ...valid, gitCredentialId: null },
       });
 
     try {
-      const read = await workspaceApi.config.get();
-      assert.deepEqual(read.configuration.github, github);
+      await assert.rejects(workspaceApi.config.get(), invalidResponse);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -335,13 +352,10 @@ describe('Configuration HTTP boundary', () => {
       { ...snapshot, configuration: { ...valid, providers: [null] } },
     ],
     [
-      'a GitHub block without its stored-token flag',
+      'a configuration whose credential choice is not a string',
       {
         ...snapshot,
-        configuration: {
-          ...valid,
-          github: { username: 'octocat', email: 'octocat@example.com' },
-        },
+        configuration: { ...valid, githubCredentialId: { id: 'x' } },
       },
     ],
   ];

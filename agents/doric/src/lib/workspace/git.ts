@@ -2,10 +2,30 @@ import type { Logger } from 'pino';
 
 import type { Sandbox } from 'sandbox';
 
-import type { ConfigInput } from '../config/schema.js';
+/** The identity the agent's Git commands commit with; never a secret. */
+export interface GitIdentity {
+  readonly username: string;
+  readonly email: string;
+}
 
-/** The configured GitHub block: an identity plus an optional write-only token. */
-export type GithubIdentity = NonNullable<ConfigInput['github']>;
+/**
+ * What one sandbox receives: the `GIT` identity that commits, and, separately,
+ * the `API_TOKEN` secret that authenticates GitHub. They are stored as different
+ * credential kinds, so the host applies them independently.
+ */
+export interface GitCredentials {
+  readonly identity?: GitIdentity;
+  readonly token?: string;
+}
+
+/** Whether a sandbox already received exactly this identity and token. */
+export const sameGitCredentials = (
+  applied: GitCredentials | undefined,
+  current: GitCredentials,
+): boolean =>
+  applied?.identity?.username === current.identity?.username &&
+  applied?.identity?.email === current.identity?.email &&
+  applied?.token === current.token;
 
 interface Context {
   readonly logger: Logger;
@@ -16,13 +36,21 @@ interface Context {
 const CREDENTIAL_ENV = 'DORIC_GIT_CREDENTIAL';
 
 /**
- * The two variables that carry the GitHub identity into the `gh` write. Passing
- * them through the environment keeps the token out of argv, and writing a file
- * rather than exporting `GH_TOKEN` keeps it out of the environment of every
- * later command.
+ * The two variables that carry the GitHub authentication into the `gh` write.
+ * Passing them through the environment keeps the token out of argv, and writing
+ * a file rather than exporting `GH_TOKEN` keeps it out of the environment of
+ * every later command.
  */
 const GH_TOKEN_ENV = 'DORIC_GH_TOKEN';
 const GH_USERNAME_ENV = 'DORIC_GH_USERNAME';
+
+/**
+ * The username GitHub is authenticated as. A token without a configured identity
+ * has no account name of its own, and `oauth2` is GitHub's own convention for a
+ * token used as the credential's user.
+ */
+const tokenUser = (identity: GitIdentity | undefined): string =>
+  identity?.username ?? 'oauth2';
 
 /**
  * The credential write: one line copied from that environment variable, with
@@ -39,33 +67,36 @@ const CREDENTIAL_SCRIPT = `umask 077 && printf '%s\\n' "$${CREDENTIAL_ENV}" > "$
 const GH_HOSTS_SCRIPT = `umask 077 && mkdir -p "$HOME/.config/gh" && printf 'github.com:\\n    oauth_token: %s\\n    user: %s\\n    git_protocol: https\\n' "$${GH_TOKEN_ENV}" "$${GH_USERNAME_ENV}" > "$HOME/.config/gh/hosts.yml"`;
 
 /**
- * Applies the configured GitHub identity to one Project sandbox and, when a
- * token is configured, the credential store Git authenticates `github.com` with
- * plus the `gh` hosts file that authenticates the same user's GitHub CLI.
- * Every effect goes through `sandbox.exec`, and the token travels only in that
- * process environment: no tool argument, result, event, or log line carries it.
- * The writes are idempotent, and any failure stays a warning that names the
- * Project alone, so a credential can never break the prompt that needed it.
+ * Applies the configured Git identity to one Project sandbox and, when a token
+ * is configured, the credential store Git authenticates `github.com` with plus
+ * the `gh` hosts file that authenticates the same account's GitHub CLI. Every
+ * effect goes through `sandbox.exec`, and the token travels only in that process
+ * environment: no tool argument, result, event, or log line carries it. The
+ * writes are idempotent, and any failure stays a warning that names the Project
+ * alone, so a credential can never break the prompt that needed it.
  */
-export const applyGitIdentity = async (
+export const applyGitCredentials = async (
   sandbox: Sandbox,
-  github: GithubIdentity | undefined,
+  { identity, token }: GitCredentials,
   { logger, projectId }: Context,
 ): Promise<void> => {
-  if (github === undefined) return;
+  if (identity === undefined && token === undefined) return;
 
   try {
     // The identity is not a secret: its values are ordinary Git settings.
-    await configure(sandbox, 'user.name', github.username);
-    await configure(sandbox, 'user.email', github.email);
+    if (identity !== undefined) {
+      await configure(sandbox, 'user.name', identity.username);
+      await configure(sandbox, 'user.email', identity.email);
+    }
 
-    if (github.token === undefined) return;
+    if (token === undefined) return;
 
+    const user = tokenUser(identity);
     await configure(sandbox, 'credential.helper', 'store');
-    await storeCredential(sandbox, github.username, github.token);
-    await authenticateGh(sandbox, github.username, github.token);
+    await storeCredential(sandbox, user, token);
+    await authenticateGh(sandbox, user, token);
   } catch {
-    logger.warn({ projectId }, 'GitHub identity could not be applied');
+    logger.warn({ projectId }, 'Git credentials could not be applied');
   }
 };
 

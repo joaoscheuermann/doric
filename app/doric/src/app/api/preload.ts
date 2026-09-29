@@ -35,7 +35,36 @@ type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 type ProviderConfiguration = {
   readonly id: string;
   readonly baseUrl: string;
-  readonly apiKeyEnv: string;
+  /** The `API_TOKEN` credential this provider authenticates with. */
+  readonly credentialId: string;
+};
+
+type CredentialKind = 'API_TOKEN' | 'USERNAME_PASSWORD' | 'GIT';
+
+/** A credential as the host answers it; the secret itself never arrives. */
+type Credential = {
+  readonly id: string;
+  readonly kind: CredentialKind;
+  readonly name: string;
+  readonly username?: string;
+  readonly email?: string;
+  readonly hasSecret: boolean;
+};
+
+type CredentialCreate = {
+  readonly kind: CredentialKind;
+  readonly name: string;
+  readonly username?: string;
+  readonly email?: string;
+  readonly secret?: string;
+};
+
+type CredentialUpdate = {
+  readonly kind?: CredentialKind;
+  readonly name?: string;
+  readonly username?: string | null;
+  readonly email?: string | null;
+  readonly secret?: string | null;
 };
 
 type Configuration = {
@@ -48,29 +77,14 @@ type Configuration = {
     };
   };
   readonly execution: { readonly maxTurns: number };
-  readonly github?: GitHubConfiguration;
+  /** The `GIT` credential the agent's git commands commit as. */
+  readonly gitCredentialId?: string;
+  /** The `API_TOKEN` credential the sandbox authenticates GitHub with. */
+  readonly githubCredentialId?: string;
 };
 
-/** GitHub as the host answers it: whether a token is stored, never the token. */
-type GitHubConfiguration = {
-  readonly username: string;
-  readonly email: string;
-  readonly hasToken: boolean;
-};
-
-/**
- * The GitHub block a configuration update sends: a token replaces the stored
- * one, `null` or no key keeps it, and `''` clears it.
- */
-type GitHubInput = {
-  readonly username: string;
-  readonly email: string;
-  readonly token?: string | null;
-};
-
-type ConfigurationInput = Omit<Configuration, 'github'> & {
-  readonly github?: GitHubInput;
-};
+/** The configuration a save sends: a plain replacement of the host's copy. */
+type ConfigurationInput = Configuration;
 
 type DoricConfiguration = {
   readonly configuration: Configuration;
@@ -110,11 +124,15 @@ type ProjectChange = {
   readonly status: ProjectChangeStatus;
 };
 
-type ProjectDiff = {
-  readonly path?: string;
-  readonly repository: boolean;
+type ProjectChangeSet = {
+  readonly path: string;
   readonly diff: string;
   readonly changes: readonly ProjectChange[];
+};
+
+type ProjectDiff = {
+  readonly path?: string;
+  readonly repositories: readonly ProjectChangeSet[];
 };
 
 type ProjectFilesResult =
@@ -183,6 +201,19 @@ contextBridge.exposeInMainWorld('doric', {
     update: (configuration: ConfigurationInput) =>
       invoke<DoricConfiguration>('doric:config:update', configuration),
   },
+  /**
+   * The host's credential store. A create or patch carries a secret and the
+   * answer to either is the public view, so no stored secret ever comes back
+   * across this boundary.
+   */
+  credentials: {
+    list: () => invoke<readonly Credential[]>('doric:credentials:list'),
+    create: (input: CredentialCreate) =>
+      invoke<Credential>('doric:credentials:create', input),
+    update: (id: string, input: CredentialUpdate) =>
+      invoke<Credential>('doric:credentials:update', id, input),
+    remove: (id: string) => invoke<void>('doric:credentials:remove', id),
+  },
   projects: {
     list: () => invoke<readonly Project[]>('doric:projects:list'),
     files: (projectId: string, path?: string) =>
@@ -207,6 +238,25 @@ contextBridge.exposeInMainWorld('doric', {
         if (projectListener !== listener) return;
         projectListener = undefined;
         ipcRenderer.send('doric:projects:unwatch');
+      };
+    },
+  },
+  settings: {
+    // Opens the settings window, or focuses it when it is already open.
+    open: () => ipcRenderer.invoke('doric:settings:open') as Promise<void>,
+    /**
+     * Settles a change still waiting on the save debounce, answering the main
+     * process's held-back close. The subscription returns its own unsubscribe.
+     */
+    onFlush: (listener: () => void | Promise<void>) => {
+      const handler = (): void => {
+        void Promise.resolve(listener()).then(() =>
+          ipcRenderer.invoke('doric:settings:flushed'),
+        );
+      };
+      ipcRenderer.on('doric:settings:flush', handler);
+      return () => {
+        ipcRenderer.removeListener('doric:settings:flush', handler);
       };
     },
   },

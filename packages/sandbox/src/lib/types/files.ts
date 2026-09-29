@@ -55,5 +55,30 @@ export type SandboxTreeResult =
   | ({ readonly status: 'listed' } & SandboxTree)
   | SandboxListFailure;
 
+/** One Git repository in the workspace; `path` is always workspace-relative. */
+export interface SandboxRepo {
+  /** The repository root; the workspace root when empty. */
+  readonly path: string;
+}
+
+/** The Git repositories a workspace holds, one entry per repository boundary. */
+export interface SandboxRepos {
+  /** The scanned directory, workspace-relative; the workspace root when empty. */
+  readonly path: string;
+  readonly repositories: readonly SandboxRepo[];
+}
+
+/**
+ * Why the repositories could not be listed. There is no caller-supplied path, so
+ * a repository scan escapes nothing; only the workspace root itself can fail.
+ */
+export type SandboxReposFailure =
+  | { readonly status: 'missing' }
+  | { readonly status: 'not_directory' };
+
+export type SandboxReposResult =
+  | ({ readonly status: 'listed' } & SandboxRepos)
+  | SandboxReposFailure;
+
 /** What a workspace path currently is; `escaped` never left the workspace root. */
 export type WorkspacePathKind = 'directory' | 'file' | 'missing' | 'other';

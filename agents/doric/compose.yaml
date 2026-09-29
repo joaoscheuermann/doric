@@ -41,7 +41,8 @@ services:
       DORIC_HOST: 0.0.0.0
       DORIC_SANDBOX_PROVIDER: firecracker
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Encrypts stored credential secrets; required once a credential holds one.
+      DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +74,8 @@ services:
       # plain Node image; publish the tag or set DORIC_SANDBOX_IMAGE to override.
       DORIC_SANDBOX_IMAGE: ${DORIC_SANDBOX_IMAGE:-doric-sandbox:local}
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Encrypts stored credential secrets; required once a credential holds one.
+      DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:
       postgres:
         condition: service_healthy

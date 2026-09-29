@@ -1,7 +1,9 @@
 import {
   type Configuration,
   type ConfigurationInput,
-  type GitHubInput,
+  type CredentialCreate,
+  type CredentialKind,
+  type CredentialUpdate,
   type ReasoningEffort,
   reasoningEfforts,
   WorkspaceError,
@@ -35,8 +37,7 @@ const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
 const tokenPattern = /^[\x21-\x7e]+$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** The keys a GitHub block may carry; the renderer sends nothing else. */
-const githubKeys = ['username', 'email', 'token'] as const;
+/** The keys a credential body may carry; the renderer sends nothing else. */
 
 const invalidConfiguration = (): never => {
   throw new WorkspaceError('The configuration is invalid.');
@@ -54,10 +55,15 @@ const projectColors = [
   'pink',
 ] as const;
 
+/**
+ * The renderer may send IPC only from an exact URL the main process itself
+ * loaded. The allow-list is the whole rule: a sender is accepted when its URL is
+ * one of those strings, and never by prefix, origin or wildcard.
+ */
 export const senderIsAllowed = (
   senderUrl: string | undefined,
-  rendererUrl: string,
-): boolean => senderUrl === rendererUrl;
+  allowedUrls: readonly string[],
+): boolean => senderUrl !== undefined && allowedUrls.includes(senderUrl);
 
 export const name = (value: unknown): string => {
   if (typeof value !== 'string' || value.includes('\0')) {
@@ -136,11 +142,17 @@ const provider = (value: unknown): Configuration['providers'][number] => {
     !isRecord(value) ||
     !bounded(value.id, maximumIdentifierLength) ||
     !nonEmpty(value.baseUrl) ||
-    !nonEmpty(value.apiKeyEnv)
+    typeof value.credentialId !== 'string' ||
+    value.credentialId.length === 0 ||
+    value.credentialId.length > maximumIdentifierLength
   ) {
     return invalidConfiguration();
   }
-  return { id: value.id, baseUrl: value.baseUrl, apiKeyEnv: value.apiKeyEnv };
+  return {
+    id: value.id,
+    baseUrl: value.baseUrl,
+    credentialId: value.credentialId,
+  };
 };
 
 const executionModel = (
@@ -176,77 +188,162 @@ const models = (value: unknown): Configuration['models'] => {
 };
 
 /**
- * The GitHub block: the one place a credential crosses this boundary. Every
- * refusal is the same sentence and no message ever names the value it refused,
- * so a submitted token cannot reach an error string, a log line or a renderer
- * render.
+ * The credential kinds this boundary accepts, spelled out rather than imported
+ * so a new kind cannot reach the host through a shared constant without a
+ * deliberate edit here too.
  */
-const github = (value: unknown): GitHubInput => {
-  if (!isRecord(value)) return invalidConfiguration();
-  for (const key of Object.keys(value)) {
-    if (!(githubKeys as readonly string[]).includes(key)) {
-      return invalidConfiguration();
-    }
-  }
+const credentialKindValues = ['API_TOKEN', 'USERNAME_PASSWORD', 'GIT'] as const;
 
-  if (!bounded(value.username, maximumUsernameLength)) {
-    return invalidConfiguration();
-  }
-
-  const email = value.email;
-  if (
-    typeof email !== 'string' ||
-    email.trim().length === 0 ||
-    email.trim().length > maximumEmailLength ||
-    !emailPattern.test(email.trim())
-  ) {
-    return invalidConfiguration();
-  }
-
-  return {
-    username: value.username,
-    email,
-    token: submittedToken(value.token),
-  };
-};
+const isCredentialKind = (value: unknown): value is CredentialKind =>
+  typeof value === 'string' &&
+  (credentialKindValues as readonly string[]).includes(value);
 
 /**
- * The token as the host reads it: absent or null keeps the stored one, `''`
- * clears it and a non-empty string replaces it. A credential is never trimmed,
- * so a token carrying whitespace is refused rather than altered.
+ * A stored secret as this boundary reads it: bounded, free of line breaks, and
+ * never trimmed. A credential carrying whitespace is refused rather than
+altered.
  */
-const submittedToken = (value: unknown): string | null => {
-  if (value === undefined || value === null) return null;
+const secret = (value: unknown): string => {
   if (
     typeof value !== 'string' ||
+    value.length === 0 ||
     value.length > maximumTokenLength ||
-    (value !== '' && !tokenPattern.test(value))
+    !tokenPattern.test(value)
   ) {
     return invalidConfiguration();
   }
   return value;
 };
 
+/** One of the kind's optional string fields, when the credential carries it. */
+const optionalField = (value: unknown, maximum: number): string | undefined => {
+  if (value === undefined) return undefined;
+  if (!bounded(value, maximum)) return invalidConfiguration();
+  return value;
+};
+
+/**
+ * Guards a credential create. The kind's own field set is the host service's
+ * rule and it re-checks the stored row, so this refuses only a shape the host
+ * could never accept; every refusal is one sentence that never names a value, so
+ * a submitted secret cannot reach an error string, a log line, or a render.
+ */
+export const credentialCreate = (value: unknown): CredentialCreate => {
+  if (!isRecord(value) || !isCredentialKind(value.kind)) {
+    return invalidCredential();
+  }
+  if (!bounded(value.name, maximumIdentifierLength)) return invalidCredential();
+
+  const username = optionalField(value.username, maximumUsernameLength);
+  const email = emailField(value.email);
+  const held = value.secret === undefined ? undefined : secret(value.secret);
+
+  return {
+    kind: value.kind,
+    name: value.name,
+    ...(username === undefined ? {} : { username }),
+    ...(email === undefined ? {} : { email }),
+    ...(held === undefined ? {} : { secret: held }),
+  };
+};
+
+/**
+ * Guards a credential patch. Every field follows one rule — absent or `null`
+ * keeps what is stored, `''` clears it, and a value sets it — so a secret is
+ * never cleared by a caller that did not mean to. A rejected change to `kind`
+ * travels as `undefined` and is the host service's answer, not a shape error.
+ */
+export const credentialUpdate = (value: unknown): CredentialUpdate => {
+  if (!isRecord(value)) return invalidCredential();
+
+  const kind = value.kind;
+  if (kind !== undefined && !isCredentialKind(kind)) return invalidCredential();
+
+  const name = value.name;
+  if (name !== undefined && !bounded(name, maximumIdentifierLength)) {
+    return invalidCredential();
+  }
+
+  return {
+    ...(kind === undefined ? {} : { kind }),
+    ...(name === undefined ? {} : { name }),
+    username: clearing(value.username, maximumUsernameLength),
+    email: clearingEmail(value.email),
+    secret: clearingSecret(value.secret),
+  };
+};
+
+/** `''` clears a stored field, `null` or an absent key keeps it. */
+const clearing = (value: unknown, maximum: number): string | null => {
+  if (value === undefined || value === null) return null;
+  if (value === '') return '';
+  if (!bounded(value, maximum)) return invalidCredential();
+  return value;
+};
+
+const clearingSecret = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  if (value === '') return '';
+  return secret(value);
+};
+
+/** A credential's email field, which is an address when present. */
+const emailField = (value: unknown): string | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'string' ||
+    value.trim().length === 0 ||
+    value.trim().length > maximumEmailLength ||
+    !emailPattern.test(value.trim())
+  ) {
+    return invalidCredential();
+  }
+  return value;
+};
+
+/** `''` clears a stored field, `null` or an absent key keeps it. */
+const clearingEmail = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  if (value === '') return '';
+  return emailField(value) ?? null;
+};
+
+/** One refusal for every credential shape this boundary cannot accept. */
+const invalidCredential = (): never => {
+  throw new WorkspaceError('The credential is invalid.');
+};
+
 /**
  * Guards the renderer's configuration payload, the only way a Settings surface
  * reaches the host. Uniqueness and cross-references stay the host's job, so this
- * boundary only refuses a shape the host could never accept — and inside the
- * GitHub block, which carries the one credential that travels this way, every
- * key is known and every value bounded.
+ * boundary only refuses a shape the host could never accept. No secret travels
+ * this way any more: the configuration names credentials by id.
  */
 export const configuration = (value: unknown): ConfigurationInput => {
   if (!isRecord(value) || !Array.isArray(value.providers)) {
     return invalidConfiguration();
   }
 
-  const githubBlock = value.github;
+  const gitCredentialId = reference(value.gitCredentialId);
+  const githubCredentialId = reference(value.githubCredentialId);
   return {
     providers: value.providers.map(provider),
     models: models(value.models),
     execution: { maxTurns: maximumTurns(value.execution) },
-    // Absent leaves the stored block alone; `null` removes it; an object sets it.
-    ...(githubBlock === undefined
-      ? {}
-      : { github: githubBlock === null ? null : github(githubBlock) }),
+    ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
+    ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
   };
+};
+
+/** A named credential, or nothing when the configuration names none. */
+const reference = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (
+    typeof value !== 'string' ||
+    value.length > maximumIdentifierLength ||
+    value.includes('\0')
+  ) {
+    return invalidConfiguration();
+  }
+  return value;
 };

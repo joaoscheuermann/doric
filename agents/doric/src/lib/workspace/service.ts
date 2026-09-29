@@ -9,10 +9,17 @@ import {
 import type { Sandpool } from 'sandpool';
 
 import { runDirectPrompt } from '../agents/direct/executor.js';
+import type { ConfigInput } from '../config/schema.js';
 import type { ConfigService } from '../config/service.js';
+import type { CredentialKind } from '../credentials/kind.js';
+import type { CredentialService } from '../credentials/service.js';
 import { randomProjectColor } from './colors.js';
 import { projectChanges, readProjectFile } from './files.js';
-import { applyGitIdentity, type GithubIdentity } from './git.js';
+import {
+  applyGitCredentials,
+  type GitCredentials,
+  sameGitCredentials,
+} from './git.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
@@ -41,19 +48,11 @@ type LeaseOutcome<Value> =
   | { readonly status: 'missing' | 'pending' | 'unavailable' | 'expired' }
   | { readonly status: 'ready'; readonly value: Value };
 
-/** Whether a sandbox already received exactly this GitHub block. */
-const sameGithub = (
-  applied: GithubIdentity | undefined,
-  current: GithubIdentity | undefined,
-): boolean =>
-  applied?.username === current?.username &&
-  applied?.email === current?.email &&
-  applied?.token === current?.token;
-
 type Options = {
   readonly projects: ProjectStore;
   readonly threads: ThreadStore;
   readonly config: ConfigService;
+  readonly credentials: CredentialService;
   readonly pool: Sandpool;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;
@@ -65,6 +64,7 @@ export const createWorkspaceService = ({
   projects,
   threads,
   config,
+  credentials,
   pool,
   publisher,
   logger,
@@ -147,17 +147,77 @@ export const createWorkspaceService = ({
       });
     return runtime.project;
   };
+  /**
+   * Resolves the Git identity and the GitHub token the current configuration
+   * names. A configured choice resolves by id; without one, the integration asks
+   * for the kind it needs, where no match means it stays off. A missing or
+   * ambiguous reference costs only its own half, is surfaced as a warning naming
+   * the reason, and never breaks the prompt that needed the credential.
+   *
+   * The GitHub token is resolved only among the credentials no provider claims,
+   * because a provider key and a GitHub token are both `API_TOKEN`: without this,
+   * an operator who filled in a provider key and chose no GitHub credential would
+   * have that key written into the sandbox's git credential store and `gh` hosts
+   * file. A token is therefore authenticated with only when it was named, or when
+   * it is the one `API_TOKEN` credential nothing else uses.
+   */
+  const gitCredentials = (
+    configuration: ConfigInput,
+    projectId: string,
+  ): GitCredentials => {
+    const identity = select(configuration.gitCredentialId, 'GIT', projectId);
+    const token = select(
+      configuration.githubCredentialId,
+      'API_TOKEN',
+      projectId,
+      new Set(configuration.providers.map(({ credentialId }) => credentialId)),
+    );
+
+    return {
+      ...(identity?.username === undefined || identity.email === undefined
+        ? {}
+        : { identity: { username: identity.username, email: identity.email } }),
+      ...(token?.secret === undefined || token.secret === ''
+        ? {}
+        : { token: token.secret }),
+    };
+  };
+  const select = (
+    id: string | undefined,
+    kind: CredentialKind,
+    projectId: string,
+    claimed?: ReadonlySet<string>,
+  ) => {
+    try {
+      if (id !== undefined) return credentials.byId(id);
+      return claimed === undefined
+        ? credentials.byKind(kind)
+        : credentials.byUnclaimedKind(kind, claimed);
+    } catch (error) {
+      logger.warn(
+        { projectId },
+        `A credential was not applied: ${
+          error instanceof Error ? error.message : 'unknown failure'
+        }`,
+      );
+
+      return undefined;
+    }
+  };
   const acquire = async (runtime: ProjectRuntime) => {
     try {
       const lease = await pool.acquire({ signal: runtime.controller.signal });
-      // The captured block is what a fresh sandbox starts with, and the next
-      // prompt re-applies the current one when it has moved on.
-      const github = runtime.generation.snapshot.configuration.github;
-      await applyGitIdentity(lease.sandbox, github, {
+      // The captured credentials are what a fresh sandbox starts with, and the
+      // next prompt re-applies the current ones when they have moved on.
+      const git = gitCredentials(
+        runtime.generation.snapshot.configuration,
+        runtime.project.id,
+      );
+      await applyGitCredentials(lease.sandbox, git, {
         logger,
         projectId: runtime.project.id,
       });
-      runtime.appliedGithub = github;
+      runtime.appliedGit = git;
       await exclusive(runtime.project.id, async () => {
         runtime.lease = lease;
         if (runtime.closing) return;
@@ -176,28 +236,31 @@ export const createWorkspaceService = ({
     }
   };
   /**
-   * The GitHub identity and its credential follow the current configuration, so a
-   * rotated or newly saved token reaches a Project that is already running, while
-   * every other configuration value stays captured in the Project's generation.
-   * The block is compared with the one the sandbox last received, so an unchanged
-   * configuration never re-runs commands, and the writes stay off the project lock
-   * because a credential is not a lifecycle mutation.
+   * The Git identity and the GitHub token follow the current configuration, so a
+   * rotated or newly saved credential reaches a Project that is already running,
+   * while every other configuration value stays captured in the Project's
+   * generation. The pair is compared with the one the sandbox last received, so an
+   * unchanged configuration never re-runs commands, and the writes stay off the
+   * project lock because a credential is not a lifecycle mutation.
    */
-  const applyCurrentGithub = async (runtime: ProjectRuntime | undefined) => {
+  const applyCurrentGit = async (runtime: ProjectRuntime | undefined) => {
     const sandbox = runtime?.lease?.sandbox;
     if (runtime === undefined || sandbox === undefined || runtime.closing)
       return;
-    const github = config.current().snapshot.configuration.github;
-    if (sameGithub(runtime.appliedGithub, github)) return;
-    await applyGitIdentity(sandbox, github, {
+    const git = gitCredentials(
+      config.current().snapshot.configuration,
+      runtime.project.id,
+    );
+    if (sameGitCredentials(runtime.appliedGit, git)) return;
+    await applyGitCredentials(sandbox, git, {
       logger,
       projectId: runtime.project.id,
     });
-    runtime.appliedGithub = github;
+    runtime.appliedGit = git;
     // This Project's captured generation predates any rotation, so the new token
     // is registered for redaction before anything can carry it into an event.
-    if (github?.token !== undefined) {
-      runtime.generation.registerSecret(github.token);
+    if (git.token !== undefined) {
+      runtime.generation.registerSecret(git.token);
     }
   };
   /**
@@ -305,11 +368,11 @@ export const createWorkspaceService = ({
         if (kind === 'escaped') return { status: 'invalid_path' as const };
         if (kind === 'missing') return { status: 'not_found' as const };
       }
-      const changes = await projectChanges(sandbox, path);
+      const repositories = await projectChanges(sandbox);
       return {
         status: 'ready' as const,
         ...(path === undefined ? {} : { path }),
-        ...changes,
+        repositories,
       };
     });
     if (outcome.status !== 'ready') return { status: outcome.status };
@@ -422,8 +485,8 @@ export const createWorkspaceService = ({
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
         // New input is the point where a live sandbox catches up with a rotated
-        // or newly saved GitHub block, before the prompt is enqueued.
-        await applyCurrentGithub(runtimes.get(record.thread.projectId));
+        // or newly saved credential, before the prompt is enqueued.
+        await applyCurrentGit(runtimes.get(record.thread.projectId));
         return exclusive(record.thread.projectId, async () => {
           const project = runtimes.get(record.thread.projectId);
           const thread = project?.threads.get(id);
@@ -436,7 +499,7 @@ export const createWorkspaceService = ({
         const record = await threads.find(id);
         if (record === undefined) return { status: 'missing' };
         // A rewind enqueues its replacement input the same way a prompt does.
-        await applyCurrentGithub(runtimes.get(record.thread.projectId));
+        await applyCurrentGit(runtimes.get(record.thread.projectId));
         return exclusive(record.thread.projectId, async () => {
           const project = runtimes.get(record.thread.projectId);
           const thread = project?.threads.get(id);

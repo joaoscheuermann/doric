@@ -11,6 +11,14 @@ import type {
 
 import { defaultConfig } from '../../src/lib/config/schema.js';
 import type {
+  Credential,
+  CredentialKind,
+} from '../../src/lib/credentials/kind.js';
+import {
+  credentialById,
+  credentialByKind,
+} from '../../src/lib/credentials/resolve.js';
+import type {
   ProjectRecord,
   ProjectStore,
   ThreadEvent,
@@ -18,6 +26,30 @@ import type {
   ThreadStore,
   WorkspacePublisher,
 } from '../../src/lib/workspace/types.js';
+
+/**
+ * The resolution half of the credential service, over a live list. Tests that
+ * only need a Project to receive credentials use this instead of a store, and
+ * `secrets` follows the list so redaction stays honest.
+ */
+export const credentialResolver = (
+  list: () => readonly Credential[] = () => [],
+) =>
+  ({
+    list,
+    find: (id: string) => list().find(({ id: stored }) => stored === id),
+    byId: (id: string) => credentialById(list(), id),
+    byKind: (kind: CredentialKind) => credentialByKind(list(), kind),
+    byUnclaimedKind: (kind: CredentialKind, claimed: ReadonlySet<string>) =>
+      credentialByKind(
+        list().filter(({ id }) => !claimed.has(id)),
+        kind,
+      ),
+    secrets: () =>
+      list().flatMap(({ secret }) =>
+        secret === undefined || secret === '' ? [] : [secret],
+      ),
+  }) as never;
 
 export const deferred = <T = void>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -296,6 +328,7 @@ export const workspace = () => {
           registerSecret: () => undefined,
         }),
       } as never,
+      credentials: credentialResolver(),
       logger: { debug: () => undefined, error: () => undefined } as never,
     },
   };
@@ -319,13 +352,23 @@ export type FakeSandboxEntry = {
   readonly content?: string;
 };
 
+/** One repository the fake sandbox holds, with the output git returns for it. */
+export type FakeRepository = {
+  readonly path: string;
+  readonly status?: string;
+  readonly diff?: string;
+};
+
 export type FakeSandboxOptions = {
   readonly root?: string;
   readonly id?: string;
   readonly entries?: readonly FakeSandboxEntry[];
-  /** `git status --porcelain` output; omit for a workspace with no repository. */
+  /** `git status --porcelain` of the repository at the workspace root. */
   readonly status?: string;
   readonly diff?: string;
+  /** Repositories to discover, each by its workspace-relative root; `''` is the
+   * workspace root. */
+  readonly repositories?: readonly FakeRepository[];
 };
 
 /**
@@ -335,12 +378,13 @@ export type FakeSandboxOptions = {
  *
  * - `sh -c '<kind test>' sh <absolute path>` reports directory/file/missing;
  * - `find <absolute dir> [-maxdepth 1] ... -type d|f ...` lists the tree;
+ * - `find <root> ( -name .git ) -prune -print` finds each scripted repository;
  * - `wc -c <absolute paths>` reports each file's byte size;
  * - `head -c <n> -- <path>` returns the first `n` bytes of the file;
- * - `git status --porcelain [-- <path>]` fails when no repository is scripted;
+ * - `git -C <root> status --porcelain` fails for a root without a repository;
  * - `git config --global <key> <value>` succeeds and is recorded;
  * - any other `sh -c <script>` succeeds as the workspace's own shell helper;
- * - `diff(input)` returns the scripted diff and records the input it received;
+ * - `diff(input)` returns the diff of the repository `input.cwd` names;
  * - `readFile(<absolute path>)` returns a file's content or rejects.
  *
  * Tests may also wrap `exec`, `diff`, or `readFile` after construction.
@@ -351,7 +395,6 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   const directories = new Set<string>(['']);
   const execs: SandboxExecInput[] = [];
   const diffs: (SandboxDiffInput | undefined)[] = [];
-  const repository = options.status !== undefined;
 
   const clean = (value: string): string =>
     value.replace(/^\/+/, '').replace(/\/+$/, '');
@@ -379,6 +422,21 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
     addParents(path);
   }
 
+  // A scripted `status` is the workspace-root repository; `repositories` names
+  // the rest. Every repository root is a directory in the workspace.
+  const repositories = new Map<string, FakeRepository>();
+  for (const repository of [
+    ...(options.status === undefined
+      ? []
+      : [{ path: '', status: options.status, diff: options.diff }]),
+    ...(options.repositories ?? []),
+  ]) {
+    const path = clean(repository.path);
+    repositories.set(path, repository);
+    directories.add(path);
+    addParents(path);
+  }
+
   const kindOf = (value: string): WorkspacePathKind => {
     const path = relative(value);
     if (path === '') return 'directory';
@@ -396,9 +454,15 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   };
   const find = (args: readonly string[]): string => {
     const base = relative(args[0] ?? root);
+    const marker = args.indexOf('-name');
+    if (marker !== -1 && args[marker + 1] === '.git' && !args.includes('-type'))
+      return [...repositories.keys()]
+        .map((path) => absolute(path === '' ? '.git' : `${path}/.git`))
+        .join('\n');
     const directoriesOnly = args[args.indexOf('-type') + 1] === 'd';
-    const marker = args.indexOf('-maxdepth');
-    const maxdepth = marker === -1 ? Infinity : Number(args[marker + 1]);
+    const depthMarker = args.indexOf('-maxdepth');
+    const maxdepth =
+      depthMarker === -1 ? Infinity : Number(args[depthMarker + 1]);
     const values = directoriesOnly ? [...directories] : [...files.keys()];
     return values
       .filter((value) => {
@@ -432,10 +496,13 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
       );
       return bytesResult(bytes.subarray(0, Number(args[1])));
     }
-    if (command === 'git' && args[0] === 'status')
-      return repository
-        ? ok(options.status ?? '')
-        : bytesResult(new Uint8Array(), 128);
+    if (command === 'git' && args.includes('status')) {
+      const path = relative(args[0] === '-C' ? (args[1] ?? root) : root);
+      const repository = repositories.get(path);
+      return repository === undefined
+        ? bytesResult(new Uint8Array(), 128)
+        : ok(repository.status ?? '');
+    }
     if (command === 'git' && args[0] === 'config') return ok('');
     throw new Error(`Unscripted sandbox command: ${input.cmd.join(' ')}`);
   };
@@ -446,7 +513,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
     exec,
     diff: async (input?: SandboxDiffInput) => {
       diffs.push(input);
-      return options.diff ?? '';
+      return repositories.get(relative(input?.cwd ?? root))?.diff ?? '';
     },
     readFile: async (path: string) => {
       const value = files.get(relative(path));
