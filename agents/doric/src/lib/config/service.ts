@@ -1,11 +1,13 @@
-import type { Bundle } from 'bundle';
 import type { Logger } from 'pino';
+
+import type { Bundle } from 'bundle';
 
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
-import type { ConfigInput, DoricConfig } from './schema.js';
-import type { ConfigStore } from './store.js';
 import { createGeneration, type Generation } from './generation.js';
+import type { ConfigInput, DoricConfig } from './schema.js';
+import { providerCredentials } from './schema.js';
+import type { ConfigStore } from './store.js';
 
 /**
  * A configuration whose credential references are not usable. It is caller
@@ -73,22 +75,23 @@ export const createConfigService = async ({
 };
 
 /**
- * A provider authenticates with an `API_TOKEN` and nothing else, the Git
- * identity is the `GIT` kind's alone, and the GitHub integration needs another
- * `API_TOKEN`. A reference is rejected before it is activated, so no stored
- * configuration can point at a credential of the wrong kind.
+ * Every `secret` field a provider carries names an `API_TOKEN` credential, the
+ * Git identity is the `GIT` kind's alone, and the GitHub integration needs
+ * another `API_TOKEN`. A reference is rejected before it is activated, so no
+ * stored configuration can point at a credential of the wrong kind.
  */
 const requireCredentials = (
   configuration: ConfigInput,
   credentials: CredentialService,
 ): void => {
   for (const provider of configuration.providers)
-    requireKind(
-      credentials,
-      provider.credentialId,
-      'API_TOKEN',
-      `Provider ${provider.id}`,
-    );
+    for (const { field, id } of providerCredentials(provider))
+      requireKind(
+        credentials,
+        id,
+        'API_TOKEN',
+        `Provider ${provider.id} ${field.key}`,
+      );
 
   requireKind(
     credentials,

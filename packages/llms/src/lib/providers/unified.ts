@@ -133,7 +133,8 @@ const normalizedUpstreamModel = (
   throw new TypeError('Unified provider upstreamModel must not be blank.');
 };
 
-const defaultStructuredOutputRepairs = 2;
+/** The repair budget a unified provider uses when a caller names none. */
+export const defaultStructuredOutputRepairs = 2;
 
 const repairLimit = (value: number | undefined): number => {
   const limit = value ?? defaultStructuredOutputRepairs;

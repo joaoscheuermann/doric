@@ -2,6 +2,7 @@ export * from './lib/classes/http-error.js';
 export * from './lib/classes/provider-error.js';
 export * from './lib/http.js';
 export * from './lib/providers/codex.js';
+export * from './lib/providers/kinds.js';
 export { structuredJsonSchema } from './lib/providers/structured.js';
 export * from './lib/providers/lmstudio-openai.js';
 export * from './lib/providers/lmstudio.js';

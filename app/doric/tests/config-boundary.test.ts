@@ -12,13 +12,19 @@ const valid: Configuration = {
   providers: [
     {
       id: 'openrouter',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      credentialId: '00000000-0000-4000-8000-000000000001',
+      kind: 'openrouter',
+      configuration: {
+        endpoint: 'https://openrouter.ai/api/v1',
+        token: '00000000-0000-4000-8000-000000000001',
+      },
+      models: ['deepseek/deepseek-v4-flash-0731'],
+      reasonings: ['low'],
     },
     {
       id: 'local',
-      baseUrl: 'http://127.0.0.1:1234/v1',
-      credentialId: '00000000-0000-4000-8000-000000000002',
+      kind: 'lmstudio',
+      configuration: {},
+      models: ['local-model'],
     },
   ],
   models: {
@@ -90,13 +96,42 @@ describe('Configuration validation', () => {
     ['a missing providers list', { ...valid, providers: undefined }],
     ['providers as an object', { ...valid, providers: valid.providers[0] }],
     ['a null provider', { ...valid, providers: [null] }],
-    ['a provider missing its base URL', provider({ baseUrl: undefined })],
+    ['a provider missing its kind', provider({ kind: undefined })],
+    ['an empty provider kind', provider({ kind: '' })],
+    [
+      'a provider kind over 128 characters',
+      provider({ kind: 'a'.repeat(129) }),
+    ],
+    [
+      'a provider missing its configuration',
+      provider({ configuration: undefined }),
+    ],
+    [
+      'a configuration that is not a record',
+      provider({ configuration: 'none' }),
+    ],
+    ['a configuration that is a list', provider({ configuration: [] })],
+    [
+      'a configuration value that is not a string',
+      provider({ configuration: { token: 7 } }),
+    ],
+    [
+      'a configuration value that is empty',
+      provider({ configuration: { token: '' } }),
+    ],
     ['an empty provider id', provider({ id: '' })],
     ['a whitespace-only provider id', provider({ id: '   ' })],
     ['a provider id over 128 characters', provider({ id: 'a'.repeat(129) })],
-    ['an empty credential reference', provider({ credentialId: '' })],
-    ['a missing credential reference', provider({ credentialId: undefined })],
-    ['a non-string credential reference', provider({ credentialId: 7 })],
+    ['models that are not a list', provider({ models: 'a-model' })],
+    ['a model that is not a string', provider({ models: [7] })],
+    ['an empty model', provider({ models: [''] })],
+    ['a model over 512 characters', provider({ models: ['a'.repeat(513)] })],
+    ['reasonings that are not a list', provider({ reasonings: 'low' })],
+    ['a reasoning that is not a string', provider({ reasonings: [7] })],
+    [
+      'a reasoning outside the closed set',
+      provider({ reasonings: ['extreme'] }),
+    ],
     ['a missing models section', { ...valid, models: undefined }],
     ['models as an array', { ...valid, models: [] }],
     ['missing execution models', { ...valid, models: {} }],
@@ -271,33 +306,6 @@ describe('Configuration HTTP boundary', () => {
     assert.equal(requests[1]?.init?.body, JSON.stringify(valid));
   });
 
-  test('sends a GitHub block, and the token it replaces, through the config route', async () => {
-    const originalFetch = globalThis.fetch;
-    const requests: Array<{ url: string; init?: RequestInit }> = [];
-    globalThis.fetch = async (input, init) => {
-      requests.push({ url: String(input), init });
-      return Response.json(snapshot);
-    };
-
-    const input = {
-      ...valid,
-      github: {
-        username: 'octocat',
-        email: 'octocat@example.com',
-        token: 'ghp_typed',
-      },
-    };
-
-    try {
-      await workspaceApi.config.update(input);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-
-    assert.equal(requests[0]?.init?.method, 'PUT');
-    assert.equal(requests[0]?.init?.body, JSON.stringify(input));
-  });
-
   test('reads the credential choices a host answered with', async () => {
     const originalFetch = globalThis.fetch;
     const choices = {
@@ -352,6 +360,42 @@ describe('Configuration HTTP boundary', () => {
       { ...snapshot, configuration: { ...valid, providers: [null] } },
     ],
     [
+      'a configuration whose provider names no kind',
+      {
+        ...snapshot,
+        configuration: {
+          ...valid,
+          providers: [{ id: 'openrouter', configuration: {} }],
+        },
+      },
+    ],
+    [
+      'a configuration whose provider values are not strings',
+      {
+        ...snapshot,
+        configuration: {
+          ...valid,
+          providers: [
+            {
+              id: 'openrouter',
+              kind: 'openrouter',
+              configuration: { token: 7 },
+            },
+          ],
+        },
+      },
+    ],
+    [
+      'a configuration whose provider carries a reasoning llms does not know',
+      {
+        ...snapshot,
+        configuration: {
+          ...valid,
+          providers: [{ ...valid.providers[0], reasonings: ['extreme'] }],
+        },
+      },
+    ],
+    [
       'a configuration whose credential choice is not a string',
       {
         ...snapshot,
@@ -402,4 +446,113 @@ describe('Configuration HTTP boundary', () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+describe('Provider catalog boundary', () => {
+  const kinds = [
+    {
+      id: 'openrouter',
+      label: 'OpenRouter',
+      description: 'OpenRouter.',
+      fields: [
+        {
+          key: 'endpoint',
+          label: 'Endpoint',
+          kind: 'url',
+          required: false,
+          description: 'Overrides the base URL.',
+          placeholder: 'https://openrouter.ai/api/v1',
+        },
+        { key: 'token', label: 'Token', kind: 'secret', required: true },
+      ],
+      lists: ['models', 'reasonings'],
+    },
+    {
+      id: 'codex',
+      label: 'Codex',
+      description: 'Codex.',
+      fields: [
+        {
+          key: 'fedramp',
+          label: 'FedRAMP',
+          kind: 'enum',
+          required: false,
+          placeholder: 'false',
+          options: ['true', 'false'],
+        },
+      ],
+      lists: [],
+    },
+  ];
+
+  const answer = async (body: unknown) => {
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = async (input) => {
+      requests.push(String(input));
+      return Response.json(body);
+    };
+
+    try {
+      return { kinds: await workspaceApi.providers.kinds(), requests };
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  };
+
+  test('unwraps the catalog a host answered with', async () => {
+    const read = await answer({ kinds });
+
+    assert.deepEqual(read.kinds, kinds);
+    assert.deepEqual(read.requests, ['http://127.0.0.1:3000/providers/kinds']);
+  });
+
+  /** The token field of the first kind, which each malformed case breaks once. */
+  const field = () => kinds[0]!.fields[1]!;
+
+  const malformed: ReadonlyArray<readonly [string, unknown]> = [
+    ['a body with no kinds envelope', []],
+    ['a kinds envelope that is not a list', { kinds: {} }],
+    ['a kind with no label', { kinds: [{ ...kinds[0], label: undefined }] }],
+    [
+      'a kind with no fields list',
+      { kinds: [{ ...kinds[0], fields: 'none' }] },
+    ],
+    [
+      'a field whose kind is outside the closed set',
+      { kinds: [{ ...kinds[0], fields: [{ ...field(), kind: 'colour' }] }] },
+    ],
+    [
+      'a field with no required flag',
+      {
+        kinds: [{ ...kinds[0], fields: [{ ...field(), required: undefined }] }],
+      },
+    ],
+    [
+      'an enum field with no options',
+      { kinds: [{ ...kinds[0], fields: [{ ...field(), kind: 'enum' }] }] },
+    ],
+    [
+      'a text field offering options',
+      { kinds: [{ ...kinds[0], fields: [{ ...field(), options: ['a'] }] }] },
+    ],
+    [
+      'a field whose options are not strings',
+      {
+        kinds: [
+          { ...kinds[0], fields: [{ ...field(), kind: 'enum', options: [7] }] },
+        ],
+      },
+    ],
+    [
+      'a kind keeping a list outside the closed set',
+      { kinds: [{ ...kinds[0], lists: ['endpoints'] }] },
+    ],
+  ];
+
+  for (const [scenario, body] of malformed) {
+    test(`refuses ${scenario}`, async () => {
+      await assert.rejects(answer(body), invalidResponse);
+    });
+  }
 });

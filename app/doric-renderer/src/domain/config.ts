@@ -22,11 +22,70 @@ export const reasoningEfforts = [
 
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
 
+/** The identifier a provider kind is known by. The host owns the set. */
+export type ProviderKindId = string;
+
+/** How a configuration field must be drawn and validated. */
+export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
+
+/**
+ * One configuration field a kind declares. The kind fixes how the field is drawn
+ * (`kind`), what it is called, and whether it must be present, so a dialog draws a
+ * kind it has never seen and applies the host's own rule to each field.
+ */
+export type ProviderField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ProviderFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  /** The values an `enum` field offers; present only for `kind: 'enum'`. */
+  readonly options?: readonly string[];
+};
+
+/** The per-provider lists a kind keeps; each is edited as a table. */
+export type ProviderListId = 'models' | 'reasonings';
+
+/**
+ * A kind of provider the host may call: the fields it declares, in the order a
+ * dialog draws them, and the lists it keeps. The host owns this catalog, so
+ * nothing here is a fixed list of provider types the renderer already knows.
+ */
+export type ProviderKind = {
+  readonly id: ProviderKindId;
+  readonly label: string;
+  readonly description: string;
+  readonly fields: readonly ProviderField[];
+  readonly lists: readonly ProviderListId[];
+};
+
+/** Every list a kind may keep, in the order a form draws them. */
+export const providerListIds = [
+  'models',
+  'reasonings',
+] as const satisfies readonly ProviderListId[];
+
+/** What one entry of a list is called, so a rule can name a singular entry. */
+const providerListNoun: Record<ProviderListId, string> = {
+  models: 'model',
+  reasonings: 'reasoning effort',
+};
+
+/**
+ * One provider the host may call. The kind decides which fields carry a value
+ * and which lists it keeps; a `secret` field names an `API_TOKEN` credential
+ * rather than carrying a secret, and a `number` field still arrives as a string.
+ */
 export type ProviderConfiguration = {
   readonly id: string;
-  readonly baseUrl: string;
-  /** The `API_TOKEN` credential this provider authenticates with. */
-  readonly credentialId: string;
+  readonly kind: ProviderKindId;
+  /** The values of the fields the kind declares, keyed by `ProviderField.key`. */
+  readonly configuration: { readonly [key: string]: string };
+  /** The models it keeps; present exactly when the kind declares `models`. */
+  readonly models?: readonly string[];
+  /** Its reasoning efforts; present exactly when the kind declares `reasonings`. */
+  readonly reasonings?: readonly string[];
 };
 
 /** The closed set of credential kinds. A kind fixes which fields it carries. */
@@ -148,9 +207,32 @@ export const providerLabel = (
 ): string =>
   provider.id.trim() === '' ? `Provider ${index + 1}` : provider.id;
 
+/** The kind the catalog declares under an id, or `undefined` when it declares none. */
+export const kindOf = (
+  kinds: readonly ProviderKind[],
+  id: ProviderKindId,
+): ProviderKind | undefined => kinds.find((kind) => kind.id === id);
+
 /**
- * One provider as the providers table draws it: the provider itself, and the
- * position it holds in `Configuration.providers`.
+ * The address a provider is called at, as its kind declares it: the value of the
+ * kind's `url` field, or `—` for a kind that declares none or a value left empty.
+ * The row reads this rather than a field it names itself, because which field is
+ * the address is the kind's to decide.
+ */
+export const providerAddress = (
+  kind: ProviderKind | undefined,
+  provider: ProviderConfiguration,
+): string => {
+  const field = kind?.fields.find((candidate) => candidate.kind === 'url');
+  if (field === undefined) return '—';
+  const value = (provider.configuration[field.key] ?? '').trim();
+  return value === '' ? '—' : value;
+};
+
+/**
+ * One provider as the providers table draws it: the provider itself, the kind's
+ * declaration it is drawn against, and the position it holds in
+ * `Configuration.providers`.
  *
  * The position is the row's identity, and a provider id is not one: a row that
  * was just added has none, and a row being typed may carry a duplicate, so an
@@ -158,17 +240,28 @@ export const providerLabel = (
  * either, because sorting, filtering and paging each change the order rows are
  * drawn in without changing the list. Carrying the position on the row is what
  * lets a cell keep addressing the provider the user is looking at.
+ *
+ * The kind is carried so a row draws the label, the address and the list counts
+ * the catalog declares, rather than a shape this module assumes a provider has.
+ * It is `undefined` only while the catalog has not arrived yet or no longer
+ * declares the kind, which is the host's refusal to answer, not a row to hide.
  */
 export type ProviderRow = {
   readonly index: number;
   readonly provider: ProviderConfiguration;
+  readonly kind?: ProviderKind;
 };
 
-/** The configured providers as table rows, each keeping its place in the list. */
+/** The configured providers as table rows, each with its place and its kind. */
 export const providerRows = (
   configuration: Configuration,
+  kinds: readonly ProviderKind[],
 ): readonly ProviderRow[] =>
-  configuration.providers.map((provider, index) => ({ index, provider }));
+  configuration.providers.map((provider, index) => ({
+    index,
+    provider,
+    kind: kindOf(kinds, provider.kind),
+  }));
 
 /** The name a reasoning effort is shown under. */
 export const effortLabel = (effort: ReasoningEffort): string =>
@@ -225,12 +318,16 @@ export const updatedAtLabel = (updatedAt: string): string => {
  * are the host's, in the order a person would fix them: a usable provider list
  * first, then the model that runs against it, then the turn limit.
  *
- * The credential choices are not checked here. A choice is an id the credential
- * list offered, and a credential that is deleted is the host's refusal to
- * answer, not a draft this module can judge without the list in hand.
+ * The kind catalog travels in because a provider's fields and lists are the
+ * kind's to declare: without it this module cannot say what a provider must
+ * carry. The stored credentials do not, so whether a `secret` field still names
+ * a credential is asked of the dialog, where the store is in hand — a credential
+ * that is deleted is the host's refusal to answer, not a draft this module can
+ * judge without the list.
  */
 export const configurationIssue = (
   configuration: Configuration,
+  kinds: readonly ProviderKind[],
 ): string | undefined => {
   const { providers } = configuration;
   if (providers.length === 0) return 'Add at least one provider.';
@@ -246,12 +343,10 @@ export const configurationIssue = (
     if (ids.has(provider.id)) return 'Provider ids must be unique.';
     ids.add(provider.id);
 
-    if (!isHttpUrl(provider.baseUrl)) {
-      return `Enter an http:// or https:// base URL for ${provider.id}.`;
-    }
-    if (provider.credentialId.trim() === '') {
-      return `Choose the credential ${provider.id} authenticates with.`;
-    }
+    const kind = kindOf(kinds, provider.kind);
+    if (kind === undefined) return `Choose a kind for ${provider.id}.`;
+    const issue = providerFieldsIssue(provider, kind);
+    if (issue !== undefined) return issue;
   }
 
   const { effort, model, providerId } = configuration.models.execution;
@@ -269,13 +364,137 @@ export const configurationIssue = (
   return undefined;
 };
 
+/**
+ * The first reason one provider's own fields and lists fall outside what its
+ * kind declares, or `undefined`. This is the rule `configurationIssue` applies
+ * to every provider and `providerIssue` applies to one draft, so the two cannot
+ * drift: a `url` is http(s), a `number` parses finite, an `enum` names one of the
+ * values the kind offers, a required field is present and non-empty, no field
+ * the kind does not declare is carried, and each list is present exactly when the
+ * kind keeps it, with unique non-empty entries.
+ *
+ * Whether a `secret` field names a stored credential is not asked here: that
+ * needs the store, which only the dialog holds (see `providerIssue`).
+ */
+const providerFieldsIssue = (
+  provider: ProviderConfiguration,
+  kind: ProviderKind,
+): string | undefined => {
+  const declared = new Map(kind.fields.map((field) => [field.key, field]));
+  for (const key of Object.keys(provider.configuration)) {
+    if (!declared.has(key)) {
+      return `Provider ${provider.id} carries a field its kind does not declare.`;
+    }
+  }
+
+  for (const field of kind.fields) {
+    const value = (provider.configuration[field.key] ?? '').trim();
+    if (value === '') {
+      if (field.required) return `Enter ${field.label} for ${provider.id}.`;
+      continue;
+    }
+    if (field.kind === 'url' && !isHttpUrl(value)) {
+      return `Enter an http:// or https:// address for ${field.label} on ${provider.id}.`;
+    }
+    if (field.kind === 'number' && !Number.isFinite(Number(value))) {
+      return `Enter a number for ${field.label} on ${provider.id}.`;
+    }
+    if (field.kind === 'enum' && !(field.options ?? []).includes(value)) {
+      return `Choose ${field.label} for ${provider.id}.`;
+    }
+  }
+
+  for (const list of providerListIds) {
+    const entries = provider[list];
+    if (!kind.lists.includes(list)) {
+      if (entries !== undefined && entries.length > 0) {
+        return `Provider ${provider.id}'s kind does not keep ${list}.`;
+      }
+      continue;
+    }
+    if (entries === undefined) {
+      return `Provider ${provider.id} must carry its ${list}.`;
+    }
+    const noun = providerListNoun[list];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const trimmed = entry.trim();
+      if (trimmed === '') {
+        return `Every ${noun} must be filled in for ${provider.id}.`;
+      }
+      if (seen.has(trimmed)) {
+        return `Every ${noun} must be unique for ${provider.id}.`;
+      }
+      seen.add(trimmed);
+      if (
+        list === 'reasonings' &&
+        !reasoningEfforts.includes(entry as ReasoningEffort)
+      ) {
+        return `Choose a known reasoning effort for ${provider.id}.`;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * The first `secret` field that does not name a stored `API_TOKEN` credential,
+ * or `undefined`. A secret field is drawn with the credential select, so this is
+ * what stops a draft naming a credential the store no longer holds — the rule
+ * the dialog's own Save reads.
+ */
+const providerSecretsIssue = (
+  provider: ProviderConfiguration,
+  kind: ProviderKind,
+  credentials: readonly Credential[],
+): string | undefined => {
+  const tokens = credentialsOfKind(credentials, 'API_TOKEN');
+  for (const field of kind.fields) {
+    if (field.kind !== 'secret') continue;
+    const value = (provider.configuration[field.key] ?? '').trim();
+    if (value === '') continue;
+    if (!tokens.some((token) => token.id === value)) {
+      return `Choose the API token ${provider.id} authenticates with.`;
+    }
+  }
+  return undefined;
+};
+
+/** Whether two configuration value maps carry the same fields, absent as empty. */
+const isSameValues = (
+  left: { readonly [key: string]: string },
+  right: { readonly [key: string]: string },
+): boolean => {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? '') !== (right[key] ?? '')) return false;
+  }
+  return true;
+};
+
+/** Whether two provider lists hold the same entries, absent as empty. */
+const isSameList = (
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean => {
+  const entries = left ?? [];
+  const others = right ?? [];
+  return (
+    entries.length === others.length &&
+    entries.every((entry, index) => entry === others[index])
+  );
+};
+
 const isSameProvider = (
   left: ProviderConfiguration,
   right: ProviderConfiguration,
 ): boolean =>
   left.id === right.id &&
-  left.baseUrl === right.baseUrl &&
-  left.credentialId === right.credentialId;
+  left.kind === right.kind &&
+  isSameValues(left.configuration, right.configuration) &&
+  isSameList(left.models, right.models) &&
+  isSameList(left.reasonings, right.reasonings);
 
 /**
  * The configuration with one provider replaced wholesale at a position, keeping
@@ -292,16 +511,18 @@ export const replaceProvider = (
   return current === undefined
     ? configuration
     : updateProvider(configuration, index, {
-        baseUrl: provider.baseUrl,
-        credentialId: provider.credentialId,
         id: provider.id,
+        kind: provider.kind,
+        configuration: provider.configuration,
+        models: provider.models,
+        reasonings: provider.reasonings,
       });
 };
 
 /**
- * One provider while it is being edited in a dialog: the fields themselves, and
- * the position it holds in `Configuration.providers`, or `undefined` while it is
- * being added.
+ * One provider while it is being edited in a dialog: the provider's own fields,
+ * and the position it holds in `Configuration.providers`, or `undefined` while it
+ * is being added.
  *
  * The draft is separate from the configuration because a dialog edits a copy: the
  * stored list keeps the provider every other screen is reading until the draft is
@@ -312,11 +533,21 @@ export type ProviderDraft = ProviderConfiguration & {
   readonly index?: number;
 };
 
-/** A draft for a provider that does not exist yet. */
-export const emptyProviderDraft = (): ProviderDraft => ({
+/**
+ * A draft for a provider that does not exist yet, in one kind: the id is blank,
+ * every field the kind declares starts empty, and the lists it keeps start
+ * empty too, because a new provider's fields and lists are exactly the kind's to
+ * say. Changing the kind later starts from this again, since no two kinds share
+ * a field set a half-typed value could survive.
+ */
+export const emptyProviderDraft = (kind: ProviderKind): ProviderDraft => ({
   id: '',
-  baseUrl: '',
-  credentialId: '',
+  kind: kind.id,
+  configuration: Object.fromEntries(
+    kind.fields.map((field) => [field.key, '']),
+  ),
+  ...(kind.lists.includes('models') ? { models: [] } : {}),
+  ...(kind.lists.includes('reasonings') ? { reasonings: [] } : {}),
 });
 
 /** The provider at one position as an editable draft, or `undefined` if none. */
@@ -329,24 +560,57 @@ export const providerDraftOf = (
 };
 
 /**
+ * The provider a draft describes, as the configuration carries it. A field the
+ * kind does not require and the draft left empty is left out rather than sent
+ * empty, because an unset optional value is one the provider does not carry; a
+ * required field stays, so the host's own message still names what is missing.
+ * A list is carried exactly when the kind keeps it, empty until entries are
+ * added.
+ */
+export const providerFromDraft = (
+  draft: ProviderDraft,
+  kind: ProviderKind,
+): ProviderConfiguration => {
+  const configuration: Record<string, string> = {};
+
+  for (const field of kind.fields) {
+    const value = (draft.configuration[field.key] ?? '').trim();
+    if (value !== '' || field.required) configuration[field.key] = value;
+  }
+
+  return {
+    id: draft.id,
+    kind: draft.kind,
+    configuration,
+    ...(kind.lists.includes('models') ? { models: draft.models ?? [] } : {}),
+    ...(kind.lists.includes('reasonings')
+      ? { reasonings: draft.reasonings ?? [] }
+      : {}),
+  };
+};
+
+/**
  * The first reason a provider draft cannot be stored, in the voice the surface
  * uses, or `undefined` when it can. It states the provider's own rules — the same
  * ones `configurationIssue` applies to every provider — so a dialog refuses a row
  * on its own terms instead of reporting the whole list: an empty or duplicated id
  * is still the configuration's to report, because a draft cannot see its
  * neighbours.
+ *
+ * The credentials travel in because a `secret` field names a stored `API_TOKEN`,
+ * and the dialog is where the store is in hand.
  */
-export const providerIssue = (draft: ProviderDraft): string | undefined => {
+export const providerIssue = (
+  draft: ProviderDraft,
+  kind: ProviderKind,
+  credentials: readonly Credential[],
+): string | undefined => {
   if (draft.id.trim() === '' || Array.from(draft.id).length > providerIdLimit) {
     return `Enter an id between 1 and ${providerIdLimit} characters for every provider.`;
   }
-  if (!isHttpUrl(draft.baseUrl)) {
-    return `Enter an http:// or https:// base URL for ${draft.id}.`;
-  }
-  if (draft.credentialId.trim() === '') {
-    return `Choose the credential ${draft.id} authenticates with.`;
-  }
-  return undefined;
+  const fields = providerFieldsIssue(draft, kind);
+  if (fields !== undefined) return fields;
+  return providerSecretsIssue(draft, kind, credentials);
 };
 
 /**

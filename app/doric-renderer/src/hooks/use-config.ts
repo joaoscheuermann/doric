@@ -4,6 +4,7 @@ import {
   configurationIssue,
   type DoricConfiguration,
   isSameConfiguration,
+  type ProviderKind,
 } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -41,8 +42,14 @@ export type Config = {
  * the host's message and keeps the user's draft. What a save sends is the
  * draft as `configurationInput` reads it, which is where a write-only token
  * becomes the body the host stores.
+ *
+ * The kind catalog travels in because a provider's fields and lists are the
+ * kind's, so the hook cannot say whether the draft is valid without it.
  */
-export const useConfig = (open: boolean): Config => {
+export const useConfig = (
+  open: boolean,
+  kinds: readonly ProviderKind[],
+): Config => {
   const [saved, setSaved] = useState<DoricConfiguration>();
   const [draft, setDraft] = useState<Configuration>();
   const [loading, setLoading] = useState(false);
@@ -120,25 +127,26 @@ export const useConfig = (open: boolean): Config => {
       next === undefined ||
       saved === undefined ||
       isSameConfiguration(saved.configuration, next) ||
-      configurationIssue(next) !== undefined
+      configurationIssue(next, kinds) !== undefined
     ) {
       return;
     }
     await save();
-  }, [saved, save]);
+  }, [kinds, saved, save]);
 
   // A valid change sends itself once typing settles; a draft the host would
   // refuse is left to the section that explains it.
   useEffect(() => {
     if (draft === undefined || saved === undefined) return;
     if (isSameConfiguration(saved.configuration, draft)) return;
-    if (configurationIssue(draft) !== undefined) return;
+    if (configurationIssue(draft, kinds) !== undefined) return;
     const timer = setTimeout(() => void save(), saveDelayMs);
     pending.current = timer;
     return () => clearTimeout(timer);
-  }, [draft, saved, save]);
+  }, [draft, kinds, saved, save]);
 
-  const issue = draft === undefined ? undefined : configurationIssue(draft);
+  const issue =
+    draft === undefined ? undefined : configurationIssue(draft, kinds);
   const dirty =
     draft !== undefined &&
     saved !== undefined &&

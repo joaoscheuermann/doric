@@ -32,11 +32,41 @@ type Thread = {
 
 type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
+/** The kinds of control a provider field needs; an `enum` carries its options. */
+type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
+
+/**
+ * One value a provider kind declares. A `secret` value is the id of a stored
+ * `API_TOKEN` credential, so no secret itself ever crosses this boundary.
+ */
+type ProviderField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ProviderFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  readonly options?: readonly string[];
+};
+
+type ProviderListId = 'models' | 'reasonings';
+
+/** One provider integration the host can configure and this window may edit. */
+type ProviderKind = {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly fields: readonly ProviderField[];
+  readonly lists: readonly ProviderListId[];
+};
+
 type ProviderConfiguration = {
   readonly id: string;
-  readonly baseUrl: string;
-  /** The `API_TOKEN` credential this provider authenticates with. */
-  readonly credentialId: string;
+  readonly kind: string;
+  /** The kind's own field values; a `secret` value names a stored credential. */
+  readonly configuration: Readonly<Record<string, string>>;
+  readonly models?: readonly string[];
+  readonly reasonings?: readonly ReasoningEffort[];
 };
 
 type CredentialKind = 'API_TOKEN' | 'USERNAME_PASSWORD' | 'GIT';
@@ -200,6 +230,10 @@ contextBridge.exposeInMainWorld('doric', {
     get: () => invoke<DoricConfiguration>('doric:config:get'),
     update: (configuration: ConfigurationInput) =>
       invoke<DoricConfiguration>('doric:config:update', configuration),
+  },
+  providers: {
+    // The host's catalog: the kinds it can build and what each one needs.
+    kinds: () => invoke<readonly ProviderKind[]>('doric:providers:kinds'),
   },
   /**
    * The host's credential store. A create or patch carries a secret and the

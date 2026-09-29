@@ -16,12 +16,10 @@ const maximumModelLength = 512;
 const maximumUsernameLength = 128;
 const maximumEmailLength = 254;
 const maximumTokenLength = 512;
+const maximumFieldValueLength = 512;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const nonEmpty = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
 
 /** A trimmed string within the host's own limit for that field. */
 const bounded = (value: unknown, maximum: number): value is string =>
@@ -141,18 +139,57 @@ const provider = (value: unknown): Configuration['providers'][number] => {
   if (
     !isRecord(value) ||
     !bounded(value.id, maximumIdentifierLength) ||
-    !nonEmpty(value.baseUrl) ||
-    typeof value.credentialId !== 'string' ||
-    value.credentialId.length === 0 ||
-    value.credentialId.length > maximumIdentifierLength
+    !bounded(value.kind, maximumIdentifierLength) ||
+    !isRecord(value.configuration) ||
+    Array.isArray(value.configuration)
   ) {
     return invalidConfiguration();
   }
+
+  // The catalog is the host's, so this reads any field key and any value: what it
+  // refuses is a value the host could never carry, not one it has not seen.
+  const configuration: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value.configuration)) {
+    if (
+      !bounded(key, maximumIdentifierLength) ||
+      !bounded(entry, maximumFieldValueLength)
+    ) {
+      return invalidConfiguration();
+    }
+
+    configuration[key] = entry;
+  }
+
+  const models = modelList(value.models);
+  const reasonings = reasoningList(value.reasonings);
+
   return {
     id: value.id,
-    baseUrl: value.baseUrl,
-    credentialId: value.credentialId,
+    kind: value.kind,
+    configuration,
+    ...(models === undefined ? {} : { models }),
+    ...(reasonings === undefined ? {} : { reasonings }),
   };
+};
+
+/** The models a provider offers, or nothing when its kind keeps none. */
+const modelList = (value: unknown): string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return invalidConfiguration();
+
+  return value.map((entry) =>
+    bounded(entry, maximumModelLength) ? entry : invalidConfiguration(),
+  );
+};
+
+/** The efforts a provider accepts; a name llms does not know is not one. */
+const reasoningList = (value: unknown): ReasoningEffort[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return invalidConfiguration();
+
+  return value.map((entry) =>
+    isReasoningEffort(entry) ? entry : invalidConfiguration(),
+  );
 };
 
 const executionModel = (

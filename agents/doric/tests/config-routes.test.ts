@@ -4,11 +4,48 @@ import test from 'node:test';
 
 import express from 'express';
 
+import { providerKinds } from 'llms';
+
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { ConfigCredentialError } from '../src/lib/config/service.js';
 import { createConfigRouter } from '../src/routes/config.js';
+import { createProvidersRouter } from '../src/routes/providers.js';
 
 const gitCredentialId = '00000000-0000-4000-8000-00000000000a';
+
+test('answers the provider-kind catalog the host can build', async () => {
+  const app = express();
+
+  app.use('/providers', createProvidersRouter());
+
+  const host = await serve(app);
+
+  try {
+    const response = await fetch(`${host.url}/providers/kinds`);
+
+    assert.equal(response.status, 200);
+
+    const body = (await response.json()) as { kinds: unknown };
+
+    // The route is the catalog itself, so a kind's fields and lists arrive
+    // exactly as llms declares them.
+    assert.deepEqual(body.kinds, JSON.parse(JSON.stringify(providerKinds)));
+    assert.deepEqual(
+      (body.kinds as readonly { id: string }[]).map(({ id }) => id),
+      [
+        'openai',
+        'openai-compatible',
+        'openrouter',
+        'unified',
+        'codex',
+        'lmstudio',
+        'lmstudio-openai',
+      ],
+    );
+  } finally {
+    await host.close();
+  }
+});
 
 test('returns the active configuration at the root config route', async () => {
   const active = snapshot(1);
@@ -163,6 +200,10 @@ const serveConfig = async (service: unknown) => {
 
   app.use('/config', createConfigRouter(service as never));
 
+  return serve(app);
+};
+
+const serve = async (app: express.Express) => {
   const server = createServer(app);
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

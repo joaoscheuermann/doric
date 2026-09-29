@@ -115,11 +115,49 @@ export const reasoningEfforts = [
 
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
 
+/** The kinds of control a provider field needs; an `enum` carries its options. */
+export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
+
+/**
+ * One value a provider kind declares. A `secret` value is the id of a stored
+ * `API_TOKEN` credential, so no secret itself ever crosses this boundary.
+ */
+export type ProviderField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ProviderFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  readonly options?: readonly string[];
+};
+
+/** The per-provider lists a kind keeps: edited as tables, read by other sections. */
+export type ProviderListId = 'models' | 'reasonings';
+
+/**
+ * One provider integration the host can configure. Its `id` stays a string
+ * because the catalog is the host's: a settings surface that received a kind it
+ * had never heard of can still render it.
+ */
+export type ProviderKind = {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly fields: readonly ProviderField[];
+  readonly lists: readonly ProviderListId[];
+};
+
 export type ProviderConfiguration = {
   readonly id: string;
-  readonly baseUrl: string;
-  /** The `API_TOKEN` credential this provider authenticates with. */
-  readonly credentialId: string;
+  /** The kind this provider names, one of the catalog's ids. */
+  readonly kind: string;
+  /** The kind's own field values; a `secret` value names a stored credential. */
+  readonly configuration: Readonly<Record<string, string>>;
+  /** The models this provider offers, for the kinds whose catalog lists them. */
+  readonly models?: readonly string[];
+  /** The efforts it accepts, for the kinds whose catalog lists them. */
+  readonly reasonings?: readonly ReasoningEffort[];
 };
 
 /**
@@ -248,16 +286,126 @@ const providerConfigurationFrom = (value: unknown): ProviderConfiguration => {
   if (
     !isRecord(value) ||
     typeof value.id !== 'string' ||
-    typeof value.baseUrl !== 'string' ||
-    typeof value.credentialId !== 'string'
+    typeof value.kind !== 'string'
   ) {
     return invalidResponse();
   }
+
+  const models = stringListFrom(value.models);
+  const reasonings = reasoningListFrom(value.reasonings);
+
   return {
     id: value.id,
-    baseUrl: value.baseUrl,
-    credentialId: value.credentialId,
+    kind: value.kind,
+    configuration: configurationValuesFrom(value.configuration),
+    ...(models === undefined ? {} : { models }),
+    ...(reasonings === undefined ? {} : { reasonings }),
   };
+};
+
+/** A provider's field values: one string per key, and nothing else. */
+const configurationValuesFrom = (value: unknown): Record<string, string> => {
+  if (!isRecord(value) || Array.isArray(value)) return invalidResponse();
+
+  const entries = Object.entries(value);
+  if (entries.some(([, entry]) => typeof entry !== 'string'))
+    return invalidResponse();
+
+  return Object.fromEntries(entries as readonly [string, string][]);
+};
+
+/** A provider list, or nothing when the kind keeps none. */
+const stringListFrom = (value: unknown): readonly string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
+    return invalidResponse();
+
+  return value as readonly string[];
+};
+
+/** A provider's reasoning list, which only names efforts llms knows. */
+const reasoningListFrom = (
+  value: unknown,
+): readonly ReasoningEffort[] | undefined => {
+  const list = stringListFrom(value);
+  if (list === undefined) return undefined;
+  if (!list.every(isReasoningEffort)) return invalidResponse();
+
+  return list;
+};
+
+const providerFieldKinds: readonly ProviderFieldKind[] = [
+  'text',
+  'url',
+  'number',
+  'enum',
+  'secret',
+];
+
+const providerLists: readonly ProviderListId[] = ['models', 'reasonings'];
+
+const providerFieldFrom = (value: unknown): ProviderField => {
+  if (
+    !isRecord(value) ||
+    typeof value.key !== 'string' ||
+    typeof value.label !== 'string' ||
+    !providerFieldKinds.includes(value.kind as ProviderFieldKind) ||
+    typeof value.required !== 'boolean' ||
+    (value.description !== undefined &&
+      typeof value.description !== 'string') ||
+    (value.placeholder !== undefined && typeof value.placeholder !== 'string')
+  ) {
+    return invalidResponse();
+  }
+
+  // An `enum` is the only kind that offers values, so the two must agree: a
+  // control the catalog cannot describe would render as an empty choice.
+  const options = stringListFrom(value.options);
+  if ((value.kind === 'enum') !== (options !== undefined))
+    return invalidResponse();
+
+  return {
+    key: value.key,
+    label: value.label,
+    kind: value.kind as ProviderFieldKind,
+    required: value.required,
+    ...(value.description === undefined
+      ? {}
+      : { description: value.description }),
+    ...(value.placeholder === undefined
+      ? {}
+      : { placeholder: value.placeholder }),
+    ...(options === undefined ? {} : { options }),
+  };
+};
+
+const providerKindFrom = (value: unknown): ProviderKind => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.label !== 'string' ||
+    typeof value.description !== 'string' ||
+    !Array.isArray(value.fields) ||
+    !Array.isArray(value.lists) ||
+    value.lists.some((list) => !providerLists.includes(list as ProviderListId))
+  ) {
+    return invalidResponse();
+  }
+
+  return {
+    id: value.id,
+    label: value.label,
+    description: value.description,
+    fields: value.fields.map(providerFieldFrom),
+    lists: value.lists as readonly ProviderListId[],
+  };
+};
+
+/** The host's catalog, unwrapped from the envelope the route answers with. */
+const providerKindsFrom = (value: unknown): readonly ProviderKind[] => {
+  if (!isRecord(value) || !Array.isArray(value.kinds)) return invalidResponse();
+
+  return value.kinds.map(providerKindFrom);
 };
 
 const credentialKindValues = new Set<string>(credentialKinds);
@@ -729,6 +877,14 @@ export const workspaceApi = {
           body: body(configuration),
         }),
       ),
+  },
+  /**
+   * The provider kinds the host can build. The catalog is the host's, so this is
+   * what lets a settings surface configure a kind it has never heard of.
+   */
+  providers: {
+    kinds: async (): Promise<readonly ProviderKind[]> =>
+      providerKindsFrom(await request<unknown>('/providers/kinds')),
   },
   /**
    * The host's credential store. The list answers every credential in its

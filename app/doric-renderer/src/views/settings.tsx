@@ -6,9 +6,14 @@ import type { SettingsNavItem } from '@/components/templates/settings-surface';
 import { SettingsWindow } from '@/components/templates/settings-window';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { type Configuration, updatedAtLabel } from '@/domain/config';
+import {
+  type Configuration,
+  type ProviderKind,
+  updatedAtLabel,
+} from '@/domain/config';
 import { type Config, useConfig } from '@/hooks/use-config';
 import { type Credentials, useCredentials } from '@/hooks/use-credentials';
+import { useProviderKinds } from '@/hooks/use-provider-kinds';
 import {
   AlertCircleIcon,
   GitBranchIcon,
@@ -100,11 +105,13 @@ function Section({
   credentials,
   draft,
   id,
+  kinds,
   onChange,
 }: {
   readonly credentials: Credentials;
   readonly draft: Configuration;
   readonly id: SectionId;
+  readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: Configuration) => void;
 }) {
   switch (id) {
@@ -113,6 +120,7 @@ function Section({
         <SettingsProviders
           credentials={credentials.list}
           draft={draft}
+          kinds={kinds}
           onChange={onChange}
         />
       );
@@ -139,8 +147,9 @@ function Section({
  * the save instead of offering one.
  */
 export function Settings() {
-  const config = useConfig(true);
   const credentials = useCredentials();
+  const kinds = useProviderKinds();
+  const config = useConfig(true, kinds.list);
   const [section, setSection] = useState<SectionId>('providers');
   const current = sections.find((item) => item.id === section) ?? sections[0];
   // The one icon the section is named by, drawn by the nav and the heading alike
@@ -249,6 +258,7 @@ export function Settings() {
             credentials={credentials}
             draft={draft}
             id={current.id}
+            kinds={kinds.list}
             onChange={config.setDraft}
           />
         )}

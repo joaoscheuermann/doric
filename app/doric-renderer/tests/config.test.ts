@@ -19,9 +19,15 @@ import {
   emptyProviderDraft,
   isSameConfiguration,
   isUsableChoice,
+  kindOf,
+  providerAddress,
   type ProviderConfiguration,
+  type ProviderDraft,
   providerDraftOf,
+  type ProviderField,
+  providerFromDraft,
   providerIssue,
+  type ProviderKind,
   providerLabel,
   providerRows,
   type ReasoningEffort,
@@ -47,10 +53,76 @@ const credential = (
   hasSecret: true,
 });
 
-const provider = (id: string): ProviderConfiguration => ({
+/**
+ * A provider catalog that covers every field kind and both per-provider lists,
+ * plus one kind that keeps none, so a case can prove what the renderer draws
+ * comes from the catalog rather than from a shape it assumes.
+ */
+const kinds: readonly ProviderKind[] = [
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    description: 'OpenAI and compatible endpoints.',
+    fields: [
+      { key: 'endpoint', label: 'Endpoint', kind: 'url', required: true },
+      { key: 'token', label: 'API token', kind: 'secret', required: true },
+      {
+        key: 'region',
+        label: 'Region',
+        kind: 'enum',
+        required: false,
+        options: ['us', 'eu'],
+      },
+      { key: 'weight', label: 'Weight', kind: 'number', required: false },
+      { key: 'note', label: 'Note', kind: 'text', required: false },
+    ],
+    lists: ['models', 'reasonings'],
+  },
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    description: 'A local server.',
+    fields: [
+      { key: 'endpoint', label: 'Endpoint', kind: 'url', required: true },
+    ],
+    lists: [],
+  },
+];
+
+/** The value a field starts with, so a fixture satisfies every field kind. */
+const valueFor = (field: ProviderField, id: string): string =>
+  field.kind === 'url'
+    ? 'https://api.example.com'
+    : field.kind === 'secret'
+      ? `${id}-credential`
+      : field.kind === 'enum'
+        ? (field.options?.[0] ?? '')
+        : field.kind === 'number'
+          ? '1'
+          : '';
+
+/** One provider of a kind, carrying every field and list the kind declares. */
+const provider = (
+  id: string,
+  kind: ProviderKind = kinds[0],
+): ProviderConfiguration => ({
   id,
-  baseUrl: 'https://api.example.com',
-  credentialId: `${id}-credential`,
+  kind: kind.id,
+  configuration: Object.fromEntries(
+    kind.fields.map((field) => [field.key, valueFor(field, id)]),
+  ),
+  ...(kind.lists.includes('models') ? { models: ['gpt-5'] } : {}),
+  ...(kind.lists.includes('reasonings') ? { reasonings: ['medium'] } : {}),
+});
+
+/** The provider with one configuration field set to a value a case names. */
+const withField = (
+  provider: ProviderConfiguration,
+  key: string,
+  value: string,
+): ProviderConfiguration => ({
+  ...provider,
+  configuration: { ...provider.configuration, [key]: value },
 });
 
 /** A configuration the host would accept, which each case then breaks once. */
@@ -78,7 +150,7 @@ const withProviders = (
 /** A configuration the host would accept, which each case then breaks once. */
 describe('configuration rules', () => {
   test('accepts a configuration the host would accept', () => {
-    assert.equal(configurationIssue(configuration()), undefined);
+    assert.equal(configurationIssue(configuration(), kinds), undefined);
   });
 
   test("accepts values at the host's own bounds", () => {
@@ -86,13 +158,7 @@ describe('configuration rules', () => {
     assert.equal(
       configurationIssue(
         configuration({
-          providers: [
-            {
-              id,
-              baseUrl: 'http://localhost:11434',
-              credentialId: 'c'.repeat(128),
-            },
-          ],
+          providers: [provider(id)],
           models: {
             execution: {
               providerId: id,
@@ -101,6 +167,7 @@ describe('configuration rules', () => {
             },
           },
         }),
+        kinds,
       ),
       undefined,
     );
@@ -108,19 +175,23 @@ describe('configuration rules', () => {
 
   test('requires at least one provider', () => {
     assert.equal(
-      configurationIssue(withProviders(configuration(), [])),
+      configurationIssue(withProviders(configuration(), []), kinds),
       'Add at least one provider.',
     );
   });
 
   test('requires every provider id to be named and bounded', () => {
     assert.equal(
-      configurationIssue(withProviders(configuration(), [provider('  ')])),
+      configurationIssue(
+        withProviders(configuration(), [provider('  ')]),
+        kinds,
+      ),
       'Enter an id between 1 and 128 characters for every provider.',
     );
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [provider('p'.repeat(129))]),
+        kinds,
       ),
       'Enter an id between 1 and 128 characters for every provider.',
     );
@@ -133,38 +204,146 @@ describe('configuration rules', () => {
           provider('openai'),
           provider('openai'),
         ]),
+        kinds,
       ),
       'Provider ids must be unique.',
     );
   });
 
-  test('requires an http or https base URL', () => {
+  test('requires every required field the kind declares', () => {
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), baseUrl: 'api.example.com' },
+          withField(provider('openai'), 'endpoint', ''),
         ]),
+        kinds,
       ),
-      'Enter an http:// or https:// base URL for openai.',
+      'Enter Endpoint for openai.',
     );
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), baseUrl: 'ftp://api.example.com' },
+          withField(provider('openai'), 'token', ''),
         ]),
+        kinds,
       ),
-      'Enter an http:// or https:// base URL for openai.',
+      'Enter API token for openai.',
     );
   });
 
-  test('requires a credential reference on every provider', () => {
+  test('requires an address field to be http or https', () => {
+    for (const endpoint of ['api.example.com', 'ftp://api.example.com']) {
+      assert.equal(
+        configurationIssue(
+          withProviders(configuration(), [
+            withField(provider('openai'), 'endpoint', endpoint),
+          ]),
+          kinds,
+        ),
+        'Enter an http:// or https:// address for Endpoint on openai.',
+      );
+    }
+  });
+
+  test('requires a number field to parse finite', () => {
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), credentialId: '' },
+          withField(provider('openai'), 'weight', 'heavy'),
         ]),
+        kinds,
       ),
-      'Choose the credential openai authenticates with.',
+      'Enter a number for Weight on openai.',
+    );
+  });
+
+  test('requires an enum field to name one of the values the kind offers', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          withField(provider('openai'), 'region', 'apac'),
+        ]),
+        kinds,
+      ),
+      'Choose Region for openai.',
+    );
+  });
+
+  test('refuses a field the kind does not declare', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          withField(provider('openai'), 'legacy', 'x'),
+        ]),
+        kinds,
+      ),
+      'Provider openai carries a field its kind does not declare.',
+    );
+  });
+
+  test('requires the lists a kind keeps, and refuses the ones it does not', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), models: undefined },
+        ]),
+        kinds,
+      ),
+      'Provider openai must carry its models.',
+    );
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('ollama', kinds[1]), models: ['llama'] },
+        ]),
+        kinds,
+      ),
+      "Provider ollama's kind does not keep models.",
+    );
+  });
+
+  test('requires every list entry to be filled in and unique', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), models: ['gpt-5', ''] },
+        ]),
+        kinds,
+      ),
+      'Every model must be filled in for openai.',
+    );
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), reasonings: ['low', 'low'] },
+        ]),
+        kinds,
+      ),
+      'Every reasoning effort must be unique for openai.',
+    );
+  });
+
+  test('requires a reasoning entry to name one of the six efforts', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), reasonings: ['extreme'] },
+        ]),
+        kinds,
+      ),
+      'Choose a known reasoning effort for openai.',
+    );
+  });
+
+  test('requires a provider to name a kind the catalog declares', () => {
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          { ...provider('openai'), kind: 'mystery' },
+        ]),
+        kinds,
+      ),
+      'Choose a kind for openai.',
     );
   });
 
@@ -176,6 +355,7 @@ describe('configuration rules', () => {
           model: 'gpt-5',
           effort: 'medium',
         }),
+        kinds,
       ),
       'Choose the provider that runs prompts.',
     );
@@ -190,6 +370,7 @@ describe('configuration rules', () => {
             model,
             effort: 'medium',
           }),
+          kinds,
         ),
         'Enter a model between 1 and 512 characters.',
       );
@@ -204,6 +385,7 @@ describe('configuration rules', () => {
           model: 'gpt-5',
           effort: 'extreme' as ReasoningEffort,
         }),
+        kinds,
       ),
       'Choose a reasoning effort.',
     );
@@ -212,7 +394,7 @@ describe('configuration rules', () => {
   test('requires a positive whole turn limit', () => {
     for (const maxTurns of [0, -1, 2.5, Number.NaN]) {
       assert.equal(
-        configurationIssue(configuration({ execution: { maxTurns } })),
+        configurationIssue(configuration({ execution: { maxTurns } }), kinds),
         'Enter a turn limit of 1 or more.',
       );
     }
@@ -221,17 +403,29 @@ describe('configuration rules', () => {
 
 describe('credential choice rules', () => {
   test('accepts a configuration that names no credentials', () => {
-    assert.equal(configurationIssue(configuration()), undefined);
+    assert.equal(configurationIssue(configuration(), kinds), undefined);
   });
 
-  test('requires a credential for every provider', () => {
+  test('holds a provider secret to a non-empty value, not a stored one', () => {
+    // The section's own rule asks only that a required secret is named; whether
+    // the store still holds it is the dialog's check, where the store is in hand.
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), credentialId: '' },
+          withField(provider('openai'), 'token', 'deleted-credential'),
         ]),
+        kinds,
       ),
-      'Choose the credential openai authenticates with.',
+      undefined,
+    );
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          withField(provider('openai'), 'token', ''),
+        ]),
+        kinds,
+      ),
+      'Enter API token for openai.',
     );
   });
 
@@ -242,6 +436,7 @@ describe('credential choice rules', () => {
           gitCredentialId: 'identity',
           githubCredentialId: 'token',
         }),
+        kinds,
       ),
       undefined,
     );
@@ -495,10 +690,15 @@ describe('configuration comparison', () => {
     const changed: readonly Configuration[] = [
       withProviders(base, [provider('openai'), provider('anthropic')]),
       withProviders(base, [provider('azure')]),
+      withProviders(base, [provider('openai', kinds[1])]),
       withProviders(base, [
-        { ...provider('openai'), baseUrl: 'https://other.example.com' },
+        withField(provider('openai'), 'endpoint', 'https://other.example.com'),
       ]),
-      withProviders(base, [{ ...provider('openai'), credentialId: 'other' }]),
+      withProviders(base, [
+        withField(provider('openai'), 'token', 'other-credential'),
+      ]),
+      withProviders(base, [{ ...provider('openai'), models: ['gpt-5-mini'] }]),
+      withProviders(base, [{ ...provider('openai'), reasonings: ['high'] }]),
       updateModel(base, { providerId: 'anthropic' }),
       updateModel(base, { model: 'gpt-5-mini' }),
       updateModel(base, { effort: 'high' }),
@@ -537,10 +737,21 @@ describe('provider transitions', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic')],
     });
-    const next = updateProvider(base, 1, { baseUrl: 'https://proxy.internal' });
+    const next = updateProvider(base, 1, {
+      configuration: {
+        ...base.providers[1].configuration,
+        endpoint: 'https://proxy.internal',
+      },
+    });
 
-    assert.equal(next.providers[0].baseUrl, 'https://api.example.com');
-    assert.equal(next.providers[1].baseUrl, 'https://proxy.internal');
+    assert.equal(
+      next.providers[0].configuration.endpoint,
+      'https://api.example.com',
+    );
+    assert.equal(
+      next.providers[1].configuration.endpoint,
+      'https://proxy.internal',
+    );
     assert.equal(next.providers[1].id, 'anthropic');
   });
 
@@ -570,17 +781,9 @@ describe('provider transitions', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic')],
     });
-    const next = replaceProvider(base, 0, {
-      id: 'azure',
-      baseUrl: 'https://azure.internal',
-      credentialId: 'azure-credential',
-    });
+    const next = replaceProvider(base, 0, provider('azure'));
 
-    assert.deepEqual(next.providers[0], {
-      id: 'azure',
-      baseUrl: 'https://azure.internal',
-      credentialId: 'azure-credential',
-    });
+    assert.deepEqual(next.providers[0], provider('azure'));
     assert.deepEqual(next.providers[1], provider('anthropic'));
   });
 
@@ -646,7 +849,7 @@ describe('provider transitions', () => {
       ['anthropic'],
     );
     assert.equal(next.models.execution.providerId, 'anthropic');
-    assert.equal(configurationIssue(next), undefined);
+    assert.equal(configurationIssue(next, kinds), undefined);
   });
 
   test('points the execution model at nothing when no provider is left', () => {
@@ -659,23 +862,40 @@ describe('provider transitions', () => {
 });
 
 describe('provider rows', () => {
-  test('gives each provider the place it holds in the list', () => {
+  test('gives each provider the place it holds in the list, and its kind', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic'), provider('azure')],
     });
 
+    const rows = providerRows(base, kinds);
+
     assert.deepEqual(
-      providerRows(base).map(({ index }) => index),
+      rows.map(({ index }) => index),
       [0, 1, 2],
     );
     assert.deepEqual(
-      providerRows(base).map(({ provider: row }) => row.id),
+      rows.map(({ provider: row }) => row.id),
       ['openai', 'anthropic', 'azure'],
+    );
+    assert.deepEqual(
+      rows.map(({ kind }) => kind?.label),
+      ['OpenAI', 'OpenAI', 'OpenAI'],
     );
   });
 
   test('draws no row for a list holding no providers', () => {
-    assert.deepEqual(providerRows(configuration({ providers: [] })), []);
+    assert.deepEqual(providerRows(configuration({ providers: [] }), kinds), []);
+  });
+
+  test('carries no kind for one the catalog does not declare', () => {
+    const rows = providerRows(
+      configuration({
+        providers: [{ ...provider('openai'), kind: 'mystery' }],
+      }),
+      kinds,
+    );
+
+    assert.equal(rows[0].kind, undefined);
   });
 
   test('addresses the provider a row names, not the place the table drew it', () => {
@@ -684,21 +904,30 @@ describe('provider rows', () => {
     });
     // A descending sort draws the last provider first, so the first row on
     // screen is the last provider in the list.
-    const drawn = [...providerRows(base)].reverse();
+    const drawn = [...providerRows(base, kinds)].reverse();
 
     const next = updateProvider(base, drawn[0].index, {
-      baseUrl: 'https://azure.internal',
+      configuration: {
+        ...drawn[0].provider.configuration,
+        endpoint: 'https://azure.internal',
+      },
     });
 
-    assert.equal(next.providers[2].baseUrl, 'https://azure.internal');
-    assert.equal(next.providers[0].baseUrl, 'https://api.example.com');
+    assert.equal(
+      next.providers[2].configuration.endpoint,
+      'https://azure.internal',
+    );
+    assert.equal(
+      next.providers[0].configuration.endpoint,
+      'https://api.example.com',
+    );
   });
 
   test('removes the provider a row names when the rows are drawn out of order', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic'), provider('azure')],
     });
-    const drawn = [...providerRows(base)].reverse();
+    const drawn = [...providerRows(base, kinds)].reverse();
 
     const next = removeProvider(base, drawn[0].index);
 
@@ -712,7 +941,7 @@ describe('provider rows', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic'), provider('azure')],
     });
-    const kept = providerRows(base).filter(
+    const kept = providerRows(base, kinds).filter(
       ({ provider: row }) => row.id !== 'anthropic',
     );
 
@@ -726,6 +955,9 @@ describe('provider rows', () => {
 });
 
 describe('provider drafts', () => {
+  /** The credentials the dialog may offer a provider's secret field. */
+  const tokens = [credential('openai-credential')];
+
   test('opens a draft on the provider at the position it was drawn at', () => {
     const base = configuration({
       providers: [provider('openai'), provider('anthropic')],
@@ -741,45 +973,169 @@ describe('provider drafts', () => {
     assert.equal(providerDraftOf(configuration(), 3), undefined);
   });
 
-  test('adds a draft that names no provider until it is filled in', () => {
-    assert.deepEqual(emptyProviderDraft(), {
+  test('adds a draft that starts empty in exactly one kind', () => {
+    assert.deepEqual(emptyProviderDraft(kinds[0]), {
       id: '',
-      baseUrl: '',
-      credentialId: '',
+      kind: 'openai',
+      configuration: {
+        endpoint: '',
+        token: '',
+        region: '',
+        weight: '',
+        note: '',
+      },
+      models: [],
+      reasonings: [],
+    });
+    // A kind that keeps no lists carries none, and only its own fields.
+    assert.deepEqual(emptyProviderDraft(kinds[1]), {
+      id: '',
+      kind: 'ollama',
+      configuration: { endpoint: '' },
     });
   });
 
   test('accepts a draft the host would accept', () => {
-    assert.equal(providerIssue(provider('openai')), undefined);
+    assert.equal(
+      providerIssue(provider('openai'), kinds[0], tokens),
+      undefined,
+    );
   });
 
   test('refuses an unnamed or overlong id', () => {
     assert.equal(
-      providerIssue({ ...provider('openai'), id: '  ' }),
+      providerIssue({ ...provider('openai'), id: '  ' }, kinds[0], tokens),
       'Enter an id between 1 and 128 characters for every provider.',
     );
     assert.equal(
-      providerIssue({ ...provider('openai'), id: 'p'.repeat(129) }),
+      providerIssue(
+        { ...provider('openai'), id: 'p'.repeat(129) },
+        kinds[0],
+        tokens,
+      ),
       'Enter an id between 1 and 128 characters for every provider.',
     );
   });
 
-  test('refuses anything but an http base URL', () => {
+  test('refuses a field the draft breaks', () => {
     assert.equal(
-      providerIssue({ ...provider('openai'), baseUrl: 'api.example.com' }),
-      'Enter an http:// or https:// base URL for openai.',
+      providerIssue(
+        withField(provider('openai'), 'endpoint', 'api.example.com'),
+        kinds[0],
+        tokens,
+      ),
+      'Enter an http:// or https:// address for Endpoint on openai.',
     );
   });
 
-  test('refuses a provider that authenticates with nothing', () => {
+  test('refuses a secret that names no stored API token', () => {
     assert.equal(
-      providerIssue({ ...provider('openai'), credentialId: '' }),
-      'Choose the credential openai authenticates with.',
+      providerIssue(
+        withField(provider('openai'), 'token', 'deleted-credential'),
+        kinds[0],
+        tokens,
+      ),
+      'Choose the API token openai authenticates with.',
     );
+  });
+
+  test('refuses a list entry the kind rule breaks', () => {
+    assert.equal(
+      providerIssue(
+        { ...provider('openai'), models: ['gpt-5', ''] },
+        kinds[0],
+        tokens,
+      ),
+      'Every model must be filled in for openai.',
+    );
+  });
+
+  test('carries a required value and leaves an unset optional one out', () => {
+    const draft: ProviderDraft = {
+      ...emptyProviderDraft(kinds[0]),
+      id: 'openai',
+      configuration: {
+        ...emptyProviderDraft(kinds[0]).configuration,
+        endpoint: 'https://api.example.com',
+        token: 'openai-credential',
+      },
+    };
+
+    // `region`, `weight` and `note` were never given a value, so a stored
+    // provider carries none of them; the lists its kind keeps are carried
+    // empty until entries are added.
+    assert.deepEqual(providerFromDraft(draft, kinds[0]), {
+      id: 'openai',
+      kind: 'openai',
+      configuration: {
+        endpoint: 'https://api.example.com',
+        token: 'openai-credential',
+      },
+      models: [],
+      reasonings: [],
+    });
+  });
+
+  test('keeps a required value the draft left empty, so the host names it', () => {
+    const draft: ProviderDraft = {
+      ...emptyProviderDraft(kinds[0]),
+      id: 'openai',
+    };
+
+    assert.deepEqual(providerFromDraft(draft, kinds[0]).configuration, {
+      endpoint: '',
+      token: '',
+    });
+  });
+
+  test('carries the fields of a kind that keeps no lists', () => {
+    const draft: ProviderDraft = {
+      ...emptyProviderDraft(kinds[1]),
+      id: 'local',
+      configuration: { endpoint: 'http://127.0.0.1:11434' },
+    };
+
+    assert.deepEqual(providerFromDraft(draft, kinds[1]), {
+      id: 'local',
+      kind: 'ollama',
+      configuration: { endpoint: 'http://127.0.0.1:11434' },
+    });
   });
 });
 
 describe('settings vocabulary', () => {
+  test('finds the kind the catalog declares under an id', () => {
+    assert.equal(kindOf(kinds, 'openai')?.label, 'OpenAI');
+    assert.equal(kindOf(kinds, 'mystery'), undefined);
+  });
+
+  test('reads a provider address from the field its kind calls an address', () => {
+    assert.equal(
+      providerAddress(kinds[0], provider('openai')),
+      'https://api.example.com',
+    );
+    // An unknown kind, and an address field left empty, are each drawn as none.
+    assert.equal(providerAddress(undefined, provider('openai')), '—');
+    assert.equal(
+      providerAddress(
+        kinds[0],
+        withField(provider('openai'), 'endpoint', '  '),
+      ),
+      '—',
+    );
+    // A kind that declares no `url` field has no address to read at all.
+    const tokenOnly: ProviderKind = {
+      id: 'token-only',
+      label: 'Token only',
+      description: 'No endpoint.',
+      fields: [
+        { key: 'token', label: 'Token', kind: 'secret', required: true },
+      ],
+      lists: [],
+    };
+    assert.equal(providerAddress(tokenOnly, provider('openai')), '—');
+  });
+
   test('names a provider by its id, or by its place until it has one', () => {
     assert.equal(providerLabel(provider('openai'), 0), 'openai');
     assert.equal(providerLabel(provider(''), 1), 'Provider 2');

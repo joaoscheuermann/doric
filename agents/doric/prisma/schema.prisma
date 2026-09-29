@@ -77,13 +77,22 @@ model Credential {
 }
 
 model ProviderConfiguration {
-  configurationId Int                  @map("configuration_id")
-  id              String
-  baseUrl         String               @map("base_url")
-  credentialId    String               @map("credential_id") @db.Uuid
-  configuration   DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
-  credential      Credential           @relation(fields: [credentialId], references: [id], onDelete: Restrict)
-  models          ModelConfiguration[]
+  configurationId  Int                  @map("configuration_id")
+  id               String
+  kind             String
+  /// The kind's non-secret field values, keyed by the kind's own field keys.
+  fieldValues      Json                 @map("field_values") @db.JsonB
+  /// The value of the kind's one `secret` field: the stored credential it names.
+  /// It is a column rather than a JSON value so the reference is enforced, and
+  /// `null` means a kind whose provider named none.
+  credentialId     String?              @map("credential_id") @db.Uuid
+  /// The models this provider offers, as an empty list when its kind keeps none.
+  modelIds         String[]             @map("model_ids")
+  /// The reasoning efforts it accepts, as an empty list when its kind keeps none.
+  reasoningEfforts String[]             @map("reasoning_efforts")
+  configuration    DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  credential       Credential?          @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  models           ModelConfiguration[]
 
   @@id([configurationId, id])
   @@map("provider_configuration")

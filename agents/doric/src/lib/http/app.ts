@@ -3,6 +3,7 @@ import express, { type Express } from 'express';
 import { createConfigRouter } from '../../routes/config.js';
 import { createCredentialsRouter } from '../../routes/credentials.js';
 import { createProjectsRouter } from '../../routes/projects.js';
+import { createProvidersRouter } from '../../routes/providers.js';
 import { createThreadsRouter } from '../../routes/threads.js';
 import {
   createVmsRouter,
@@ -27,6 +28,7 @@ export const registerHttpRoutes = (
   app.use('/vms', createVmsRouter(dependencies.vms));
   app.use('/config', createConfigRouter(dependencies.config));
   app.use('/credentials', createCredentialsRouter(dependencies.credentials));
+  app.use('/providers', createProvidersRouter());
   app.use('/projects', createProjectsRouter(dependencies.service));
   app.use('/threads', createThreadsRouter(dependencies.service));
   app.use(handleHttpError);

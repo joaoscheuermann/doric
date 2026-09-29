@@ -10,6 +10,7 @@ import type { Sandpool } from 'sandpool';
 
 import { runDirectPrompt } from '../agents/direct/executor.js';
 import type { ConfigInput } from '../config/schema.js';
+import { providerCredentials } from '../config/schema.js';
 import type { ConfigService } from '../config/service.js';
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
@@ -154,12 +155,12 @@ export const createWorkspaceService = ({
    * ambiguous reference costs only its own half, is surfaced as a warning naming
    * the reason, and never breaks the prompt that needed the credential.
    *
-   * The GitHub token is resolved only among the credentials no provider claims,
-   * because a provider key and a GitHub token are both `API_TOKEN`: without this,
-   * an operator who filled in a provider key and chose no GitHub credential would
-   * have that key written into the sandbox's git credential store and `gh` hosts
-   * file. A token is therefore authenticated with only when it was named, or when
-   * it is the one `API_TOKEN` credential nothing else uses.
+   * The GitHub token is resolved only among the credentials no provider names,
+   * because a provider's token and a GitHub token are both `API_TOKEN`: without
+   * this, an operator who filled in a provider key and chose no GitHub credential
+   * would have that key written into the sandbox's git credential store and `gh`
+   * hosts file. A token is therefore authenticated with only when it was named,
+   * or when it is the one `API_TOKEN` credential nothing else uses.
    */
   const gitCredentials = (
     configuration: ConfigInput,
@@ -170,7 +171,11 @@ export const createWorkspaceService = ({
       configuration.githubCredentialId,
       'API_TOKEN',
       projectId,
-      new Set(configuration.providers.map(({ credentialId }) => credentialId)),
+      new Set(
+        configuration.providers.flatMap((provider) =>
+          providerCredentials(provider).map(({ id }) => id),
+        ),
+      ),
     );
 
     return {

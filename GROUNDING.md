@@ -131,6 +131,14 @@ loading a page that mounts the settings surface alone, with no conversation,
 sidebar or Thread — edits the host's configuration: the configured providers as
 an editable table, the execution model with its reasoning effort, the execution
 turn limit, and a Credentials section over the host's credential store. A
+provider is configured by choosing the kind of provider it is — one of the kinds
+`packages/llms` offers — and then filling the fields and the per-provider lists
+that kind declares. The renderer learns those kinds, fields and lists from the
+host rather than carrying a list of its own, so a kind added to the library
+becomes configurable without a renderer change. A field the kind calls `secret`
+names a stored `API_TOKEN` credential instead of carrying a value; a kind that
+keeps models or reasoning efforts edits each list as a table, and the execution
+model and its effort are chosen from the selected provider's own lists. A
 credential is named and has one of a closed set of kinds that fixes its fields:
 `API_TOKEN` is authentication, which a provider key and the GitHub token both
 are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
@@ -142,10 +150,10 @@ valid change sends itself once typing settles, on a field blur, and as the windo
 closes, and the footer reports the revision and update time alongside the save
 state. The window states plainly that a saved change applies to Projects created
 afterwards, because a running Project keeps the configuration it had captured —
-with one exception: the credential the configuration names for the Git identity
-and the credential it names for GitHub authentication follow the current
-configuration, so a rotated secret reaches a Project that is already running on
-its next prompt.
+with one exception: every credential the configuration names, each provider's
+`secret` value and the Git identity and GitHub authentication alike, follows the
+current configuration, so a rotated secret reaches a Project that is already
+running on its next prompt.
 
 ### Project And Thread Contract
 
@@ -377,8 +385,17 @@ key, and resolves fused-score ties by that key. It has no persistence or
 provider integration.
 
 `agents/doric` receives complete singleton configuration replacements through
-`PUT /config`. It persists only provider IDs, HTTP(S) base URLs, credential
-references, one `models.execution` profile, and `execution.maxTurns`. Each
+`PUT /config`. It persists only provider IDs, the kind each provider is, the
+configuration values and per-provider lists that kind declares, one
+`models.execution` profile, and `execution.maxTurns`. A provider's kind, the
+fields it declares and the lists it keeps are `providerKinds` in
+`packages/llms`; the host serves that catalog unchanged at `GET /providers/kinds`
+and builds each configured provider with `createProviderForKind`, so a stored
+provider carries a value for every field its kind requires, leaves an optional
+field it has no value for out rather than storing it empty, and carries the lists
+its kind keeps — empty until an operator names entries — and nothing else. The
+settings surface and the agent therefore agree on what a provider needs without
+either hard-coding the other's list. Each
 Project created by `POST /projects` captures the active configuration generation
 and an immutable JSONB snapshot; later replacements affect only new Projects.
 Every Thread uses its Project's captured generation.

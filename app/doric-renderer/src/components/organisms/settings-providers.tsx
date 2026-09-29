@@ -1,3 +1,4 @@
+import { ProviderListEditor } from '@/components/molecules/provider-list-editor';
 import { RowActions } from '@/components/molecules/row-actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -46,13 +47,22 @@ import {
   type Credential,
   credentialLabel,
   credentialsOfKind,
+  effortLabel,
   emptyProviderDraft,
+  kindOf,
+  providerAddress,
   type ProviderDraft,
   providerDraftOf,
+  type ProviderField,
+  providerFromDraft,
   providerIssue,
+  type ProviderKind,
   providerLabel,
+  type ProviderListId,
   type ProviderRow,
   providerRows,
+  type ReasoningEffort,
+  reasoningEfforts,
   removeProvider,
   replaceProvider,
 } from '@/domain/config';
@@ -121,15 +131,34 @@ const pageSizes = [10, 20, 50];
 
 type SettingsProvidersProps = {
   readonly draft: Configuration;
+  /** The host's provider catalog, which says what every field and list is. */
+  readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: Configuration) => void;
-  /** The stored credentials, of which a provider may name an `API_TOKEN`. */
+  /** The stored credentials, of which a provider's secret fields name one. */
   readonly credentials: readonly Credential[];
+};
+
+/** What each list the catalog declares is called, in a heading and its control. */
+const listTitle: Record<ProviderListId, string> = {
+  models: 'Models',
+  reasonings: 'Reasonings',
+};
+
+const listAddLabel: Record<ProviderListId, string> = {
+  models: 'Add model',
+  reasonings: 'Add reasoning effort',
 };
 
 /** What a column is called, in its header and in the visibility menu alike. */
 const columnTitle = <TValue,>(
   column: Column<DataTableFeatures, ProviderRow, TValue>,
 ): string => column.columnDef.meta?.title ?? column.id;
+
+/** How many entries of one list a row draws, or `—` for a kind that keeps none. */
+const listCountLabel = (row: ProviderRow, list: ProviderListId): string =>
+  row.kind?.lists.includes(list) === true
+    ? String(row.provider[list]?.length ?? 0)
+    : '—';
 
 /**
  * A column header that sorts, naming the column in both of its spellings. It is
@@ -161,13 +190,11 @@ function SortHeader<TValue>({
  * in the list and an action always names the provider it was drawn for.
  */
 function ProviderTable({
-  credentials,
   loading,
   onEdit,
   onRemove,
   providers,
 }: {
-  readonly credentials: readonly Credential[];
   readonly loading: boolean;
   readonly onEdit: (index: number) => void;
   readonly onRemove: (index: number) => void;
@@ -195,35 +222,52 @@ function ProviderTable({
           sortFn: 'alphanumeric',
           meta: { title: 'Id' },
         }),
-        columnHelper.accessor((row) => row.provider.baseUrl, {
-          id: 'baseUrl',
+        columnHelper.accessor((row) => row.kind?.label ?? row.provider.kind, {
+          id: 'kind',
           header: ({ column }) => <SortHeader column={column} />,
           cell: ({ row }) => (
             <span className="truncate text-muted-foreground">
-              {row.original.provider.baseUrl}
+              {row.original.kind?.label ?? row.original.provider.kind}
             </span>
           ),
           sortFn: 'alphanumeric',
-          meta: { title: 'Base URL' },
+          meta: { title: 'Kind' },
         }),
-        columnHelper.accessor((row) => row.provider.credentialId, {
-          id: 'credentialId',
-          header: ({ column }) => <SortHeader column={column} />,
-          cell: ({ row }) => {
-            const chosen = credentials.find(
-              (credential) =>
-                credential.id === row.original.provider.credentialId,
-            );
-            return chosen === undefined ? (
-              <span className="text-muted-foreground">—</span>
-            ) : (
+        columnHelper.accessor(
+          (row) => providerAddress(row.kind, row.provider),
+          {
+            id: 'address',
+            header: ({ column }) => <SortHeader column={column} />,
+            cell: ({ row }) => (
               <span className="truncate text-muted-foreground">
-                {credentialLabel(chosen)}
+                {providerAddress(row.original.kind, row.original.provider)}
               </span>
-            );
+            ),
+            sortFn: 'alphanumeric',
+            meta: { title: 'Address' },
           },
+        ),
+        columnHelper.accessor((row) => listCountLabel(row, 'models'), {
+          id: 'models',
+          header: ({ column }) => <SortHeader column={column} />,
+          cell: ({ row }) => (
+            <span className="truncate text-muted-foreground">
+              {listCountLabel(row.original, 'models')}
+            </span>
+          ),
           sortFn: 'alphanumeric',
-          meta: { title: 'Credential' },
+          meta: { title: 'Models' },
+        }),
+        columnHelper.accessor((row) => listCountLabel(row, 'reasonings'), {
+          id: 'reasonings',
+          header: ({ column }) => <SortHeader column={column} />,
+          cell: ({ row }) => (
+            <span className="truncate text-muted-foreground">
+              {listCountLabel(row.original, 'reasonings')}
+            </span>
+          ),
+          sortFn: 'alphanumeric',
+          meta: { title: 'Reasonings' },
         }),
         columnHelper.display({
           id: 'actions',
@@ -259,7 +303,7 @@ function ProviderTable({
           meta: { title: 'Actions' },
         }),
       ]),
-    [credentials, onEdit, onRemove],
+    [onEdit, onRemove],
   );
 
   const table = useTable({
@@ -434,10 +478,108 @@ function ProviderTable({
 }
 
 /**
- * The form that adds or edits one provider, in a dialog: the id the host knows it
- * by, the base URL it is called at, and the `API_TOKEN` credential it
- * authenticates with. The credential list is exactly the stored `API_TOKEN`
- * credentials, because that is the only kind a provider may name.
+ * One field a kind declares, drawn the way the field says it must be: `enum`
+ * offers the kind's own options, `secret` offers the stored `API_TOKEN`
+ * credentials, and every other kind is typed into a field, with `url` and
+ * `number` only changing how the input behaves. The label, the description and
+ * the placeholder are the field's, so a kind the renderer has never seen is
+ * still fully drawn — there is no per-kind case here.
+ */
+function ProviderFieldControl({
+  field,
+  onChange,
+  tokens,
+  value,
+}: {
+  readonly field: ProviderField;
+  readonly onChange: (value: string) => void;
+  readonly tokens: readonly Credential[];
+  readonly value: string;
+}) {
+  const id = `provider-${field.key}`;
+
+  if (field.kind === 'enum') {
+    return (
+      <Field>
+        <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue
+              placeholder={field.placeholder ?? `Choose ${field.label}`}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {(field.options ?? []).map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {field.description !== undefined && (
+          <FieldDescription>{field.description}</FieldDescription>
+        )}
+      </Field>
+    );
+  }
+
+  if (field.kind === 'secret') {
+    return (
+      <Field>
+        <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
+        <Select
+          value={value}
+          onValueChange={onChange}
+          disabled={tokens.length === 0}
+        >
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue placeholder="Choose a credential" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {tokens.map((token) => (
+                <SelectItem key={token.id} value={token.id}>
+                  {credentialLabel(token)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>
+          {tokens.length === 0
+            ? 'No API token is stored yet. Add one under Credentials.'
+            : (field.description ?? 'The API token this field names.')}
+        </FieldDescription>
+      </Field>
+    );
+  }
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
+      <Input
+        id={id}
+        autoComplete="off"
+        spellCheck={field.kind === 'url' ? false : undefined}
+        inputMode={field.kind === 'number' ? 'numeric' : undefined}
+        placeholder={field.placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {field.description !== undefined && (
+        <FieldDescription>{field.description}</FieldDescription>
+      )}
+    </Field>
+  );
+}
+
+/**
+ * The form that adds or edits one provider, in a dialog. The id is the host's own;
+ * the kind is chosen once, when the provider is added, because it fixes the field
+ * set and the lists and a stored provider cannot change shape; and every field and
+ * list below is the kind's, drawn in the order the catalog declares them.
  *
  * A provider is patched by the position it holds in `Configuration.providers`,
  * and the list position is what `draft.index` carries: `undefined` is the
@@ -446,19 +588,38 @@ function ProviderTable({
 function ProviderDialog({
   credentials,
   draft,
+  kinds,
   onChange,
   onClose,
   onSave,
 }: {
   readonly credentials: readonly Credential[];
   readonly draft: ProviderDraft;
+  readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: ProviderDraft) => void;
   readonly onClose: () => void;
   readonly onSave: () => void;
 }) {
   const editing = draft.index !== undefined;
-  const issue = providerIssue(draft);
-  const choices = credentialsOfKind(credentials, 'API_TOKEN');
+  const kind = kindOf(kinds, draft.kind);
+  const issue =
+    kind === undefined
+      ? 'Choose a provider kind.'
+      : providerIssue(draft, kind, credentials);
+  const tokens = credentialsOfKind(credentials, 'API_TOKEN');
+
+  const setValue = (key: string, value: string): void =>
+    onChange({
+      ...draft,
+      configuration: { ...draft.configuration, [key]: value },
+    });
+
+  const setList = (list: ProviderListId, entries: readonly string[]): void =>
+    onChange(
+      list === 'models'
+        ? { ...draft, models: entries }
+        : { ...draft, reasonings: entries },
+    );
 
   return (
     <Dialog
@@ -474,12 +635,52 @@ function ProviderDialog({
           </DialogTitle>
           <DialogDescription>
             {editing
-              ? 'Change where this provider is called and which credential it authenticates with.'
-              : 'A provider the agent may call, and the credential it authenticates with.'}
+              ? 'Change where this provider is called and how it authenticates.'
+              : 'A provider the agent may call, and how it authenticates.'}
           </DialogDescription>
         </DialogHeader>
 
         <FieldGroup>
+          {editing ? (
+            <Field>
+              <FieldLabel>Kind</FieldLabel>
+              <p className="text-sm">{kind?.label ?? draft.kind}</p>
+              {kind !== undefined && (
+                <FieldDescription>{kind.description}</FieldDescription>
+              )}
+            </Field>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="provider-kind">Kind</FieldLabel>
+              <Select
+                value={draft.kind}
+                onValueChange={(value) => {
+                  const chosen = kindOf(kinds, value);
+                  // A field set is the kind's, so changing kind starts over: no
+                  // value typed for one kind's fields survives into another's.
+                  if (chosen !== undefined)
+                    onChange(emptyProviderDraft(chosen));
+                }}
+              >
+                <SelectTrigger id="provider-kind" className="w-full">
+                  <SelectValue placeholder="Choose a kind" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {kinds.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {candidate.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {kind !== undefined && (
+                <FieldDescription>{kind.description}</FieldDescription>
+              )}
+            </Field>
+          )}
+
           <Field>
             <FieldLabel htmlFor="provider-id">Id</FieldLabel>
             <Input
@@ -496,50 +697,31 @@ function ProviderDialog({
             </FieldDescription>
           </Field>
 
-          <Field>
-            <FieldLabel htmlFor="provider-base-url">Base URL</FieldLabel>
-            <Input
-              id="provider-base-url"
-              autoComplete="off"
-              spellCheck={false}
-              value={draft.baseUrl}
-              onChange={(event) =>
-                onChange({ ...draft, baseUrl: event.target.value })
-              }
+          {kind?.fields.map((field) => (
+            <ProviderFieldControl
+              key={field.key}
+              field={field}
+              tokens={tokens}
+              value={draft.configuration[field.key] ?? ''}
+              onChange={(value) => setValue(field.key, value)}
             />
-            <FieldDescription>
-              The `http://` or `https://` address prompts are sent to.
-            </FieldDescription>
-          </Field>
+          ))}
 
-          <Field>
-            <FieldLabel htmlFor="provider-credential">Credential</FieldLabel>
-            <Select
-              value={draft.credentialId}
-              onValueChange={(value) =>
-                onChange({ ...draft, credentialId: value })
+          {kind?.lists.map((list) => (
+            <ProviderListEditor
+              key={list}
+              label={listTitle[list]}
+              addLabel={listAddLabel[list]}
+              entries={draft[list] ?? []}
+              choices={list === 'reasonings' ? reasoningEfforts : undefined}
+              choiceLabel={
+                list === 'reasonings'
+                  ? (value) => effortLabel(value as ReasoningEffort)
+                  : undefined
               }
-              disabled={choices.length === 0}
-            >
-              <SelectTrigger id="provider-credential" className="w-full">
-                <SelectValue placeholder="Choose a credential" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {choices.map((credential) => (
-                    <SelectItem key={credential.id} value={credential.id}>
-                      {credentialLabel(credential)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription>
-              {choices.length === 0
-                ? 'No API token is stored yet. Add one under Credentials.'
-                : 'The API token this provider authenticates with.'}
-            </FieldDescription>
-          </Field>
+              onChange={(entries) => setList(list, entries)}
+            />
+          ))}
 
           {issue !== undefined && (
             <Alert variant="destructive">
@@ -564,11 +746,11 @@ function ProviderDialog({
 }
 
 /**
- * The providers the host may call, as a data table: each row names one, the
- * address it is called at, and the credential it authenticates with, and the
- * actions open the dialog that edits the row or remove it. Nothing is editable
- * in place, so the table cannot carry a half-typed draft, and a row that would be
- * refused at the dialog stays as the host last stored it.
+ * The providers the host may call, as a data table: each row names one, the kind
+ * it is, the address that kind calls, and how many models and reasonings it
+ * keeps, and the actions open the dialog that edits the row or remove it. Nothing
+ * is editable in place, so the table cannot carry a half-typed draft, and a row
+ * that would be refused at the dialog stays as the host last stored it.
  *
  * The table's control — sorting, filtering, visibility and paging — is view state
  * that never leaves this component. A dialog's draft is the only thing that
@@ -581,10 +763,11 @@ function ProviderDialog({
 export function SettingsProviders({
   credentials,
   draft,
+  kinds,
   onChange,
 }: SettingsProvidersProps) {
   const [editing, setEditing] = useState<ProviderDraft>();
-  const providers = useMemo(() => providerRows(draft), [draft]);
+  const providers = useMemo(() => providerRows(draft, kinds), [draft, kinds]);
 
   /**
    * Writes the dialog's draft into the list and closes it. An added provider is
@@ -592,18 +775,35 @@ export function SettingsProviders({
    * opened at, so the execution model's reference moves with a rename either way.
    */
   const save = (): void => {
-    if (editing === undefined || providerIssue(editing) !== undefined) return;
+    if (editing === undefined) return;
+    const kind = kindOf(kinds, editing.kind);
+    if (
+      kind === undefined ||
+      providerIssue(editing, kind, credentials) !== undefined
+    )
+      return;
+    const provider = providerFromDraft(editing, kind);
     const at = editing.index;
     const next =
       at === undefined
-        ? addProvider(draft, editing)
-        : replaceProvider(draft, at, editing);
+        ? addProvider(draft, provider)
+        : replaceProvider(draft, at, provider);
     onChange(next);
     setEditing(undefined);
   };
 
   return (
     <FieldGroup>
+      {kinds.length === 0 && (
+        <Alert>
+          <AlertCircleIcon />
+          <AlertTitle>No provider kind is available</AlertTitle>
+          <AlertDescription>
+            The host has not declared any provider kind, so none can be added.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {credentialsOfKind(credentials, 'API_TOKEN').length === 0 && (
         <Alert>
           <AlertCircleIcon />
@@ -615,7 +815,6 @@ export function SettingsProviders({
       )}
 
       <ProviderTable
-        credentials={credentials}
         loading={false}
         providers={providers}
         onEdit={(index) => setEditing(providerDraftOf(draft, index))}
@@ -628,7 +827,11 @@ export function SettingsProviders({
         variant="outline"
         size="sm"
         className="self-start"
-        onClick={() => setEditing(emptyProviderDraft())}
+        disabled={kinds.length === 0}
+        onClick={() => {
+          const first = kinds[0];
+          if (first !== undefined) setEditing(emptyProviderDraft(first));
+        }}
       >
         <PlusIcon data-icon="inline-start" />
         Add provider
@@ -638,6 +841,7 @@ export function SettingsProviders({
         <ProviderDialog
           credentials={credentials}
           draft={editing}
+          kinds={kinds}
           onChange={setEditing}
           onClose={() => setEditing(undefined)}
           onSave={save}

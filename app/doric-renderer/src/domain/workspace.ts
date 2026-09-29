@@ -4,6 +4,7 @@ import type {
   CredentialCreate,
   CredentialUpdate,
   DoricConfiguration,
+  ProviderKind,
 } from './config';
 import type { ConnectionApi } from './connection';
 
@@ -152,6 +153,14 @@ export type WorkspaceApi = {
     create(input: CredentialCreate): Promise<Credential>;
     update(id: string, input: CredentialUpdate): Promise<Credential>;
     remove(id: string): Promise<void>;
+  };
+  /**
+   * The host's provider catalog: what kinds of provider exist, which fields each
+   * declares and which per-provider lists it keeps. The host owns this set, so the
+   * renderer draws whatever it is answered with rather than a fixed list.
+   */
+  readonly providers: {
+    kinds(): Promise<readonly ProviderKind[]>;
   };
   readonly projects: {
     list(): Promise<readonly Project[]>;

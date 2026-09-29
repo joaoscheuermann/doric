@@ -85,6 +85,19 @@ function ChoicePicker({
 export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
   const { effort, model, providerId } = draft.models.execution;
   const maxTurns = draft.execution.maxTurns;
+  // The selected provider may hold the models and reasonings it supports. When
+  // it lists them they become the choices; when it lists none the field stays
+  // free, because a provider that declares no models can be called with any.
+  const provider = draft.providers.find((entry) => entry.id === providerId);
+  const models = provider?.models ?? [];
+  const reasonings = provider?.reasonings ?? [];
+  const efforts =
+    reasonings.length === 0
+      ? reasoningEfforts.map((value) => ({ label: effortLabel(value), value }))
+      : reasonings.map((value) => ({
+          label: effortLabel(value as ReasoningEffort),
+          value,
+        }));
 
   return (
     <FieldGroup>
@@ -107,22 +120,28 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
       </Field>
       <Field>
         <FieldLabel htmlFor="execution-model">Model</FieldLabel>
-        <Input
-          id="execution-model"
-          value={model}
-          onChange={(event) =>
-            onChange(updateModel(draft, { model: event.target.value }))
-          }
-        />
+        {models.length === 0 ? (
+          <Input
+            id="execution-model"
+            value={model}
+            onChange={(event) =>
+              onChange(updateModel(draft, { model: event.target.value }))
+            }
+          />
+        ) : (
+          <ChoicePicker
+            ariaLabel="Execution model"
+            choices={models.map((value) => ({ label: value, value }))}
+            value={model}
+            onSelect={(next) => onChange(updateModel(draft, { model: next }))}
+          />
+        )}
       </Field>
       <Field>
         <FieldLabel>Reasoning effort</FieldLabel>
         <ChoicePicker
           ariaLabel="Reasoning effort"
-          choices={reasoningEfforts.map((value) => ({
-            label: effortLabel(value),
-            value,
-          }))}
+          choices={efforts}
           value={effort}
           onSelect={(next) =>
             onChange(updateModel(draft, { effort: next as ReasoningEffort }))

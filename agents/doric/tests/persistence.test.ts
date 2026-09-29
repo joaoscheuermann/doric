@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { defaultConfig } from '../src/lib/config/schema.js';
+
+import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { createConfigStore } from '../src/lib/config/store.js';
 import { createCredentialService } from '../src/lib/credentials/service.js';
 import { createCredentialStore } from '../src/lib/credentials/store.js';
@@ -15,6 +16,8 @@ import {
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const promptId = randomUUID();
+const gitCredentialId = '00000000-0000-4000-8000-000000000003';
+const githubCredentialId = '00000000-0000-4000-8000-000000000004';
 /** 32 zero bytes, base64. A fixed test key, never a deployed one. */
 const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
@@ -464,7 +467,7 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, and credential migrations', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, credential, and provider-kind migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
@@ -472,6 +475,7 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
     '20260923000000_add_project_color',
     '20260924000000_add_github_credentials',
     '20260925000000_add_credential_store',
+    '20260926000000_add_provider_kinds',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -526,6 +530,22 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
   const drop = store.indexOf('DROP COLUMN "github_username"');
   assert.ok(drop > store.indexOf('INSERT INTO "credential"'));
   assert.match(store, /DROP COLUMN "api_key_env";/u);
+
+  const kinds = await readFile(
+    `${migrationDirectory}/20260926000000_add_provider_kinds/migration.sql`,
+    'utf8',
+  );
+  assert.match(kinds, /ADD COLUMN "kind" TEXT,/u);
+  assert.match(kinds, /ADD COLUMN "field_values" JSONB,/u);
+  assert.match(kinds, /ADD COLUMN "model_ids" TEXT\[\],/u);
+  assert.match(kinds, /ADD COLUMN "reasoning_efforts" TEXT\[\];/u);
+  // Every existing provider row is described by the kind it was built as before
+  // its base URL goes.
+  assert.ok(
+    kinds.indexOf("'openai-compatible'") <
+      kinds.indexOf('DROP COLUMN "base_url"'),
+  );
+  assert.match(kinds, /ALTER COLUMN "credential_id" DROP NOT NULL/u);
 });
 
 test(
@@ -926,7 +946,7 @@ integrationTest(
   async ({ credentials, configs }) => {
     // The seeded provider credential is referenced by the seeded provider.
     assert.equal(
-      await credentials.remove(defaultConfig.providers[0].credentialId),
+      await credentials.remove(defaultConfig.providers[0].configuration.token),
       'referenced',
     );
     // A name a kind already uses is a conflict, not a second credential.
@@ -988,6 +1008,215 @@ integrationTest(
 
     const cleared = await configs.replace(defaultConfig);
     assert.equal(cleared.configuration.gitCredentialId, undefined);
+  },
+);
+
+integrationTest(
+  'round-trips configured providers of different kinds',
+  async ({ credentials, configs }) => {
+    const local = await credentials.create({
+      kind: 'API_TOKEN',
+      name: 'local',
+      secret: 'sk_local',
+    });
+    assert.equal(local.status, 'saved');
+    if (local.status !== 'saved') return;
+
+    const configuration: ConfigInput = {
+      ...structuredClone(defaultConfig),
+      // The store answers providers in id order, so this one is written in it.
+      providers: [
+        {
+          id: 'codex',
+          kind: 'codex',
+          configuration: {
+            token: defaultConfig.providers[0].configuration.token,
+            fedramp: 'true',
+          },
+        },
+        {
+          id: 'local',
+          kind: 'lmstudio',
+          // A kind's list comes back even when this provider names no model yet.
+          configuration: {},
+          models: [],
+        },
+        {
+          id: 'proxy',
+          kind: 'openai-compatible',
+          configuration: {
+            identityId: 'proxy',
+            identityName: 'Proxy',
+            token: local.credential.id,
+          },
+          models: ['proxy-model'],
+          reasonings: ['low', 'high'],
+        },
+      ],
+      models: {
+        // A model a kind's list does not name is still a model the operator may
+        // type, which is what an empty list leaves the execution section doing.
+        execution: {
+          providerId: 'local',
+          model: 'local-model',
+          effort: 'low',
+        },
+      },
+    };
+
+    const saved = await configs.replace(configuration);
+    assert.deepEqual(saved.configuration.providers, configuration.providers);
+    assert.deepEqual(
+      (await configs.load()).configuration.providers,
+      configuration.providers,
+    );
+
+    // A credential a provider names cannot go, and the one it does not can.
+    assert.equal(await credentials.remove(local.credential.id), 'referenced');
+    await configs.replace({
+      ...configuration,
+      providers: configuration.providers.filter(({ id }) => id !== 'proxy'),
+    });
+    assert.equal(await credentials.remove(local.credential.id), 'deleted');
+  },
+);
+
+integrationTest(
+  'carries a provider row the old host built into its kind',
+  async ({ database, configs }) => {
+    const [provider] = await database.providerConfiguration.findMany();
+
+    assert.deepEqual(provider, {
+      configurationId: 1,
+      id: 'openrouter',
+      kind: 'openai-compatible',
+      fieldValues: {
+        identityId: 'openrouter',
+        identityName: 'openrouter',
+        endpoint: 'https://openrouter.ai/api/v1',
+      },
+      // The credential reference is the row's own, untouched.
+      credentialId: '00000000-0000-4000-8000-000000000002',
+      modelIds: [],
+      reasoningEfforts: [],
+    });
+    assert.deepEqual((await configs.load()).configuration, defaultConfig);
+  },
+);
+
+test(
+  'converts a configured provider of the old shape without losing its data',
+  { skip: connectionString === undefined },
+  async () => {
+    assert.ok(connectionString);
+    const baseline = await readFile(
+      `${migrationDirectory}/20260825000000_initial/migration.sql`,
+      'utf8',
+    );
+    const github = await readFile(
+      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+      'utf8',
+    );
+    const store = await readFile(
+      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+      'utf8',
+    );
+    const kinds = await readFile(
+      `${migrationDirectory}/20260926000000_add_provider_kinds/migration.sql`,
+      'utf8',
+    );
+    const resources = await persistenceFixture(connectionString, {
+      migration: async () => `${baseline}\n${github}\n${store}`,
+    });
+    try {
+      // A host an operator has already used: a Git identity, a GitHub token, and
+      // an execution model of their own.
+      await resources.database.$executeRaw`
+        INSERT INTO credential (id, kind, name, updated_at) VALUES
+          ('00000000-0000-4000-8000-000000000003', 'GIT', 'github', CURRENT_TIMESTAMP),
+          ('00000000-0000-4000-8000-000000000004', 'API_TOKEN', 'github', CURRENT_TIMESTAMP)`;
+      await resources.database.$executeRaw`
+        UPDATE doric_configuration SET
+          git_credential_id = '00000000-0000-4000-8000-000000000003',
+          github_credential_id = '00000000-0000-4000-8000-000000000004',
+          max_turns = 100
+        WHERE id = 1`;
+      await resources.database.$executeRaw`
+        UPDATE model_configuration SET model = 'stealth/space-bunny-alpha', effort = 'medium'
+        WHERE configuration_id = 1 AND role = 'EXECUTION'`;
+
+      await resources.migrate(kinds);
+
+      const providers = await resources.database.$queryRaw<
+        {
+          id: string;
+          kind: string;
+          field_values: Record<string, string>;
+          credential_id: string | null;
+          model_ids: string[];
+          reasoning_efforts: string[];
+        }[]
+      >`SELECT id, kind, field_values, credential_id, model_ids, reasoning_efforts
+        FROM provider_configuration`;
+      assert.deepEqual(providers, [
+        {
+          id: 'openrouter',
+          kind: 'openai-compatible',
+          field_values: {
+            identityId: 'openrouter',
+            identityName: 'openrouter',
+            endpoint: 'https://openrouter.ai/api/v1',
+          },
+          credential_id: '00000000-0000-4000-8000-000000000002',
+          model_ids: [],
+          reasoning_efforts: [],
+        },
+      ]);
+
+      const configuration =
+        await resources.database.doricConfiguration.findUniqueOrThrow({
+          where: { id: 1 },
+        });
+      assert.equal(configuration.gitCredentialId, gitCredentialId);
+      assert.equal(configuration.githubCredentialId, githubCredentialId);
+      assert.equal(configuration.maxTurns, 100);
+      assert.equal(
+        (await resources.database.modelConfiguration.findFirstOrThrow()).model,
+        'stealth/space-bunny-alpha',
+      );
+      await assert.rejects(
+        resources.database
+          .$queryRaw`SELECT base_url FROM provider_configuration`,
+      );
+
+      // What `GET /config` answers afterwards: the mapped provider, and the
+      // execution model, choices, and turn limit the operator had.
+      const loaded = await createConfigStore(resources.database).load();
+      assert.deepEqual(loaded.configuration.providers, [
+        {
+          id: 'openrouter',
+          kind: 'openai-compatible',
+          configuration: {
+            identityId: 'openrouter',
+            identityName: 'openrouter',
+            endpoint: 'https://openrouter.ai/api/v1',
+            token: '00000000-0000-4000-8000-000000000002',
+          },
+          models: [],
+          reasonings: [],
+        },
+      ]);
+      assert.deepEqual(loaded.configuration.models.execution, {
+        providerId: 'openrouter',
+        model: 'stealth/space-bunny-alpha',
+        effort: 'medium',
+      });
+      assert.equal(loaded.configuration.execution.maxTurns, 100);
+      assert.equal(loaded.configuration.gitCredentialId, gitCredentialId);
+      assert.equal(loaded.configuration.githubCredentialId, githubCredentialId);
+    } finally {
+      await resources.close();
+    }
   },
 );
 
