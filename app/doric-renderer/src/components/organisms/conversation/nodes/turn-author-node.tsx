@@ -8,9 +8,9 @@
  * root — the line trails the block the sync holds it against, and moves with it
  * as an agent run grows.
  */
+import { ReaderAvatar } from '@/components/molecules/reader-avatar';
 import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
 import { relativeTime } from '@/utility/relative-time';
-import { toSvg } from 'jdenticon';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -25,12 +25,6 @@ import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
 /** The side of the conversation a line names. */
 export type AuthorRole = 'agent' | 'user';
-
-/**
- * How large the identicon is rendered. The circle scales it to fit whatever box
- * the row gives the avatar, so this only needs to be big enough to stay crisp.
- */
-const AVATAR_PX = 24;
 
 export type SerializedTurnAuthorNode = Spread<
   { role: AuthorRole; name: string; at?: string },
@@ -83,13 +77,7 @@ export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
         {this.__role === 'agent' ? (
           <BotIcon className="size-4.5 shrink-0" />
         ) : (
-          <span
-            aria-hidden="true"
-            className="flex size-4.5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 [&>svg]:size-full"
-            dangerouslySetInnerHTML={{
-              __html: toSvg(this.__name, AVATAR_PX),
-            }}
-          />
+          <ReaderAvatar name={this.__name} />
         )}
         <span className="truncate">{this.__name}</span>
         {this.__at === undefined ? null : (

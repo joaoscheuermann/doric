@@ -29,6 +29,7 @@ import {
   $isUserTurnNode,
   type UserTurnNode,
 } from '@/components/organisms/conversation/nodes/user-turn-node';
+import { AGENT_NAME, READER_NAME } from '@/domain/conversation-authors';
 import { type Turn } from '@/domain/projector';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -51,13 +52,8 @@ type TurnUnit = {
   block: TurnBlock;
 };
 
-/**
- * The names the author lines show. Both are fixed for now — the reader's own
- * identity and the agent's are not in the projection yet — so the day they
- * arrive, these two constants are what is replaced.
- */
-const USER_NAME = 'jao.scheuermann';
-const AGENT_NAME = 'agent';
+// The reader and the agent are the two authors a turn can name; both names come
+// from `domain/conversation-authors`, the one place they are fixed.
 
 /** An author line as the sync builds it, before it is a node. */
 type AuthorDraft = {
@@ -114,7 +110,7 @@ const authorFor = (
 ): AuthorDraft | null => {
   const turn = turns[index];
   const at = turn.events.at(-1)?.createdAt;
-  if (turn.type === 'user') return { role: 'user', name: USER_NAME, at };
+  if (turn.type === 'user') return { role: 'user', name: READER_NAME, at };
   const next = turns[index + 1];
   return next === undefined || next.type === 'user'
     ? { role: 'agent', name: AGENT_NAME, at }
