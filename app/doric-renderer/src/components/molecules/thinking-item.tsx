@@ -15,6 +15,7 @@ export function ThinkingItem({ streaming, text }: ThinkingItemProps) {
   return (
     <CollapsibleBlock
       active={streaming}
+      hasContent={text.length > 0}
       label={streaming ? 'Thinking' : 'Thought'}
     >
       <div className="whitespace-pre-wrap break-words">{text}</div>

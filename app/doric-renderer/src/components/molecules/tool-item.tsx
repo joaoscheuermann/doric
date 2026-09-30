@@ -17,10 +17,13 @@ type ToolItemProps = {
  */
 export function ToolItem({ args, error, name, result, status }: ToolItemProps) {
   const running = status === 'running';
+  const hasContent =
+    args.length > 0 || result !== undefined || error !== undefined;
 
   return (
     <CollapsibleBlock
       active={running}
+      hasContent={hasContent}
       label={`${running ? 'Calling' : 'Called'} ${humanize(name)}`}
     >
       <div className="flex flex-col gap-1.5">

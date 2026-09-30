@@ -12,8 +12,19 @@ import {
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
+/**
+ * How a prompt the host has not accepted yet is drawn: the reader's own words,
+ * present but not yet a turn of the conversation.
+ */
+const PENDING_CLASS = 'opacity-50';
+
 export type SerializedUserTurnNode = Spread<
-  { turnKey: string; promptId: string; delegated?: DelegatedInput },
+  {
+    turnKey: string;
+    promptId: string;
+    accepted: boolean;
+    delegated?: DelegatedInput;
+  },
   SerializedElementNode
 >;
 
@@ -21,11 +32,17 @@ export type SerializedUserTurnNode = Spread<
  * The human's prompt as an editable block — or another Thread's input, when
  * `delegated` is set. The text lives as a child node, so the editor owns it:
  * selection, typing and undo all work on it like any other rich text.
+ *
+ * A prompt the host has not accepted yet is drawn dimmed. That block is only
+ * ever the reader's words sent a moment ago, drawn before the log holds them,
+ * and the accepted turn the log carries is a block of its own — so `accepted` is
+ * fixed per block and never has to be repainted.
  */
 export class UserTurnNode extends ElementNode {
   __turnKey: string;
   __promptId: string;
   __delegated?: DelegatedInput;
+  __accepted: boolean;
   /** The text the chat last wrote, so an edit by the reader survives a sync. */
   __synced: string;
 
@@ -34,12 +51,14 @@ export class UserTurnNode extends ElementNode {
     promptId: string,
     delegated: DelegatedInput | undefined,
     text: string,
+    accepted: boolean,
     key?: NodeKey,
   ) {
     super(key);
     this.__turnKey = turnKey;
     this.__promptId = promptId;
     this.__delegated = delegated;
+    this.__accepted = accepted;
     this.__synced = text.trim();
   }
 
@@ -53,13 +72,16 @@ export class UserTurnNode extends ElementNode {
       node.__promptId,
       node.__delegated,
       node.__synced,
+      node.__accepted,
       node.__key,
     );
   }
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = CONVERSATION_FONT_CLASS;
+    dom.className = this.__accepted
+      ? CONVERSATION_FONT_CLASS
+      : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;
     return dom;
   }
 
@@ -89,6 +111,7 @@ export class UserTurnNode extends ElementNode {
       ...super.exportJSON(),
       turnKey: this.__turnKey,
       promptId: this.__promptId,
+      accepted: this.__accepted,
       ...(this.__delegated === undefined
         ? {}
         : { delegated: this.__delegated }),
@@ -101,6 +124,7 @@ export class UserTurnNode extends ElementNode {
       serialized.promptId,
       serialized.delegated,
       '',
+      serialized.accepted,
     );
   }
 }
@@ -110,9 +134,10 @@ export function $createUserTurnNode(
   promptId: string,
   delegated: DelegatedInput | undefined,
   text: string,
+  accepted: boolean,
 ): UserTurnNode {
   const value = text.trim();
-  const node = new UserTurnNode(turnKey, promptId, delegated, value);
+  const node = new UserTurnNode(turnKey, promptId, delegated, value, accepted);
   if (value.length > 0) node.append($createTextNode(value));
   return node;
 }

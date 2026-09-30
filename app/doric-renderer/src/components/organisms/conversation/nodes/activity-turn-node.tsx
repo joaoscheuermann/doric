@@ -101,6 +101,7 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
     return (
       <CollapsibleBlock
         active={false}
+        hasContent
         label={activitySummary(this.__thoughts, this.__tools)}
       >
         {/* A flex column, so the steps stand `gap-2` apart without carrying a

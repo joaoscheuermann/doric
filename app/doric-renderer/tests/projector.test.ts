@@ -49,6 +49,9 @@ const toolOf = (turn: Turn | undefined): ToolTurn | undefined =>
 const streamingOf = (turn: Turn | undefined): boolean | undefined =>
   turn?.type === 'thinking' ? turn.streaming : undefined;
 
+const awaitingOf = (turn: Turn | undefined): boolean | undefined =>
+  turn?.type === 'user' ? turn.awaiting : undefined;
+
 const activityOf = (turn: Turn | undefined): ActivityTurn | undefined =>
   turn?.type === 'activity' ? turn : undefined;
 
@@ -208,6 +211,49 @@ describe('thread event projection', () => {
     ]);
 
     assert.deepEqual(types(projection.turns), ['activity', 'user']);
+  });
+
+  test('reads a prompt the agent has not answered as awaiting', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.equal(awaitingOf(projection.turns[0]), true);
+  });
+
+  test('stops awaiting once the agent produces a step', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
+    ]);
+
+    assert.equal(awaitingOf(projection.turns[0]), false);
+  });
+
+  test('stops awaiting once the job ends without an answer', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'cancelled',
+        text: '',
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['user']);
+    assert.equal(awaitingOf(projection.turns[0]), false);
   });
 
   test('accumulates consecutive text deltas into one agent turn', () => {

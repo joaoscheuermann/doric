@@ -30,6 +30,12 @@ export type UserTurn = TurnBase & {
   readonly accepted: boolean;
   /** Set when another Thread wrote this input rather than the human. */
   readonly delegated?: DelegatedInput;
+  /**
+   * Whether the agent has still to do anything about this prompt: the log has
+   * accepted it and not moved past it, so a surface can show that it is waiting
+   * rather than leaving the transcript silent.
+   */
+  readonly awaiting: boolean;
 };
 
 /** A run of the agent's user-visible text: one answer, streaming and settled. */
@@ -132,6 +138,7 @@ type Draft =
       text: string;
       accepted: boolean;
       delegated?: DelegatedInput;
+      awaiting: boolean;
     }
   | {
       type: 'agent';
@@ -295,6 +302,7 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
         events: [item],
         text: delegated === undefined ? text : '',
         accepted: true,
+        awaiting: false,
         ...(delegated === undefined ? {} : { delegated }),
       });
     } else if (event?.type === 'reasoning.delta') {
@@ -390,12 +398,15 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
     if (settled !== undefined) turn.status = settled;
   }
 
-  // The transcript's last turn is the one the log is still writing, until its
-  // job settles; reasoning has no lifecycle of its own to read that from. That
-  // last burst is also the one a surface keeps whole instead of grouping.
+  // The transcript's last turn is the one the log is still at. A prompt there,
+  // in a job that has not settled, is a prompt the agent has not answered yet;
+  // reasoning has no lifecycle of its own to read the same fact from. That last
+  // burst is also the one a surface keeps whole instead of grouping.
   const last = turns.at(-1);
-  if (last?.type === 'thinking' && !status.has(last.promptId))
-    last.streaming = true;
+  if (last !== undefined && !status.has(last.promptId)) {
+    if (last.type === 'user') last.awaiting = true;
+    else if (last.type === 'thinking') last.streaming = true;
+  }
 
   return grouped(turns, status);
 };

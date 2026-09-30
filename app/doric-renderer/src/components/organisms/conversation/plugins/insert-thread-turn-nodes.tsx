@@ -26,6 +26,7 @@ import {
 } from '@/components/organisms/conversation/nodes/turn-author-node';
 import {
   $createUserPromptNode,
+  $getUserPromptNode,
   $isUserPromptNode,
   type UserPromptNode,
 } from '@/components/organisms/conversation/nodes/user-prompt-node';
@@ -94,7 +95,13 @@ const $createBlock = (turn: Turn): TurnBlock => {
   const key = turnKey(turn);
   switch (turn.type) {
     case 'user':
-      return $createUserTurnNode(key, turn.promptId, turn.delegated, turn.text);
+      return $createUserTurnNode(
+        key,
+        turn.promptId,
+        turn.delegated,
+        turn.text,
+        turn.accepted,
+      );
     case 'agent':
       return $createAgentTurnNode(key, turn.promptId, turn.status, turn.text);
     case 'thinking':
@@ -136,7 +143,10 @@ const authorFor = (
 ): AuthorDraft | null => {
   const turn = turns[index];
   const at = turn.events.at(-1)?.createdAt;
-  if (turn.type === 'user') return { role: 'user', name: READER_NAME, at };
+  if (turn.type === 'user')
+    // A prompt the host has not accepted yet is drawn dimmed and nameless; the
+    // name arrives with the accepted turn the log holds.
+    return turn.accepted ? { role: 'user', name: READER_NAME, at } : null;
   const next = turns[index + 1];
   return next === undefined || next.type === 'user'
     ? { role: 'agent', name: AGENT_NAME, at }
@@ -194,11 +204,10 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
 const $settlePrompt = (): UserPromptNode => {
   const root = $getRoot();
 
-  let prompt: UserPromptNode | undefined;
+  let prompt = $getUserPromptNode();
   for (const node of root.getChildren()) {
     if (!$isUserPromptNode(node)) continue;
-    if (prompt === undefined) prompt = node;
-    else node.remove();
+    if (node !== prompt) node.remove();
   }
   if (prompt === undefined) {
     prompt = $createUserPromptNode();

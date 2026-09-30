@@ -1,5 +1,6 @@
 import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
 import {
+  $getRoot,
   ElementNode,
   type LexicalNode,
   type NodeKey,
@@ -88,4 +89,15 @@ export function $isUserPromptNode(
   node: LexicalNode | null | undefined,
 ): node is UserPromptNode {
   return node instanceof UserPromptNode;
+}
+
+/**
+ * The conversation's one prompt block, wherever it sits, or `undefined` before
+ * one exists. There is only ever one, so the first found is the prompt.
+ */
+export function $getUserPromptNode(): UserPromptNode | undefined {
+  for (const child of $getRoot().getChildren()) {
+    if ($isUserPromptNode(child)) return child;
+  }
+  return undefined;
 }

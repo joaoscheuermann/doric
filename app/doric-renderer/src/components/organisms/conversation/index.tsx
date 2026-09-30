@@ -10,12 +10,14 @@ import {
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
 import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugins/read-only-blocks';
+import { SendPrompt } from '@/components/organisms/conversation/plugins/send-prompt';
 import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   isReadOnlyBlock,
   isUndeletableBlock,
 } from '@/domain/conversation-nodes';
+import { withPendingTurns } from '@/domain/pending-turns';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
@@ -46,6 +48,7 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
+import { useMemo } from 'react';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
 const exampleTheme: EditorThemeClasses = {
@@ -233,6 +236,13 @@ export function Conversation({
   readonly onSandboxWrite?: () => void;
 }) {
   const chat = useThreadChat(thread);
+  // What the editor draws: the log's turns, and the two things the surface is
+  // waiting for — the reader's words before the host accepts them, and the
+  // agent's first step while it has produced nothing.
+  const turns = useMemo(
+    () => withPendingTurns(chat.turns, chat.pending),
+    [chat.turns, chat.pending],
+  );
 
   return (
     <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
@@ -248,7 +258,8 @@ export function Conversation({
             isUndeletable={isUndeletableBlock}
           />
           <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-          <InsertThreadTurnNodes turns={chat.turns} />
+          <InsertThreadTurnNodes turns={turns} />
+          <SendPrompt send={chat.prompt} />
         </LexicalExtensionComposer>
       </div>
     </ScrollArea>

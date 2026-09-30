@@ -1,3 +1,4 @@
+import type { PendingSend } from '@/domain/pending-turns';
 import {
   emptyProjection,
   projectEvents,
@@ -24,6 +25,11 @@ export type ThreadChat = {
   readonly error: string | undefined;
   readonly sending: boolean;
   readonly sendError: string | undefined;
+  /**
+   * The words the reader has sent that the log does not hold yet, so a surface
+   * can draw them at once. `undefined` when nothing is in flight.
+   */
+  readonly pending: PendingSend | undefined;
   /** Sends a prompt through `threads.prompt`, and reports whether it was accepted. */
   readonly prompt: (text: string) => Promise<boolean>;
   /** Replaces a past prompt through `threads.rewind`. */
@@ -50,6 +56,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string>();
+  const [sent, setSent] = useState<PendingSend>();
 
   useEffect(() => {
     // A new Thread reopens the surface: every piece of per-Thread state goes
@@ -62,6 +69,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     setError(undefined);
     setSendError(undefined);
     setSending(false);
+    setSent(undefined);
     return window.doric.threads.watch(thread.id, 0, (update) => {
       if (update.kind === 'snapshot') {
         setProjection((current) =>
@@ -101,10 +109,33 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     [],
   );
 
+  // The reader's own prompts in the log: one more of them than there were when a
+  // send left is that send accepted, whatever else the log has done since.
+  const ownPrompts = useMemo(
+    () =>
+      projection.turns.filter(
+        (turn) => turn.type === 'user' && turn.delegated === undefined,
+      ).length,
+    [projection.turns],
+  );
+
   const prompt = useCallback(
-    (text: string) =>
-      send((value) => window.doric.threads.prompt(record.id, value), text),
-    [record.id, send],
+    async (text: string): Promise<boolean> => {
+      const words = text.trim();
+      if (words.length === 0) return false;
+      // Drawn at once: the words leave the prompt before the log holds them, so
+      // the surface shows them as the turn they are about to become.
+      setSent({ text: words, before: ownPrompts });
+      const accepted = await send(
+        (value) => window.doric.threads.prompt(record.id, value),
+        text,
+      );
+      // A refused send has nothing to wait for; the surface puts the words back
+      // into the prompt.
+      if (!accepted) setSent(undefined);
+      return accepted;
+    },
+    [ownPrompts, record.id, send],
   );
 
   const rewind = useCallback(
@@ -121,6 +152,13 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     [projection.events],
   );
 
+  // The words stop being pending once the log has accepted one more prompt of
+  // the reader's own; the state is dropped then, and the surface stops drawing
+  // them in the same render the accepted turn appears.
+  useEffect(() => {
+    if (sent !== undefined && ownPrompts > sent.before) setSent(undefined);
+  }, [ownPrompts, sent]);
+
   return {
     thread: record,
     events: projection.events,
@@ -129,6 +167,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     error,
     sending,
     sendError,
+    pending: sent,
     prompt,
     rewind,
   };
