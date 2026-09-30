@@ -174,9 +174,9 @@ const StyleImportExportExtension = defineExtension({
 
 /**
  * Lexical seeds a fresh editor with an empty paragraph. The editor's own block
- * here is the prompt — the reader's input, and the last block of the
- * conversation — so it takes that place, and the transcript is inserted above
- * it rather than below a blank line.
+ * here is the prompt — the reader's input, and the conversation's tail, with the
+ * reader's author line trailing it — so it takes that place, and the transcript
+ * is inserted above it rather than below a blank line.
  */
 const PromptInitialState = defineExtension({
   $initialEditorState: () => {

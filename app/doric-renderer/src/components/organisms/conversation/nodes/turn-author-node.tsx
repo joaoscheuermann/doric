@@ -6,7 +6,8 @@
  * It is a widget of its own rather than a child of the turn, so the turn's text
  * stays the only thing the caret can cross, and the two are siblings in the
  * root — the line trails the block the sync holds it against, and moves with it
- * as an agent run grows.
+ * as an agent run grows. The reader's prompt wears one the same way, below it
+ * and without a time, because it is the turn the reader is writing.
  */
 import { ReaderAvatar } from '@/components/molecules/reader-avatar';
 import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';

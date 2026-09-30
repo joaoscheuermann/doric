@@ -154,9 +154,14 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     block.setTurn(turn);
 };
 
-/** The one prompt block. Only one is ever in the editor. */
-const $ensurePrompt = (): UserPromptNode => {
+/**
+ * The prompt and the reader's author line that trails it, kept as the
+ * conversation's last two blocks whatever an update did to the root. Only one
+ * prompt is ever in the editor.
+ */
+const $settlePrompt = (): UserPromptNode => {
   const root = $getRoot();
+
   let prompt: UserPromptNode | undefined;
   for (const node of root.getChildren()) {
     if (!$isUserPromptNode(node)) continue;
@@ -167,26 +172,34 @@ const $ensurePrompt = (): UserPromptNode => {
     prompt = $createUserPromptNode();
     root.append(prompt);
   }
-  return prompt;
-};
 
-/** The prompt exists and is the last block, whatever an update did to the root. */
-const $settlePrompt = (): UserPromptNode => {
-  const prompt = $ensurePrompt();
-  const root = $getRoot();
-  if (root.getLastChild() !== prompt) {
-    prompt.remove();
-    root.append(prompt);
+  // The reader's own line trails the prompt, the way a turn's trails a turn. A
+  // line of another role there is a leftover, so it is replaced rather than
+  // kept; the reader's has no time yet, because the prompt is not sent.
+  let author = prompt.getNextSibling();
+  if (!($isTurnAuthorNode(author) && author.__role === 'user')) {
+    if ($isTurnAuthorNode(author)) author.remove();
+    author = $createTurnAuthorNode('user', READER_NAME, undefined);
+    prompt.insertAfter(author);
   }
+
+  // The pair stays the conversation's tail, so nothing follows the author line.
+  if (root.getLastChild() !== author) {
+    prompt.remove();
+    author.remove();
+    root.append(prompt);
+    root.append(author);
+  }
+
   return prompt;
 };
 
 /**
  * Renders the chat's turns into the editor with no interaction: every turn is a
- * block, the prompt block is the last one, and the editor is kept in step with
- * the chat — a turn it updates is re-rendered where it sits, one it adds is
- * inserted above the prompt, and one it drops is removed. The first sync also
- * opens the surface, leaving the caret in the prompt.
+ * block, the prompt block and its author line are the last two, and the editor
+ * is kept in step with the chat — a turn it updates is re-rendered where it
+ * sits, one it adds is inserted above the prompt, and one it drops is removed.
+ * The first sync also opens the surface, leaving the caret in the prompt.
  */
 export function InsertThreadTurnNodes({
   turns,
@@ -202,8 +215,9 @@ export function InsertThreadTurnNodes({
     editor.update(() => {
       const root = $getRoot();
       const existing = new Map<string, TurnUnit>();
-      // An author line is read as the tail of the turn block before it. One that
-      // no turn precedes is a leftover, so it is dropped rather than left behind.
+      // An author line is read as the tail of the block before it: a turn's for
+      // a turn, and the reader's for the prompt. A line with neither before it is
+      // a leftover, so it is dropped rather than left behind.
       let trailing: TurnBlock | null = null;
       for (const node of root.getChildren()) {
         if (isTurnBlock(node)) {
@@ -212,6 +226,10 @@ export function InsertThreadTurnNodes({
           continue;
         }
         if ($isTurnAuthorNode(node)) {
+          if ($isUserPromptNode(node.getPreviousSibling())) {
+            trailing = null;
+            continue;
+          }
           const unit =
             trailing === null ? undefined : existing.get(trailing.__turnKey);
           if (unit === undefined) node.remove();
