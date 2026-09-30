@@ -1,7 +1,10 @@
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
-import { UserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
+import {
+  $createUserPromptNode,
+  UserPromptNode,
+} from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,6 +28,7 @@ import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionCompose
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { RichTextExtension } from '@lexical/rich-text';
 import {
+  $getRoot,
   $isTextNode,
   configExtension,
   defineExtension,
@@ -161,6 +165,19 @@ const StyleImportExportExtension = defineExtension({
 });
 
 /**
+ * Lexical seeds a fresh editor with an empty paragraph. The editor's own block
+ * here is the prompt — the reader's input, and the last block of the
+ * conversation — so it takes that place, and the transcript is inserted above
+ * it rather than below a blank line.
+ */
+const PromptInitialState = defineExtension({
+  $initialEditorState: () => {
+    $getRoot().append($createUserPromptNode());
+  },
+  name: '@org/source/ConversationPromptInitialState',
+});
+
+/**
  * The editor the example mounts. Only the HMR hook differs: webpack hands a
  * module `module.hot` and not the Vite-shaped `import.meta.hot` the extension
  * reads, so the editor keeps none of its own.
@@ -175,6 +192,7 @@ const conversationExtension = defineExtension({
     HistoryExtension,
     AutoFocusExtension,
     TreeViewExtension,
+    PromptInitialState,
   ],
   name: '@lexical/examples/react-rich',
   namespace: 'react-rich',

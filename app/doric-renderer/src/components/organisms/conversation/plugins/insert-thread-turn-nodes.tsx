@@ -25,8 +25,13 @@ import {
 } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { type Turn } from '@/domain/projector';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, type LexicalNode, RootNode } from 'lexical';
-import { useEffect } from 'react';
+import {
+  $getRoot,
+  type LexicalEditor,
+  type LexicalNode,
+  RootNode,
+} from 'lexical';
+import { useEffect, useRef } from 'react';
 
 /** Any of the four turn blocks, once it is in the editor. */
 type TurnBlock = UserTurnNode | AgentTurnNode | ThinkingTurnNode | ToolTurnNode;
@@ -95,20 +100,22 @@ const $ensurePrompt = (): UserPromptNode => {
 };
 
 /** The prompt exists and is the last block, whatever an update did to the root. */
-const $settlePrompt = (): void => {
+const $settlePrompt = (): UserPromptNode => {
   const prompt = $ensurePrompt();
   const root = $getRoot();
   if (root.getLastChild() !== prompt) {
     prompt.remove();
     root.append(prompt);
   }
+  return prompt;
 };
 
 /**
  * Renders the chat's turns into the editor with no interaction: every turn is a
  * block, the prompt block is the last one, and the editor is kept in step with
  * the chat — a turn it updates is re-rendered where it sits, one it adds is
- * inserted above the prompt, and one it drops is removed.
+ * inserted above the prompt, and one it drops is removed. The first sync also
+ * opens the surface, leaving the caret in the prompt.
  */
 export function InsertThreadTurnNodes({
   turns,
@@ -116,8 +123,11 @@ export function InsertThreadTurnNodes({
   readonly turns: readonly Turn[];
 }) {
   const [editor] = useLexicalComposerContext();
+  const seated = useRef<LexicalEditor | null>(null);
 
   useEffect(() => {
+    const opening = seated.current !== editor;
+
     editor.update(() => {
       const root = $getRoot();
       const existing = new Map<string, TurnBlock>();
@@ -125,7 +135,7 @@ export function InsertThreadTurnNodes({
         if (isTurnBlock(node)) existing.set(node.__turnKey, node);
       }
 
-      const prompt = $ensurePrompt();
+      const prompt = $settlePrompt();
 
       for (const turn of turns) {
         const key = turnKey(turn);
@@ -142,8 +152,17 @@ export function InsertThreadTurnNodes({
 
       for (const stale of existing.values()) stale.remove();
 
-      $settlePrompt();
+      // Seat the caret in the prompt as the surface opens. The editor is focused
+      // before the first turn is in, when the root is still empty, so the
+      // browser parks the caret on a line of its own above the transcript; a
+      // selection in the prompt is what keeps that line from existing.
+      if (opening) prompt.select();
     });
+
+    if (opening) {
+      seated.current = editor;
+      editor.focus();
+    }
   }, [editor, turns]);
 
   /**
