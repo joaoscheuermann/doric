@@ -253,6 +253,18 @@
     pointer-events: none;
   }
 
+  /* An empty editor block carries a managed line break, which is what a caret
+     with no text anchors to. Drawing the placeholder out of flow leaves that
+     line break as the block's only inline content, so the caret rests at the
+     start instead of after the placeholder text. */
+  [data-lexical-editor] [data-placeholder] {
+    position: relative;
+  }
+
+  [data-lexical-editor] [data-placeholder]::before {
+    position: absolute;
+  }
+
   html,
   body,
   #root {

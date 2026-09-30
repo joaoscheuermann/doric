@@ -25,7 +25,7 @@ import {
 } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { type Turn } from '@/domain/projector';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, type LexicalNode } from 'lexical';
+import { $getRoot, type LexicalNode, RootNode } from 'lexical';
 import { useEffect } from 'react';
 
 /** Any of the four turn blocks, once it is in the editor. */
@@ -78,7 +78,7 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     block.setTurn(turn);
 };
 
-/** The one prompt block, kept last. Only one is ever in the editor. */
+/** The one prompt block. Only one is ever in the editor. */
 const $ensurePrompt = (): UserPromptNode => {
   const root = $getRoot();
   let prompt: UserPromptNode | undefined;
@@ -92,6 +92,16 @@ const $ensurePrompt = (): UserPromptNode => {
     root.append(prompt);
   }
   return prompt;
+};
+
+/** The prompt exists and is the last block, whatever an update did to the root. */
+const $settlePrompt = (): void => {
+  const prompt = $ensurePrompt();
+  const root = $getRoot();
+  if (root.getLastChild() !== prompt) {
+    prompt.remove();
+    root.append(prompt);
+  }
 };
 
 /**
@@ -132,12 +142,21 @@ export function InsertThreadTurnNodes({
 
       for (const stale of existing.values()) stale.remove();
 
-      if (root.getLastChild() !== prompt) {
-        prompt.remove();
-        root.append(prompt);
-      }
+      $settlePrompt();
     });
   }, [editor, turns]);
+
+  /**
+   * The prompt cannot be deleted. The sync above runs when the chat changes; this
+   * runs at the end of every update — Lexical applies a root transform last, as
+   * a finalizer — so a backspace, a forward delete or a paste that drops the
+   * prompt restores it in the same commit rather than leaving the surface
+   * without one.
+   */
+  useEffect(
+    () => editor.registerNodeTransform(RootNode, $settlePrompt),
+    [editor],
+  );
 
   return null;
 }
