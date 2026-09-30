@@ -7,7 +7,13 @@ import {
 } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
+import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugins/read-only-blocks';
+import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  isReadOnlyBlock,
+  isUndeletableBlock,
+} from '@/domain/conversation-nodes';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
@@ -24,6 +30,7 @@ import {
   DOMRenderExtension,
   sel,
 } from '@lexical/html';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { RichTextExtension } from '@lexical/rich-text';
@@ -228,8 +235,16 @@ export function Conversation({
   console.log(chat);
 
   return (
-    <ScrollArea className="min-h-0 w-full flex-1">
-      <LexicalExtensionComposer extension={conversationExtension}>
+    <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
+      <LexicalExtensionComposer
+        extension={conversationExtension}
+        contentEditable={<ContentEditable className="flex-1 outline-none" />}
+      >
+        <UndeletableBlocksPlugin
+          isReadOnly={isReadOnlyBlock}
+          isUndeletable={isUndeletableBlock}
+        />
+        <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
         <InsertThreadTurnNodes turns={chat.turns} />
       </LexicalExtensionComposer>
     </ScrollArea>

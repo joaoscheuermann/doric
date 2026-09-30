@@ -1,3 +1,4 @@
+import { THINKING_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ThinkingTurn } from '@/domain/projector';
 import {
   DecoratorNode,
@@ -27,7 +28,7 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   static override getType(): string {
-    return 'thinking-turn-node';
+    return THINKING_TURN_BLOCK;
   }
 
   static override clone(node: ThinkingTurnNode): ThinkingTurnNode {

@@ -1,3 +1,4 @@
+import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
 import {
   ElementNode,
   type LexicalNode,
@@ -5,8 +6,6 @@ import {
   type SerializedElementNode,
   type Spread,
 } from 'lexical';
-
-const USER_PROMPT_NODE_TYPE = 'user-prompt-node';
 
 const placeholder = 'Enter some rich text…';
 
@@ -27,7 +26,7 @@ export type SerializedUserPromptNode = Spread<
  */
 export class UserPromptNode extends ElementNode {
   static override getType(): string {
-    return USER_PROMPT_NODE_TYPE;
+    return USER_PROMPT_BLOCK;
   }
 
   static override clone(node: UserPromptNode): UserPromptNode {

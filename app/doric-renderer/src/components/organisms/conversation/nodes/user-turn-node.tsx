@@ -1,3 +1,4 @@
+import { USER_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { DelegatedInput } from '@/domain/delegated';
 import type { UserTurn } from '@/domain/projector';
 import {
@@ -41,7 +42,7 @@ export class UserTurnNode extends ElementNode {
   }
 
   static override getType(): string {
-    return 'user-turn-node';
+    return USER_TURN_BLOCK;
   }
 
   static override clone(node: UserTurnNode): UserTurnNode {

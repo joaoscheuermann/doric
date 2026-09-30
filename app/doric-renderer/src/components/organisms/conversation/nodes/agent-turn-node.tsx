@@ -1,3 +1,4 @@
+import { AGENT_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { AgentTurn, PromptStatus } from '@/domain/projector';
 import {
   $createTextNode,
@@ -14,9 +15,9 @@ export type SerializedAgentTurnNode = Spread<
 >;
 
 /**
- * A run of the agent's answer as an editable block. The text lives as a child
- * node, so the reader can edit it; the chat keeps writing into it while the
- * job streams, and stops once the reader changes it.
+ * A run of the agent's answer as a block the reader can read and move the caret
+ * through, but not edit: the chat owns the text. Its text lives as a child node
+ * so the caret reaches it like any other rich text.
  */
 export class AgentTurnNode extends ElementNode {
   __turnKey: string;
@@ -40,7 +41,7 @@ export class AgentTurnNode extends ElementNode {
   }
 
   static override getType(): string {
-    return 'agent-turn-node';
+    return AGENT_TURN_BLOCK;
   }
 
   static override clone(node: AgentTurnNode): AgentTurnNode {

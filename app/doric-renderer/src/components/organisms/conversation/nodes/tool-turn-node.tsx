@@ -1,3 +1,4 @@
+import { TOOL_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ToolTurn } from '@/domain/projector';
 import {
   DecoratorNode,
@@ -52,7 +53,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   static override getType(): string {
-    return 'tool-turn-node';
+    return TOOL_TURN_BLOCK;
   }
 
   static override clone(node: ToolTurnNode): ToolTurnNode {
