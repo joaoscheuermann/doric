@@ -11,6 +11,7 @@ import {
   type ProviderKind,
   updatedAtLabel,
 } from '@/domain/config';
+import { filterSettingsSections } from '@/domain/settings-search';
 import { type Config, useConfig } from '@/hooks/use-config';
 import { type Credentials, useCredentials } from '@/hooks/use-credentials';
 import { useProviderKinds } from '@/hooks/use-provider-kinds';
@@ -151,6 +152,9 @@ export function Settings() {
   const kinds = useProviderKinds();
   const config = useConfig(true, kinds.list);
   const [section, setSection] = useState<SectionId>('providers');
+  // The query narrows the nav alone: a section it hides is still the one on
+  // screen, and the nav then shows no active row for as long as the query lasts.
+  const [query, setQuery] = useState('');
   const current = sections.find((item) => item.id === section) ?? sections[0];
   // The one icon the section is named by, drawn by the nav and the heading alike
   // so the two never drift.
@@ -201,12 +205,31 @@ export function Settings() {
     if (match !== undefined) setSection(match.id);
   };
 
+  // The nav's footer states the save state alone: the revision line beside it
+  // is wider than the nav column, so it stays in the content footer. Neither
+  // footer offers a control, so no action is offered twice.
+  const navSaveState =
+    status === undefined ? undefined : (
+      <span
+        className={
+          status.destructive
+            ? 'truncate text-xs text-destructive'
+            : 'truncate text-xs text-muted-foreground'
+        }
+      >
+        {status.text}
+      </span>
+    );
+
   return (
     <SettingsWindow
       activeId={current.id}
       title={current.label}
-      nav={sections}
+      nav={filterSettingsSections(sections, query)}
+      onQueryChange={setQuery}
       onSelect={selectSection}
+      query={query}
+      sidebarFooter={navSaveState}
       footer={
         <div className="flex w-full items-center gap-2 text-xs text-muted-foreground">
           {config.saved !== undefined && (
