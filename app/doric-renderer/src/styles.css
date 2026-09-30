@@ -245,7 +245,8 @@
     @apply select-text;
   }
 
-  [contenteditable='true'][data-placeholder]:empty::before {
+  [contenteditable='true'][data-placeholder]:empty::before,
+  [data-lexical-editor] [data-placeholder]::before {
     color: var(--muted-foreground);
     content: attr(data-placeholder);
     opacity: 0.6;

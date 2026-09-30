@@ -1,11 +1,10 @@
 import {
-  DecoratorNode,
+  ElementNode,
   type LexicalNode,
   type NodeKey,
-  type SerializedLexicalNode,
+  type SerializedElementNode,
   type Spread,
 } from 'lexical';
-import { JSX } from 'react/jsx-runtime';
 
 const USER_PROMPT_NODE_TYPE = 'user-prompt-node';
 
@@ -13,15 +12,20 @@ const placeholder = 'Enter some rich text…';
 
 export type SerializedUserPromptNode = Spread<
   Record<never, never>,
-  SerializedLexicalNode
+  SerializedElementNode
 >;
 
 /**
  * The block the reader writes the next prompt in, and the last block of the
- * conversation so the transcript grows above it. For now it is only the box and
- * its placeholder: nothing reads what it holds yet.
+ * conversation so the transcript grows above it.
+ *
+ * The text lives as a child node, like the turn blocks', so the whole
+ * conversation stays one editing host: the caret, typing and undo all belong to
+ * the editor, and the caret crosses between a turn and the prompt the way it
+ * crosses between two turns. It carries its placeholder only while it is empty,
+ * so the reader types over it rather than on top of it.
  */
-export class UserPromptNode extends DecoratorNode<JSX.Element> {
+export class UserPromptNode extends ElementNode {
   static override getType(): string {
     return USER_PROMPT_NODE_TYPE;
   }
@@ -35,39 +39,30 @@ export class UserPromptNode extends DecoratorNode<JSX.Element> {
   }
 
   override createDOM(): HTMLElement {
-    return document.createElement('div');
-  }
-
-  override updateDOM(): boolean {
-    return false;
+    const dom = document.createElement('div');
+    dom.className = 'min-h-24 outline-none';
+    this.$applyPlaceholder(dom);
+    return dom;
   }
 
   /**
-   * A block rather than an inline decorator. `DecoratorNode` defaults to inline,
-   * which tucks the prompt inside a paragraph and hides it from the surface that
-   * finds the prompt and keeps it last; as a block it sits beside the turn blocks
-   * at the root, where that ordering works.
+   * The placeholder is a property of the block, not of one of its children, so
+   * it is re-derived whenever the block is reconciled — which typing marks it
+   * dirty, because the text is inserted into it.
    */
+  override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
+    this.$applyPlaceholder(dom);
+    return false;
+  }
+
   override isInline(): boolean {
     return false;
   }
 
-  override decorate(): JSX.Element {
-    return (
-      <div className="relative">
-        <div
-          contentEditable
-          suppressContentEditableWarning
-          role="textbox"
-          aria-label="Prompt"
-          aria-placeholder={placeholder}
-          className="min-h-24 px-3 py-2 outline-none"
-        />
-        <div className="pointer-events-none absolute top-2 left-3 select-none text-muted-foreground">
-          {placeholder}
-        </div>
-      </div>
-    );
+  private $applyPlaceholder(dom: HTMLElement): void {
+    if (this.getTextContent().length === 0)
+      dom.setAttribute('data-placeholder', placeholder);
+    else dom.removeAttribute('data-placeholder');
   }
 
   override exportJSON(): SerializedUserPromptNode {
