@@ -21,7 +21,6 @@ import {
   DOMRenderExtension,
   sel,
 } from '@lexical/html';
-import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { RichTextExtension } from '@lexical/rich-text';
@@ -212,14 +211,7 @@ export function Conversation({
 
   return (
     <ScrollArea className="min-h-0 w-full flex-1">
-      <LexicalExtensionComposer
-        extension={conversationExtension}
-        contentEditable={null}
-      >
-        <ContentEditable
-          className="min-h-24 px-3 py-2 outline-none overflow-hidden"
-          aria-label="Prompt"
-        />
+      <LexicalExtensionComposer extension={conversationExtension}>
         <InsertThreadTurnNodes turns={chat.turns} />
       </LexicalExtensionComposer>
     </ScrollArea>

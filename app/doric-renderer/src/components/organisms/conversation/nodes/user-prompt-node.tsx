@@ -42,6 +42,16 @@ export class UserPromptNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
+  /**
+   * A block rather than an inline decorator. `DecoratorNode` defaults to inline,
+   * which tucks the prompt inside a paragraph and hides it from the surface that
+   * finds the prompt and keeps it last; as a block it sits beside the turn blocks
+   * at the root, where that ordering works.
+   */
+  override isInline(): boolean {
+    return false;
+  }
+
   override decorate(): JSX.Element {
     return (
       <div className="relative">
