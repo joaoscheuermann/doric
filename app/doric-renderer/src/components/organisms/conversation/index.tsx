@@ -214,9 +214,9 @@ const conversationExtension = defineExtension({
 });
 
 /**
- * The conversation surface: the example's rich-text editor, and — for now — the
- * Thread's log on the console. `useThreadChat` still owns the subscription and
- * the sending; only what renders them waits.
+ * The conversation surface: one Lexical editor holding the Thread's projected
+ * turns and the reader's prompt. `useThreadChat` owns the subscription, the
+ * projection and the sending; this surface renders them in a centred column.
  *
  * `onSandboxWrite` is additive: this surface takes it and ignores it, and the
  * caller may use it when the log grows a write to the sandbox the Project's
@@ -230,23 +230,27 @@ export function Conversation({
 }) {
   const chat = useThreadChat(thread);
 
-  console.log('=== before ===');
-  console.log(thread);
-  console.log(chat);
-
   return (
     <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
-      <LexicalExtensionComposer
-        extension={conversationExtension}
-        contentEditable={<ContentEditable className="flex-1 outline-none" />}
-      >
-        <UndeletableBlocksPlugin
-          isReadOnly={isReadOnlyBlock}
-          isUndeletable={isUndeletableBlock}
-        />
-        <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-        <InsertThreadTurnNodes turns={chat.turns} />
-      </LexicalExtensionComposer>
+      {/*
+       * The conversation reads as a centred column: it fills the pane up to a
+       * readable measure and centres there, and `px-4` is the least breathing
+       * room its sides keep once the pane is narrower than that measure. The
+       * `font-light` keeps the mono body from reading as heavy at length.
+       */}
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 text-sm font-light">
+        <LexicalExtensionComposer
+          extension={conversationExtension}
+          contentEditable={<ContentEditable className="flex-1 outline-none" />}
+        >
+          <UndeletableBlocksPlugin
+            isReadOnly={isReadOnlyBlock}
+            isUndeletable={isUndeletableBlock}
+          />
+          <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+          <InsertThreadTurnNodes turns={chat.turns} />
+        </LexicalExtensionComposer>
+      </div>
     </ScrollArea>
   );
 }
