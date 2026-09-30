@@ -58,7 +58,10 @@ export class AgentTurnNode extends ElementNode {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = CONVERSATION_FONT_CLASS;
+    // `mt-6`: the gap a turn stands from the one before it, which the author
+    // line's bottom margin gives every other case. A summary before this answer
+    // carries no bottom margin of its own, so the gap has to be stated here.
+    dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
     return dom;
   }
 

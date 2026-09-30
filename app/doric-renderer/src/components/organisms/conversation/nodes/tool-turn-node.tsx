@@ -1,3 +1,4 @@
+import { ToolItem } from '@/components/molecules/tool-item';
 import { TOOL_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ToolTurn } from '@/domain/projector';
 import {
@@ -72,7 +73,10 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = CONVERSATION_FONT_CLASS;
+    // `mt-6`: the gap the conversation's blocks stand apart by, which the author
+    // line's bottom margin gives every other case. A step of a run can follow a
+    // block that carries no such line, so the gap is stated here.
+    dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
     return dom;
   }
 
@@ -93,9 +97,13 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
 
   override decorate(): JSX.Element {
     return (
-      <div>
-        {this.__name} · {this.__status}
-      </div>
+      <ToolItem
+        args={this.__args}
+        error={this.__error}
+        name={this.__name}
+        result={this.__result}
+        status={this.__status}
+      />
     );
   }
 

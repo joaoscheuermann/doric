@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  ACTIVITY_TURN_BLOCK,
   AGENT_TURN_BLOCK,
   isReadOnlyBlock,
   isUndeletableBlock,
@@ -20,6 +21,7 @@ describe('what a conversation block allows', () => {
       AGENT_TURN_BLOCK,
       THINKING_TURN_BLOCK,
       TOOL_TURN_BLOCK,
+      ACTIVITY_TURN_BLOCK,
       USER_PROMPT_BLOCK,
     ]) {
       assert.equal(isUndeletableBlock(type), true, type);

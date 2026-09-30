@@ -17,6 +17,12 @@ export const USER_TURN_BLOCK = 'user-turn-node';
 /** The author line that trails the agent's and the reader's turns. */
 export const TURN_AUTHOR_BLOCK = 'turn-author-node';
 
+/**
+ * A completed burst of the agent's reasoning and tool calls, kept as one block so
+ * a long run of steps reads as one line.
+ */
+export const ACTIVITY_TURN_BLOCK = 'activity-turn-node';
+
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
 
@@ -27,6 +33,7 @@ const UNDELETABLE = new Set([
   TOOL_TURN_BLOCK,
   USER_TURN_BLOCK,
   USER_PROMPT_BLOCK,
+  ACTIVITY_TURN_BLOCK,
 ]);
 
 /**

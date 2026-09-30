@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  type ActivityItem,
+  type ActivityTurn,
   emptyProjection,
   projectEvents,
   sandboxWrites,
@@ -34,13 +36,29 @@ const types = (turns: readonly Turn[]): readonly string[] =>
   turns.map((turn) => turn.type);
 
 const textOf = (turn: Turn | undefined): string | undefined =>
-  turn === undefined || turn.type === 'tool_call' ? undefined : turn.text;
+  turn === undefined || turn.type === 'tool_call' || turn.type === 'activity'
+    ? undefined
+    : turn.text;
 
 const agentStatus = (turn: Turn | undefined): string | undefined =>
   turn?.type === 'agent' ? turn.status : undefined;
 
 const toolOf = (turn: Turn | undefined): ToolTurn | undefined =>
   turn?.type === 'tool_call' ? turn : undefined;
+
+const streamingOf = (turn: Turn | undefined): boolean | undefined =>
+  turn?.type === 'thinking' ? turn.streaming : undefined;
+
+const activityOf = (turn: Turn | undefined): ActivityTurn | undefined =>
+  turn?.type === 'activity' ? turn : undefined;
+
+const toolItemOf = (
+  turn: Turn | undefined,
+): Extract<ActivityItem, { kind: 'tool' }> | undefined =>
+  activityOf(turn)?.items.find(
+    (item): item is Extract<ActivityItem, { kind: 'tool' }> =>
+      item.kind === 'tool',
+  );
 
 describe('thread event projection', () => {
   test('opens a user turn for the human prompt', () => {
@@ -124,6 +142,74 @@ describe('thread event projection', () => {
     assert.equal(projection.turns[0]?.events.length, 2);
   });
 
+  test('reads a trailing reasoning run as still streaming', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
+    ]);
+
+    assert.equal(streamingOf(projection.turns[0]), true);
+  });
+
+  test('groups reasoning that a following answer closes', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
+      event(2, 'one', { type: 'text.delta', delta: 'so' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
+    assert.equal(activityOf(projection.turns[0])?.thoughts, 1);
+    assert.equal(activityOf(projection.turns[0])?.tools, 0);
+  });
+
+  test('groups reasoning when its job ends without an answer', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'cancelled',
+        text: '',
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['activity']);
+  });
+
+  test('groups a completed burst and counts what it did', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),
+      event(2, 'one', { type: 'tool.started', call: call('c1', 'read_file') }),
+      event(3, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'read_file'),
+        record: { output: 'x' },
+      }),
+      event(4, 'one', { type: 'reasoning.delta', delta: 'b' }),
+      event(5, 'one', { type: 'text.delta', delta: 'answer' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
+    const activity = activityOf(projection.turns[0]);
+    assert.equal(activity?.thoughts, 2);
+    assert.equal(activity?.tools, 1);
+    assert.deepEqual(
+      activity?.items.map((item) => item.kind),
+      ['thinking', 'tool', 'thinking'],
+    );
+  });
+
+  test('groups a burst that a new prompt closes', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),
+      event(2, 'two', {
+        type: 'prompt.accepted',
+        text: 'next',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['activity', 'user']);
+  });
+
   test('accumulates consecutive text deltas into one agent turn', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'text.delta', delta: 'Hel' }),
@@ -146,7 +232,7 @@ describe('thread event projection', () => {
     ]);
 
     assert.deepEqual(types(projection.turns), [
-      'thinking',
+      'activity',
       'agent',
       'tool_call',
     ]);
@@ -162,7 +248,7 @@ describe('thread event projection', () => {
       event(3, 'one', { type: 'text.delta', delta: 'after' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['agent', 'tool_call', 'agent']);
+    assert.deepEqual(types(projection.turns), ['agent', 'activity', 'agent']);
     assert.equal(textOf(projection.turns[0]), 'before');
     assert.equal(textOf(projection.turns[2]), 'after');
   });
@@ -227,8 +313,8 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['tool_call', 'agent']);
-    assert.equal(toolOf(projection.turns[0])?.status, 'running');
+    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
+    assert.equal(toolItemOf(projection.turns[0])?.status, 'running');
     assert.equal(agentStatus(projection.turns[1]), 'completed');
     assert.equal(textOf(projection.turns[1]), 'done');
   });
@@ -246,7 +332,7 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['agent', 'tool_call', 'agent']);
+    assert.deepEqual(types(projection.turns), ['agent', 'activity', 'agent']);
     assert.equal(textOf(projection.turns[0]), 'first');
     assert.equal(textOf(projection.turns[2]), 'final');
   });
@@ -294,7 +380,7 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['thinking', 'agent']);
+    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
     assert.equal(textOf(projection.turns[1]), 'answer');
     assert.equal(agentStatus(projection.turns[1]), 'completed');
   });

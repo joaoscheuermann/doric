@@ -1,3 +1,4 @@
+import { ActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
@@ -211,6 +212,7 @@ const conversationExtension = defineExtension({
     ThinkingTurnNode,
     ToolTurnNode,
     TurnAuthorNode,
+    ActivityTurnNode,
     UserPromptNode,
   ],
 });

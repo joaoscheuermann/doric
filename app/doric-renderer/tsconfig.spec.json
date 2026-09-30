@@ -24,6 +24,8 @@
     "src/domain/projector.ts",
     "src/domain/selection.ts",
     "src/domain/settings-search.ts",
+    "src/utility/activity-summary.ts",
+    "src/utility/humanize.ts",
     "src/utility/identicon.ts",
     "src/utility/oklch.ts",
     "src/utility/relative-time.ts",

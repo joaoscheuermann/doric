@@ -1,3 +1,4 @@
+import { ThinkingItem } from '@/components/molecules/thinking-item';
 import { THINKING_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ThinkingTurn } from '@/domain/projector';
 import {
@@ -12,7 +13,7 @@ import { JSX } from 'react/jsx-runtime';
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
 export type SerializedThinkingTurnNode = Spread<
-  { turnKey: string; promptId: string; text: string },
+  { turnKey: string; promptId: string; text: string; streaming: boolean },
   SerializedLexicalNode
 >;
 
@@ -21,12 +22,21 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;
   __promptId: string;
   __text: string;
+  /** Whether the run is still being written; the sync keeps it current. */
+  __streaming: boolean;
 
-  constructor(turnKey: string, promptId: string, text: string, key?: NodeKey) {
+  constructor(
+    turnKey: string,
+    promptId: string,
+    text: string,
+    streaming: boolean,
+    key?: NodeKey,
+  ) {
     super(key);
     this.__turnKey = turnKey;
     this.__promptId = promptId;
     this.__text = text.trim();
+    this.__streaming = streaming;
   }
 
   static override getType(): string {
@@ -38,13 +48,17 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
       node.__turnKey,
       node.__promptId,
       node.__text,
+      node.__streaming,
       node.__key,
     );
   }
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = CONVERSATION_FONT_CLASS;
+    // `mt-6`: the gap the conversation's blocks stand apart by, which the author
+    // line's bottom margin gives every other case. A step of a run can follow a
+    // block that carries no such line, so the gap is stated here.
+    dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
     return dom;
   }
 
@@ -64,12 +78,17 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   override decorate(): JSX.Element {
-    return <div>{this.__text}</div>;
+    return <ThinkingItem streaming={this.__streaming} text={this.__text} />;
   }
 
   setTurn(turn: ThinkingTurn): void {
     const value = turn.text.trim();
-    if (this.__text !== value) this.getWritable().__text = value;
+    const textChanged = this.__text !== value;
+    const streamingChanged = this.__streaming !== turn.streaming;
+    if (!textChanged && !streamingChanged) return;
+    const writable = this.getWritable();
+    if (textChanged) writable.__text = value;
+    if (streamingChanged) writable.__streaming = turn.streaming;
   }
 
   override exportJSON(): SerializedThinkingTurnNode {
@@ -78,6 +97,7 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
       turnKey: this.__turnKey,
       promptId: this.__promptId,
       text: this.__text,
+      streaming: this.__streaming,
     };
   }
 
@@ -88,6 +108,7 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
       serialized.turnKey,
       serialized.promptId,
       serialized.text,
+      serialized.streaming,
     );
   }
 }
@@ -96,8 +117,9 @@ export function $createThinkingTurnNode(
   turnKey: string,
   promptId: string,
   text: string,
+  streaming: boolean,
 ): ThinkingTurnNode {
-  return new ThinkingTurnNode(turnKey, promptId, text);
+  return new ThinkingTurnNode(turnKey, promptId, text, streaming);
 }
 
 export function $isThinkingTurnNode(

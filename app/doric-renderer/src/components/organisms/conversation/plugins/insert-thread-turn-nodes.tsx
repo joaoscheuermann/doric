@@ -1,4 +1,9 @@
 import {
+  $createActivityTurnNode,
+  $isActivityTurnNode,
+  type ActivityTurnNode,
+} from '@/components/organisms/conversation/nodes/activity-turn-node';
+import {
   $createAgentTurnNode,
   $isAgentTurnNode,
   type AgentTurnNode,
@@ -40,8 +45,13 @@ import {
 } from 'lexical';
 import { useEffect, useRef } from 'react';
 
-/** Any of the four turn blocks, once it is in the editor. */
-type TurnBlock = UserTurnNode | AgentTurnNode | ThinkingTurnNode | ToolTurnNode;
+/** Any of the five turn blocks, once it is in the editor. */
+type TurnBlock =
+  | UserTurnNode
+  | AgentTurnNode
+  | ThinkingTurnNode
+  | ToolTurnNode
+  | ActivityTurnNode;
 
 /**
  * A turn as the editor holds it: the turn's block, and the author line that
@@ -66,15 +76,18 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isUserTurnNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
-  $isToolTurnNode(node);
+  $isToolTurnNode(node) ||
+  $isActivityTurnNode(node);
 
 /**
- * A turn's identity across updates: the event that opened it. A run that keeps
- * streaming keeps its first event, so its key is stable while its text grows,
- * which is what lets an update land on the block already in the editor.
+ * A turn's identity across updates: the kind of turn it is and the event that
+ * opened it. A run that keeps streaming keeps its first event, so its key is
+ * stable while its text grows, which is what lets an update land on the block
+ * already in the editor. The kind is part of it because one block stands in for
+ * a burst of steps the reader watched as thinking and tool turns.
  */
 const turnKey = (turn: Turn): string =>
-  `${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
+  `${turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
 
 /** The block a turn becomes: one node class per kind of turn. */
 const $createBlock = (turn: Turn): TurnBlock => {
@@ -85,7 +98,20 @@ const $createBlock = (turn: Turn): TurnBlock => {
     case 'agent':
       return $createAgentTurnNode(key, turn.promptId, turn.status, turn.text);
     case 'thinking':
-      return $createThinkingTurnNode(key, turn.promptId, turn.text);
+      return $createThinkingTurnNode(
+        key,
+        turn.promptId,
+        turn.text,
+        turn.streaming,
+      );
+    case 'activity':
+      return $createActivityTurnNode(
+        key,
+        turn.promptId,
+        turn.thoughts,
+        turn.tools,
+        turn.items,
+      );
     case 'tool_call':
       return $createToolTurnNode(
         key,
@@ -121,13 +147,17 @@ const authorFor = (
  * Whether the turn trails the author line it should: a turn gains one it lacks
  * and loses one it should not wear. Its block stays where it is, so the line is
  * inserted after the block rather than regenerated with the root, and a line
- * that is only out of date keeps its element and takes the new time.
+ * that is only out of date keeps its element and takes the new time. Returns the
+ * line the turn now trails, so the sync can place the next block after it.
  */
-const $syncAuthor = (unit: TurnUnit, draft: AuthorDraft | null): void => {
+const $syncAuthor = (
+  unit: TurnUnit,
+  draft: AuthorDraft | null,
+): TurnAuthorNode | null => {
   const current = unit.author;
   if (draft === null) {
     current?.remove();
-    return;
+    return null;
   }
   if (
     current !== null &&
@@ -135,12 +165,12 @@ const $syncAuthor = (unit: TurnUnit, draft: AuthorDraft | null): void => {
     current.__name === draft.name
   ) {
     current.setAuthor(draft.at);
-    return;
+    return current;
   }
   current?.remove();
-  unit.block.insertAfter(
-    $createTurnAuthorNode(draft.role, draft.name, draft.at),
-  );
+  const author = $createTurnAuthorNode(draft.role, draft.name, draft.at);
+  unit.block.insertAfter(author);
+  return author;
 };
 
 /** Hands the block the chat's newest version of its turn. */
@@ -151,6 +181,8 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   else if (turn.type === 'thinking' && $isThinkingTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'tool_call' && $isToolTurnNode(block))
+    block.setTurn(turn);
+  else if (turn.type === 'activity' && $isActivityTurnNode(block))
     block.setTurn(turn);
 };
 
@@ -198,8 +230,9 @@ const $settlePrompt = (): UserPromptNode => {
  * Renders the chat's turns into the editor with no interaction: every turn is a
  * block, the prompt block and its author line are the last two, and the editor
  * is kept in step with the chat — a turn it updates is re-rendered where it
- * sits, one it adds is inserted above the prompt, and one it drops is removed.
- * The first sync also opens the surface, leaving the caret in the prompt.
+ * sits, one it adds is placed where it belongs in the transcript, and one it
+ * drops is removed. The first sync also opens the surface, leaving the caret in
+ * the prompt.
  */
 export function InsertThreadTurnNodes({
   turns,
@@ -242,25 +275,34 @@ export function InsertThreadTurnNodes({
 
       const prompt = $settlePrompt();
 
+      // A new block goes after the turn before it rather than always above the
+      // prompt: a burst that closes becomes one block where its steps were, in
+      // the middle of the transcript.
+      let previous: LexicalNode | null = null;
       for (const [index, turn] of turns.entries()) {
         const key = turnKey(turn);
         const draft = authorFor(turns, index);
 
         const unit = existing.get(key);
+        let block: TurnBlock;
 
         if (unit === undefined) {
-          const block = $createBlock(turn);
-          prompt.insertBefore(block);
-          if (draft !== null) {
-            block.insertAfter(
-              $createTurnAuthorNode(draft.role, draft.name, draft.at),
-            );
+          block = $createBlock(turn);
+          if (previous === null) {
+            const first = root.getFirstChild();
+            if (first === null) root.append(block);
+            else first.insertBefore(block);
+          } else {
+            previous.insertAfter(block);
           }
         } else {
-          $applyTurn(unit.block, turn);
+          block = unit.block;
+          $applyTurn(block, turn);
           existing.delete(key);
-          $syncAuthor(unit, draft);
         }
+
+        const author = $syncAuthor(unit ?? { author: null, block }, draft);
+        previous = author ?? block;
       }
 
       for (const { author, block } of existing.values()) {

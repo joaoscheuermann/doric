@@ -45,6 +45,12 @@ export type AgentTurn = TurnBase & {
 export type ThinkingTurn = TurnBase & {
   readonly type: 'thinking';
   readonly text: string;
+  /**
+   * Whether the log is still writing this run. Reasoning carries no lifecycle of
+   * its own, so it is derived: only the transcript's last turn can still be
+   * written, and only while its job has not settled.
+   */
+  readonly streaming: boolean;
 };
 
 /** One tool call, from `tool.started` to its `tool.finished`/`tool.failed`. */
@@ -60,8 +66,38 @@ export type ToolTurn = TurnBase & {
   readonly error?: string;
 };
 
+/** One grouped step of a completed burst: a run of reasoning, or a tool call. */
+export type ActivityItem =
+  | { readonly kind: 'thinking'; readonly text: string }
+  | {
+      readonly kind: 'tool';
+      readonly name: string;
+      readonly args: string;
+      readonly status: ToolStatus;
+      readonly result?: string;
+      readonly error?: string;
+    };
+
+/**
+ * A completed burst of the agent's reasoning and tool calls, kept as one block so
+ * a transcript is not a list of every step it took. Only the burst still being
+ * written stays as individual thinking and tool turns.
+ */
+export type ActivityTurn = TurnBase & {
+  readonly type: 'activity';
+  /** How many reasoning runs and tool calls the burst grouped. */
+  readonly thoughts: number;
+  readonly tools: number;
+  readonly items: readonly ActivityItem[];
+};
+
 /** One block of the conversation, in the order the log produced it. */
-export type Turn = UserTurn | AgentTurn | ThinkingTurn | ToolTurn;
+export type Turn =
+  | UserTurn
+  | AgentTurn
+  | ThinkingTurn
+  | ToolTurn
+  | ActivityTurn;
 
 export type Projection = {
   readonly events: readonly ThreadEvent[];
@@ -104,7 +140,13 @@ type Draft =
       text: string;
       status: PromptStatus;
     }
-  | { type: 'thinking'; promptId: string; events: ThreadEvent[]; text: string }
+  | {
+      type: 'thinking';
+      promptId: string;
+      events: ThreadEvent[];
+      text: string;
+      streaming: boolean;
+    }
   | {
       type: 'tool_call';
       promptId: string;
@@ -116,6 +158,79 @@ type Draft =
       result?: string;
       error?: string;
     };
+
+/** The draft a completed burst groups: a run of reasoning, or a tool call. */
+type BurstDraft = Extract<Draft, { type: 'thinking' | 'tool_call' }>;
+
+const isBurstDraft = (turn: Draft): turn is BurstDraft =>
+  turn.type === 'thinking' || turn.type === 'tool_call';
+
+/** One grouped step, in the shape a surface renders it. */
+const activityItem = (item: BurstDraft): ActivityItem =>
+  item.type === 'thinking'
+    ? { kind: 'thinking', text: item.text }
+    : {
+        kind: 'tool',
+        name: item.name,
+        args: item.args,
+        status: item.status,
+        ...(item.result === undefined ? {} : { result: item.result }),
+        ...(item.error === undefined ? {} : { error: item.error }),
+      };
+
+/** A burst, frozen into the one block that stands in for it. */
+const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
+  type: 'activity',
+  promptId: run[0]?.promptId ?? '',
+  events: run.flatMap((item) => item.events),
+  thoughts: run.filter((item) => item.type === 'thinking').length,
+  tools: run.filter((item) => item.type === 'tool_call').length,
+  items: run.map(activityItem),
+});
+
+/**
+ * The turns a surface renders: every burst of reasoning and tool calls that is
+ * done becomes one turn, while the burst the log is still writing — the
+ * transcript's last, in a job that has not settled — stays as its own steps, so
+ * the reader watches it as it happens.
+ */
+const grouped = (
+  turns: readonly Draft[],
+  status: ReadonlyMap<string, PromptStatus>,
+): readonly Turn[] => {
+  const last = turns.at(-1);
+  const writing = last !== undefined && !status.has(last.promptId);
+
+  const result: Turn[] = [];
+  let index = 0;
+  while (index < turns.length) {
+    const turn = turns[index];
+    if (turn === undefined || !isBurstDraft(turn)) {
+      if (turn !== undefined) result.push(turn);
+      index += 1;
+      continue;
+    }
+
+    let end = index;
+    while (end + 1 < turns.length) {
+      const next = turns[end + 1];
+      if (
+        next === undefined ||
+        !isBurstDraft(next) ||
+        next.promptId !== turn.promptId
+      )
+        break;
+      end += 1;
+    }
+
+    const run = turns.slice(index, end + 1).filter(isBurstDraft);
+    if (writing && end === turns.length - 1) result.push(...run);
+    else result.push(activity(run));
+    index = end + 1;
+  }
+
+  return result;
+};
 
 /** The tool turn a `tool.finished`/`tool.failed` belongs to, by call id. */
 const findTool = (
@@ -188,7 +303,13 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
         open.text += delta;
         open.events.push(item);
       } else {
-        turns.push({ type: 'thinking', promptId, events: [item], text: delta });
+        turns.push({
+          type: 'thinking',
+          promptId,
+          events: [item],
+          text: delta,
+          streaming: false,
+        });
       }
     } else if (event?.type === 'text.delta') {
       const delta = typeof event.delta === 'string' ? event.delta : '';
@@ -269,7 +390,14 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
     if (settled !== undefined) turn.status = settled;
   }
 
-  return turns;
+  // The transcript's last turn is the one the log is still writing, until its
+  // job settles; reasoning has no lifecycle of its own to read that from. That
+  // last burst is also the one a surface keeps whole instead of grouping.
+  const last = turns.at(-1);
+  if (last?.type === 'thinking' && !status.has(last.promptId))
+    last.streaming = true;
+
+  return grouped(turns, status);
 };
 
 const orderedUnique = (
