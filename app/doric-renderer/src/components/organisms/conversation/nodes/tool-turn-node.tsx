@@ -80,6 +80,16 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
+  /**
+   * A block, not an inline widget. `DecoratorNode` reports inline by default,
+   * and the rich-text root then wraps an inline child in a `ParagraphNode` —
+   * which hides this turn from the sync that keeps the transcript in step, so
+   * it is re-created on every update and the dividers around it land wrong.
+   */
+  override isInline(): boolean {
+    return false;
+  }
+
   override decorate(): JSX.Element {
     return (
       <div>

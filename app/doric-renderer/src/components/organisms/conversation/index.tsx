@@ -1,6 +1,7 @@
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
+import { TurnDividerNode } from '@/components/organisms/conversation/nodes/turn-divider-node';
 import {
   $createUserPromptNode,
   UserPromptNode,
@@ -209,6 +210,7 @@ const conversationExtension = defineExtension({
     AgentTurnNode,
     ThinkingTurnNode,
     ToolTurnNode,
+    TurnDividerNode,
     UserPromptNode,
   ],
 });
@@ -232,12 +234,6 @@ export function Conversation({
 
   return (
     <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
-      {/*
-       * The conversation reads as a centred column: it fills the pane up to a
-       * readable measure and centres there, and `px-4` is the least breathing
-       * room its sides keep once the pane is narrower than that measure. The
-       * `font-light` keeps the mono body from reading as heavy at length.
-       */}
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 text-sm font-light">
         <LexicalExtensionComposer
           extension={conversationExtension}

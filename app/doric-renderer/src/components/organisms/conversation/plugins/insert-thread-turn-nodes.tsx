@@ -14,6 +14,12 @@ import {
   type ToolTurnNode,
 } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import {
+  $createTurnDividerNode,
+  $isTurnDividerNode,
+  type DividerRole,
+  type TurnDividerNode,
+} from '@/components/organisms/conversation/nodes/turn-divider-node';
+import {
   $createUserPromptNode,
   $isUserPromptNode,
   type UserPromptNode,
@@ -35,6 +41,15 @@ import { useEffect, useRef } from 'react';
 
 /** Any of the four turn blocks, once it is in the editor. */
 type TurnBlock = UserTurnNode | AgentTurnNode | ThinkingTurnNode | ToolTurnNode;
+
+/**
+ * A turn as the editor holds it: the turn's block, and the divider that heads it
+ * when the turn is the agent's or the reader's — `null` for a turn without one.
+ */
+type TurnUnit = {
+  divider: TurnDividerNode | null;
+  block: TurnBlock;
+};
 
 const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isUserTurnNode(node) ||
@@ -70,6 +85,37 @@ const $createBlock = (turn: Turn): TurnBlock => {
         turn.status,
       );
   }
+};
+
+/**
+ * The divider that heads a turn, or `null` when it has none. The reader's own
+ * turn wears the person; an agent run — its reasoning, its tool calls and its
+ * answer alike — opens on its first turn with the bot, so a thinking turn right
+ * after the prompt is what wears it, not only a later answer.
+ */
+const dividerRole = (
+  turns: readonly Turn[],
+  index: number,
+): DividerRole | null => {
+  const turn = turns[index];
+  if (turn.type === 'user') return 'user';
+  const previous = index === 0 ? null : turns[index - 1];
+  return previous === null || previous.type === 'user' ? 'agent' : null;
+};
+
+/**
+ * Whether the turn wears the divider it should: a turn gains one it lacks, and
+ * loses or replaces one it should not wear. Its block stays where it is, so the
+ * divider is inserted before the block rather than regenerated with the root.
+ */
+const $syncDivider = (unit: TurnUnit, role: DividerRole | null): void => {
+  if (role === null) {
+    unit.divider?.remove();
+    return;
+  }
+  if (unit.divider?.__role === role) return;
+  unit.divider?.remove();
+  unit.block.insertBefore($createTurnDividerNode(role));
 };
 
 /** Hands the block the chat's newest version of its turn. */
@@ -130,27 +176,45 @@ export function InsertThreadTurnNodes({
 
     editor.update(() => {
       const root = $getRoot();
-      const existing = new Map<string, TurnBlock>();
+      const existing = new Map<string, TurnUnit>();
+      // A divider is read as the head of the turn that follows it. One that no
+      // turn follows is a leftover, so it is dropped rather than left behind.
+      let pending: TurnDividerNode | null = null;
       for (const node of root.getChildren()) {
-        if (isTurnBlock(node)) existing.set(node.__turnKey, node);
+        if ($isTurnDividerNode(node)) {
+          pending?.remove();
+          pending = node;
+          continue;
+        }
+        if (isTurnBlock(node)) {
+          existing.set(node.__turnKey, { block: node, divider: pending });
+          pending = null;
+        }
       }
+      pending?.remove();
 
       const prompt = $settlePrompt();
 
-      for (const turn of turns) {
+      for (const [index, turn] of turns.entries()) {
         const key = turnKey(turn);
+        const role = dividerRole(turns, index);
 
-        const block = existing.get(key);
+        const unit = existing.get(key);
 
-        if (block === undefined) {
+        if (unit === undefined) {
+          if (role !== null) prompt.insertBefore($createTurnDividerNode(role));
           prompt.insertBefore($createBlock(turn));
         } else {
-          $applyTurn(block, turn);
+          $applyTurn(unit.block, turn);
           existing.delete(key);
+          $syncDivider(unit, role);
         }
       }
 
-      for (const stale of existing.values()) stale.remove();
+      for (const { divider, block } of existing.values()) {
+        divider?.remove();
+        block.remove();
+      }
 
       // Seat the caret in the prompt as the surface opens. The editor is focused
       // before the first turn is in, when the root is still empty, so the
