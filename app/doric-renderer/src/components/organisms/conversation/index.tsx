@@ -234,7 +234,9 @@ export function Conversation({
 
   return (
     <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 text-sm font-light">
+      {/* The top padding keeps the first block off the header, since the
+          transcript grows from the top of the scroll view. */}
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 text-sm font-light">
         <LexicalExtensionComposer
           extension={conversationExtension}
           contentEditable={<ContentEditable className="flex-1 outline-none" />}
