@@ -3,7 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@lexical/clipboard": "^0.51.0",
     "@lexical/code": "^0.51.0",
+    "@lexical/extension": "^0.51.0",
+    "@lexical/history": "^0.51.0",
+    "@lexical/html": "^0.51.0",
     "@lexical/link": "^0.51.0",
     "@lexical/list": "^0.51.0",
     "@lexical/markdown": "^0.51.0",

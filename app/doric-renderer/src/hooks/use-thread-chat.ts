@@ -1,8 +1,8 @@
 import {
   emptyProjection,
   projectEvents,
-  type PromptTurn,
   sandboxWrites,
+  type Turn,
 } from '@/domain/projector';
 import { messageFrom, type Thread, type ThreadEvent } from '@/domain/workspace';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,7 +14,7 @@ export type ThreadChat = {
   /** Every event the Thread has, in durable order, deduplicated. */
   readonly events: readonly ThreadEvent[];
   /** The same log, projected into turns. */
-  readonly turns: readonly PromptTurn[];
+  readonly turns: readonly Turn[];
   /**
    * How many finished `write`, `edit` or `terminal` calls the log holds: the
    * signal that the sandbox the Thread shares has changed.

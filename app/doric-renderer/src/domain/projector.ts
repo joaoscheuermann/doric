@@ -9,17 +9,47 @@ export type PromptStatus =
   | 'failed'
   | 'cancelled';
 
-export type ThinkingSegment = {
-  readonly kind: 'thinking';
+export type ToolStatus = 'running' | 'finished' | 'failed';
+
+/** What every turn shares: the prompt job it belongs to, and its own events. */
+type TurnBase = {
+  /**
+   * The prompt job this turn belongs to. One job emits several turns, and a
+   * rewind names a prompt, so the id is what ties them back together.
+   */
+  readonly promptId: string;
+  /** The events this turn was projected from, in log order. */
+  readonly events: readonly ThreadEvent[];
+};
+
+/** The human's prompt, or another Thread's input, opening a job. */
+export type UserTurn = TurnBase & {
+  readonly type: 'user';
+  /** The prompt as written; empty when another Thread wrote it. */
+  readonly text: string;
+  readonly accepted: boolean;
+  /** Set when another Thread wrote this input rather than the human. */
+  readonly delegated?: DelegatedInput;
+};
+
+/** A run of the agent's user-visible text: one answer, streaming and settled. */
+export type AgentTurn = TurnBase & {
+  readonly type: 'agent';
+  /** The run's text: its deltas, then the finished text when it is the last. */
+  readonly text: string;
+  /** The job's lifecycle, so a surface can show progress, failure, cancellation. */
+  readonly status: PromptStatus;
+};
+
+/** A run of the agent's reasoning, kept apart from the text it produced. */
+export type ThinkingTurn = TurnBase & {
+  readonly type: 'thinking';
   readonly text: string;
 };
 
-export type TextSegment = { readonly kind: 'text'; readonly text: string };
-
-export type ToolStatus = 'running' | 'finished' | 'failed';
-
-export type ToolSegment = {
-  readonly kind: 'tool';
+/** One tool call, from `tool.started` to its `tool.finished`/`tool.failed`. */
+export type ToolTurn = TurnBase & {
+  readonly type: 'tool_call';
   readonly callId: string;
   readonly name: string;
   /** One-line JSON of the call payload, ready for a truncated preview. */
@@ -30,23 +60,12 @@ export type ToolSegment = {
   readonly error?: string;
 };
 
-export type PromptSegment = ThinkingSegment | TextSegment | ToolSegment;
-
-export type PromptTurn = {
-  readonly promptId: string;
-  readonly sequence: number;
-  readonly inputRole: 'user' | 'agent';
-  readonly accepted: boolean;
-  readonly userMarkdown: string;
-  /** Set when another Thread wrote this turn's input rather than the human. */
-  readonly delegated?: DelegatedInput;
-  readonly segments: readonly PromptSegment[];
-  readonly status: PromptStatus;
-};
+/** One block of the conversation, in the order the log produced it. */
+export type Turn = UserTurn | AgentTurn | ThinkingTurn | ToolTurn;
 
 export type Projection = {
   readonly events: readonly ThreadEvent[];
-  readonly turns: readonly PromptTurn[];
+  readonly turns: readonly Turn[];
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -60,9 +79,6 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
-const sourceRole = (value: unknown): PromptTurn['inputRole'] =>
-  record(value)?.kind === 'user' ? 'user' : 'agent';
-
 const oneLineJson = (value: unknown): string => {
   try {
     return JSON.stringify(value) ?? '';
@@ -71,176 +87,189 @@ const oneLineJson = (value: unknown): string => {
   }
 };
 
-/** Appends a delta to a trailing run of the same kind, or starts a new one. */
-const appendDelta = (
-  segments: readonly PromptSegment[],
-  kind: 'thinking' | 'text',
-  delta: string,
-): readonly PromptSegment[] => {
-  const last = segments.at(-1);
-  if (last?.kind === kind) {
-    return [...segments.slice(0, -1), { kind, text: last.text + delta }];
+/** A turn while it is still being built; frozen into a `Turn` at the end. */
+type Draft =
+  | {
+      type: 'user';
+      promptId: string;
+      events: ThreadEvent[];
+      text: string;
+      accepted: boolean;
+      delegated?: DelegatedInput;
+    }
+  | {
+      type: 'agent';
+      promptId: string;
+      events: ThreadEvent[];
+      text: string;
+      status: PromptStatus;
+    }
+  | { type: 'thinking'; promptId: string; events: ThreadEvent[]; text: string }
+  | {
+      type: 'tool_call';
+      promptId: string;
+      events: ThreadEvent[];
+      callId: string;
+      name: string;
+      args: string;
+      status: ToolStatus;
+      result?: string;
+      error?: string;
+    };
+
+/** The tool turn a `tool.finished`/`tool.failed` belongs to, by call id. */
+const findTool = (
+  turns: readonly Draft[],
+  promptId: string,
+  callId: unknown,
+): Draft | undefined => {
+  if (typeof callId !== 'string') return undefined;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (
+      turn?.type === 'tool_call' &&
+      turn.promptId === promptId &&
+      turn.callId === callId
+    ) {
+      return turn;
+    }
   }
-  return [...segments, { kind, text: delta }];
+  return undefined;
+};
+
+/** The last agent turn of a job, which the finished text replaces. */
+const lastAgent = (
+  turns: readonly Draft[],
+  promptId: string,
+): Draft | undefined => {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn?.type === 'agent' && turn.promptId === promptId) return turn;
+  }
+  return undefined;
 };
 
 /**
- * Replaces the last text segment, appending one when the turn has none. An
- * empty replacement never appends, so a turn that produced no text stays empty.
+ * The conversation a log holds: one turn per contiguous run of events, in the
+ * order the log produced them. A human prompt, an agent answer, its reasoning
+ * and each tool call are their own turn, so a surface renders a transcript
+ * rather than one lump per prompt.
+ *
+ * A delta extends the turn it continues only while that turn is still the last
+ * one written, so reasoning, text and tools that interleave stay in order. The
+ * job's lifecycle is one value, carried by each of its agent turns.
  */
-const withLastText = (
-  segments: readonly PromptSegment[],
-  text: string,
-): readonly PromptSegment[] => {
-  let index = -1;
-  for (let position = segments.length - 1; position >= 0; position -= 1) {
-    if (segments[position]?.kind === 'text') {
-      index = position;
-      break;
-    }
-  }
-  if (index === -1)
-    return text.length === 0 ? segments : [...segments, { kind: 'text', text }];
-  return segments.map((segment, position) =>
-    position === index ? { kind: 'text', text } : segment,
-  );
-};
+const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
+  const turns: Draft[] = [];
+  const status = new Map<string, PromptStatus>();
 
-/** Mutates the tool segment whose `callId` matches, leaving others untouched. */
-const updateTool = (
-  segments: readonly PromptSegment[],
-  callId: string,
-  patch: Partial<ToolSegment>,
-): readonly PromptSegment[] =>
-  segments.map((segment) =>
-    segment.kind === 'tool' && segment.callId === callId
-      ? { ...segment, ...patch }
-      : segment,
-  );
-
-const toolStarted = (
-  segments: readonly PromptSegment[],
-  call: unknown,
-): readonly PromptSegment[] => {
-  const value = record(call);
-  if (typeof value?.id !== 'string') return segments;
-  return [
-    ...segments,
-    {
-      kind: 'tool',
-      callId: value.id,
-      name: typeof value.name === 'string' ? value.name : '',
-      args: oneLineJson(value.payload),
-      status: 'running',
-    },
-  ];
-};
-
-const project = (events: readonly ThreadEvent[]): readonly PromptTurn[] => {
-  const turns = new Map<string, PromptTurn>();
   for (const item of events) {
     if (record(item.event)?.type === 'history.truncated') continue;
-    const current = turns.get(item.promptId) ?? {
-      promptId: item.promptId,
-      sequence: item.sequence,
-      inputRole: 'user' as const,
-      accepted: false,
-      userMarkdown: '',
-      segments: [],
-      status: 'queued' as const,
-    };
     const event = record(item.event);
+    const promptId = item.promptId;
+    const last = turns.at(-1);
+    const open =
+      last !== undefined && last.promptId === promptId ? last : undefined;
+
     if (event?.type === 'prompt.accepted') {
       const text = typeof event.text === 'string' ? event.text : '';
       const delegated = delegatedInput(event.source, text);
-      turns.set(item.promptId, {
-        ...current,
-        inputRole: sourceRole(event.source),
+      turns.push({
+        type: 'user',
+        promptId,
+        events: [item],
+        text: delegated === undefined ? text : '',
         accepted: true,
-        userMarkdown: delegated === undefined ? text : '',
         ...(delegated === undefined ? {} : { delegated }),
       });
     } else if (event?.type === 'reasoning.delta') {
-      turns.set(item.promptId, {
-        ...current,
-        segments: appendDelta(
-          current.segments,
-          'thinking',
-          typeof event.delta === 'string' ? event.delta : '',
-        ),
-        status: 'streaming',
-      });
+      const delta = typeof event.delta === 'string' ? event.delta : '';
+      if (open?.type === 'thinking') {
+        open.text += delta;
+        open.events.push(item);
+      } else {
+        turns.push({ type: 'thinking', promptId, events: [item], text: delta });
+      }
     } else if (event?.type === 'text.delta') {
-      turns.set(item.promptId, {
-        ...current,
-        segments: appendDelta(
-          current.segments,
-          'text',
-          typeof event.delta === 'string' ? event.delta : '',
-        ),
-        status: 'streaming',
-      });
+      const delta = typeof event.delta === 'string' ? event.delta : '';
+      if (open?.type === 'agent') {
+        open.text += delta;
+        open.events.push(item);
+      } else {
+        turns.push({
+          type: 'agent',
+          promptId,
+          events: [item],
+          text: delta,
+          status: 'streaming',
+        });
+      }
     } else if (event?.type === 'tool.started') {
-      turns.set(item.promptId, {
-        ...current,
-        segments: toolStarted(current.segments, event.call),
-        status: 'streaming',
+      const call = record(event.call);
+      turns.push({
+        type: 'tool_call',
+        promptId,
+        events: [item],
+        callId: typeof call?.id === 'string' ? call.id : '',
+        name: typeof call?.name === 'string' ? call.name : '',
+        args: oneLineJson(call?.payload),
+        status: 'running',
       });
     } else if (event?.type === 'tool.finished') {
       const call = record(event.call);
       const output = record(event.record)?.output;
-      turns.set(item.promptId, {
-        ...current,
-        segments:
-          typeof call?.id === 'string'
-            ? updateTool(current.segments, call.id, {
-                status: 'finished',
-                result: typeof output === 'string' ? output : '',
-              })
-            : current.segments,
-        status: 'streaming',
-      });
+      const tool = findTool(turns, promptId, call?.id);
+      if (tool?.type === 'tool_call') {
+        tool.status = 'finished';
+        tool.result = typeof output === 'string' ? output : '';
+        tool.events.push(item);
+      }
     } else if (event?.type === 'tool.failed') {
       const call = record(event.call);
       const message = record(event.error)?.message;
-      turns.set(item.promptId, {
-        ...current,
-        segments:
-          typeof call?.id === 'string'
-            ? updateTool(current.segments, call.id, {
-                status: 'failed',
-                error: typeof message === 'string' ? message : '',
-              })
-            : current.segments,
-        status: 'streaming',
-      });
+      const tool = findTool(turns, promptId, call?.id);
+      if (tool?.type === 'tool_call') {
+        tool.status = 'failed';
+        tool.error = typeof message === 'string' ? message : '';
+        tool.events.push(item);
+      }
     } else if (event?.type === 'prompt.finished') {
-      const status = terminalStatus(
+      const terminal = terminalStatus(
         typeof event.status === 'string' ? event.status : 'completed',
       );
-      const finishedText = typeof event.text === 'string' ? event.text : '';
-      const hasText = current.segments.some(
-        (segment) => segment.kind === 'text',
-      );
-      turns.set(item.promptId, {
-        ...current,
-        segments:
-          status === 'completed' || !hasText
-            ? withLastText(current.segments, finishedText)
-            : current.segments,
-        status,
-      });
+      const finished = typeof event.text === 'string' ? event.text : '';
+      const agent = lastAgent(turns, promptId);
+      // A finished run is authoritative; a failed one keeps whatever streamed,
+      // unless it streamed nothing and the host still named a result.
+      if (terminal === 'completed' || agent === undefined) {
+        if (agent?.type === 'agent') {
+          agent.text = finished;
+          agent.events.push(item);
+        } else if (finished.length > 0) {
+          turns.push({
+            type: 'agent',
+            promptId,
+            events: [item],
+            text: finished,
+            status: terminal,
+          });
+        }
+      }
+      status.set(promptId, terminal);
     } else if (event?.type === 'agent.failed') {
-      turns.set(item.promptId, { ...current, status: 'failed' });
+      status.set(promptId, 'failed');
     } else if (event?.type === 'agent.cancelled') {
-      turns.set(item.promptId, { ...current, status: 'cancelled' });
-    } else {
-      turns.set(item.promptId, current);
+      status.set(promptId, 'cancelled');
     }
   }
-  return [...turns.values()].sort(
-    (left, right) => left.sequence - right.sequence,
-  );
+
+  for (const turn of turns) {
+    if (turn.type !== 'agent') continue;
+    const settled = status.get(turn.promptId);
+    if (settled !== undefined) turn.status = settled;
+  }
+
+  return turns;
 };
 
 const orderedUnique = (

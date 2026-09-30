@@ -21,7 +21,6 @@ import {
   Empty,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
@@ -30,7 +29,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
 import { useProjectFiles } from '@/hooks/use-project-files';
 import { useWorkspace } from '@/hooks/use-workspace';
-import { FileTextIcon } from 'lucide-react';
 import { type CSSProperties, useCallback, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
@@ -152,9 +150,6 @@ export function App() {
               ) : (
                 <Empty>
                   <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <FileTextIcon />
-                    </EmptyMedia>
                     <EmptyTitle>No thread selected</EmptyTitle>
                     <EmptyDescription>
                       Select a thread to open its conversation.
