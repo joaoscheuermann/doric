@@ -14,11 +14,11 @@ import {
   type ToolTurnNode,
 } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import {
-  $createTurnDividerNode,
-  $isTurnDividerNode,
-  type DividerRole,
-  type TurnDividerNode,
-} from '@/components/organisms/conversation/nodes/turn-divider-node';
+  $createTurnAuthorNode,
+  $isTurnAuthorNode,
+  type AuthorRole,
+  type TurnAuthorNode,
+} from '@/components/organisms/conversation/nodes/turn-author-node';
 import {
   $createUserPromptNode,
   $isUserPromptNode,
@@ -43,12 +43,27 @@ import { useEffect, useRef } from 'react';
 type TurnBlock = UserTurnNode | AgentTurnNode | ThinkingTurnNode | ToolTurnNode;
 
 /**
- * A turn as the editor holds it: the turn's block, and the divider that heads it
- * when the turn is the agent's or the reader's — `null` for a turn without one.
+ * A turn as the editor holds it: the turn's block, and the author line that
+ * trails it when it wears one — `null` for a turn without one.
  */
 type TurnUnit = {
-  divider: TurnDividerNode | null;
+  author: TurnAuthorNode | null;
   block: TurnBlock;
+};
+
+/**
+ * The names the author lines show. Both are fixed for now — the reader's own
+ * identity and the agent's are not in the projection yet — so the day they
+ * arrive, these two constants are what is replaced.
+ */
+const USER_NAME = 'jao.scheuermann';
+const AGENT_NAME = 'agent';
+
+/** An author line as the sync builds it, before it is a node. */
+type AuthorDraft = {
+  role: AuthorRole;
+  name: string;
+  at: string | undefined;
 };
 
 const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
@@ -88,34 +103,48 @@ const $createBlock = (turn: Turn): TurnBlock => {
 };
 
 /**
- * The divider that heads a turn, or `null` when it has none. The reader's own
- * turn wears the person; an agent run — its reasoning, its tool calls and its
- * answer alike — opens on its first turn with the bot, so a thinking turn right
- * after the prompt is what wears it, not only a later answer.
+ * The author line a turn trails, or `null` when it wears none. The reader's own
+ * turn always wears one. So does the agent, but only on the last turn of its run
+ * — the one before the next user turn — so the line trails the run's whole
+ * reasoning, tool calls and answer rather than its first turn.
  */
-const dividerRole = (
+const authorFor = (
   turns: readonly Turn[],
   index: number,
-): DividerRole | null => {
+): AuthorDraft | null => {
   const turn = turns[index];
-  if (turn.type === 'user') return 'user';
-  const previous = index === 0 ? null : turns[index - 1];
-  return previous === null || previous.type === 'user' ? 'agent' : null;
+  const at = turn.events.at(-1)?.createdAt;
+  if (turn.type === 'user') return { role: 'user', name: USER_NAME, at };
+  const next = turns[index + 1];
+  return next === undefined || next.type === 'user'
+    ? { role: 'agent', name: AGENT_NAME, at }
+    : null;
 };
 
 /**
- * Whether the turn wears the divider it should: a turn gains one it lacks, and
- * loses or replaces one it should not wear. Its block stays where it is, so the
- * divider is inserted before the block rather than regenerated with the root.
+ * Whether the turn trails the author line it should: a turn gains one it lacks
+ * and loses one it should not wear. Its block stays where it is, so the line is
+ * inserted after the block rather than regenerated with the root, and a line
+ * that is only out of date keeps its element and takes the new time.
  */
-const $syncDivider = (unit: TurnUnit, role: DividerRole | null): void => {
-  if (role === null) {
-    unit.divider?.remove();
+const $syncAuthor = (unit: TurnUnit, draft: AuthorDraft | null): void => {
+  const current = unit.author;
+  if (draft === null) {
+    current?.remove();
     return;
   }
-  if (unit.divider?.__role === role) return;
-  unit.divider?.remove();
-  unit.block.insertBefore($createTurnDividerNode(role));
+  if (
+    current !== null &&
+    current.__role === draft.role &&
+    current.__name === draft.name
+  ) {
+    current.setAuthor(draft.at);
+    return;
+  }
+  current?.remove();
+  unit.block.insertAfter(
+    $createTurnAuthorNode(draft.role, draft.name, draft.at),
+  );
 };
 
 /** Hands the block the chat's newest version of its turn. */
@@ -177,42 +206,51 @@ export function InsertThreadTurnNodes({
     editor.update(() => {
       const root = $getRoot();
       const existing = new Map<string, TurnUnit>();
-      // A divider is read as the head of the turn that follows it. One that no
-      // turn follows is a leftover, so it is dropped rather than left behind.
-      let pending: TurnDividerNode | null = null;
+      // An author line is read as the tail of the turn block before it. One that
+      // no turn precedes is a leftover, so it is dropped rather than left behind.
+      let trailing: TurnBlock | null = null;
       for (const node of root.getChildren()) {
-        if ($isTurnDividerNode(node)) {
-          pending?.remove();
-          pending = node;
+        if (isTurnBlock(node)) {
+          existing.set(node.__turnKey, { block: node, author: null });
+          trailing = node;
           continue;
         }
-        if (isTurnBlock(node)) {
-          existing.set(node.__turnKey, { block: node, divider: pending });
-          pending = null;
+        if ($isTurnAuthorNode(node)) {
+          const unit =
+            trailing === null ? undefined : existing.get(trailing.__turnKey);
+          if (unit === undefined) node.remove();
+          else unit.author = node;
+          trailing = null;
+          continue;
         }
+        trailing = null;
       }
-      pending?.remove();
 
       const prompt = $settlePrompt();
 
       for (const [index, turn] of turns.entries()) {
         const key = turnKey(turn);
-        const role = dividerRole(turns, index);
+        const draft = authorFor(turns, index);
 
         const unit = existing.get(key);
 
         if (unit === undefined) {
-          if (role !== null) prompt.insertBefore($createTurnDividerNode(role));
-          prompt.insertBefore($createBlock(turn));
+          const block = $createBlock(turn);
+          prompt.insertBefore(block);
+          if (draft !== null) {
+            block.insertAfter(
+              $createTurnAuthorNode(draft.role, draft.name, draft.at),
+            );
+          }
         } else {
           $applyTurn(unit.block, turn);
           existing.delete(key);
-          $syncDivider(unit, role);
+          $syncAuthor(unit, draft);
         }
       }
 
-      for (const { divider, block } of existing.values()) {
-        divider?.remove();
+      for (const { author, block } of existing.values()) {
+        author?.remove();
         block.remove();
       }
 

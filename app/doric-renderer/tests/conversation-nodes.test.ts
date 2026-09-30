@@ -7,7 +7,7 @@ import {
   isUndeletableBlock,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
-  TURN_DIVIDER_BLOCK,
+  TURN_AUTHOR_BLOCK,
   USER_PROMPT_BLOCK,
   USER_TURN_BLOCK,
 } from '../src/domain/conversation-nodes';
@@ -15,7 +15,7 @@ import {
 describe('what a conversation block allows', () => {
   test('keeps every block a deletion could reach', () => {
     for (const type of [
-      TURN_DIVIDER_BLOCK,
+      TURN_AUTHOR_BLOCK,
       USER_TURN_BLOCK,
       AGENT_TURN_BLOCK,
       THINKING_TURN_BLOCK,

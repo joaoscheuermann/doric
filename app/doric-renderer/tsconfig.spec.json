@@ -25,6 +25,7 @@
     "src/domain/selection.ts",
     "src/domain/settings-search.ts",
     "src/utility/oklch.ts",
+    "src/utility/relative-time.ts",
     "tests/**/*.ts"
   ]
 }

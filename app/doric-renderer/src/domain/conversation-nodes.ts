@@ -14,14 +14,14 @@ export const THINKING_TURN_BLOCK = 'thinking-turn-node';
 export const TOOL_TURN_BLOCK = 'tool-turn-node';
 export const USER_TURN_BLOCK = 'user-turn-node';
 
-/** The rule and icon that open the agent's and the reader's turns. */
-export const TURN_DIVIDER_BLOCK = 'turn-divider-node';
+/** The author line that trails the agent's and the reader's turns. */
+export const TURN_AUTHOR_BLOCK = 'turn-author-node';
 
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
 
 const UNDELETABLE = new Set([
-  TURN_DIVIDER_BLOCK,
+  TURN_AUTHOR_BLOCK,
   AGENT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,

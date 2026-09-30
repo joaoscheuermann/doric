@@ -16,6 +16,7 @@
     "@tanstack/react-table": "^9.2.4",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
+    "jdenticon": "^3.3.0",
     "lexical": "^0.51.0",
     "lucide-react": "^0.544.0",
     "monaco-editor": "^0.56.0",

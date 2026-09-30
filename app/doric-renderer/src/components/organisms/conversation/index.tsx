@@ -1,7 +1,7 @@
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
-import { TurnDividerNode } from '@/components/organisms/conversation/nodes/turn-divider-node';
+import { TurnAuthorNode } from '@/components/organisms/conversation/nodes/turn-author-node';
 import {
   $createUserPromptNode,
   UserPromptNode,
@@ -210,7 +210,7 @@ const conversationExtension = defineExtension({
     AgentTurnNode,
     ThinkingTurnNode,
     ToolTurnNode,
-    TurnDividerNode,
+    TurnAuthorNode,
     UserPromptNode,
   ],
 });

@@ -56,7 +56,8 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
    * A block, not an inline widget. `DecoratorNode` reports inline by default,
    * and the rich-text root then wraps an inline child in a `ParagraphNode` —
    * which hides this turn from the sync that keeps the transcript in step, so
-   * it is re-created on every update and the dividers around it land wrong.
+   * it is re-created on every update and the author line that should trail the
+   * run lands on the wrong turn.
    */
   override isInline(): boolean {
     return false;
