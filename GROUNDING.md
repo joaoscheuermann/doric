@@ -84,9 +84,9 @@ submit button and that log rendered verbatim as JSON, with no styling.
 PostgreSQL Thread events remain the sole conversation-history source. Because that
 rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
 tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
-only, and the faces vendored under `src/assets/fonts` are the repository's only
-ones: Noto Sans for the app, Noto Serif, and IBM Plex Mono for the conversation
-body. The sidebar tree follows the selected Project's live
+only, and the one face vendored under `src/assets/fonts` is the repository's only
+one: IBM Plex Mono, worn by the app and the conversation body alike. The sidebar
+tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh. The selected Thread
 persists locally across app
