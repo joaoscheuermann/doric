@@ -7,6 +7,8 @@ import {
   type Spread,
 } from 'lexical';
 
+import { CONVERSATION_FONT_CLASS } from './conversation-font';
+
 const placeholder = 'Enter some rich text…';
 
 export type SerializedUserPromptNode = Spread<
@@ -39,7 +41,7 @@ export class UserPromptNode extends ElementNode {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = 'min-h-24 outline-none';
+    dom.className = `min-h-24 outline-none ${CONVERSATION_FONT_CLASS}`;
     this.$applyPlaceholder(dom);
     return dom;
   }

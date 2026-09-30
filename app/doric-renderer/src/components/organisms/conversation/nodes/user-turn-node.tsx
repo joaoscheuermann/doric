@@ -10,6 +10,8 @@ import {
   type Spread,
 } from 'lexical';
 
+import { CONVERSATION_FONT_CLASS } from './conversation-font';
+
 export type SerializedUserTurnNode = Spread<
   { turnKey: string; promptId: string; delegated?: DelegatedInput },
   SerializedElementNode
@@ -56,7 +58,9 @@ export class UserTurnNode extends ElementNode {
   }
 
   override createDOM(): HTMLElement {
-    return document.createElement('div');
+    const dom = document.createElement('div');
+    dom.className = CONVERSATION_FONT_CLASS;
+    return dom;
   }
 
   override updateDOM(): boolean {

@@ -9,6 +9,8 @@ import {
 } from 'lexical';
 import { JSX } from 'react/jsx-runtime';
 
+import { CONVERSATION_FONT_CLASS } from './conversation-font';
+
 export type SerializedThinkingTurnNode = Spread<
   { turnKey: string; promptId: string; text: string },
   SerializedLexicalNode
@@ -41,7 +43,9 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   override createDOM(): HTMLElement {
-    return document.createElement('div');
+    const dom = document.createElement('div');
+    dom.className = CONVERSATION_FONT_CLASS;
+    return dom;
   }
 
   override updateDOM(): boolean {
