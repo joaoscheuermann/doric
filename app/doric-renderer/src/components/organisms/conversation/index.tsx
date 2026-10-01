@@ -9,6 +9,7 @@ import {
 } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
+import { MarkdownPromptPlugin } from '@/components/organisms/conversation/plugins/markdown-prompt';
 import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugins/read-only-blocks';
 import { SendPrompt } from '@/components/organisms/conversation/plugins/send-prompt';
 import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
@@ -21,6 +22,7 @@ import { withPendingTurns } from '@/domain/pending-turns';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
+import { CodeNode } from '@lexical/code';
 import {
   AutoFocusExtension,
   EditorStateExtension,
@@ -34,10 +36,12 @@ import {
   DOMRenderExtension,
   sel,
 } from '@lexical/html';
+import { LinkNode } from '@lexical/link';
+import { ListItemNode, ListNode } from '@lexical/list';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
-import { RichTextExtension } from '@lexical/rich-text';
+import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import {
   $getRoot,
   $isTextNode,
@@ -59,6 +63,7 @@ const exampleTheme: EditorThemeClasses = {
     h3: 'editor-heading-h3',
     h4: 'editor-heading-h4',
     h5: 'editor-heading-h5',
+    h6: 'editor-heading-h6',
   },
   image: 'editor-image',
   link: 'editor-link',
@@ -217,6 +222,14 @@ const conversationExtension = defineExtension({
     TurnAuthorNode,
     ActivityTurnNode,
     UserPromptNode,
+    // The blocks the agent's markdown becomes; a heading, a quote, a list and a
+    // fence are nodes the editor has to know to hold the answer's own text.
+    HeadingNode,
+    QuoteNode,
+    ListNode,
+    ListItemNode,
+    CodeNode,
+    LinkNode,
   ],
 });
 
@@ -258,6 +271,7 @@ export function Conversation({
             isUndeletable={isUndeletableBlock}
           />
           <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+          <MarkdownPromptPlugin />
           <InsertThreadTurnNodes turns={turns} />
           <SendPrompt send={chat.prompt} />
         </LexicalExtensionComposer>

@@ -1,7 +1,6 @@
 import { AGENT_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { AgentTurn, PromptStatus } from '@/domain/projector';
 import {
-  $createTextNode,
   ElementNode,
   type LexicalNode,
   type NodeKey,
@@ -10,6 +9,7 @@ import {
 } from 'lexical';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
+import { $appendMarkdown } from './markdown-blocks';
 
 export type SerializedAgentTurnNode = Spread<
   { turnKey: string; promptId: string; status: PromptStatus },
@@ -18,21 +18,26 @@ export type SerializedAgentTurnNode = Spread<
 
 /**
  * A run of the agent's answer as a block the reader can read and move the caret
- * through, but not edit: the chat owns the text. Its text lives as a child node
- * so the caret reaches it like any other rich text.
+ * through, but not edit: the chat owns the text. Its text lives as child nodes
+ * so the caret reaches it like any other rich text, and those children are the
+ * markdown the answer was written in — read as blocks, with every marker kept,
+ * so the transcript styles what the model wrote instead of replacing it.
  */
 export class AgentTurnNode extends ElementNode {
   __turnKey: string;
   __promptId: string;
   __status: PromptStatus;
-  /** The text the chat last wrote, so an edit by the reader survives a sync. */
+  /** The markdown the chat last wrote, so an edit by the reader survives a sync. */
   __synced: string;
+  /** The text the children were last built into, for the same guard. */
+  __written: string;
 
   constructor(
     turnKey: string,
     promptId: string,
     status: PromptStatus,
     text: string,
+    written: string,
     key?: NodeKey,
   ) {
     super(key);
@@ -40,6 +45,7 @@ export class AgentTurnNode extends ElementNode {
     this.__promptId = promptId;
     this.__status = status;
     this.__synced = text.trim();
+    this.__written = written;
   }
 
   static override getType(): string {
@@ -52,6 +58,7 @@ export class AgentTurnNode extends ElementNode {
       node.__promptId,
       node.__status,
       node.__synced,
+      node.__written,
       node.__key,
     );
   }
@@ -79,15 +86,24 @@ export class AgentTurnNode extends ElementNode {
     this.getWritable().__status = status;
   }
 
-  /** Take the chat's latest text, unless the reader has edited this block. */
+  /**
+   * Take the chat's latest markdown, unless the reader has edited this block
+   * since the last sync — then their words win and the chat leaves it alone. The
+   * children are rebuilt from the source as the markdown says they should be,
+   * never rewritten: what the block holds is still what the model wrote.
+   */
   setTurn(turn: AgentTurn): void {
     const writable = this.getWritable();
     if (writable.__status !== turn.status) writable.__status = turn.status;
-    if (this.getTextContent() !== this.__synced) return;
+
     const value = turn.text.trim();
+    if (value === writable.__synced) return;
+    if (this.getTextContent() !== writable.__written) return;
+
     writable.clear();
-    if (value.length > 0) writable.append($createTextNode(value));
     writable.__synced = value;
+    if (value.length > 0) $appendMarkdown(writable, value);
+    writable.__written = writable.getTextContent();
   }
 
   override exportJSON(): SerializedAgentTurnNode {
@@ -118,8 +134,9 @@ export function $createAgentTurnNode(
   text: string,
 ): AgentTurnNode {
   const value = text.trim();
-  const node = new AgentTurnNode(turnKey, promptId, status, value);
-  if (value.length > 0) node.append($createTextNode(value));
+  const node = new AgentTurnNode(turnKey, promptId, status, value, '');
+  if (value.length > 0) $appendMarkdown(node, value);
+  node.__written = node.getTextContent();
   return node;
 }
 

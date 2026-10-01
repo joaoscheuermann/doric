@@ -2,7 +2,6 @@ import { USER_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { DelegatedInput } from '@/domain/delegated';
 import type { UserTurn } from '@/domain/projector';
 import {
-  $createTextNode,
   ElementNode,
   type LexicalNode,
   type NodeKey,
@@ -11,6 +10,7 @@ import {
 } from 'lexical';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
+import { $appendMarkdown } from './markdown-blocks';
 
 /**
  * How a prompt the host has not accepted yet is drawn: the reader's own words,
@@ -32,6 +32,11 @@ export type SerializedUserTurnNode = Spread<
  * The human's prompt as an editable block — or another Thread's input, when
  * `delegated` is set. The text lives as a child node, so the editor owns it:
  * selection, typing and undo all work on it like any other rich text.
+ * The text lives as child nodes, so the editor owns it: selection, typing and
+ * undo all work on it like any other rich text — and those children are the
+ * markdown the reader wrote, read as blocks with their markers kept, so a prompt
+ * reads in the transcript the way it was written and the way it read in the
+ * input.
  *
  * A prompt the host has not accepted yet is drawn dimmed. That block is only
  * ever the reader's words sent a moment ago, drawn before the log holds them,
@@ -43,14 +48,17 @@ export class UserTurnNode extends ElementNode {
   __promptId: string;
   __delegated?: DelegatedInput;
   __accepted: boolean;
-  /** The text the chat last wrote, so an edit by the reader survives a sync. */
+  /** The markdown the chat last wrote, so an edit by the reader survives a sync. */
   __synced: string;
+  /** The text the children were last built into, for the same guard. */
+  __written: string;
 
   constructor(
     turnKey: string,
     promptId: string,
     delegated: DelegatedInput | undefined,
     text: string,
+    written: string,
     accepted: boolean,
     key?: NodeKey,
   ) {
@@ -60,6 +68,7 @@ export class UserTurnNode extends ElementNode {
     this.__delegated = delegated;
     this.__accepted = accepted;
     this.__synced = text.trim();
+    this.__written = written;
   }
 
   static override getType(): string {
@@ -72,6 +81,7 @@ export class UserTurnNode extends ElementNode {
       node.__promptId,
       node.__delegated,
       node.__synced,
+      node.__written,
       node.__accepted,
       node.__key,
     );
@@ -94,16 +104,22 @@ export class UserTurnNode extends ElementNode {
   }
 
   /**
-   * Take the chat's latest text, unless the reader has edited this block since
-   * the last sync — then their words win and the chat leaves it alone.
+   * Take the chat's latest markdown, unless the reader has edited this block
+   * since the last sync — then their words win and the chat leaves it alone. The
+   * children are rebuilt from the source as the markdown says they should be,
+   * never rewritten: what the block holds is still what the reader wrote.
    */
   setTurn(turn: UserTurn): void {
-    if (this.getTextContent() !== this.__synced) return;
+    if (this.getTextContent() !== this.__written) return;
+
     const value = turn.text.trim();
+    if (value === this.__synced) return;
+
     const writable = this.getWritable();
     writable.clear();
-    if (value.length > 0) writable.append($createTextNode(value));
     writable.__synced = value;
+    if (value.length > 0) $appendMarkdown(writable, value);
+    writable.__written = writable.getTextContent();
   }
 
   override exportJSON(): SerializedUserTurnNode {
@@ -137,8 +153,16 @@ export function $createUserTurnNode(
   accepted: boolean,
 ): UserTurnNode {
   const value = text.trim();
-  const node = new UserTurnNode(turnKey, promptId, delegated, value, accepted);
-  if (value.length > 0) node.append($createTextNode(value));
+  const node = new UserTurnNode(
+    turnKey,
+    promptId,
+    delegated,
+    value,
+    '',
+    accepted,
+  );
+  if (value.length > 0) $appendMarkdown(node, value);
+  node.__written = node.getTextContent();
   return node;
 }
 
