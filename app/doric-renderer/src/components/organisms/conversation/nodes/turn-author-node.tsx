@@ -55,7 +55,10 @@ export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    dom.className = `${CONVERSATION_FONT_CLASS} mt-2 mb-6`;
+    // `select-none`: the line is the conversation's furniture, not its text, and
+    // the editing host makes everything inside it selectable by default — so a
+    // reader dragging over a turn would otherwise carry "name · now" out with it.
+    dom.className = `${CONVERSATION_FONT_CLASS} mt-2 mb-6 select-none`;
     return dom;
   }
 

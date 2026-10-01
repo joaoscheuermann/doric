@@ -10,7 +10,7 @@ import {
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
-const placeholder = 'Enter some rich text…';
+const placeholder = 'Ask the agent to search, edit or build in this project…';
 
 export type SerializedUserPromptNode = Spread<
   Record<never, never>,

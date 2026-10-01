@@ -10,6 +10,7 @@ import {
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
 import { MarkdownPromptPlugin } from '@/components/organisms/conversation/plugins/markdown-prompt';
+import { PromptLineBreaks } from '@/components/organisms/conversation/plugins/prompt-line-breaks';
 import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugins/read-only-blocks';
 import { SendPrompt } from '@/components/organisms/conversation/plugins/send-prompt';
 import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
@@ -272,6 +273,7 @@ export function Conversation({
           />
           <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
           <MarkdownPromptPlugin />
+          <PromptLineBreaks />
           <InsertThreadTurnNodes turns={turns} />
           <SendPrompt send={chat.prompt} />
         </LexicalExtensionComposer>
