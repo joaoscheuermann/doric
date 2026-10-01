@@ -27,7 +27,12 @@ import {
   kindFillsModelEfforts,
   kindOf,
   modelChoiceKey,
+  modelDefaultEffort,
   modelEfforts,
+  modelGroups,
+  modelMandatory,
+  modelThinkingEffort,
+  modelThinks,
   providerAddress,
   type ProviderConfiguration,
   type ProviderDraft,
@@ -44,6 +49,7 @@ import {
   removeModel,
   removeProvider,
   replaceProvider,
+  searchModelGroups,
   selectModelChoice,
   setExecutionEffort,
   turnsFromInput,
@@ -966,6 +972,193 @@ describe('the execution profile a footer picker edits', () => {
     assert.deepEqual(
       selectModelChoice(base, 'gpt-5').models.execution,
       base.models.execution,
+    );
+  });
+});
+
+describe('the models the execution picker offers', () => {
+  test('groups every provider under its label, and leaves a single provider unnamed', () => {
+    assert.deepEqual(modelGroups(configuration()), [
+      {
+        label: undefined,
+        choices: [{ label: 'gpt-5', value: modelChoiceKey('openai', 'gpt-5') }],
+      },
+    ]);
+
+    const two = withProviders(configuration(), [
+      provider('openai'),
+      provider('anthropic'),
+    ]);
+
+    assert.deepEqual(
+      modelGroups(two).map((group) => group.label),
+      ['openai', 'anthropic'],
+    );
+  });
+
+  test('shows a model no provider lists, first in the group its provider names', () => {
+    const groups = modelGroups(
+      withExecution(configuration(), {
+        providerId: 'openai',
+        model: 'unlisted',
+      }),
+    );
+
+    assert.deepEqual(groups[0]?.choices[0], {
+      label: 'unlisted',
+      value: modelChoiceKey('openai', 'unlisted'),
+    });
+  });
+
+  test('narrows the groups to a matching name, and drops the emptied ones', () => {
+    const base = withProviders(configuration(), [
+      { ...provider('openai'), models: [{ name: 'gpt-5' }] },
+      { ...provider('anthropic'), models: [{ name: 'claude-sonnet' }] },
+    ]);
+    const groups = modelGroups(base);
+
+    assert.deepEqual(
+      searchModelGroups(groups, 'gpt').map((group) =>
+        group.choices.map((choice) => choice.label),
+      ),
+      [['gpt-5']],
+    );
+    assert.deepEqual(searchModelGroups(groups, '  '), groups);
+    assert.deepEqual(searchModelGroups(groups, 'nope'), []);
+  });
+
+  test('reads a thinking model from its listed efforts, and none from a model that cannot', () => {
+    assert.equal(modelThinks(configuration(), 'openai', 'gpt-5'), true);
+    assert.equal(modelThinks(configuration(), 'openai', 'gpt-5-mini'), false);
+
+    const onlyNone = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [{ name: 'gpt-5', reasonings: ['none'] }],
+      },
+    ]);
+
+    assert.equal(modelThinks(onlyNone, 'openai', 'gpt-5'), false);
+  });
+
+  test("names the effort a model's own catalog calls its default, and none otherwise", () => {
+    const named = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          {
+            name: 'gpt-5',
+            reasonings: ['high', 'medium'],
+            defaultEffort: 'high',
+          },
+        ],
+      },
+    ]);
+
+    assert.equal(modelDefaultEffort(named, 'openai', 'gpt-5'), 'high');
+
+    // A default the model does not list names no effort at all.
+    const unlisted = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          { name: 'gpt-5', reasonings: ['medium'], defaultEffort: 'high' },
+        ],
+      },
+    ]);
+
+    assert.equal(modelDefaultEffort(unlisted, 'openai', 'gpt-5'), undefined);
+    assert.equal(
+      modelDefaultEffort(configuration(), 'openai', 'gpt-5'),
+      undefined,
+    );
+  });
+
+  test('leaves thinking unavailable for a model whose catalog pins reasoning on', () => {
+    const pinned = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          { name: 'gpt-5', reasonings: ['high', 'medium'], mandatory: true },
+        ],
+      },
+    ]);
+
+    assert.equal(modelMandatory(pinned, 'openai', 'gpt-5'), true);
+    assert.equal(modelThinks(pinned, 'openai', 'gpt-5'), false);
+    assert.equal(modelMandatory(configuration(), 'openai', 'gpt-5'), false);
+  });
+
+  test('starts a model at the effort its catalog names, and otherwise at its first other than none', () => {
+    const named = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          {
+            name: 'gpt-5',
+            reasonings: ['high', 'medium', 'low'],
+            defaultEffort: 'high',
+          },
+        ],
+      },
+    ]);
+
+    assert.equal(modelThinkingEffort(named, 'openai', 'gpt-5'), 'high');
+
+    const unnamed = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [{ name: 'gpt-5', reasonings: ['none', 'low', 'high'] }],
+      },
+    ]);
+
+    assert.equal(modelThinkingEffort(unnamed, 'openai', 'gpt-5'), 'low');
+
+    // A default the model does not list is no default at all.
+    const unlisted = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          { name: 'gpt-5', reasonings: ['medium'], defaultEffort: 'high' },
+        ],
+      },
+    ]);
+
+    assert.equal(modelThinkingEffort(unlisted, 'openai', 'gpt-5'), 'medium');
+    assert.equal(
+      modelThinkingEffort(configuration(), 'openai', 'gpt-5-mini'),
+      undefined,
+    );
+  });
+
+  test("switches the profile to the model it names, at that model's own default", () => {
+    const base = withExecution(
+      withProviders(configuration(), [
+        {
+          ...provider('openai'),
+          models: [
+            { name: 'gpt-5', reasonings: ['medium'] },
+            {
+              name: 'claude',
+              reasonings: ['high', 'medium', 'low'],
+              defaultEffort: 'high',
+            },
+          ],
+        },
+      ]),
+      { providerId: 'openai', model: 'gpt-5', effort: 'medium' },
+    );
+
+    assert.deepEqual(updateModel(base, { model: 'claude' }).models.execution, {
+      providerId: 'openai',
+      model: 'claude',
+      effort: 'high',
+    });
+
+    // A model that lists no effort carries none, so no reasoning block is sent.
+    assert.deepEqual(
+      updateModel(base, { model: 'gpt-5-mini' }).models.execution,
+      { providerId: 'openai', model: 'gpt-5-mini' },
     );
   });
 });

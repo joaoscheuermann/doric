@@ -87,6 +87,10 @@ type ProviderKind = {
 type ProviderModel = {
   readonly name: string;
   readonly reasonings?: readonly ReasoningEffort[];
+  /** The effort the catalog names as this model's own, when it names one. */
+  readonly defaultEffort?: ReasoningEffort;
+  /** Whether the catalog pins reasoning on for this model. */
+  readonly mandatory?: boolean;
 };
 
 type ProviderConfiguration = {

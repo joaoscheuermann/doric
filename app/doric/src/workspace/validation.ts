@@ -181,17 +181,27 @@ const configurationValues = (value: unknown): Record<string, string> => {
   return configuration;
 };
 
-/** One model a provider offers: its name, and the efforts its kind keeps. */
+/** One model a provider offers: its name, and the reasoning its kind keeps. */
 const model = (value: unknown): ProviderModel => {
   if (!isRecord(value) || !bounded(value.name, maximumModelLength)) {
     return invalidConfiguration();
   }
 
   const reasonings = reasoningList(value.reasonings);
+  const defaultEffort = value.defaultEffort;
+
+  if (
+    (defaultEffort !== undefined && !isReasoningEffort(defaultEffort)) ||
+    (value.mandatory !== undefined && typeof value.mandatory !== 'boolean')
+  ) {
+    return invalidConfiguration();
+  }
 
   return {
     name: value.name,
     ...(reasonings === undefined ? {} : { reasonings }),
+    ...(defaultEffort === undefined ? {} : { defaultEffort }),
+    ...(value.mandatory === undefined ? {} : { mandatory: value.mandatory }),
   };
 };
 

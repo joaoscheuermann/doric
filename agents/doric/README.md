@@ -124,12 +124,14 @@ Configuration saved here reaches the next prompt of any Project, including one
 that is already running. A provider kind whose catalog describes its models
 declares a models URL, and that catalog is read twice: once when a provider page
 asks what its endpoint serves — `POST /providers/models`, which takes the draft's
-kind and values and answers every model with its name, its reasoning efforts and
-the request parameters it advertises — and again on `PUT /config`, where each
-listed model takes the reasoning efforts that catalog names, a model the catalog
-does not name takes none, and the execution effort is dropped when its model
-lists none. A catalog that cannot be read leaves that provider as it was, so an
-unreachable endpoint never costs the configuration its model list.
+kind and values and answers every model with its name, its reasoning efforts, the
+effort it names as that model's default, whether it pins reasoning on, and the
+request parameters it advertises — and again on `PUT /config`, where each listed
+model takes the reasoning that catalog describes, a model the catalog does not
+name takes none, and the execution effort resolves to the one its model starts at
+or is dropped when that model lists none. A catalog that cannot be read leaves
+that provider as it was, so an unreachable endpoint never costs the configuration
+its model list.
 
 `/credentials` owns the credential store. `GET /credentials` answers
 `[{ id, kind, name, username?, email?, hasSecret }]` and never a secret.

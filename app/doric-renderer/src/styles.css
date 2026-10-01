@@ -209,6 +209,12 @@
   /* The conversation body is the one surface that keeps IBM Plex Mono; the rest
      of the app wears Noto Sans, so the face is held as its own token. */
   --font-conversation: 'IBM Plex Mono', monospace;
+  /* Every vendored control ships `font-medium`, which Tailwind resolves to this
+     token. The app states its weight once here instead of on each surface, so a
+     button, a label and a table header weigh what the text around them weighs;
+     the three largest headings are the only things that state medium themselves
+     (see the base layer), because a section title outranks its body. */
+  --font-weight-medium: 400;
   --radius: 0.25rem;
   --shadow-x: 2px;
   --shadow-y: 2px;
@@ -363,17 +369,21 @@
   }
 
   /*
-   * A title is medium, never the browser's bold: an `<h1>` names a thing and
-   * what it names is already the strongest thing on the screen, so the rule is
-   * stated once here instead of on each heading.
+   * A title is medium, never the browser's bold: an `<h1>`–`<h3>` names a thing
+   * and what it names is already the strongest thing on the screen, so the rule
+   * is stated once here instead of on each heading. The smaller headings are the
+   * app's normal weight, like every other surface.
    */
   h1,
   h2,
-  h3,
+  h3 {
+    font-weight: 500;
+  }
+
   h4,
   h5,
   h6 {
-    font-weight: 500;
+    font-weight: var(--font-weight-normal);
   }
 
   input,
@@ -420,6 +430,17 @@
   body,
   #root {
     height: 100%;
+  }
+
+  /*
+   * Lucide draws every icon at a 2px stroke, which reads heavier than the app's
+   * thin type. The weight is stated once here rather than at each call site: the
+   * icons carry it as a presentation attribute, which any rule outranks, and
+   * absolute stroke width stays off, so the stroke scales with the size an icon
+   * is drawn at instead of holding a fixed pixel weight.
+   */
+  .lucide {
+    stroke-width: 1.25px;
   }
 }
 

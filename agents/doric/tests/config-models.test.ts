@@ -87,14 +87,30 @@ const entries = (
   ...models: readonly {
     readonly id: string;
     readonly supported_efforts?: readonly string[];
+    readonly default_effort?: string;
+    readonly mandatory?: boolean;
   }[]
 ) => ({
   data: models.map((model) => ({
     id: model.id,
     name: model.id,
-    ...(model.supported_efforts === undefined
+    ...(model.supported_efforts === undefined &&
+    model.default_effort === undefined &&
+    model.mandatory === undefined
       ? {}
-      : { reasoning: { supported_efforts: model.supported_efforts } }),
+      : {
+          reasoning: {
+            ...(model.supported_efforts === undefined
+              ? {}
+              : { supported_efforts: model.supported_efforts }),
+            ...(model.default_effort === undefined
+              ? {}
+              : { default_effort: model.default_effort }),
+            ...(model.mandatory === undefined
+              ? {}
+              : { mandatory: model.mandatory }),
+          },
+        }),
   })),
 });
 
@@ -142,10 +158,80 @@ test('writes the efforts each model its catalog describes accepts', async () => 
   ]);
 });
 
+test('writes the default effort and the reasoning a catalog pins on', async () => {
+  const http = transport(() =>
+    entries(
+      {
+        id: 'anthropic/claude-sonnet-4',
+        supported_efforts: ['high', 'medium', 'low'],
+        default_effort: 'high',
+        mandatory: true,
+      },
+      // A default the model does not list is no default at all, and reasoning a
+      // catalog says nothing about stays optional.
+      {
+        id: 'openai/gpt-5',
+        supported_efforts: ['medium'],
+        default_effort: 'xhigh',
+      },
+    ),
+  );
+  const filled = await read(
+    configuration([
+      { name: 'anthropic/claude-sonnet-4' },
+      { name: 'openai/gpt-5' },
+    ]),
+    http,
+  );
+
+  assert.deepEqual(filled.providers[0]?.models, [
+    {
+      name: 'anthropic/claude-sonnet-4',
+      reasonings: ['high', 'medium', 'low'],
+      defaultEffort: 'high',
+      mandatory: true,
+    },
+    { name: 'openai/gpt-5', reasonings: ['medium'] },
+  ]);
+});
+
+test('drops catalog properties the endpoint no longer describes', async () => {
+  const http = transport(() =>
+    entries({ id: 'openai/gpt-5', supported_efforts: ['medium'] }),
+  );
+  const stored = ConfigInputSchema.parse({
+    ...configuration([
+      { name: 'openai/gpt-5', reasonings: ['high', 'medium'] },
+    ]),
+    providers: [
+      {
+        ...configuration([]).providers[0],
+        models: [
+          {
+            name: 'openai/gpt-5',
+            reasonings: ['high', 'medium'],
+            defaultEffort: 'high',
+            mandatory: true,
+          },
+        ],
+      },
+    ],
+  });
+
+  const filled = await read(stored, http);
+
+  assert.deepEqual(filled.providers[0]?.models, [
+    { name: 'openai/gpt-5', reasonings: ['medium'] },
+  ]);
+});
+
 test('leaves a provider as it was when its catalog cannot be read', async () => {
   const warnings: unknown[][] = [];
   const http = unreachable as unknown as HttpTransport;
-  const stored = configuration([{ name: 'openai/gpt-5', reasonings: ['low'] }]);
+  const stored = configuration(
+    [{ name: 'openai/gpt-5', reasonings: ['low'] }],
+    'low',
+  );
   const filled = await read(stored, http, warnings);
 
   assert.deepEqual(filled, stored);
@@ -182,6 +268,40 @@ test('keeps the execution effort when its model lists efforts', async () => {
   );
 
   assert.equal(filled.models.execution.effort, 'medium');
+});
+
+test("starts the execution effort at the model's own default", async () => {
+  const http = transport(() =>
+    entries({
+      id: 'openai/gpt-5',
+      supported_efforts: ['high', 'medium', 'low'],
+      default_effort: 'high',
+    }),
+  );
+  const filled = await read(configuration([{ name: 'openai/gpt-5' }]), http);
+
+  assert.equal(filled.models.execution.effort, 'high');
+});
+
+test("starts the execution effort at the model's first effort other than none", async () => {
+  const http = transport(() =>
+    entries({ id: 'openai/gpt-5', supported_efforts: ['none', 'low', 'high'] }),
+  );
+  const filled = await read(configuration([{ name: 'openai/gpt-5' }]), http);
+
+  assert.equal(filled.models.execution.effort, 'low');
+});
+
+test('keeps the off an operator named for a model that lists efforts', async () => {
+  const http = transport(() =>
+    entries({ id: 'openai/gpt-5', supported_efforts: ['none', 'low', 'high'] }),
+  );
+  const filled = await read(
+    configuration([{ name: 'openai/gpt-5' }], 'none'),
+    http,
+  );
+
+  assert.equal(filled.models.execution.effort, 'none');
 });
 
 test('reads no catalog for a kind that declares no models URL', async () => {

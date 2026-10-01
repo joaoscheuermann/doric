@@ -153,12 +153,18 @@ export type ProviderKind = {
 
 /**
  * One model a provider offers. Its name is the model id an execution profile
- * types; when the kind keeps reasoning efforts, the model carries its own.
+ * types; when the kind keeps reasoning efforts, the model carries its own, the
+ * effort its catalog names as the model's default, and whether that catalog pins
+ * reasoning on.
  */
 export type ProviderModel = {
   readonly name: string;
   /** The efforts this model accepts, for the kinds whose catalog lists them. */
   readonly reasonings?: readonly ReasoningEffort[];
+  /** The effort the catalog names as this model's own; absent when it names none. */
+  readonly defaultEffort?: ReasoningEffort;
+  /** Whether the catalog pins reasoning on, so no request may turn it off. */
+  readonly mandatory?: boolean;
 };
 
 export type ProviderConfiguration = {
@@ -336,16 +342,26 @@ const stringListFrom = (value: unknown): readonly string[] | undefined => {
   return value as readonly string[];
 };
 
-/** One model a provider offers: its name, and the efforts its kind keeps. */
+/** One model a provider offers: its name, and the reasoning its kind keeps. */
 const providerModelFrom = (value: unknown): ProviderModel => {
   if (!isRecord(value) || typeof value.name !== 'string')
     return invalidResponse();
 
   const reasonings = reasoningListFrom(value.reasonings);
+  const defaultEffort = value.defaultEffort;
+
+  if (
+    (defaultEffort !== undefined && !isReasoningEffort(defaultEffort)) ||
+    (value.mandatory !== undefined && typeof value.mandatory !== 'boolean')
+  ) {
+    return invalidResponse();
+  }
 
   return {
     name: value.name,
     ...(reasonings === undefined ? {} : { reasonings }),
+    ...(defaultEffort === undefined ? {} : { defaultEffort }),
+    ...(value.mandatory === undefined ? {} : { mandatory: value.mandatory }),
   };
 };
 

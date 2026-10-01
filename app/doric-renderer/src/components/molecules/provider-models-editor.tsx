@@ -65,9 +65,16 @@ export function ProviderModelsEditor({
     const chosen = new Set(current.reasonings ?? []);
     if (pressed) chosen.add(effort);
     else chosen.delete(effort);
+    // A model's own default is one it lists, so unchoosing that effort leaves the
+    // model with no default rather than one it cannot be told.
+    const defaultEffort =
+      !pressed && current.defaultEffort === effort
+        ? undefined
+        : current.defaultEffort;
     replace(index, {
       ...current,
       reasonings: reasoningEfforts.filter((value) => chosen.has(value)),
+      defaultEffort,
     });
   };
 

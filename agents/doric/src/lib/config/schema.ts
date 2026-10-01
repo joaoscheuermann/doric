@@ -56,6 +56,16 @@ const uniqueList = <Schema extends z.ZodType>(entry: Schema) =>
 interface ProviderModelInput {
   readonly name: string;
   readonly reasonings?: readonly string[];
+  /**
+   * The effort this model's own catalog names as its default, which the host
+   * writes from that catalog rather than an operator naming it.
+   */
+  readonly defaultEffort?: string;
+  /**
+   * Whether the model's catalog pins reasoning on, so no request may turn it off.
+   * Like `defaultEffort`, the host reads it from the catalog.
+   */
+  readonly mandatory?: boolean;
 }
 
 /**
@@ -213,15 +223,40 @@ const providerKindRules = (
 
     names.add(trimmed);
 
-    if (keepsReasonings === (entry.reasonings !== undefined)) return;
+    if (keepsReasonings !== (entry.reasonings !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: keepsReasonings
+          ? `Provider kind ${kind.id} keeps a model's reasonings.`
+          : `Provider kind ${kind.id} does not keep a model's reasonings.`,
+        path: ['models', index, 'reasonings'],
+      });
+      return;
+    }
 
-    context.addIssue({
-      code: 'custom',
-      message: keepsReasonings
-        ? `Provider kind ${kind.id} keeps a model's reasonings.`
-        : `Provider kind ${kind.id} does not keep a model's reasonings.`,
-      path: ['models', index, 'reasonings'],
-    });
+    // Both are the catalog's to say, so a model of a kind that keeps no
+    // reasonings has no reasoning block for them to describe.
+    if (!keepsReasonings) {
+      if (entry.defaultEffort !== undefined || entry.mandatory !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `Provider kind ${kind.id} does not keep a model's reasoning.`,
+          path: ['models', index],
+        });
+      }
+      return;
+    }
+
+    if (
+      entry.defaultEffort !== undefined &&
+      !entry.reasonings?.includes(entry.defaultEffort)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `Model ${entry.name} defaults to an effort it does not list.`,
+        path: ['models', index, 'defaultEffort'],
+      });
+    }
   });
 };
 
@@ -233,6 +268,8 @@ const providerModel = z
   .object({
     name: model,
     reasonings: uniqueList(effort).optional(),
+    defaultEffort: effort.optional(),
+    mandatory: z.boolean().optional(),
   })
   .strict();
 

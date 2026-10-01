@@ -94,14 +94,17 @@ export const readCatalogEntries = async (
 
 /**
  * Writes what each provider's model catalog says about the models an operator
- * listed: the reasoning efforts each one accepts, and no efforts for a model the
- * catalog does not name. A catalog a host cannot read leaves that provider
+ * listed: the reasoning efforts each one accepts, the effort the catalog names as
+ * the model's default, whether it pins reasoning on, and no efforts for a model
+ * the catalog does not name. A catalog a host cannot read leaves that provider
  * exactly as it was rather than erasing what it already knew, and a model list no
  * kind reads a catalog for is untouched.
  *
- * The execution effort is dropped when the model it names lists none, because a
- * model whose catalog names no effort cannot be told one: the agent sends no
- * reasoning block at all rather than an effort the endpoint never offered.
+ * The execution effort is resolved against the model it names: an effort the
+ * operator chose is kept, a profile that names none starts at the effort its
+ * model starts at, and a model that lists none leaves the profile with none, so
+ * no prompt sends an effort the endpoint never offered and no thinking model is
+ * left asking for no reasoning at all.
  */
 export const readModelProperties = async (
   configuration: ConfigInput,
@@ -137,10 +140,18 @@ const withCatalog = async (
 
   return {
     ...provider,
-    models: provider.models?.map((model) => ({
-      ...model,
-      reasonings: [...(catalog.get(model.name.trim())?.reasonings ?? [])],
-    })),
+    models: provider.models?.map((model) => {
+      const entry = catalog.get(model.name.trim());
+
+      return {
+        name: model.name,
+        reasonings: [...(entry?.reasonings ?? [])],
+        ...(entry?.defaultEffort === undefined
+          ? {}
+          : { defaultEffort: entry.defaultEffort }),
+        ...(entry?.mandatory === true ? { mandatory: true } : {}),
+      };
+    }),
   };
 };
 
@@ -169,21 +180,38 @@ const credential = (
 };
 
 /**
- * The execution profile with an effort its model cannot be told resolved away. A
- * model that lists no efforts leaves the profile with none, so the agent sends no
- * reasoning block rather than an effort the endpoint never offered.
+ * The execution profile resolved against the model it names. A profile that names
+ * an effort is kept as it stands, because that is the operator's choice, including
+ * the `none` that asks for no reasoning. A profile that names none takes the
+ * effort its model starts at — the one the catalog names as the model's default,
+ * and otherwise the model's first effort other than `none` — so a thinking model
+ * is never left with no effort at all. A model that lists no effort leaves the
+ * profile with none, because there is nothing the request could carry for it.
  */
 const executionProfile = (
   providers: readonly Provider[],
   configuration: ConfigInput,
 ): ConfigInput['models'] => {
-  const { providerId, model } = configuration.models.execution;
+  const { providerId, model, effort } = configuration.models.execution;
   const listed = providers
     .find((provider) => provider.id === providerId)
     ?.models?.find((entry) => entry.name === model);
 
-  if (listed?.reasonings === undefined || listed.reasonings.length > 0)
-    return configuration.models;
+  // A kind that keeps no reasonings says nothing about this model's.
+  if (listed?.reasonings === undefined) return configuration.models;
 
-  return { execution: { providerId, model } };
+  const efforts = listed.reasonings;
+  if (efforts.length === 0) return { execution: { providerId, model } };
+
+  // An effort the operator named is theirs, including the `none` that asks for
+  // no reasoning; a profile that names none starts where the model starts.
+  if (effort !== undefined) return configuration.models;
+
+  const preferred = listed.defaultEffort;
+  const start =
+    preferred !== undefined && efforts.includes(preferred)
+      ? preferred
+      : (efforts.find((value) => value !== 'none') ?? efforts[0]);
+
+  return { execution: { providerId, model, effort: start } };
 };

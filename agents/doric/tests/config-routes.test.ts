@@ -109,6 +109,7 @@ test('answers the models a provider catalog describes', async () => {
           name: 'OpenAI: GPT-5',
           parameters: ['tools', 'tool_choice'],
           reasonings: ['high', 'medium'],
+          mandatory: false,
         },
       ],
     });

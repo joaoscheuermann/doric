@@ -131,10 +131,14 @@ check where the model accepts it — searchable, pageable, and with a column men
 A model the catalog does not list can still be typed in and is drawn marked, so
 an unreachable endpoint never costs the provider its models. What is ticked is the
 provider's own model list, in the order it was chosen, and the host reads the same
-catalog again when it saves, so the reasoning efforts a model accepts are the
-endpoint's answer rather than something typed here. The Execution section then
-offers exactly those, and a model that lists none offers no effort and carries
-none.
+catalog again when it saves, so the reasoning a model accepts — its efforts, the
+effort its catalog names as the model's default, and whether it pins reasoning on
+— is the endpoint's answer rather than something typed here. The Execution
+section then offers exactly those efforts, a model that lists efforts starts at
+the effort its catalog names as its default, and a model that lists none offers
+no effort and carries none. Where a picker lists the efforts — the footer's
+reasoning menu and the row the model picker ends with — the effort the catalog
+names as the model's default wears a `(default)` mark beside it.
 
 A provider row names a **credential**, not an environment variable, so no
 provider key is part of the configuration and none travels through the renderer.

@@ -18,7 +18,12 @@ const valid: Configuration = {
         token: '00000000-0000-4000-8000-000000000001',
       },
       models: [
-        { name: 'deepseek/deepseek-v4-flash-0731', reasonings: ['low'] },
+        {
+          name: 'deepseek/deepseek-v4-flash-0731',
+          reasonings: ['low'],
+          defaultEffort: 'low',
+          mandatory: true,
+        },
       ],
     },
     {
@@ -143,6 +148,18 @@ describe('Configuration validation', () => {
       'a model reasoning outside the closed set',
       provider({ models: [{ name: 'a-model', reasonings: ['extreme'] }] }),
     ],
+    [
+      'a model default effort outside the closed set',
+      provider({
+        models: [
+          { name: 'a-model', reasonings: ['low'], defaultEffort: 'extreme' },
+        ],
+      }),
+    ],
+    [
+      'a model whose mandatory flag is not a boolean',
+      provider({ models: [{ name: 'a-model', mandatory: 'yes' }] }),
+    ],
     ['a missing models section', { ...valid, models: undefined }],
     ['models as an array', { ...valid, models: [] }],
     ['missing execution models', { ...valid, models: {} }],
@@ -178,6 +195,19 @@ describe('Configuration validation', () => {
       providerId: 'openrouter',
       model: 'mimo',
     });
+  });
+
+  test("forwards a model's default effort and mandatory reasoning", () => {
+    const configured = configuration(structuredClone(valid));
+
+    assert.deepEqual(configured.providers[0]?.models, [
+      {
+        name: 'deepseek/deepseek-v4-flash-0731',
+        reasonings: ['low'],
+        defaultEffort: 'low',
+        mandatory: true,
+      },
+    ]);
   });
 });
 
@@ -575,6 +605,27 @@ describe('Configuration HTTP boundary', () => {
                 {
                   name: 'deepseek/deepseek-v4-flash-0731',
                   reasonings: ['extreme'],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+    [
+      'a configuration whose model carries a default effort llms does not know',
+      {
+        ...snapshot,
+        configuration: {
+          ...valid,
+          providers: [
+            {
+              ...valid.providers[0],
+              models: [
+                {
+                  name: 'deepseek/deepseek-v4-flash-0731',
+                  reasonings: ['low'],
+                  defaultEffort: 'extreme',
                 },
               ],
             },

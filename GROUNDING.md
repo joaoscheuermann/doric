@@ -159,6 +159,10 @@ its effort are chosen among what the selected provider's model lists, which is
 the catalog's answer for a kind that reads one. A model that lists no effort —
 and a kind that names no models URL keeps the efforts an operator typed — leaves
 the execution effort absent, and the agent then sends no reasoning block at all. A
+model that lists efforts starts at the one its catalog names as that model's
+default, so switching models never leaves a thinking model with no effort at all,
+and a model whose catalog pins reasoning on has no state the thinking control
+could turn off. A
 credential is named and has one of a closed set of kinds that fixes its fields:
 `API_TOKEN` is authentication, which a provider key and the GitHub token both
 are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
@@ -412,15 +416,21 @@ and builds each configured provider with `createProviderForKind`, so a stored
 provider carries a value for every field its kind requires, leaves an optional
 field it has no value for out rather than storing it empty, and carries the model
 list its kind keeps — empty until an operator names models — and nothing else. A
-kind that keeps `reasonings` keeps the efforts on each model, so a model carries
-the reasoning efforts that model accepts; a kind that keeps only `models` carries
-a name alone. A kind whose catalog describes its models declares a models URL,
-and the host reads it on every configuration write — and, for a provider page,
-through `POST /providers/models`: each listed model takes the
-efforts that catalog names, a model the catalog does not name takes none, and a
-catalog that cannot be read leaves that provider exactly as it was. An execution
-effort its model does not list is resolved away — the column is nullable for
-exactly that — so no prompt carries a reasoning block the endpoint never offered.
+kind that keeps `reasonings` keeps the reasoning on each model: the reasoning
+efforts that model accepts, the effort its own catalog names as the model's
+default, and whether that catalog pins reasoning on; a kind that keeps only
+`models` carries a name alone. A kind whose catalog describes its models declares
+a models URL, and the host reads it on every configuration write — and, for a
+provider page, through `POST /providers/models`: each listed model takes the
+reasoning that catalog describes, a model the catalog does not name takes none,
+and a catalog that cannot be read leaves that provider exactly as it was. An
+execution profile carries an effort exactly when its model lists one, and the
+host writes it on every save: the effort that model's own catalog names as its
+default when it names one, and its first effort other than `none` otherwise. A
+profile that already names an effort is kept as it stands, including the `none`
+that asks for no reasoning; a model that lists none carries no effort at all,
+which is why the column is nullable, so no prompt carries a reasoning block the
+endpoint never offered.
 The OpenAI-compatible kind reports the configured provider's own
 id and name as its identity rather than taking them as fields, so nothing in the
 catalog asks an operator for an identity the provider already has. The settings

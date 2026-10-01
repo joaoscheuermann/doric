@@ -95,6 +95,17 @@ export type ProviderKind = {
 export type ProviderModel = {
   readonly name: string;
   readonly reasonings?: readonly string[];
+  /**
+   * The effort the catalog names as this model's own, absent when it names none.
+   * It is what a model starts at when the execution profile switches to it.
+   */
+  readonly defaultEffort?: string;
+  /**
+   * Whether the catalog says this model's reasoning cannot be turned off. The
+   * execution toggle is then pinned on rather than offering a choice it cannot
+   * make.
+   */
+  readonly mandatory?: boolean;
 };
 
 /**
@@ -190,6 +201,21 @@ export type ModelExecution = {
    * catalog names no efforts cannot be told one, so no reasoning block is sent.
    */
   readonly effort?: ReasoningEffort;
+};
+
+/** One model a provider offers, as the execution picker draws its choices. */
+export type ModelChoice = {
+  readonly label: string;
+  readonly value: string;
+};
+
+/**
+ * One provider's models, under the provider's label. The label is absent when a
+ * single provider holds them all, because then the group needs no naming.
+ */
+export type ModelGroup = {
+  readonly label?: string;
+  readonly choices: readonly ModelChoice[];
 };
 
 export type DoricConfiguration = {
@@ -504,6 +530,13 @@ const modelsIssue = (
       if (!reasoningEfforts.includes(entry as ReasoningEffort)) {
         return `Choose a known reasoning effort for ${name}.`;
       }
+    }
+
+    if (
+      model.defaultEffort !== undefined &&
+      !efforts.has(model.defaultEffort)
+    ) {
+      return `Model ${name} defaults to an effort it does not list.`;
     }
   }
 
@@ -1128,31 +1161,196 @@ export const modelEfforts = (
   providerId: string,
   model: string,
 ): readonly ReasoningEffort[] =>
-  (
-    configuration.providers
-      .find((provider) => provider.id === providerId)
-      ?.models?.find((entry) => entry.name === model)?.reasonings ?? []
-  ).filter(isReasoningEffort);
+  (modelEntry(configuration, providerId, model)?.reasonings ?? []).filter(
+    isReasoningEffort,
+  );
+
+/** The entry a provider lists one model under, or `undefined` when it lists none. */
+const modelEntry = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): ProviderModel | undefined =>
+  configuration.providers
+    .find((provider) => provider.id === providerId)
+    ?.models?.find((entry) => entry.name === model);
 
 /**
- * Sets one part of the execution profile. Naming a model that lists no efforts
- * resolves the effort away, because there is nothing the request could carry for
- * it; naming one that lists efforts leaves the choice as it stands.
+ * The models the execution picker offers, grouped by the provider that lists
+ * them, in the order the providers are configured.
+ *
+ * A model the catalog does not list is still shown, first in the group of the
+ * provider the profile names, so the surface never hides the value it is set
+ * to: the profile keeps a model the catalog does not describe, and the picker
+ * says so rather than reading as empty.
+ */
+export const modelGroups = (
+  configuration: Configuration,
+): readonly ModelGroup[] => {
+  // One provider needs no naming: its models are the only ones there are.
+  const single = configuration.providers.length === 1;
+  const { providerId, model } = configuration.models.execution;
+  const groups = configuration.providers.map((provider, index) => ({
+    label: single ? undefined : providerLabel(provider, index),
+    choices: (provider.models ?? []).map((entry) => ({
+      label: entry.name,
+      value: modelChoiceKey(provider.id, entry.name),
+    })),
+  }));
+
+  if (model === '') return groups;
+
+  const current = modelChoiceKey(providerId, model);
+  if (
+    groups.some((group) =>
+      group.choices.some((choice) => choice.value === current),
+    )
+  ) {
+    return groups;
+  }
+
+  const choice = { label: model, value: current };
+  const own = configuration.providers.findIndex(
+    (provider) => provider.id === providerId,
+  );
+  if (own === -1) return [{ choices: [choice] }, ...groups];
+
+  return groups.map((group, index) =>
+    index === own
+      ? { label: group.label, choices: [choice, ...group.choices] }
+      : group,
+  );
+};
+
+/**
+ * The groups narrowed to the models whose name contains `query`, headings kept
+ * and emptied groups dropped. An empty query — or one with nothing but
+ * whitespace — keeps every group, so clearing the field restores the list.
+ */
+export const searchModelGroups = (
+  groups: readonly ModelGroup[],
+  query: string,
+): readonly ModelGroup[] => {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return groups;
+
+  return groups
+    .map((group) => ({
+      label: group.label,
+      choices: group.choices.filter((choice) =>
+        choice.label.toLowerCase().includes(needle),
+      ),
+    }))
+    .filter((group) => group.choices.length > 0);
+};
+
+/**
+ * The effort the model's own catalog names as its default, when the model lists
+ * it. It is the level a model starts at, which a picker marks as the model's own.
+ */
+export const modelDefaultEffort = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): ReasoningEffort | undefined => {
+  const preferred = modelEntry(configuration, providerId, model)?.defaultEffort;
+
+  return preferred !== undefined &&
+    isReasoningEffort(preferred) &&
+    modelEfforts(configuration, providerId, model).includes(preferred)
+    ? preferred
+    : undefined;
+};
+
+/**
+ * The effort thinking turns on at for the model the profile names: the one its
+ * own catalog names, when the model lists it, and otherwise its first effort
+ * other than `none`, so the level is one the model itself accepts. A model that
+ * lists no effort names none, and a request sends no reasoning block for it.
+ */
+export const modelThinkingEffort = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): ReasoningEffort | undefined => {
+  const efforts = modelEfforts(configuration, providerId, model);
+  if (efforts.length === 0) return undefined;
+
+  return (
+    modelDefaultEffort(configuration, providerId, model) ??
+    efforts.find((effort) => effort !== 'none') ??
+    efforts[0]
+  );
+};
+
+/**
+ * Whether the model's catalog pins reasoning on, so no request may turn it off.
+ * A model the catalog says nothing about leaves reasoning optional.
+ */
+export const modelMandatory = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): boolean => modelEntry(configuration, providerId, model)?.mandatory === true;
+
+/**
+ * Whether thinking can be turned both on and off for the model the profile names:
+ * it lists an effort to think at, and its catalog does not pin reasoning on. A
+ * model with neither has no state to change, so the control is disabled rather
+ * than inert.
+ */
+export const modelThinks = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): boolean =>
+  !modelMandatory(configuration, providerId, model) &&
+  modelEfforts(configuration, providerId, model).some(
+    (effort) => effort !== 'none',
+  );
+
+/**
+ * The execution profile one model runs: the effort it starts at, and no effort at
+ * all when the model lists none, because there is nothing the request could carry
+ * for it.
+ */
+const modelProfile = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): ModelExecution => {
+  const effort = modelThinkingEffort(configuration, providerId, model);
+
+  return effort === undefined
+    ? { providerId, model }
+    : { providerId, model, effort };
+};
+
+/**
+ * Sets one part of the execution profile. Naming another model — or another
+ * provider — resolves the effort to the one the new model starts at, so a switch
+ * never leaves the profile naming an effort that model does not list, nor none at
+ * all for a model that lists them. Patching anything else leaves the choice as it
+ * stands, and a model that lists no effort keeps the profile carrying none.
  */
 export const updateModel = (
   configuration: Configuration,
   patch: Partial<ModelExecution>,
 ): Configuration => {
-  const chosen = { ...configuration.models.execution, ...patch };
+  const current = configuration.models.execution;
+  const chosen = { ...current, ...patch };
+  const sameModel =
+    chosen.providerId === current.providerId && chosen.model === current.model;
+  const kept =
+    sameModel &&
+    modelEfforts(configuration, chosen.providerId, chosen.model).length > 0;
 
   return {
     ...configuration,
     models: {
-      execution:
-        modelEfforts(configuration, chosen.providerId, chosen.model).length ===
-        0
-          ? { providerId: chosen.providerId, model: chosen.model }
-          : chosen,
+      execution: kept
+        ? chosen
+        : modelProfile(configuration, chosen.providerId, chosen.model),
     },
   };
 };
