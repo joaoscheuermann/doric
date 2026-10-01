@@ -86,8 +86,9 @@ export type ActivityItem =
 
 /**
  * A completed burst of the agent's reasoning and tool calls, kept as one block so
- * a transcript is not a list of every step it took. Only the burst still being
- * written stays as individual thinking and tool turns.
+ * a transcript is not a list of every step it took. Only a burst that did more
+ * than one thing is grouped: a lone step of reasoning or a lone tool call reads
+ * as itself, and so does the burst still being written.
  */
 export type ActivityTurn = TurnBase & {
   readonly type: 'activity';
@@ -197,9 +198,10 @@ const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
 
 /**
  * The turns a surface renders: every burst of reasoning and tool calls that is
- * done becomes one turn, while the burst the log is still writing — the
- * transcript's last, in a job that has not settled — stays as its own steps, so
- * the reader watches it as it happens.
+ * done and did more than one thing becomes one turn, while the steps of a burst
+ * of one, and of the burst the log is still writing — the transcript's last, in
+ * a job that has not settled — stay on their own, so a lone step reads as itself
+ * and the reader watches the live burst as it happens.
  */
 const grouped = (
   turns: readonly Draft[],
@@ -231,7 +233,10 @@ const grouped = (
     }
 
     const run = turns.slice(index, end + 1).filter(isBurstDraft);
-    if (writing && end === turns.length - 1) result.push(...run);
+    // A burst of one step has nothing to summarize: the step is the whole of it,
+    // and a summary would only repeat it.
+    if (run.length === 1 || (writing && end === turns.length - 1))
+      result.push(...run);
     else result.push(activity(run));
     index = end + 1;
   }
@@ -307,6 +312,10 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
       });
     } else if (event?.type === 'reasoning.delta') {
       const delta = typeof event.delta === 'string' ? event.delta : '';
+      // A delta that carries no text says nothing changed, so it neither opens a
+      // turn nor ends the run it sits inside. A provider that emits one beside
+      // each reasoning token would otherwise split the run into a step per token.
+      if (delta.length === 0) continue;
       if (open?.type === 'thinking') {
         open.text += delta;
         open.events.push(item);
@@ -321,6 +330,8 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
       }
     } else if (event?.type === 'text.delta') {
       const delta = typeof event.delta === 'string' ? event.delta : '';
+      // Same rule as reasoning: an empty delta is not an answer starting.
+      if (delta.length === 0) continue;
       if (open?.type === 'agent') {
         open.text += delta;
         open.events.push(item);

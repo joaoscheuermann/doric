@@ -119,6 +119,23 @@ provider and model execution runs on, its reasoning effort, the turn limit one
 prompt may take, which stored credentials the Git identity and GitHub use, and
 the credential store itself.
 
+A provider is edited on a page of its own. The kind fixes the fields, and the
+kind also decides which of them a reader rarely needs: those wait behind an
+**Advanced settings** disclosure at the end of the form, so the page opens on the
+necessary values alone. A kind whose catalog describes its models declares a
+Models URL, and that kind's models are chosen from the endpoint itself: the page
+asks the host for the catalog when the picker opens, and offers it as a table of
+one row per model — a tick column, the model and its endpoint name, the reasoning
+efforts, and one column per request parameter the catalog advertises, with a
+check where the model accepts it — searchable, pageable, and with a column menu.
+A model the catalog does not list can still be typed in and is drawn marked, so
+an unreachable endpoint never costs the provider its models. What is ticked is the
+provider's own model list, in the order it was chosen, and the host reads the same
+catalog again when it saves, so the reasoning efforts a model accepts are the
+endpoint's answer rather than something typed here. The Execution section then
+offers exactly those, and a model that lists none offers no effort and carries
+none.
+
 A provider row names a **credential**, not an environment variable, so no
 provider key is part of the configuration and none travels through the renderer.
 
@@ -165,11 +182,11 @@ the window closes, and the window's footer reports the revision, the update time
 and the save state instead of offering one. A draft the host would refuse is never sent and is
 explained above the section, because the same rules live in `src/domain/config.ts`
 and the host re-validates them; a failed save keeps the draft and shows the host's
-message. Changing the execution model reaches new Projects only: a Project
-keeps the configuration it was created with, and one already running keeps running
-as it was. The credential choices are the one exception: they follow the current
-configuration, so the host applies a rotated secret to a Project that is already
-running, on that Project's next prompt.
+message. A saved change reaches the next prompt of any Project, including one
+that is already running: the execution provider, model, reasoning effort, and
+turn limit are read as the prompt runs, exactly as the credential choices are,
+so the host applies a rotated secret to a Project that is already running, on
+that Project's next prompt.
 
 The providers section is a data table on TanStack Table v9
 (`@tanstack/react-table`, declared by `app/doric-renderer/package.json`): its
@@ -202,11 +219,10 @@ the window closes, and the window's footer reports the revision, the update time
 and the save state instead of offering one. A draft the host would refuse is never sent and is
 explained above the section, because the same rules live in `src/domain/config.ts`
 and the host re-validates them; a failed save keeps the draft and shows the host's
-message. Changing the execution model reaches new Projects only: a Project
-keeps the configuration it was created with, and one already running keeps running
-as it was. The GitHub block is the one exception: its identity and token follow
-the current configuration, so the host applies a rotated token to a Project that
-is already running, on that Project's next prompt.
+message. A saved change reaches the next prompt of any Project, including one
+that is already running: its identity and token are read as the prompt runs, so
+the host applies a rotated token to a Project that is already running, on that
+Project's next prompt.
 
 ## Development
 

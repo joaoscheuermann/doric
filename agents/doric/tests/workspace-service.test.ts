@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import type { ConfigService } from '../src/lib/config/service.js';
 import { isProjectColor } from '../src/lib/workspace/colors.js';
 import type {
   InputSource,
@@ -654,3 +655,56 @@ test(
     await service.dispose();
   },
 );
+
+test('runs each prompt with the configuration in force, not the one its Project was created with', async () => {
+  const harness = workspace();
+  const captured = (harness.dependencies.config as ConfigService).current();
+  const saved = {
+    ...captured,
+    snapshot: { ...captured.snapshot, revision: 2 },
+  };
+  let current = captured;
+  const revisions: string[] = [];
+  const gates: { started: () => void; held: Promise<void> }[] = [];
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(),
+    config: {
+      current: () => current,
+      replace: () => Promise.resolve(saved.snapshot),
+    },
+    execute: async ({ generation }) => {
+      const gate = gates.shift();
+      revisions.push(String(generation.snapshot.revision));
+      gate?.started();
+      await gate?.held;
+      return 'done';
+    },
+  });
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const thread = await createThread(service, project.id);
+
+  const run = async (prompt: string) => {
+    const started = deferred();
+    const held = deferred();
+    gates.push({ started: started.resolve, held: held.promise });
+    assert.equal(
+      (await service.threads.prompt(thread.id, prompt)).status,
+      'accepted',
+    );
+    await started.promise;
+    held.resolve();
+    await harness.threadState(thread.id, 'ready');
+  };
+
+  await run('one');
+  assert.deepEqual(revisions, ['1']);
+
+  // The settings save themselves between the two prompts.
+  current = saved;
+
+  await run('two');
+  assert.deepEqual(revisions, ['1', '2']);
+  await service.dispose();
+});

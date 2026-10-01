@@ -32,9 +32,12 @@ export type Config = {
 };
 
 /**
- * The one place the settings surface reads and writes the host configuration.
- * The host owns it — it is a singleton with a revision — so a load seeds the
- * draft, and a save replaces both copies with what the host returned.
+ * The one place a surface reads and writes the host configuration. The host owns
+ * it — it is a singleton with a revision — so a load seeds the draft, and a save
+ * replaces both copies with what the host returned. The configuration is shared
+ * by the workspace window and the settings window, so the hook also rereads it
+ * when its window regains focus, keeping one window's draft from writing back
+ * over a change the other one saved.
  *
  * There is no Save button, so the hook saves by itself: a valid change sends
  * itself once typing settles, and `flush` sends it at once for a field blur or
@@ -62,6 +65,20 @@ export const useConfig = (
   /** The draft a save must read, whatever render scheduled it. */
   const latest = useRef<Configuration | undefined>(undefined);
   latest.current = draft;
+  /**
+   * A counter bumped when the window regains focus. The configuration is the
+   * host's single copy, shared by the workspace window and the settings window,
+   * so a save in one leaves the other holding a stale draft — which its next save
+   * would write back over the other window's change. Rereading on focus is what
+   * keeps a window's draft from overwriting a change made in the other one.
+   */
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const onFocus = () => setReload((value) => value + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   useEffect(() => {
     intent.current += 1;
@@ -91,7 +108,7 @@ export const useConfig = (
       .finally(() => {
         if (intent.current === request) setLoading(false);
       });
-  }, [open]);
+  }, [open, reload]);
 
   const save = useCallback(async (): Promise<void> => {
     clearTimeout(pending.current);

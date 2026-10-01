@@ -1,14 +1,24 @@
 import { SettingsCredentials } from '@/components/organisms/settings-credentials';
 import { SettingsExecution } from '@/components/organisms/settings-execution';
+import { SettingsProviderScreen } from '@/components/organisms/settings-provider';
 import { SettingsProviders } from '@/components/organisms/settings-providers';
 import { SettingsVersioning } from '@/components/organisms/settings-versioning';
-import type { SettingsNavItem } from '@/components/templates/settings-surface';
+import type {
+  SettingsCrumb,
+  SettingsNavItem,
+} from '@/components/templates/settings-surface';
 import { SettingsWindow } from '@/components/templates/settings-window';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  applyProviderDraft,
   type Configuration,
+  emptyProviderDraft,
+  kindOf,
+  type ProviderDraft,
+  providerDraftOf,
   type ProviderKind,
+  providerLabel,
   updatedAtLabel,
 } from '@/domain/config';
 import { filterSettingsSections } from '@/domain/settings-search';
@@ -27,8 +37,9 @@ import { toast } from 'sonner';
 
 /**
  * The sections this window offers, in the order the nav lists them. Each one
- * carries the heading and the sentence a reader sees above its own controls, so
- * a screen cannot be added without saying what it is for.
+ * carries the label its heading shows and the sentence the nav searches beside
+ * it, so a reader finds a section by what it explains — "turns", "push" — not
+ * only by the one word it is named after.
  */
 const sections = [
   {
@@ -100,20 +111,26 @@ function saveState(
 
 /**
  * The active section's own surface. The nav and this switch name the same ids,
- * so a section is one nav entry and one case here.
+ * so a section is one nav entry and one case here. The providers section opens
+ * its own page for a provider through the callbacks, which the view owns because
+ * the page sits above this content in the window's chrome.
  */
 function Section({
   credentials,
   draft,
   id,
   kinds,
+  onAdd,
   onChange,
+  onEdit,
 }: {
   readonly credentials: Credentials;
   readonly draft: Configuration;
   readonly id: SectionId;
   readonly kinds: readonly ProviderKind[];
+  readonly onAdd: () => void;
   readonly onChange: (next: Configuration) => void;
+  readonly onEdit: (index: number) => void;
 }) {
   switch (id) {
     case 'providers':
@@ -122,7 +139,9 @@ function Section({
           credentials={credentials.list}
           draft={draft}
           kinds={kinds}
+          onAdd={onAdd}
           onChange={onChange}
+          onEdit={onEdit}
         />
       );
     case 'execution':
@@ -146,6 +165,11 @@ function Section({
  * Thread is open. There is no Save button: a valid change sends itself after a
  * short pause, on a field blur, and as the window closes, and the footer reports
  * the save instead of offering one.
+ *
+ * A section shows its own list; a provider opens one page deeper, under the
+ * providers section, which the window's bar names and leads back from. The page
+ * owns no save of its own either: it writes each accepted change into the same
+ * configuration, and the section's debounce carries it like every other control.
  */
 export function Settings() {
   const credentials = useCredentials();
@@ -155,11 +179,43 @@ export function Settings() {
   // The query narrows the nav alone: a section it hides is still the one on
   // screen, and the nav then shows no active row for as long as the query lasts.
   const [query, setQuery] = useState('');
+  // The provider whose page is open under the providers section, or `undefined`
+  // while that section shows its list. It carries the draft being configured, so
+  // the page and the list cannot disagree about which provider is open.
+  const [provider, setProvider] = useState<ProviderDraft>();
   const current = sections.find((item) => item.id === section) ?? sections[0];
-  // The one icon the section is named by, drawn by the nav and the heading alike
-  // so the two never drift.
+  // The one icon the section is named by, drawn by the nav, the section heading
+  // and the provider page alike, so they never drift.
   const Icon = current.icon;
   const { draft, flush } = config;
+  // What the heading names: the section's own while its list shows, and the
+  // provider page's while one is open. The breadcrumb carries the provider's own
+  // name, so the heading says which page this is rather than repeating it.
+  const title =
+    provider === undefined
+      ? current.label
+      : provider.index === undefined
+        ? 'Add provider'
+        : 'Edit provider';
+  // The chain the window's bar draws, outermost first. The section is a control
+  // while a provider page sits under it, and the page itself is the last part,
+  // which is where the chain already is.
+  const trail: readonly SettingsCrumb[] = [
+    { label: 'Settings' },
+    provider === undefined
+      ? { label: current.label }
+      : { label: current.label, onSelect: () => setProvider(undefined) },
+    ...(provider === undefined
+      ? []
+      : [
+          {
+            label:
+              provider.index === undefined
+                ? 'Add provider'
+                : providerLabel(provider, provider.index),
+          },
+        ]),
+  ];
   const status = saveState(config);
   // The revision already accounted for, so a render never repeats a message. The
   // load sets the same `saved` a write does, and the load is not a save, so the
@@ -202,7 +258,51 @@ export function Settings() {
 
   const selectSection = (id: string): void => {
     const match = sections.find((item) => item.id === id);
-    if (match !== undefined) setSection(match.id);
+    if (match !== undefined) {
+      setSection(match.id);
+      // A section is where the chain starts over, so a provider page opened under
+      // the previous one does not stay half-open behind the new section.
+      setProvider(undefined);
+    }
+  };
+
+  /**
+   * Opens the providers section's page for the provider at one list position.
+   * The position is how a row addresses its provider, and the same one the page
+   * edits, so the order the table draws rows in never decides which is opened.
+   */
+  const editProvider = (index: number): void => {
+    if (draft === undefined) return;
+    const next = providerDraftOf(draft, index);
+    if (next !== undefined) setProvider(next);
+  };
+
+  /** Opens the same page for a provider that does not exist yet. */
+  const addProviderPage = (): void => {
+    const first = kinds.list[0];
+    if (first !== undefined) setProvider(emptyProviderDraft(first));
+  };
+
+  /**
+   * Writes the provider page's draft into the configuration as soon as it is one
+   * the host would accept, so the window's own save carries it and leaving the
+   * page needs no commit of its own. A draft that is not yet valid stays local:
+   * a half-typed id or a missing field never reaches the list, nor does it stop
+   * the rest of the window from saving.
+   */
+  const changeProvider = (next: ProviderDraft): void => {
+    const kind = kindOf(kinds.list, next.kind);
+    if (draft === undefined || kind === undefined) {
+      setProvider(next);
+      return;
+    }
+    const applied = applyProviderDraft(draft, next, kind, credentials.list);
+    if (applied === undefined) {
+      setProvider(next);
+      return;
+    }
+    setProvider(applied.draft);
+    config.setDraft(applied.configuration);
   };
 
   // The nav's footer states the save state alone: the revision line beside it
@@ -224,7 +324,8 @@ export function Settings() {
   return (
     <SettingsWindow
       activeId={current.id}
-      title={current.label}
+      trail={trail}
+      onBack={provider === undefined ? undefined : () => setProvider(undefined)}
       nav={filterSettingsSections(sections, query)}
       onQueryChange={setQuery}
       onSelect={selectSection}
@@ -252,20 +353,16 @@ export function Settings() {
       {/* A blur on any field sends the change waiting on the debounce. */}
       <div onBlur={() => void flush()}>
         {/*
-          Every screen states what it is and what it is for, above its own
-          controls. The heading is an `<h1>` because the window holds one section
-          at a time, so the section is the page of this surface. The section's own
-          icon leads it, the same one the nav draws beside this label, so the two
-          name one section rather than two that happen to share a word.
+          The section's own icon leads its heading, the same one the nav draws
+          beside the label, so the two name one section rather than two that
+          happen to share a word. The heading is an `<h1>` because the window
+          holds one section at a time, so the section is the page of this
+          surface. The heading names the page and stops there: what the page is
+          for is the controls themselves, not a sentence about them.
         */}
-        <header className="mb-4 flex items-start gap-2">
-          <Icon aria-hidden className="mt-0.5 size-5 shrink-0" />
-          <div className="flex flex-col gap-1">
-            <h1 className="text-lg font-medium">{current.label}</h1>
-            <p className="text-sm text-muted-foreground">
-              {current.description}
-            </p>
-          </div>
+        <header className="mb-4 flex items-center gap-2">
+          <Icon aria-hidden className="size-5 shrink-0" />
+          <h1 className="text-lg font-medium">{title}</h1>
         </header>
         {config.issue !== undefined && (
           <Alert variant="destructive" className="mb-4">
@@ -276,13 +373,22 @@ export function Settings() {
         )}
         {draft === undefined ? (
           config.loading && <SectionSkeleton />
+        ) : current.id === 'providers' && provider !== undefined ? (
+          <SettingsProviderScreen
+            credentials={credentials.list}
+            draft={provider}
+            kinds={kinds.list}
+            onChange={changeProvider}
+          />
         ) : (
           <Section
             credentials={credentials}
             draft={draft}
             id={current.id}
             kinds={kinds.list}
+            onAdd={addProviderPage}
             onChange={config.setDraft}
+            onEdit={editProvider}
           />
         )}
       </div>

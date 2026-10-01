@@ -1,4 +1,5 @@
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
+import { reasoningText } from '@/utility/reasoning-text';
 
 type ThinkingItemProps = {
   readonly text: string;
@@ -12,13 +13,15 @@ type ThinkingItemProps = {
  * same block inside its summary.
  */
 export function ThinkingItem({ streaming, text }: ThinkingItemProps) {
+  const body = reasoningText(text);
+
   return (
     <CollapsibleBlock
       active={streaming}
-      hasContent={text.length > 0}
+      hasContent={body.length > 0}
       label={streaming ? 'Thinking' : 'Thought'}
     >
-      <div className="whitespace-pre-wrap break-words">{text}</div>
+      <div className="whitespace-pre-wrap break-words">{body}</div>
     </CollapsibleBlock>
   );
 }

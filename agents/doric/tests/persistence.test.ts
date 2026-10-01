@@ -467,7 +467,7 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, credential, and provider-kind migrations', async () => {
+test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, credential, provider-kind, provider-model, upstream-model, and execution-effort migrations', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
@@ -476,6 +476,9 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
     '20260924000000_add_github_credentials',
     '20260925000000_add_credential_store',
     '20260926000000_add_provider_kinds',
+    '20260927000000_provider_models_and_identity',
+    '20260930000000_drop_upstream_model',
+    '20260930010000_optional_execution_effort',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -546,6 +549,19 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
       kinds.indexOf('DROP COLUMN "base_url"'),
   );
   assert.match(kinds, /ALTER COLUMN "credential_id" DROP NOT NULL/u);
+
+  const models = await readFile(
+    `${migrationDirectory}/20260927000000_provider_models_and_identity/migration.sql`,
+    'utf8',
+  );
+  assert.match(models, /ADD COLUMN "models" JSONB NOT NULL DEFAULT '\[\]';/u);
+  // Each model id becomes one object whose efforts are the old provider list,
+  // and the identity keys leave `field_values` before the arrays go.
+  assert.ok(
+    models.indexOf('jsonb_agg') < models.indexOf('DROP COLUMN "model_ids"'),
+  );
+  assert.match(models, /- 'identityId' - 'identityName'/u);
+  assert.match(models, /DROP COLUMN "reasoning_efforts";/u);
 });
 
 test(
@@ -1045,12 +1061,9 @@ integrationTest(
           id: 'proxy',
           kind: 'openai-compatible',
           configuration: {
-            identityId: 'proxy',
-            identityName: 'Proxy',
             token: local.credential.id,
           },
-          models: ['proxy-model'],
-          reasonings: ['low', 'high'],
+          models: [{ name: 'proxy-model', reasonings: ['low', 'high'] }],
         },
       ],
       models: {
@@ -1091,14 +1104,11 @@ integrationTest(
       id: 'openrouter',
       kind: 'openai-compatible',
       fieldValues: {
-        identityId: 'openrouter',
-        identityName: 'openrouter',
         endpoint: 'https://openrouter.ai/api/v1',
       },
       // The credential reference is the row's own, untouched.
       credentialId: '00000000-0000-4000-8000-000000000002',
-      modelIds: [],
-      reasoningEfforts: [],
+      models: [],
     });
     assert.deepEqual((await configs.load()).configuration, defaultConfig);
   },
@@ -1125,6 +1135,10 @@ test(
       `${migrationDirectory}/20260926000000_add_provider_kinds/migration.sql`,
       'utf8',
     );
+    const models = await readFile(
+      `${migrationDirectory}/20260927000000_provider_models_and_identity/migration.sql`,
+      'utf8',
+    );
     const resources = await persistenceFixture(connectionString, {
       migration: async () => `${baseline}\n${github}\n${store}`,
     });
@@ -1145,7 +1159,16 @@ test(
         UPDATE model_configuration SET model = 'stealth/space-bunny-alpha', effort = 'medium'
         WHERE configuration_id = 1 AND role = 'EXECUTION'`;
 
+      // The provider-kind migration maps the old row; an operator has since named
+      // two models that share one effort menu, which the next migration back-fills
+      // onto each model.
       await resources.migrate(kinds);
+      await resources.database.$executeRaw`
+        UPDATE provider_configuration
+        SET model_ids = ARRAY['stealth/space-bunny-alpha', 'other-model'],
+            reasoning_efforts = ARRAY['low', 'high']
+        WHERE configuration_id = 1 AND id = 'openrouter'`;
+      await resources.migrate(models);
 
       const providers = await resources.database.$queryRaw<
         {
@@ -1153,23 +1176,22 @@ test(
           kind: string;
           field_values: Record<string, string>;
           credential_id: string | null;
-          model_ids: string[];
-          reasoning_efforts: string[];
+          models: { name: string; reasonings?: string[] }[];
         }[]
-      >`SELECT id, kind, field_values, credential_id, model_ids, reasoning_efforts
+      >`SELECT id, kind, field_values, credential_id, models
         FROM provider_configuration`;
       assert.deepEqual(providers, [
         {
           id: 'openrouter',
           kind: 'openai-compatible',
           field_values: {
-            identityId: 'openrouter',
-            identityName: 'openrouter',
             endpoint: 'https://openrouter.ai/api/v1',
           },
           credential_id: '00000000-0000-4000-8000-000000000002',
-          model_ids: [],
-          reasoning_efforts: [],
+          models: [
+            { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
+            { name: 'other-model', reasonings: ['low', 'high'] },
+          ],
         },
       ]);
 
@@ -1197,13 +1219,13 @@ test(
           id: 'openrouter',
           kind: 'openai-compatible',
           configuration: {
-            identityId: 'openrouter',
-            identityName: 'openrouter',
             endpoint: 'https://openrouter.ai/api/v1',
             token: '00000000-0000-4000-8000-000000000002',
           },
-          models: [],
-          reasonings: [],
+          models: [
+            { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
+            { name: 'other-model', reasonings: ['low', 'high'] },
+          ],
         },
       ]);
       assert.deepEqual(loaded.configuration.models.execution, {

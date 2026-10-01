@@ -30,6 +30,7 @@ import {
 } from '../utils/json.js';
 import { parseSseEvents } from '../utils/sse.js';
 import {
+  deltaEvent,
   messageText,
   requestReasoningEffort,
   requireRequestInput,
@@ -165,16 +166,26 @@ export const createLmStudioProvider = (
           }
 
           if (event.event === 'message.delta') {
-            const content = stringField(payload, 'content') ?? '';
-            text.push(content);
-            yield { type: 'text.delta', delta: content };
+            const delta = deltaEvent(
+              'text.delta',
+              stringField(payload, 'content'),
+            );
+            if (delta !== undefined) {
+              text.push(delta.delta);
+              yield delta;
+            }
             continue;
           }
 
           if (event.event === 'reasoning.delta') {
-            const content = stringField(payload, 'content') ?? '';
-            reasoning.push(content);
-            yield { type: 'reasoning.delta', delta: content };
+            const delta = deltaEvent(
+              'reasoning.delta',
+              stringField(payload, 'content'),
+            );
+            if (delta !== undefined) {
+              reasoning.push(delta.delta);
+              yield delta;
+            }
             continue;
           }
 
@@ -312,6 +323,7 @@ const reasoningEffort = (
     medium: 'medium',
     high: 'high',
     xhigh: 'high',
+    max: 'high',
   }[effort];
 };
 

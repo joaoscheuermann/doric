@@ -402,6 +402,46 @@ test('maps LM Studio named stream events to provider events', async () => {
   });
 });
 
+test('emits no LM Studio delta for an event whose content is empty', async () => {
+  const provider = createLmStudioProvider({
+    transport: fakeTransport({
+      streams: [
+        [
+          sse('message.delta', { content: '' }),
+          sse('reasoning.delta', { content: 'why' }),
+          sse('reasoning.delta', {}),
+          sse('message.delta', { content: 'Hi' }),
+          sse('chat.end', {
+            result: { output: [{ type: 'message', content: 'Hi' }] },
+          }),
+        ],
+      ],
+    }),
+  });
+
+  const events = await collect(
+    provider.stream({
+      model: 'local-model',
+      messages: [{ role: 'user', content: 'Hi' }],
+    }),
+  );
+
+  assert.deepEqual(
+    events.filter((event) => event.type === 'text.delta'),
+    [{ type: 'text.delta', delta: 'Hi' }],
+  );
+
+  assert.deepEqual(
+    events
+      .filter(
+        (event): event is ProviderStreamEvent & { type: 'reasoning.delta' } =>
+          event.type === 'reasoning.delta',
+      )
+      .map((event) => event.delta),
+    ['why'],
+  );
+});
+
 test('continues LM Studio streams after provider error events', async () => {
   const provider = createLmStudioProvider({
     transport: fakeTransport({

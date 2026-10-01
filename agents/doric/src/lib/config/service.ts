@@ -5,6 +5,7 @@ import type { Bundle } from 'bundle';
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
 import { createGeneration, type Generation } from './generation.js';
+import { readModelProperties } from './models.js';
 import type { ConfigInput, DoricConfig } from './schema.js';
 import { providerCredentials } from './schema.js';
 import type { ConfigStore } from './store.js';
@@ -31,6 +32,12 @@ type ConfigServiceOptions = {
   readonly bundles: readonly Bundle[];
   readonly logger: Logger;
   readonly buildGeneration?: typeof createGeneration;
+  /**
+   * Reads what each provider's model catalog says about the models it lists, and
+   * returns the configuration to store. Injected so a test never reaches a real
+   * endpoint; the default is the host's own reader.
+   */
+  readonly readModels?: (configuration: ConfigInput) => Promise<ConfigInput>;
 };
 
 /** Initializes and serializes atomic configuration-generation replacements. */
@@ -40,7 +47,12 @@ export const createConfigService = async ({
   bundles,
   logger,
   buildGeneration = createGeneration,
+  readModels,
 }: ConfigServiceOptions): Promise<ConfigService> => {
+  const models =
+    readModels ??
+    ((configuration: ConfigInput) =>
+      readModelProperties(configuration, { credentials, logger }));
   let active = await buildGeneration({
     snapshot: await store.load(),
     credentials,
@@ -54,13 +66,14 @@ export const createConfigService = async ({
     replace(config) {
       const replacement = tail.then(async () => {
         requireCredentials(config, credentials);
+        const filled = await models(config);
         const candidate = await buildGeneration({
-          snapshot: { configuration: config, revision: 0, updatedAt: '' },
+          snapshot: { configuration: filled, revision: 0, updatedAt: '' },
           credentials,
           bundles,
           logger,
         });
-        const snapshot = await store.replace(config);
+        const snapshot = await store.replace(filled);
         active = { ...candidate, snapshot };
         return snapshot;
       });

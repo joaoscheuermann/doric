@@ -24,6 +24,12 @@ import {
 const endpointValue = 'http://127.0.0.1:4321/proxy';
 const tokenValue = 'sk-catalog-value';
 
+/**
+ * The identity the compatible factory reports. A provider is its own id now, so
+ * the test supplies one and the compatible case reads it back.
+ */
+const identity = { id: 'compatible-identity', name: 'Compatible Identity' };
+
 const sample = (field: ProviderField): string => {
   switch (field.kind) {
     case 'url':
@@ -97,7 +103,7 @@ const cases: readonly Case[] = [
     defaultBaseUrl: 'https://api.openai.com/v1',
     path: '/responses',
     transport: () => fakeTransport({ responses: [responsesAnswer()] }),
-    metadata: { id: 'identityId-value', name: 'identityName-value' },
+    metadata: identity,
   },
   {
     kind: 'openrouter',
@@ -188,6 +194,7 @@ const complete = async (
   const provider = createProviderForKind(kind.id, values, {
     transport,
     logger: silentLogger,
+    identity,
   });
 
   await provider.complete({
@@ -304,7 +311,11 @@ test('answers the kind and the fields a provider was built from', async () => {
 });
 
 test('refuses a kind whose required value is absent or blank', () => {
-  const deps = { transport: fakeTransport({}), logger: silentLogger };
+  const deps = {
+    transport: fakeTransport({}),
+    logger: silentLogger,
+    identity,
+  };
 
   for (const kind of providerKinds) {
     const required = kind.fields.filter((field) => field.required);
@@ -333,7 +344,11 @@ test('refuses a kind whose required value is absent or blank', () => {
 });
 
 test('refuses a value its factory cannot use', () => {
-  const deps = { transport: fakeTransport({}), logger: silentLogger };
+  const deps = {
+    transport: fakeTransport({}),
+    logger: silentLogger,
+    identity,
+  };
   const unified = kindOf('unified');
   const codex = kindOf('codex');
 
@@ -393,6 +408,7 @@ test('passes a number field through to its factory', async () => {
     const provider = createProviderForKind('unified', values, {
       transport,
       logger: silentLogger,
+      identity,
     });
 
     await assert.rejects(

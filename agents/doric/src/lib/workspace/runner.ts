@@ -23,7 +23,6 @@ import {
 export const createThreadRunner = (context: RuntimeContext) => {
   const { exclusive, threads: store, publisher } = context;
   const publish = async (
-    project: ProjectRuntime,
     thread: ThreadRuntime,
     job: PromptJob,
     event: unknown,
@@ -31,7 +30,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     const value = await store.appendEvent(
       thread.thread.id,
       job.id,
-      eventJson(event, project.generation.redactions()),
+      eventJson(event, context.generation().redactions()),
     );
     publisher.event(value);
   };
@@ -65,7 +64,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     if (prompt.trim().length === 0)
       throw new TypeError('A non-empty prompt is required.');
     const job: PromptJob = { id: randomUUID(), prompt, source };
-    await publish(project, thread, job, {
+    await publish(thread, job, {
       type: 'prompt.accepted',
       text: prompt,
       source,
@@ -99,7 +98,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
           '',
           '## Result',
           '',
-          String(eventJson(text, project.generation.redactions())),
+          String(eventJson(text, context.generation().redactions())),
         ].join('\n'),
         {
           kind: 'result',
@@ -117,7 +116,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     status: string,
     text: string,
   ) => {
-    await publish(project, thread, job, {
+    await publish(thread, job, {
       type: 'prompt.finished',
       status,
       text,
@@ -151,7 +150,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         text = await context.execute({
           thread: thread.thread,
           job: active.job,
-          generation: project.generation,
+          generation: context.generation(),
           sandbox: project.lease!.sandbox,
           signal: active.controller.signal,
           store,
@@ -166,7 +165,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
           status === 'cancelled'
             ? 'The prompt was cancelled.'
             : 'The prompt failed.';
-        await publish(project, thread, active.job, {
+        await publish(thread, active.job, {
           type: status === 'cancelled' ? 'agent.cancelled' : 'agent.failed',
           error,
         });
@@ -302,7 +301,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         .then(async () => {
           for (const job of pending) {
             try {
-              await publish(project, thread, job, {
+              await publish(thread, job, {
                 type:
                   failure === undefined ? 'agent.cancelled' : 'agent.failed',
               });

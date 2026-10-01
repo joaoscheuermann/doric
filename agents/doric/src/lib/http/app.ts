@@ -1,4 +1,5 @@
 import express, { type Express } from 'express';
+import type { Logger } from 'pino';
 
 import { createConfigRouter } from '../../routes/config.js';
 import { createCredentialsRouter } from '../../routes/credentials.js';
@@ -11,8 +12,8 @@ import {
 } from '../../routes/vms.js';
 import type { ConfigService } from '../config/service.js';
 import type { CredentialService } from '../credentials/service.js';
-import { handleHttpError } from './errors.js';
 import type { WorkspaceService } from '../workspace/types.js';
+import { handleHttpError } from './errors.js';
 
 /** Registers the production HTTP surface on the shared HTTP/Socket.IO app. */
 export const registerHttpRoutes = (
@@ -20,6 +21,7 @@ export const registerHttpRoutes = (
   dependencies: {
     readonly config: ConfigService;
     readonly credentials: CredentialService;
+    readonly logger: Logger;
     readonly service: WorkspaceService;
     readonly vms: CreateVmsRouterOptions;
   },
@@ -28,7 +30,13 @@ export const registerHttpRoutes = (
   app.use('/vms', createVmsRouter(dependencies.vms));
   app.use('/config', createConfigRouter(dependencies.config));
   app.use('/credentials', createCredentialsRouter(dependencies.credentials));
-  app.use('/providers', createProvidersRouter());
+  app.use(
+    '/providers',
+    createProvidersRouter({
+      credentials: dependencies.credentials,
+      logger: dependencies.logger,
+    }),
+  );
   app.use('/projects', createProjectsRouter(dependencies.service));
   app.use('/threads', createThreadsRouter(dependencies.service));
   app.use(handleHttpError);

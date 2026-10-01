@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  type ActivityItem,
   type ActivityTurn,
   emptyProjection,
   projectEvents,
@@ -54,14 +53,6 @@ const awaitingOf = (turn: Turn | undefined): boolean | undefined =>
 
 const activityOf = (turn: Turn | undefined): ActivityTurn | undefined =>
   turn?.type === 'activity' ? turn : undefined;
-
-const toolItemOf = (
-  turn: Turn | undefined,
-): Extract<ActivityItem, { kind: 'tool' }> | undefined =>
-  activityOf(turn)?.items.find(
-    (item): item is Extract<ActivityItem, { kind: 'tool' }> =>
-      item.kind === 'tool',
-  );
 
 describe('thread event projection', () => {
   test('opens a user turn for the human prompt', () => {
@@ -145,6 +136,31 @@ describe('thread event projection', () => {
     assert.equal(projection.turns[0]?.events.length, 2);
   });
 
+  test('ignores a text delta that carries no text', () => {
+    // OpenRouter sends one empty text delta beside each reasoning chunk, so an
+    // unfiltered delta would open an agent turn inside the run and split it.
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'The user is' }),
+      event(2, 'one', { type: 'text.delta', delta: '' }),
+      event(3, 'one', { type: 'reasoning.delta', delta: ' greeting me.' }),
+      event(4, 'one', { type: 'text.delta', delta: '' }),
+      event(5, 'one', { type: 'text.delta', delta: 'Hi' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['thinking', 'agent']);
+    assert.equal(textOf(projection.turns[0]), 'The user is greeting me.');
+    assert.equal(textOf(projection.turns[1]), 'Hi');
+  });
+
+  test('ignores a delta that carries no text however its run would read', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: '' }),
+      event(2, 'one', { type: 'text.delta', delta: '' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), []);
+  });
+
   test('reads a trailing reasoning run as still streaming', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
@@ -153,18 +169,17 @@ describe('thread event projection', () => {
     assert.equal(streamingOf(projection.turns[0]), true);
   });
 
-  test('groups reasoning that a following answer closes', () => {
+  test('keeps a lone thought as its own step, not a summary', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
       event(2, 'one', { type: 'text.delta', delta: 'so' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
-    assert.equal(activityOf(projection.turns[0])?.thoughts, 1);
-    assert.equal(activityOf(projection.turns[0])?.tools, 0);
+    assert.deepEqual(types(projection.turns), ['thinking', 'agent']);
+    assert.equal(textOf(projection.turns[0]), 'hmm');
   });
 
-  test('groups reasoning when its job ends without an answer', () => {
+  test('keeps a lone thought when its job ends without an answer', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),
       event(2, 'one', {
@@ -174,7 +189,8 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['activity']);
+    assert.deepEqual(types(projection.turns), ['thinking']);
+    assert.equal(streamingOf(projection.turns[0]), false);
   });
 
   test('groups a completed burst and counts what it did', () => {
@@ -200,7 +216,7 @@ describe('thread event projection', () => {
     );
   });
 
-  test('groups a burst that a new prompt closes', () => {
+  test('keeps a lone thought when a new prompt closes it', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),
       event(2, 'two', {
@@ -210,7 +226,7 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['activity', 'user']);
+    assert.deepEqual(types(projection.turns), ['thinking', 'user']);
   });
 
   test('reads a prompt the agent has not answered as awaiting', () => {
@@ -278,7 +294,7 @@ describe('thread event projection', () => {
     ]);
 
     assert.deepEqual(types(projection.turns), [
-      'activity',
+      'thinking',
       'agent',
       'tool_call',
     ]);
@@ -294,7 +310,7 @@ describe('thread event projection', () => {
       event(3, 'one', { type: 'text.delta', delta: 'after' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['agent', 'activity', 'agent']);
+    assert.deepEqual(types(projection.turns), ['agent', 'tool_call', 'agent']);
     assert.equal(textOf(projection.turns[0]), 'before');
     assert.equal(textOf(projection.turns[2]), 'after');
   });
@@ -359,8 +375,8 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
-    assert.equal(toolItemOf(projection.turns[0])?.status, 'running');
+    assert.deepEqual(types(projection.turns), ['tool_call', 'agent']);
+    assert.equal(toolOf(projection.turns[0])?.status, 'running');
     assert.equal(agentStatus(projection.turns[1]), 'completed');
     assert.equal(textOf(projection.turns[1]), 'done');
   });
@@ -378,7 +394,7 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['agent', 'activity', 'agent']);
+    assert.deepEqual(types(projection.turns), ['agent', 'tool_call', 'agent']);
     assert.equal(textOf(projection.turns[0]), 'first');
     assert.equal(textOf(projection.turns[2]), 'final');
   });
@@ -426,7 +442,7 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
+    assert.deepEqual(types(projection.turns), ['thinking', 'agent']);
     assert.equal(textOf(projection.turns[1]), 'answer');
     assert.equal(agentStatus(projection.turns[1]), 'completed');
   });

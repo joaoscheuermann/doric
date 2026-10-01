@@ -111,6 +111,7 @@ export const reasoningEfforts = [
   'medium',
   'high',
   'xhigh',
+  'max',
 ] as const;
 
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
@@ -130,6 +131,8 @@ export type ProviderField = {
   readonly description?: string;
   readonly placeholder?: string;
   readonly options?: readonly string[];
+  /** Whether an operator rarely needs the field, so a screen can shelve it. */
+  readonly advanced?: boolean;
 };
 
 /** The per-provider lists a kind keeps: edited as tables, read by other sections. */
@@ -148,6 +151,16 @@ export type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
+/**
+ * One model a provider offers. Its name is the model id an execution profile
+ * types; when the kind keeps reasoning efforts, the model carries its own.
+ */
+export type ProviderModel = {
+  readonly name: string;
+  /** The efforts this model accepts, for the kinds whose catalog lists them. */
+  readonly reasonings?: readonly ReasoningEffort[];
+};
+
 export type ProviderConfiguration = {
   readonly id: string;
   /** The kind this provider names, one of the catalog's ids. */
@@ -155,9 +168,7 @@ export type ProviderConfiguration = {
   /** The kind's own field values; a `secret` value names a stored credential. */
   readonly configuration: Readonly<Record<string, string>>;
   /** The models this provider offers, for the kinds whose catalog lists them. */
-  readonly models?: readonly string[];
-  /** The efforts it accepts, for the kinds whose catalog lists them. */
-  readonly reasonings?: readonly ReasoningEffort[];
+  readonly models?: readonly ProviderModel[];
 };
 
 /**
@@ -215,7 +226,11 @@ export type Configuration = {
     readonly execution: {
       readonly providerId: string;
       readonly model: string;
-      readonly effort: ReasoningEffort;
+      /**
+       * The effort the model accepts; absent when it lists none, because a model
+       * whose catalog names no efforts cannot be told one.
+       */
+      readonly effort?: ReasoningEffort;
     };
   };
   readonly execution: { readonly maxTurns: number };
@@ -291,15 +306,13 @@ const providerConfigurationFrom = (value: unknown): ProviderConfiguration => {
     return invalidResponse();
   }
 
-  const models = stringListFrom(value.models);
-  const reasonings = reasoningListFrom(value.reasonings);
+  const models = providerModelsFrom(value.models);
 
   return {
     id: value.id,
     kind: value.kind,
     configuration: configurationValuesFrom(value.configuration),
     ...(models === undefined ? {} : { models }),
-    ...(reasonings === undefined ? {} : { reasonings }),
   };
 };
 
@@ -321,6 +334,29 @@ const stringListFrom = (value: unknown): readonly string[] | undefined => {
     return invalidResponse();
 
   return value as readonly string[];
+};
+
+/** One model a provider offers: its name, and the efforts its kind keeps. */
+const providerModelFrom = (value: unknown): ProviderModel => {
+  if (!isRecord(value) || typeof value.name !== 'string')
+    return invalidResponse();
+
+  const reasonings = reasoningListFrom(value.reasonings);
+
+  return {
+    name: value.name,
+    ...(reasonings === undefined ? {} : { reasonings }),
+  };
+};
+
+/** A provider's model list, or nothing when the kind keeps none. */
+const providerModelsFrom = (
+  value: unknown,
+): readonly ProviderModel[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return invalidResponse();
+
+  return value.map(providerModelFrom);
 };
 
 /** A provider's reasoning list, which only names efforts llms knows. */
@@ -353,7 +389,9 @@ const providerFieldFrom = (value: unknown): ProviderField => {
     typeof value.required !== 'boolean' ||
     (value.description !== undefined &&
       typeof value.description !== 'string') ||
-    (value.placeholder !== undefined && typeof value.placeholder !== 'string')
+    (value.placeholder !== undefined &&
+      typeof value.placeholder !== 'string') ||
+    (value.advanced !== undefined && typeof value.advanced !== 'boolean')
   ) {
     return invalidResponse();
   }
@@ -375,6 +413,7 @@ const providerFieldFrom = (value: unknown): ProviderField => {
     ...(value.placeholder === undefined
       ? {}
       : { placeholder: value.placeholder }),
+    ...(value.advanced === undefined ? {} : { advanced: value.advanced }),
     ...(options === undefined ? {} : { options }),
   };
 };
@@ -401,7 +440,60 @@ const providerKindFrom = (value: unknown): ProviderKind => {
   };
 };
 
-/** The host's catalog, unwrapped from the envelope the route answers with. */
+/**
+ * One model a provider's catalog describes: what the endpoint calls it, the
+ * reasoning efforts it accepts, and every request parameter it advertises. The
+ * efforts are the closed set every endpoint agrees on, so a value this window
+ * cannot send is not one it forwards.
+ */
+export type CatalogModel = {
+  readonly id: string;
+  readonly name?: string;
+  readonly reasonings: readonly ReasoningEffort[];
+  readonly parameters: readonly string[];
+};
+
+/** The values one provider carries, as a catalog read names it. */
+export type ProviderValuesRef = {
+  readonly kind: string;
+  readonly configuration: Readonly<Record<string, string>>;
+};
+
+/**
+ * The host's catalog, unwrapped from the envelope the route answers with.
+ */
+const catalogFrom = (value: unknown): readonly CatalogModel[] => {
+  if (!isRecord(value) || !Array.isArray(value.models))
+    return invalidResponse();
+
+  return value.models.map((entry) => {
+    if (!isRecord(entry) || typeof entry.id !== 'string')
+      return invalidResponse();
+
+    const reasonings = reasoningListFrom(entry.reasonings);
+    const parameters = stringListFrom(entry.parameters);
+
+    if (
+      reasonings === undefined ||
+      parameters === undefined ||
+      (entry.name !== undefined && typeof entry.name !== 'string')
+    ) {
+      return invalidResponse();
+    }
+
+    return {
+      id: entry.id,
+      ...(entry.name === undefined ? {} : { name: entry.name }),
+      reasonings,
+      parameters,
+    };
+  });
+};
+
+/**
+ * The host's provider-kind catalog, unwrapped from the envelope the route
+ * answers with.
+ */
 const providerKindsFrom = (value: unknown): readonly ProviderKind[] => {
   if (!isRecord(value) || !Array.isArray(value.kinds)) return invalidResponse();
 
@@ -461,7 +553,7 @@ const configurationFrom = (value: unknown): Configuration => {
   if (
     typeof providerId !== 'string' ||
     typeof model !== 'string' ||
-    !isReasoningEffort(effort)
+    (effort !== undefined && !isReasoningEffort(effort))
   ) {
     return invalidResponse();
   }
@@ -470,7 +562,13 @@ const configurationFrom = (value: unknown): Configuration => {
   const githubCredentialId = credentialReferenceFrom(value.githubCredentialId);
   return {
     providers: value.providers.map(providerConfigurationFrom),
-    models: { execution: { providerId, model, effort } },
+    models: {
+      execution: {
+        providerId,
+        model,
+        ...(effort === undefined ? {} : { effort }),
+      },
+    },
     execution: { maxTurns: value.execution.maxTurns },
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
@@ -879,12 +977,23 @@ export const workspaceApi = {
       ),
   },
   /**
-   * The provider kinds the host can build. The catalog is the host's, so this is
-   * what lets a settings surface configure a kind it has never heard of.
+   * The provider kinds the host can build, and the models one provider's catalog
+   * describes. The catalog is the host's — this window never opens HTTP — so the
+   * kinds let a settings surface configure a kind it has never heard of, and the
+   * read lets a provider page offer the models the endpoint itself lists.
    */
   providers: {
     kinds: async (): Promise<readonly ProviderKind[]> =>
       providerKindsFrom(await request<unknown>('/providers/kinds')),
+    models: async (
+      values: ProviderValuesRef,
+    ): Promise<readonly CatalogModel[]> =>
+      catalogFrom(
+        await request<unknown>('/providers/models', {
+          method: 'POST',
+          body: body(values),
+        }),
+      ),
   },
   /**
    * The host's credential store. The list answers every credential in its

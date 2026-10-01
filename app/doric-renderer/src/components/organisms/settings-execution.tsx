@@ -1,12 +1,4 @@
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { ChoicePicker } from '@/components/molecules/choice-picker';
 import {
   Field,
   FieldDescription,
@@ -17,87 +9,41 @@ import { Input } from '@/components/ui/input';
 import {
   type Configuration,
   effortLabel,
+  modelEfforts,
   providerLabel,
   type ReasoningEffort,
-  reasoningEfforts,
   turnsFromInput,
   updateModel,
   updateTurnLimit,
 } from '@/domain/config';
-import { ChevronDownIcon, InfoIcon } from 'lucide-react';
 
 type SettingsExecutionProps = {
   readonly draft: Configuration;
   readonly onChange: (next: Configuration) => void;
 };
 
-type Choice = { readonly label: string; readonly value: string };
-
-/**
- * One setting chosen from a fixed list: the trigger names the current choice and
- * the menu holds the list. An empty list cannot be opened, because nothing is
- * there to choose.
- */
-function ChoicePicker({
-  ariaLabel,
-  choices,
-  onSelect,
-  value,
-}: {
-  readonly ariaLabel: string;
-  readonly choices: readonly Choice[];
-  readonly onSelect: (value: string) => void;
-  readonly value: string;
-}) {
-  const current = choices.find((choice) => choice.value === value);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-fit justify-between"
-          aria-label={ariaLabel}
-          disabled={choices.length === 0}
-        >
-          {current?.label ?? `Choose ${ariaLabel.toLowerCase()}`}
-          <ChevronDownIcon data-icon="inline-end" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuRadioGroup value={value} onValueChange={onSelect}>
-          {choices.map((choice) => (
-            <DropdownMenuRadioItem key={choice.value} value={choice.value}>
-              {choice.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 /**
  * What runs a prompt: the provider, the model on it, the reasoning effort, and
- * how many turns one prompt may take.
+ * how many turns one prompt may take. Every prompt reads this as it runs, so a
+ * choice here reaches a Project that is already running.
  */
 export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
   const { effort, model, providerId } = draft.models.execution;
   const maxTurns = draft.execution.maxTurns;
-  // The selected provider may hold the models and reasonings it supports. When
-  // it lists them they become the choices; when it lists none the field stays
-  // free, because a provider that declares no models can be called with any.
+  // The selected provider may hold the models it offers, and each model its own
+  // reasoning efforts. When the model lists them they become the choices; when
+  // it lists none — or no model is named — the field stays free, because a
+  // provider that declares no models can be called with any, and a model whose
+  // efforts are unknown is taken to accept the whole set.
   const provider = draft.providers.find((entry) => entry.id === providerId);
   const models = provider?.models ?? [];
-  const reasonings = provider?.reasonings ?? [];
-  const efforts =
-    reasonings.length === 0
-      ? reasoningEfforts.map((value) => ({ label: effortLabel(value), value }))
-      : reasonings.map((value) => ({
-          label: effortLabel(value as ReasoningEffort),
-          value,
-        }));
+  // The model's own efforts, and nothing else: a model that lists none offers no
+  // choice at all, because what it accepts is the catalog's to say.
+  const reasonings = modelEfforts(draft, providerId, model);
+  const efforts = reasonings.map((value) => ({
+    label: effortLabel(value),
+    value,
+  }));
 
   return (
     <FieldGroup>
@@ -131,7 +77,10 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
         ) : (
           <ChoicePicker
             ariaLabel="Execution model"
-            choices={models.map((value) => ({ label: value, value }))}
+            choices={models.map((entry) => ({
+              label: entry.name,
+              value: entry.name,
+            }))}
             value={model}
             onSelect={(next) => onChange(updateModel(draft, { model: next }))}
           />
@@ -142,11 +91,17 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
         <ChoicePicker
           ariaLabel="Reasoning effort"
           choices={efforts}
-          value={effort}
+          emptyLabel="Not offered by this model"
+          value={effort ?? ''}
           onSelect={(next) =>
             onChange(updateModel(draft, { effort: next as ReasoningEffort }))
           }
         />
+        <FieldDescription>
+          {efforts.length === 0
+            ? 'This model does not list the reasoning efforts it accepts, so no effort is sent with a prompt.'
+            : 'The efforts this model lists in the provider catalog.'}
+        </FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor="execution-max-turns">Turn limit</FieldLabel>
@@ -162,15 +117,6 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
           The most turns a single prompt may take before it stops.
         </FieldDescription>
       </Field>
-      <Alert>
-        <InfoIcon />
-        <AlertTitle>Applies to new Projects</AlertTitle>
-        <AlertDescription>
-          A Project keeps the configuration it was created with, so this change
-          reaches only Projects created after it is saved. Projects already
-          running keep running as they were.
-        </AlertDescription>
-      </Alert>
     </FieldGroup>
   );
 }

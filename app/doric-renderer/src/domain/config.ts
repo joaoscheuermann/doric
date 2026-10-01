@@ -18,6 +18,7 @@ export const reasoningEfforts = [
   'medium',
   'high',
   'xhigh',
+  'max',
 ] as const;
 
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
@@ -25,13 +26,32 @@ export type ReasoningEffort = (typeof reasoningEfforts)[number];
 /** The identifier a provider kind is known by. The host owns the set. */
 export type ProviderKindId = string;
 
+/**
+ * One model a provider's own catalog describes, as the host read it: what the
+ * endpoint calls the model, the reasoning efforts it accepts, and every request
+ * parameter it advertises. The renderer never reads a catalog itself, so this is
+ * always the host's answer.
+ */
+export type CatalogModel = {
+  readonly id: string;
+  readonly name?: string;
+  readonly reasonings: readonly ReasoningEffort[];
+  readonly parameters: readonly string[];
+};
+
+/** The values one provider carries, as a catalog read names it. */
+export type ProviderValuesRef = {
+  readonly kind: ProviderKindId;
+  readonly configuration: Readonly<Record<string, string>>;
+};
+
 /** How a configuration field must be drawn and validated. */
 export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
 /**
  * One configuration field a kind declares. The kind fixes how the field is drawn
- * (`kind`), what it is called, and whether it must be present, so a dialog draws a
- * kind it has never seen and applies the host's own rule to each field.
+ * (`kind`), what it is called, and whether it must be present, so the surface
+ * draws a kind it has never seen and applies the host's own rule to each field.
  */
 export type ProviderField = {
   readonly key: string;
@@ -42,14 +62,20 @@ export type ProviderField = {
   readonly placeholder?: string;
   /** The values an `enum` field offers; present only for `kind: 'enum'`. */
   readonly options?: readonly string[];
+  /** Whether an operator rarely needs the field, so a screen can shelve it. */
+  readonly advanced?: boolean;
 };
 
-/** The per-provider lists a kind keeps; each is edited as a table. */
+/**
+ * What a kind keeps beyond its fields. `models` is the list of models the
+ * provider offers; `reasonings` means each model in that list carries the
+ * reasoning efforts it accepts, so a kind that keeps it keeps `models` too.
+ */
 export type ProviderListId = 'models' | 'reasonings';
 
 /**
- * A kind of provider the host may call: the fields it declares, in the order a
- * dialog draws them, and the lists it keeps. The host owns this catalog, so
+ * A kind of provider the host may call: the fields it declares, in the order the
+ * surface draws them, and the lists it keeps. The host owns this catalog, so
  * nothing here is a fixed list of provider types the renderer already knows.
  */
 export type ProviderKind = {
@@ -60,16 +86,15 @@ export type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
-/** Every list a kind may keep, in the order a form draws them. */
-export const providerListIds = [
-  'models',
-  'reasonings',
-] as const satisfies readonly ProviderListId[];
-
-/** What one entry of a list is called, so a rule can name a singular entry. */
-const providerListNoun: Record<ProviderListId, string> = {
-  models: 'model',
-  reasonings: 'reasoning effort',
+/**
+ * One model a provider offers, with the reasoning efforts that model accepts.
+ * The efforts are present exactly when the kind keeps `reasonings`; a kind that
+ * keeps only `models` — a server that translates the effort itself — carries a
+ * name alone.
+ */
+export type ProviderModel = {
+  readonly name: string;
+  readonly reasonings?: readonly string[];
 };
 
 /**
@@ -82,10 +107,8 @@ export type ProviderConfiguration = {
   readonly kind: ProviderKindId;
   /** The values of the fields the kind declares, keyed by `ProviderField.key`. */
   readonly configuration: { readonly [key: string]: string };
-  /** The models it keeps; present exactly when the kind declares `models`. */
-  readonly models?: readonly string[];
-  /** Its reasoning efforts; present exactly when the kind declares `reasonings`. */
-  readonly reasonings?: readonly string[];
+  /** The models it offers; present exactly when the kind declares `models`. */
+  readonly models?: readonly ProviderModel[];
 };
 
 /** The closed set of credential kinds. A kind fixes which fields it carries. */
@@ -162,7 +185,11 @@ export type ConfigurationInput = Configuration;
 export type ModelExecution = {
   readonly providerId: string;
   readonly model: string;
-  readonly effort: ReasoningEffort;
+  /**
+   * The effort the model accepts; absent when it accepts none. A model whose
+   * catalog names no efforts cannot be told one, so no reasoning block is sent.
+   */
+  readonly effort?: ReasoningEffort;
 };
 
 export type DoricConfiguration = {
@@ -321,9 +348,9 @@ export const updatedAtLabel = (updatedAt: string): string => {
  * The kind catalog travels in because a provider's fields and lists are the
  * kind's to declare: without it this module cannot say what a provider must
  * carry. The stored credentials do not, so whether a `secret` field still names
- * a credential is asked of the dialog, where the store is in hand — a credential
- * that is deleted is the host's refusal to answer, not a draft this module can
- * judge without the list.
+ * a credential is asked of the provider page, where the store is in hand — a
+ * credential that is deleted is the host's refusal to answer, not a draft this
+ * module can judge without the list.
  */
 export const configurationIssue = (
   configuration: Configuration,
@@ -354,7 +381,16 @@ export const configurationIssue = (
   if (model.trim() === '' || Array.from(model).length > modelLimit) {
     return `Enter a model between 1 and ${modelLimit} characters.`;
   }
-  if (!reasoningEfforts.includes(effort)) return 'Choose a reasoning effort.';
+  // A model that lists no efforts cannot be told one, so the profile carries
+  // none; a model that lists them needs the choice among them, and no profile
+  // may name an effort outside the set every endpoint agrees on.
+  const efforts = modelEfforts(configuration, providerId, model);
+  if (effort !== undefined && !reasoningEfforts.includes(effort)) {
+    return 'Choose a reasoning effort.';
+  }
+  if (efforts.length > 0 && effort === undefined) {
+    return 'Choose a reasoning effort.';
+  }
   if (
     !Number.isInteger(configuration.execution.maxTurns) ||
     configuration.execution.maxTurns < 1
@@ -370,11 +406,12 @@ export const configurationIssue = (
  * to every provider and `providerIssue` applies to one draft, so the two cannot
  * drift: a `url` is http(s), a `number` parses finite, an `enum` names one of the
  * values the kind offers, a required field is present and non-empty, no field
- * the kind does not declare is carried, and each list is present exactly when the
- * kind keeps it, with unique non-empty entries.
+ * the kind does not declare is carried, and the model list is present exactly
+ * when the kind keeps it, each model named once with the efforts its kind keeps
+ * (see `modelsIssue`).
  *
  * Whether a `secret` field names a stored credential is not asked here: that
- * needs the store, which only the dialog holds (see `providerIssue`).
+ * needs the store, which only the provider page holds (see `providerIssue`).
  */
 const providerFieldsIssue = (
   provider: ProviderConfiguration,
@@ -404,33 +441,68 @@ const providerFieldsIssue = (
     }
   }
 
-  for (const list of providerListIds) {
-    const entries = provider[list];
-    if (!kind.lists.includes(list)) {
-      if (entries !== undefined && entries.length > 0) {
-        return `Provider ${provider.id}'s kind does not keep ${list}.`;
+  return modelsIssue(provider.id, provider.models, kind);
+};
+
+/**
+ * The first reason a provider's models cannot be stored, or `undefined`: every
+ * model is named and no two share a name, and — when the kind keeps
+ * `reasonings` — each model carries its own effort list, unique and known, while
+ * a kind that keeps only `models` carries a name alone.
+ */
+const modelsIssue = (
+  providerId: string,
+  models: ProviderConfiguration['models'],
+  kind: ProviderKind,
+): string | undefined => {
+  const keepsModels = kind.lists.includes('models');
+
+  if (!keepsModels) {
+    return models !== undefined && models.length > 0
+      ? `Provider ${providerId}'s kind does not keep models.`
+      : undefined;
+  }
+  if (models === undefined) {
+    return `Provider ${providerId} must carry its models.`;
+  }
+
+  const keepsReasonings = kind.lists.includes('reasonings');
+  const names = new Set<string>();
+
+  for (const model of models) {
+    const name = model.name.trim();
+    if (name === '') return `Every model must be named for ${providerId}.`;
+    if (Array.from(name).length > modelLimit) {
+      return `Enter a model of at most ${modelLimit} characters for ${providerId}.`;
+    }
+    if (names.has(name)) {
+      return `Every model must be unique for ${providerId}.`;
+    }
+    names.add(name);
+
+    const reasonings = model.reasonings;
+    if (!keepsReasonings) {
+      if (reasonings !== undefined && reasonings.length > 0) {
+        return `The kind of ${providerId} does not keep a model's reasoning efforts.`;
       }
       continue;
     }
-    if (entries === undefined) {
-      return `Provider ${provider.id} must carry its ${list}.`;
+    if (reasonings === undefined) {
+      return `Model ${name} must carry its reasoning efforts for ${providerId}.`;
     }
-    const noun = providerListNoun[list];
-    const seen = new Set<string>();
-    for (const entry of entries) {
+
+    const efforts = new Set<string>();
+    for (const entry of reasonings) {
       const trimmed = entry.trim();
       if (trimmed === '') {
-        return `Every ${noun} must be filled in for ${provider.id}.`;
+        return `Every reasoning effort must be filled in for ${name}.`;
       }
-      if (seen.has(trimmed)) {
-        return `Every ${noun} must be unique for ${provider.id}.`;
+      if (efforts.has(trimmed)) {
+        return `Every reasoning effort must be unique for ${name}.`;
       }
-      seen.add(trimmed);
-      if (
-        list === 'reasonings' &&
-        !reasoningEfforts.includes(entry as ReasoningEffort)
-      ) {
-        return `Choose a known reasoning effort for ${provider.id}.`;
+      efforts.add(trimmed);
+      if (!reasoningEfforts.includes(entry as ReasoningEffort)) {
+        return `Choose a known reasoning effort for ${name}.`;
       }
     }
   }
@@ -442,7 +514,7 @@ const providerFieldsIssue = (
  * The first `secret` field that does not name a stored `API_TOKEN` credential,
  * or `undefined`. A secret field is drawn with the credential select, so this is
  * what stops a draft naming a credential the store no longer holds — the rule
- * the dialog's own Save reads.
+ * the provider page reads before it commits the draft.
  */
 const providerSecretsIssue = (
   provider: ProviderConfiguration,
@@ -486,6 +558,26 @@ const isSameList = (
   );
 };
 
+/** Whether two provider models hold the same name and the same efforts, absent as empty. */
+const isSameModel = (left: ProviderModel, right: ProviderModel): boolean =>
+  left.name === right.name && isSameList(left.reasonings, right.reasonings);
+
+/** Whether two model lists hold the same models, absent as empty. */
+const isSameModels = (
+  left: readonly ProviderModel[] | undefined,
+  right: readonly ProviderModel[] | undefined,
+): boolean => {
+  const models = left ?? [];
+  const others = right ?? [];
+  return (
+    models.length === others.length &&
+    models.every((model, index) => {
+      const other = others[index];
+      return other !== undefined && isSameModel(model, other);
+    })
+  );
+};
+
 const isSameProvider = (
   left: ProviderConfiguration,
   right: ProviderConfiguration,
@@ -493,13 +585,12 @@ const isSameProvider = (
   left.id === right.id &&
   left.kind === right.kind &&
   isSameValues(left.configuration, right.configuration) &&
-  isSameList(left.models, right.models) &&
-  isSameList(left.reasonings, right.reasonings);
+  isSameModels(left.models, right.models);
 
 /**
  * The configuration with one provider replaced wholesale at a position, keeping
  * the list's length. The position is the identity `updateProvider` addresses, and
- * it is the one a dialog's draft carries, so a rename cannot land on the wrong
+ * it is the one an editing draft carries, so a rename cannot land on the wrong
  * row while the table draws the list in another order.
  */
 export const replaceProvider = (
@@ -515,19 +606,19 @@ export const replaceProvider = (
         kind: provider.kind,
         configuration: provider.configuration,
         models: provider.models,
-        reasonings: provider.reasonings,
       });
 };
 
 /**
- * One provider while it is being edited in a dialog: the provider's own fields,
- * and the position it holds in `Configuration.providers`, or `undefined` while it
- * is being added.
+ * One provider while it is being edited on the provider page: the provider's own
+ * fields, and the position it holds in `Configuration.providers`, or `undefined`
+ * while it is being added.
  *
- * The draft is separate from the configuration because a dialog edits a copy: the
- * stored list keeps the provider every other screen is reading until the draft is
- * saved, and a half-typed id never becomes the reference the execution settings
- * point at.
+ * The draft is what the page edits, so the surface can hold a provider the list
+ * would refuse — a half-typed id, a field still missing — without the stored list
+ * carrying it: `applyProviderDraft` writes the draft into the configuration only
+ * once the provider's own rules accept it, and a half-typed id never becomes the
+ * reference the execution settings point at.
  */
 export type ProviderDraft = ProviderConfiguration & {
   readonly index?: number;
@@ -535,8 +626,8 @@ export type ProviderDraft = ProviderConfiguration & {
 
 /**
  * A draft for a provider that does not exist yet, in one kind: the id is blank,
- * every field the kind declares starts empty, and the lists it keeps start
- * empty too, because a new provider's fields and lists are exactly the kind's to
+ * every field the kind declares starts empty, and the model list it keeps starts
+ * empty too, because a new provider's fields and models are exactly the kind's to
  * say. Changing the kind later starts from this again, since no two kinds share
  * a field set a half-typed value could survive.
  */
@@ -547,8 +638,16 @@ export const emptyProviderDraft = (kind: ProviderKind): ProviderDraft => ({
     kind.fields.map((field) => [field.key, '']),
   ),
   ...(kind.lists.includes('models') ? { models: [] } : {}),
-  ...(kind.lists.includes('reasonings') ? { reasonings: [] } : {}),
 });
+
+/**
+ * A model row a kind starts from: unnamed, carrying no efforts yet when the kind
+ * keeps them per model, and a name alone when it does not.
+ */
+export const emptyProviderModel = (kind: ProviderKind): ProviderModel =>
+  kind.lists.includes('reasonings')
+    ? { name: '', reasonings: [] }
+    : { name: '' };
 
 /** The provider at one position as an editable draft, or `undefined` if none. */
 export const providerDraftOf = (
@@ -564,13 +663,29 @@ export const providerDraftOf = (
  * kind does not require and the draft left empty is left out rather than sent
  * empty, because an unset optional value is one the provider does not carry; a
  * required field stays, so the host's own message still names what is missing.
- * A list is carried exactly when the kind keeps it, empty until entries are
- * added.
+ * The model list is carried exactly when the kind keeps it, empty until models
+ * are added.
  */
 export const providerFromDraft = (
   draft: ProviderDraft,
   kind: ProviderKind,
-): ProviderConfiguration => {
+): ProviderConfiguration => ({
+  id: draft.id,
+  kind: draft.kind,
+  configuration: providerFieldValues(draft, kind),
+  ...(kind.lists.includes('models') ? { models: draft.models ?? [] } : {}),
+});
+
+/**
+ * The fields one draft fills, as the host stores them: a value per declared
+ * field, trimmed, with an unset optional left out rather than sent empty. A
+ * catalog read names exactly these, so a provider page asks about the same
+ * connection the configuration would carry.
+ */
+export const providerFieldValues = (
+  draft: ProviderDraft,
+  kind: ProviderKind,
+): Readonly<Record<string, string>> => {
   const configuration: Record<string, string> = {};
 
   for (const field of kind.fields) {
@@ -578,27 +693,28 @@ export const providerFromDraft = (
     if (value !== '' || field.required) configuration[field.key] = value;
   }
 
-  return {
-    id: draft.id,
-    kind: draft.kind,
-    configuration,
-    ...(kind.lists.includes('models') ? { models: draft.models ?? [] } : {}),
-    ...(kind.lists.includes('reasonings')
-      ? { reasonings: draft.reasonings ?? [] }
-      : {}),
-  };
+  return configuration;
 };
+
+/** The values a catalog read names for one draft provider. */
+export const providerValues = (
+  draft: ProviderDraft,
+  kind: ProviderKind,
+): ProviderValuesRef => ({
+  kind: draft.kind,
+  configuration: providerFieldValues(draft, kind),
+});
 
 /**
  * The first reason a provider draft cannot be stored, in the voice the surface
  * uses, or `undefined` when it can. It states the provider's own rules — the same
- * ones `configurationIssue` applies to every provider — so a dialog refuses a row
+ * ones `configurationIssue` applies to every provider — so the page refuses a row
  * on its own terms instead of reporting the whole list: an empty or duplicated id
  * is still the configuration's to report, because a draft cannot see its
  * neighbours.
  *
  * The credentials travel in because a `secret` field names a stored `API_TOKEN`,
- * and the dialog is where the store is in hand.
+ * and the provider page is where the store is in hand.
  */
 export const providerIssue = (
   draft: ProviderDraft,
@@ -611,6 +727,50 @@ export const providerIssue = (
   const fields = providerFieldsIssue(draft, kind);
   if (fields !== undefined) return fields;
   return providerSecretsIssue(draft, kind, credentials);
+};
+
+/**
+ * One provider draft applied to a configuration, and the draft addressed at the
+ * position it landed on.
+ */
+export type AppliedProviderDraft = {
+  readonly configuration: Configuration;
+  /**
+   * The draft with the position it took, so later edits replace that row rather
+   * than appending the provider again.
+   */
+  readonly draft: ProviderDraft;
+};
+
+/**
+ * The configuration with one provider draft written into it, or `undefined` for
+ * a draft the host would refuse.
+ *
+ * This is the rule a provider is committed by, stated apart from the surface
+ * that collects the draft: a draft the provider's own rules accept is appended
+ * when it is new and replaces the row it was opened at when it is not, and the
+ * position an added provider took travels back so the caller keeps editing that
+ * row. A refused draft is left out, so it stays on the surface until it is one
+ * the configuration can carry.
+ */
+export const applyProviderDraft = (
+  configuration: Configuration,
+  draft: ProviderDraft,
+  kind: ProviderKind,
+  credentials: readonly Credential[],
+): AppliedProviderDraft | undefined => {
+  if (providerIssue(draft, kind, credentials) !== undefined) return undefined;
+  const provider = providerFromDraft(draft, kind);
+  if (draft.index === undefined) {
+    return {
+      configuration: addProvider(configuration, provider),
+      draft: { ...draft, index: configuration.providers.length },
+    };
+  }
+  return {
+    configuration: replaceProvider(configuration, draft.index, provider),
+    draft,
+  };
 };
 
 /**
@@ -835,7 +995,7 @@ const withExecutionProvider = (
 
 /**
  * Appends a provider to the list. It is written whole rather than patched in
- * afterwards, because the row a dialog adds is the row it filled in.
+ * afterwards, because the row that is added is the row that was filled in.
  */
 export const addProvider = (
   configuration: Configuration,
@@ -892,13 +1052,151 @@ export const removeProvider = (
 };
 
 /** Patches the model execution runs. */
+/**
+ * Whether a kind's own catalog states the reasoning efforts its models accept.
+ * A kind that declares a models URL is one the host reads when it saves, so a
+ * screen shows the efforts the catalog gave instead of offering an edit the next
+ * save would overwrite.
+ */
+export const kindFillsModelEfforts = (kind: ProviderKind): boolean =>
+  kind.fields.some(({ key }) => key === 'modelsUrl');
+
+/**
+ * The features a picker shows as columns: every request parameter any model in a
+ * catalog advertises. The ones that decide how a model may be called come first,
+ * because they are what a reader checks before choosing, and the rest follow
+ * alphabetically so a table states its columns in one order every time.
+ */
+export const catalogFeatures = (
+  models: readonly CatalogModel[],
+): readonly string[] => {
+  const seen = new Set(models.flatMap((model) => model.parameters));
+  const notable = catalogNotableFeatures.filter((feature) => seen.has(feature));
+
+  return [
+    ...notable,
+    ...[...seen].filter((feature) => !notable.includes(feature)).sort(),
+  ];
+};
+
+/** The features worth reading first: they decide how a model may be called. */
+const catalogNotableFeatures = [
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'structured_outputs',
+  'response_format',
+  'reasoning',
+  'reasoning_effort',
+  'include_reasoning',
+];
+
+/**
+ * The provider's model list with one model added at the end, or with one already
+ * in it left exactly as it was: the order the models were chosen in is the order
+ * the execution section offers them, so an addition never reorders the list.
+ */
+export const addModel = (
+  models: readonly ProviderModel[],
+  model: ProviderModel,
+): readonly ProviderModel[] => {
+  const name = model.name.trim();
+
+  return models.some((entry) => entry.name === name)
+    ? models
+    : [...models, { ...model, name }];
+};
+
+/** The provider's model list without one model, in the order the rest keep. */
+export const removeModel = (
+  models: readonly ProviderModel[],
+  name: string,
+): readonly ProviderModel[] => models.filter((entry) => entry.name !== name);
+
+/** Whether a stored effort is one every endpoint agrees on. */
+export const isReasoningEffort = (value: string): value is ReasoningEffort =>
+  reasoningEfforts.includes(value as ReasoningEffort);
+
+/**
+ * The reasoning efforts the model an execution profile names lists, in the order
+ * the model records them. A model that lists none — and a model no provider lists
+ * — offers nothing to choose, because what a model accepts is the catalog's to
+ * say rather than a menu this surface invents.
+ */
+export const modelEfforts = (
+  configuration: Configuration,
+  providerId: string,
+  model: string,
+): readonly ReasoningEffort[] =>
+  (
+    configuration.providers
+      .find((provider) => provider.id === providerId)
+      ?.models?.find((entry) => entry.name === model)?.reasonings ?? []
+  ).filter(isReasoningEffort);
+
+/**
+ * Sets one part of the execution profile. Naming a model that lists no efforts
+ * resolves the effort away, because there is nothing the request could carry for
+ * it; naming one that lists efforts leaves the choice as it stands.
+ */
 export const updateModel = (
   configuration: Configuration,
   patch: Partial<ModelExecution>,
-): Configuration => ({
-  ...configuration,
-  models: { execution: { ...configuration.models.execution, ...patch } },
-});
+): Configuration => {
+  const chosen = { ...configuration.models.execution, ...patch };
+
+  return {
+    ...configuration,
+    models: {
+      execution:
+        modelEfforts(configuration, chosen.providerId, chosen.model).length ===
+        0
+          ? { providerId: chosen.providerId, model: chosen.model }
+          : chosen,
+    },
+  };
+};
+
+/**
+ * Sets the reasoning effort the execution requests, or clears it when no effort
+ * is named. A cleared effort travels as an absent field rather than an empty one,
+ * because the host reads "no effort" as no reasoning block; naming an effort a
+ * model does not list is resolved away by `updateModel` exactly as elsewhere.
+ */
+export const setExecutionEffort = (
+  configuration: Configuration,
+  effort?: ReasoningEffort,
+): Configuration => {
+  if (effort !== undefined) return updateModel(configuration, { effort });
+
+  const { providerId, model } = configuration.models.execution;
+  return {
+    ...configuration,
+    models: { execution: { providerId, model } },
+  };
+};
+
+/**
+ * The composite key a model choice carries: a model name alone is not unique,
+ * because two providers may offer one under the same name, so the choice names
+ * its provider too. The separator cannot occur in either id.
+ */
+export const modelChoiceKey = (providerId: string, model: string): string =>
+  `${providerId}\u0000${model}`;
+
+/** The execution profile a composite model choice names. */
+export const selectModelChoice = (
+  configuration: Configuration,
+  key: string,
+): Configuration => {
+  const separator = key.indexOf('\u0000');
+  if (separator === -1) return configuration;
+
+  return updateModel(configuration, {
+    providerId: key.slice(0, separator),
+    model: key.slice(separator + 1),
+  });
+};
 
 /** Sets how many turns one prompt may take. */
 export const updateTurnLimit = (

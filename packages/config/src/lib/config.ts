@@ -218,7 +218,8 @@ function optionalReasoningEffort(
     effort === 'low' ||
     effort === 'medium' ||
     effort === 'high' ||
-    effort === 'xhigh'
+    effort === 'xhigh' ||
+    effort === 'max'
   ) {
     return effort;
   }
@@ -226,7 +227,7 @@ function optionalReasoningEffort(
   throw invalid(
     'invalid_config_field',
     path,
-    'Expected reasoning effort none, minimal, low, medium, high, or xhigh',
+    'Expected reasoning effort none, minimal, low, medium, high, xhigh, or max',
   );
 }
 

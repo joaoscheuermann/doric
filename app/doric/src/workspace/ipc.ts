@@ -11,6 +11,7 @@ import {
   name,
   projectColor,
   prompt,
+  providerValues,
   relativePath,
   senderIsAllowed,
   sequence,
@@ -67,6 +68,12 @@ export const registerWorkspaceHandlers = (
   ipcMain.handle(
     'doric:providers:kinds',
     safe(allowedUrls, workspaceApi.providers.kinds),
+  );
+  ipcMain.handle(
+    'doric:providers:models',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.providers.models(providerValues(value)),
+    ),
   );
   ipcMain.handle(
     'doric:credentials:list',

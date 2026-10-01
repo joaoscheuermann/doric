@@ -42,9 +42,19 @@ export type ProviderField = {
   readonly placeholder?: string;
   /** The values an `enum` field offers; present only for `kind: 'enum'`. */
   readonly options?: readonly string[];
+  /**
+   * Whether the field is one an operator rarely needs, so a settings surface can
+   * keep it out of the way and show the necessary fields alone.
+   */
+  readonly advanced?: boolean;
 };
 
-/** The per-provider lists a kind keeps: edited as tables, read by other sections. */
+/**
+ * The per-provider lists a kind keeps: edited as tables, read by other sections.
+ * `models` is the provider's own model list; `reasonings` is carried per model,
+ * so a kind that keeps it has every model in that list name its own efforts. No
+ * kind keeps `reasonings` without `models`.
+ */
 export type ProviderListId = 'models' | 'reasonings';
 
 export type ProviderKind = {
@@ -59,15 +69,36 @@ export type ProviderKind = {
 
 /**
  * A base URL. Absent means the factory's own endpoint, which is why the default
- * travels as the placeholder a settings surface shows instead of as a value.
+ * travels as the placeholder a settings surface shows instead of as a value. It is
+ * an advanced field: a kind's own endpoint is the right one until an operator
+ * points the provider somewhere else.
  */
 const endpoint = (defaultBaseUrl: string): ProviderField => ({
   key: 'endpoint',
   label: 'Endpoint',
   kind: 'url',
   required: false,
+  advanced: true,
   description: 'Overrides the base URL requests are sent to.',
   placeholder: defaultBaseUrl,
+});
+
+/**
+ * The URL a kind's model catalog lives at, where the catalog also says what each
+ * model accepts. Absent means the kind's own catalog URL, which travels as the
+ * placeholder exactly as `endpoint`'s default does. Only a kind whose catalog
+ * describes its models keeps this field: a kind whose catalog lists ids alone
+ * keeps the efforts on the models an operator names.
+ */
+const modelsUrl = (defaultModelsUrl: string): ProviderField => ({
+  key: 'modelsUrl',
+  label: 'Models URL',
+  kind: 'url',
+  required: false,
+  advanced: true,
+  description:
+    'Where this provider lists the models it serves and what each one accepts.',
+  placeholder: defaultModelsUrl,
 });
 
 /**
@@ -88,7 +119,7 @@ const token = (options: {
 
 /**
  * The OpenAI-shaped kinds keep both lists: their factories enumerate the models
- * they serve and take an effort the operator chooses among. LM Studio's OpenAI
+ * they serve, and each model names the efforts it accepts. LM Studio's OpenAI
  * compatibility is one of them.
  */
 const openAiLists: readonly ProviderListId[] = ['models', 'reasonings'];
@@ -101,11 +132,11 @@ const openAiLists: readonly ProviderListId[] = ['models', 'reasonings'];
  * optional field whose placeholder shows that default.
  *
  * `lists` follows what a kind can offer the operator. A kind keeps `models` when
- * its factory can enumerate the models it serves, and `reasonings` when the
- * efforts are the operator's own menu. LM Studio's native server lists the
+ * its factory can enumerate the models it serves, and `reasonings` when each
+ * model in that list names its own efforts. LM Studio's native server lists the
  * models loaded into it but translates the host's effort onto its own four
- * values, and the ChatGPT Codex backend pins both the model set and the
- * reasoning levels, so neither list belongs on those rows.
+ * values, so it keeps models alone, and the ChatGPT Codex backend pins both the
+ * model set and the reasoning levels, so it keeps neither list.
  */
 export const providerKinds: readonly ProviderKind[] = [
   {
@@ -126,22 +157,8 @@ export const providerKinds: readonly ProviderKind[] = [
     id: 'openai-compatible',
     label: 'OpenAI compatible',
     description:
-      'Any endpoint that answers the OpenAI Responses API, under the identity you name.',
+      'Any endpoint that answers the OpenAI Responses API, under its own identity.',
     fields: [
-      {
-        key: 'identityId',
-        label: 'Identity ID',
-        kind: 'text',
-        required: true,
-        description: 'The provider id this provider reports as its own.',
-      },
-      {
-        key: 'identityName',
-        label: 'Identity name',
-        kind: 'text',
-        required: true,
-        description: 'The provider name this provider reports as its own.',
-      },
       endpoint(openAiMetadata.baseUrl),
       token({
         required: false,
@@ -163,6 +180,7 @@ export const providerKinds: readonly ProviderKind[] = [
         description:
           'Names the stored API_TOKEN credential this provider authenticates with.',
       }),
+      modelsUrl(`${openRouterMetadata.baseUrl}/models`),
     ],
     lists: openAiLists,
   },
@@ -179,22 +197,16 @@ export const providerKinds: readonly ProviderKind[] = [
           'Names the stored API_TOKEN credential this provider authenticates with.',
       }),
       {
-        key: 'upstreamModel',
-        label: 'Upstream model',
-        kind: 'text',
-        required: false,
-        description:
-          'The original model whose curated profile a proxy alias should use.',
-      },
-      {
         key: 'maxStructuredOutputRepairs',
         label: 'Structured output repairs',
         kind: 'number',
         required: false,
+        advanced: true,
         description:
           'How many corrected attempts a rejected structured response gets.',
         placeholder: String(defaultStructuredOutputRepairs),
       },
+      modelsUrl(`${unifiedMetadata.baseUrl}/models`),
     ],
     lists: openAiLists,
   },
@@ -278,6 +290,15 @@ export type ProviderValues = Readonly<Record<string, SecretSource>>;
 export type ProviderKindDeps = {
   readonly transport: HttpTransport;
   readonly logger: Logger;
+  /**
+   * The identity a compatible factory reports as its own. A configured provider
+   * is known by its own id, so this is that id rather than a value an operator
+   * types into the kind's fields.
+   */
+  readonly identity: {
+    readonly id: string;
+    readonly name: string;
+  };
 };
 
 /**
@@ -352,10 +373,7 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
     createOpenAiCompatibleProvider({
       transport: deps.transport,
       logger: deps.logger,
-      identity: {
-        id: literalValue('identityId', values.identityId) ?? '',
-        name: literalValue('identityName', values.identityName) ?? '',
-      },
+      identity: deps.identity,
       apiKey: values.token ?? '',
       ...baseUrl(values),
     }),
@@ -369,7 +387,6 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
     }),
 
   unified: (values, deps) => {
-    const upstreamModel = literalValue('upstreamModel', values.upstreamModel);
     const repairs = literalValue(
       'maxStructuredOutputRepairs',
       values.maxStructuredOutputRepairs,
@@ -379,7 +396,6 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
       transport: deps.transport,
       logger: deps.logger,
       apiKey: values.token ?? '',
-      ...(upstreamModel === undefined ? {} : { upstreamModel }),
       ...(repairs === undefined
         ? {}
         : {

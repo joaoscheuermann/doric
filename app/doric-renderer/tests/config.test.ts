@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  addModel,
   addProvider,
+  applyProviderDraft,
+  catalogFeatures,
+  type CatalogModel,
   type Configuration,
   configurationIssue,
   type Credential,
@@ -17,9 +21,13 @@ import {
   effortLabel,
   emptyCredentialDraft,
   emptyProviderDraft,
+  isReasoningEffort,
   isSameConfiguration,
   isUsableChoice,
+  kindFillsModelEfforts,
   kindOf,
+  modelChoiceKey,
+  modelEfforts,
   providerAddress,
   type ProviderConfiguration,
   type ProviderDraft,
@@ -30,10 +38,14 @@ import {
   type ProviderKind,
   providerLabel,
   providerRows,
+  providerValues,
   type ReasoningEffort,
   reasoningEfforts,
+  removeModel,
   removeProvider,
   replaceProvider,
+  selectModelChoice,
+  setExecutionEffort,
   turnsFromInput,
   updateCredentialChoice,
   updatedAtLabel,
@@ -111,8 +123,18 @@ const provider = (
   configuration: Object.fromEntries(
     kind.fields.map((field) => [field.key, valueFor(field, id)]),
   ),
-  ...(kind.lists.includes('models') ? { models: ['gpt-5'] } : {}),
-  ...(kind.lists.includes('reasonings') ? { reasonings: ['medium'] } : {}),
+  ...(kind.lists.includes('models')
+    ? {
+        models: [
+          {
+            name: 'gpt-5',
+            ...(kind.lists.includes('reasonings')
+              ? { reasonings: ['medium'] }
+              : {}),
+          },
+        ],
+      }
+    : {}),
 });
 
 /** The provider with one configuration field set to a value a case names. */
@@ -294,7 +316,7 @@ describe('configuration rules', () => {
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('ollama', kinds[1]), models: ['llama'] },
+          { ...provider('ollama', kinds[1]), models: [{ name: 'llama' }] },
         ]),
         kinds,
       ),
@@ -302,36 +324,60 @@ describe('configuration rules', () => {
     );
   });
 
-  test('requires every list entry to be filled in and unique', () => {
+  test('requires every model to be named once, with known efforts', () => {
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), models: ['gpt-5', ''] },
+          {
+            ...provider('openai'),
+            models: [{ name: 'gpt-5', reasonings: [] }, { name: '  ' }],
+          },
         ]),
         kinds,
       ),
-      'Every model must be filled in for openai.',
+      'Every model must be named for openai.',
     );
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), reasonings: ['low', 'low'] },
+          {
+            ...provider('openai'),
+            models: [
+              { name: 'gpt-5', reasonings: [] },
+              { name: 'gpt-5', reasonings: [] },
+            ],
+          },
         ]),
         kinds,
       ),
-      'Every reasoning effort must be unique for openai.',
+      'Every model must be unique for openai.',
     );
   });
 
-  test('requires a reasoning entry to name one of the six efforts', () => {
+  test('requires every reasoning effort to be known and unique per model', () => {
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
-          { ...provider('openai'), reasonings: ['extreme'] },
+          {
+            ...provider('openai'),
+            models: [{ name: 'gpt-5', reasonings: ['low', 'low'] }],
+          },
         ]),
         kinds,
       ),
-      'Choose a known reasoning effort for openai.',
+      'Every reasoning effort must be unique for gpt-5.',
+    );
+    assert.equal(
+      configurationIssue(
+        withProviders(configuration(), [
+          {
+            ...provider('openai'),
+            models: [{ name: 'gpt-5', reasonings: ['extreme'] }],
+          },
+        ]),
+        kinds,
+      ),
+      'Choose a known reasoning effort for gpt-5.',
     );
   });
 
@@ -377,7 +423,7 @@ describe('configuration rules', () => {
     }
   });
 
-  test('requires one of the six reasoning efforts', () => {
+  test('requires a reasoning effort the endpoint names', () => {
     assert.equal(
       configurationIssue(
         withExecution(configuration(), {
@@ -391,6 +437,36 @@ describe('configuration rules', () => {
     );
   });
 
+  test('chooses the effort for a model that lists efforts', () => {
+    assert.equal(
+      configurationIssue(
+        withExecution(configuration(), {
+          providerId: 'openai',
+          model: 'gpt-5',
+        }),
+        kinds,
+      ),
+      'Choose a reasoning effort.',
+    );
+  });
+
+  test('carries no effort for a model that lists none', () => {
+    const listed = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [{ name: 'gpt-5', reasonings: [] }],
+      },
+    ]);
+
+    assert.equal(
+      configurationIssue(
+        withExecution(listed, { providerId: 'openai', model: 'gpt-5' }),
+        kinds,
+      ),
+      undefined,
+    );
+  });
+
   test('requires a positive whole turn limit', () => {
     for (const maxTurns of [0, -1, 2.5, Number.NaN]) {
       assert.equal(
@@ -401,6 +477,82 @@ describe('configuration rules', () => {
   });
 });
 
+describe('the catalog a provider page offers', () => {
+  /** An OpenRouter-shaped kind: one required secret, optional URLs, both lists. */
+  const openRouter: ProviderKind = {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: 'A catalog and a chat API.',
+    fields: [
+      { key: 'endpoint', label: 'Endpoint', kind: 'url', required: false },
+      { key: 'token', label: 'Token', kind: 'secret', required: true },
+      {
+        key: 'modelsUrl',
+        label: 'Models URL',
+        kind: 'url',
+        required: false,
+        advanced: true,
+      },
+    ],
+    lists: ['models', 'reasonings'],
+  };
+
+  const model = (
+    id: string,
+    parameters: readonly string[],
+    reasonings: readonly ReasoningEffort[] = [],
+  ): CatalogModel => ({ id, parameters, reasonings });
+
+  test('states one column per feature, the ones that decide a call first', () => {
+    assert.deepEqual(
+      catalogFeatures([
+        model('a', ['temperature', 'tools', 'logprobs']),
+        model('b', ['tools', 'reasoning_effort']),
+      ]),
+      ['tools', 'reasoning_effort', 'logprobs', 'temperature'],
+    );
+    assert.deepEqual(catalogFeatures([]), []);
+  });
+
+  test('adds a chosen model at the end, and never twice', () => {
+    const offered = addModel([], { name: ' a-model ' });
+
+    assert.deepEqual(offered, [{ name: 'a-model' }]);
+    assert.deepEqual(addModel(offered, { name: 'a-model' }), offered);
+    assert.deepEqual(addModel(offered, { name: 'b-model' }), [
+      { name: 'a-model' },
+      { name: 'b-model' },
+    ]);
+  });
+
+  test('removes one model and keeps the order of the rest', () => {
+    assert.deepEqual(
+      removeModel([{ name: 'a' }, { name: 'b' }, { name: 'c' }], 'b'),
+      [{ name: 'a' }, { name: 'c' }],
+    );
+  });
+
+  test('names a catalog read after the fields a draft filled', () => {
+    assert.deepEqual(
+      providerValues(
+        {
+          id: '',
+          kind: openRouter.id,
+          configuration: { endpoint: '', token: ' cred ', modelsUrl: '' },
+          models: [],
+        },
+        openRouter,
+      ),
+      { kind: 'openrouter', configuration: { token: 'cred' } },
+    );
+  });
+
+  test('reads an effort only from the closed set', () => {
+    assert.equal(isReasoningEffort('max'), true);
+    assert.equal(isReasoningEffort('ultra'), false);
+  });
+});
+
 describe('credential choice rules', () => {
   test('accepts a configuration that names no credentials', () => {
     assert.equal(configurationIssue(configuration(), kinds), undefined);
@@ -408,7 +560,7 @@ describe('credential choice rules', () => {
 
   test('holds a provider secret to a non-empty value, not a stored one', () => {
     // The section's own rule asks only that a required secret is named; whether
-    // the store still holds it is the dialog's check, where the store is in hand.
+    // the store still holds it is the provider page's check, where the store is in hand.
     assert.equal(
       configurationIssue(
         withProviders(configuration(), [
@@ -697,8 +849,18 @@ describe('configuration comparison', () => {
       withProviders(base, [
         withField(provider('openai'), 'token', 'other-credential'),
       ]),
-      withProviders(base, [{ ...provider('openai'), models: ['gpt-5-mini'] }]),
-      withProviders(base, [{ ...provider('openai'), reasonings: ['high'] }]),
+      withProviders(base, [
+        {
+          ...provider('openai'),
+          models: [{ name: 'gpt-5-mini', reasonings: ['medium'] }],
+        },
+      ]),
+      withProviders(base, [
+        {
+          ...provider('openai'),
+          models: [{ name: 'gpt-5', reasonings: ['high'] }],
+        },
+      ]),
       updateModel(base, { providerId: 'anthropic' }),
       updateModel(base, { model: 'gpt-5-mini' }),
       updateModel(base, { effort: 'high' }),
@@ -722,8 +884,94 @@ describe('configuration comparison', () => {
   });
 });
 
+describe('the execution effort follows the model it names', () => {
+  test('lists the efforts the model names, and none for a model nothing lists', () => {
+    assert.deepEqual(modelEfforts(configuration(), 'openai', 'gpt-5'), [
+      'medium',
+    ]);
+    assert.deepEqual(modelEfforts(configuration(), 'openai', 'gpt-5-mini'), []);
+  });
+
+  test('keeps the chosen effort while the model lists efforts', () => {
+    assert.equal(
+      updateModel(configuration(), { effort: 'high' }).models.execution.effort,
+      'high',
+    );
+  });
+
+  test('resolves the effort away when the chosen model lists none', () => {
+    const listed = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [{ name: 'gpt-5', reasonings: [] }],
+      },
+    ]);
+
+    assert.deepEqual(
+      updateModel(listed, { providerId: 'openai', model: 'gpt-5' }).models
+        .execution,
+      { providerId: 'openai', model: 'gpt-5' },
+    );
+  });
+
+  test('tells a kind whose own catalog states the efforts', () => {
+    assert.equal(kindFillsModelEfforts(kinds[0]), false);
+    assert.equal(
+      kindFillsModelEfforts({
+        ...kinds[0],
+        fields: [
+          ...kinds[0].fields,
+          {
+            key: 'modelsUrl',
+            label: 'Models URL',
+            kind: 'url',
+            required: false,
+            advanced: true,
+          },
+        ],
+      }),
+      true,
+    );
+  });
+});
+
+describe('the execution profile a footer picker edits', () => {
+  test('sets the effort a model lists, and clears it when none is named', () => {
+    assert.equal(
+      setExecutionEffort(configuration(), 'high').models.execution.effort,
+      'high',
+    );
+    assert.deepEqual(
+      setExecutionEffort(configuration(), undefined).models.execution,
+      { providerId: 'openai', model: 'gpt-5' },
+    );
+  });
+
+  test('reads a model choice back into the profile it names', () => {
+    const key = modelChoiceKey('openai', 'gpt-5-mini');
+
+    assert.equal(
+      selectModelChoice(configuration(), key).models.execution.model,
+      'gpt-5-mini',
+    );
+    assert.deepEqual(selectModelChoice(configuration(), key).models.execution, {
+      providerId: 'openai',
+      model: 'gpt-5-mini',
+    });
+  });
+
+  test('leaves the profile alone for a key that names no provider', () => {
+    const base = configuration();
+
+    assert.deepEqual(
+      selectModelChoice(base, 'gpt-5').models.execution,
+      base.models.execution,
+    );
+  });
+});
+
 describe('provider transitions', () => {
-  test('appends the provider the dialog filled in', () => {
+  test('appends the provider the page filled in', () => {
     const next = addProvider(configuration(), provider('anthropic'));
 
     assert.deepEqual(
@@ -955,7 +1203,7 @@ describe('provider rows', () => {
 });
 
 describe('provider drafts', () => {
-  /** The credentials the dialog may offer a provider's secret field. */
+  /** The credentials the provider page may offer a provider's secret field. */
   const tokens = [credential('openai-credential')];
 
   test('opens a draft on the provider at the position it was drawn at', () => {
@@ -985,9 +1233,8 @@ describe('provider drafts', () => {
         note: '',
       },
       models: [],
-      reasonings: [],
     });
-    // A kind that keeps no lists carries none, and only its own fields.
+    // A kind that keeps no models carries none, and only its own fields.
     assert.deepEqual(emptyProviderDraft(kinds[1]), {
       id: '',
       kind: 'ollama',
@@ -1039,14 +1286,17 @@ describe('provider drafts', () => {
     );
   });
 
-  test('refuses a list entry the kind rule breaks', () => {
+  test('refuses a model the kind rule breaks', () => {
     assert.equal(
       providerIssue(
-        { ...provider('openai'), models: ['gpt-5', ''] },
+        {
+          ...provider('openai'),
+          models: [{ name: 'gpt-5', reasonings: [] }, { name: '' }],
+        },
         kinds[0],
         tokens,
       ),
-      'Every model must be filled in for openai.',
+      'Every model must be named for openai.',
     );
   });
 
@@ -1062,7 +1312,7 @@ describe('provider drafts', () => {
     };
 
     // `region`, `weight` and `note` were never given a value, so a stored
-    // provider carries none of them; the lists its kind keeps are carried
+    // provider carries none of them; the model list its kind keeps is carried
     // empty until entries are added.
     assert.deepEqual(providerFromDraft(draft, kinds[0]), {
       id: 'openai',
@@ -1072,7 +1322,6 @@ describe('provider drafts', () => {
         token: 'openai-credential',
       },
       models: [],
-      reasonings: [],
     });
   });
 
@@ -1088,7 +1337,7 @@ describe('provider drafts', () => {
     });
   });
 
-  test('carries the fields of a kind that keeps no lists', () => {
+  test('carries the fields of a kind that keeps no models', () => {
     const draft: ProviderDraft = {
       ...emptyProviderDraft(kinds[1]),
       id: 'local',
@@ -1100,6 +1349,59 @@ describe('provider drafts', () => {
       kind: 'ollama',
       configuration: { endpoint: 'http://127.0.0.1:11434' },
     });
+  });
+});
+
+describe('applying a provider draft', () => {
+  /** The credentials a provider's secret field may name. */
+  const tokens = [credential('openai-credential')];
+
+  test('appends a valid new draft and names the position it took', () => {
+    const base = configuration({ providers: [provider('openai')] });
+    const draft: ProviderDraft = {
+      ...emptyProviderDraft(kinds[1]),
+      id: 'local',
+      configuration: { endpoint: 'http://127.0.0.1:11434' },
+    };
+
+    const applied = applyProviderDraft(base, draft, kinds[1], tokens);
+
+    assert.equal(applied?.draft.index, 1);
+    assert.deepEqual(
+      applied?.configuration.providers[1],
+      providerFromDraft(draft, kinds[1]),
+    );
+  });
+
+  test('replaces the provider at the position the draft was opened at', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('local', kinds[1])],
+    });
+    const renamed: ProviderDraft = {
+      ...provider('openai'),
+      index: 0,
+      id: 'renamed',
+    };
+
+    const applied = applyProviderDraft(base, renamed, kinds[0], tokens);
+
+    assert.deepEqual(applied?.configuration.providers, [
+      providerFromDraft(renamed, kinds[0]),
+      provider('local', kinds[1]),
+    ]);
+    // An edited provider keeps the position it was opened at, so a later edit
+    // replaces that row rather than appending it again.
+    assert.equal(applied?.draft.index, 0);
+  });
+
+  test('leaves the configuration alone for a draft the host would refuse', () => {
+    const base = configuration();
+    const unnamed: ProviderDraft = { ...provider('openai'), id: '  ' };
+
+    assert.equal(
+      applyProviderDraft(base, unnamed, kinds[0], tokens),
+      undefined,
+    );
   });
 });
 
@@ -1149,6 +1451,7 @@ describe('settings vocabulary', () => {
       'Medium',
       'High',
       'Xhigh',
+      'Max',
     ]);
   });
 

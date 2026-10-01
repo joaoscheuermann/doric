@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-30
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -84,8 +84,9 @@ submit button and that log rendered verbatim as JSON, with no styling.
 PostgreSQL Thread events remain the sole conversation-history source. Because that
 rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
 tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
-only, and the one face vendored under `src/assets/fonts` is the repository's only
-one: IBM Plex Mono, worn by the app and the conversation body alike. The sidebar
+only, and the faces vendored under `src/assets/fonts` are the only ones the
+renderer wears: Noto Sans for the app's own surfaces, and IBM Plex Mono for the
+conversation body alone. The sidebar
 tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh. The selected Thread
@@ -93,11 +94,12 @@ persists locally across app
 restarts. One
 full-height resize handle owns the sidebar boundary across header and content
 and disappears when the sidebar closes; it draws no grip of its own. A segmented
-footer shares that geometry
-and shows the Electron main process's Socket.IO connection status on the content
-side. The header names the selected Thread as a breadcrumb of its Project and
-the chain of Threads above it, and every part but the last selects what it
-names.
+footer shares that geometry: the sidebar side shows the Electron main process's
+Socket.IO connection status, while the content side carries the execution picker
+— the model a prompt is sent to, whether it thinks, and how hard — beside the
+settings trigger. The header names the selected Thread as a breadcrumb of its
+Project and the chain of Threads above it, and every part but the last selects
+what it names.
 
 A Project-scoped sandbox surface sits in a resizable right-hand panel that starts
 open, and whose collapsed state is a narrow rail carrying its own toggle, so the
@@ -132,14 +134,31 @@ loading a page that mounts the settings surface alone, with no conversation,
 sidebar or Thread — edits the host's configuration: the configured providers as
 an editable table, the execution model with its reasoning effort, the execution
 turn limit, and a Credentials section over the host's credential store. A
-provider is configured by choosing the kind of provider it is — one of the kinds
-`packages/llms` offers — and then filling the fields and the per-provider lists
-that kind declares. The renderer learns those kinds, fields and lists from the
-host rather than carrying a list of its own, so a kind added to the library
-becomes configurable without a renderer change. A field the kind calls `secret`
-names a stored `API_TOKEN` credential instead of carrying a value; a kind that
-keeps models or reasoning efforts edits each list as a table, and the execution
-model and its effort are chosen from the selected provider's own lists. A
+provider is configured on a page of its own, opened from the providers table,
+whose breadcrumb names the provider and whose back control returns to the table.
+The kind is chosen there with a searchable combobox and changing it starts the
+form over, so a provider is configured by choosing the kind of provider it is —
+one of the kinds `packages/llms` offers — and then filling the fields and the
+models that kind declares. A field a kind marks `advanced` waits behind the
+form's last section, so the screen opens on the necessary values alone. A kind
+whose catalog describes its models declares a Models URL, and its models are
+chosen from that endpoint: `POST /providers/models` answers what the endpoint
+lists, with each model's name, reasoning efforts and advertised parameters, and
+the page draws it as a searchable, pageable table with a tick column, a column
+per parameter, and a column menu. A model the catalog does not list can still be
+named, and is drawn marked. Each
+model carries the reasoning efforts it accepts, which the host reads from the
+same catalog when it saves, so a kind that declares a models URL
+takes them from the endpoint rather than from an operator's typing.
+The renderer learns those kinds, fields and models from the host rather than
+carrying a list of its own, so a kind added to the library becomes configurable
+without a renderer change. A field the kind calls `secret` names a stored
+`API_TOKEN` credential instead of carrying a value; a kind that keeps models
+edits them as rows, each model with its own efforts, and the execution model and
+its effort are chosen among what the selected provider's model lists, which is
+the catalog's answer for a kind that reads one. A model that lists no effort —
+and a kind that names no models URL keeps the efforts an operator typed — leaves
+the execution effort absent, and the agent then sends no reasoning block at all. A
 credential is named and has one of a closed set of kinds that fixes its fields:
 `API_TOKEN` is authentication, which a provider key and the GitHub token both
 are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
@@ -149,17 +168,15 @@ credential holds one and never the secret, so the field always starts empty, an
 empty field keeps what is stored, and a value sets it. There is no Save button: a
 valid change sends itself once typing settles, on a field blur, and as the window
 closes, and the footer reports the revision and update time alongside the save
-state. The window states plainly that a saved change applies to Projects created
-afterwards, because a running Project keeps the configuration it had captured —
-with one exception: every credential the configuration names, each provider's
-`secret` value and the Git identity and GitHub authentication alike, follows the
-current configuration, so a rotated secret reaches a Project that is already
-running on its next prompt.
+state. A saved change reaches the next prompt of any Project, including one that
+is already running: every credential the configuration names, each provider's
+`secret` value and the Git identity and GitHub authentication alike, and equally
+the execution provider, model, reasoning effort, and turn limit.
 
 ### Project And Thread Contract
 
 The host architecture replaces Session with a Project that owns
-one sandbox lease and its captured configuration, and Threads that own
+one sandbox lease and Threads that own
 independent conversations, histories, and serial input queues. Threads may have
 child Threads; a child executing work delegated by its parent is a subagent,
 not a different runtime or a conversation inaccessible to the user. Users can
@@ -387,19 +404,33 @@ provider integration.
 
 `agents/doric` receives complete singleton configuration replacements through
 `PUT /config`. It persists only provider IDs, the kind each provider is, the
-configuration values and per-provider lists that kind declares, one
+configuration values that kind declares, the models each provider offers, one
 `models.execution` profile, and `execution.maxTurns`. A provider's kind, the
-fields it declares and the lists it keeps are `providerKinds` in
+fields it declares and the model list it keeps are `providerKinds` in
 `packages/llms`; the host serves that catalog unchanged at `GET /providers/kinds`
 and builds each configured provider with `createProviderForKind`, so a stored
 provider carries a value for every field its kind requires, leaves an optional
-field it has no value for out rather than storing it empty, and carries the lists
-its kind keeps — empty until an operator names entries — and nothing else. The
-settings surface and the agent therefore agree on what a provider needs without
-either hard-coding the other's list. Each
-Project created by `POST /projects` captures the active configuration generation
-and an immutable JSONB snapshot; later replacements affect only new Projects.
-Every Thread uses its Project's captured generation.
+field it has no value for out rather than storing it empty, and carries the model
+list its kind keeps — empty until an operator names models — and nothing else. A
+kind that keeps `reasonings` keeps the efforts on each model, so a model carries
+the reasoning efforts that model accepts; a kind that keeps only `models` carries
+a name alone. A kind whose catalog describes its models declares a models URL,
+and the host reads it on every configuration write — and, for a provider page,
+through `POST /providers/models`: each listed model takes the
+efforts that catalog names, a model the catalog does not name takes none, and a
+catalog that cannot be read leaves that provider exactly as it was. An execution
+effort its model does not list is resolved away — the column is nullable for
+exactly that — so no prompt carries a reasoning block the endpoint never offered.
+The OpenAI-compatible kind reports the configured provider's own
+id and name as its identity rather than taking them as fields, so nothing in the
+catalog asks an operator for an identity the provider already has. The settings
+surface and the agent therefore agree on what a provider needs without either
+hard-coding the other's list. Each
+Project created by `POST /projects` records the active configuration generation
+and its immutable JSONB snapshot as what it was created with; that record is
+provenance, not authority. Every prompt reads the configuration in force when it
+runs, so a provider, model, reasoning effort, or turn limit chosen in the
+settings reaches the next prompt of any Project, including one already running.
 
 `agents/doric` owns a credential store: named `credential` rows of a closed kind
 set, where the kind fixes the field set. `API_TOKEN` is authentication and the
@@ -610,8 +641,8 @@ value is redacted from events, logs, and Thread replay instead of being handed t
 a tool. The credential routes follow one rule: an absent or `null` field keeps
 what is stored, `''` clears it, and a value sets it, while a kind is immutable
 after create and a credential a provider or the configuration references cannot
-be deleted. The named credentials therefore also reach a Project through the
-configuration generation it captured. The host applies the Git identity and the
+be deleted. The named credentials therefore reach a Project through the
+configuration in force, on its next prompt. The host applies the Git identity and the
 GitHub token to a Project's sandbox separately: `git config user.name/user.email`
 for the identity, and, when a token is configured, a `credential.helper
 store` credential file written 0600 plus the `~/.config/gh/hosts.yml` written
@@ -646,11 +677,15 @@ and preserves ordered opaque
 `reasoning_details` for replay. It sends `parallel_tool_calls` only when the
 live model catalog advertises that parameter; otherwise it omits the transport
 control, reinforces sequential requests with a model-facing instruction, and
-relies on the Agent's atomic tool-batch validation before execution. Direct
-proxy compositions may provide one original upstream model identifier while
-sending a different request model alias; those requests use the original's
-curated profile and skip live capability discovery because an OpenAI-compatible
-proxy model listing is not an OpenRouter capability catalog. Direct
+relies on the Agent's atomic tool-batch validation before execution. The live
+catalog is the contract for a model's capabilities: the request model must be
+one the endpoint lists, and a proxy alias that renames a model is not supported,
+so those requests fail with the endpoint's own answer rather than a guessed
+profile. Curated profiles remain for what a catalog cannot state — whether a
+model's tool schema may be sent strict, how much opaque reasoning detail replays,
+and which laboratory cannot combine forced tool choice with reasoning — and as
+the fallback for a capability read that failed.
+Direct
 tool-free schemas select advertised JSON Schema, JSON object mode, or a
 deterministic schema prompt, then validate with the original Zod schema and
 allow at most two correction attempts. Structured streams emit only after
@@ -698,7 +733,7 @@ safe logs, stream events, and provider errors.
 Provider configs may include an optional `baseUrl` string to
 override provider endpoints that support it. Model configs may include an
 optional provider-neutral `effort` value of `none`, `minimal`, `low`,
-`medium`, `high`, or `xhigh`; legacy model `reasoning` remains supported as
+`medium`, `high`, `xhigh`, or `max`, or absent; legacy model `reasoning` remains supported as
 the same effort alias. Config parsing rejects models that provide conflicting
 `effort` and `reasoning` values. Provider requests may include top-level
 `effort`, which takes precedence over legacy `flags.reasoning.effort`.

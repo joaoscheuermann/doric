@@ -4,7 +4,8 @@ export type ReasoningEffort =
   | 'low'
   | 'medium'
   | 'high'
-  | 'xhigh';
+  | 'xhigh'
+  | 'max';
 
 export type GithubConfig = {
   readonly repo: {

@@ -18,6 +18,12 @@ COPY bundles ./bundles
 COPY packages ./packages
 COPY tools ./tools
 
+# The lockfile is resolved by npm 11, the version the repository is developed
+# with. The base image's bundled npm 10 re-resolves a caret range to a version
+# the lock does not carry and refuses `npm ci` with "Missing: <pkg> from lock
+# file"; pinning the major here keeps the builder and the toolchain in step.
+RUN npm install --global npm@11.13.0
+
 # Lifecycle scripts are initially disabled because dependencies are untrusted
 # build inputs. Nx's required setup is then invoked explicitly. Direct tsc
 # builds avoid coupling the container build to the Nx task graph, the Doric

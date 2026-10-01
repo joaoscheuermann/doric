@@ -52,7 +52,6 @@ export type ThreadRuntime = {
 };
 export type ProjectRuntime = {
   project: Project;
-  readonly generation: Generation;
   readonly controller: AbortController;
   readonly threads: Map<string, ThreadRuntime>;
   closing: boolean;
@@ -66,6 +65,12 @@ export type RuntimeContext = {
   readonly threads: ThreadStore;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;
+  /**
+   * The configuration in force right now. A prompt reads it as it runs, so a
+   * choice made in the settings reaches the very next prompt of any Project
+   * instead of only the Projects created after it.
+   */
+  readonly generation: () => Generation;
   readonly execute: ThreadExecution;
   readonly exclusive: <Value>(
     id: string,

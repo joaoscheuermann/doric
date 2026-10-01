@@ -25,8 +25,6 @@ import { createUnifiedRequestPreparer } from './unified/prepare.js';
 
 export type UnifiedProviderDeps = OpenRouterProviderDeps & {
   readonly maxStructuredOutputRepairs?: number;
-  /** Original model id used for curated capabilities when requests carry a proxy alias. */
-  readonly upstreamModel?: string;
 };
 
 export const unifiedMetadata: ProviderMetadata = {
@@ -41,7 +39,6 @@ export const createUnifiedProvider = (
   deps: UnifiedProviderDeps,
 ): LlmProvider => {
   const maxRepairs = repairLimit(deps.maxStructuredOutputRepairs);
-  const upstreamModel = normalizedUpstreamModel(deps.upstreamModel);
   const resolveSupport = createOpenRouterCatalog(
     createOpenRouterModelsLoader(
       deps,
@@ -52,7 +49,7 @@ export const createUnifiedProvider = (
   const core = createOpenRouterProviderCore(deps, {
     metadata: unifiedMetadata,
     validateStructuredOutput: false,
-    prepare: createUnifiedRequestPreparer(resolveSupport, upstreamModel),
+    prepare: createUnifiedRequestPreparer(resolveSupport),
   });
 
   async function complete<Schema extends StructuredOutputSchema>(
@@ -121,16 +118,6 @@ export const createUnifiedProvider = (
   };
 
   return withProviderLogging(provider, deps.logger);
-};
-
-const normalizedUpstreamModel = (
-  value: string | undefined,
-): string | undefined => {
-  if (value === undefined) return undefined;
-
-  const normalized = value.trim();
-  if (normalized.length > 0) return normalized;
-  throw new TypeError('Unified provider upstreamModel must not be blank.');
 };
 
 /** The repair budget a unified provider uses when a caller names none. */

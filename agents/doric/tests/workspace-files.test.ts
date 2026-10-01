@@ -333,6 +333,7 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
   registerHttpRoutes(app, {
     config: { current: unsupported, replace: unsupported },
     credentials: credentialResolver(),
+    logger: { warn: () => undefined } as never,
     service,
     vms: { list: () => [], find: () => undefined, ssh: async () => undefined },
   });

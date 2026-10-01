@@ -44,8 +44,17 @@ export interface CredentialService {
     kind: CredentialKind,
     claimed: ReadonlySet<string>,
   ): Credential | undefined;
-  /** Every stored secret, so no event, log line, or message can carry one. */
+  /**
+   * Every secret the host holds, so no event, log line, or message can carry
+   * one: each stored secret, and each one the host registered after storing it.
+   */
   secrets(): readonly string[];
+  /**
+   * Records a secret the host learned outside the store — a credential it wrote
+   * into a running sandbox — so redaction covers it for as long as the host runs,
+   * whatever configuration is in force.
+   */
+  register(secret: string): void;
   create(input: CredentialCreate): Promise<CredentialWrite>;
   update(id: string, input: CredentialUpdate): Promise<CredentialWrite>;
   remove(id: string): Promise<CredentialRemoval>;
@@ -77,6 +86,7 @@ export const createCredentialService = async ({
     );
 
   let cache = stored.map((row) => reveal(row, cipher));
+  const registered: string[] = [];
   const save = (credential: Credential): void => {
     cache = [
       ...cache.filter(({ id }) => id !== credential.id),
@@ -94,7 +104,11 @@ export const createCredentialService = async ({
         cache.filter((credential) => !claimed.has(credential.id)),
         kind,
       ),
-    secrets: () => storedSecrets(cache),
+    secrets: () => [...storedSecrets(cache), ...registered],
+
+    register(secret) {
+      if (secret !== '') registered.push(secret);
+    },
 
     async create(input) {
       if (!credentialFieldsSatisfied(input.kind, input))

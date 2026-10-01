@@ -19,6 +19,16 @@ type StoredConfig = Prisma.DoricConfigurationGetPayload<{
 type StoredProviderRow = StoredConfig['providers'][number];
 
 /**
+ * One model a stored provider lists, with the efforts it carries when its kind
+ * keeps them. The stored JSON is read as this shape and handed to the schema,
+ * which is what decides whether it matches the provider's kind.
+ */
+interface ProviderModelInput {
+  readonly name: string;
+  readonly reasonings?: readonly string[];
+}
+
+/**
  * One provider row read back as the configuration's own input, which the schema
  * then judges: a stored value that disagrees with its kind fails there rather
  * than being served as a valid configuration.
@@ -27,8 +37,7 @@ interface ProviderInput {
   readonly id: string;
   readonly kind: ProviderKindId;
   readonly configuration: Readonly<Record<string, string>>;
-  readonly models?: readonly string[];
-  readonly reasonings?: readonly string[];
+  readonly models?: readonly ProviderModelInput[];
 }
 
 export type ConfigStore = {
@@ -76,7 +85,7 @@ export const createConfigStore = (database: Database): ConfigStore => ({
               role: ModelRole.EXECUTION,
               providerId: config.models.execution.providerId,
               model: config.models.execution.model,
-              effort: config.models.execution.effort,
+              effort: config.models.execution.effort ?? null,
             },
           ],
         });
@@ -115,7 +124,7 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
       execution: {
         providerId: execution.providerId,
         model: execution.model,
-        effort: execution.effort,
+        ...(execution.effort === null ? {} : { effort: execution.effort }),
       },
     },
     execution: { maxTurns: stored.maxTurns },
@@ -136,10 +145,11 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
 
 /**
  * One provider row as the configuration shape. The stored kind decides where the
- * credential comes from, and a list a kind keeps is read even when the row holds
- * nothing, so a migrated provider round-trips as the kind it was mapped to. A
- * list a kind does not keep is read only when the row disagrees with its kind,
- * which the configuration schema then rejects instead of dropping it silently.
+ * credential comes from, and a model list a kind keeps is read even when the row
+ * holds nothing, so a migrated provider round-trips as the kind it was mapped to.
+ * A model list a kind does not keep is read only when the row disagrees with its
+ * kind, which the configuration schema then rejects instead of dropping it
+ * silently.
  */
 const providerFromStored = (stored: StoredProviderRow): ProviderInput => {
   const kind = providerKind(stored.kind);
@@ -147,6 +157,9 @@ const providerFromStored = (stored: StoredProviderRow): ProviderInput => {
     throw new Error(`Stored provider kind is unknown: ${stored.kind}`);
 
   const secret = secretField(stored.kind);
+  const models = Array.isArray(stored.models)
+    ? (stored.models as unknown as readonly ProviderModelInput[])
+    : undefined;
 
   return {
     id: stored.id,
@@ -157,17 +170,14 @@ const providerFromStored = (stored: StoredProviderRow): ProviderInput => {
         ? {}
         : { [secret.key]: stored.credentialId }),
     },
-    ...(stored.modelIds.length === 0 && !kind.lists.includes('models')
-      ? {}
-      : { models: stored.modelIds }),
-    ...(stored.reasoningEfforts.length === 0 &&
-    !kind.lists.includes('reasonings')
-      ? {}
-      : { reasonings: stored.reasoningEfforts }),
+    ...(models !== undefined &&
+    (models.length > 0 || kind.lists.includes('models'))
+      ? { models }
+      : {}),
   };
 };
 
-/** One provider as its row: its field values, its credential, and its lists. */
+/** One provider as its row: its field values, its credential, and its models. */
 const providerRow = (provider: ConfigInput['providers'][number]) => {
   const secret = secretField(provider.kind);
 
@@ -183,7 +193,6 @@ const providerRow = (provider: ConfigInput['providers'][number]) => {
       secret === undefined
         ? null
         : (provider.configuration[secret.key] ?? null),
-    modelIds: provider.models ?? [],
-    reasoningEfforts: provider.reasonings ?? [],
+    models: provider.models ?? [],
   };
 };

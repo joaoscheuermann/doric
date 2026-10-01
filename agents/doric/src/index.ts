@@ -184,6 +184,7 @@ async function main() {
   registerHttpRoutes(app, {
     config,
     credentials,
+    logger,
     service,
     vms: {
       list: vms.list,

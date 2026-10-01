@@ -16,7 +16,7 @@ const curatedSupport: OpenRouterModelSupport = {
 };
 
 export const createUnifiedRequestPreparer =
-  (resolve: SupportResolver, upstreamModel?: string) =>
+  (resolve: SupportResolver) =>
   async (
     request: ProviderRequest<unknown>,
   ): Promise<PreparedOpenRouterRequest> => {
@@ -33,11 +33,12 @@ export const createUnifiedRequestPreparer =
 
     const needsSupport = hasTools || request.schema !== undefined;
 
-    const support =
-      needsSupport && upstreamModel === undefined
-        ? await resolve(request.model, request.signal)
-        : curatedSupport;
-    const profile = unifiedProfileForModel(upstreamModel ?? request.model);
+    // The catalog is the contract: a model the endpoint does not list is one this
+    // provider cannot reason about, so it reads only what the endpoint advertises.
+    const support = needsSupport
+      ? await resolve(request.model, request.signal)
+      : curatedSupport;
+    const profile = unifiedProfileForModel(request.model);
 
     requireToolSupport(request, support, profile.tools);
 

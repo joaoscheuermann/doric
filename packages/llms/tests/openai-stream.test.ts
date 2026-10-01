@@ -214,4 +214,42 @@ test('returns stream error event for malformed OpenAI stream payloads', async ()
   assert.equal(events.at(-1)?.type, 'error');
 });
 
+test('emits no OpenAI delta for a chunk whose delta is empty', async () => {
+  const stream = [
+    sse({ type: 'response.output_text.delta', delta: '' }),
+    sse({ type: 'response.output_text.delta', delta: 'Hi' }),
+    sse({ type: 'response.reasoning_summary_text.delta', delta: '' }),
+    sse({ type: 'response.refusal.delta', delta: '' }),
+    sse({
+      type: 'response.completed',
+      response: { status: 'completed', output_text: 'Hi' },
+    }),
+  ];
+
+  const provider = createOpenAiProvider({
+    transport: fakeTransport({ streams: [stream] }),
+  });
+
+  const events = await collect(
+    provider.stream({
+      model: 'gpt-5',
+      messages: [{ role: 'user', content: 'Hi' }],
+    }),
+  );
+
+  assert.deepEqual(
+    events.filter((event) => event.type === 'text.delta'),
+    [{ type: 'text.delta', delta: 'Hi' }],
+  );
+
+  assert.equal(
+    events.some((event) => event.type === 'reasoning.delta'),
+    false,
+  );
+  assert.equal(
+    events.some((event) => event.type === 'refusal.delta'),
+    false,
+  );
+});
+
 const sse = (value: unknown): string => `data: ${JSON.stringify(value)}\n\n`;

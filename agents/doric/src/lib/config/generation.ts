@@ -21,14 +21,6 @@ export type Generation = {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
-  /**
-   * Registers a secret the host learned after this generation was built — a
-   * rotated credential it wrote into a running sandbox — so it is redacted
-   * exactly like the ones the credential store already holds. A Project whose
-   * generation predates a rotation would otherwise persist the new token
-   * unredacted.
-   */
-  readonly registerSecret: (value: string) => void;
   readonly catalog: Catalog;
 };
 
@@ -40,11 +32,10 @@ type GenerationOptions = {
 };
 
 /**
- * Builds one provider and bundle generation captured by new Projects. Each
- * provider is built from the kind it names and that kind's own values, and a
- * `secret` value is passed as a source rather than a value, so the key is read
- * from the credential store on every call and a rotation reaches a Project that
- * is already running.
+ * Builds the providers and catalog of one configuration. Each provider is built
+ * from the kind it names and that kind's own values, and a `secret` value is
+ * passed as a source rather than a value, so the key is read from the credential
+ * store on every call and a rotation reaches a prompt that is already running.
  */
 export const createGeneration = async ({
   snapshot,
@@ -52,8 +43,6 @@ export const createGeneration = async ({
   bundles,
   logger,
 }: GenerationOptions): Promise<Generation> => {
-  const registered = new Set<string>();
-
   const providers = new Map(
     snapshot.configuration.providers.map((provider) => [
       provider.id,
@@ -63,6 +52,7 @@ export const createGeneration = async ({
         {
           transport: createFetchTransport(),
           logger,
+          identity: { id: provider.id, name: provider.id },
         },
       ),
     ]),
@@ -71,13 +61,10 @@ export const createGeneration = async ({
   return {
     snapshot,
     providers,
-    // Every stored secret is redacted, so no persisted history, event, tool
-    // result, or log line can carry one, and a rotation is covered the moment
-    // the store holds it.
-    redactions: () => [...credentials.secrets(), ...registered],
-    registerSecret: (value) => {
-      if (value.length > 0) registered.add(value);
-    },
+    // Every secret the host holds is redacted, so no persisted history, event,
+    // tool result, or log line can carry one, and a rotation is covered the
+    // moment the store holds it.
+    redactions: () => credentials.secrets(),
     catalog: {
       skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),
       tools: bundles.flatMap(({ tools }) =>

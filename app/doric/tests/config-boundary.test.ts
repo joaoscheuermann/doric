@@ -6,7 +6,7 @@ import {
   workspaceApi,
   WorkspaceError,
 } from '../src/workspace/api';
-import { configuration } from '../src/workspace/validation';
+import { configuration, providerValues } from '../src/workspace/validation';
 
 const valid: Configuration = {
   providers: [
@@ -17,14 +17,15 @@ const valid: Configuration = {
         endpoint: 'https://openrouter.ai/api/v1',
         token: '00000000-0000-4000-8000-000000000001',
       },
-      models: ['deepseek/deepseek-v4-flash-0731'],
-      reasonings: ['low'],
+      models: [
+        { name: 'deepseek/deepseek-v4-flash-0731', reasonings: ['low'] },
+      ],
     },
     {
       id: 'local',
       kind: 'lmstudio',
       configuration: {},
-      models: ['local-model'],
+      models: [{ name: 'local-model' }],
     },
   ],
   models: {
@@ -123,14 +124,24 @@ describe('Configuration validation', () => {
     ['a whitespace-only provider id', provider({ id: '   ' })],
     ['a provider id over 128 characters', provider({ id: 'a'.repeat(129) })],
     ['models that are not a list', provider({ models: 'a-model' })],
-    ['a model that is not a string', provider({ models: [7] })],
-    ['an empty model', provider({ models: [''] })],
-    ['a model over 512 characters', provider({ models: ['a'.repeat(513)] })],
-    ['reasonings that are not a list', provider({ reasonings: 'low' })],
-    ['a reasoning that is not a string', provider({ reasonings: [7] })],
+    ['a model that is not a record', provider({ models: [7] })],
+    ['a model missing its name', provider({ models: [{}] })],
+    ['a model with an empty name', provider({ models: [{ name: '' }] })],
     [
-      'a reasoning outside the closed set',
-      provider({ reasonings: ['extreme'] }),
+      'a model over 512 characters',
+      provider({ models: [{ name: 'a'.repeat(513) }] }),
+    ],
+    [
+      'model reasonings that are not a list',
+      provider({ models: [{ name: 'a-model', reasonings: 'low' }] }),
+    ],
+    [
+      'a model reasoning that is not a string',
+      provider({ models: [{ name: 'a-model', reasonings: [7] }] }),
+    ],
+    [
+      'a model reasoning outside the closed set',
+      provider({ models: [{ name: 'a-model', reasonings: ['extreme'] }] }),
     ],
     ['a missing models section', { ...valid, models: undefined }],
     ['models as an array', { ...valid, models: [] }],
@@ -154,6 +165,129 @@ describe('Configuration validation', () => {
   for (const [scenario, value] of malformed) {
     test(`rejects ${scenario}`, () => {
       assert.throws(() => configuration(value), invalidConfiguration);
+    });
+  }
+
+  test('accepts an execution profile whose model lists no reasoning effort', () => {
+    const configured = configuration({
+      ...structuredClone(valid),
+      models: { execution: { providerId: 'openrouter', model: 'mimo' } },
+    });
+
+    assert.deepEqual(configured.models.execution, {
+      providerId: 'openrouter',
+      model: 'mimo',
+    });
+  });
+});
+
+describe('the provider catalog boundary', () => {
+  const values = {
+    kind: 'openrouter',
+    configuration: { token: '00000000-0000-4000-8000-000000000002' },
+  };
+
+  test('forwards the values a catalog read names, and nothing else', () => {
+    const rendered = { ...structuredClone(values), models: [], draft: true };
+
+    const forwarded = providerValues(rendered);
+
+    assert.deepEqual(forwarded, values);
+    assert.notEqual(forwarded, rendered);
+  });
+
+  const malformed: ReadonlyArray<readonly [string, unknown]> = [
+    ['null', null],
+    ['a primitive', 'openrouter'],
+    ['a number', 7],
+    ['a missing kind', { configuration: {} }],
+    ['an empty kind', { kind: '', configuration: {} }],
+    ['a kind over the identifier bound', { kind: 'k'.repeat(129) }],
+    ['a missing configuration', { kind: 'openrouter' }],
+    ['a configuration that is a list', { ...values, configuration: [] }],
+    [
+      'a value that is not a string',
+      { ...values, configuration: { token: 7 } },
+    ],
+    ['an empty value', { ...values, configuration: { token: '' } }],
+    [
+      'a value over the field bound',
+      { ...values, configuration: { token: 't'.repeat(513) } },
+    ],
+  ];
+
+  for (const [scenario, value] of malformed) {
+    test(`refuses ${scenario}`, () => {
+      assert.throws(() => providerValues(value), invalidConfiguration);
+    });
+  }
+});
+
+describe('the model catalog boundary', () => {
+  const answer = async (body: unknown) => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => Response.json(body);
+    try {
+      return await workspaceApi.providers.models({
+        kind: 'openrouter',
+        configuration: { token: '00000000-0000-4000-8000-000000000002' },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  };
+
+  test('reads the models the endpoint described', async () => {
+    const models = await answer({
+      models: [
+        {
+          id: 'openai/gpt-5',
+          name: 'OpenAI: GPT-5',
+          parameters: ['tools', 'tool_choice'],
+          reasonings: ['high', 'medium'],
+        },
+        { id: 'local/model', parameters: [], reasonings: [] },
+      ],
+    });
+
+    assert.deepEqual(models, [
+      {
+        id: 'openai/gpt-5',
+        name: 'OpenAI: GPT-5',
+        parameters: ['tools', 'tool_choice'],
+        reasonings: ['high', 'medium'],
+      },
+      { id: 'local/model', parameters: [], reasonings: [] },
+    ]);
+  });
+
+  const malformed: ReadonlyArray<readonly [string, unknown]> = [
+    ['an envelope that is not an object', []],
+    ['a missing models list', {}],
+    ['models that are not a list', { models: 'a-model' }],
+    ['a model that is not an object', { models: [7] }],
+    ['a model without an id', { models: [{ parameters: [], reasonings: [] }] }],
+    [
+      'a model without its parameters',
+      { models: [{ id: 'a/model', reasonings: [] }] },
+    ],
+    [
+      'a model without its reasonings',
+      { models: [{ id: 'a/model', parameters: [] }] },
+    ],
+    [
+      'a model naming an effort the host does not know',
+      { models: [{ id: 'a/model', parameters: [], reasonings: ['extreme'] }] },
+    ],
+    [
+      'a model naming a name that is not a string',
+      { models: [{ id: 'a/model', name: 7, parameters: [], reasonings: [] }] },
+    ],
+  ];
+
+  for (const [scenario, value] of malformed) {
+    test(`refuses ${scenario}`, async () => {
+      await assert.rejects(answer(value), invalidResponse);
     });
   }
 });
@@ -203,6 +337,49 @@ describe('credential choice boundary', () => {
       assert.throws(() => configuration(value), invalidConfiguration);
     });
   }
+});
+
+describe('configuration response boundary', () => {
+  const answer = async (body: unknown) => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => Response.json(body);
+    try {
+      return await workspaceApi.config.get();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  };
+
+  test('reads back an execution profile whose model lists no reasoning effort', async () => {
+    const stored = await answer({
+      configuration: {
+        ...structuredClone(valid),
+        models: { execution: { providerId: 'openrouter', model: 'mimo' } },
+      },
+      revision: 3,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    assert.deepEqual(stored.configuration.models.execution, {
+      providerId: 'openrouter',
+      model: 'mimo',
+    });
+  });
+
+  test('drops an unknown reasoning effort rather than reading it', async () => {
+    await assert.rejects(
+      answer({
+        ...structuredClone(snapshot),
+        configuration: {
+          ...structuredClone(valid),
+          models: {
+            execution: { ...valid.models.execution, effort: 'extreme' },
+          },
+        },
+      }),
+      invalidResponse,
+    );
+  });
 });
 
 describe('credential response boundary', () => {
@@ -386,12 +563,22 @@ describe('Configuration HTTP boundary', () => {
       },
     ],
     [
-      'a configuration whose provider carries a reasoning llms does not know',
+      'a configuration whose model carries a reasoning llms does not know',
       {
         ...snapshot,
         configuration: {
           ...valid,
-          providers: [{ ...valid.providers[0], reasonings: ['extreme'] }],
+          providers: [
+            {
+              ...valid.providers[0],
+              models: [
+                {
+                  name: 'deepseek/deepseek-v4-flash-0731',
+                  reasonings: ['extreme'],
+                },
+              ],
+            },
+          ],
         },
       },
     ],

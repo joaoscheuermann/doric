@@ -31,9 +31,10 @@ export type SerializedActivityTurnNode = Spread<
  * a header that counts what the burst did, and, opened, the steps themselves. A
  * long run of steps then reads as one line instead of filling the transcript.
  *
- * Only a burst the log has finished writing is grouped; the one still being
- * written stays as its own thinking and tool turns, so this block is never the
- * live one and its label never shimmers.
+ * Only a burst the log has finished writing, and that did more than one thing,
+ * is grouped: a lone step reads as itself, and the burst still being written
+ * stays its own thinking and tool turns, so this block is never the live one and
+ * its label never shimmers.
  */
 export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;

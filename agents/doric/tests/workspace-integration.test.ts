@@ -218,6 +218,7 @@ test(
     registerHttpRoutes(app, {
       config,
       credentials: credentialResolver(),
+      logger: { warn: () => undefined } as never,
       service,
       vms: {
         list: vms.list,

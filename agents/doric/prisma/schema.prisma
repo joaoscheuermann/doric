@@ -86,13 +86,13 @@ model ProviderConfiguration {
   /// It is a column rather than a JSON value so the reference is enforced, and
   /// `null` means a kind whose provider named none.
   credentialId     String?              @map("credential_id") @db.Uuid
-  /// The models this provider offers, as an empty list when its kind keeps none.
-  modelIds         String[]             @map("model_ids")
-  /// The reasoning efforts it accepts, as an empty list when its kind keeps none.
-  reasoningEfforts String[]             @map("reasoning_efforts")
+  /// The models this provider offers, as `ProviderModel[]` JSON. Each model names
+  /// itself and, when its kind keeps them, its own reasoning efforts. Empty means
+  /// the kind keeps no model list, or the operator has named none yet.
+  models           Json                 @default("[]") @db.JsonB
   configuration    DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
   credential       Credential?          @relation(fields: [credentialId], references: [id], onDelete: Restrict)
-  models           ModelConfiguration[]
+  modelConfigurations ModelConfiguration[]
 
   @@id([configurationId, id])
   @@map("provider_configuration")
@@ -103,7 +103,7 @@ model ModelConfiguration {
   role            ModelRole
   providerId      String                @map("provider_id")
   model           String
-  effort          String
+  effort          String?
   configuration   DoricConfiguration    @relation(fields: [configurationId], references: [id], onDelete: Cascade)
   provider        ProviderConfiguration @relation(fields: [configurationId, providerId], references: [configurationId, id])
 

@@ -11,7 +11,7 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
-import { finishReason, parseUsage } from '../common.js';
+import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
 export type StreamState = {
   readonly text: string[];
@@ -101,22 +101,25 @@ export const streamEvents = (
 
     state.replay.push(...replayItems(delta));
 
-    if (content !== undefined) {
-      state.text.push(content);
+    const text = deltaEvent('text.delta', content);
+    if (text !== undefined) {
+      state.text.push(text.delta);
 
-      events.push({ type: 'text.delta', delta: content });
+      events.push(text);
     }
 
-    if (reasoning !== undefined) {
-      state.reasoning.push(reasoning);
+    const thought = deltaEvent('reasoning.delta', reasoning);
+    if (thought !== undefined) {
+      state.reasoning.push(thought.delta);
 
-      events.push({ type: 'reasoning.delta', delta: reasoning });
+      events.push(thought);
     }
 
-    if (refusal !== undefined) {
-      state.refusal.push(refusal);
+    const declined = deltaEvent('refusal.delta', refusal);
+    if (declined !== undefined) {
+      state.refusal.push(declined.delta);
 
-      events.push({ type: 'refusal.delta', delta: refusal });
+      events.push(declined);
     }
 
     for (const call of arrayField(delta, 'tool_calls')

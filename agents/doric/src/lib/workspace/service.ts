@@ -78,6 +78,7 @@ export const createWorkspaceService = ({
     publisher,
     logger,
     execute,
+    generation: () => config.current(),
     exclusive,
   });
   let disposed = false;
@@ -212,10 +213,10 @@ export const createWorkspaceService = ({
   const acquire = async (runtime: ProjectRuntime) => {
     try {
       const lease = await pool.acquire({ signal: runtime.controller.signal });
-      // The captured credentials are what a fresh sandbox starts with, and the
-      // next prompt re-applies the current ones when they have moved on.
+      // The credentials in force are what a fresh sandbox starts with, and the
+      // next prompt re-applies them when they have moved on.
       const git = gitCredentials(
-        runtime.generation.snapshot.configuration,
+        config.current().snapshot.configuration,
         runtime.project.id,
       );
       await applyGitCredentials(lease.sandbox, git, {
@@ -242,11 +243,10 @@ export const createWorkspaceService = ({
   };
   /**
    * The Git identity and the GitHub token follow the current configuration, so a
-   * rotated or newly saved credential reaches a Project that is already running,
-   * while every other configuration value stays captured in the Project's
-   * generation. The pair is compared with the one the sandbox last received, so an
-   * unchanged configuration never re-runs commands, and the writes stay off the
-   * project lock because a credential is not a lifecycle mutation.
+   * rotated or newly saved credential reaches a Project that is already running.
+   * The pair is compared with the one the sandbox last received, so an unchanged
+   * configuration never re-runs commands, and the writes stay off the project
+   * lock because a credential is not a lifecycle mutation.
    */
   const applyCurrentGit = async (runtime: ProjectRuntime | undefined) => {
     const sandbox = runtime?.lease?.sandbox;
@@ -262,11 +262,9 @@ export const createWorkspaceService = ({
       projectId: runtime.project.id,
     });
     runtime.appliedGit = git;
-    // This Project's captured generation predates any rotation, so the new token
-    // is registered for redaction before anything can carry it into an event.
-    if (git.token !== undefined) {
-      runtime.generation.registerSecret(git.token);
-    }
+    // The host just wrote this token into a sandbox, so it must never surface in
+    // an event or a log line, whether or not the credential store still holds it.
+    if (git.token !== undefined) credentials.register(git.token);
   };
   /**
    * Resolves a Project lease for one operation, so every lease-dependent
@@ -409,7 +407,6 @@ export const createWorkspaceService = ({
           );
           const runtime: ProjectRuntime = {
             project: record.project,
-            generation,
             controller: new AbortController(),
             threads: new Map(),
             closing: false,

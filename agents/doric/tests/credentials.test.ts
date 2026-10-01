@@ -325,6 +325,24 @@ test('refuses to start when a stored secret has no key', async () => {
   assert.deepEqual(service.secrets(), []);
 });
 
+/** A secret the host wrote into a sandbox is redacted like a stored one. */
+test('redacts a secret it learned after the store was read', async () => {
+  const empty = memoryStore([]);
+  const service = await createCredentialService({
+    store: empty.store,
+    environment: {},
+  });
+  const learned = 'ghp_learned_in_a_sandbox';
+
+  assert.deepEqual(service.secrets(), []);
+
+  service.register(learned);
+  // An empty secret is no secret, exactly as the store's own rule reads it.
+  service.register('');
+
+  assert.deepEqual(service.secrets(), [learned]);
+});
+
 test('keeps, clears, and sets a stored field through one rule', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({

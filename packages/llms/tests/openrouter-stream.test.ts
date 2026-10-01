@@ -290,4 +290,47 @@ test('returns OpenRouter stream error events for malformed and provider errors',
   );
 });
 
+test('emits no OpenRouter delta for a chunk that carries no text', async () => {
+  const provider = createOpenRouterProvider({
+    transport: fakeTransport({
+      streams: [
+        [
+          // The shape OpenRouter sends beside a reasoning token: the chunk names
+          // `content` as the empty string, which is no text at all.
+          sse({ choices: [{ delta: { content: '', reasoning: 'why' } }] }),
+          sse({ choices: [{ delta: { content: '', reasoning: ' not' } }] }),
+          sse({ choices: [{ delta: { content: 'Hi' } }] }),
+          sse({ choices: [{ delta: { reasoning: '' } }] }),
+          'data: [DONE]\n\n',
+        ],
+      ],
+    }),
+    apiKey: 'key',
+  });
+
+  const events = await collect(
+    provider.stream({
+      model: 'openai/gpt-5',
+      messages: [{ role: 'user', content: 'Hi' }],
+    }),
+  );
+
+  assert.deepEqual(
+    events.filter((event) => event.type === 'text.delta'),
+    [{ type: 'text.delta', delta: 'Hi' }],
+  );
+
+  assert.deepEqual(
+    events
+      .filter(
+        (
+          event,
+        ): event is Extract<ProviderStreamEvent, { type: 'reasoning.delta' }> =>
+          event.type === 'reasoning.delta',
+      )
+      .map((event) => event.delta),
+    ['why', ' not'],
+  );
+});
+
 const sse = (value: unknown): string => `data: ${JSON.stringify(value)}\n\n`;

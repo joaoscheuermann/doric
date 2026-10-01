@@ -29,6 +29,7 @@
     "src/utility/humanize.ts",
     "src/utility/identicon.ts",
     "src/utility/oklch.ts",
+    "src/utility/reasoning-text.ts",
     "src/utility/relative-time.ts",
     "tests/**/*.ts"
   ]

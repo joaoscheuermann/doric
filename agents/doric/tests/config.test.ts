@@ -22,6 +22,7 @@ import {
   createConfigService,
 } from '../src/lib/config/service.js';
 import type { Credential } from '../src/lib/credentials/kind.js';
+import type { CredentialService } from '../src/lib/credentials/service.js';
 import { eventJson } from '../src/lib/events/serialization.js';
 import { credentialResolver } from './helpers/workspace.js';
 
@@ -82,8 +83,18 @@ test('carries each provider kind with the values that kind declares', () => {
           .filter((field) => field.required)
           .map((field) => [field.key, valueFor(field)]),
       ),
-      ...(kind.lists.includes('models') ? { models: ['a-model'] } : {}),
-      ...(kind.lists.includes('reasonings') ? { reasonings: ['low'] } : {}),
+      ...(kind.lists.includes('models')
+        ? {
+            models: [
+              {
+                name: 'a-model',
+                ...(kind.lists.includes('reasonings')
+                  ? { reasonings: ['low'] }
+                  : {}),
+              },
+            ],
+          }
+        : {}),
     };
 
     assert.equal(
@@ -132,8 +143,7 @@ test('rejects a provider that omits a value its kind requires', () => {
     id: 'openrouter',
     kind: 'openrouter',
     configuration: { endpoint: 'https://openrouter.ai/api/v1' },
-    models: ['a-model'],
-    reasonings: ['low'],
+    models: [{ name: 'a-model', reasonings: ['low'] }],
   });
 
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
@@ -185,8 +195,7 @@ test('rejects a number value that is not a number and an enum value outside its 
       token: providerCredential.id,
       maxStructuredOutputRepairs: 'two',
     },
-    models: ['a-model'],
-    reasonings: ['low'],
+    models: [{ name: 'a-model', reasonings: ['low'] }],
   };
   const codex = {
     id: 'codex',
@@ -225,87 +234,89 @@ test('rejects a number value that is not a number and an enum value outside its 
 });
 
 test('rejects a list the kind does not keep, and a kind that omits one it does', () => {
-  // Codex keeps neither list, and the OpenAI-compatible kind keeps both.
+  // Codex keeps no model list, and the OpenAI-compatible kind keeps one.
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
         id: 'codex',
         kind: 'codex',
         configuration: { token: providerCredential.id },
-        models: ['gpt-codex'],
+        models: [{ name: 'gpt-codex' }],
       }),
     ).success,
     false,
   );
 
-  // A kind that keeps a list must carry it, even when the provider names no
-  // entry yet.
+  // A kind that keeps a model list must carry it, even when the provider names
+  // no model yet.
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
         id: 'openrouter',
         kind: 'openai-compatible',
-        configuration: {
-          identityId: 'openrouter',
-          identityName: 'openrouter',
-        },
-        models: [],
+        configuration: {},
       }),
     ).success,
     false,
   );
 
+  // LM Studio keeps models but not reasoning efforts, so a model of its carries
+  // a name alone.
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
         id: 'local',
         kind: 'lmstudio',
         configuration: {},
-        models: ['local-model'],
-        reasonings: ['low'],
+        models: [{ name: 'local-model', reasonings: ['low'] }],
       }),
     ).success,
     false,
   );
 });
 
-test('accepts a list a kind keeps while it holds nothing yet', () => {
+test('accepts a model list a kind keeps while it holds nothing yet', () => {
   // A migrated provider has no models of its own until an operator names them,
   // and the execution section is what falls back to a typed model.
   const [provider] = defaultConfig.providers;
   assert.deepEqual(provider?.models, []);
-  assert.deepEqual(provider?.reasonings, []);
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
 
-test('rejects a list entry that repeats, is empty, or is not an effort name', () => {
+test('rejects a model list entry that repeats, is empty, or carries a bad effort', () => {
   assert.equal(
     ConfigInputSchema.safeParse(
-      withProvider({ ...providerOf(), models: ['a-model', 'a-model'] }),
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model' }, { name: 'a-model' }],
+      }),
     ).success,
     false,
   );
   assert.equal(
     ConfigInputSchema.safeParse(
-      withProvider({ ...providerOf(), models: ['a-model', ' '] }),
+      withProvider({ ...providerOf(), models: [{ name: ' ' }] }),
     ).success,
     false,
   );
   assert.equal(
     ConfigInputSchema.safeParse(
-      withProvider({ ...providerOf(), reasonings: ['low', 'low'] }),
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model', reasonings: ['low', 'low'] }],
+      }),
     ).success,
     false,
   );
-});
-
-test('rejects a reasoning list that names an effort llms does not know', () => {
-  const invalid = {
-    ...structuredClone(defaultConfig),
-    providers: [{ ...providerOf(), reasonings: ['extreme'] }],
-  };
-
-  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model', reasonings: ['extreme'] }],
+      }),
+    ).success,
+    false,
+  );
 });
 
 test('rejects model profiles that reference an unavailable provider', () => {
@@ -341,7 +352,7 @@ test('names the credential each provider secret field carries', () => {
       id: 'local',
       kind: 'lmstudio',
       configuration: {},
-      models: ['local-model'],
+      models: [{ name: 'local-model' }],
     }),
     [],
   );
@@ -403,14 +414,13 @@ test('builds every configured provider through the kind it names', async () => {
         id: 'local',
         kind: 'lmstudio',
         configuration: {},
-        models: ['local-model'],
+        models: [{ name: 'local-model' }],
       },
       {
         id: 'proxy',
         kind: 'openai-compatible',
-        configuration: { identityId: 'proxy', identityName: 'Proxy' },
-        models: ['proxy-model'],
-        reasonings: ['low'],
+        configuration: {},
+        models: [{ name: 'proxy-model', reasonings: ['low'] }],
       },
     ],
     models: {
@@ -462,27 +472,24 @@ test('redacts every stored secret from event values', async () => {
   );
 });
 
-test('redacts a rotated secret a running Project learned after it was built', async () => {
+test('redacts a secret the credentials learned after the generation was built', async () => {
   const rotated = 'ghp_rotated_later';
+  const credentials: CredentialService = credentialResolver();
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
-    credentials: credentialResolver(),
+    credentials,
     bundles: [],
     logger: pino({ enabled: false }),
   });
 
   assert.equal(generation.redactions().includes(rotated), false);
 
-  generation.registerSecret(rotated);
+  credentials.register(rotated);
 
   assert.equal(generation.redactions().includes(rotated), true);
   assert.deepEqual(eventJson({ output: rotated }, generation.redactions()), {
     output: '[REDACTED]',
   });
-
-  generation.registerSecret('');
-
-  assert.equal(generation.redactions().includes(''), false);
 });
 
 test('serializes concurrent replacements in request order', async () => {
@@ -577,7 +584,6 @@ const configHarness = async ({
       snapshot: current,
       providers: new Map(),
       redactions: () => [],
-      registerSecret: () => undefined,
       catalog: { skills: [], tools: [] },
     } satisfies Generation;
   };
@@ -587,6 +593,9 @@ const configHarness = async ({
     bundles: [],
     logger: pino({ enabled: false }),
     buildGeneration: build,
+    // The catalog reader has its own cases; this harness is about the store and
+    // the service, so it must never reach an endpoint.
+    readModels: (configuration) => Promise.resolve(configuration),
   });
   return {
     service,

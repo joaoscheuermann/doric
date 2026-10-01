@@ -1,10 +1,12 @@
 import type {
+  CatalogModel,
   ConfigurationInput,
   Credential,
   CredentialCreate,
   CredentialUpdate,
   DoricConfiguration,
   ProviderKind,
+  ProviderValuesRef,
 } from './config';
 import type { ConnectionApi } from './connection';
 
@@ -156,11 +158,14 @@ export type WorkspaceApi = {
   };
   /**
    * The host's provider catalog: what kinds of provider exist, which fields each
-   * declares and which per-provider lists it keeps. The host owns this set, so the
-   * renderer draws whatever it is answered with rather than a fixed list.
+   * declares, which per-provider lists it keeps, and what one provider's own
+   * model catalog describes. The host owns these, so the renderer draws whatever
+   * it is answered with rather than a fixed list — and the read happens on the
+   * host's side, because this window never opens HTTP.
    */
   readonly providers: {
     kinds(): Promise<readonly ProviderKind[]>;
+    models(values: ProviderValuesRef): Promise<readonly CatalogModel[]>;
   };
   readonly projects: {
     list(): Promise<readonly Project[]>;

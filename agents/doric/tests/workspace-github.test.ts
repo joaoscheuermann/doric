@@ -54,7 +54,7 @@ const host = (
   const harness = workspace();
   const environment = fakeSandbox();
   const warnings: unknown[][] = [];
-  /** Every value this generation was asked to redact after it was built. */
+  /** Every secret the host registered for redaction after it stored one. */
   const registered: string[] = [];
   const gates = new Map<string, { started: () => void; held: Promise<void> }>();
   let current = stored;
@@ -77,9 +77,6 @@ const host = (
       ...current.flatMap(({ secret }) => (secret ? [secret] : [])),
       ...registered,
     ],
-    registerSecret: (value: string) => {
-      registered.push(value);
-    },
   });
   const execute: ThreadExecution = async ({ job }) => {
     const gate = gates.get(job.prompt);
@@ -95,7 +92,7 @@ const host = (
         throw new Error('Configuration is not replaced in this test');
       },
     },
-    credentials: credentialResolver(list),
+    credentials: credentialResolver(list, registered),
     pool: pool(undefined, environment),
     logger: {
       debug: () => undefined,
@@ -348,8 +345,8 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
   const hostUnderTest = host(stored, choices);
   const { thread } = await hostUnderTest.open();
   assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
-  // The credentials the sandbox received are the ones the Project captured, so
-  // nothing has been registered for redaction yet.
+  // The credentials the sandbox received are the ones in force, so nothing has
+  // been learned for redaction yet.
   assert.deepEqual(hostUnderTest.registered, []);
 
   // The sandbox already holds these credentials, so a prompt issues nothing.
@@ -367,9 +364,9 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
     'accepted',
   );
   assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS * 2);
-  // The Project's captured generation predates the rotation, so the token it
-  // just received has to be registered for redaction before an event can carry
-  // it: the sandbox's credential file is readable by the agent's own tools.
+  // The host just wrote the rotated token into the sandbox, so it is registered
+  // for redaction before an event can carry it: the sandbox's credential file is
+  // readable by the agent's own tools.
   assert.deepEqual(hostUnderTest.registered, ['ghp_rotated_token']);
   assert.deepEqual(hostUnderTest.environment.execs[APPLY_COMMANDS]?.cmd, [
     'git',

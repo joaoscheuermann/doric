@@ -30,7 +30,14 @@ type Thread = {
   readonly updatedAt: string;
 };
 
-type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max';
 
 /** The kinds of control a provider field needs; an `enum` carries its options. */
 type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
@@ -47,6 +54,22 @@ type ProviderField = {
   readonly description?: string;
   readonly placeholder?: string;
   readonly options?: readonly string[];
+  /** Whether an operator rarely needs the field, so a screen can shelve it. */
+  readonly advanced?: boolean;
+};
+
+/** One model a provider's catalog describes, as the host answers it. */
+type CatalogModel = {
+  readonly id: string;
+  readonly name?: string;
+  readonly reasonings: readonly ReasoningEffort[];
+  readonly parameters: readonly string[];
+};
+
+/** The values one provider carries, as a catalog read names it. */
+type ProviderValuesRef = {
+  readonly kind: string;
+  readonly configuration: Readonly<Record<string, string>>;
 };
 
 type ProviderListId = 'models' | 'reasonings';
@@ -60,13 +83,18 @@ type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
+/** One model a provider offers, with its own efforts when the kind keeps them. */
+type ProviderModel = {
+  readonly name: string;
+  readonly reasonings?: readonly ReasoningEffort[];
+};
+
 type ProviderConfiguration = {
   readonly id: string;
   readonly kind: string;
   /** The kind's own field values; a `secret` value names a stored credential. */
   readonly configuration: Readonly<Record<string, string>>;
-  readonly models?: readonly string[];
-  readonly reasonings?: readonly ReasoningEffort[];
+  readonly models?: readonly ProviderModel[];
 };
 
 type CredentialKind = 'API_TOKEN' | 'USERNAME_PASSWORD' | 'GIT';
@@ -103,7 +131,8 @@ type Configuration = {
     readonly execution: {
       readonly providerId: string;
       readonly model: string;
-      readonly effort: ReasoningEffort;
+      /** The effort the model accepts; absent when it lists none. */
+      readonly effort?: ReasoningEffort;
     };
   };
   readonly execution: { readonly maxTurns: number };
@@ -234,6 +263,11 @@ contextBridge.exposeInMainWorld('doric', {
   providers: {
     // The host's catalog: the kinds it can build and what each one needs.
     kinds: () => invoke<readonly ProviderKind[]>('doric:providers:kinds'),
+    // What one provider's own catalog lists, read on the host's side because
+    // this window never opens HTTP. The values are the draft's, so a provider
+    // page reads its models before the provider exists.
+    models: (values: ProviderValuesRef) =>
+      invoke<readonly CatalogModel[]>('doric:providers:models', values),
   },
   /**
    * The host's credential store. A create or patch carries a secret and the

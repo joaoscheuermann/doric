@@ -1,6 +1,7 @@
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -18,14 +19,14 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import type { LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 /** One section the shell offers, named by the caller that owns the sections. */
 export type SettingsNavItem = {
   /**
-   * The sentence the section shows above its controls. The nav searches it as
-   * well as the label, so a reader finds a section by what it explains rather
-   * than by the one word it is named after.
+   * The sentence the nav searches beside the label, so a reader finds a section
+   * by what it explains rather than by the one word it is named after. It is not
+   * drawn: a section's heading shows the label alone.
    */
   readonly description?: string;
   readonly icon: LucideIcon;
@@ -53,19 +54,50 @@ export type SettingsSurfaceProps = {
 };
 
 /**
- * The chain naming the settings surface and the section it is showing. It is a
- * molecule so a frame that draws a header of its own can put it in that header:
- * the section a window is on belongs to the window's chrome, not to the section.
+ * One part of the chain a settings frame names what it is showing with. Every
+ * part but the last leads somewhere — the surface itself does not, and the page
+ * on screen is where the chain already is.
  */
-export function SettingsBreadcrumb({ title }: { readonly title: string }) {
+export type SettingsCrumb = {
+  readonly label: string;
+  /** Selects what the crumb names; absent when the part leads nowhere. */
+  readonly onSelect?: () => void;
+};
+
+/**
+ * The chain naming the settings surface and the page it is showing, outermost
+ * first. Every part but the last is a control that leads back to it, so a window
+ * that draws this in its chrome doubles as the way out of a nested page.
+ */
+export function SettingsBreadcrumb({
+  trail,
+}: {
+  readonly trail: readonly SettingsCrumb[];
+}) {
   return (
-    <Breadcrumb className="min-w-0">
+    <Breadcrumb className="min-w-0 [app-region:no-drag]">
       <BreadcrumbList className="flex-nowrap">
-        <BreadcrumbItem className="shrink-0">Settings</BreadcrumbItem>
-        <BreadcrumbSeparator className="shrink-0" />
-        <BreadcrumbItem className="min-w-0">
-          <BreadcrumbPage className="truncate">{title}</BreadcrumbPage>
-        </BreadcrumbItem>
+        {trail.map((crumb, index) => {
+          const last = index === trail.length - 1;
+          return (
+            <Fragment key={`${index}-${crumb.label}`}>
+              {index > 0 && <BreadcrumbSeparator className="shrink-0" />}
+              <BreadcrumbItem className={last ? 'min-w-0' : 'shrink-0'}>
+                {last || crumb.onSelect === undefined ? (
+                  <BreadcrumbPage className="truncate">
+                    {crumb.label}
+                  </BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <button type="button" onClick={crumb.onSelect}>
+                      {crumb.label}
+                    </button>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </Fragment>
+          );
+        })}
       </BreadcrumbList>
     </Breadcrumb>
   );

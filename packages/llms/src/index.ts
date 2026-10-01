@@ -6,6 +6,8 @@ export * from './lib/providers/kinds.js';
 export { structuredJsonSchema } from './lib/providers/structured.js';
 export * from './lib/providers/lmstudio-openai.js';
 export * from './lib/providers/lmstudio.js';
+export * from './lib/providers/models.js';
+export { requestJson } from './lib/providers/http.js';
 export {
   createOpenAiProvider,
   createOpenAiCompatibleProvider,

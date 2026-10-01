@@ -3,20 +3,35 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import express from 'express';
+import { pino } from 'pino';
 
 import { providerKinds } from 'llms';
 
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { ConfigCredentialError } from '../src/lib/config/service.js';
+import type { Credential } from '../src/lib/credentials/kind.js';
 import { createConfigRouter } from '../src/routes/config.js';
 import { createProvidersRouter } from '../src/routes/providers.js';
+import { credentialResolver } from './helpers/workspace.js';
 
 const gitCredentialId = '00000000-0000-4000-8000-00000000000a';
+/** The credential a provider names when a case reads its catalog. */
+const providerCredential: Credential = {
+  id: '00000000-0000-4000-8000-000000000002',
+  kind: 'API_TOKEN',
+  name: 'OPENROUTER_API_KEY',
+  secret: 'sk_stored_key',
+};
+
+const logger = pino({ enabled: false });
 
 test('answers the provider-kind catalog the host can build', async () => {
   const app = express();
 
-  app.use('/providers', createProvidersRouter());
+  app.use(
+    '/providers',
+    createProvidersRouter({ credentials: credentialResolver(), logger }),
+  );
 
   const host = await serve(app);
 
@@ -42,6 +57,116 @@ test('answers the provider-kind catalog the host can build', async () => {
         'lmstudio-openai',
       ],
     );
+  } finally {
+    await host.close();
+  }
+});
+
+test('answers the models a provider catalog describes', async () => {
+  const catalog = 'https://catalog.example.com/models';
+  const requests: { readonly url: string }[] = [];
+  const host = await serveProviders({
+    credentials: credentialResolver(() => [providerCredential]),
+    // The endpoint is answered here, so no case reaches a real one.
+    transport: {
+      request: (request: { readonly url: string }) => {
+        requests.push({ url: request.url });
+
+        return Promise.resolve({
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            data: [
+              {
+                id: 'openai/gpt-5',
+                name: 'OpenAI: GPT-5',
+                supported_parameters: ['tools', 'tool_choice'],
+                reasoning: { supported_efforts: ['high', 'medium'] },
+              },
+            ],
+          }),
+        });
+      },
+    },
+  });
+
+  try {
+    const response = await fetch(`${host.url}/providers/models`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'openrouter',
+        configuration: { modelsUrl: catalog, token: providerCredential.id },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(requests[0]?.url, catalog);
+    assert.deepEqual(await response.json(), {
+      models: [
+        {
+          id: 'openai/gpt-5',
+          name: 'OpenAI: GPT-5',
+          parameters: ['tools', 'tool_choice'],
+          reasonings: ['high', 'medium'],
+        },
+      ],
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+test('answers a catalog it cannot read as its own error', async () => {
+  const host = await serveProviders({
+    credentials: credentialResolver(),
+    transport: {
+      request: () => Promise.resolve({ status: 500, headers: {}, body: '' }),
+    },
+  });
+
+  try {
+    const response = await fetch(`${host.url}/providers/models`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'openrouter',
+        configuration: { token: '00000000-0000-4000-8000-000000000002' },
+      }),
+    });
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: 'model_catalog_unreadable',
+        message: 'The provider model catalog could not be read.',
+      },
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+test('refuses provider values the kind does not declare', async () => {
+  const host = await serveProviders({ credentials: credentialResolver() });
+
+  try {
+    const response = await fetch(`${host.url}/providers/models`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'lmstudio',
+        configuration: { identityId: 'local' },
+      }),
+    });
+
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: 'invalid_provider',
+        message: 'The provider values are invalid.',
+      },
+    });
   } finally {
     await host.close();
   }
@@ -192,6 +317,29 @@ const snapshot = (revision: number, extra: Partial<ConfigInput> = {}) => ({
   revision,
   updatedAt: new Date(revision * 1000).toISOString(),
 });
+
+/** The provider routes, over the kind catalog and a catalog read that a case answers. */
+const serveProviders = async (options: {
+  readonly credentials: unknown;
+  readonly transport?: unknown;
+}) => {
+  const app = express();
+
+  app.use(express.json());
+
+  app.use(
+    '/providers',
+    createProvidersRouter({
+      credentials: options.credentials,
+      logger,
+      ...(options.transport === undefined
+        ? {}
+        : { transport: options.transport }),
+    } as never),
+  );
+
+  return serve(app);
+};
 
 const serveConfig = async (service: unknown) => {
   const app = express();

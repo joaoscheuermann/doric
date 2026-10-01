@@ -147,6 +147,19 @@ export const httpError = (
     diagnostic: diagnosticExcerpt(body),
   });
 
+/**
+ * A delta event carries the text a chunk produced. A chunk that carries none ask
+ * a consumer to do nothing, so it opens no event: emitting one would let an empty
+ * delta end a run of reasoning or text and split it into a block of its own.
+ */
+export const deltaEvent = <
+  Type extends 'text.delta' | 'reasoning.delta' | 'refusal.delta',
+>(
+  type: Type,
+  delta: string | undefined,
+): { readonly type: Type; readonly delta: string } | undefined =>
+  delta === undefined || delta === '' ? undefined : { type, delta };
+
 export const streamErrorEvent = (
   provider: ProviderId,
   code: string,

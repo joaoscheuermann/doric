@@ -1,8 +1,4 @@
 import { DeleteDialog } from '@/components/molecules/delete-dialog';
-import {
-  WorkspaceFooter,
-  WorkspaceSidebarFooter,
-} from '@/components/molecules/workspace-footer';
 import { Conversation } from '@/components/organisms/conversation';
 import { FileViewer } from '@/components/organisms/file-viewer';
 import { ProjectFilesSidebar } from '@/components/organisms/project-files-sidebar';
@@ -11,6 +7,10 @@ import {
   type SidebarActions,
   type SidebarModel,
 } from '@/components/organisms/project-sidebar';
+import {
+  WorkspaceFooter,
+  WorkspaceSidebarFooter,
+} from '@/components/organisms/workspace-footer';
 import {
   WorkspaceHeader,
   WorkspaceSidebarHeader,

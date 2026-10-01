@@ -11,7 +11,7 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
-import { finishReason, parseUsage } from '../common.js';
+import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
 export type TextSnapshots = {
   readonly outputItems: string[];
@@ -34,24 +34,18 @@ export const streamEvent = (
   const type = stringField(payload, 'type');
 
   if (type === 'response.output_text.delta') {
-    return { type: 'text.delta', delta: stringField(payload, 'delta') ?? '' };
+    return deltaEvent('text.delta', stringField(payload, 'delta'));
   }
 
   if (
     type === 'response.reasoning_summary_text.delta' ||
     type === 'response.reasoning_text.delta'
   ) {
-    return {
-      type: 'reasoning.delta',
-      delta: stringField(payload, 'delta') ?? '',
-    };
+    return deltaEvent('reasoning.delta', stringField(payload, 'delta'));
   }
 
   if (type === 'response.refusal.delta') {
-    return {
-      type: 'refusal.delta',
-      delta: stringField(payload, 'delta') ?? '',
-    };
+    return deltaEvent('refusal.delta', stringField(payload, 'delta'));
   }
 
   if (type === 'response.function_call_arguments.delta') {

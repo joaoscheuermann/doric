@@ -32,10 +32,16 @@ import type {
  * only need a Project to receive credentials use this instead of a store, and
  * `secrets` follows the list so redaction stays honest.
  */
+/**
+ * A credential service over a live credential list, with the secrets the host
+ * learned recorded in `registered`, exactly as the real service records them, so
+ * a case can assert what redaction covers after a rotation.
+ */
 export const credentialResolver = (
   list: () => readonly Credential[] = () => [],
-) =>
-  ({
+  registered: string[] = [],
+) => {
+  return {
     list,
     find: (id: string) => list().find(({ id: stored }) => stored === id),
     byId: (id: string) => credentialById(list(), id),
@@ -45,11 +51,17 @@ export const credentialResolver = (
         list().filter(({ id }) => !claimed.has(id)),
         kind,
       ),
-    secrets: () =>
-      list().flatMap(({ secret }) =>
+    secrets: () => [
+      ...list().flatMap(({ secret }) =>
         secret === undefined || secret === '' ? [] : [secret],
       ),
-  }) as never;
+      ...registered,
+    ],
+    register: (secret: string) => {
+      if (secret !== '') registered.push(secret);
+    },
+  } as never;
+};
 
 export const deferred = <T = void>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -325,7 +337,6 @@ export const workspace = () => {
           providers: new Map(),
           catalog: { skills: [], tools: [] },
           redactions: () => ['secret-value'],
-          registerSecret: () => undefined,
         }),
       } as never,
       credentials: credentialResolver(),

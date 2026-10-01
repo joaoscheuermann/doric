@@ -2,7 +2,15 @@ import { z } from 'zod';
 
 import { type ProviderField, providerKind, type ProviderKindId } from 'llms';
 
-const effort = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const effort = z.enum([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
 const identifier = z.string().trim().min(1).max(128);
 const model = z.string().trim().min(1).max(512);
 const limit = z.number().int().safe().positive();
@@ -40,12 +48,33 @@ const uniqueList = <Schema extends z.ZodType>(entry: Schema) =>
     message: 'A provider list cannot repeat an entry.',
   });
 
+/**
+ * One model a provider lists. Its name is the model id an execution profile
+ * types. When the kind keeps `reasonings`, the model carries its own efforts; a
+ * kind that keeps models without reasonings carries a name alone.
+ */
+interface ProviderModelInput {
+  readonly name: string;
+  readonly reasonings?: readonly string[];
+}
+
+/**
+ * The kind and values one provider carries, with its id when the caller has one:
+ * a stored configuration always names a provider, while a provider page asking a
+ * catalog what it lists holds a draft that may not be named yet.
+ */
+export interface ProviderValuesRef {
+  readonly id?: string;
+  readonly kind: ProviderKindId;
+  readonly configuration: Readonly<Record<string, string>>;
+  readonly models?: readonly ProviderModelInput[];
+}
+
 /** One provider's values, judged against the kind it names. */
 interface ProviderValuesInput {
   readonly kind: ProviderKindId;
   readonly configuration: Readonly<Record<string, string>>;
-  readonly models?: readonly string[];
-  readonly reasonings?: readonly string[];
+  readonly models?: readonly ProviderModelInput[];
 }
 
 /** The fields a kind declares that carry a credential, whose value is its id. */
@@ -89,8 +118,8 @@ const fieldIssue = (
  * absent or set, never empty. The kind also decides which lists the row keeps.
  * The catalog owns the field sets, so this restates none of them.
  */
-const providerKindRules = (
-  value: ProviderValuesInput,
+const providerFieldsRule = (
+  value: Pick<ProviderValuesInput, 'kind' | 'configuration'>,
   context: z.RefinementCtx,
 ): void => {
   const kind = providerKind(value.kind);
@@ -129,33 +158,94 @@ const providerKindRules = (
         message: `Provider kind ${kind.id} requires ${field.key}.`,
         path: ['configuration', field.key],
       });
-
-  for (const list of ['models', 'reasonings'] as const) {
-    const keeps = kind.lists.includes(list);
-
-    if (keeps === (value[list] !== undefined)) continue;
-
-    context.addIssue({
-      code: 'custom',
-      message: keeps
-        ? `Provider kind ${kind.id} keeps ${list}.`
-        : `Provider kind ${kind.id} does not keep ${list}.`,
-      path: [list],
-    });
-  }
 };
 
 /**
+ * One provider's values without its lists, for a caller that holds none: asking a
+ * kind's model catalog what it lists happens on the provider page, before any of
+ * that provider's models exist. It applies the same field rule a stored provider
+ * obeys, so a value the configuration would refuse never reaches an endpoint.
+ */
+export const ProviderValuesSchema = z
+  .object({
+    kind: providerKindId,
+    configuration: z.record(z.string(), z.string()),
+  })
+  .strict()
+  .superRefine(providerFieldsRule);
+
+const providerKindRules = (
+  value: ProviderValuesInput,
+  context: z.RefinementCtx,
+): void => {
+  providerFieldsRule(value, context);
+
+  const kind = providerKind(value.kind);
+
+  // A kind's own check refused any other kind, so this one is a known one.
+  if (kind === undefined) return;
+  const keepsModels = kind.lists.includes('models');
+  const keepsReasonings = kind.lists.includes('reasonings');
+
+  if (keepsModels !== (value.models !== undefined)) {
+    context.addIssue({
+      code: 'custom',
+      message: keepsModels
+        ? `Provider kind ${kind.id} keeps models.`
+        : `Provider kind ${kind.id} does not keep models.`,
+      path: ['models'],
+    });
+    return;
+  }
+
+  if (value.models === undefined) return;
+
+  const names = new Set<string>();
+  value.models.forEach((entry, index) => {
+    const trimmed = entry.name.trim();
+
+    if (names.has(trimmed))
+      context.addIssue({
+        code: 'custom',
+        message: 'A provider cannot list a model twice.',
+        path: ['models', index, 'name'],
+      });
+
+    names.add(trimmed);
+
+    if (keepsReasonings === (entry.reasonings !== undefined)) return;
+
+    context.addIssue({
+      code: 'custom',
+      message: keepsReasonings
+        ? `Provider kind ${kind.id} keeps a model's reasonings.`
+        : `Provider kind ${kind.id} does not keep a model's reasonings.`,
+      path: ['models', index, 'reasonings'],
+    });
+  });
+};
+
+/**
+ * One model a provider lists. A kind that keeps `reasonings` validates each
+ * model's own efforts here; the kind's rules decide whether it may carry them.
+ */
+const providerModel = z
+  .object({
+    name: model,
+    reasonings: uniqueList(effort).optional(),
+  })
+  .strict();
+
+/**
  * One configured provider: the kind it names, exactly that kind's values, and the
- * lists the kind keeps.
+ * models the kind keeps.
  */
 const provider = z
   .object({
     id: identifier,
     kind: providerKindId,
     configuration: z.record(z.string(), z.string()),
-    models: uniqueList(model).optional(),
-    reasonings: uniqueList(effort).optional(),
+    models: z.array(providerModel).optional(),
   })
   .strict()
   .superRefine(providerKindRules);
@@ -164,7 +254,12 @@ const reasoningModel = z
   .object({
     providerId: identifier,
     model,
-    effort,
+    /**
+     * The effort the model accepts. Absent when the model lists none: a model a
+     * catalog describes without efforts cannot be told one, so no reasoning block
+     * is sent for it.
+     */
+    effort: effort.optional(),
   })
   .strict();
 
@@ -238,10 +333,12 @@ export type DoricConfig = {
 
 /**
  * Every credential one configured provider names, with the field that named it.
- * A `secret` field the provider left unset names none.
+ * A `secret` field the provider left unset names none. It reads only the kind and
+ * the values, so a caller holding a draft — a provider page asking a catalog what
+ * it lists — asks the same question the configuration does.
  */
 export const providerCredentials = (
-  provider: ConfigInput['providers'][number],
+  provider: ProviderValuesRef,
 ): readonly {
   readonly field: ProviderField;
   readonly id: string;
@@ -262,7 +359,7 @@ const baselineCredentialId = '00000000-0000-4000-8000-000000000002';
  * The configuration a host starts with. It is the baseline migration's own
  * provider row as the migration maps it: the row the old host built was an
  * OpenAI-compatible provider under its own identity, so that is what it stays,
- * and its lists are empty until an operator names the models it may use.
+ * and its model list is empty until an operator names the models it may use.
  */
 export const defaultConfig: ConfigInput = {
   providers: [
@@ -270,13 +367,10 @@ export const defaultConfig: ConfigInput = {
       id: 'openrouter',
       kind: 'openai-compatible',
       configuration: {
-        identityId: 'openrouter',
-        identityName: 'openrouter',
         endpoint: 'https://openrouter.ai/api/v1',
         token: baselineCredentialId,
       },
       models: [],
-      reasonings: [],
     },
   ],
   models: {

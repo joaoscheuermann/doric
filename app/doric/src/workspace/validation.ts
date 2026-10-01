@@ -4,6 +4,8 @@ import {
   type CredentialCreate,
   type CredentialKind,
   type CredentialUpdate,
+  type ProviderModel,
+  type ProviderValuesRef,
   type ReasoningEffort,
   reasoningEfforts,
   WorkspaceError,
@@ -139,17 +141,33 @@ const provider = (value: unknown): Configuration['providers'][number] => {
   if (
     !isRecord(value) ||
     !bounded(value.id, maximumIdentifierLength) ||
-    !bounded(value.kind, maximumIdentifierLength) ||
-    !isRecord(value.configuration) ||
-    Array.isArray(value.configuration)
+    !bounded(value.kind, maximumIdentifierLength)
   ) {
     return invalidConfiguration();
   }
 
-  // The catalog is the host's, so this reads any field key and any value: what it
-  // refuses is a value the host could never carry, not one it has not seen.
+  const configuration = configurationValues(value.configuration);
+  const models = modelList(value.models);
+
+  return {
+    id: value.id,
+    kind: value.kind,
+    configuration,
+    ...(models === undefined ? {} : { models }),
+  };
+};
+
+/**
+ * One provider's declared values: a bounded string per key, and nothing else.
+ * The catalog is the host's, so this reads any field key and any value: what it
+ * refuses is a value the host could never carry, not one it has not seen.
+ */
+const configurationValues = (value: unknown): Record<string, string> => {
+  if (!isRecord(value) || Array.isArray(value)) return invalidConfiguration();
+
   const configuration: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value.configuration)) {
+
+  for (const [key, entry] of Object.entries(value)) {
     if (
       !bounded(key, maximumIdentifierLength) ||
       !bounded(entry, maximumFieldValueLength)
@@ -160,29 +178,32 @@ const provider = (value: unknown): Configuration['providers'][number] => {
     configuration[key] = entry;
   }
 
-  const models = modelList(value.models);
+  return configuration;
+};
+
+/** One model a provider offers: its name, and the efforts its kind keeps. */
+const model = (value: unknown): ProviderModel => {
+  if (!isRecord(value) || !bounded(value.name, maximumModelLength)) {
+    return invalidConfiguration();
+  }
+
   const reasonings = reasoningList(value.reasonings);
 
   return {
-    id: value.id,
-    kind: value.kind,
-    configuration,
-    ...(models === undefined ? {} : { models }),
+    name: value.name,
     ...(reasonings === undefined ? {} : { reasonings }),
   };
 };
 
 /** The models a provider offers, or nothing when its kind keeps none. */
-const modelList = (value: unknown): string[] | undefined => {
+const modelList = (value: unknown): ProviderModel[] | undefined => {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) return invalidConfiguration();
 
-  return value.map((entry) =>
-    bounded(entry, maximumModelLength) ? entry : invalidConfiguration(),
-  );
+  return value.map(model);
 };
 
-/** The efforts a provider accepts; a name llms does not know is not one. */
+/** One model's efforts; a name llms does not know is not one. */
 const reasoningList = (value: unknown): ReasoningEffort[] | undefined => {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) return invalidConfiguration();
@@ -192,6 +213,23 @@ const reasoningList = (value: unknown): ReasoningEffort[] | undefined => {
   );
 };
 
+/**
+ * The values one provider carries, as a catalog read names it: the kind, and the
+ * values that kind declares. It names no id, because the provider page asks
+ * before the provider is named, and no models, because the catalog is what
+ * decides those. It applies the same field rule a stored provider does, so a
+ * value the configuration would refuse never reaches an endpoint.
+ */
+export const providerValues = (value: unknown): ProviderValuesRef => {
+  if (!isRecord(value) || !bounded(value.kind, maximumIdentifierLength))
+    return invalidConfiguration();
+
+  return {
+    kind: value.kind,
+    configuration: configurationValues(value.configuration),
+  };
+};
+
 const executionModel = (
   value: unknown,
 ): Configuration['models']['execution'] => {
@@ -199,14 +237,17 @@ const executionModel = (
     !isRecord(value) ||
     !bounded(value.providerId, maximumIdentifierLength) ||
     !bounded(value.model, maximumModelLength) ||
-    !isReasoningEffort(value.effort)
+    // A model that lists no efforts cannot be told one, so the profile carries
+    // none; a value that is there must still be an effort llms knows.
+    (value.effort !== undefined && !isReasoningEffort(value.effort))
   ) {
     return invalidConfiguration();
   }
+
   return {
     providerId: value.providerId,
     model: value.model,
-    effort: value.effort,
+    ...(value.effort === undefined ? {} : { effort: value.effort }),
   };
 };
 
