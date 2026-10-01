@@ -13,6 +13,7 @@ import { MarkdownPromptPlugin } from '@/components/organisms/conversation/plugin
 import { PromptLineBreaks } from '@/components/organisms/conversation/plugins/prompt-line-breaks';
 import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugins/read-only-blocks';
 import { SendPrompt } from '@/components/organisms/conversation/plugins/send-prompt';
+import { TableBlocksPlugin } from '@/components/organisms/conversation/plugins/table-blocks';
 import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -44,6 +45,7 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
+import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
   $getRoot,
   $isTextNode,
@@ -77,6 +79,10 @@ const exampleTheme: EditorThemeClasses = {
   },
   paragraph: 'editor-paragraph',
   quote: 'editor-quote',
+  table: 'editor-table',
+  tableCell: 'editor-table-cell',
+  tableCellHeader: 'editor-table-cell-header',
+  tableRow: 'editor-table-row',
   text: {
     bold: 'editor-text-bold',
     code: 'editor-text-code',
@@ -224,14 +230,19 @@ const conversationExtension = defineExtension({
     TurnAuthorNode,
     ActivityTurnNode,
     UserPromptNode,
-    // The blocks the agent's markdown becomes; a heading, a quote, a list and a
-    // fence are nodes the editor has to know to hold the answer's own text.
+    // The blocks the agent's markdown becomes; a heading, a quote, a list, a
+    // fence and a table are nodes the editor has to know to hold the answer's
+    // own text — a table's cells are the editor's nodes, so the caret crosses
+    // them and the read-only rule still holds.
     HeadingNode,
     QuoteNode,
     ListNode,
     ListItemNode,
     CodeNode,
     LinkNode,
+    TableNode,
+    TableRowNode,
+    TableCellNode,
   ],
 });
 
@@ -312,6 +323,7 @@ export function Conversation({
             isUndeletable={isUndeletableBlock}
           />
           <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+          <TableBlocksPlugin />
           <MarkdownPromptPlugin />
           <PromptLineBreaks />
           <InsertThreadTurnNodes turns={turns} />

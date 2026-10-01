@@ -17,6 +17,13 @@
  * and a surface that draws no marker of its own — the prompt, which only styles
  * what the reader types — still shows it.
  *
+ * A table is where the shape changes rather than just a run: its rows are the
+ * cells a pipe divides them into, because a table draws a cell for each. A pipe
+ * and the whitespace that pads it travel as `marker` runs, the way a list's
+ * marker does, and the delimiter row is kept as a row of its own even though the
+ * table draws a rule instead — so the source still joins back, and the alignment
+ * the `:` markers ask for is read out of it as a field.
+ *
  * The rules are deliberately the shallow ones a transcript needs, stated here
  * rather than hidden in a component so they can be checked without a DOM: a fence
  * runs to its own closing fence or to the end, a blank line ends a paragraph,
@@ -58,6 +65,23 @@ export type MarkdownBlock =
   | {
       readonly kind: 'ordered';
       readonly items: readonly MarkdownItem[];
+    }
+  | {
+      readonly kind: 'table';
+      /** The header row's cells. */
+      readonly header: MarkdownRow;
+      /**
+       * The delimiter row's cells, kept so the table joins back to its source;
+       * the table draws a rule for them rather than their text.
+       */
+      readonly delimiter: MarkdownRow;
+      /**
+       * The alignment each column wears, read from `delimiter`; a column whose
+       * delimiter cell declares none has `undefined` here.
+       */
+      readonly align: readonly (MarkdownAlign | undefined)[];
+      /** The body rows' cells. */
+      readonly rows: readonly MarkdownRow[];
     };
 
 /**
@@ -67,6 +91,23 @@ export type MarkdownBlock =
  * of dropping it to the column's edge.
  */
 export type MarkdownItem = readonly MarkdownLine[];
+
+/**
+ * How a table column's cells align, read from the `:` markers a delimiter cell
+ * wears. A delimiter cell with no marker declares no alignment, which is why the
+ * field below allows `undefined` beside the three.
+ */
+export type MarkdownAlign = 'left' | 'center' | 'right';
+
+/**
+ * One cell of a table row: the runs its text draws. A pipe and the whitespace
+ * that pads the cell travel as `marker` runs, the way a list item's marker does,
+ * because the table draws the grid for them and would otherwise draw them twice.
+ */
+export type MarkdownCell = readonly MarkdownRun[];
+
+/** One table row: its cells, in order. */
+export type MarkdownRow = readonly MarkdownCell[];
 
 /** A fence opener: three backticks or three tildes, whatever follows them. */
 const fenceOf = (line: string): string | undefined => {
@@ -178,10 +219,150 @@ const listItemLine = (line: string): MarkdownLine => {
   ];
 };
 
+/** Whether a `|` at this index divides cells rather than being escaped. */
+const isCellPipe = (line: string, index: number): boolean =>
+  line[index] === '|' && line[index - 1] !== '\\';
+
+/** Whether a line carries a pipe at all, the mark of a table row. */
+const hasCellPipe = (line: string): boolean => {
+  for (let index = 0; index < line.length; index += 1) {
+    if (isCellPipe(line, index)) return true;
+  }
+  return false;
+};
+
+/**
+ * One table line as the cells it holds, in order.
+ *
+ * A pipe is the table's own marker, so it travels as a `marker` run of its own,
+ * the way a list item's marker does: the table draws the grid for it, and the row
+ * still joins back to the line the source wrote. The whitespace that pads a cell
+ * travels with the pipe that bounds it, so what a cell *draws* is its text alone.
+ *
+ * An outer field — the part before the first pipe or after the last — is a cell
+ * only when it holds something, because markdown's outer pipe is optional and its
+ * padding is not a cell of its own.
+ */
+const tableCells = (line: string): MarkdownRow => {
+  const fields: string[] = [];
+  let start = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (!isCellPipe(line, index)) continue;
+    fields.push(line.slice(start, index));
+    start = index + 1;
+  }
+  fields.push(line.slice(start));
+
+  // A field between two pipes is a cell even when empty (`| |`); an outer field
+  // only when it holds something.
+  const isCell = (index: number): boolean => {
+    const field = fields[index];
+    if (field === undefined) return false;
+    const inner = index > 0 && index < fields.length - 1;
+    return inner || field.trim() !== '';
+  };
+
+  const cells: MarkdownCell[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    if (!isCell(index)) continue;
+    const field = fields[index] ?? '';
+    const lead = /^\s*/.exec(field)?.[0] ?? '';
+    const rest = field.slice(lead.length);
+    const trail = /\s*$/.exec(rest)?.[0] ?? '';
+    const content = rest.slice(0, rest.length - trail.length);
+
+    const runs: MarkdownRun[] = [];
+    // The pipe before this cell belongs to it; the pipe after it belongs to the
+    // cell that follows, or — when none does — trails this one.
+    if (index > 0) runs.push({ kind: 'marker', source: '|' });
+    if (lead.length > 0) runs.push({ kind: 'marker', source: lead });
+    if (content.length > 0) runs.push(...markdownRuns(content));
+    if (trail.length > 0) runs.push({ kind: 'marker', source: trail });
+    if (index < fields.length - 1 && !isCell(index + 1))
+      runs.push({ kind: 'marker', source: '|' });
+
+    cells.push(runs);
+  }
+
+  return cells;
+};
+
+/** The text a cell draws: its runs with the markers a table draws for it left out. */
+const cellText = (cell: MarkdownCell): string =>
+  cell
+    .filter((run) => run.kind !== 'marker')
+    .map((run) => run.source)
+    .join('');
+
+/** Whether a cell is a delimiter cell: `-`, `:-`, `-:` or `:-:`. */
+const isDelimiterCell = (cell: MarkdownCell): boolean =>
+  /^:?-+:?$/.test(cellText(cell));
+
+/** The alignment a delimiter cell asks for; `undefined` is the default. */
+const cellAlign = (cell: MarkdownCell): MarkdownAlign | undefined => {
+  const text = cellText(cell);
+  const left = text.startsWith(':');
+  const right = text.endsWith(':');
+  if (left && right) return 'center';
+  if (left) return 'left';
+  if (right) return 'right';
+  return undefined;
+};
+
+/** A table's rows from its header line, or `undefined` when none starts here. */
+type MarkdownTableRead = {
+  readonly header: MarkdownRow;
+  readonly delimiter: MarkdownRow;
+  readonly align: readonly (MarkdownAlign | undefined)[];
+  readonly rows: readonly MarkdownRow[];
+  /** The line after the last body row. */
+  readonly next: number;
+};
+
+/**
+ * The table a line begins, when one does: a header line, a delimiter row that
+ * matches it cell for cell, and the piped lines that follow. A header with no
+ * pipe is not a table — a lone delimiter line is a setext underline, which this
+ * reader leaves as the paragraph line it reads today.
+ */
+const tableAt = (
+  lines: readonly string[],
+  index: number,
+): MarkdownTableRead | undefined => {
+  const headerLine = lines[index] ?? '';
+  if (!hasCellPipe(headerLine)) return undefined;
+
+  const delimiterLine = lines[index + 1];
+  if (delimiterLine === undefined) return undefined;
+
+  const header = tableCells(headerLine);
+  const delimiter = tableCells(delimiterLine);
+  if (delimiter.length !== header.length) return undefined;
+  if (!delimiter.every(isDelimiterCell)) return undefined;
+
+  const rows: MarkdownRow[] = [];
+  let next = index + 2;
+  while (next < lines.length) {
+    const candidate = lines[next] ?? '';
+    if (blank(candidate) || !hasCellPipe(candidate)) break;
+    rows.push(tableCells(candidate));
+    next += 1;
+  }
+
+  return {
+    align: delimiter.map(cellAlign),
+    delimiter,
+    header,
+    next,
+    rows,
+  };
+};
+
 /**
  * The source read into blocks, in order. Every block is one the source names:
- * a fence, a heading, a quote, a list, or — for anything else — a paragraph,
- * which gathers the lines between blank lines the way a reader reads them.
+ * a fence, a heading, a quote, a table, a list, or — for anything else — a
+ * paragraph, which gathers the lines between blank lines the way a reader reads
+ * them.
  */
 export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
   const lines = source.split('\n');
@@ -266,6 +447,20 @@ export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
       }
 
       blocks.push({ kind: ordered ? 'ordered' : 'bullet', items });
+      continue;
+    }
+
+    const table = tableAt(lines, index);
+    if (table !== undefined) {
+      endParagraph();
+      blocks.push({
+        kind: 'table',
+        header: table.header,
+        delimiter: table.delimiter,
+        align: table.align,
+        rows: table.rows,
+      });
+      index = table.next;
       continue;
     }
 

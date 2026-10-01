@@ -6,13 +6,29 @@ import {
   type MarkdownBlock,
   markdownBlocks,
   type MarkdownLine,
+  type MarkdownRun,
 } from '../src/domain/markdown';
 
 /** Every line a block holds, whichever shape it is. */
-const linesOf = (block: MarkdownBlock): readonly MarkdownLine[] =>
-  block.kind === 'bullet' || block.kind === 'ordered'
-    ? block.items.reduce<MarkdownLine[]>((all, item) => [...all, ...item], [])
-    : block.lines;
+const linesOf = (block: MarkdownBlock): readonly MarkdownLine[] => {
+  if (block.kind === 'table')
+    return [block.header, block.delimiter, ...block.rows].map((row) =>
+      row.flat(),
+    );
+  if (block.kind === 'bullet' || block.kind === 'ordered')
+    return block.items.reduce<MarkdownLine[]>(
+      (all, item) => [...all, ...item],
+      [],
+    );
+  return block.lines;
+};
+
+/** The text a cell draws: its runs without the markers the table draws itself. */
+const cellSource = (cell: readonly MarkdownRun[]): string =>
+  cell
+    .filter((run) => run.kind !== 'marker')
+    .map((run) => run.source)
+    .join('');
 
 /** The source a whole block joins back to, line by line. */
 const blockSource = (block: MarkdownBlock): string =>
@@ -203,5 +219,73 @@ describe('reading markdown as blocks', () => {
   test('reads an empty source as no block at all', () => {
     assert.deepEqual(markdownBlocks(''), []);
     assert.deepEqual(markdownBlocks('   \n\n '), []);
+  });
+
+  test('reads a pipe table into its header, delimiter and body rows', () => {
+    const text = [
+      '| Name | Qty |',
+      '| --- | ---: |',
+      '| one | 1 |',
+      '| two | 2 |',
+    ].join('\n');
+    const blocks = markdownBlocks(text);
+
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0]?.kind, 'table');
+    // Every character is still there: the pipes and the delimiter row travel as
+    // markers, and the block joins back to the source it was written as.
+    assert.equal(source(blocks), text);
+
+    const table = blocks[0];
+    if (table?.kind !== 'table') return assert.fail('not a table');
+    assert.deepEqual(table.align, [undefined, 'right']);
+    assert.deepEqual(table.header.map(cellSource), ['Name', 'Qty']);
+    assert.deepEqual(
+      table.rows.map((row) => row.map(cellSource)),
+      [
+        ['one', '1'],
+        ['two', '2'],
+      ],
+    );
+  });
+
+  test("reads a table column's alignment from its delimiter markers", () => {
+    const blocks = markdownBlocks(
+      '| a | b | c |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |',
+    );
+
+    const table = blocks[0];
+    if (table?.kind !== 'table') return assert.fail('not a table');
+    assert.deepEqual(table.align, ['left', 'center', 'right']);
+  });
+
+  test('leaves a table with no delimiter row, or one of a different width, as text', () => {
+    // A header with no pipe is a paragraph, and a lone delimiter line under it is
+    // a setext underline this reader never claimed.
+    assert.deepEqual(
+      markdownBlocks('plain\n---').map((block) => block.kind),
+      ['paragraph'],
+    );
+    // A delimiter row must match the header cell for cell, or nothing is a table.
+    assert.deepEqual(
+      markdownBlocks('| a | b |\n| --- |\n| 1 | 2 |').map(
+        (block) => block.kind,
+      ),
+      ['paragraph'],
+    );
+  });
+
+  test("keeps a cell's emphasis and the table's markers apart", () => {
+    const table = markdownBlocks('| **b** | c |\n| --- | --- |')[0];
+
+    if (table?.kind !== 'table') return assert.fail('not a table');
+    const [first, second] = table.header[0] ?? [];
+    assert.deepEqual(first, { kind: 'marker', source: '|' });
+    assert.deepEqual(second, { kind: 'marker', source: ' ' });
+    assert.deepEqual(
+      table.header[0]?.filter((run) => run.kind !== 'marker'),
+      [{ kind: 'bold', source: '**b**' }],
+    );
+    assert.equal(cellSource(table.header[1] ?? []), 'c');
   });
 });

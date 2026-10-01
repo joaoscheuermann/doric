@@ -508,7 +508,8 @@
 .editor-quote:last-child,
 .editor-code:last-child,
 .editor-list-ul:last-child,
-.editor-list-ol:last-child {
+.editor-list-ol:last-child,
+.editor-table:last-child {
   margin-bottom: 0;
 }
 
@@ -587,6 +588,34 @@
   /* The item is indented, so the marker that hangs beside it is indented with
      it and a wrapped line lands under the item's own text. */
   margin: 0.125rem 0 0.125rem 1.5rem;
+}
+
+.editor-table {
+  margin: 0 0 0.5rem;
+  /* The grid the markdown asked for, drawn rather than shown: the pipes it was
+     written with are markers no cell keeps. */
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.editor-table-cell,
+.editor-table-cell-header {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+}
+
+.editor-table-cell-header {
+  background: var(--muted);
+  font-weight: 500;
+  /* A header cell is centered by the browser; the column's own alignment, set
+     on the cell's paragraph, still wins over this. */
+  text-align: left;
+}
+
+/* A cell's paragraph is the cell's whole content, so it carries no gap. */
+.editor-table .editor-paragraph {
+  margin: 0;
 }
 
 .editor-text-bold {
