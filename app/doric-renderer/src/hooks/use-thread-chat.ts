@@ -8,6 +8,15 @@ import {
 import { messageFrom, type Thread, type ThreadEvent } from '@/domain/workspace';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+/**
+ * How long a stream's events wait before they reach the projection. A live run
+ * writes its log thousands of events at a time, and every event that reached the
+ * projection would re-read the whole of it — the cost a whole run pays, not one
+ * event. A flush carries a burst instead, and the first event of one lands at
+ * once, so a turn the reader is waiting for is not the one that waits.
+ */
+const STREAM_FLUSH_MS = 100;
+
 /** What a conversation surface needs from one Thread's chat. */
 export type ThreadChat = {
   /** The Thread's record, kept live by the event stream. */
@@ -70,14 +79,36 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     setSendError(undefined);
     setSending(false);
     setSent(undefined);
-    return window.doric.threads.watch(thread.id, 0, (update) => {
+
+    // A stream's events are held until one flush carries them, and a flush waits
+    // out the window before the last one unless nothing has flushed for longer.
+    const queued: ThreadEvent[] = [];
+    let flush: ReturnType<typeof setTimeout> | undefined;
+    let flushedAt = 0;
+
+    const drain = (): void => {
+      flush = undefined;
+      flushedAt = Date.now();
+      const batch = queued.splice(0);
+      if (batch.length > 0) {
+        setProjection((current) => projectEvents(current, batch));
+      }
+    };
+
+    const unwatch = window.doric.threads.watch(thread.id, 0, (update) => {
       if (update.kind === 'snapshot') {
         setProjection((current) =>
           projectEvents(current, update.snapshot.events),
         );
         if (update.snapshot.thread !== null) setRecord(update.snapshot.thread);
       } else if (update.kind === 'event') {
-        setProjection((current) => projectEvents(current, [update.event]));
+        queued.push(update.event);
+        if (flush === undefined) {
+          flush = setTimeout(
+            drain,
+            Math.max(0, STREAM_FLUSH_MS - (Date.now() - flushedAt)),
+          );
+        }
       } else if (update.kind === 'updated') {
         setRecord(update.thread);
       } else if (update.kind === 'error') {
@@ -86,6 +117,11 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
         setError('This thread was deleted.');
       }
     });
+
+    return () => {
+      if (flush !== undefined) clearTimeout(flush);
+      unwatch();
+    };
   }, [thread.id]);
 
   const send = useCallback(

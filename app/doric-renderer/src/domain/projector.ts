@@ -422,10 +422,31 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
   return grouped(turns, status);
 };
 
+/**
+ * A merge that a stream's own events need no map or sort for: the log is already
+ * ordered, and the events a live run writes follow the ones held — same Thread,
+ * rising sequence, no duplicate. A reconnect replays, and a rewind discards, so
+ * anything that does not follow falls back to the full merge below.
+ */
+const followsWhatIsHeld = (
+  current: readonly ThreadEvent[],
+  incoming: readonly ThreadEvent[],
+): boolean => {
+  let last = current.at(-1)?.sequence ?? -1;
+  for (const event of incoming) {
+    if (!Number.isSafeInteger(event.sequence) || event.sequence <= last)
+      return false;
+    last = event.sequence;
+  }
+  return true;
+};
+
 const orderedUnique = (
   current: readonly ThreadEvent[],
   incoming: readonly ThreadEvent[],
 ): readonly ThreadEvent[] => {
+  if (followsWhatIsHeld(current, incoming)) return [...current, ...incoming];
+
   const byPromptAndSequence = new Map<string, ThreadEvent>();
   for (const event of [...current, ...incoming]) {
     const key = `${event.promptId}:${event.sequence}`;

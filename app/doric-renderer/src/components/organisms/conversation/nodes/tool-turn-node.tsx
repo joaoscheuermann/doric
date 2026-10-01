@@ -108,12 +108,29 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   setTurn(turn: ToolTurn): void {
+    const name = turn.name.trim();
+    const args = turn.args.trim();
+    const status = turn.status;
+    const result = turn.result?.trim();
+    const error = turn.error?.trim();
+    // A sync that says nothing new touches nothing, so the editor keeps its own
+    // DOM and the reader keeps the caret where it was.
+    if (
+      this.__name === name &&
+      this.__args === args &&
+      this.__status === status &&
+      this.__result === result &&
+      this.__error === error
+    ) {
+      return;
+    }
+
     const writable = this.getWritable();
-    writable.__name = turn.name.trim();
-    writable.__args = turn.args.trim();
-    writable.__status = turn.status;
-    writable.__result = turn.result?.trim();
-    writable.__error = turn.error?.trim();
+    writable.__name = name;
+    writable.__args = args;
+    writable.__status = status;
+    writable.__result = result;
+    writable.__error = error;
   }
 
   override exportJSON(): SerializedToolTurnNode {

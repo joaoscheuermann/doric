@@ -27,6 +27,33 @@ export type SerializedActivityTurnNode = Spread<
 >;
 
 /**
+ * Whether two bursts are the same steps. A projection rebuilds its items every
+ * time it runs, so the node reads the fields a surface draws rather than the
+ * identity of the objects: a burst that changed nothing keeps its DOM, and its
+ * steps are not drawn again.
+ */
+const sameItems = (
+  current: readonly ActivityItem[],
+  next: readonly ActivityItem[],
+): boolean =>
+  current.length === next.length &&
+  current.every((item, index) => {
+    const other = next[index];
+    if (other === undefined) return false;
+    if (item.kind === 'thinking' && other.kind === 'thinking')
+      return item.text === other.text;
+    if (item.kind === 'tool' && other.kind === 'tool')
+      return (
+        item.name === other.name &&
+        item.args === other.args &&
+        item.status === other.status &&
+        item.result === other.result &&
+        item.error === other.error
+      );
+    return false;
+  });
+
+/**
  * A completed burst of the agent's reasoning and tool calls, kept as one block:
  * a header that counts what the burst did, and, opened, the steps themselves. A
  * long run of steps then reads as one line instead of filling the transcript.
@@ -128,6 +155,14 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   setTurn(turn: ActivityTurn): void {
+    if (
+      this.__thoughts === turn.thoughts &&
+      this.__tools === turn.tools &&
+      sameItems(this.__items, turn.items)
+    ) {
+      return;
+    }
+
     const writable = this.getWritable();
     writable.__thoughts = turn.thoughts;
     writable.__tools = turn.tools;

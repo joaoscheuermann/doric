@@ -3,11 +3,11 @@ import { describe, test } from 'node:test';
 
 import { reasoningText } from '../src/utility/reasoning-text';
 
-describe('a run of reasoning as one flow', () => {
-  test('turns the line breaks a model streams between tokens into one flow', () => {
+describe('a run of reasoning read back into prose', () => {
+  test('joins the breaks a model streams between words into one flow', () => {
     assert.equal(
-      reasoningText('The user is\n\n asking for\n\n\n a\n\n\n "mim'),
-      'The user is asking for a "mim',
+      reasoningText('I now\n\n\n have\n\n everything\n\n\n to\n\n answer'),
+      'I now have everything to answer',
     );
   });
 
@@ -15,12 +15,27 @@ describe('a run of reasoning as one flow', () => {
     assert.equal(reasoningText('mim\n\n\nada'), 'mimada');
   });
 
-  test('leaves the single spaces between words alone', () => {
+  test('keeps the paragraph a sentence ends on', () => {
     assert.equal(
-      reasoningText('Portuguese\n slang\n for'),
-      'Portuguese slang for',
+      reasoningText('Done.\n\nNext one.\n\nAnd the last.'),
+      'Done.\n\nNext one.\n\nAnd the last.',
     );
-    assert.equal(reasoningText('The user is asking.'), 'The user is asking.');
+    // A capital after a blank line opens a paragraph of its own too.
+    assert.equal(
+      reasoningText('reconcile their work\n\nThis is a big task.'),
+      'reconcile their work\n\nThis is a big task.',
+    );
+  });
+
+  test('keeps the lines the model opens as structure', () => {
+    assert.equal(
+      reasoningText('The plan:\n- first\n- second'),
+      'The plan:\n- first\n- second',
+    );
+    assert.equal(
+      reasoningText('The user wants me to:\n1. one\n2. two'),
+      'The user wants me to:\n1. one\n2. two',
+    );
   });
 
   test('trims the whitespace a run starts and ends with', () => {

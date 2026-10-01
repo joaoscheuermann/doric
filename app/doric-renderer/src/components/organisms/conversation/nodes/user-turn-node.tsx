@@ -110,10 +110,11 @@ export class UserTurnNode extends ElementNode {
    * never rewritten: what the block holds is still what the reader wrote.
    */
   setTurn(turn: UserTurn): void {
-    if (this.getTextContent() !== this.__written) return;
-
     const value = turn.text.trim();
     if (value === this.__synced) return;
+
+    // The reader's own words win: a block they edited keeps what they wrote.
+    if (this.getTextContent() !== this.__written) return;
 
     const writable = this.getWritable();
     writable.clear();

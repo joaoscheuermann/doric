@@ -22,22 +22,26 @@ export type SerializedAgentTurnNode = Spread<
  * so the caret reaches it like any other rich text, and those children are the
  * markdown the answer was written in — read as blocks, with every marker kept,
  * so the transcript styles what the model wrote instead of replacing it.
+ *
+ * Because the block is read-only, a sync never has a reader's edit to protect: it
+ * always takes the chat's latest markdown. That is not a detail — the editor
+ * normalizes the tree a build produces (a table pads its short rows), so the text
+ * a block holds after a build is not the text it held in the same update. A guard
+ * that compared the two would refuse every later sync and freeze the answer at
+ * whatever a stream had built so far.
  */
 export class AgentTurnNode extends ElementNode {
   __turnKey: string;
   __promptId: string;
   __status: PromptStatus;
-  /** The markdown the chat last wrote, so an edit by the reader survives a sync. */
+  /** The markdown the chat last wrote, so a sync that changed nothing is a no-op. */
   __synced: string;
-  /** The text the children were last built into, for the same guard. */
-  __written: string;
 
   constructor(
     turnKey: string,
     promptId: string,
     status: PromptStatus,
     text: string,
-    written: string,
     key?: NodeKey,
   ) {
     super(key);
@@ -45,7 +49,6 @@ export class AgentTurnNode extends ElementNode {
     this.__promptId = promptId;
     this.__status = status;
     this.__synced = text.trim();
-    this.__written = written;
   }
 
   static override getType(): string {
@@ -58,7 +61,6 @@ export class AgentTurnNode extends ElementNode {
       node.__promptId,
       node.__status,
       node.__synced,
-      node.__written,
       node.__key,
     );
   }
@@ -87,23 +89,23 @@ export class AgentTurnNode extends ElementNode {
   }
 
   /**
-   * Take the chat's latest markdown, unless the reader has edited this block
-   * since the last sync — then their words win and the chat leaves it alone. The
-   * children are rebuilt from the source as the markdown says they should be,
-   * never rewritten: what the block holds is still what the model wrote.
+   * Take the chat's latest markdown. The children are rebuilt from the source as
+   * the markdown says they should be, never rewritten: what the block holds is
+   * still what the model wrote. A sync that says nothing new touches nothing, so
+   * the editor keeps its own text and the reader keeps the caret where it was.
    */
   setTurn(turn: AgentTurn): void {
+    const value = turn.text.trim();
+    const textChanged = value !== this.__synced;
+    if (!textChanged && this.__status === turn.status) return;
+
     const writable = this.getWritable();
     if (writable.__status !== turn.status) writable.__status = turn.status;
-
-    const value = turn.text.trim();
-    if (value === writable.__synced) return;
-    if (this.getTextContent() !== writable.__written) return;
+    if (!textChanged) return;
 
     writable.clear();
     writable.__synced = value;
     if (value.length > 0) $appendMarkdown(writable, value);
-    writable.__written = writable.getTextContent();
   }
 
   override exportJSON(): SerializedAgentTurnNode {
@@ -134,9 +136,8 @@ export function $createAgentTurnNode(
   text: string,
 ): AgentTurnNode {
   const value = text.trim();
-  const node = new AgentTurnNode(turnKey, promptId, status, value, '');
+  const node = new AgentTurnNode(turnKey, promptId, status, value);
   if (value.length > 0) $appendMarkdown(node, value);
-  node.__written = node.getTextContent();
   return node;
 }
 
