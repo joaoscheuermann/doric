@@ -107,8 +107,19 @@ export type Turn =
   | ActivityTurn;
 
 export type Projection = {
+  /** Every event the log holds, in durable order, deduplicated. */
   readonly events: readonly ThreadEvent[];
+  /** The turns a surface renders. */
   readonly turns: readonly Turn[];
+  /**
+   * The turns as they are still being built, and the job's lifecycle per prompt:
+   * the reading's own state. A surface reads `turns`; these are kept so a batch
+   * that follows the log reads itself instead of the whole log behind it, and a
+   * turn it changes is a copy, so a projection is never altered after it was
+   * returned.
+   */
+  readonly drafts: readonly Draft[];
+  readonly status: ReadonlyMap<string, PromptStatus>;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -131,7 +142,7 @@ const oneLineJson = (value: unknown): string => {
 };
 
 /** A turn while it is still being built; frozen into a `Turn` at the end. */
-type Draft =
+export type Draft =
   | {
       type: 'user';
       promptId: string;
@@ -286,127 +297,141 @@ const lastAgent = (
  * one written, so reasoning, text and tools that interleave stay in order. The
  * job's lifecycle is one value, carried by each of its agent turns.
  */
-const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
-  const turns: Draft[] = [];
-  const status = new Map<string, PromptStatus>();
+/**
+ * Reads one event of the log into the turns being built. A turn the event
+ * changes is written where it sits, which is safe because the read owns its
+ * turns: a batch that follows the log starts from copies of the ones read before
+ * it, so a projection is never altered after it was returned.
+ */
+const readEvent = (
+  turns: Draft[],
+  status: Map<string, PromptStatus>,
+  item: ThreadEvent,
+): void => {
+  if (isTruncation(item)) return;
+  const event = record(item.event);
+  const promptId = item.promptId;
+  const last = turns.at(-1);
+  const open =
+    last !== undefined && last.promptId === promptId ? last : undefined;
 
-  for (const item of events) {
-    if (record(item.event)?.type === 'history.truncated') continue;
-    const event = record(item.event);
-    const promptId = item.promptId;
-    const last = turns.at(-1);
-    const open =
-      last !== undefined && last.promptId === promptId ? last : undefined;
-
-    if (event?.type === 'prompt.accepted') {
-      const text = typeof event.text === 'string' ? event.text : '';
-      const delegated = delegatedInput(event.source, text);
+  if (event?.type === 'prompt.accepted') {
+    const text = typeof event.text === 'string' ? event.text : '';
+    const delegated = delegatedInput(event.source, text);
+    turns.push({
+      type: 'user',
+      promptId,
+      events: [item],
+      text: delegated === undefined ? text : '',
+      accepted: true,
+      awaiting: false,
+      ...(delegated === undefined ? {} : { delegated }),
+    });
+  } else if (event?.type === 'reasoning.delta') {
+    const delta = typeof event.delta === 'string' ? event.delta : '';
+    // A delta that carries no text says nothing changed, so it neither opens a
+    // turn nor ends the run it sits inside. A provider that emits one beside
+    // each reasoning token would otherwise split the run into a step per token.
+    if (delta.length === 0) return;
+    if (open?.type === 'thinking') {
+      open.text += delta;
+      open.events = [...open.events, item];
+    } else {
       turns.push({
-        type: 'user',
+        type: 'thinking',
         promptId,
         events: [item],
-        text: delegated === undefined ? text : '',
-        accepted: true,
-        awaiting: false,
-        ...(delegated === undefined ? {} : { delegated }),
+        text: delta,
+        streaming: false,
       });
-    } else if (event?.type === 'reasoning.delta') {
-      const delta = typeof event.delta === 'string' ? event.delta : '';
-      // A delta that carries no text says nothing changed, so it neither opens a
-      // turn nor ends the run it sits inside. A provider that emits one beside
-      // each reasoning token would otherwise split the run into a step per token.
-      if (delta.length === 0) continue;
-      if (open?.type === 'thinking') {
-        open.text += delta;
-        open.events.push(item);
-      } else {
-        turns.push({
-          type: 'thinking',
-          promptId,
-          events: [item],
-          text: delta,
-          streaming: false,
-        });
-      }
-    } else if (event?.type === 'text.delta') {
-      const delta = typeof event.delta === 'string' ? event.delta : '';
-      // Same rule as reasoning: an empty delta is not an answer starting.
-      if (delta.length === 0) continue;
-      if (open?.type === 'agent') {
-        open.text += delta;
-        open.events.push(item);
-      } else {
+    }
+  } else if (event?.type === 'text.delta') {
+    const delta = typeof event.delta === 'string' ? event.delta : '';
+    // Same rule as reasoning: an empty delta is not an answer starting.
+    if (delta.length === 0) return;
+    if (open?.type === 'agent') {
+      open.text += delta;
+      open.events = [...open.events, item];
+    } else {
+      turns.push({
+        type: 'agent',
+        promptId,
+        events: [item],
+        text: delta,
+        status: 'streaming',
+      });
+    }
+  } else if (event?.type === 'tool.started') {
+    const call = record(event.call);
+    turns.push({
+      type: 'tool_call',
+      promptId,
+      events: [item],
+      callId: typeof call?.id === 'string' ? call.id : '',
+      name: typeof call?.name === 'string' ? call.name : '',
+      args: oneLineJson(call?.payload),
+      status: 'running',
+    });
+  } else if (event?.type === 'tool.finished') {
+    const call = record(event.call);
+    const output = record(event.record)?.output;
+    const tool = findTool(turns, promptId, call?.id);
+    if (tool?.type === 'tool_call') {
+      tool.status = 'finished';
+      tool.result = typeof output === 'string' ? output : '';
+      tool.events = [...tool.events, item];
+    }
+  } else if (event?.type === 'tool.failed') {
+    const call = record(event.call);
+    const message = record(event.error)?.message;
+    const tool = findTool(turns, promptId, call?.id);
+    if (tool?.type === 'tool_call') {
+      tool.status = 'failed';
+      tool.error = typeof message === 'string' ? message : '';
+      tool.events = [...tool.events, item];
+    }
+  } else if (event?.type === 'prompt.finished') {
+    const terminal = terminalStatus(
+      typeof event.status === 'string' ? event.status : 'completed',
+    );
+    const finished = typeof event.text === 'string' ? event.text : '';
+    const agent = lastAgent(turns, promptId);
+    // A finished run is authoritative; a failed one keeps whatever streamed,
+    // unless it streamed nothing and the host still named a result.
+    if (terminal === 'completed' || agent === undefined) {
+      if (agent?.type === 'agent') {
+        agent.text = finished;
+        agent.events = [...agent.events, item];
+      } else if (finished.length > 0) {
         turns.push({
           type: 'agent',
           promptId,
           events: [item],
-          text: delta,
-          status: 'streaming',
+          text: finished,
+          status: terminal,
         });
       }
-    } else if (event?.type === 'tool.started') {
-      const call = record(event.call);
-      turns.push({
-        type: 'tool_call',
-        promptId,
-        events: [item],
-        callId: typeof call?.id === 'string' ? call.id : '',
-        name: typeof call?.name === 'string' ? call.name : '',
-        args: oneLineJson(call?.payload),
-        status: 'running',
-      });
-    } else if (event?.type === 'tool.finished') {
-      const call = record(event.call);
-      const output = record(event.record)?.output;
-      const tool = findTool(turns, promptId, call?.id);
-      if (tool?.type === 'tool_call') {
-        tool.status = 'finished';
-        tool.result = typeof output === 'string' ? output : '';
-        tool.events.push(item);
-      }
-    } else if (event?.type === 'tool.failed') {
-      const call = record(event.call);
-      const message = record(event.error)?.message;
-      const tool = findTool(turns, promptId, call?.id);
-      if (tool?.type === 'tool_call') {
-        tool.status = 'failed';
-        tool.error = typeof message === 'string' ? message : '';
-        tool.events.push(item);
-      }
-    } else if (event?.type === 'prompt.finished') {
-      const terminal = terminalStatus(
-        typeof event.status === 'string' ? event.status : 'completed',
-      );
-      const finished = typeof event.text === 'string' ? event.text : '';
-      const agent = lastAgent(turns, promptId);
-      // A finished run is authoritative; a failed one keeps whatever streamed,
-      // unless it streamed nothing and the host still named a result.
-      if (terminal === 'completed' || agent === undefined) {
-        if (agent?.type === 'agent') {
-          agent.text = finished;
-          agent.events.push(item);
-        } else if (finished.length > 0) {
-          turns.push({
-            type: 'agent',
-            promptId,
-            events: [item],
-            text: finished,
-            status: terminal,
-          });
-        }
-      }
-      status.set(promptId, terminal);
-    } else if (event?.type === 'agent.failed') {
-      status.set(promptId, 'failed');
-    } else if (event?.type === 'agent.cancelled') {
-      status.set(promptId, 'cancelled');
     }
+    status.set(promptId, terminal);
+  } else if (event?.type === 'agent.failed') {
+    status.set(promptId, 'failed');
+  } else if (event?.type === 'agent.cancelled') {
+    status.set(promptId, 'cancelled');
   }
+};
 
+/**
+ * The job's lifecycle each of its agent turns carries, and the one turn of a job
+ * still running that is still being written.
+ */
+const settle = (
+  turns: Draft[],
+  status: ReadonlyMap<string, PromptStatus>,
+): void => {
   for (const turn of turns) {
     if (turn.type !== 'agent') continue;
     const settled = status.get(turn.promptId);
-    if (settled !== undefined) turn.status = settled;
+    if (settled !== undefined && turn.status !== settled) turn.status = settled;
   }
 
   // The transcript's last turn is the one the log is still at. A prompt there,
@@ -414,12 +439,53 @@ const project = (events: readonly ThreadEvent[]): readonly Turn[] => {
   // reasoning has no lifecycle of its own to read the same fact from. That last
   // burst is also the one a surface keeps whole instead of grouping.
   const last = turns.at(-1);
-  if (last !== undefined && !status.has(last.promptId)) {
-    if (last.type === 'user') last.awaiting = true;
-    else if (last.type === 'thinking') last.streaming = true;
+  const writing = last !== undefined && !status.has(last.promptId);
+  for (const turn of turns) {
+    const live = turn === last && writing;
+    if (turn.type === 'user' && turn.awaiting !== live) turn.awaiting = live;
+    else if (turn.type === 'thinking' && turn.streaming !== live)
+      turn.streaming = live;
   }
+};
 
-  return grouped(turns, status);
+/**
+ * The conversation a log holds: one turn per contiguous run of events, in the
+ * order the log produced them. A human prompt, an agent answer, its reasoning
+ * and each tool call are their own turn, so a surface renders a transcript
+ * rather than one lump per prompt.
+ *
+ * A delta extends the turn it continues only while that turn is still the last
+ * one written, so reasoning, text and tools that interleave stay in order. The
+ * job's lifecycle is one value, carried by each of its agent turns.
+ */
+const project = (events: readonly ThreadEvent[]): Projection => {
+  const drafts: Draft[] = [];
+  const status = new Map<string, PromptStatus>();
+  for (const item of events) readEvent(drafts, status, item);
+  settle(drafts, status);
+  return { events, drafts, status, turns: grouped(drafts, status) };
+};
+
+/**
+ * A batch that follows the log read into the turns already read from it: the
+ * turns are copied once — a copy of one is what a change writes to, so a
+ * projection is never altered after it was returned — and the batch extends the
+ * tail of the reading instead of the log being read again from its start.
+ */
+const readInto = (
+  current: Projection,
+  incoming: readonly ThreadEvent[],
+): Projection => {
+  const drafts = current.drafts.map((draft): Draft => ({ ...draft }));
+  const status = new Map(current.status);
+  for (const item of incoming) readEvent(drafts, status, item);
+  settle(drafts, status);
+  return {
+    events: [...current.events, ...incoming],
+    drafts,
+    status,
+    turns: grouped(drafts, status),
+  };
 };
 
 /**
@@ -483,6 +549,10 @@ const truncation = (
   return { afterSequence, sequence: event.sequence };
 };
 
+/** Whether an event is the marker of a rewind, which discards the log before it. */
+const isTruncation = (event: ThreadEvent): boolean =>
+  record(event.event)?.type === 'history.truncated';
+
 /** Drops held events that a rewind already discarded. */
 const survivors = (events: readonly ThreadEvent[]): readonly ThreadEvent[] => {
   const markers = events.flatMap((event) => truncation(event) ?? []);
@@ -499,11 +569,24 @@ export const projectEvents = (
   current: Projection,
   incoming: readonly ThreadEvent[],
 ): Projection => {
-  const events = survivors(orderedUnique(current.events, incoming));
-  return { events, turns: project(events) };
+  // A batch that follows the log extends what has been read of it. A rewind
+  // discards history and a replay does not follow, so those read the log again
+  // from its start.
+  if (
+    followsWhatIsHeld(current.events, incoming) &&
+    !incoming.some(isTruncation)
+  ) {
+    return readInto(current, incoming);
+  }
+  return project(survivors(orderedUnique(current.events, incoming)));
 };
 
-export const emptyProjection: Projection = { events: [], turns: [] };
+export const emptyProjection: Projection = {
+  events: [],
+  turns: [],
+  drafts: [],
+  status: new Map(),
+};
 
 /** The tool calls that can change the sandbox a Project's Threads share. */
 const sandboxTools = ['write', 'edit', 'terminal'];

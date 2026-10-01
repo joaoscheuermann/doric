@@ -600,3 +600,80 @@ describe('sandbox writes in the log', () => {
     assert.equal(sandboxWrites([]), 0);
   });
 });
+
+describe('reading a log in batches', () => {
+  const log = [
+    event(1, 'one', {
+      type: 'prompt.accepted',
+      text: 'hello',
+      source: { kind: 'user' },
+    }),
+    event(2, 'one', { type: 'reasoning.delta', delta: 'think' }),
+    event(3, 'one', { type: 'reasoning.delta', delta: ' hard' }),
+    event(4, 'one', { type: 'tool.started', call: call('c1', 'read_file') }),
+    event(5, 'one', {
+      type: 'tool.finished',
+      call: call('c1', 'read_file'),
+      record: { output: 'x' },
+    }),
+    event(6, 'one', { type: 'text.delta', delta: 'answer' }),
+    event(7, 'one', {
+      type: 'prompt.finished',
+      status: 'completed',
+      text: 'the answer.',
+    }),
+    event(8, 'two', {
+      type: 'prompt.accepted',
+      text: 'next',
+      source: { kind: 'user' },
+    }),
+    event(9, 'two', { type: 'reasoning.delta', delta: 'more' }),
+    event(10, 'two', { type: 'reasoning.delta', delta: ' thought' }),
+    event(11, 'two', {
+      type: 'prompt.finished',
+      status: 'completed',
+      text: '',
+    }),
+  ];
+
+  test('reads a batch that follows the log as the log read again', () => {
+    const whole = projectEvents(emptyProjection, log);
+
+    let step = emptyProjection;
+    for (const item of log) step = projectEvents(step, [item]);
+
+    assert.deepEqual(step.turns, whole.turns);
+    assert.deepEqual(step.events, whole.events);
+  });
+
+  test('reads any batching of the log as one read of it', () => {
+    const whole = projectEvents(emptyProjection, log);
+
+    const batches = [log.slice(0, 2), log.slice(2, 5), log.slice(5)];
+    let step = emptyProjection;
+    for (const batch of batches) step = projectEvents(step, batch);
+
+    assert.deepEqual(step.turns, whole.turns);
+  });
+
+  test('reads a rewind that discards part of the log as the log read again', () => {
+    const rewound = [
+      ...log,
+      event(12, 'two', { type: 'history.truncated', afterSequence: 8 }),
+      event(13, 'two', {
+        type: 'prompt.accepted',
+        text: 'again',
+        source: { kind: 'user' },
+      }),
+      event(14, 'two', { type: 'text.delta', delta: 'once more' }),
+    ];
+
+    const whole = projectEvents(emptyProjection, rewound);
+
+    let step = emptyProjection;
+    for (const item of rewound) step = projectEvents(step, [item]);
+
+    assert.deepEqual(step.turns, whole.turns);
+    assert.deepEqual(step.events, whole.events);
+  });
+});
