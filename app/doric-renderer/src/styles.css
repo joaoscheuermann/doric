@@ -177,32 +177,32 @@
   --card-foreground: oklch(0.2795 0.0368 260.031);
   --popover: oklch(0.9699 0.0013 106.4238);
   --popover-foreground: oklch(0.2795 0.0368 260.031);
-  --primary: oklch(0.5854 0.2041 277.1173);
+  --primary: oklch(0.515 0.2041 277.1173);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.8687 0.0043 56.366);
+  --secondary: oklch(0.855 0.0043 56.366);
   --secondary-foreground: oklch(0.4461 0.0263 256.8018);
-  --muted: oklch(0.9232 0.0026 48.7171);
-  --muted-foreground: oklch(0.551 0.0234 264.3637);
-  --accent: oklch(0.9376 0.026 321.9388);
+  --muted: oklch(0.86 0.0026 48.7171);
+  --muted-foreground: oklch(0.5 0.0234 264.3637);
+  --accent: oklch(0.87 0.026 321.9388);
   --accent-foreground: oklch(0.3729 0.0306 259.7328);
-  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive: oklch(0.52 0.2078 25.3313);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.8687 0.0043 56.366);
-  --input: oklch(0.8687 0.0043 56.366);
-  --ring: oklch(0.5854 0.2041 277.1173);
-  --chart-1: oklch(0.5854 0.2041 277.1173);
+  --border: oklch(0.82 0.0043 56.366);
+  --input: oklch(0.82 0.0043 56.366);
+  --ring: oklch(0.515 0.2041 277.1173);
+  --chart-1: oklch(0.515 0.2041 277.1173);
   --chart-2: oklch(0.5106 0.2301 276.9656);
   --chart-3: oklch(0.4568 0.2146 277.0229);
   --chart-4: oklch(0.3984 0.1773 277.3662);
   --chart-5: oklch(0.3588 0.1354 278.6973);
   --sidebar: oklch(0.8687 0.0043 56.366);
   --sidebar-foreground: oklch(0.2795 0.0368 260.031);
-  --sidebar-primary: oklch(0.5854 0.2041 277.1173);
+  --sidebar-primary: oklch(0.515 0.2041 277.1173);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9376 0.026 321.9388);
+  --sidebar-accent: oklch(0.825 0.026 321.9388);
   --sidebar-accent-foreground: oklch(0.3729 0.0306 259.7328);
-  --sidebar-border: oklch(0.8687 0.0043 56.366);
-  --sidebar-ring: oklch(0.5854 0.2041 277.1173);
+  --sidebar-border: oklch(0.8 0.0043 56.366);
+  --sidebar-ring: oklch(0.515 0.2041 277.1173);
   --font-sans: 'Noto Sans', sans-serif;
   --font-serif: 'Noto Sans', sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -255,11 +255,11 @@
   --primary-foreground: oklch(0.2244 0.0074 67.437);
   --secondary: oklch(0.3359 0.0077 59.4197);
   --secondary-foreground: oklch(0.8717 0.0093 258.3382);
-  --muted: oklch(0.2287 0.0074 67.4469);
+  --muted: oklch(0.3 0.0074 67.4469);
   --muted-foreground: oklch(0.7137 0.0192 261.3246);
   --accent: oklch(0.3896 0.0074 59.4734);
   --accent-foreground: oklch(0.8717 0.0093 258.3382);
-  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive: oklch(0.76 0.18 25.3313);
   --destructive-foreground: oklch(0.2244 0.0074 67.437);
   --border: oklch(0.3359 0.0077 59.4197);
   --input: oklch(0.3359 0.0077 59.4197);
@@ -464,6 +464,19 @@
   background-clip: padding-box;
   border: 1.5px solid transparent;
   border-radius: 9999px;
+}
+
+/*
+ * The chrome bars, and the reason they are one class instead of one height
+ * copied into ten places: every bar — the workspace's header and footer, the
+ * sidebar's, the file viewer's, the sandbox panel's, and the settings window's —
+ * carries the same `size="sm"` or `icon-sm` control, which is 28px. The bar is
+ * that control plus four of air on each side, so a control never reads as
+ * touching the rule it stands on, and an adjustment is made here rather than
+ * nine times over.
+ */
+.chrome-bar {
+  height: 2.25rem;
 }
 
 /*

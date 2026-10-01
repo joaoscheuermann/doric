@@ -42,7 +42,7 @@ export function WorkspaceSidebarHeader() {
   return (
     <div
       data-slot="workspace-sidebar-header"
-      className="relative flex h-8 shrink-0 items-center bg-sidebar pl-20 [app-region:drag]"
+      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-20 [app-region:drag]"
     >
       <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       <SidebarToggle />
@@ -69,7 +69,7 @@ export function WorkspaceHeader({
   return (
     <header
       data-slot="workspace-header"
-      className="relative flex h-8 shrink-0 items-center bg-sidebar [app-region:drag]"
+      className="relative flex chrome-bar shrink-0 items-center bg-sidebar [app-region:drag]"
     >
       <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       {!open && (

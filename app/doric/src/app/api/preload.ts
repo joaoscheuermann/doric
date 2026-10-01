@@ -26,6 +26,8 @@ type Thread = {
   readonly projectId: string;
   readonly parentThreadId?: string;
   readonly state: string;
+  /** The prompt the Thread is running, present only while one is. */
+  readonly activePromptId?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -362,6 +364,8 @@ contextBridge.exposeInMainWorld('doric', {
         promptId,
         prompt,
       ),
+    interrupt: (id: string, promptId: string) =>
+      invoke<void>('doric:threads:interrupt', id, promptId),
     terminate: (id: string) => invoke<Thread>('doric:threads:terminate', id),
     delete: (id: string) => invoke<void>('doric:threads:delete', id),
   },

@@ -31,13 +31,13 @@ export function DraftName({
 
   return (
     <div
-      className="relative flex min-h-7 w-full items-center gap-2 pr-3 text-xs [&>svg]:size-3.5!"
+      className="relative flex min-h-7 w-full items-center gap-2 pr-3 text-xs"
       style={{
         paddingLeft: depth === undefined ? '0.75rem' : indentation(depth),
       }}
     >
       <TreeGuides depth={depth ?? 0} />
-      {draft ? <ProjectAvatar /> : <MessageSquareIcon />}
+      {draft ? <ProjectAvatar /> : <MessageSquareIcon className="size-3.5" />}
       <EditableName
         editing
         label={label}

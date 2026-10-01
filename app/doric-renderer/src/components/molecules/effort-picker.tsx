@@ -46,7 +46,6 @@ export function EffortPicker({
           variant="ghost"
           size="sm"
           aria-label={ariaLabel}
-          className="px-2"
           disabled={disabled}
         >
           {label}

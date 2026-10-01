@@ -22,6 +22,7 @@ import {
 import { withPendingTurns } from '@/domain/pending-turns';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
+import type { PromptSignal } from '@/utility/prompt-signal';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
 import { CodeNode } from '@lexical/code';
 import {
@@ -53,7 +54,7 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
 const exampleTheme: EditorThemeClasses = {
@@ -243,13 +244,39 @@ const conversationExtension = defineExtension({
  * caller may use it when the log grows a write to the sandbox the Project's
  * Threads share.
  */
+/**
+ * The conversation's own send and stop, which the shell's control drives.
+ *
+ * The shell counts its requests and passes the count down: a value travelling
+ * one way only. Nothing here writes state in the shell, because a child that
+ * does that writes it during the shell's commit — which is what a render loop is
+ * made of — and the shell has no way to read the editor anyway.
+ */
 export function Conversation({
   thread,
+  promptSignal,
+  sendRequest,
 }: {
   readonly thread: Thread;
   readonly onSandboxWrite?: () => void;
+  /** Where the editor writes whether the prompt holds words. */
+  readonly promptSignal?: PromptSignal;
+  /** The shell's send requests, counted; each new count sends the prompt once. */
+  readonly sendRequest?: number;
 }) {
   const chat = useThreadChat(thread);
+  /**
+   * The element the editor edits, built once and kept.
+   *
+   * The composer builds the editor from this element — its `useMemo` depends on
+   * it — so a new element per render is a new editor per render: the transcript
+   * is rebuilt under the reader's caret, and the scroll falls back to the top of
+   * the conversation. A render of this surface must cost a render, nothing more.
+   */
+  const contentEditable = useMemo(
+    () => <ContentEditable className="flex-1 outline-none" />,
+    [],
+  );
   // What the editor draws: the log's turns, and the two things the surface is
   // waiting for — the reader's words before the host accepts them, and the
   // agent's first step while it has produced nothing.
@@ -257,6 +284,19 @@ export function Conversation({
     () => withPendingTurns(chat.turns, chat.pending),
     [chat.turns, chat.pending],
   );
+  // The prompt the Thread is running. The shell reads the same Thread for its
+  // own control; the keyboard needs it here, where the editor is.
+  const activePromptId = chat.thread.activePromptId;
+  const running =
+    chat.thread.state === 'running' && activePromptId !== undefined;
+  const stop = useCallback((): void => {
+    if (activePromptId === undefined) return;
+    // A refusal is the run having settled first, which is the same outcome the
+    // reader asked for; there is nothing left to report.
+    void window.doric.threads
+      .interrupt(chat.thread.id, activePromptId)
+      .catch(() => undefined);
+  }, [activePromptId, chat.thread.id]);
 
   return (
     <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
@@ -265,7 +305,7 @@ export function Conversation({
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 text-sm font-light">
         <LexicalExtensionComposer
           extension={conversationExtension}
-          contentEditable={<ContentEditable className="flex-1 outline-none" />}
+          contentEditable={contentEditable}
         >
           <UndeletableBlocksPlugin
             isReadOnly={isReadOnlyBlock}
@@ -275,7 +315,13 @@ export function Conversation({
           <MarkdownPromptPlugin />
           <PromptLineBreaks />
           <InsertThreadTurnNodes turns={turns} />
-          <SendPrompt send={chat.prompt} />
+          <SendPrompt
+            canStop={running}
+            promptSignal={promptSignal}
+            send={chat.prompt}
+            sendRequest={sendRequest}
+            onStop={stop}
+          />
         </LexicalExtensionComposer>
       </div>
     </ScrollArea>

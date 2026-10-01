@@ -210,6 +210,15 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:interrupt',
+    safe(allowedUrls, (threadId: unknown, promptId: unknown) =>
+      workspaceApi.threads.interrupt(
+        identifier(threadId),
+        identifier(promptId),
+      ),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:terminate',
     safe(allowedUrls, (value: unknown) =>
       workspaceApi.threads.terminate(identifier(value)),

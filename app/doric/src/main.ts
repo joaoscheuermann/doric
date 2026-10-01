@@ -88,10 +88,17 @@ const installContentSecurityPolicy = (): void => {
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
-/** Keeps native traffic lights visible and centered in the 32px renderer bar. */
+/**
+ * Keeps native traffic lights visible and centered in the renderer's chrome bar.
+ *
+ * The numbers belong to that bar's height, which is stated once in the
+ * renderer's stylesheet as `.chrome-bar` (2.25rem, so 36px): a macOS light is
+ * 12px tall, so its inset is `(36 - 12) / 2`. Raising the bar means raising this
+ * with it, which is the one place the two are not derived from each other.
+ */
 const titleBarOptions = (): Electron.BrowserWindowConstructorOptions =>
   process.platform === 'darwin'
-    ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 9 } }
+    ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } }
     : {};
 
 const createSplashWindow = () => {

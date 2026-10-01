@@ -90,7 +90,6 @@ export function ExecutionPicker() {
       <Toggle
         aria-label="Thinking"
         size="sm"
-        className="px-2"
         disabled={!thinks}
         pressed={thinking || mandatory}
         onPressedChange={setThinking}
@@ -120,7 +119,7 @@ export function ExecutionPicker() {
         <Input
           aria-label="Execution model"
           autoComplete="off"
-          className="h-7 w-48 border-transparent bg-transparent px-2 text-xs shadow-none hover:bg-muted focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+          className="w-48 border-transparent bg-transparent shadow-none hover:bg-muted focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
           placeholder="Model id"
           value={model}
           onChange={(event) =>

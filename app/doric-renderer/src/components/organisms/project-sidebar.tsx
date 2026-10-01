@@ -125,7 +125,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
               Projects
             </SidebarGroupLabel>
             <SidebarGroupAction
-              className="pointer-events-none top-1 right-1 opacity-0 group-hover/group-label:pointer-events-auto group-hover/group-label:opacity-100 group-focus-within/group-label:pointer-events-auto group-focus-within/group-label:opacity-100 [&>svg]:size-3!"
+              className="pointer-events-none top-1 right-1 opacity-0 group-hover/group-label:pointer-events-auto group-hover/group-label:opacity-100 group-focus-within/group-label:pointer-events-auto group-focus-within/group-label:opacity-100"
               aria-label="New project"
               onClick={actions.beginProject}
             >
@@ -195,7 +195,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                           isActive={selected}
                           size="sm"
                           className={cn(
-                            'h-7 w-full rounded-none px-3 pr-8 [&>svg]:size-3.5!',
+                            'h-7 w-full rounded-none px-3 pr-8',
                             rowInteraction(selected),
                           )}
                         >

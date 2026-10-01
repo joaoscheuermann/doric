@@ -27,7 +27,7 @@ import {
   SidebarMenuSkeleton,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Toggle } from '@/components/ui/toggle';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   changeLetter,
   classifyDiff,
@@ -68,9 +68,11 @@ type PanelView = 'files' | 'changes';
  * the file viewer panel that sits beside this one, so the tree it was opened
  * from stays where it is.
  *
- * The two views are icon-only toggles in the header in place of a title, because
- * they name what the panel is showing and select it. The panel's own toggle
- * closes it, and stays the last control at the header's corner.
+ * The two views are icon-only tabs in the header in place of a title, because
+ * they name what the panel is showing and select it among a set. They wear the
+ * line variant: a track and a raised thumb read as a chip borrowed from another
+ * surface, while an underline is the panel's own edge carrying the choice. The
+ * panel's own toggle closes it, and stays the last control at the corner.
  */
 export function ProjectFilesSidebar({
   files,
@@ -83,18 +85,25 @@ export function ProjectFilesSidebar({
     <Sidebar collapsible="none" className="overflow-hidden">
       <PanelHeader>
         <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
-          <ViewToggle
-            icon={<FilesIcon />}
-            label="Files"
-            onSelect={() => setView('files')}
-            selected={view === 'files'}
-          />
-          <ViewToggle
-            icon={<FileDiffIcon />}
-            label="Changes"
-            onSelect={() => setView('changes')}
-            selected={view === 'changes'}
-          />
+          {/* No colours of their own: the line variant is transparent, and this
+              theme's `foreground` is the sidebar's own, so the vendored text
+              and underline already sit in the panel's palette. */}
+          <Tabs
+            className="shrink-0 [app-region:no-drag]"
+            value={view}
+            onValueChange={(next) =>
+              setView(next === 'changes' ? 'changes' : 'files')
+            }
+          >
+            <TabsList variant="line">
+              <TabsTrigger aria-label="Files" value="files">
+                <FilesIcon />
+              </TabsTrigger>
+              <TabsTrigger aria-label="Changes" value="changes">
+                <FileDiffIcon />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <FilesToggle onToggle={onToggle} open />
         </div>
       </PanelHeader>
@@ -117,52 +126,15 @@ export function ProjectFilesSidebar({
 }
 
 /**
- * One of the panel's two views, as an icon-only toggle sized for the h-8 header:
- * the `sm` toggle with its horizontal padding dropped is the icon-sized one.
- *
- * The view on screen is the highlighted one. The vendored Toggle supplies the
- * pressed background; recolouring its pressed state to the sidebar's own accent,
- * and the icon to that accent's foreground, is what makes an active view read as
- * part of the panel rather than as a chip in another palette. Unselected, the
- * icon stays muted.
- *
- * Pressing the view already on screen selects it again rather than clearing it,
- * because the panel always shows one of the two.
- */
-function ViewToggle({
-  icon,
-  label,
-  onSelect,
-  selected,
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly onSelect: () => void;
-  readonly selected: boolean;
-}) {
-  return (
-    <Toggle
-      aria-label={label}
-      size="sm"
-      className="shrink-0 px-0! text-muted-foreground data-[state=on]:bg-sidebar-accent! data-[state=on]:text-sidebar-accent-foreground! [app-region:no-drag]"
-      pressed={selected}
-      onPressedChange={onSelect}
-    >
-      {icon}
-    </Toggle>
-  );
-}
-
-/**
  * The panel's header strip: the drag region, its boundary, and the controls it
- * carries — the two view toggles and the panel's own toggle, together at the
- * right corner.
+ * carries — the view tabs and the panel's own toggle, together at the right
+ * corner.
  */
 function PanelHeader({ children }: { readonly children: ReactNode }) {
   return (
     <div
       data-slot="project-files-header"
-      className="relative flex h-8 shrink-0 items-center bg-sidebar pl-2 [app-region:drag]"
+      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-2 [app-region:drag]"
     >
       <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       {children}
@@ -246,7 +218,7 @@ function FilesFooter({ files }: { readonly files: ProjectFiles }) {
   return (
     <footer
       data-slot="project-files-footer"
-      className="flex h-8 shrink-0 items-center gap-2 border-t px-3"
+      className="flex chrome-bar shrink-0 items-center gap-2 border-t px-3"
     >
       <Button
         variant="ghost"

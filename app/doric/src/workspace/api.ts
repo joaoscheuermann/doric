@@ -17,6 +17,8 @@ export type Thread = {
   readonly projectId: string;
   readonly parentThreadId?: string;
   readonly state: string;
+  /** The prompt the Thread is running, present only while one is. */
+  readonly activePromptId?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -1134,6 +1136,13 @@ export const workspaceApi = {
           body: body({ promptId, prompt }),
         }),
       ),
+    /** Stops the prompt a Thread is running, leaving its queue alone. */
+    interrupt: async (threadId: string, promptId: string) => {
+      await request<unknown>(`/threads/${id(threadId)}/interrupt`, {
+        method: 'POST',
+        body: body({ promptId }),
+      });
+    },
     terminate: (threadId: string) =>
       request<Thread>(`/threads/${id(threadId)}/terminate`, {
         method: 'POST',

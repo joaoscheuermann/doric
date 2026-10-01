@@ -48,7 +48,7 @@ export function FileViewer({ file, onClose, path }: FileViewerProps) {
     >
       <header
         data-slot="file-viewer-header"
-        className="relative flex h-8 shrink-0 items-center gap-2 bg-sidebar pl-3 [app-region:drag]"
+        className="relative flex chrome-bar shrink-0 items-center gap-2 bg-sidebar pl-3 [app-region:drag]"
       >
         <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
         <span className="min-w-0 truncate font-mono text-xs">
@@ -71,7 +71,7 @@ export function FileViewer({ file, onClose, path }: FileViewerProps) {
       </div>
       <footer
         data-slot="file-viewer-footer"
-        className="flex h-8 shrink-0 items-center gap-2 border-t px-3"
+        className="flex chrome-bar shrink-0 items-center gap-2 border-t px-3"
       >
         <FileBreadcrumb onBack={onClose} path={path} />
       </footer>

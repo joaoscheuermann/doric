@@ -87,7 +87,7 @@ export function ThreadBranches({
                   isActive={selected}
                   size="sm"
                   className={cn(
-                    'h-7 w-full translate-x-0 rounded-none pr-8 [&>svg]:size-3.5!',
+                    'h-7 w-full translate-x-0 rounded-none pr-8',
                     rowInteraction(selected),
                   )}
                   style={{ paddingLeft: indentation(depth) }}

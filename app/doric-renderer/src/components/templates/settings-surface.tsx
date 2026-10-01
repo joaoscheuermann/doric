@@ -142,7 +142,7 @@ export function SettingsSurface({
               value={query}
             />
             {nav.length === 0 ? (
-              <div className="flex h-8 items-center px-2 text-xs text-muted-foreground">
+              <div className="flex chrome-bar items-center px-2 text-xs text-muted-foreground">
                 No sections match
               </div>
             ) : (
@@ -169,7 +169,7 @@ export function SettingsSurface({
           The bottom of the nav column, at the height of the content's own footer
           band, so the two read as one strip across the window.
         */}
-        <SidebarFooter className="h-8 shrink-0 justify-center border-t">
+        <SidebarFooter className="chrome-bar shrink-0 justify-center border-t">
           {sidebarFooter}
         </SidebarFooter>
       </Sidebar>
@@ -183,7 +183,7 @@ export function SettingsSurface({
       <Separator orientation="vertical" className="hidden md:block" />
       <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        <div className="flex h-8 shrink-0 items-center border-t px-4">
+        <div className="flex chrome-bar shrink-0 items-center border-t px-4">
           {footer}
         </div>
       </main>

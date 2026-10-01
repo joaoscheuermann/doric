@@ -29,7 +29,13 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
 import { useProjectFiles } from '@/hooks/use-project-files';
 import { useWorkspace } from '@/hooks/use-workspace';
-import { type CSSProperties, useCallback, useState } from 'react';
+import { createPromptSignal } from '@/utility/prompt-signal';
+import {
+  type CSSProperties,
+  useCallback,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -44,6 +50,26 @@ export function App() {
   // Project owns the sandbox, the Thread only reports.
   const [filesOpen, setFilesOpen] = useState(true);
   const [filesRevision, setFilesRevision] = useState(0);
+  // What the conversation's composer offers the footer, and how the two talk.
+  //
+  // The prompt lives in the editor and the control lives in the shell, so the
+  // fact that the prompt is empty has to cross between them. It crosses as a
+  // value the shell owns: the editor writes it, the shell reads it through
+  // `useSyncExternalStore`, and the child's props are the same object whatever it
+  // writes. Nothing sets the shell's state from the child — that is a write
+  // during the shell's commit, which is what a render loop is made of — and the
+  // signal only speaks when the value changes, so a write cannot become a second
+  // render and a render a second write.
+  //
+  // Sending goes the other way for the same reason: the shell counts requests and
+  // the editor answers each new count once.
+  const [promptSignal] = useState(createPromptSignal);
+  const canSend = useSyncExternalStore(
+    promptSignal.subscribe,
+    promptSignal.snapshot,
+  );
+  const [sendRequest, setSendRequest] = useState(0);
+  const send = useCallback(() => setSendRequest((count) => count + 1), []);
   const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
   const noteSandboxWrite = useCallback(
     () => setFilesRevision((revision) => revision + 1),
@@ -76,6 +102,17 @@ export function App() {
     startRename: actions.startRename,
   };
   const { selectedThread } = workspace;
+  const activePromptId = selectedThread?.activePromptId;
+  const running =
+    selectedThread?.state === 'running' && activePromptId !== undefined;
+  // A refusal is the run having settled first, which is the same outcome the
+  // reader asked for; there is nothing left to report.
+  const stop = useCallback(() => {
+    if (selectedThread === undefined || activePromptId === undefined) return;
+    void window.doric.threads
+      .interrupt(selectedThread.id, activePromptId)
+      .catch(() => undefined);
+  }, [activePromptId, selectedThread]);
   const selectedProject = workspace.projects.find(
     (project) => project.id === workspace.selectedProjectId,
   );
@@ -121,7 +158,11 @@ export function App() {
           }
           footer={
             <WorkspaceFooter
-              onOpenSettings={() => void window.doric.settings.open()}
+              canSend={canSend}
+              disabled={selectedThread === undefined}
+              onSend={send}
+              onStop={stop}
+              running={running}
             />
           }
           header={
@@ -136,7 +177,11 @@ export function App() {
           }
           onFilesOpenChange={setFilesOpen}
           sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
-          sidebarFooter={<WorkspaceSidebarFooter />}
+          sidebarFooter={
+            <WorkspaceSidebarFooter
+              onOpenSettings={() => void window.doric.settings.open()}
+            />
+          }
           sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
@@ -145,6 +190,8 @@ export function App() {
                 <Conversation
                   key={selectedThread.id}
                   onSandboxWrite={noteSandboxWrite}
+                  promptSignal={promptSignal}
+                  sendRequest={sendRequest}
                   thread={selectedThread}
                 />
               ) : (

@@ -55,6 +55,8 @@ export type Thread = {
   readonly projectId: string;
   readonly parentThreadId?: string;
   readonly state: string;
+  /** The prompt the Thread is running, present only while one is. */
+  readonly activePromptId?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -208,6 +210,8 @@ export type WorkspaceApi = {
       promptId: string,
       prompt: string,
     ): Promise<{ readonly promptId: string }>;
+    /** Stops the prompt a Thread is running, leaving its queue alone. */
+    interrupt(id: string, promptId: string): Promise<void>;
     watch(
       id: string,
       afterSequence: number,

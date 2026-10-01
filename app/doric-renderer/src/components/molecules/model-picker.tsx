@@ -71,7 +71,7 @@ export function ModelPicker({
           variant="ghost"
           size="sm"
           aria-label={ariaLabel}
-          className="max-w-72 min-w-0 px-2"
+          className="max-w-72 min-w-0"
         >
           <span className="truncate">{label}</span>
         </Button>
