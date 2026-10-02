@@ -3,12 +3,11 @@ import { z } from 'zod';
 import { defineTool } from 'tool';
 
 export default defineTool({
-  name: 'send_to_thread',
+  name: 'thread-spawn',
   description:
-    'Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically.',
+    'Create a child chat and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat.',
   input: z
     .object({
-      threadId: z.uuid(),
       prompt: z
         .string()
         .min(1)
@@ -17,5 +16,5 @@ export default defineTool({
     .strict(),
   output: z.string(),
   execute: async (sandbox, host, input) =>
-    JSON.stringify(await host.threads.send(input.threadId, input.prompt)),
+    JSON.stringify(await host.threads.spawn(input.prompt)),
 });

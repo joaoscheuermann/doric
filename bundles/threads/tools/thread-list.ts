@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from 'tool';
 
 export default defineTool({
-  name: 'list_threads',
+  name: 'thread-list',
   description:
     'List your direct child chats and their states. Use the next cursor to continue.',
   input: z

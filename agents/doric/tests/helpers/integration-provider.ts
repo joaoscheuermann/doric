@@ -101,7 +101,7 @@ export function scriptedProvider(): LlmProvider {
         });
       } else {
         assert.ok(input.includes(parentPrompt), `Unexpected input: ${input}`);
-        yield call('spawn_thread', { prompt: childPrompt });
+        yield call('thread-spawn', { prompt: childPrompt });
       }
     },
   };
