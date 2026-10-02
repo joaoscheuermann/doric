@@ -7,9 +7,11 @@ import {
   classifyDiff,
   collapsedPath,
   type DiffFile,
+  diffReadState,
   diffStat,
   emptyDirectoryNotice,
   fileLanguage,
+  fileReadState,
   joinPath,
   parentPath,
   pathSegments,
@@ -17,8 +19,14 @@ import {
   ROOT_PATH,
   sandboxNotice,
   toggleExpanded,
+  treeReadState,
   truncationNotice,
 } from '../src/domain/files';
+import type {
+  ProjectDiff,
+  ProjectFileContent,
+  ProjectTreeNode,
+} from '../src/domain/workspace';
 
 const kinds = (file: DiffFile | undefined): readonly string[] =>
   (file?.lines ?? []).map(({ kind }) => kind);
@@ -397,5 +405,113 @@ describe('what the surface says', () => {
       ),
       ['A', 'M', 'D', 'R', 'U'],
     );
+  });
+});
+
+const treeNode: ProjectTreeNode = {
+  name: 'app.ts',
+  path: 'src/app.ts',
+  type: 'file',
+};
+
+const fileContent: ProjectFileContent = {
+  path: 'src/app.ts',
+  content: 'one',
+  truncated: false,
+  binary: false,
+};
+
+const diff: ProjectDiff = { repositories: [] };
+
+const lease = { status: 'pending', retryAfterSeconds: 5 } as const;
+
+describe('what a sandbox read shows', () => {
+  test('shows the tree, the file and the diff each read answered with', () => {
+    assert.deepEqual(
+      treeReadState({ status: 'ready', path: '', entries: [treeNode] }, false),
+      {
+        status: 'ready',
+        value: [treeNode],
+      },
+    );
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, false, false),
+      { status: 'ready', value: fileContent },
+    );
+    assert.deepEqual(diffReadState({ status: 'ready', diff }, false, false), {
+      status: 'ready',
+      value: diff,
+    });
+  });
+
+  test('explains a lease instead of failing, and reuses its retry hint', () => {
+    for (const state of [
+      treeReadState(lease, false),
+      diffReadState(lease, false, false),
+    ]) {
+      assert.equal(state.status, 'pending');
+      assert.equal(
+        state.status === 'pending' ? state.retryAfterSeconds : undefined,
+        5,
+      );
+    }
+    assert.deepEqual(fileReadState(lease, false, false), lease);
+    assert.deepEqual(treeReadState({ status: 'not_found' }, false), {
+      status: 'not_found',
+    });
+  });
+
+  test('keeps what is on screen when a reread of it fails', () => {
+    assert.deepEqual(
+      treeReadState({ status: 'ready', path: '', entries: [treeNode] }, true),
+      {
+        status: 'ready',
+        value: [treeNode],
+      },
+    );
+    assert.deepEqual(diffReadState({ status: 'ready', diff }, false, true), {
+      status: 'ready',
+      value: diff,
+    });
+  });
+
+  test('keeps waiting on a tree whose read failed without answering', () => {
+    assert.deepEqual(treeReadState(undefined, false), { status: 'loading' });
+    assert.deepEqual(treeReadState(undefined, true), { status: 'loading' });
+    // A lease that a failed reread left behind is no longer an answer.
+    assert.deepEqual(treeReadState(lease, true), { status: 'loading' });
+  });
+
+  test('shows a file read as loading while it is going', () => {
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, true, false),
+      { status: 'loading' },
+    );
+    assert.deepEqual(fileReadState(undefined, true, false), {
+      status: 'loading',
+    });
+    assert.deepEqual(diffReadState(undefined, true, false), {
+      status: 'loading',
+    });
+  });
+
+  test('leaves nothing open when a file read failed', () => {
+    // The surface closes the file rather than showing a broken one.
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, false, true),
+      { status: 'idle' },
+    );
+    assert.deepEqual(fileReadState(undefined, false, true), { status: 'idle' });
+    assert.deepEqual(fileReadState(undefined, false, false), {
+      status: 'idle',
+    });
+  });
+
+  test('leaves the changes unshown when a failed diff read answered nothing', () => {
+    assert.deepEqual(diffReadState(undefined, false, true), { status: 'idle' });
+    assert.deepEqual(diffReadState(lease, false, true), { status: 'idle' });
+    assert.deepEqual(diffReadState(undefined, false, false), {
+      status: 'idle',
+    });
   });
 });

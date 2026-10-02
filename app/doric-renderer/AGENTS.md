@@ -15,6 +15,8 @@ src/
     templates/   arrangement only: layout and regions, no app state
   views/         pages: own the state, read the hooks, compose templates
   hooks/         every `use*` hook
+  stores/        Zustand stores: the client/UI state the hooks hand out
+  queries/       TanStack Query: the query keys and the one client per window
   domain/        the vocabulary of the product
   utility/       small helpers with no product vocabulary
 ```
@@ -29,7 +31,9 @@ Where a new file goes, in order:
    - Nothing but arrangement — a layout, a region, a slot taking `ReactNode`:
      `templates`.
 2. Does it own a page's state and compose templates? Then it is a `view`.
-3. Does it start with `use`? Then it is a `hook`, whatever it talks to.
+3. Does it start with `use`? Then it is a hook, whatever it talks to. Server
+   state behind a hook is read through TanStack Query (`queries/`), and client
+   state behind one lives in a Zustand store (`stores/`).
 4. Does it name what the product is about — a Thread, a Project, a tab, the
    projection of the event log? Then it is `domain`.
 5. Otherwise it is `utility`: a helper stated in terms of nothing but its

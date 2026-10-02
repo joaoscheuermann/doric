@@ -1,5 +1,6 @@
 import {
   type Configuration,
+  type ConfigurationInput,
   configurationInput,
   configurationIssue,
   type DoricConfiguration,
@@ -7,6 +8,8 @@ import {
   type ProviderKind,
 } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
+import { queryKeys } from '@/queries/keys';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** How long typing settles before a valid change sends itself to the host. */
@@ -55,7 +58,6 @@ export const useConfig = (
 ): Config => {
   const [saved, setSaved] = useState<DoricConfiguration>();
   const [draft, setDraft] = useState<Configuration>();
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   /** Interaction intent, so a load whose modal closed cannot land after it. */
@@ -80,35 +82,41 @@ export const useConfig = (
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
+  const queryClient = useQueryClient();
+  const load = useQuery({
+    queryKey: queryKeys.config,
+    queryFn: () => window.doric.config.get(),
+    enabled: open,
+  });
+  const { mutateAsync: write } = useMutation({
+    mutationFn: (configuration: ConfigurationInput) =>
+      window.doric.config.update(configuration),
+  });
+
+  // A load starts when the modal opens and again when the window regains focus.
+  // Closing discards the draft: a pending change was flushed by the caller
+  // before the modal closed, and a reopened modal reloads the host's copy.
   useEffect(() => {
     intent.current += 1;
-    const request = intent.current;
     if (!open) {
-      // Closing discards the draft: a pending change was flushed by the caller
-      // before the modal closed, and a reopened modal reloads the host's copy.
       setSaved(undefined);
       setDraft(undefined);
       setError(undefined);
       setSaving(false);
-      setLoading(false);
       return;
     }
     setError(undefined);
-    setLoading(true);
-    void window.doric.config
-      .get()
-      .then((loaded) => {
-        if (intent.current !== request) return;
-        setSaved(loaded);
-        setDraft(loaded.configuration);
-      })
-      .catch((reason: unknown) => {
-        if (intent.current === request) setError(messageFrom(reason));
-      })
-      .finally(() => {
-        if (intent.current === request) setLoading(false);
-      });
-  }, [open, reload]);
+    void queryClient.refetchQueries({ queryKey: queryKeys.config });
+  }, [open, queryClient, reload]);
+
+  // Every answered load seeds both copies with what the host stores, which is
+  // what keeps a window from writing its draft back over the other window's
+  // change once the read lands.
+  useEffect(() => {
+    if (!open || load.data === undefined) return;
+    setSaved(load.data);
+    setDraft(load.data.configuration);
+  }, [load.data, open]);
 
   const save = useCallback(async (): Promise<void> => {
     clearTimeout(pending.current);
@@ -118,9 +126,7 @@ export const useConfig = (
     setSaving(true);
     setError(undefined);
     try {
-      const updated = await window.doric.config.update(
-        configurationInput(next),
-      );
+      const updated = await write(configurationInput(next));
       if (intent.current !== request) return;
       setSaved(updated);
       // Keep a draft the user changed while the request was in flight.
@@ -135,7 +141,7 @@ export const useConfig = (
     } finally {
       if (intent.current === request) setSaving(false);
     }
-  }, []);
+  }, [write]);
 
   const flush = useCallback(async (): Promise<void> => {
     clearTimeout(pending.current);
@@ -175,7 +181,7 @@ export const useConfig = (
     error,
     flush,
     issue,
-    loading,
+    loading: open && (load.isPending || load.isFetching),
     saved,
     saving,
     setDraft,

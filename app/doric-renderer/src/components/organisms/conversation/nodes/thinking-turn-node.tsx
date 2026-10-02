@@ -1,8 +1,17 @@
 import { ThinkingItem } from '@/components/molecules/thinking-item';
+import { WidgetFocus } from '@/components/molecules/widget-focus';
+import {
+  blockToggled,
+  type Chosen,
+  thinkingOpenness,
+} from '@/domain/collapsible';
 import { THINKING_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ThinkingTurn } from '@/domain/projector';
+import { reasoningText } from '@/utility/reasoning-text';
 import {
+  $getNodeByKey,
   DecoratorNode,
+  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -24,6 +33,8 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   __text: string;
   /** Whether the run is still being written; the sync keeps it current. */
   __streaming: boolean;
+  /** The reader's choice of open/closed; `null` until they make one. */
+  __chosen: boolean | null = null;
 
   constructor(
     turnKey: string,
@@ -67,6 +78,15 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   /**
+   * The reader's choice of open/closed is theirs, not the sync's: it travels
+   * with the block through every update a sync writes.
+   */
+  override afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__chosen = prevNode.__chosen;
+  }
+
+  /**
    * A block, not an inline widget. `DecoratorNode` reports inline by default,
    * and the rich-text root then wraps an inline child in a `ParagraphNode` —
    * which hides this turn from the sync that keeps the transcript in step, so
@@ -77,8 +97,38 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
-  override decorate(): JSX.Element {
-    return <ThinkingItem streaming={this.__streaming} text={this.__text} />;
+  override decorate(editor: LexicalEditor): JSX.Element {
+    return (
+      <WidgetFocus nodeKey={this.__key}>
+        <ThinkingItem
+          chosen={this.__chosen}
+          onChosenChange={(chosen) =>
+            editor.update(() => {
+              const node = $getNodeByKey(this.__key);
+              if ($isThinkingTurnNode(node)) node.setChosen(chosen);
+            })
+          }
+          streaming={this.__streaming}
+          text={this.__text}
+        />
+      </WidgetFocus>
+    );
+  }
+
+  /** Write the reader's choice of open/closed. */
+  setChosen(chosen: Chosen): void {
+    if (this.__chosen === chosen) return;
+    this.getWritable().__chosen = chosen;
+  }
+
+  /** The reader opens or closes the block: their next choice is its opposite. */
+  toggle(): void {
+    this.setChosen(
+      blockToggled(
+        this.__chosen,
+        thinkingOpenness(reasoningText(this.__text), this.__streaming),
+      ),
+    );
   }
 
   setTurn(turn: ThinkingTurn): void {

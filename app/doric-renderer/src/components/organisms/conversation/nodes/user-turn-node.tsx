@@ -89,6 +89,7 @@ export class UserTurnNode extends ElementNode {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
+    dom.dataset.promptId = this.__promptId;
     dom.className = this.__accepted
       ? CONVERSATION_FONT_CLASS
       : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;

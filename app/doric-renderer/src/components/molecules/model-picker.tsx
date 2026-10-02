@@ -6,12 +6,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import { type ModelGroup, searchModelGroups } from '@/domain/config';
 import { ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { useState } from 'react';
 
 /** The reasoning control the popover ends with, when the model can think. */
 type Reasoning = {
+  /** The row's name in words, so a placeholder label never speaks as a dash. */
+  readonly ariaLabel: string;
   readonly choices: readonly {
     readonly label: string;
     /** A mark the row wears beside its label, such as the model's own default. */
@@ -39,9 +42,10 @@ type ModelPickerProps = {
 
 /**
  * The model a prompt runs on, worn as a ghost button: opening it shows a search
- * field over the models each provider lists, grouped under the provider's label,
- * and the model's reasoning as the row the popover ends with. The search narrows
- * the list and never sets a value, so selecting is the only commitment.
+ * field over the models each provider lists, grouped under the provider's label
+ * and divided from one another by a rule, and the model's reasoning as the row
+ * the popover ends with. The search narrows the list and never sets a value, so
+ * selecting is the only commitment.
  *
  * It is a popover rather than a combobox because the list is a menu of choices —
  * a model, and the effort it thinks at — not a field to type a model into.
@@ -104,6 +108,7 @@ export function ModelPicker({
           ) : (
             matches.map((group, index) => (
               <div key={group.label ?? `group-${index}`}>
+                {index > 0 && <Separator className="my-1" />}
                 {group.label !== undefined && (
                   <div className="px-2 pt-2 pb-0.5 text-xs text-muted-foreground">
                     {group.label}
@@ -128,6 +133,7 @@ export function ModelPicker({
                 <Button
                   variant="ghost"
                   size="sm"
+                  aria-label={reasoning.ariaLabel}
                   className="w-full justify-between gap-2 font-normal"
                 >
                   Reasoning

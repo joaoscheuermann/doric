@@ -1,10 +1,14 @@
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
+import { type Chosen, thinkingOpenness } from '@/domain/collapsible';
 import { reasoningText } from '@/utility/reasoning-text';
 
 type ThinkingItemProps = {
   readonly text: string;
   /** Whether the run is still being written: the block opens, and it shimmers. */
   readonly streaming: boolean;
+  /** The reader's choice of open/closed, when the block's owner holds it. */
+  readonly chosen?: Chosen;
+  readonly onChosenChange?: (chosen: boolean) => void;
 };
 
 /**
@@ -18,14 +22,20 @@ type ThinkingItemProps = {
  * sees; the reasoning is a throwaway they skim, so the two read differently on
  * purpose.
  */
-export function ThinkingItem({ streaming, text }: ThinkingItemProps) {
+export function ThinkingItem({
+  chosen,
+  onChosenChange,
+  streaming,
+  text,
+}: ThinkingItemProps) {
   const body = reasoningText(text);
 
   return (
     <CollapsibleBlock
-      active={streaming}
-      hasContent={body.length > 0}
+      chosen={chosen}
       label={streaming ? 'Thinking' : 'Thought'}
+      onChosenChange={onChosenChange}
+      openness={thinkingOpenness(body, streaming)}
     >
       {/* The paragraph breaks are the model's own, so they are kept rather than
           collapsed away; the marks are its syntax, so they are not read. */}

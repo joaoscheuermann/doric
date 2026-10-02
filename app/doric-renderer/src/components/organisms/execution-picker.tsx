@@ -30,9 +30,11 @@ import { BrainIcon } from 'lucide-react';
  * Thinking is a toggle wearing the brain mark alone, which its label names: on
  * sends the effort the model starts at, off sends `none`, and a model with no
  * effort to think at — or one whose catalog pins reasoning on — has the control
- * disabled rather than offering a state it cannot reach. The marks read in the
- * order a reader settles them — think, then with what, then how hard — divided by
- * a rule after thinking and a dot between the two choices.
+ * disabled rather than offering a state it cannot reach. The mark carries that
+ * state on its own — a muted brain at rest, one filled in the surface's own
+ * foreground when thinking is on — with the hover wash as its only chrome. The
+ * marks read in the order a reader settles them — think, then with what, then
+ * how hard — divided by a rule after thinking and a dot between the two choices.
  */
 export function ExecutionPicker() {
   const kinds = useProviderKinds();
@@ -52,8 +54,14 @@ export function ExecutionPicker() {
   const thinks = modelThinks(draft, providerId, model);
   const mandatory = modelMandatory(draft, providerId, model);
   const thinking = effort !== undefined && effort !== 'none';
+  // A missing effort wears the dash of a placeholder where a reader sees the
+  // label, while the names below keep saying what the dash stands for.
   const effortName =
     effort === undefined || effort === 'none' ? 'None' : effortLabel(effort);
+  const effortSpoken =
+    effort === undefined || effort === 'none'
+      ? 'no effort'
+      : effortLabel(effort);
   const effortChoices = efforts.map((value) => ({
     label: effortLabel(value),
     value,
@@ -90,11 +98,12 @@ export function ExecutionPicker() {
       <Toggle
         aria-label="Thinking"
         size="sm"
+        className="data-[state=on]:bg-transparent aria-pressed:bg-transparent"
         disabled={!thinks}
         pressed={thinking || mandatory}
         onPressedChange={setThinking}
       >
-        <BrainIcon className="group-data-[state=on]/toggle:text-primary" />
+        <BrainIcon className="text-muted-foreground group-data-[state=on]/toggle:stroke-white group-data-[state=on]/toggle:text-foreground" />
       </Toggle>
       <ToolbarDivider />
       {hasChoices ? (
@@ -108,6 +117,7 @@ export function ExecutionPicker() {
             effortChoices.length === 0
               ? undefined
               : {
+                  ariaLabel: `Reasoning, ${effortSpoken}`,
                   choices: effortChoices,
                   label: effortName,
                   value: effort,
@@ -128,7 +138,7 @@ export function ExecutionPicker() {
         />
       )}
       <span aria-hidden="true" className="text-muted-foreground">
-        ·
+        ●
       </span>
       <EffortPicker
         ariaLabel="Reasoning effort"

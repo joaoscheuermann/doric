@@ -48,6 +48,9 @@ export class UserPromptNode extends ElementNode {
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
     dom.className = `outline-none ${CONVERSATION_FONT_CLASS}`;
+    // The rail's last handle finds the input by this, the way a prompt's block
+    // is found by the `data-prompt-id` its turn carries.
+    dom.dataset.promptInput = '';
     this.$applyPlaceholder(dom);
     return dom;
   }

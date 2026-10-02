@@ -1,8 +1,12 @@
 import { ToolItem } from '@/components/molecules/tool-item';
+import { WidgetFocus } from '@/components/molecules/widget-focus';
+import { blockToggled, type Chosen, toolOpenness } from '@/domain/collapsible';
 import { TOOL_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ToolTurn } from '@/domain/projector';
 import {
+  $getNodeByKey,
   DecoratorNode,
+  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -36,6 +40,8 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   __status: ToolTurn['status'];
   __result?: string;
   __error?: string;
+  /** The reader's choice of open/closed; `null` until they make one. */
+  __chosen: boolean | null = null;
 
   constructor(
     turnKey: string,
@@ -85,6 +91,15 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   /**
+   * The reader's choice of open/closed is theirs, not the sync's: it travels
+   * with the block through every update a sync writes.
+   */
+  override afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__chosen = prevNode.__chosen;
+  }
+
+  /**
    * A block, not an inline widget. `DecoratorNode` reports inline by default,
    * and the rich-text root then wraps an inline child in a `ParagraphNode` —
    * which hides this turn from the sync that keeps the transcript in step, so
@@ -95,15 +110,40 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
-  override decorate(): JSX.Element {
+  override decorate(editor: LexicalEditor): JSX.Element {
     return (
-      <ToolItem
-        args={this.__args}
-        error={this.__error}
-        name={this.__name}
-        result={this.__result}
-        status={this.__status}
-      />
+      <WidgetFocus nodeKey={this.__key}>
+        <ToolItem
+          args={this.__args}
+          chosen={this.__chosen}
+          error={this.__error}
+          name={this.__name}
+          onChosenChange={(chosen) =>
+            editor.update(() => {
+              const node = $getNodeByKey(this.__key);
+              if ($isToolTurnNode(node)) node.setChosen(chosen);
+            })
+          }
+          result={this.__result}
+          status={this.__status}
+        />
+      </WidgetFocus>
+    );
+  }
+
+  /** Write the reader's choice of open/closed. */
+  setChosen(chosen: Chosen): void {
+    if (this.__chosen === chosen) return;
+    this.getWritable().__chosen = chosen;
+  }
+
+  /** The reader opens or closes the block: their next choice is its opposite. */
+  toggle(): void {
+    this.setChosen(
+      blockToggled(
+        this.__chosen,
+        toolOpenness(this.__status, this.__args, this.__result, this.__error),
+      ),
     );
   }
 

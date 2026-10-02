@@ -1,10 +1,13 @@
 import type { ProviderKind } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
-import { useEffect, useState } from 'react';
+import { queryKeys } from '@/queries/keys';
+import { useQuery } from '@tanstack/react-query';
 
 /**
- * The provider catalog the host declares, and how its read is going. The catalog
- * is one read of a host capability: it names the kinds a provider may be, so the
+ * The provider catalog the host declares, and how its read is going. The catalo
+g
+ * is one read of a host capability: it names the kinds a provider may be, so th
+e
  * renderer draws whatever arrives rather than a list of types it already knows.
  */
 export type ProviderKinds = {
@@ -22,30 +25,15 @@ export type ProviderKinds = {
  * without it no provider can be drawn.
  */
 export const useProviderKinds = (): ProviderKinds => {
-  const [list, setList] = useState<readonly ProviderKind[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
+  const kinds = useQuery({
+    queryKey: queryKeys.providerKinds,
+    queryFn: () => window.doric.providers.kinds(),
+    staleTime: Infinity,
+  });
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    void window.doric.providers
-      .kinds()
-      .then((kinds) => {
-        if (!active) return;
-        setList(kinds);
-        setError(undefined);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(messageFrom(reason));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return { list, loading, error };
+  return {
+    list: kinds.data ?? [],
+    loading: kinds.isPending || kinds.isFetching,
+    error: kinds.isError ? messageFrom(kinds.error) : undefined,
+  };
 };

@@ -71,6 +71,16 @@ export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
+  /**
+   * Furniture, not a caret stop: the caret skips this line entirely — keyboard
+   * navigation passes from the block before it to the block after it — and a
+   * click on it never selects it as a node. It stays visible and moves with its
+   * turn; it just has nothing for a caret to rest on.
+   */
+  override isKeyboardSelectable(): boolean {
+    return false;
+  }
+
   /** The time the turn above was last written; the run keeps it current. */
   setAuthor(at: string | undefined): void {
     if (this.__at !== at) this.getWritable().__at = at;

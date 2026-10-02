@@ -1,4 +1,13 @@
-import type { ProjectChangeStatus, ProjectLeaseState } from './workspace';
+import type {
+  ProjectChangeStatus,
+  ProjectDiff,
+  ProjectDiffResult,
+  ProjectFileContent,
+  ProjectFileResult,
+  ProjectLeaseState,
+  ProjectTreeNode,
+  ProjectTreeResult,
+} from './workspace';
 
 /** The workspace root: every path this surface carries is relative to it. */
 export const ROOT_PATH = '';
@@ -280,3 +289,63 @@ const changeLetters: Record<ProjectChangeStatus, string> = {
 /** The letter a changed file's badge carries. */
 export const changeLetter = (status: ProjectChangeStatus): string =>
   changeLetters[status];
+
+/**
+ * What a read of the sandbox answered. `idle` is "not asked yet", and the lease
+ * states and the two refusals are data rather than failures, because the
+ * surface explains them instead of erroring.
+ */
+export type ReadState<Value> =
+  | { readonly status: 'idle' }
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly value: Value }
+  | { readonly status: SandboxStatus; readonly retryAfterSeconds?: number };
+
+/**
+ * What the tree shows. A reread that fails keeps a tree already on screen and
+ * falls back to the loading shape otherwise, while the surface explains the
+ * failure beside it.
+ */
+export const treeReadState = (
+  result: ProjectTreeResult | undefined,
+  failed: boolean,
+): ReadState<readonly ProjectTreeNode[]> => {
+  if (result?.status === 'ready') {
+    return { status: 'ready', value: result.entries };
+  }
+  if (result !== undefined && !failed) return result;
+  return { status: 'loading' };
+};
+
+/**
+ * What the open file shows. Every read of a file starts from loading, and a
+ * failed one leaves nothing open: the surface closes the file instead of
+ * showing a broken one.
+ */
+export const fileReadState = (
+  result: ProjectFileResult | undefined,
+  loading: boolean,
+  failed: boolean,
+): ReadState<ProjectFileContent> => {
+  if (loading) return { status: 'loading' };
+  if (failed || result === undefined) return { status: 'idle' };
+  return result.status === 'ready'
+    ? { status: 'ready', value: result.file }
+    : result;
+};
+
+/**
+ * What the changes view shows. A reread that fails keeps a diff already on
+ * screen — worth more than a placeholder — and falls back to `idle` otherwise.
+ */
+export const diffReadState = (
+  result: ProjectDiffResult | undefined,
+  loading: boolean,
+  failed: boolean,
+): ReadState<ProjectDiff> => {
+  if (loading) return { status: 'loading' };
+  if (result?.status === 'ready')
+    return { status: 'ready', value: result.diff };
+  if (result !== undefined && !failed) return result;
+  return { status: 'idle' };
+};

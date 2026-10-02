@@ -1,3 +1,4 @@
+import { ThreadNavRail } from '@/components/molecules/thread-nav-rail';
 import { ActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
@@ -8,6 +9,7 @@ import {
   UserPromptNode,
 } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
+import { CaretNavigation } from '@/components/organisms/conversation/plugins/caret-navigation';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
 import { MarkdownPromptPlugin } from '@/components/organisms/conversation/plugins/markdown-prompt';
 import { PromptLineBreaks } from '@/components/organisms/conversation/plugins/prompt-line-breaks';
@@ -26,11 +28,7 @@ import { useThreadChat } from '@/hooks/use-thread-chat';
 import type { PromptSignal } from '@/utility/prompt-signal';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
 import { CodeNode } from '@lexical/code';
-import {
-  AutoFocusExtension,
-  EditorStateExtension,
-  HMRExtension,
-} from '@lexical/extension';
+import { EditorStateExtension, HMRExtension } from '@lexical/extension';
 import { HistoryExtension } from '@lexical/history';
 import {
   defineImportRule,
@@ -56,7 +54,7 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
 const exampleTheme: EditorThemeClasses = {
@@ -215,7 +213,6 @@ const conversationExtension = defineExtension({
     StyleImportExportExtension,
     EditorStateExtension,
     HistoryExtension,
-    AutoFocusExtension,
     TreeViewExtension,
     PromptInitialState,
   ],
@@ -288,6 +285,8 @@ export function Conversation({
     () => <ContentEditable className="flex-1 outline-none" />,
     [],
   );
+  // The scroll area whose viewport holds the transcript, for the nav rail beside it.
+  const scrollRoot = useRef<HTMLDivElement>(null);
   // What the editor draws: the log's turns, and the two things the surface is
   // waiting for — the reader's words before the host accepts them, and the
   // agent's first step while it has produced nothing.
@@ -310,32 +309,42 @@ export function Conversation({
   }, [activePromptId, chat.thread.id]);
 
   return (
-    <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
-      {/* The top padding keeps the first block off the header, since the
+    <div className="flex min-h-0 w-full flex-1">
+      <ScrollArea
+        ref={scrollRoot}
+        className="conversation-scroll min-h-0 w-full flex-1"
+      >
+        {/* The top padding keeps the first block off the header, since the
           transcript grows from the top of the scroll view. */}
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 text-sm font-light">
-        <LexicalExtensionComposer
-          extension={conversationExtension}
-          contentEditable={contentEditable}
-        >
-          <UndeletableBlocksPlugin
-            isReadOnly={isReadOnlyBlock}
-            isUndeletable={isUndeletableBlock}
-          />
-          <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-          <TableBlocksPlugin />
-          <MarkdownPromptPlugin />
-          <PromptLineBreaks />
-          <InsertThreadTurnNodes turns={turns} />
-          <SendPrompt
-            canStop={running}
-            promptSignal={promptSignal}
-            send={chat.prompt}
-            sendRequest={sendRequest}
-            onStop={stop}
-          />
-        </LexicalExtensionComposer>
-      </div>
-    </ScrollArea>
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
+          <LexicalExtensionComposer
+            extension={conversationExtension}
+            contentEditable={contentEditable}
+          >
+            <UndeletableBlocksPlugin
+              isReadOnly={isReadOnlyBlock}
+              isUndeletable={isUndeletableBlock}
+            />
+            <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+            <CaretNavigation />
+            <TableBlocksPlugin />
+            <MarkdownPromptPlugin />
+            <PromptLineBreaks />
+            <InsertThreadTurnNodes turns={turns} />
+            <SendPrompt
+              canStop={running}
+              promptSignal={promptSignal}
+              send={chat.prompt}
+              sendRequest={sendRequest}
+              onStop={stop}
+            />
+          </LexicalExtensionComposer>
+        </div>
+        {/* Inside the scroll view, pinned to it: the rail is absolutely
+          positioned against the scroll area's root, so the transcript scrolls
+          beneath it and the rail holds the viewport's right edge. */}
+        <ThreadNavRail scrollRoot={scrollRoot} turns={turns} />
+      </ScrollArea>
+    </div>
   );
 }

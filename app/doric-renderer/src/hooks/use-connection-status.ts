@@ -1,9 +1,6 @@
 import type { ConnectionStatus } from '@/domain/connection';
-import { useSyncExternalStore } from 'react';
-
-const getSnapshot = (): ConnectionStatus => window.doric.connection.status();
-const subscribe = (listener: () => void): (() => void) =>
-  window.doric.connection.subscribe(listener);
+import { connectionStore } from '@/stores/connection';
+import { useStore } from 'zustand/react';
 
 export const useConnectionStatus = (): ConnectionStatus =>
-  useSyncExternalStore(subscribe, getSnapshot);
+  useStore(connectionStore(), (state) => state.status);

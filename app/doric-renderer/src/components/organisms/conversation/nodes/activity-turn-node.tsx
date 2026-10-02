@@ -1,11 +1,19 @@
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
 import { ThinkingItem } from '@/components/molecules/thinking-item';
 import { ToolItem } from '@/components/molecules/tool-item';
+import { WidgetFocus } from '@/components/molecules/widget-focus';
+import {
+  blockToggled,
+  type Chosen,
+  settledOpenness,
+} from '@/domain/collapsible';
 import { ACTIVITY_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ActivityItem, ActivityTurn } from '@/domain/projector';
 import { activitySummary } from '@/utility/activity-summary';
 import {
+  $getNodeByKey,
   DecoratorNode,
+  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -69,6 +77,8 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   __thoughts: number;
   __tools: number;
   __items: readonly ActivityItem[];
+  /** The reader's choice of open/closed; `null` until they make one. */
+  __chosen: boolean | null = null;
 
   constructor(
     turnKey: string,
@@ -115,6 +125,15 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   /**
+   * The reader's choice of open/closed is theirs, not the sync's: it travels
+   * with the block through every update a sync writes.
+   */
+  override afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__chosen = prevNode.__chosen;
+  }
+
+  /**
    * A block, not an inline widget. `DecoratorNode` reports inline by default,
    * and the rich-text root then wraps an inline child in a `ParagraphNode` —
    * which hides this turn from the sync that keeps the transcript in step, so
@@ -125,33 +144,52 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
-  override decorate(): JSX.Element {
+  override decorate(editor: LexicalEditor): JSX.Element {
     return (
-      <CollapsibleBlock
-        active={false}
-        hasContent
-        label={activitySummary(this.__thoughts, this.__tools)}
-      >
-        {/* A flex column, so the steps stand `gap-2` apart without carrying a
+      <WidgetFocus nodeKey={this.__key}>
+        <CollapsibleBlock
+          chosen={this.__chosen}
+          label={activitySummary(this.__thoughts, this.__tools)}
+          onChosenChange={(chosen) =>
+            editor.update(() => {
+              const node = $getNodeByKey(this.__key);
+              if ($isActivityTurnNode(node)) node.setChosen(chosen);
+            })
+          }
+          openness={settledOpenness}
+        >
+          {/* A flex column, so the steps stand `gap-2` apart without carrying a
             margin of their own: a margin would also push the guide down. */}
-        <div className="flex flex-col gap-2">
-          {this.__items.map((item, index) =>
-            item.kind === 'thinking' ? (
-              <ThinkingItem key={index} streaming={false} text={item.text} />
-            ) : (
-              <ToolItem
-                key={index}
-                args={item.args}
-                error={item.error}
-                name={item.name}
-                result={item.result}
-                status={item.status}
-              />
-            ),
-          )}
-        </div>
-      </CollapsibleBlock>
+          <div className="flex flex-col gap-2">
+            {this.__items.map((item, index) =>
+              item.kind === 'thinking' ? (
+                <ThinkingItem key={index} streaming={false} text={item.text} />
+              ) : (
+                <ToolItem
+                  key={index}
+                  args={item.args}
+                  error={item.error}
+                  name={item.name}
+                  result={item.result}
+                  status={item.status}
+                />
+              ),
+            )}
+          </div>
+        </CollapsibleBlock>
+      </WidgetFocus>
     );
+  }
+
+  /** Write the reader's choice of open/closed. */
+  setChosen(chosen: Chosen): void {
+    if (this.__chosen === chosen) return;
+    this.getWritable().__chosen = chosen;
+  }
+
+  /** The reader opens or closes the block: their next choice is its opposite. */
+  toggle(): void {
+    this.setChosen(blockToggled(this.__chosen, settledOpenness));
   }
 
   setTurn(turn: ActivityTurn): void {

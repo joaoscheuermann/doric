@@ -27,15 +27,10 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { threadPath } from '@/domain/thread-tree';
+import { useComposer } from '@/hooks/use-composer';
 import { useProjectFiles } from '@/hooks/use-project-files';
 import { useWorkspace } from '@/hooks/use-workspace';
-import { createPromptSignal } from '@/utility/prompt-signal';
-import {
-  type CSSProperties,
-  useCallback,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { type CSSProperties, useCallback, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -51,25 +46,7 @@ export function App() {
   const [filesOpen, setFilesOpen] = useState(true);
   const [filesRevision, setFilesRevision] = useState(0);
   // What the conversation's composer offers the footer, and how the two talk.
-  //
-  // The prompt lives in the editor and the control lives in the shell, so the
-  // fact that the prompt is empty has to cross between them. It crosses as a
-  // value the shell owns: the editor writes it, the shell reads it through
-  // `useSyncExternalStore`, and the child's props are the same object whatever it
-  // writes. Nothing sets the shell's state from the child — that is a write
-  // during the shell's commit, which is what a render loop is made of — and the
-  // signal only speaks when the value changes, so a write cannot become a second
-  // render and a render a second write.
-  //
-  // Sending goes the other way for the same reason: the shell counts requests and
-  // the editor answers each new count once.
-  const [promptSignal] = useState(createPromptSignal);
-  const canSend = useSyncExternalStore(
-    promptSignal.subscribe,
-    promptSignal.snapshot,
-  );
-  const [sendRequest, setSendRequest] = useState(0);
-  const send = useCallback(() => setSendRequest((count) => count + 1), []);
+  const { promptSignal, sendRequest, canSend, send } = useComposer();
   const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
   const noteSandboxWrite = useCallback(
     () => setFilesRevision((revision) => revision + 1),
