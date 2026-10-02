@@ -21,11 +21,11 @@ Change or stop delegated work deliberately, with the smallest intervention that 
 
 ## Procedure
 
-1. Queue follow-up work with `send_to_thread` using a self-contained prompt; the instruction queues behind the child's current work and its result returns automatically.
-2. To cancel only the active prompt, use `interrupt_thread` with the exact `threadId` and `promptId` from `list_threads` or `get_thread`. Interrupting keeps the child, its queued inputs, and its descendants.
-3. To close a child and its entire subtree, use `terminate_thread`. Termination cancels active and queued work, closes descendants, keeps history, and cannot be undone.
+1. Queue follow-up work with `thread-send` using a self-contained prompt; the instruction queues behind the child's current work and its result returns automatically.
+2. To cancel only the active prompt, use `thread-interrupt` with the exact `threadId` and `promptId` from `thread-list` or `thread-get`. Interrupting keeps the child, its queued inputs, and its descendants.
+3. To close a child and its entire subtree, use `thread-terminate`. Termination cancels active and queued work, closes descendants, keeps history, and cannot be undone.
 4. Interruption does not undo effects and does not stop descendants; prefer interrupting a single prompt over terminating a subtree when the child's remaining work is still wanted.
-5. After steering, verify the new state with `get_thread` before relying on it.
+5. After steering, verify the new state with `thread-get` before relying on it.
 
 ## Completion
 

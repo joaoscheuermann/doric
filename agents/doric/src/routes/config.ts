@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { ConfigInputSchema } from '../lib/config/schema.js';
 import {
   ConfigCredentialError,
+  ConfigToolError,
   type ConfigService,
 } from '../lib/config/service.js';
 import { sendError } from '../lib/http/errors.js';
@@ -35,7 +36,10 @@ export const createConfigRouter = (service: ConfigService): Router => {
     try {
       response.json(await service.replace(parsed.data));
     } catch (error) {
-      if (error instanceof ConfigCredentialError) {
+      if (
+        error instanceof ConfigCredentialError ||
+        error instanceof ConfigToolError
+      ) {
         sendError(response, 422, 'invalid_config', error.message);
 
         return;

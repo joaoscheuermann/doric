@@ -224,12 +224,12 @@ encerrado permanece consultável na filha, sem reabrir o pai.
 
 | Ferramenta         | Contrato                                                                    |
 | ------------------ | --------------------------------------------------------------------------- |
-| `spawn_thread`     | Cria filha e aceita tarefa inicial; retorna sem aguardar execução           |
-| `list_threads`     | Lista filhas e estados, com paginação sem limitar quantidade total          |
-| `get_thread`       | Consulta estado, progresso e resultado autorizado                           |
-| `send_to_thread`   | Enfileira orientação na filha e retorna promptId                            |
-| `interrupt_thread` | Interrompe somente o promptId ativo identificado, preservando fila e filhas |
-| `terminate_thread` | Encerra a filha e sua subárvore                                             |
+| `thread-spawn`      | Cria filha e aceita tarefa inicial; retorna sem aguardar execução           |
+| `thread-list`       | Lista filhas e estados, com paginação sem limitar quantidade total          |
+| `thread-get`        | Consulta estado, progresso e resultado autorizado                           |
+| `thread-send`       | Enfileira orientação na filha e retorna promptId                            |
+| `thread-interrupt`  | Interrompe somente o promptId ativo identificado, preservando fila e filhas |
+| `thread-terminate`  | Encerra a filha e sua subárvore                                             |
 
 Essas ferramentas usam `packages/tool`, mas são montadas no host, pois precisam
 do serviço de Threads, não apenas do sandbox. Tools de filesystem, Git e terminal

@@ -7,6 +7,7 @@ import type {
   DoricConfiguration,
   ProviderKind,
   ProviderValuesRef,
+  ToolCatalogEntry,
 } from './config';
 import type { ConnectionApi } from './connection';
 
@@ -168,6 +169,14 @@ export type WorkspaceApi = {
     create(input: CredentialCreate): Promise<Credential>;
     update(id: string, input: CredentialUpdate): Promise<Credential>;
     remove(id: string): Promise<void>;
+  };
+  /**
+   * The host's tool catalog: the tools the loaded bundles expose, and the
+   * configuration fields each one declares. The host owns it, so the surface
+   * draws the tools it actually has and lets each tool describe its own section.
+   */
+  readonly tools: {
+    catalog(): Promise<readonly ToolCatalogEntry[]>;
   };
   /**
    * The host's provider catalog: what kinds of provider exist, which fields each

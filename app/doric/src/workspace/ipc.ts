@@ -68,6 +68,10 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:tools:catalog',
+    safe(allowedUrls, workspaceApi.tools.catalog),
+  );
+  ipcMain.handle(
     'doric:providers:kinds',
     safe(allowedUrls, workspaceApi.providers.kinds),
   );

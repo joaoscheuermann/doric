@@ -86,6 +86,29 @@ type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
+/** The value kinds a tool configuration field can carry. */
+type ToolConfigFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
+
+/** One configuration field a tool declares, as the host answers it. */
+type ToolConfigField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ToolConfigFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  readonly default?: string;
+  readonly options?: readonly string[];
+  readonly advanced?: boolean;
+};
+
+/** One tool the loaded bundles expose, with the fields it declares. */
+type ToolCatalogEntry = {
+  readonly name: string;
+  readonly description?: string;
+  readonly settings: readonly ToolConfigField[];
+};
+
 /** One model a provider offers, with its own efforts when the kind keeps them. */
 type ProviderModel = {
   readonly name: string;
@@ -266,6 +289,11 @@ contextBridge.exposeInMainWorld('doric', {
     get: () => invoke<DoricConfiguration>('doric:config:get'),
     update: (configuration: ConfigurationInput) =>
       invoke<DoricConfiguration>('doric:config:update', configuration),
+  },
+  tools: {
+    // The host's catalog: the tools the loaded bundles expose, and the
+    // configuration fields each one declares.
+    catalog: () => invoke<readonly ToolCatalogEntry[]>('doric:tools:catalog'),
   },
   providers: {
     // The host's catalog: the kinds it can build and what each one needs.

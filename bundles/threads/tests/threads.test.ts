@@ -4,12 +4,12 @@ import test from 'node:test';
 import type { Host, ThreadControl } from 'host';
 import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 
-import get from '../tools/get-thread.js';
-import interrupt from '../tools/interrupt-thread.js';
-import list from '../tools/list-threads.js';
-import send from '../tools/send-to-thread.js';
-import spawn from '../tools/spawn-thread.js';
-import terminate from '../tools/terminate-thread.js';
+import get from '../tools/thread-get.js';
+import interrupt from '../tools/thread-interrupt.js';
+import list from '../tools/thread-list.js';
+import send from '../tools/thread-send.js';
+import spawn from '../tools/thread-spawn.js';
+import terminate from '../tools/thread-terminate.js';
 
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
@@ -19,12 +19,12 @@ const tools = [spawn, list, get, send, interrupt, terminate] as const;
 
 test('exposes thread tools in the established model-visible order', () => {
   const expected = [
-    'spawn_thread',
-    'list_threads',
-    'get_thread',
-    'send_to_thread',
-    'interrupt_thread',
-    'terminate_thread',
+    'thread-spawn',
+    'thread-list',
+    'thread-get',
+    'thread-send',
+    'thread-interrupt',
+    'thread-terminate',
   ];
   assert.deepEqual(
     tools.map((tool) => tool.name),
@@ -70,27 +70,27 @@ test('preserves thread control arguments, defaults, and serialized results', asy
     storage.execute({ id: 'call', name, payload });
 
   assert.equal(
-    await execute('spawn_thread', { prompt: ' task ' }),
+    await execute('thread-spawn', { prompt: ' task ' }),
     JSON.stringify({ threadId, promptId }),
   );
   assert.equal(
-    await execute('list_threads', {}),
+    await execute('thread-list', {}),
     JSON.stringify({ items: [] }),
   );
   assert.equal(
-    await execute('get_thread', { threadId }),
+    await execute('thread-get', { threadId }),
     JSON.stringify({ thread: { id: threadId }, events: [] }),
   );
   assert.equal(
-    await execute('send_to_thread', { threadId, prompt: ' follow-up ' }),
+    await execute('thread-send', { threadId, prompt: ' follow-up ' }),
     JSON.stringify({ promptId }),
   );
   assert.equal(
-    await execute('interrupt_thread', { threadId, promptId }),
+    await execute('thread-interrupt', { threadId, promptId }),
     'interrupted',
   );
   assert.equal(
-    await execute('terminate_thread', { threadId }),
+    await execute('thread-terminate', { threadId }),
     JSON.stringify({ id: threadId, state: 'cancelled' }),
   );
 });
@@ -100,13 +100,13 @@ test('rejects invalid thread control inputs at the tool boundary', async () => {
     tools.map((tool) => tool({} as never, host({} as never))),
   );
   for (const [name, payload] of [
-    ['spawn_thread', { prompt: '   ' }],
-    ['send_to_thread', { threadId, prompt: '' }],
-    ['list_threads', { limit: 0 }],
-    ['list_threads', { limit: 101 }],
-    ['get_thread', { threadId, afterSequence: -1 }],
-    ['interrupt_thread', { threadId, promptId: 'invalid' }],
-    ['terminate_thread', { threadId, extra: true }],
+    ['thread-spawn', { prompt: '   ' }],
+    ['thread-send', { threadId, prompt: '' }],
+    ['thread-list', { limit: 0 }],
+    ['thread-list', { limit: 101 }],
+    ['thread-get', { threadId, afterSequence: -1 }],
+    ['thread-interrupt', { threadId, promptId: 'invalid' }],
+    ['thread-terminate', { threadId, extra: true }],
   ] as const) {
     const call: ToolCall = { id: 'call', name, payload };
 

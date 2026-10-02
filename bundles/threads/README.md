@@ -9,10 +9,10 @@ loads that artifact through the `bundle` package.
 The bundle provides these always-available tools, which act only on the calling
 prompt's direct child threads in the same project:
 
-- `spawn_thread` — create a child chat and delegate a self-contained task;
-- `list_threads`, `get_thread` — observe direct children and their events;
-- `send_to_thread` — queue a follow-up instruction in a child;
-- `interrupt_thread`, `terminate_thread` — cancel one active prompt or close a
+- `thread-spawn` — create a child chat and delegate a self-contained task;
+- `thread-list`, `thread-get` — observe direct children and their events;
+- `thread-send` — queue a follow-up instruction in a child;
+- `thread-interrupt`, `thread-terminate` — cancel one active prompt or close a
   child subtree.
 
 Each tool reads its capabilities from the per-prompt `Host` facade's `threads`

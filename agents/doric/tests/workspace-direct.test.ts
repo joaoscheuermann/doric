@@ -31,8 +31,8 @@ test(
     const generation = (harness.dependencies.config as ConfigService).current();
     const tools = await catalogTools();
     assert.ok(
-      tools.some(({ name }) => name === 'spawn_thread'),
-      'the threads bundle must supply spawn_thread',
+      tools.some(({ name }) => name === 'thread-spawn'),
+      'the threads bundle must supply thread-spawn',
     );
     const provider = {
       metadata: { id: 'local', name: 'local' },
@@ -59,7 +59,7 @@ test(
               toolCalls: [
                 {
                   id: 'spawn-1',
-                  name: 'spawn_thread',
+                  name: 'thread-spawn',
                   arguments: JSON.stringify({
                     prompt: 'Investigate child task.',
                   }),
@@ -104,7 +104,7 @@ test(
     assert.equal(children?.items.length, 1);
     assert.ok(
       requests.some((request) =>
-        request.tools?.some((tool) => tool.name === 'spawn_thread'),
+        request.tools?.some((tool) => tool.name === 'thread-spawn'),
       ),
     );
     const events = await service.threads.events(created.thread.id, 0);

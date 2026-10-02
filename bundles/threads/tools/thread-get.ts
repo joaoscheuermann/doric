@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from 'tool';
 
 export default defineTool({
-  name: 'get_thread',
+  name: 'thread-get',
   description:
     'Read a direct child chat state and its persisted events after an exclusive sequence cursor.',
   input: z

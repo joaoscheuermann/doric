@@ -95,6 +95,7 @@ export const createConfigStore = (database: Database): ConfigStore => ({
             revision: { increment: 1 },
             generation: randomUUID(),
             maxTurns: config.execution.maxTurns,
+            toolConfig: config.tools ?? {},
             gitCredentialId: config.gitCredentialId ?? null,
             githubCredentialId: config.githubCredentialId ?? null,
           },
@@ -128,6 +129,7 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
       },
     },
     execution: { maxTurns: stored.maxTurns },
+    tools: stored.toolConfig as Readonly<Record<string, Readonly<Record<string, string>>>>,
     ...(stored.gitCredentialId === null
       ? {}
       : { gitCredentialId: stored.gitCredentialId }),

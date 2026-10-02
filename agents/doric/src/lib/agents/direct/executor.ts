@@ -6,6 +6,7 @@ import { createToolStorage } from 'tool';
 
 import { eventJson } from '../../events/serialization.js';
 import { providerFor } from '../../config/generation.js';
+import { resolveToolConfigs } from '../../config/tool-config.js';
 import {
   ThreadPersistenceError,
   type PromptJob,
@@ -63,7 +64,16 @@ export const runDirectPrompt: ThreadExecution = async ({
     effort: execution.effort,
     system: directSystemPrompt(generation.catalog.skills),
     tools: createToolStorage(
-      generation.catalog.tools.map((factory) => factory(sandbox, host)),
+      (() => {
+        const configs = resolveToolConfigs(
+          generation.catalog.tools,
+          generation.snapshot.configuration,
+        );
+
+        return generation.catalog.tools.map((factory) =>
+          factory(sandbox, host, configs.get(factory.name)),
+        );
+      })(),
     ),
     toolCalls: createToolCallStorage(),
     messages,

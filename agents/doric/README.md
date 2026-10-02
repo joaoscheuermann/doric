@@ -46,8 +46,8 @@ src/lib/
 
 The Direct system prompt is one exported literal template string; the executor
 appends bundle skills in their declared order. The thread delegation tools
-(`spawn_thread`, `list_threads`, `get_thread`, `send_to_thread`,
-`interrupt_thread`, `terminate_thread`) ship in the `/bundles/threads` bundle and
+(`thread-spawn`, `thread-list`, `thread-get`, `thread-send`,
+`thread-interrupt`, `thread-terminate`) ship in the `/bundles/threads` bundle and
 reach the host only through the per-prompt `Host` facade's `threads` namespace,
 whose contract lives in `packages/host`. Shared lifecycle and authorization
 remain in `workspace`: `runner.ts` builds the prompt-scoped facade, and every

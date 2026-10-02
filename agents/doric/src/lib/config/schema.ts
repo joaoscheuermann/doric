@@ -349,11 +349,23 @@ const referencesKnownProviders = (
  * unconfigured form, and the service refuses a reference that names a missing
  * credential or the wrong kind before it is activated.
  */
+/**
+ * Per-tool configuration values, keyed by tool name and then by the tool's own
+ * field keys. It is an open record on purpose: bundles load at runtime, so the
+ * fields a tool declares are validated against the loaded catalog at binding
+ * time rather than by this static schema. A `secret` value names a stored
+ * credential, exactly as a provider's secret field does.
+ */
+const tools = z
+  .record(z.string(), z.record(z.string(), z.string()))
+  .optional();
+
 export const ConfigInputSchema = z
   .object({
     providers,
     models,
     execution,
+    tools,
     gitCredentialId: z.uuid().optional(),
     githubCredentialId: z.uuid().optional(),
   })
@@ -361,6 +373,9 @@ export const ConfigInputSchema = z
   .superRefine(referencesKnownProviders);
 
 export type ConfigInput = z.output<typeof ConfigInputSchema>;
+
+/** Per-tool values as stored: a keyed string map per tool, or none yet. */
+export type ToolConfigInput = NonNullable<ConfigInput['tools']>;
 
 export type DoricConfig = {
   readonly configuration: ConfigInput;
@@ -418,4 +433,5 @@ export const defaultConfig: ConfigInput = {
     },
   },
   execution: { maxTurns: 32 },
+  tools: {},
 };
