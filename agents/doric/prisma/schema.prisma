@@ -44,6 +44,8 @@ model DoricConfiguration {
   revision           Int                     @default(1)
   generation         String                  @db.Uuid
   maxTurns           Int                     @map("max_turns")
+  /// Per-tool configuration values, keyed by tool name and then by field key.
+  toolConfig         Json                    @default("{}") @map("tool_config") @db.JsonB
   gitCredentialId    String?                 @map("git_credential_id") @db.Uuid
   githubCredentialId String?                 @map("github_credential_id") @db.Uuid
   updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)

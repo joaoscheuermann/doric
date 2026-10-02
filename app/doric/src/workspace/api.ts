@@ -153,6 +153,38 @@ export type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
+/** The value kinds a tool configuration field can carry. */
+export type ToolConfigFieldKind =
+  | 'text'
+  | 'url'
+  | 'number'
+  | 'enum'
+  | 'secret';
+
+/** One configuration field a tool declares, as the host answers it. */
+export type ToolConfigField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ToolConfigFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  readonly default?: string;
+  readonly options?: readonly string[];
+  readonly advanced?: boolean;
+};
+
+/**
+ * One tool the loaded bundles expose, with the configuration fields it declares.
+ * The catalog is the host's, so a settings surface draws the tools it has rather
+ * than a list it already knows.
+ */
+export type ToolCatalogEntry = {
+  readonly name: string;
+  readonly description?: string;
+  readonly settings: readonly ToolConfigField[];
+};
+
 /**
  * One model a provider offers. Its name is the model id an execution profile
  * types; when the kind keeps reasoning efforts, the model carries its own, the
@@ -242,6 +274,11 @@ export type Configuration = {
     };
   };
   readonly execution: { readonly maxTurns: number };
+  /**
+   * Per-tool values, keyed by tool name and then by the tool's own field keys.
+   * The host always populates it; it is optional so a hand-built draft need not.
+   */
+  readonly tools?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** The `GIT` credential the agent's git commands commit as. */
   readonly gitCredentialId?: string;
   /** The `API_TOKEN` credential the sandbox authenticates GitHub with. */
@@ -518,6 +555,80 @@ const providerKindsFrom = (value: unknown): readonly ProviderKind[] => {
   return value.kinds.map(providerKindFrom);
 };
 
+const toolConfigFieldKindValues = new Set<string>([
+  'text',
+  'url',
+  'number',
+  'enum',
+  'secret',
+]);
+
+const toolConfigFieldFrom = (value: unknown): ToolConfigField => {
+  if (
+    !isRecord(value) ||
+    typeof value.key !== 'string' ||
+    typeof value.label !== 'string' ||
+    !toolConfigFieldKindValues.has(value.kind as string) ||
+    typeof value.required !== 'boolean' ||
+    (value.description !== undefined &&
+      typeof value.description !== 'string') ||
+    (value.placeholder !== undefined &&
+      typeof value.placeholder !== 'string') ||
+    (value.default !== undefined && typeof value.default !== 'string') ||
+    (value.advanced !== undefined && typeof value.advanced !== 'boolean')
+  ) {
+    return invalidResponse();
+  }
+
+  // An `enum` is the only kind that offers values, so the two must agree.
+  const options = stringListFrom(value.options);
+  if ((value.kind === 'enum') !== (options !== undefined))
+    return invalidResponse();
+
+  return {
+    key: value.key,
+    label: value.label,
+    kind: value.kind as ToolConfigFieldKind,
+    required: value.required,
+    ...(value.description === undefined
+      ? {}
+      : { description: value.description }),
+    ...(value.placeholder === undefined
+      ? {}
+      : { placeholder: value.placeholder }),
+    ...(value.default === undefined ? {} : { default: value.default }),
+    ...(value.advanced === undefined ? {} : { advanced: value.advanced }),
+    ...(options === undefined ? {} : { options }),
+  };
+};
+
+/**
+ * The host's tool catalog, unwrapped from the envelope the route answers with.
+ */
+const toolCatalogFrom = (value: unknown): readonly ToolCatalogEntry[] => {
+  if (!isRecord(value) || !Array.isArray(value.tools)) return invalidResponse();
+
+  return value.tools.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.name !== 'string' ||
+      (entry.description !== undefined &&
+        typeof entry.description !== 'string') ||
+      !Array.isArray(entry.settings)
+    ) {
+      return invalidResponse();
+    }
+
+    return {
+      name: entry.name,
+      ...(entry.description === undefined
+        ? {}
+        : { description: entry.description }),
+      settings: entry.settings.map(toolConfigFieldFrom),
+    };
+  });
+};
+
 const credentialKindValues = new Set<string>(credentialKinds);
 
 const isCredentialKind = (value: unknown): value is CredentialKind =>
@@ -555,6 +666,20 @@ const credentialReferenceFrom = (value: unknown): string | undefined => {
   return typeof value === 'string' ? value : invalidResponse();
 };
 
+/** Every tool's values: a keyed string map per tool name, and nothing else. */
+const toolValuesFrom = (
+  value: unknown,
+): Readonly<Record<string, Readonly<Record<string, string>>>> | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Array.isArray(value)) return invalidResponse();
+
+  const tools: Record<string, Readonly<Record<string, string>>> = {};
+  for (const [name, fields] of Object.entries(value))
+    tools[name] = configurationValuesFrom(fields);
+
+  return tools;
+};
+
 const configurationFrom = (value: unknown): Configuration => {
   if (
     !isRecord(value) ||
@@ -578,6 +703,7 @@ const configurationFrom = (value: unknown): Configuration => {
 
   const gitCredentialId = credentialReferenceFrom(value.gitCredentialId);
   const githubCredentialId = credentialReferenceFrom(value.githubCredentialId);
+  const tools = toolValuesFrom(value.tools);
   return {
     providers: value.providers.map(providerConfigurationFrom),
     models: {
@@ -588,6 +714,7 @@ const configurationFrom = (value: unknown): Configuration => {
       },
     },
     execution: { maxTurns: value.execution.maxTurns },
+    ...(tools === undefined ? {} : { tools }),
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
   };
@@ -993,6 +1120,15 @@ export const workspaceApi = {
           body: body(configuration),
         }),
       ),
+  },
+  /**
+   * The tools the loaded bundles expose, each with the configuration fields it
+   * declares. The catalog is the host's, so a settings surface renders the tools
+   * it actually has and lets each tool describe its own section.
+   */
+  tools: {
+    catalog: async (): Promise<readonly ToolCatalogEntry[]> =>
+      toolCatalogFrom(await request<unknown>('/tools')),
   },
   /**
    * The provider kinds the host can build, and the models one provider's catalog

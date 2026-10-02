@@ -6,6 +6,7 @@ import { createCredentialsRouter } from '../../routes/credentials.js';
 import { createProjectsRouter } from '../../routes/projects.js';
 import { createProvidersRouter } from '../../routes/providers.js';
 import { createThreadsRouter } from '../../routes/threads.js';
+import { createToolsRouter } from '../../routes/tools.js';
 import {
   createVmsRouter,
   type CreateVmsRouterOptions,
@@ -39,5 +40,6 @@ export const registerHttpRoutes = (
   );
   app.use('/projects', createProjectsRouter(dependencies.service));
   app.use('/threads', createThreadsRouter(dependencies.service));
+  app.use('/tools', createToolsRouter(dependencies.config));
   app.use(handleHttpError);
 };

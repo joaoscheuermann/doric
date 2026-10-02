@@ -86,6 +86,46 @@ export type ProviderKind = {
   readonly lists: readonly ProviderListId[];
 };
 
+/** The value kinds a tool configuration field can carry. */
+export type ToolConfigFieldKind =
+  | 'text'
+  | 'url'
+  | 'number'
+  | 'enum'
+  | 'secret';
+
+/**
+ * One configuration field a tool declares. Like a provider kind's field, the tool
+ * fixes how it is drawn (`kind`), what it is called, and whether it must be
+ * present, so the surface draws a tool it has never seen and applies the host's
+ * own rule to each field.
+ */
+export type ToolConfigField = {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: ToolConfigFieldKind;
+  readonly required: boolean;
+  readonly description?: string;
+  readonly placeholder?: string;
+  /** The value the field falls back to when the configuration omits it. */
+  readonly default?: string;
+  /** The values an `enum` field offers; present only for `kind: 'enum'`. */
+  readonly options?: readonly string[];
+  /** Whether an operator rarely needs the field, so a screen can shelve it. */
+  readonly advanced?: boolean;
+};
+
+/**
+ * One tool the host's loaded bundles expose, with the configuration fields it
+ * declares. The host owns this catalog, so the surface draws the tools it has
+ * rather than a list it already knows.
+ */
+export type ToolCatalogEntry = {
+  readonly name: string;
+  readonly description?: string;
+  readonly settings: readonly ToolConfigField[];
+};
+
 /**
  * One model a provider offers, with the reasoning efforts that model accepts.
  * The efforts are present exactly when the kind keeps `reasonings`; a kind that
@@ -180,6 +220,11 @@ export type Configuration = {
     readonly execution: ModelExecution;
   };
   readonly execution: { readonly maxTurns: number };
+  /**
+   * Per-tool values, keyed by tool name and then by the tool's own field keys.
+   * The host always populates it; it is optional so a hand-built draft need not.
+   */
+  readonly tools?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** The `GIT` credential the agent's git commands commit as; absent for none. */
   readonly gitCredentialId?: string;
   /** The `API_TOKEN` credential GitHub authenticates with; absent for none. */
@@ -823,8 +868,37 @@ export const isSameConfiguration = (
   left.models.execution.model === right.models.execution.model &&
   left.models.execution.effort === right.models.execution.effort &&
   left.execution.maxTurns === right.execution.maxTurns &&
+  isSameToolValues(left.tools, right.tools) &&
   left.gitCredentialId === right.gitCredentialId &&
   left.githubCredentialId === right.githubCredentialId;
+
+/**
+ * Whether two tool-value maps describe the same values. A missing map and an
+ * empty one are the same, because the host answers an empty map for a host that
+ * configured no tool.
+ */
+const isSameToolValues = (
+  left: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined,
+  right: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined,
+): boolean => {
+  const a = left ?? {};
+  const b = right ?? {};
+  const names = Object.keys(a);
+
+  if (names.length !== Object.keys(b).length) return false;
+
+  return names.every((name) => {
+    const av = a[name];
+    const bv = b[name];
+    if (bv === undefined) return false;
+
+    const keys = Object.keys(av);
+    return (
+      keys.length === Object.keys(bv).length &&
+      keys.every((key) => av[key] === bv[key])
+    );
+  });
+};
 
 /**
  * The configuration as a save sends it. The body is a plain replacement, so the

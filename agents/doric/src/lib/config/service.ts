@@ -9,6 +9,7 @@ import { readModelProperties } from './models.js';
 import type { ConfigInput, DoricConfig } from './schema.js';
 import { providerCredentials } from './schema.js';
 import type { ConfigStore } from './store.js';
+import { requireToolConfigs } from './tool-config.js';
 
 /**
  * A configuration whose credential references are not usable. It is caller
@@ -18,6 +19,18 @@ export class ConfigCredentialError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ConfigCredentialError';
+  }
+}
+
+/**
+ * A configuration a bundled tool cannot read: a value its declared fields make
+ * mandatory is missing. Like a credential fault this is caller input, so the
+ * route answers it as an invalid config rather than a host failure.
+ */
+export class ConfigToolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigToolError';
   }
 }
 
@@ -67,6 +80,15 @@ export const createConfigService = async ({
       const replacement = tail.then(async () => {
         requireCredentials(config, credentials);
         const filled = await models(config);
+        try {
+          requireToolConfigs(filled, bundles);
+        } catch (error) {
+          throw new ConfigToolError(
+            error instanceof Error
+              ? error.message
+              : 'A tool configuration is invalid.',
+          );
+        }
         const candidate = await buildGeneration({
           snapshot: { configuration: filled, revision: 0, updatedAt: '' },
           credentials,

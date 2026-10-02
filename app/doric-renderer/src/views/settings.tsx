@@ -2,6 +2,7 @@ import { SettingsCredentials } from '@/components/organisms/settings-credentials
 import { SettingsExecution } from '@/components/organisms/settings-execution';
 import { SettingsProviderScreen } from '@/components/organisms/settings-provider';
 import { SettingsProviders } from '@/components/organisms/settings-providers';
+import { SettingsTools } from '@/components/organisms/settings-tools';
 import { SettingsVersioning } from '@/components/organisms/settings-versioning';
 import type {
   SettingsCrumb,
@@ -30,6 +31,7 @@ import {
   GitBranchIcon,
   KeyRoundIcon,
   ServerIcon,
+  WrenchIcon,
   ZapIcon,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -55,6 +57,13 @@ const sections = [
     label: 'Execution',
     description:
       'What runs a prompt: the provider, the model on it, its reasoning effort, and how many turns one prompt may take.',
+  },
+  {
+    icon: WrenchIcon,
+    id: 'tools',
+    label: 'Tools',
+    description:
+      'Configuration for the tools the loaded bundles expose, each describing the fields it reads.',
   },
   {
     icon: GitBranchIcon,
@@ -146,6 +155,8 @@ function Section({
       );
     case 'execution':
       return <SettingsExecution draft={draft} onChange={onChange} />;
+    case 'tools':
+      return <SettingsTools draft={draft} onChange={onChange} />;
     case 'versioning':
       return (
         <SettingsVersioning

@@ -10,6 +10,7 @@ import type {
   Tool,
   ToolCall,
   ToolCallRequest,
+  ToolConfig,
   ToolDefinition,
   ToolFactory,
   ToolInput,
@@ -40,14 +41,18 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     strict: options.strict ?? true,
   };
 
-  const factory = ((sandbox: Sandbox, host: Host): Tool<Input, Output> => ({
+  const factory = ((
+    sandbox: Sandbox,
+    host: Host,
+    config: ToolConfig = {},
+  ): Tool<Input, Output> => ({
     name: options.name,
     description: options.description,
     input: options.input,
     output: options.output,
     definition,
     execute: async (payload) => {
-      const result = await options.execute(sandbox, host, payload);
+      const result = await options.execute(sandbox, host, payload, config);
       const parsed = options.output.safeParse(result);
 
       if (parsed.success) {
@@ -69,6 +74,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     input: { value: options.input },
     output: { value: options.output },
     definition: { value: definition },
+    settings: { value: options.settings ?? [] },
   });
 
   return factory;

@@ -7,6 +7,8 @@
 export const queryKeys = {
   config: ['config'],
   credentials: ['credentials'],
+  /** The tools the host's loaded bundles expose, with their declared fields. */
+  toolCatalog: ['tools'],
   providerKinds: ['providers', 'kinds'],
   /**
    * One picker's model catalog, keyed by the picker and the read it is on: a
