@@ -1,4 +1,3 @@
-import { cn } from '@/utility/utils';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection';
 import {
@@ -13,18 +12,21 @@ import { type ReactNode, useEffect, useRef } from 'react';
 type WidgetFocusProps = {
   /** The node the widget is built on: what the focus selects. */
   readonly nodeKey: NodeKey;
-  readonly children: ReactNode;
+  /** The widget's parts, told whether the widget holds the caret. */
+  readonly children: (focused: boolean) => ReactNode;
 };
 
 /**
  * A widget of the conversation focused as a unit.
  *
  * The caret never enters a widget — a thinking run, a tool call, an activity
- * summary is one stop — and its focus is the editor's node selection, drawn here
- * as a quiet frame. A click takes that focus as a unit (with Shift it adds the
- * widget to the selection instead), while the controls inside keep their own
- * behaviour: the chevron still opens and closes. The frame is editor-internal
- * focus and moves neither DOM focus nor scroll.
+ * summary is one stop — and its focus is the editor's node selection. The parts
+ * draw that focus themselves, in their own hover style, so a focused widget
+ * looks the way it does under the pointer and wears no frame of its own. A
+ * click takes that focus as a unit (with Shift it adds the widget to the
+ * selection instead), while the controls inside keep their own behaviour: the
+ * chevron still opens and closes. The focus is editor-internal and moves
+ * neither DOM focus nor scroll.
  */
 export function WidgetFocus({ children, nodeKey }: WidgetFocusProps) {
   const [editor] = useLexicalComposerContext();
@@ -56,15 +58,5 @@ export function WidgetFocus({ children, nodeKey }: WidgetFocusProps) {
     [clearSelected, editor, setSelected],
   );
 
-  return (
-    <div
-      className={cn(
-        'rounded-md transition-colors',
-        isSelected && 'bg-muted/50 ring-1 ring-border',
-      )}
-      ref={frame}
-    >
-      {children}
-    </div>
-  );
+  return <div ref={frame}>{children(isSelected)}</div>;
 }

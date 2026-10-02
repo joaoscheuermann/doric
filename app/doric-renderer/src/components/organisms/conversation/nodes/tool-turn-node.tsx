@@ -113,20 +113,23 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   override decorate(editor: LexicalEditor): JSX.Element {
     return (
       <WidgetFocus nodeKey={this.__key}>
-        <ToolItem
-          args={this.__args}
-          chosen={this.__chosen}
-          error={this.__error}
-          name={this.__name}
-          onChosenChange={(chosen) =>
-            editor.update(() => {
-              const node = $getNodeByKey(this.__key);
-              if ($isToolTurnNode(node)) node.setChosen(chosen);
-            })
-          }
-          result={this.__result}
-          status={this.__status}
-        />
+        {(focused) => (
+          <ToolItem
+            args={this.__args}
+            chosen={this.__chosen}
+            error={this.__error}
+            focused={focused}
+            name={this.__name}
+            onChosenChange={(chosen) =>
+              editor.update(() => {
+                const node = $getNodeByKey(this.__key);
+                if ($isToolTurnNode(node)) node.setChosen(chosen);
+              })
+            }
+            result={this.__result}
+            status={this.__status}
+          />
+        )}
       </WidgetFocus>
     );
   }

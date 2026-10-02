@@ -6,9 +6,11 @@ type ThinkingItemProps = {
   readonly text: string;
   /** Whether the run is still being written: the block opens, and it shimmers. */
   readonly streaming: boolean;
-  /** The reader's choice of open/closed, when the block's owner holds it. */
-  readonly chosen?: Chosen;
-  readonly onChosenChange?: (chosen: boolean) => void;
+  /** The reader's choice of open/closed, held by the block's owner. */
+  readonly chosen: Chosen;
+  readonly onChosenChange: (chosen: boolean) => void;
+  /** Whether the block is the caret's stop; it then wears the hover style. */
+  readonly focused?: boolean;
 };
 
 /**
@@ -24,6 +26,7 @@ type ThinkingItemProps = {
  */
 export function ThinkingItem({
   chosen,
+  focused,
   onChosenChange,
   streaming,
   text,
@@ -33,6 +36,7 @@ export function ThinkingItem({
   return (
     <CollapsibleBlock
       chosen={chosen}
+      focused={focused}
       label={streaming ? 'Thinking' : 'Thought'}
       onChosenChange={onChosenChange}
       openness={thinkingOpenness(body, streaming)}
