@@ -27,6 +27,10 @@ const recordColumns = {
   activePromptId: true,
   errorCode: true,
   lastSequence: true,
+  resultText: true,
+  resultStatus: true,
+  resultPromptId: true,
+  resultAt: true,
   createdAt: true,
   updatedAt: true,
   startedAt: true,
@@ -281,6 +285,35 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     ).map(event);
   },
 
+  async eventsAfterPage(id, sequence, limit) {
+    checkLimit(limit);
+    const rows = await database.threadEvent.findMany({
+      where: { threadId: id, sequence: { gt: sequence } },
+      orderBy: { sequence: 'asc' },
+      take: limit + 1,
+    });
+    const events = rows.slice(0, limit).map(event);
+    const last = events.at(-1);
+    return {
+      events,
+      ...(rows.length > limit && last !== undefined
+        ? { nextSequence: last.sequence }
+        : {}),
+    };
+  },
+
+  async setResult(id, result) {
+    await database.thread.updateMany({
+      where: { id },
+      data: {
+        resultText: result.text,
+        resultStatus: result.status,
+        resultPromptId: result.promptId,
+        resultAt: new Date(result.at),
+      },
+    });
+  },
+
   async deleteSubtree(id) {
     return database.$transaction(async (tx) => {
       const current = await tx.thread.findUnique({
@@ -333,6 +366,19 @@ const thread = (
   ...(stored.activePromptId === null
     ? {}
     : { activePromptId: stored.activePromptId }),
+  ...(stored.resultText === null ||
+  stored.resultStatus === null ||
+  stored.resultPromptId === null ||
+  stored.resultAt === null
+    ? {}
+    : {
+        result: {
+          status: stored.resultStatus,
+          text: stored.resultText,
+          promptId: stored.resultPromptId,
+          at: stored.resultAt.toISOString(),
+        },
+      }),
   ...timestamps(stored),
 });
 

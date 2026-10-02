@@ -15,6 +15,10 @@
       "alwaysAvailable": true
     },
     {
+      "path": "tools/thread-events.js",
+      "alwaysAvailable": true
+    },
+    {
       "path": "tools/thread-send.js",
       "alwaysAvailable": true
     },

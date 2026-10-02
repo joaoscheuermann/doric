@@ -83,6 +83,8 @@ export const runDirectPrompt: ThreadExecution = async ({
     for await (const value of agent.stream(input(job), {
       signal,
       maxTurns: generation.snapshot.configuration.execution.maxTurns,
+      maxToolResultChars:
+        generation.snapshot.configuration.execution.maxToolResultChars,
     })) {
       try {
         const stored = await store.appendEvent(

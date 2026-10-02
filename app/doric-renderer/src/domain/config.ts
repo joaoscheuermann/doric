@@ -219,7 +219,11 @@ export type Configuration = {
   readonly models: {
     readonly execution: ModelExecution;
   };
-  readonly execution: { readonly maxTurns: number };
+  readonly execution: {
+    readonly maxTurns: number;
+    /** The most one tool result may carry into the model, in characters. */
+    readonly maxToolResultChars?: number;
+  };
   /**
    * Per-tool values, keyed by tool name and then by the tool's own field keys.
    * The host always populates it; it is optional so a hand-built draft need not.
@@ -404,6 +408,16 @@ export const turnsFromInput = (value: string): number => {
   return trimmed === '' ? Number.NaN : Number(trimmed);
 };
 
+/**
+ * The tool result limit a text field names: `NaN` while it names none (an empty
+ * field is no cap, not zero), and `undefined` for an empty value so it is left
+ * off the configuration rather than sent as a number.
+ */
+export const toolResultCharsFromInput = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : Number(trimmed);
+};
+
 /** The host's `updatedAt` as a reader sees it, or verbatim when unreadable. */
 export const updatedAtLabel = (updatedAt: string): string => {
   const at = new Date(updatedAt);
@@ -467,6 +481,13 @@ export const configurationIssue = (
     configuration.execution.maxTurns < 1
   ) {
     return 'Enter a turn limit of 1 or more.';
+  }
+  const toolResultChars = configuration.execution.maxToolResultChars;
+  if (
+    toolResultChars !== undefined &&
+    (!Number.isInteger(toolResultChars) || toolResultChars < 1)
+  ) {
+    return 'Enter a tool result limit of 1 or more, or leave it empty.';
   }
   return undefined;
 };
@@ -868,6 +889,7 @@ export const isSameConfiguration = (
   left.models.execution.model === right.models.execution.model &&
   left.models.execution.effort === right.models.execution.effort &&
   left.execution.maxTurns === right.execution.maxTurns &&
+  left.execution.maxToolResultChars === right.execution.maxToolResultChars &&
   isSameToolValues(left.tools, right.tools) &&
   left.gitCredentialId === right.gitCredentialId &&
   left.githubCredentialId === right.githubCredentialId;
@@ -1477,6 +1499,15 @@ export const updateTurnLimit = (
 ): Configuration => ({
   ...configuration,
   execution: { ...configuration.execution, maxTurns },
+});
+
+/** The configuration with its tool result character cap set, or cleared. */
+export const updateToolResultLimit = (
+  configuration: Configuration,
+  maxToolResultChars: number | undefined,
+): Configuration => ({
+  ...configuration,
+  execution: { ...configuration.execution, maxToolResultChars },
 });
 
 /**

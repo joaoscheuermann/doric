@@ -245,7 +245,8 @@ synchronization, and linked worktrees. The Git tool executes structured argv
 directly without shell interpretation, forces non-interactive Git behavior,
 bounds stdout and stderr, and exposes no dedicated credential input.
 `/bundles/threads` owns the delegation tools `thread-spawn`, `thread-list`,
-`thread-get`, `thread-send`, `thread-interrupt`, and `thread-terminate` plus
+`thread-get`, `thread-events`, `thread-send`, `thread-interrupt`, and
+`thread-terminate` plus
 focused delegation, inspection, and steering skills.
 `packages/bundle` owns strict manifest validation and runtime loading.
 Doric loads only immediate bundle directories, in lexical order, from its

@@ -12,8 +12,10 @@ import {
   modelEfforts,
   providerLabel,
   type ReasoningEffort,
+  toolResultCharsFromInput,
   turnsFromInput,
   updateModel,
+  updateToolResultLimit,
   updateTurnLimit,
 } from '@/domain/config';
 
@@ -115,6 +117,32 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
         />
         <FieldDescription>
           The most turns a single prompt may take before it stops.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="execution-tool-result-chars">
+          Tool result limit
+        </FieldLabel>
+        <Input
+          id="execution-tool-result-chars"
+          inputMode="numeric"
+          value={
+            draft.execution.maxToolResultChars === undefined
+              ? ''
+              : String(draft.execution.maxToolResultChars)
+          }
+          onChange={(event) =>
+            onChange(
+              updateToolResultLimit(
+                draft,
+                toolResultCharsFromInput(event.target.value),
+              ),
+            )
+          }
+        />
+        <FieldDescription>
+          The most characters of one tool result that reach the model. Leave it
+          empty for no cap; the full result is still recorded.
         </FieldDescription>
       </Field>
     </FieldGroup>

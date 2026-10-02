@@ -24,6 +24,18 @@ export type Project = {
   readonly startedAt?: string;
   readonly finishedAt?: string;
 };
+/**
+ * The materialized result of a thread's most recent finished prompt. It is
+ * stored on the thread so reading a child's state never reconstructs it from
+ * the event log.
+ */
+export type ThreadOutcome = {
+  readonly status: string;
+  readonly text: string;
+  readonly promptId: string;
+  readonly at: string;
+};
+
 export type Thread = {
   readonly id: string;
   readonly projectId: string;
@@ -37,6 +49,7 @@ export type Thread = {
   readonly updatedAt: string;
   readonly startedAt?: string;
   readonly finishedAt?: string;
+  readonly result?: ThreadOutcome;
 };
 export type InputSource =
   | { readonly kind: 'user' }
@@ -202,6 +215,21 @@ export interface ThreadStore {
     event: unknown,
   ): Promise<ThreadEvent>;
   eventsAfter(id: string, sequence: number): Promise<readonly ThreadEvent[]>;
+  /**
+   * A bounded, forward page of events after an exclusive cursor, with the next
+   * cursor when more remain. It is the agent-facing read; `eventsAfter` stays
+   * the whole-log read the UI replays.
+   */
+  eventsAfterPage(
+    id: string,
+    sequence: number,
+    limit: number,
+  ): Promise<{
+    readonly events: readonly ThreadEvent[];
+    readonly nextSequence?: number;
+  }>;
+  /** Records the result of a finished prompt, replacing any earlier one. */
+  setResult(id: string, result: ThreadOutcome): Promise<void>;
   deleteSubtree(id: string): Promise<DeleteResult>;
   reconcile(): Promise<number>;
 }

@@ -4,8 +4,10 @@ export type {
   PromptResult,
   SpawnedThread,
   ThreadControl,
-  ThreadDetail,
+  ThreadEventsPage,
   ThreadEventView,
   ThreadPage,
+  ThreadResult,
+  ThreadSummary,
   ThreadView,
 } from './lib/threads.js';

@@ -7,7 +7,14 @@
 export interface ThreadControl {
   spawn(prompt: string): Promise<SpawnedThread>;
   list(limit: number, cursor?: string): Promise<ThreadPage>;
-  get(threadId: string, afterSequence: number): Promise<ThreadDetail>;
+  /** The child's state and, when a prompt has finished, its materialized result. */
+  get(threadId: string): Promise<ThreadSummary>;
+  /** A bounded, forward page of the child's persisted events after a cursor. */
+  events(
+    threadId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<ThreadEventsPage>;
   send(threadId: string, prompt: string): Promise<PromptResult>;
   interrupt(threadId: string, promptId: string): Promise<InterruptResult>;
   terminate(threadId: string): Promise<ThreadView>;
@@ -40,14 +47,34 @@ export interface ThreadEventView {
   readonly createdAt: string;
 }
 
+/** The final result of the most recent finished prompt, as the host materializes it. */
+export interface ThreadResult {
+  readonly status: string;
+  readonly text: string;
+  readonly promptId: string;
+  readonly at: string;
+}
+
 export interface ThreadPage {
   readonly items: readonly ThreadView[];
   readonly nextCursor?: string;
 }
 
-export interface ThreadDetail {
+/**
+ * A child's state and, when one exists, the result of its most recent finished
+ * prompt. It is a cheap read: the result is stored on the thread rather than
+ * reconstructed from its events, so inspecting a finished child never carries
+ * its transcript.
+ */
+export interface ThreadSummary {
   readonly thread: ThreadView;
+  readonly result?: ThreadResult;
+}
+
+/** A bounded page of a child's persisted events, with the next exclusive cursor. */
+export interface ThreadEventsPage {
   readonly events: readonly ThreadEventView[];
+  readonly nextSequence?: number;
 }
 
 export interface SpawnedThread {

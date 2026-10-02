@@ -85,7 +85,21 @@ export const notifyToolEvent = async <Output>(
   await options.onToolEvent?.(event);
 };
 
-export const toolResultEnvelope = (record: ToolCallRecord): string =>
+/**
+ * Trims a tool result to the model-facing cap. The full output is still stored
+ * on the record, so this only limits what reaches the next turn.
+ */
+const capOutput = (value: string, maxChars?: number): string => {
+  if (maxChars === undefined || value.length <= maxChars) return value;
+
+  const omitted = value.length - maxChars;
+  return `${value.slice(0, maxChars)}\n… [truncated ${omitted} of ${value.length} characters]`;
+};
+
+export const toolResultEnvelope = (
+  record: ToolCallRecord,
+  maxChars?: number,
+): string =>
   [
     '# Tool Result',
     '',
@@ -95,7 +109,7 @@ export const toolResultEnvelope = (record: ToolCallRecord): string =>
     '',
     '## Output',
     '',
-    fenced(record.output),
+    fenced(capOutput(record.output, maxChars)),
   ].join('\n');
 
 const fenced = (value: string): string => {
