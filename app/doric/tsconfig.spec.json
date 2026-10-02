@@ -17,6 +17,7 @@
     "src/workspace/config.ts",
     "src/workspace/events.ts",
     "src/workspace/project-events.ts",
+    "src/workspace/thread-history.ts",
     "src/workspace/validation.ts",
     "tests/**/*.ts"
   ]

@@ -2,6 +2,7 @@ import { posix as path } from 'node:path';
 
 import type {
   SandboxEntry,
+  SandboxListFailure,
   SandboxListInput,
   SandboxListResult,
   SandboxRepo,
@@ -25,6 +26,79 @@ const HIDDEN_EXCEPTIONS = new Set(['.agents']);
 /** `wc` argument batches stay well below the platform argument-list limit. */
 const SIZE_BATCH = 256;
 
+/**
+ * The listing scan: `$1` is `deep` or `shallow`, `$2` the listed directory. One
+ * `find` pass prints every entry the two old passes printed, and a shell loop
+ * tags each line `D`irectory or `F`ile, so one round trip reports the root kind
+ * (`K`) and every entry with its type. A failed scan prints no entry lines,
+ * which is the empty listing the two-pass version produced.
+ */
+const ENTRIES_SCRIPT = String.raw`if [ -d "$2" ]; then
+  printf 'K directory\n'
+  if [ "$1" = deep ]; then
+    out=$(find "$2" -name .git -prune -o -type d -print -o -type f -print)
+    status=$?
+  else
+    out=$(find "$2" -maxdepth 1 -name .git -prune -o -type d -print -o -type f -print)
+    status=$?
+  fi
+  if [ "$status" = 0 ] && [ -n "$out" ]; then
+    printf '%s\n' "$out" | while IFS= read -r item; do
+      if [ -d "$item" ]; then
+        printf 'D %s\n' "$item"
+      else
+        printf 'F %s\n' "$item"
+      fi
+    done
+  fi
+elif [ -f "$2" ]; then
+  printf 'K file\n'
+elif [ -e "$2" ]; then
+  printf 'K other\n'
+else
+  printf 'K missing\n'
+fi
+`;
+
+/**
+ * The ignore rules: `$1` is `deep` or `shallow`, `$2` the listed directory,
+ * `$3...` its ancestor directories. Every `.gitignore` the old code read one
+ * round trip at a time is printed here as one stream: `A <dir>` opens an
+ * ancestor's rules, `N <file>` a subtree file's, and each content line follows
+ * prefixed with `+` so rules and framing can never collide. Each file is read
+ * by the shell itself, so a workspace with many rule files costs no extra
+ * process. A deep listing also scans the subtree for `.gitignore` files, the
+ * workspace's own among them.
+ */
+const IGNORES_SCRIPT = String.raw`mode=$1
+root=$2
+shift 2
+if [ -d "$root" ]; then
+  for dir do
+    if [ -f "$dir/.gitignore" ]; then
+      printf 'A %s\n' "$dir"
+      while IFS= read -r line || [ -n "$line" ]; do
+        printf '+%s\n' "$line"
+      done 2>/dev/null < "$dir/.gitignore"
+    fi
+  done
+  if [ "$mode" = deep ]; then
+    out=$(find "$root" -name .git -prune -o -type f -name .gitignore -print)
+    status=$?
+    if [ "$status" = 0 ] && [ -n "$out" ]; then
+      printf '%s\n' "$out" | while IFS= read -r file; do
+        if [ -n "$file" ]; then
+          printf 'N %s\n' "$file"
+          while IFS= read -r line || [ -n "$line" ]; do
+            printf '+%s\n' "$line"
+          done 2>/dev/null < "$file"
+        fi
+      done
+    fi
+  fi
+fi
+`;
+
 interface Entry {
   readonly path: string;
   readonly isDirectory: boolean;
@@ -36,26 +110,28 @@ interface IgnorePattern {
   readonly negated: boolean;
 }
 
+/** One ignore pattern with its glob compiled once per listing. */
+interface IgnoreMatcher {
+  readonly base: string;
+  readonly source: string;
+  readonly directory: boolean;
+  readonly negated: boolean;
+  /** `undefined` when the pattern is not a glob and matches by equality. */
+  readonly glob: RegExp | undefined;
+}
+
 /** Lists one workspace directory level, with sizes for its files. */
 export const listSandboxDirectory = async (
   sandbox: Sandbox,
   input: SandboxListInput = {},
 ): Promise<SandboxListResult> => {
-  const failure = await listable(sandbox, input);
+  const listing = await listVisible(sandbox, input, false);
 
-  if ('status' in failure) {
-    return failure;
+  if ('status' in listing) {
+    return listing;
   }
 
-  const { root, excludes } = failure;
-  const entries = await visibleEntries(
-    sandbox,
-    sandbox.root,
-    root.path,
-    await ancestorIgnores(sandbox, sandbox.root, root.path),
-    excludes,
-    false,
-  );
+  const { root, entries } = listing;
   const sizes = await fileSizes(
     sandbox,
     entries.filter((entry) => !entry.isDirectory).map((entry) => entry.path),
@@ -75,29 +151,64 @@ export const listSandboxTree = async (
   sandbox: Sandbox,
   input: SandboxListInput = {},
 ): Promise<SandboxTreeResult> => {
-  const failure = await listable(sandbox, input);
+  const listing = await listVisible(sandbox, input, true);
 
-  if ('status' in failure) {
-    return failure;
+  if ('status' in listing) {
+    return listing;
   }
-
-  const { root, excludes } = failure;
-  const entries = await visibleEntries(
-    sandbox,
-    sandbox.root,
-    root.path,
-    [
-      ...(await ancestorIgnores(sandbox, sandbox.root, root.path)),
-      ...(await nestedIgnores(sandbox, sandbox.root, root.path)),
-    ],
-    excludes,
-    true,
-  );
 
   return {
     status: 'listed',
-    path: root.relative,
-    entries: tree(sandbox, root.path, entries),
+    path: listing.root.relative,
+    entries: tree(sandbox, listing.root.path, listing.entries),
+  };
+};
+
+/**
+ * The visible entries of one listing. The scan and the ignore rules are one
+ * round trip each and run together; the root kind they report gates the
+ * outcome, then the visibility rules filter what the scan saw.
+ */
+const listVisible = async (
+  sandbox: Sandbox,
+  input: SandboxListInput,
+  deep: boolean,
+): Promise<
+  | {
+      readonly root: { readonly path: string; readonly relative: string };
+      readonly entries: readonly Entry[];
+    }
+  | SandboxListResult
+> => {
+  const gates = listable(sandbox, input);
+
+  if ('status' in gates) {
+    return gates;
+  }
+
+  const { root, excludes } = gates;
+  const [scan, ignores] = await Promise.all([
+    entryDump(sandbox, root.path, deep),
+    ignoreDump(sandbox, root.path, ancestorDirs(sandbox.root, root.path), deep),
+  ]);
+
+  if (scan.kind === 'missing') {
+    return { status: 'missing' };
+  }
+
+  if (scan.kind !== 'directory') {
+    return { status: 'not_directory' };
+  }
+
+  const name = path.basename(root.path);
+
+  if (excludes.some((pattern) => pattern.test(name))) {
+    return { status: 'excluded_root', name };
+  }
+
+  return {
+    root,
+    entries: visibleEntries(root.path, scan.entries, ignores, excludes),
   };
 };
 
@@ -184,16 +295,15 @@ export const workspacePathKind = async (
 };
 
 /** The resolved root plus the exclude patterns every listing shares. */
-const listable = async (
+const listable = (
   sandbox: Sandbox,
   input: SandboxListInput,
-): Promise<
+):
   | {
       readonly root: { readonly path: string; readonly relative: string };
       readonly excludes: readonly RegExp[];
     }
-  | SandboxListResult
-> => {
+  | SandboxListFailure => {
   const root = resolve(sandbox.root, input.path ?? '');
 
   if (typeof root === 'string') {
@@ -204,22 +314,6 @@ const listable = async (
 
   if (typeof excludes === 'string') {
     return { status: 'invalid_exclude', message: excludes };
-  }
-
-  const kind = await pathKind(sandbox, sandbox.root, root.path);
-
-  if (kind === 'missing') {
-    return { status: 'missing' };
-  }
-
-  if (kind !== 'directory') {
-    return { status: 'not_directory' };
-  }
-
-  const name = path.basename(root.path);
-
-  if (excludes.some((pattern) => pattern.test(name))) {
-    return { status: 'excluded_root', name };
   }
 
   return { root, excludes };
@@ -250,8 +344,13 @@ const tree = (
 
   for (const entry of entries) {
     const parent = path.dirname(entry.path);
+    const group = groups.get(parent);
 
-    groups.set(parent, [...(groups.get(parent) ?? []), entry]);
+    if (group === undefined) {
+      groups.set(parent, [entry]);
+    } else {
+      group.push(entry);
+    }
   }
 
   const build = (parent: string): readonly SandboxTreeNode[] =>
@@ -265,78 +364,88 @@ const tree = (
   return build(root);
 };
 
-const visibleEntries = async (
-  sandbox: Sandbox,
-  workspaceRoot: string,
+const visibleEntries = (
   root: string,
+  listed: readonly Entry[],
   ignores: readonly IgnorePattern[],
   excludes: readonly RegExp[],
-  deep: boolean,
-): Promise<readonly Entry[]> => {
-  const [directories, files] = await Promise.all([
-    listPaths(sandbox, workspaceRoot, root, 'd', deep),
-    listPaths(sandbox, workspaceRoot, root, 'f', deep),
-  ]);
+): readonly Entry[] => {
+  const ignored = ignoredWithin(root, ignores);
 
-  const entries = [
-    ...directories
-      .filter((entry) => entry !== root)
-      .map((entry) => ({ path: entry, isDirectory: true })),
-    ...files.map((entry) => ({ path: entry, isDirectory: false })),
-  ];
-
-  return entries.filter(
+  return listed.filter(
     (entry) =>
+      !(entry.isDirectory && entry.path === root) &&
       !isHidden(root, entry.path) &&
-      !isIgnoredWithAncestors(root, entry.path, entry.isDirectory, ignores) &&
+      !ignored(entry.path, entry.isDirectory) &&
       !isExcluded(entry.path, excludes),
   );
 };
 
-/** Directories first, then files, both sorted by name the way the tool prints. */
+/**
+ * Directories first, then files, both sorted by name the way the tool prints.
+ * Names the accent-insensitive comparison finds equal stay in workspace-path
+ * order, the order the listing held before it was sorted here.
+ */
 const ordered = (entries: readonly Entry[]): readonly Entry[] =>
   [...entries].sort((left, right) => {
     if (left.isDirectory !== right.isDirectory) {
       return left.isDirectory ? -1 : 1;
     }
 
-    return path
+    const byName = path
       .basename(left.path)
       .localeCompare(path.basename(right.path), undefined, {
         sensitivity: 'accent',
       });
+
+    if (byName !== 0) {
+      return byName;
+    }
+
+    return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
   });
 
-const listPaths = async (
+/** The root kind and typed entries one listing scan reports. */
+interface Scan {
+  readonly kind: WorkspacePathKind;
+  readonly entries: readonly Entry[];
+}
+
+/**
+ * Runs the one-pass listing script and reads its framed stream: a `K` record
+ * for the root kind, then `D` and `F` records for the entries below it.
+ */
+const entryDump = async (
   sandbox: Sandbox,
-  workspaceRoot: string,
   root: string,
-  type: 'd' | 'f',
   deep: boolean,
-): Promise<readonly string[]> => {
+): Promise<Scan> => {
   const result = await sandbox.exec({
-    cwd: workspaceRoot,
+    cwd: sandbox.root,
     cmd: [
-      'find',
+      'sh',
+      '-c',
+      ENTRIES_SCRIPT,
+      'entries',
+      deep ? 'deep' : 'shallow',
       root,
-      ...(deep ? [] : ['-maxdepth', '1']),
-      '(',
-      '-name',
-      '.git',
-      ')',
-      '-prune',
-      '-o',
-      '-type',
-      type,
-      '-print',
     ],
   });
 
-  if (result.exitCode !== 0) {
-    return [];
+  let kind: WorkspacePathKind = 'missing';
+  const entries: Entry[] = [];
+
+  for (const line of lines(result.stdout)) {
+    if (line.startsWith('K ')) {
+      kind = parsePathKind(line.slice(2));
+    } else if (line.startsWith('D ')) {
+      entries.push({ path: normalize(line.slice(2)), isDirectory: true });
+    } else if (line.startsWith('F ')) {
+      entries.push({ path: normalize(line.slice(2)), isDirectory: false });
+    }
   }
 
-  return lines(result.stdout).map(normalize).sort();
+  return { kind, entries };
 };
 
 /** Byte sizes for the named files, measured in one command per batch. */
@@ -374,74 +483,99 @@ const fileSizes = async (
  * applies to the directory that holds its file and everything below it, so the
  * ancestors of the listed directory are part of listing it.
  */
-const ancestorIgnores = async (
-  sandbox: Sandbox,
+const ancestorDirs = (
   workspaceRoot: string,
   dir: string,
-): Promise<readonly IgnorePattern[]> => {
+): readonly string[] => {
   const relative = path.relative(workspaceRoot, dir);
   const parts = relative === '' ? [] : relative.split('/');
-  const dirs = [
+
+  return [
     workspaceRoot,
     ...parts.map((_, index) =>
       path.join(workspaceRoot, ...parts.slice(0, index + 1)),
     ),
   ];
-
-  const groups = await Promise.all(
-    dirs.map(async (value) =>
-      parseIgnores(value, await ignoreText(sandbox, value)),
-    ),
-  );
-
-  return groups.flat();
 };
 
-/** Every `.gitignore` in the subtree, so one recursive listing reads them once. */
-const nestedIgnores = async (
+/**
+ * The ignore rules one listing applies, in the order the old per-file reads
+ * produced: each ancestor directory's rules from the workspace root down, then
+ * every subtree `.gitignore` by path with the workspace's own among them. The
+ * pattern bases carry where each rule applies; nothing is read twice here, the
+ * stream simply names each file's rules once per source.
+ */
+const ignoreDump = async (
   sandbox: Sandbox,
-  workspaceRoot: string,
   root: string,
+  dirs: readonly string[],
+  deep: boolean,
 ): Promise<readonly IgnorePattern[]> => {
   const result = await sandbox.exec({
-    cwd: workspaceRoot,
+    cwd: sandbox.root,
     cmd: [
-      'find',
+      'sh',
+      '-c',
+      IGNORES_SCRIPT,
+      'ignores',
+      deep ? 'deep' : 'shallow',
       root,
-      '(',
-      '-name',
-      '.git',
-      ')',
-      '-prune',
-      '-o',
-      '-type',
-      'f',
-      '-name',
-      '.gitignore',
-      '-print',
+      ...dirs,
     ],
   });
 
-  if (result.exitCode !== 0) {
-    return [];
-  }
-
-  const files = lines(result.stdout).map(normalize).sort();
-
-  const groups = await Promise.all(
-    files.map(async (file) =>
-      parseIgnores(
-        path.dirname(file),
-        await ignoreText(sandbox, path.dirname(file)),
-      ),
-    ),
-  );
-
-  return groups.flat();
+  return parseIgnoreDump(result.stdout);
 };
 
-const ignoreText = (sandbox: Sandbox, dir: string): Promise<string> =>
-  sandbox.readFile(`${dir}/.gitignore`).catch(() => '');
+/** Reads the framed ignore stream back into the patterns each rule holds. */
+const parseIgnoreDump = (stdout: string): readonly IgnorePattern[] => {
+  const ancestors: IgnorePattern[] = [];
+  const nested: { key: string; patterns: readonly IgnorePattern[] }[] = [];
+  let source: { readonly base: string; readonly key: string } | undefined;
+  let text: string[] = [];
+
+  const flush = (): void => {
+    const block = source;
+    source = undefined;
+    const content = text.join('\n');
+    text = [];
+
+    if (block === undefined) {
+      return;
+    }
+
+    const patterns = parseIgnores(block.base, content);
+
+    if (block.key === '') {
+      ancestors.push(...patterns);
+    } else {
+      nested.push({ key: block.key, patterns });
+    }
+  };
+
+  for (const line of lines(stdout)) {
+    if (line.startsWith('+') && source !== undefined) {
+      text.push(line.slice(1));
+    } else {
+      flush();
+
+      if (line.startsWith('A ')) {
+        source = { base: line.slice(2), key: '' };
+      } else if (line.startsWith('N ')) {
+        const file = normalize(line.slice(2));
+        source = { base: path.dirname(file), key: file };
+      }
+    }
+  }
+
+  flush();
+
+  nested.sort((left, right) =>
+    left.key === right.key ? 0 : left.key < right.key ? -1 : 1,
+  );
+
+  return [...ancestors, ...nested.flatMap((block) => block.patterns)];
+};
 
 const parseIgnores = (base: string, text: string): readonly IgnorePattern[] =>
   text
@@ -461,17 +595,95 @@ const isHidden = (root: string, fullPath: string): boolean =>
     .split('/')
     .some((part) => part.startsWith('.') && !HIDDEN_EXCEPTIONS.has(part));
 
-const isIgnoredWithAncestors = (
+/**
+ * Whether a path is ignored inside `root`: the rule every ancestor directory
+ * resolves to, or the path's own last matching rule. Rules are compiled once
+ * per listing and bucketed by base, so each path only meets the rules of the
+ * directories that hold it — in the chain from the path up — and each directory
+ * is decided once, whatever the listing's depth.
+ */
+const ignoredWithin = (
   root: string,
-  fullPath: string,
-  isDirectory: boolean,
   ignores: readonly IgnorePattern[],
-): boolean => {
-  const ignoredAncestor = ancestors(root, fullPath).some((ancestor) =>
-    isIgnored(ancestor, true, ignores),
-  );
+): ((fullPath: string, isDirectory: boolean) => boolean) => {
+  const byBase = new Map<
+    string,
+    { readonly matcher: IgnoreMatcher; readonly order: number }[]
+  >();
 
-  return ignoredAncestor || isIgnored(fullPath, isDirectory, ignores);
+  ignores.forEach((ignore, order) => {
+    const matcher = compileIgnore(ignore);
+    const bucket = byBase.get(matcher.base);
+    const rule = { matcher, order };
+
+    if (bucket === undefined) {
+      byBase.set(matcher.base, [rule]);
+    } else {
+      bucket.push(rule);
+    }
+  });
+
+  const decided = new Map<string, boolean>();
+
+  const status = (fullPath: string, isDirectory: boolean): boolean => {
+    const cached = decided.get(fullPath);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let ignored = false;
+    let decidedBy = -1;
+
+    for (let base = fullPath; ; base = path.dirname(base)) {
+      for (const { matcher, order } of byBase.get(base) ?? []) {
+        if (order <= decidedBy || (matcher.directory && !isDirectory)) {
+          continue;
+        }
+
+        const relative = path.relative(matcher.base, fullPath);
+        const name = path.basename(fullPath);
+        const matched =
+          matcher.glob === undefined
+            ? relative === matcher.source || name === matcher.source
+            : matcher.glob.test(relative) || matcher.glob.test(name);
+
+        if (matched) {
+          ignored = !matcher.negated;
+          decidedBy = order;
+        }
+      }
+
+      const parent = path.dirname(base);
+
+      if (parent === base) {
+        break;
+      }
+    }
+
+    decided.set(fullPath, ignored);
+
+    return ignored;
+  };
+
+  return (fullPath, isDirectory) =>
+    ancestors(root, fullPath).some((ancestor) => status(ancestor, true)) ||
+    status(fullPath, isDirectory);
+};
+
+/** Compiles one ignore pattern to the matcher its entries test against. */
+const compileIgnore = (ignore: IgnorePattern): IgnoreMatcher => {
+  const directory = ignore.pattern.endsWith('/');
+  const source = directory ? ignore.pattern.slice(0, -1) : ignore.pattern;
+  const glob = compileGlob(source);
+
+  return {
+    base: ignore.base,
+    source,
+    directory,
+    negated: ignore.negated,
+    glob: glob instanceof RegExp ? glob : undefined,
+  };
 };
 
 const ancestors = (root: string, fullPath: string): readonly string[] => {
@@ -485,42 +697,6 @@ const ancestors = (root: string, fullPath: string): readonly string[] => {
   }
 
   return values;
-};
-
-const isIgnored = (
-  fullPath: string,
-  isDirectory: boolean,
-  ignores: readonly IgnorePattern[],
-): boolean => {
-  let ignored = false;
-
-  for (const ignore of ignores) {
-    const pattern = ignore.pattern.endsWith('/')
-      ? ignore.pattern.slice(0, -1)
-      : ignore.pattern;
-
-    if (ignore.pattern.endsWith('/') && !isDirectory) {
-      continue;
-    }
-
-    if (!contains(ignore.base, fullPath)) {
-      continue;
-    }
-
-    const glob = compileGlob(pattern);
-    const relative = path.relative(ignore.base, fullPath);
-
-    const matched =
-      glob instanceof RegExp
-        ? glob.test(relative) || glob.test(path.basename(fullPath))
-        : relative === pattern || path.basename(fullPath) === pattern;
-
-    if (matched) {
-      ignored = !ignore.negated;
-    }
-  }
-
-  return ignored;
 };
 
 const isExcluded = (fullPath: string, excludes: readonly RegExp[]): boolean => {

@@ -300,8 +300,11 @@ const lastAgent = (
 /**
  * Reads one event of the log into the turns being built. A turn the event
  * changes is written where it sits, which is safe because the read owns its
- * turns: a batch that follows the log starts from copies of the ones read before
- * it, so a projection is never altered after it was returned.
+ * turns and their events arrays: a batch that follows the log starts from
+ * copies of the ones read before it, so a projection is never altered after it
+ * was returned, and appending an event is a push into that copy — never a copy
+ * of a growing array per event, which would make a long run cost its length
+ * squared in element copying.
  */
 const readEvent = (
   turns: Draft[],
@@ -335,7 +338,7 @@ const readEvent = (
     if (delta.length === 0) return;
     if (open?.type === 'thinking') {
       open.text += delta;
-      open.events = [...open.events, item];
+      open.events.push(item);
     } else {
       turns.push({
         type: 'thinking',
@@ -351,7 +354,7 @@ const readEvent = (
     if (delta.length === 0) return;
     if (open?.type === 'agent') {
       open.text += delta;
-      open.events = [...open.events, item];
+      open.events.push(item);
     } else {
       turns.push({
         type: 'agent',
@@ -379,7 +382,7 @@ const readEvent = (
     if (tool?.type === 'tool_call') {
       tool.status = 'finished';
       tool.result = typeof output === 'string' ? output : '';
-      tool.events = [...tool.events, item];
+      tool.events.push(item);
     }
   } else if (event?.type === 'tool.failed') {
     const call = record(event.call);
@@ -388,7 +391,7 @@ const readEvent = (
     if (tool?.type === 'tool_call') {
       tool.status = 'failed';
       tool.error = typeof message === 'string' ? message : '';
-      tool.events = [...tool.events, item];
+      tool.events.push(item);
     }
   } else if (event?.type === 'prompt.finished') {
     const terminal = terminalStatus(
@@ -401,7 +404,7 @@ const readEvent = (
     if (terminal === 'completed' || agent === undefined) {
       if (agent?.type === 'agent') {
         agent.text = finished;
-        agent.events = [...agent.events, item];
+        agent.events.push(item);
       } else if (finished.length > 0) {
         turns.push({
           type: 'agent',
@@ -469,14 +472,18 @@ const project = (events: readonly ThreadEvent[]): Projection => {
 /**
  * A batch that follows the log read into the turns already read from it: the
  * turns are copied once — a copy of one is what a change writes to, so a
- * projection is never altered after it was returned — and the batch extends the
- * tail of the reading instead of the log being read again from its start.
+ * projection is never altered after it was returned — and so is each turn's
+ * events array, once per batch, so the read appends to the copy instead of
+ * copying the array per event. The batch then extends the tail of the reading
+ * instead of the log being read again from its start.
  */
 const readInto = (
   current: Projection,
   incoming: readonly ThreadEvent[],
 ): Projection => {
-  const drafts = current.drafts.map((draft): Draft => ({ ...draft }));
+  const drafts = current.drafts.map(
+    (draft): Draft => ({ ...draft, events: [...draft.events] }),
+  );
   const status = new Map(current.status);
   for (const item of incoming) readEvent(drafts, status, item);
   settle(drafts, status);

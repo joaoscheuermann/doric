@@ -98,6 +98,7 @@ export const workspace = () => {
       return record;
     },
     find: async (id) => projectRecords.get(id),
+    record: (id) => Promise.resolve(projectRecords.get(id)?.project),
     list: async (limit, cursor) => ({
       items: [...projectRecords.values()]
         .map(({ project }) => project)
@@ -160,6 +161,7 @@ export const workspace = () => {
       return record;
     },
     find: async (id) => threadRecords.get(id),
+    record: (id) => Promise.resolve(threadRecords.get(id)?.thread),
     list: async (projectId, limit, cursor, parentThreadId) => ({
       items: [...threadRecords.values()]
         .map(({ thread }) => thread)
@@ -388,7 +390,10 @@ export type FakeSandboxOptions = {
  * without a real VM:
  *
  * - `sh -c '<kind test>' sh <absolute path>` reports directory/file/missing;
- * - `find <absolute dir> [-maxdepth 1] ... -type d|f ...` lists the tree;
+ * - `sh -c '<scan>' entries <deep|shallow> <root>` lists the tree's typed
+ *   entries and the root kind in one framed stream;
+ * - `sh -c '<rules>' ignores <deep|shallow> <root> <ancestors...>` dumps every
+ *   applicable `.gitignore` in one framed stream;
  * - `find <root> ( -name .git ) -prune -print` finds each scripted repository;
  * - `wc -c <absolute paths>` reports each file's byte size;
  * - `head -c <n> -- <path>` returns the first `n` bytes of the file;
@@ -464,31 +469,66 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
     return rest === '' ? 0 : rest.split('/').length;
   };
   const find = (args: readonly string[]): string => {
-    const base = relative(args[0] ?? root);
     const marker = args.indexOf('-name');
-    if (marker !== -1 && args[marker + 1] === '.git' && !args.includes('-type'))
-      return [...repositories.keys()]
-        .map((path) => absolute(path === '' ? '.git' : `${path}/.git`))
-        .join('\n');
-    const directoriesOnly = args[args.indexOf('-type') + 1] === 'd';
-    const depthMarker = args.indexOf('-maxdepth');
-    const maxdepth =
-      depthMarker === -1 ? Infinity : Number(args[depthMarker + 1]);
-    const values = directoriesOnly ? [...directories] : [...files.keys()];
-    return values
-      .filter((value) => {
-        const distance = depth(value, base);
-        return distance !== undefined && distance <= maxdepth;
-      })
-      .map((value) => absolute(value))
+    if (marker === -1 || args[marker + 1] !== '.git')
+      throw new Error(`Unscripted sandbox command: find ${args.join(' ')}`);
+    return [...repositories.keys()]
+      .map((path) => absolute(path === '' ? '.git' : `${path}/.git`))
       .join('\n');
+  };
+  /** The lines a shell `read` loop sees: split on newlines, final newline silent. */
+  const shellLines = (content: string): readonly string[] => {
+    const parts = content.split('\n');
+    if (parts[parts.length - 1] === '') parts.pop();
+    return parts;
+  };
+  const dump = (
+    label: 'entries' | 'ignores',
+    deep: boolean,
+    target: string,
+    ancestors: readonly string[],
+  ): string => {
+    const lines: string[] = [];
+    const content = (file: string): readonly string[] =>
+      shellLines(files.get(relative(file)) ?? '').map((line) => `+${line}`);
+    if (label === 'entries') {
+      const kind = kindOf(target);
+      lines.push(`K ${kind}`);
+      if (kind !== 'directory') return lines.join('\n');
+      const base = relative(target);
+      for (const value of [...directories, ...files.keys()]) {
+        const distance = depth(value, base);
+        if (distance === undefined || (!deep && distance > 1)) continue;
+        lines.push(`${directories.has(value) ? 'D' : 'F'} ${absolute(value)}`);
+      }
+      return lines.join('\n');
+    }
+    if (kindOf(target) !== 'directory') return '';
+    for (const dir of ancestors) {
+      const key = relative(dir);
+      if (!files.has(key === '' ? '.gitignore' : `${key}/.gitignore`)) continue;
+      lines.push(`A ${dir}`, ...content(`${dir}/.gitignore`));
+    }
+    if (!deep) return lines.join('\n');
+    for (const key of files.keys()) {
+      if (key !== '.gitignore' && !key.endsWith('/.gitignore')) continue;
+      if (!under(key, relative(target))) continue;
+      lines.push(`N ${absolute(key)}`, ...content(key));
+    }
+    return lines.join('\n');
   };
   const exec = async (input: SandboxExecInput): Promise<SandboxExecResult> => {
     execs.push(input);
     const [command, ...args] = input.cmd;
     // The path test passes a positional argument; a shell helper does not.
-    if (command === 'sh')
+    if (command === 'sh') {
+      const label = args[2];
+      if (label === 'entries' || label === 'ignores')
+        return ok(
+          dump(label, args[3] === 'deep', args[4] ?? root, args.slice(5)),
+        );
       return ok(args.length > 2 ? kindOf(args.at(-1) ?? root) : '');
+    }
     if (command === 'find') return ok(find(args));
     if (command === 'wc')
       return ok(

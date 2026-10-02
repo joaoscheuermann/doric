@@ -66,22 +66,22 @@ export const createWorkspaceSocket = (
   ) {
     try {
       const [record, history] = await Promise.all([
-        threads.find(threadId),
+        threads.record(threadId),
         threads.eventsAfter(threadId, afterSequence),
       ]);
       const project =
         record === undefined
           ? undefined
-          : await projects.find(record.thread.projectId);
+          : await projects.record(record.projectId);
       if (!socket.connected) return;
       const events = history
         .filter((event) => event.sequence > afterSequence)
         .sort((a, b) => a.sequence - b.sequence);
       socket.emit('thread:snapshot', {
         threadId,
-        projectId: record?.thread.projectId ?? null,
-        project: project?.project ?? null,
-        thread: record?.thread ?? null,
+        projectId: record?.projectId ?? null,
+        project: project ?? null,
+        thread: record ?? null,
         events,
       });
       subscription.lastSequence = events.at(-1)?.sequence ?? afterSequence;
@@ -99,13 +99,13 @@ export const createWorkspaceSocket = (
   ) {
     try {
       const [record, tree] = await Promise.all([
-        projects.find(projectId),
+        projects.record(projectId),
         threads.listByProject(projectId),
       ]);
       if (!socket.connected) return;
       socket.emit('project:snapshot', {
         projectId,
-        project: record?.project ?? null,
+        project: record ?? null,
         threads: tree,
       });
       subscription.ready = true;

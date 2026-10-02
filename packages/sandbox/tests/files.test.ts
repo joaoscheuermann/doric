@@ -8,6 +8,7 @@ import {
   listSandboxDirectory,
   listSandboxRepos,
   listSandboxTree,
+  type SandboxTreeNode,
   workspacePathKind,
 } from '../src/index.js';
 import { createLocalSandbox } from './fake-sandbox.js';
@@ -162,6 +163,93 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  void test('keeps nested negation under its own directory, deepest rules last', async () => {
+    const root = await workspace('listing-nested-negation');
+
+    await write(root, '.gitignore', '*.log\n!keep.log\n');
+    await write(root, 'sub/.gitignore', 'keep.log\n');
+    await write(root, 'sub/deep/.gitignore', '!keep.log\n');
+    await write(root, 'keep.log', 'keep');
+    await write(root, 'drop.log', 'drop');
+    await write(root, 'sub/keep.log', 'keep');
+    await write(root, 'sub/drop.log', 'drop');
+    await write(root, 'sub/deep/keep.log', 'keep');
+    await write(root, 'sub/deep/drop.log', 'drop');
+
+    const result = await listSandboxTree(createLocalSandbox(root));
+
+    assert.equal(result.status, 'listed');
+    // `sub` re-ignores `keep.log` under itself while `sub/deep` negates that
+    // again below it; the deepest matching rule wins.
+    assert.deepEqual(
+      result.status === 'listed' ? visible(result.entries) : [],
+      ['sub', 'sub/deep', 'sub/deep/keep.log', 'keep.log'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('keeps an ignored directory closed even when its .gitignore whitelists inside', async () => {
+    const root = await workspace('listing-ignored-dir');
+
+    await write(root, '.gitignore', 'build/\n');
+    await write(root, 'build/.gitignore', '!out.js\n');
+    await write(root, 'build/out.js', 'out');
+    await write(root, 'build/other.txt', 'other');
+    await write(root, 'top.txt', 'top');
+
+    const result = await listSandboxTree(createLocalSandbox(root));
+
+    assert.equal(result.status, 'listed');
+    assert.deepEqual(
+      result.status === 'listed' ? visible(result.entries) : [],
+      ['top.txt'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('lets a workspace negation win over a nested rule, the rules read in order', async () => {
+    const root = await workspace('listing-nested-order');
+
+    await write(root, '.gitignore', '!x.txt\n');
+    await write(root, '.agents/.gitignore', 'x.txt\n');
+    await write(root, 'x.txt', 'x');
+    await write(root, '.agents/x.txt', 'x');
+
+    const result = await listSandboxTree(createLocalSandbox(root));
+
+    assert.equal(result.status, 'listed');
+    assert.deepEqual(
+      result.status === 'listed' ? visible(result.entries) : [],
+      ['.agents', '.agents/x.txt', 'x.txt'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('lists a large directory in basename order whatever the scan order', async () => {
+    const root = await workspace('listing-large');
+
+    for (let index = 119; index >= 0; index -= 1) {
+      await write(root, `f-${String(index).padStart(3, '0')}.txt`, 'x');
+    }
+
+    const result = await listSandboxDirectory(createLocalSandbox(root));
+
+    assert.deepEqual(
+      result.status === 'listed'
+        ? result.entries.map(({ path: value }) => value)
+        : [],
+      Array.from(
+        { length: 120 },
+        (_, index) => `f-${String(index).padStart(3, '0')}.txt`,
+      ),
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test('builds the recursive tree the tree tool renders', async () => {
     const root = await workspace('listing-tree');
 
@@ -280,6 +368,13 @@ describe('workspace repositories', () => {
 
 const workspace = (name: string): Promise<string> =>
   mkdtemp(path.join(os.tmpdir(), `doric-${name}-`));
+
+/** The tree's visible paths, in the order the tool renders them. */
+const visible = (nodes: readonly SandboxTreeNode[]): readonly string[] =>
+  nodes.flatMap((node) => [
+    node.path,
+    ...(node.children ? visible(node.children) : []),
+  ]);
 
 const write = async (
   root: string,

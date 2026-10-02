@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import { workspaceApi, WorkspaceError } from './api';
 import type { ThreadEventService } from './events';
 import type { ProjectEventService } from './project-events';
+import type { ThreadHistoryStore } from './thread-history';
 import {
   configuration,
   credentialCreate,
@@ -54,6 +55,7 @@ export const registerWorkspaceHandlers = (
   allowedUrls: readonly string[],
   events: ThreadEventService,
   projects: ProjectEventService,
+  history: ThreadHistoryStore,
 ): void => {
   ipcMain.handle(
     'doric:config:get',
@@ -171,6 +173,12 @@ export const registerWorkspaceHandlers = (
     'doric:threads:get',
     safe(allowedUrls, (value: unknown) =>
       workspaceApi.threads.get(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:history',
+    safe(allowedUrls, async (value: unknown) =>
+      history.read(identifier(value)),
     ),
   );
   ipcMain.handle(

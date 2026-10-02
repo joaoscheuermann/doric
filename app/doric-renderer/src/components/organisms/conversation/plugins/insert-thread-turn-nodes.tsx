@@ -21,7 +21,6 @@ import {
 import {
   $createTurnAuthorNode,
   $isTurnAuthorNode,
-  type AuthorRole,
   type TurnAuthorNode,
 } from '@/components/organisms/conversation/nodes/turn-author-node';
 import {
@@ -35,7 +34,8 @@ import {
   $isUserTurnNode,
   type UserTurnNode,
 } from '@/components/organisms/conversation/nodes/user-turn-node';
-import { AGENT_NAME, READER_NAME } from '@/domain/conversation-authors';
+import { type AuthorDraft, READER_NAME } from '@/domain/conversation-authors';
+import { type SyncPlan, syncPlan } from '@/domain/conversation-sync';
 import { type Turn } from '@/domain/projector';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -66,13 +66,6 @@ type TurnUnit = {
 // The reader and the agent are the two authors a turn can name; both names come
 // from `domain/conversation-authors`, the one place they are fixed.
 
-/** An author line as the sync builds it, before it is a node. */
-type AuthorDraft = {
-  role: AuthorRole;
-  name: string;
-  at: string | undefined;
-};
-
 const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isUserTurnNode(node) ||
   $isAgentTurnNode(node) ||
@@ -80,19 +73,8 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isToolTurnNode(node) ||
   $isActivityTurnNode(node);
 
-/**
- * A turn's identity across updates: the kind of turn it is and the event that
- * opened it. A run that keeps streaming keeps its first event, so its key is
- * stable while its text grows, which is what lets an update land on the block
- * already in the editor. The kind is part of it because one block stands in for
- * a burst of steps the reader watched as thinking and tool turns.
- */
-const turnKey = (turn: Turn): string =>
-  `${turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
-
 /** The block a turn becomes: one node class per kind of turn. */
-const $createBlock = (turn: Turn): TurnBlock => {
-  const key = turnKey(turn);
+const $createBlock = (turn: Turn, key: string): TurnBlock => {
   switch (turn.type) {
     case 'user':
       return $createUserTurnNode(
@@ -129,28 +111,6 @@ const $createBlock = (turn: Turn): TurnBlock => {
         turn.status,
       );
   }
-};
-
-/**
- * The author line a turn trails, or `null` when it wears none. The reader's own
- * turn always wears one. So does the agent, but only on the last turn of its run
- * — the one before the next user turn — so the line trails the run's whole
- * reasoning, tool calls and answer rather than its first turn.
- */
-const authorFor = (
-  turns: readonly Turn[],
-  index: number,
-): AuthorDraft | null => {
-  const turn = turns[index];
-  const at = turn.events.at(-1)?.createdAt;
-  if (turn.type === 'user')
-    // A prompt the host has not accepted yet is drawn dimmed and nameless; the
-    // name arrives with the accepted turn the log holds.
-    return turn.accepted ? { role: 'user', name: READER_NAME, at } : null;
-  const next = turns[index + 1];
-  return next === undefined || next.type === 'user'
-    ? { role: 'agent', name: AGENT_NAME, at }
-    : null;
 };
 
 /**
@@ -236,12 +196,47 @@ const $settlePrompt = (): UserPromptNode => {
 };
 
 /**
+ * How many new blocks one pass creates while the transcript fills in: a long
+ * thread arrives whole on opening, and creating every block at once is a freeze
+ * while the editor draws them. One pass is one bounded batch of work, and
+ * passes keep coming across frames until the transcript is whole.
+ */
+const FILL_BATCH = 40;
+
+/**
+ * Keeps the conversation's tail — the prompt — in view while the blocks a fill
+ * pass inserts above it grow the transcript: a reader who was at the bottom
+ * stays at the bottom. A reader who has scrolled up is left where they are.
+ */
+const keepTailVisible = (editor: LexicalEditor): void => {
+  const root = editor.getRootElement();
+  let scroll: HTMLElement | null = root?.parentElement ?? null;
+  while (scroll !== null && scroll.scrollHeight <= scroll.clientHeight) {
+    scroll = scroll.parentElement;
+  }
+  if (scroll === null) return;
+  // "At the bottom" leaves room for the rounding a layout can leave behind.
+  const atBottom =
+    scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 2;
+  if (atBottom) scroll.scrollTop = scroll.scrollHeight;
+};
+
+/**
  * Renders the chat's turns into the editor with no interaction: every turn is a
  * block, the prompt block and its author line are the last two, and the editor
  * is kept in step with the chat — a turn it updates is re-rendered where it
  * sits, one it adds is placed where it belongs in the transcript, and one it
  * drops is removed. The first sync also opens the surface, leaving the caret in
  * the prompt.
+ *
+ * The first sync of a long transcript does not create every block at once. The
+ * plan `domain/conversation-sync` makes bounds how many one pass takes — the
+ * newest turns first, because the surface opens at the conversation's tail —
+ * and further passes fill the older turns in above them across frames, until
+ * the blocks stand exactly where a one-shot sync would have put them. Updates
+ * that arrive meanwhile are applied at once: a turn whose block exists is
+ * refreshed wherever it sits, and one still waiting for its pass is created
+ * with its newest content when that pass comes.
  */
 export function InsertThreadTurnNodes({
   turns,
@@ -250,86 +245,113 @@ export function InsertThreadTurnNodes({
 }) {
   const [editor] = useLexicalComposerContext();
   const seated = useRef<LexicalEditor | null>(null);
+  const filling = useRef(false);
+  const frame = useRef<number | null>(null);
 
   useEffect(() => {
-    const opening = seated.current !== editor;
+    const run = (): void => {
+      frame.current = null;
+      const opening = seated.current !== editor;
+      let plan: SyncPlan = { steps: [], removals: [], pending: false };
 
-    editor.update(() => {
-      const root = $getRoot();
-      const existing = new Map<string, TurnUnit>();
-      // An author line is read as the tail of the block before it: a turn's for
-      // a turn, and the reader's for the prompt. A line with neither before it is
-      // a leftover, so it is dropped rather than left behind.
-      let trailing: TurnBlock | null = null;
-      for (const node of root.getChildren()) {
-        if (isTurnBlock(node)) {
-          existing.set(node.__turnKey, { block: node, author: null });
-          trailing = node;
-          continue;
-        }
-        if ($isTurnAuthorNode(node)) {
-          if ($isUserPromptNode(node.getPreviousSibling())) {
+      editor.update(() => {
+        const root = $getRoot();
+        const existing = new Map<string, TurnUnit>();
+        // An author line is read as the tail of the block before it: a turn's for
+        // a turn, and the reader's for the prompt. A line with neither before it is
+        // a leftover, so it is dropped rather than left behind.
+        let trailing: TurnBlock | null = null;
+        for (const node of root.getChildren()) {
+          if (isTurnBlock(node)) {
+            existing.set(node.__turnKey, { block: node, author: null });
+            trailing = node;
+            continue;
+          }
+          if ($isTurnAuthorNode(node)) {
+            if ($isUserPromptNode(node.getPreviousSibling())) {
+              trailing = null;
+              continue;
+            }
+            const unit =
+              trailing === null ? undefined : existing.get(trailing.__turnKey);
+            if (unit === undefined) node.remove();
+            else unit.author = node;
             trailing = null;
             continue;
           }
-          const unit =
-            trailing === null ? undefined : existing.get(trailing.__turnKey);
-          if (unit === undefined) node.remove();
-          else unit.author = node;
           trailing = null;
-          continue;
         }
-        trailing = null;
-      }
 
-      const prompt = $settlePrompt();
+        plan = syncPlan([...existing.keys()], turns, FILL_BATCH);
+        const prompt = $settlePrompt();
 
-      // A new block goes after the turn before it rather than always above the
-      // prompt: a burst that closes becomes one block where its steps were, in
-      // the middle of the transcript.
-      let previous: LexicalNode | null = null;
-      for (const [index, turn] of turns.entries()) {
-        const key = turnKey(turn);
-        const draft = authorFor(turns, index);
+        // The tail of every unit that stands as the pass runs — its author line
+        // when it wears one — so a new block goes after the turn before it
+        // rather than always above the prompt: a burst that closes becomes one
+        // block where its steps were, in the middle of the transcript.
+        const tails = new Map<string, LexicalNode>();
+        for (const [key, unit] of existing) {
+          tails.set(key, unit.author ?? unit.block);
+        }
 
-        const unit = existing.get(key);
-        let block: TurnBlock;
-
-        if (unit === undefined) {
-          block = $createBlock(turn);
-          if (previous === null) {
-            const first = root.getFirstChild();
-            if (first === null) root.append(block);
-            else first.insertBefore(block);
-          } else {
-            previous.insertAfter(block);
+        for (const step of plan.steps) {
+          if (step.kind === 'update') {
+            const unit = existing.get(step.key);
+            if (unit === undefined) continue;
+            $applyTurn(unit.block, step.turn);
+            tails.set(step.key, $syncAuthor(unit, step.author) ?? unit.block);
+            continue;
           }
-        } else {
-          block = unit.block;
-          $applyTurn(block, turn);
-          existing.delete(key);
+
+          const block = $createBlock(step.turn, step.key);
+          const after = step.after === null ? undefined : tails.get(step.after);
+          if (after !== undefined) {
+            after.insertAfter(block);
+          } else {
+            const before =
+              step.before === null ? undefined : existing.get(step.before);
+            if (before !== undefined) before.block.insertBefore(block);
+            else {
+              const first = root.getFirstChild();
+              if (first === null) root.append(block);
+              else first.insertBefore(block);
+            }
+          }
+          tails.set(
+            step.key,
+            $syncAuthor({ author: null, block }, step.author) ?? block,
+          );
         }
 
-        const author = $syncAuthor(unit ?? { author: null, block }, draft);
-        previous = author ?? block;
+        for (const key of plan.removals) {
+          const unit = existing.get(key);
+          unit?.author?.remove();
+          unit?.block.remove();
+        }
+
+        // Seat the caret in the prompt as the surface opens. The editor is focused
+        // before the first turn is in, when the root is still empty, so the
+        // browser parks the caret on a line of its own above the transcript; a
+        // selection in the prompt is what keeps that line from existing.
+        if (opening) prompt.select();
+      });
+
+      if (opening) {
+        seated.current = editor;
+        editor.focus();
       }
+      // While older turns fill in above the tail, the tail stays at the bottom
+      // the reader opened at.
+      if (filling.current) keepTailVisible(editor);
+      filling.current = plan.pending;
+      if (plan.pending) frame.current = requestAnimationFrame(run);
+    };
 
-      for (const { author, block } of existing.values()) {
-        author?.remove();
-        block.remove();
-      }
-
-      // Seat the caret in the prompt as the surface opens. The editor is focused
-      // before the first turn is in, when the root is still empty, so the
-      // browser parks the caret on a line of its own above the transcript; a
-      // selection in the prompt is what keeps that line from existing.
-      if (opening) prompt.select();
-    });
-
-    if (opening) {
-      seated.current = editor;
-      editor.focus();
-    }
+    run();
+    return () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
+    };
   }, [editor, turns]);
 
   /**

@@ -54,7 +54,8 @@ renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
 The main process alone communicates with Doric HTTP and Socket.IO at
 `127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
 operations, one selected-Thread event subscription, one selected-Project tree
-subscription, and connection status through a preload IPC boundary. The status, Thread, and
+subscription, one Thread history snapshot read, and connection status through a
+preload IPC boundary. The status, Thread, and
 Project namespaces share one process-long Socket.IO Manager and Engine.IO
 connection. The renderer keeps the Threads it has read for each Project, so every
 open Project row renders its own subtree while live updates continue to follow
@@ -74,7 +75,10 @@ Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
 and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
-event-derived conversation; the header names it. The conversation surface is, for now, deliberately bare: the rendering of it is
+event-derived conversation; the header names it. The app keeps a best-effort
+local snapshot of each Thread's durable event log in the Electron main process:
+a Thread's conversation renders instantly from that snapshot when it opens, then
+reconciles through the subscription cursor and rewind markers. The conversation surface is, for now, deliberately bare: the rendering of it is
 being rebuilt by hand. `useThreadChat` is the only reader of the durable event
 stream — it subscribes to the selected Thread, accumulates every event into one
 ordered log, projects that log into turns, and exposes both, the Thread's record

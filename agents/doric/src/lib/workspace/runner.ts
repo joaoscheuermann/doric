@@ -356,13 +356,13 @@ export const createThreadRunner = (context: RuntimeContext) => {
     };
     const child = async (id: string) => {
       allowed();
-      const record = await store.find(id);
+      const record = await store.record(id);
       if (
-        record?.thread.parentThreadId !== parent.thread.id ||
-        record.thread.projectId !== project.project.id
+        record?.parentThreadId !== parent.thread.id ||
+        record.projectId !== project.project.id
       )
         throw new Error('Thread is not a direct child.');
-      return record.thread;
+      return record;
     };
     const source = {
       kind: 'parent' as const,

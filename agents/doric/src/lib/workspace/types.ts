@@ -153,6 +153,8 @@ export interface ProjectStore {
     color: ProjectColor,
   ): Promise<ProjectRecord>;
   find(id: string): Promise<ProjectRecord | undefined>;
+  /** The record alone, without the configuration snapshot column. */
+  record(id: string): Promise<Project | undefined>;
   list(limit: number, cursor?: string): Promise<Page<Project>>;
   rename(id: string, name: string): Promise<Project | undefined>;
   setColor(
@@ -174,6 +176,8 @@ export interface ThreadStore {
     parentThreadId?: string,
   ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
+  /** The record alone, without the `messages` and `checkpoints` columns. */
+  record(id: string): Promise<Thread | undefined>;
   list(
     projectId: string,
     limit: number,

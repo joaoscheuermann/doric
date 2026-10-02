@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, describe, test } from 'node:test';
 
 import type { Manager, Socket } from 'socket.io-client';
 
@@ -9,6 +12,7 @@ import {
   type ThreadUpdate,
   threadUpdateChannel,
 } from '../src/workspace/events';
+import { createThreadHistoryStore } from '../src/workspace/thread-history';
 
 class FakeSocket {
   auth: Record<string, unknown> = {};
@@ -88,13 +92,27 @@ class FakeTarget implements ThreadEventTarget {
   }
 }
 
+const directories: string[] = [];
+
+after(() => {
+  for (const directory of directories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 const setup = () => {
   const manager = new FakeManager();
-  const service = createThreadEventService({
-    socket: manager.create.bind(manager),
-  } as unknown as Pick<Manager, 'socket'>);
+  const directory = mkdtempSync(join(tmpdir(), 'doric-thread-events-'));
+  directories.push(directory);
+  const history = createThreadHistoryStore(directory);
+  const service = createThreadEventService(
+    {
+      socket: manager.create.bind(manager),
+    } as unknown as Pick<Manager, 'socket'>,
+    history,
+  );
   const target = new FakeTarget();
-  return { manager, service, target };
+  return { manager, service, target, history, directory };
 };
 
 const event = (sequence: number) => ({
@@ -198,5 +216,55 @@ describe('Thread event subscription', () => {
       kind: 'error',
       message: 'The Thread event stream failed.',
     });
+  });
+
+  test('persists every forwarded update into the Thread history snapshot', () => {
+    const { manager, service, target, history } = setup();
+    service.watch(target, 'thread-id', 0);
+
+    manager.socket.emit('thread:snapshot', {
+      threadId: 'thread-id',
+      projectId: 'project-id',
+      project: null,
+      thread: null,
+      events: [event(1), event(2)],
+    });
+    manager.socket.emit('agent:event', event(3));
+    manager.socket.emit('thread:updated', {
+      id: 'thread-id',
+      name: 'Renamed',
+      projectId: 'project-id',
+      state: 'ready',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const cached = history.read('thread-id');
+    assert.deepEqual(
+      cached?.events.map((item) => item.sequence),
+      [1, 2, 3],
+    );
+    assert.equal(cached?.thread?.name, 'Renamed');
+
+    manager.socket.emit('thread:deleted', {
+      projectId: 'project-id',
+      threadId: 'thread-id',
+    });
+    assert.equal(history.read('thread-id'), null);
+  });
+
+  test('writes the cached snapshot before the subscription closes', () => {
+    const { manager, service, target, directory } = setup();
+    service.watch(target, 'thread-id', 0);
+
+    manager.socket.emit('agent:event', event(1));
+    service.close();
+
+    assert.deepEqual(
+      createThreadHistoryStore(directory)
+        .read('thread-id')
+        ?.events.map((item) => item.sequence),
+      [1],
+    );
   });
 });

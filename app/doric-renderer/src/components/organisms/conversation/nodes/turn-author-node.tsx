@@ -10,6 +10,7 @@
  * and without a time, because it is the turn the reader is writing.
  */
 import { ReaderAvatar } from '@/components/molecules/reader-avatar';
+import type { AuthorRole } from '@/domain/conversation-authors';
 import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
 import { relativeTime } from '@/utility/relative-time';
 import {
@@ -24,8 +25,8 @@ import { JSX } from 'react/jsx-runtime';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
-/** The side of the conversation a line names. */
-export type AuthorRole = 'agent' | 'user';
+/** The side of the conversation a line names, fixed in the domain vocabulary. */
+export type { AuthorRole };
 
 export type SerializedTurnAuthorNode = Spread<
   { role: AuthorRole; name: string; at?: string },

@@ -17,6 +17,22 @@ import {
   timestamps,
 } from './storage.js';
 
+/** What a record read selects; `messages` and `checkpoints` stay out of it. */
+const recordColumns = {
+  id: true,
+  projectId: true,
+  parentThreadId: true,
+  name: true,
+  state: true,
+  activePromptId: true,
+  errorCode: true,
+  lastSequence: true,
+  createdAt: true,
+  updatedAt: true,
+  startedAt: true,
+  finishedAt: true,
+} as const;
+
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({
   async create(projectId, name, parentThreadId) {
@@ -24,6 +40,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId}::uuid FOR UPDATE`;
       const owner = await tx.project.findUniqueOrThrow({
         where: { id: projectId },
+        select: { state: true },
       });
       if (owner.state !== 'QUEUED' && owner.state !== 'READY')
         throw new Error('Inactive project.');
@@ -50,6 +67,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       }
       const stored = await tx.thread.create({
         data: { projectId, name, parentThreadId },
+        select: recordColumns,
       });
       return { thread: thread(stored), messages: [], checkpoints: {} };
     });
@@ -66,6 +84,14 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         };
   },
 
+  async record(id) {
+    const stored = await database.thread.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
+    return stored === null ? undefined : thread(stored);
+  },
+
   async list(projectId, limit, cursor, parentThreadId) {
     checkLimit(limit);
     const scope = {
@@ -75,7 +101,10 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     const anchor =
       cursor === undefined
         ? undefined
-        : await database.thread.findFirst({ where: { ...scope, id: cursor } });
+        : await database.thread.findFirst({
+            where: { ...scope, id: cursor },
+            select: { createdAt: true, id: true },
+          });
     if (anchor === null) return { items: [] };
     const records = await database.thread.findMany({
       where: {
@@ -84,6 +113,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
+      select: recordColumns,
     });
     return page(records.map(thread), limit);
   },
@@ -93,6 +123,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       await database.thread.findMany({
         where: { projectId },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        select: recordColumns,
       })
     ).map(thread);
   },
@@ -103,20 +134,27 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       data: { name },
     });
     if (result.count === 0) return undefined;
-    const stored = await database.thread.findUnique({ where: { id } });
+    const stored = await database.thread.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
     return stored === null ? undefined : thread(stored);
   },
 
   async setState(id, state, activePromptId, errorCode) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM thread WHERE id = ${id}::uuid FOR UPDATE`;
-      const current = await tx.thread.findUnique({ where: { id } });
+      const current = await tx.thread.findUnique({
+        where: { id },
+        select: recordColumns,
+      });
       if (current === null) return undefined;
       if (excludedStates(state).some((value) => value === current.state))
         return thread(current);
       return thread(
         await tx.thread.update({
           where: { id },
+          select: recordColumns,
           data: {
             state: storedState[state],
             activePromptId:
@@ -138,6 +176,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     await database.thread.update({
       where: { id },
       data: { messages: json(messages) },
+      select: { id: true },
     });
   },
 
@@ -185,6 +224,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
           checkpoints: json(prune(current, removed)),
           lastSequence: { increment: 1 },
         },
+        select: { projectId: true, lastSequence: true },
       });
       return event(
         await tx.threadEvent.create({
@@ -208,6 +248,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       const current = await tx.thread.update({
         where: { id },
         data: { lastSequence: { increment: 1 } },
+        select: { projectId: true, lastSequence: true },
       });
       const type =
         typeof value === 'object' &&
@@ -242,7 +283,10 @@ export const createThreadStore = (database: Database): ThreadStore => ({
 
   async deleteSubtree(id) {
     return database.$transaction(async (tx) => {
-      const current = await tx.thread.findUnique({ where: { id } });
+      const current = await tx.thread.findUnique({
+        where: { id },
+        select: { projectId: true },
+      });
       if (current === null) return 'missing';
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${current.projectId}::uuid FOR UPDATE`;
       const subtree = await tx.$queryRaw<{ id: string; state: string }[]>`
@@ -256,7 +300,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         subtree.some(({ state }) => state !== 'FAILED' && state !== 'CANCELLED')
       )
         return 'active';
-      await tx.thread.delete({ where: { id } });
+      await tx.thread.delete({ where: { id }, select: { id: true } });
       return 'deleted';
     });
   },
@@ -275,7 +319,9 @@ export const createThreadStore = (database: Database): ThreadStore => ({
   },
 });
 
-const thread = (stored: StoredThread): Thread => ({
+const thread = (
+  stored: Omit<StoredThread, 'messages' | 'checkpoints'>,
+): Thread => ({
   id: stored.id,
   projectId: stored.projectId,
   ...(stored.parentThreadId === null

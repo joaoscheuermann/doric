@@ -91,6 +91,17 @@ export type ThreadUpdate =
     }
   | { readonly kind: 'error'; readonly message: string };
 
+/**
+ * The app's best-effort local snapshot of one Thread's durable log: its
+ * record, the events held, and the sequence a subscription resumes from. A
+ * `null` answer means the app holds none, never that the Thread is empty.
+ */
+export type ThreadHistory = {
+  readonly thread: Thread | null;
+  readonly lastSequence: number;
+  readonly events: readonly ThreadEvent[];
+};
+
 export type ProjectUpdate =
   | {
       readonly kind: 'snapshot';
@@ -212,6 +223,12 @@ export type WorkspaceApi = {
     ): Promise<{ readonly promptId: string }>;
     /** Stops the prompt a Thread is running, leaving its queue alone. */
     interrupt(id: string, promptId: string): Promise<void>;
+    /**
+     * The local snapshot of one Thread's durable log the main process kept,
+     * or `null` when the app holds none. A conversation opens from it
+     * instantly and reconciles with the stream afterwards.
+     */
+    history(id: string): Promise<ThreadHistory | null>;
     watch(
       id: string,
       afterSequence: number,

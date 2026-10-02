@@ -15,6 +15,20 @@ import {
   timestamps,
 } from './storage.js';
 
+/** What a record read selects; `configSnapshot` stays out of it. */
+const recordColumns = {
+  id: true,
+  name: true,
+  color: true,
+  state: true,
+  configRevision: true,
+  errorCode: true,
+  createdAt: true,
+  updatedAt: true,
+  startedAt: true,
+  finishedAt: true,
+} as const;
+
 /** Persists environment snapshots independently from conversations. */
 export const createProjectStore = (database: Database): ProjectStore => ({
   async create(name, snapshot, color) {
@@ -25,6 +39,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
         configRevision: snapshot.revision,
         configSnapshot: json(snapshot),
       },
+      select: recordColumns,
     });
     return { project: project(stored), snapshot };
   },
@@ -39,17 +54,29 @@ export const createProjectStore = (database: Database): ProjectStore => ({
         };
   },
 
+  async record(id) {
+    const stored = await database.project.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
+    return stored === null ? undefined : project(stored);
+  },
+
   async list(limit, cursor) {
     checkLimit(limit);
     const anchor =
       cursor === undefined
         ? undefined
-        : await database.project.findUnique({ where: { id: cursor } });
+        : await database.project.findUnique({
+            where: { id: cursor },
+            select: { createdAt: true, id: true },
+          });
     if (anchor === null) return { items: [] };
     const records = await database.project.findMany({
       where: before(anchor),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
+      select: recordColumns,
     });
     return page(records.map(project), limit);
   },
@@ -60,7 +87,10 @@ export const createProjectStore = (database: Database): ProjectStore => ({
       data: { name },
     });
     if (result.count === 0) return undefined;
-    const stored = await database.project.findUnique({ where: { id } });
+    const stored = await database.project.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
     return stored === null ? undefined : project(stored);
   },
 
@@ -70,20 +100,27 @@ export const createProjectStore = (database: Database): ProjectStore => ({
       data: { color: color ?? null },
     });
     if (result.count === 0) return undefined;
-    const stored = await database.project.findUnique({ where: { id } });
+    const stored = await database.project.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
     return stored === null ? undefined : project(stored);
   },
 
   async setState(id, state, errorCode) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${id}::uuid FOR UPDATE`;
-      const current = await tx.project.findUnique({ where: { id } });
+      const current = await tx.project.findUnique({
+        where: { id },
+        select: recordColumns,
+      });
       if (current === null) return undefined;
       if (excludedStates(state).some((value) => value === current.state))
         return project(current);
       return project(
         await tx.project.update({
           where: { id },
+          select: recordColumns,
           data: {
             state: storedState[state],
             errorCode: errorCode ?? null,
@@ -103,7 +140,10 @@ export const createProjectStore = (database: Database): ProjectStore => ({
     return database.$transaction(async (tx) => {
       // Thread creation takes the same project lock, closing the check/delete gap.
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${id}::uuid FOR UPDATE`;
-      const current = await tx.project.findUnique({ where: { id } });
+      const current = await tx.project.findUnique({
+        where: { id },
+        select: { state: true },
+      });
       if (current === null) return 'missing';
       if (!terminal.some((state) => state === current.state)) return 'active';
       if (
@@ -112,7 +152,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
         })
       )
         return 'active';
-      await tx.project.delete({ where: { id } });
+      await tx.project.delete({ where: { id }, select: { id: true } });
       return 'deleted';
     });
   },
@@ -130,7 +170,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
   },
 });
 
-const project = (stored: StoredProject): Project => ({
+const project = (stored: Omit<StoredProject, 'configSnapshot'>): Project => ({
   id: stored.id,
   name: stored.name,
   // Only the vocabulary this host writes ever reaches a client.

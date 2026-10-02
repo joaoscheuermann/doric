@@ -10,6 +10,7 @@ import {
   type ProjectUpdate,
   projectUpdateChannel,
 } from '../../workspace/project-events';
+import type { ThreadHistory } from '../../workspace/thread-history';
 
 type Project = {
   readonly id: string;
@@ -338,6 +339,10 @@ contextBridge.exposeInMainWorld('doric', {
     list: (projectId: string) =>
       invoke<readonly Thread[]>('doric:threads:list', projectId),
     get: (id: string) => invoke<Thread | undefined>('doric:threads:get', id),
+    // The local snapshot of one Thread's durable log, or `null` when the app
+    // holds none; a conversation opens from it before the stream answers.
+    history: (id: string) =>
+      invoke<ThreadHistory | null>('doric:threads:history', id),
     create: (projectId: string, name: string, parentThreadId?: string) =>
       invoke<Thread>('doric:threads:create', projectId, name, parentThreadId),
     rename: (id: string, name: string) =>

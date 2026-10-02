@@ -94,6 +94,24 @@ test('replays ordered durable history then delivers project-scoped live events',
   assert.deepEqual(await live, event(3));
 });
 
+void test('emits the fixed thread snapshot payload on subscription', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const socket = host.connect('/threads', { threadId });
+  t.after(() => socket.close());
+  const snapshot = await next<Record<string, unknown>>(
+    socket,
+    'thread:snapshot',
+  );
+  assert.deepEqual(Object.keys(snapshot).sort(), [
+    'events',
+    'project',
+    'projectId',
+    'thread',
+    'threadId',
+  ]);
+});
+
 test('deduplicates exclusive replay and buffers out-of-order live publications', async (t) => {
   const gate = deferred<readonly ThreadEvent[]>();
   const host = await serve({ eventsAfter: () => gate.promise });
@@ -395,6 +413,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
       project,
       snapshot: { configuration: defaultConfig, revision: 1, updatedAt: '' },
     }),
+    record: () => Promise.resolve(project),
     create: unsupported,
     list: async () => ({ items: [project] }),
     rename: unsupported,
@@ -405,6 +424,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
   };
   const threads: ThreadStore = {
     find: async () => ({ thread, messages: [], checkpoints: {} }),
+    record: () => Promise.resolve(thread),
     eventsAfter: async (_id: string, cursor: number) =>
       [event(1), event(2)].filter((value) => value.sequence > cursor),
     listByProject: async () => [thread],

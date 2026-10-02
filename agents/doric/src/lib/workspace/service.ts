@@ -278,12 +278,12 @@ export const createWorkspaceService = ({
   ): Promise<LeaseOutcome<Value>> => {
     const runtime = runtimes.get(id);
     if (runtime === undefined) {
-      const record = await projects.find(id);
+      const record = await projects.record(id);
       return {
         status:
           record === undefined
             ? 'missing'
-            : isTerminal(record.project.state)
+            : isTerminal(record.state)
               ? 'expired'
               : 'unavailable',
       };
@@ -421,7 +421,7 @@ export const createWorkspaceService = ({
           });
           return record.project;
         }),
-      find: async (id) => (await projects.find(id))?.project,
+      find: (id) => projects.record(id),
       list: (limit, cursor) => projects.list(limit, cursor),
       rename: (id, name) => changeProject(id, () => projects.rename(id, name)),
       setColor: (id, color) =>
@@ -430,7 +430,7 @@ export const createWorkspaceService = ({
         exclusive(id, async () => {
           const runtime = runtimes.get(id);
           return runtime === undefined
-            ? (await projects.find(id))?.project
+            ? projects.record(id)
             : endProject(runtime);
         }),
       delete: (id) =>
@@ -457,26 +457,24 @@ export const createWorkspaceService = ({
           if (runtime === undefined)
             return {
               status:
-                (await projects.find(projectId)) === undefined
+                (await projects.record(projectId)) === undefined
                   ? ('missing' as const)
                   : ('inactive' as const),
             };
           return runner.create(runtime, name, parentThreadId);
         }),
-      find: async (id) => (await threads.find(id))?.thread,
+      find: (id) => threads.record(id),
       list: async (projectId, limit, cursor, parentThreadId) =>
-        (await projects.find(projectId)) === undefined
+        (await projects.record(projectId)) === undefined
           ? undefined
           : threads.list(projectId, limit, cursor, parentThreadId),
       rename: async (id, name) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return undefined;
-        return exclusive(record.thread.projectId, async () => {
+        return exclusive(record.projectId, async () => {
           const value = await threads.rename(id, name);
           if (value !== undefined) {
-            const runtime = runtimes
-              .get(record.thread.projectId)
-              ?.threads.get(id);
+            const runtime = runtimes.get(record.projectId)?.threads.get(id);
             if (runtime !== undefined) runtime.thread = value;
             publisher.threadUpdated(value);
           }
@@ -484,13 +482,13 @@ export const createWorkspaceService = ({
         });
       },
       prompt: async (id, prompt) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
         // New input is the point where a live sandbox catches up with a rotated
         // or newly saved credential, before the prompt is enqueued.
-        await applyCurrentGit(runtimes.get(record.thread.projectId));
-        return exclusive(record.thread.projectId, async () => {
-          const project = runtimes.get(record.thread.projectId);
+        await applyCurrentGit(runtimes.get(record.projectId));
+        return exclusive(record.projectId, async () => {
+          const project = runtimes.get(record.projectId);
           const thread = project?.threads.get(id);
           if (project === undefined || thread === undefined)
             return { status: 'inactive' as const };
@@ -498,12 +496,12 @@ export const createWorkspaceService = ({
         });
       },
       rewind: async (id, promptId, prompt) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
         // A rewind enqueues its replacement input the same way a prompt does.
-        await applyCurrentGit(runtimes.get(record.thread.projectId));
-        return exclusive(record.thread.projectId, async () => {
-          const project = runtimes.get(record.thread.projectId);
+        await applyCurrentGit(runtimes.get(record.projectId));
+        return exclusive(record.projectId, async () => {
+          const project = runtimes.get(record.projectId);
           const thread = project?.threads.get(id);
           if (project === undefined || thread === undefined)
             return { status: 'inactive' as const };
@@ -511,48 +509,48 @@ export const createWorkspaceService = ({
         });
       },
       events: async (id, afterSequence) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return undefined;
         const events = await threads.eventsAfter(id, afterSequence);
         return {
           events,
           lastSequence: Math.max(
-            record.thread.lastSequence,
+            record.lastSequence,
             events.at(-1)?.sequence ?? 0,
           ),
         };
       },
       interrupt: async (id, promptId) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return 'missing';
-        return exclusive(record.thread.projectId, async () => {
-          const thread = runtimes.get(record.thread.projectId)?.threads.get(id);
+        return exclusive(record.projectId, async () => {
+          const thread = runtimes.get(record.projectId)?.threads.get(id);
           return thread === undefined
             ? 'inactive'
             : runner.interrupt(thread, promptId);
         });
       },
       terminate: async (id) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return undefined;
-        return exclusive(record.thread.projectId, async () => {
-          const project = runtimes.get(record.thread.projectId);
-          if (project === undefined) return record.thread;
+        return exclusive(record.projectId, async () => {
+          const project = runtimes.get(record.projectId);
+          if (project === undefined) return record;
           await runner.close(project, runner.descendants(project, id));
-          return project.threads.get(id)?.thread ?? record.thread;
+          return project.threads.get(id)?.thread ?? record;
         });
       },
       delete: async (id) => {
-        const record = await threads.find(id);
+        const record = await threads.record(id);
         if (record === undefined) return 'missing';
-        return exclusive(record.thread.projectId, async () => {
-          const values = await threads.listByProject(record.thread.projectId);
+        return exclusive(record.projectId, async () => {
+          const values = await threads.listByProject(record.projectId);
           const ids = subtreeIds(values, id);
           const outcome = await threads.deleteSubtree(id);
           if (outcome === 'deleted')
             for (const child of ids) {
-              runtimes.get(record.thread.projectId)?.threads.delete(child);
-              publisher.threadDeleted(record.thread.projectId, child);
+              runtimes.get(record.projectId)?.threads.delete(child);
+              publisher.threadDeleted(record.projectId, child);
             }
           return outcome;
         });

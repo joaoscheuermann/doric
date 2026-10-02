@@ -20,6 +20,10 @@ import {
   createProjectEventService,
   type ProjectEventService,
 } from './workspace/project-events';
+import {
+  createThreadHistoryStore,
+  type ThreadHistoryStore,
+} from './workspace/thread-history';
 import { senderIsAllowed } from './workspace/validation';
 
 const rendererPort = 4200;
@@ -39,6 +43,7 @@ const flushBeforeClose: { current: (() => void) | undefined } = {
 let connection: ConnectionMonitor | null = null;
 let threadEvents: ThreadEventService | null = null;
 let projectEvents: ProjectEventService | null = null;
+let threadHistory: ThreadHistoryStore | null = null;
 
 const rendererUrl = (): string =>
   app.isPackaged
@@ -278,11 +283,18 @@ void app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   const manager = createConnectionManager();
   connection = createConnectionService(manager);
-  threadEvents = createThreadEventService(manager);
+  // The local Thread history snapshot lives in its own directory under
+  // `userData`; the event service writes it through, and closing the service
+  // flushes it before the process exits.
+  threadHistory = createThreadHistoryStore(
+    join(app.getPath('userData'), 'thread-history'),
+  );
+  threadEvents = createThreadEventService(manager, threadHistory);
   projectEvents = createProjectEventService(manager);
   app.once('will-quit', () => {
     threadEvents?.close();
     threadEvents = null;
+    threadHistory = null;
     projectEvents?.close();
     projectEvents = null;
     connection?.close();
@@ -292,7 +304,12 @@ void app.whenReady().then(() => {
   installContentSecurityPolicy();
   registerSettingsHandler(allowedUrls);
   registerSettingsFlushHandler(allowedUrls);
-  registerWorkspaceHandlers(allowedUrls, threadEvents, projectEvents);
+  registerWorkspaceHandlers(
+    allowedUrls,
+    threadEvents,
+    projectEvents,
+    threadHistory,
+  );
   createSplashWindow();
   void connectWorkspace().then(createWindow);
 

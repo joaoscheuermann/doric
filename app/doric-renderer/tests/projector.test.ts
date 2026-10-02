@@ -677,3 +677,132 @@ describe('reading a log in batches', () => {
     assert.deepEqual(step.events, whole.events);
   });
 });
+
+describe('a projection is never altered after it was returned', () => {
+  test('leaves a returned projection unchanged when a later batch extends the log', () => {
+    const first = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', { type: 'text.delta', delta: 'Hel' }),
+    ]);
+    const held = structuredClone(first);
+
+    // Every kind of write a batch can bring: a delta extending the open turn, a
+    // tool call finishing onto its own turn, and the job's finished text
+    // replacing what streamed.
+    projectEvents(first, [
+      event(3, 'one', { type: 'text.delta', delta: 'lo' }),
+      event(4, 'one', { type: 'tool.started', call: call('c1', 'read_file') }),
+      event(5, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'read_file'),
+        record: { output: 'x' },
+      }),
+      event(6, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'Hello',
+      }),
+    ]);
+
+    assert.deepEqual(first, held);
+    assert.deepEqual(emptyProjection, {
+      events: [],
+      turns: [],
+      drafts: [],
+      status: new Map(),
+    });
+  });
+
+  test('leaves the projections before a rewind unchanged when it rebuilds the log', () => {
+    const first = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'first',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', { type: 'text.delta', delta: 'answer one' }),
+    ]);
+    const held = structuredClone(first);
+
+    projectEvents(first, [
+      event(3, 'one', { type: 'history.truncated', afterSequence: 1 }),
+      event(4, 'two', {
+        type: 'prompt.accepted',
+        text: 'again',
+        source: { kind: 'user' },
+      }),
+      event(5, 'two', { type: 'text.delta', delta: 'once more' }),
+    ]);
+
+    assert.deepEqual(first, held);
+  });
+});
+
+describe('projecting a long log', () => {
+  const deltas = 100_000;
+
+  const longLog = (): ThreadEvent[] => {
+    const log = [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+    ];
+    for (let index = 0; index < deltas; index += 1) {
+      log.push(event(index + 2, 'one', { type: 'text.delta', delta: 'x' }));
+    }
+    log.push(
+      event(deltas + 2, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'x'.repeat(deltas),
+      }),
+    );
+    return log;
+  };
+
+  test('reads a turn of a hundred thousand deltas as one turn in one call', () => {
+    const log = longLog();
+
+    const started = process.hrtime.bigint();
+    const projection = projectEvents(emptyProjection, log);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    assert.deepEqual(types(projection.turns), ['user', 'agent']);
+    assert.equal(textOf(projection.turns[1]), 'x'.repeat(deltas));
+    assert.equal(projection.turns[1]?.events.length, deltas + 1);
+    assert.equal(projection.events.length, deltas + 2);
+    // Generous by design: the read is linear and takes milliseconds here. The
+    // bound exists only to fail a return to copying the turn's events per
+    // event, which made a log like this take seconds.
+    assert.ok(
+      elapsedMs < 3000,
+      `projecting ${deltas} deltas took ${elapsedMs.toFixed(0)} ms`,
+    );
+  });
+
+  test('reads the same log in batches as promptly as in one call', () => {
+    const log = longLog();
+    let step = emptyProjection;
+
+    const started = process.hrtime.bigint();
+    for (let index = 0; index < log.length; index += 5000) {
+      step = projectEvents(step, log.slice(index, index + 5000));
+    }
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    assert.deepEqual(types(step.turns), ['user', 'agent']);
+    assert.equal(textOf(step.turns[1]), 'x'.repeat(deltas));
+    assert.equal(step.turns[1]?.events.length, deltas + 1);
+    assert.equal(step.events.length, deltas + 2);
+    assert.ok(
+      elapsedMs < 3000,
+      `projecting ${deltas} deltas in batches took ${elapsedMs.toFixed(0)} ms`,
+    );
+  });
+});

@@ -88,6 +88,29 @@ integrationTest(
 );
 
 integrationTest(
+  'reads a thread or project record alone and answers nothing when it is missing',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    assert.deepEqual(
+      await threads.record(thread.id),
+      (await threads.find(thread.id))?.thread,
+    );
+    assert.deepEqual(
+      await projects.record(project.id),
+      (await projects.find(project.id))?.project,
+    );
+    const missing = randomUUID();
+    assert.equal(await threads.record(missing), undefined);
+    assert.equal(await projects.record(missing), undefined);
+  },
+);
+
+integrationTest(
   'serializes event sequences across independent clients and rolls back failed insertion',
   async ({ configs, projects, threads, second }) => {
     const { project } = await projects.create(

@@ -5,7 +5,12 @@ import {
   sandboxWrites,
   type Turn,
 } from '@/domain/projector';
-import { messageFrom, type Thread, type ThreadEvent } from '@/domain/workspace';
+import {
+  messageFrom,
+  type Thread,
+  type ThreadEvent,
+  type ThreadHistory,
+} from '@/domain/workspace';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
@@ -48,8 +53,10 @@ export type ThreadChat = {
 /**
  * The lifecycle of one Thread's chat, and the only place that reads its events.
  *
- * It subscribes when the Thread opens, accumulates every event it receives into
- * one ordered log, exposes that log and its projection, and sends prompts. It
+ * It opens a Thread from the local snapshot the main process kept — the
+ * conversation is on screen before the stream answers — then subscribes where
+ * that snapshot ends, accumulates every event it receives into one ordered log,
+ * exposes that log and its projection, and sends prompts. It
  * renders nothing: a conversation surface is free to read the events and decide
  * what to do with them, which is the whole point of keeping the pipeline here.
  *
@@ -85,6 +92,8 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     const queued: ThreadEvent[] = [];
     let flush: ReturnType<typeof setTimeout> | undefined;
     let flushedAt = 0;
+    let unwatch: (() => void) | undefined;
+    let closed = false;
 
     const drain = (): void => {
       flush = undefined;
@@ -95,32 +104,55 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
       }
     };
 
-    const unwatch = window.doric.threads.watch(thread.id, 0, (update) => {
-      if (update.kind === 'snapshot') {
-        setProjection((current) =>
-          projectEvents(current, update.snapshot.events),
-        );
-        if (update.snapshot.thread !== null) setRecord(update.snapshot.thread);
-      } else if (update.kind === 'event') {
-        queued.push(update.event);
-        if (flush === undefined) {
-          flush = setTimeout(
-            drain,
-            Math.max(0, STREAM_FLUSH_MS - (Date.now() - flushedAt)),
-          );
-        }
-      } else if (update.kind === 'updated') {
-        setRecord(update.thread);
-      } else if (update.kind === 'error') {
-        setError(update.message);
-      } else if (update.kind === 'deleted') {
-        setError('This thread was deleted.');
+    // The conversation is drawn from the local snapshot the main process kept
+    // before the stream answers, and the subscription picks up where that
+    // snapshot ends — or replays the whole log when the app holds none. Either
+    // way, what arrives merges into what is on screen.
+    const subscribe = (cached: ThreadHistory | null): void => {
+      if (closed) return;
+      if (cached !== null) {
+        if (cached.thread !== null) setRecord(cached.thread);
+        setProjection(projectEvents(emptyProjection, cached.events));
       }
-    });
+      unwatch = window.doric.threads.watch(
+        thread.id,
+        cached?.lastSequence ?? 0,
+        (update) => {
+          if (update.kind === 'snapshot') {
+            setProjection((current) =>
+              projectEvents(current, update.snapshot.events),
+            );
+            if (update.snapshot.thread !== null)
+              setRecord(update.snapshot.thread);
+          } else if (update.kind === 'event') {
+            queued.push(update.event);
+            if (flush === undefined) {
+              flush = setTimeout(
+                drain,
+                Math.max(0, STREAM_FLUSH_MS - (Date.now() - flushedAt)),
+              );
+            }
+          } else if (update.kind === 'updated') {
+            setRecord(update.thread);
+          } else if (update.kind === 'error') {
+            setError(update.message);
+          } else if (update.kind === 'deleted') {
+            setError('This thread was deleted.');
+          }
+        },
+      );
+    };
+
+    // A cache read that lands after the surface moved on is ignored.
+    void window.doric.threads
+      .history(thread.id)
+      .then(subscribe)
+      .catch(() => subscribe(null));
 
     return () => {
+      closed = true;
       if (flush !== undefined) clearTimeout(flush);
-      unwatch();
+      unwatch?.();
     };
   }, [thread.id]);
 

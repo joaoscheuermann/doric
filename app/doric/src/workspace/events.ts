@@ -1,6 +1,7 @@
 import type { Manager, Socket } from 'socket.io-client';
 
 import type { Project, Thread } from './api';
+import type { ThreadHistoryStore } from './thread-history';
 
 export type ThreadEvent = {
   readonly projectId: string;
@@ -81,11 +82,26 @@ const errorMessage = (value: unknown): string => {
     : 'The Thread event stream failed.';
 };
 
-/** Forwards one selected Thread while retaining the durable cursor for reconnects. */
+/**
+ * Forwards one selected Thread while retaining the durable cursor for
+ * reconnects, and absorbs every forwarded update into the local snapshot
+ * cache. The cache is fire-and-forget: it never delays, drops, or reorders
+ * what reaches the renderer, and it is written when the stream stops or the
+ * app closes as well as on its own debounce.
+ */
 export const createThreadEventService = (
   manager: Pick<Manager, 'socket'>,
+  history: ThreadHistoryStore,
 ): ThreadEventService => {
   let selected: Selected | undefined;
+
+  const flushHistory = (): void => {
+    try {
+      history.flush();
+    } catch {
+      // A cache failure is never a stream failure.
+    }
+  };
 
   const stop = (target?: ThreadEventTarget): void => {
     if (
@@ -98,11 +114,17 @@ export const createThreadEventService = (
     current.target.off('destroyed', current.destroyed);
     current.socket.removeAllListeners();
     current.socket.disconnect();
+    flushHistory();
   };
 
   const send = (current: Selected, update: ThreadUpdate): void => {
     if (selected === current && !current.target.isDestroyed()) {
       current.target.send(threadUpdateChannel, update);
+      try {
+        history.absorb(update);
+      } catch {
+        // A cache failure is never a stream failure.
+      }
     }
   };
 
@@ -178,6 +200,9 @@ export const createThreadEventService = (
       socket.connect();
     },
     stop,
-    close: () => stop(),
+    close: () => {
+      stop();
+      flushHistory();
+    },
   };
 };
