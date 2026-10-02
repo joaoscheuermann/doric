@@ -67,6 +67,12 @@ export type AgentRunOptions<
 > = {
   readonly maxTurns?: number;
   readonly maxToolCallRepairs?: number;
+  /**
+   * The most a single tool result may carry into the model, in characters.
+   * Absent means no cap. The full result is always stored on the record, so this
+   * only bounds what the next turn reads.
+   */
+  readonly maxToolResultChars?: number;
   readonly signal?: AbortSignal;
   readonly schema?: Schema;
   readonly onStructuredAttempt?: (

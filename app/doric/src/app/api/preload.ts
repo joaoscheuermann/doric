@@ -165,7 +165,11 @@ type Configuration = {
       readonly effort?: ReasoningEffort;
     };
   };
-  readonly execution: { readonly maxTurns: number };
+  readonly execution: {
+    readonly maxTurns: number;
+    /** The most one tool result may carry into the model, in characters. */
+    readonly maxToolResultChars?: number;
+  };
   /** The `GIT` credential the agent's git commands commit as. */
   readonly gitCredentialId?: string;
   /** The `API_TOKEN` credential the sandbox authenticates GitHub with. */

@@ -293,6 +293,26 @@ export const workspace = () => {
       events.filter(
         (event) => event.threadId === id && event.sequence > sequence,
       ),
+    eventsAfterPage: async (id, sequence, limit) => {
+      const page = events
+        .filter(
+          (event) => event.threadId === id && event.sequence > sequence,
+        )
+        .slice(0, limit);
+      const last = page.at(-1);
+      return {
+        events: page,
+        ...(last === undefined ? {} : { nextSequence: last.sequence }),
+      };
+    },
+    setResult: async (id, result) => {
+      const record = threadRecords.get(id);
+      if (record === undefined) return;
+      threadRecords.set(id, {
+        ...record,
+        thread: { ...record.thread, result },
+      });
+    },
     deleteSubtree: async () => {
       throw new Error('Deletion is not used in execution tests');
     },

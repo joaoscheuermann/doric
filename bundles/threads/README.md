@@ -10,7 +10,9 @@ The bundle provides these always-available tools, which act only on the calling
 prompt's direct child threads in the same project:
 
 - `thread-spawn` — create a child chat and delegate a self-contained task;
-- `thread-list`, `thread-get` — observe direct children and their events;
+- `thread-list`, `thread-get` — observe a direct child's state and, once a prompt
+  has finished, its materialized result;
+- `thread-events` — read a bounded, digested page of a child's persisted events;
 - `thread-send` — queue a follow-up instruction in a child;
 - `thread-interrupt`, `thread-terminate` — cancel one active prompt or close a
   child subtree.

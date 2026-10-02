@@ -304,7 +304,9 @@ const providers = z.array(provider).min(1);
 
 const models = z.object({ execution: reasoningModel }).strict();
 
-const execution = z.object({ maxTurns: limit }).strict();
+const execution = z
+  .object({ maxTurns: limit, maxToolResultChars: limit.optional() })
+  .strict();
 
 type ProviderReferences = {
   readonly providers: readonly { readonly id: string }[];

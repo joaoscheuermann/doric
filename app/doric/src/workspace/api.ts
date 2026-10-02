@@ -273,7 +273,11 @@ export type Configuration = {
       readonly effort?: ReasoningEffort;
     };
   };
-  readonly execution: { readonly maxTurns: number };
+  readonly execution: {
+    readonly maxTurns: number;
+    /** The most one tool result may carry into the model, in characters. */
+    readonly maxToolResultChars?: number;
+  };
   /**
    * Per-tool values, keyed by tool name and then by the tool's own field keys.
    * The host always populates it; it is optional so a hand-built draft need not.
@@ -687,7 +691,9 @@ const configurationFrom = (value: unknown): Configuration => {
     !isRecord(value.models) ||
     !isRecord(value.models.execution) ||
     !isRecord(value.execution) ||
-    typeof value.execution.maxTurns !== 'number'
+    typeof value.execution.maxTurns !== 'number' ||
+    (value.execution.maxToolResultChars !== undefined &&
+      typeof value.execution.maxToolResultChars !== 'number')
   ) {
     return invalidResponse();
   }
@@ -713,7 +719,12 @@ const configurationFrom = (value: unknown): Configuration => {
         ...(effort === undefined ? {} : { effort }),
       },
     },
-    execution: { maxTurns: value.execution.maxTurns },
+    execution: {
+      maxTurns: value.execution.maxTurns,
+      ...(value.execution.maxToolResultChars === undefined
+        ? {}
+        : { maxToolResultChars: value.execution.maxToolResultChars }),
+    },
     ...(tools === undefined ? {} : { tools }),
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),

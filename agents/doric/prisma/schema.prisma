@@ -44,6 +44,9 @@ model DoricConfiguration {
   revision           Int                     @default(1)
   generation         String                  @db.Uuid
   maxTurns           Int                     @map("max_turns")
+  /// The most a single tool result may carry into the model, in characters.
+  /// Absent means no cap.
+  maxToolResultChars Int?                    @map("max_tool_result_chars")
   /// Per-tool configuration values, keyed by tool name and then by field key.
   toolConfig         Json                    @default("{}") @map("tool_config") @db.JsonB
   gitCredentialId    String?                 @map("git_credential_id") @db.Uuid
@@ -142,6 +145,12 @@ model Thread {
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")
+  /// The materialized result of the most recent finished prompt, so reading a
+  /// child's state never has to reconstruct it from the event log.
+  resultText     String?       @map("result_text")
+  resultStatus   String?       @map("result_status")
+  resultPromptId String?       @map("result_prompt_id") @db.Uuid
+  resultAt       DateTime?     @map("result_at") @db.Timestamptz(3)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   startedAt      DateTime?     @map("started_at") @db.Timestamptz(3)

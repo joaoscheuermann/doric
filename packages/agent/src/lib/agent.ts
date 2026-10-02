@@ -142,11 +142,13 @@ export const createAgent = (options: AgentOptions): Agent => {
     pendingCalls.delete(callId);
   };
 
-  const pushObservedToolResult = (record: ToolCallRecord): string => {
-    const content = toolResultEnvelope(record);
-    pushToolResult(record.callId, content);
-    return content;
-  };
+  const observedToolResult =
+    (maxChars?: number) =>
+    (record: ToolCallRecord): string => {
+      const content = toolResultEnvelope(record, maxChars);
+      pushToolResult(record.callId, content);
+      return content;
+    };
 
   const storeAssistant = (finish: ProviderFinished<unknown>): void => {
     /** Message storage preserves both semantic calls and opaque provider replay. */
@@ -292,7 +294,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             options,
             calls,
             runOptions,
-            pushObservedToolResult,
+            observedToolResult(runOptions.maxToolResultChars),
           )) {
             void event;
           }
@@ -470,7 +472,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             options,
             calls,
             runOptions,
-            pushObservedToolResult,
+            observedToolResult(runOptions.maxToolResultChars),
           )) {
             yield event;
           }

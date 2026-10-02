@@ -122,6 +122,14 @@ export const createThreadRunner = (context: RuntimeContext) => {
       text,
       source: job.source,
     });
+    // Materialize the result on the thread, so reading its state later never has
+    // to reconstruct it from the event log. The last finished prompt wins.
+    await store.setResult(thread.thread.id, {
+      status,
+      text,
+      promptId: job.id,
+      at: new Date().toISOString(),
+    });
     if (thread.active?.job.id === job.id) thread.active.reported = true;
     await notify(project, thread, job, status, text);
   };
@@ -402,11 +410,19 @@ export const createThreadRunner = (context: RuntimeContext) => {
             parent.thread.id,
           );
         }),
-      get: (id, afterSequence) =>
-        exclusive(project.project.id, async () => ({
-          thread: await child(id),
-          events: await store.eventsAfter(id, afterSequence),
-        })),
+      get: (id) =>
+        exclusive(project.project.id, async () => {
+          const record = await child(id);
+          return {
+            thread: record,
+            ...(record.result === undefined ? {} : { result: record.result }),
+          };
+        }),
+      events: (id, afterSequence, limit) =>
+        exclusive(project.project.id, async () => {
+          await child(id);
+          return store.eventsAfterPage(id, afterSequence, limit);
+        }),
       send: (id, prompt) =>
         exclusive(project.project.id, async () => {
           await child(id);
