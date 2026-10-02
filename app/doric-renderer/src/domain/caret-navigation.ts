@@ -63,6 +63,49 @@ export const nextStop = (
   return undefined;
 };
 
+/** Where the caret stands inside a focused activity summary. */
+export type ItemCursor =
+  /** The summary's own header line. */
+  | null
+  /** One of the summary's steps, by index. */
+  | number;
+
+/** Where the caret goes inside a focused activity summary. */
+export type ItemTarget =
+  /** The summary's header line, or one of its steps, by index. */
+  | ItemCursor
+  /** Outside the summary, where the block walk continues beside it. */
+  | 'leave';
+
+/**
+ * The stop the caret enters an activity summary on from `direction`: the header
+ * line when it walks in from above, the last step when it walks in from below,
+ * and the header alone when the summary shows no steps. `items` counts the steps
+ * the summary shows — a closed summary shows none — so the summary and its steps
+ * read as one run of stops whichever side the caret comes from.
+ */
+export const entryItem = (items: number, direction: Direction): ItemCursor =>
+  direction === 'previous' && items > 0 ? items - 1 : null;
+
+/**
+ * The stop the caret takes next inside a focused activity summary: the next
+ * step in `direction`, the header line at the summary's own edge, and `leave`
+ * past the last step — which hands the movement back to the block walk beside
+ * the summary.
+ */
+export const nextItem = (
+  cursor: ItemCursor,
+  items: number,
+  direction: Direction,
+): ItemTarget => {
+  if (cursor === null) {
+    return direction === 'next' && items > 0 ? 0 : 'leave';
+  }
+  const target = cursor + (direction === 'next' ? 1 : -1);
+  if (target < 0) return null;
+  return target < items ? target : 'leave';
+};
+
 /** What Enter does where the caret is. */
 export type EnterAction =
   /** The focused widget opens or closes. */

@@ -100,17 +100,20 @@ export class ThinkingTurnNode extends DecoratorNode<JSX.Element> {
   override decorate(editor: LexicalEditor): JSX.Element {
     return (
       <WidgetFocus nodeKey={this.__key}>
-        <ThinkingItem
-          chosen={this.__chosen}
-          onChosenChange={(chosen) =>
-            editor.update(() => {
-              const node = $getNodeByKey(this.__key);
-              if ($isThinkingTurnNode(node)) node.setChosen(chosen);
-            })
-          }
-          streaming={this.__streaming}
-          text={this.__text}
-        />
+        {(focused) => (
+          <ThinkingItem
+            chosen={this.__chosen}
+            focused={focused}
+            onChosenChange={(chosen) =>
+              editor.update(() => {
+                const node = $getNodeByKey(this.__key);
+                if ($isThinkingTurnNode(node)) node.setChosen(chosen);
+              })
+            }
+            streaming={this.__streaming}
+            text={this.__text}
+          />
+        )}
       </WidgetFocus>
     );
   }

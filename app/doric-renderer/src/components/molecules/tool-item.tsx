@@ -9,9 +9,11 @@ type ToolItemProps = {
   readonly name: string;
   readonly result?: string;
   readonly status: ToolStatus;
-  /** The reader's choice of open/closed, when the block's owner holds it. */
-  readonly chosen?: Chosen;
-  readonly onChosenChange?: (chosen: boolean) => void;
+  /** The reader's choice of open/closed, held by the block's owner. */
+  readonly chosen: Chosen;
+  readonly onChosenChange: (chosen: boolean) => void;
+  /** Whether the block is the caret's stop; it then wears the hover style. */
+  readonly focused?: boolean;
 };
 
 /**
@@ -23,6 +25,7 @@ export function ToolItem({
   args,
   chosen,
   error,
+  focused,
   name,
   onChosenChange,
   result,
@@ -33,6 +36,7 @@ export function ToolItem({
   return (
     <CollapsibleBlock
       chosen={chosen}
+      focused={focused}
       label={`${running ? 'Calling' : 'Called'} ${humanize(name)}`}
       onChosenChange={onChosenChange}
       openness={toolOpenness(status, args, result, error)}

@@ -11,7 +11,7 @@ import {
 } from '@/domain/collapsible';
 import { cn } from '@/utility/utils';
 import { ChevronRightIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode } from 'react';
 
 type CollapsibleBlockProps = {
   /** The header line, which shimmers while the work is in progress. */
@@ -24,13 +24,14 @@ type CollapsibleBlockProps = {
    */
   readonly openness: Openness;
   /**
-   * The reader's choice of open/closed. With `onChosenChange` the block is
-   * controlled and the choice lives with the block's owner, so the chevron and
-   * the keyboard write one state; without it the block holds the choice itself
-   * — a step inside an activity summary, which no keyboard path opens.
+   * The reader's choice of open/closed, held by the block's owner as node
+   * state — so the chevron and the keyboard write one state — and `null` until
+   * they make one.
    */
-  readonly chosen?: Chosen;
-  readonly onChosenChange?: (chosen: boolean) => void;
+  readonly chosen: Chosen;
+  readonly onChosenChange: (chosen: boolean) => void;
+  /** Whether the block is the caret's stop; it then wears the hover style. */
+  readonly focused?: boolean;
   readonly children: ReactNode;
 };
 
@@ -41,7 +42,8 @@ type CollapsibleBlockProps = {
  * which their choice stands.
  *
  * The chevron points right while the block is closed and down while it is open,
- * so one icon carries both states.
+ * so one icon carries both states. A focused block's header line wears the hover
+ * style, so the caret's stop looks the way the block does under the pointer.
  *
  * The block states no spacing of its own: a turn block's own top margin sets the
  * conversation's gap between it and the turn before it, and a list of these
@@ -49,23 +51,23 @@ type CollapsibleBlockProps = {
  */
 export function CollapsibleBlock({
   children,
-  chosen: chosenProp,
+  chosen,
+  focused,
   label,
   onChosenChange,
   openness,
 }: CollapsibleBlockProps) {
-  const [held, setHeld] = useState<Chosen>(null);
-  const chosen = onChosenChange === undefined ? held : (chosenProp ?? null);
   const open = blockOpen(chosen, openness);
-  const toggle = (): void => {
-    const next = blockToggled(chosen, openness);
-    if (onChosenChange === undefined) setHeld(next);
-    else onChosenChange(next);
-  };
+  const toggle = (): void => onChosenChange(blockToggled(chosen, openness));
 
   return (
     <Collapsible open={open} onOpenChange={toggle}>
-      <CollapsibleTrigger className="flex w-full items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+      <CollapsibleTrigger
+        className={cn(
+          'flex w-full items-center gap-1 text-sm transition-colors hover:text-foreground',
+          focused ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
         <span className={cn(openness.active && 'shimmer')}>{label}</span>
         <ChevronRightIcon
           aria-hidden="true"

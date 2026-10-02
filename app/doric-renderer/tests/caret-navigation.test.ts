@@ -4,6 +4,8 @@ import { describe, test } from 'node:test';
 import {
   caretKind,
   enterAction,
+  entryItem,
+  nextItem,
   nextStop,
 } from '../src/domain/caret-navigation';
 import {
@@ -88,6 +90,43 @@ describe('where the caret stops beside author lines', () => {
     const led = [TURN_AUTHOR_BLOCK, USER_TURN_BLOCK];
     assert.equal(nextStop(led, 0, 'previous'), undefined);
     assert.equal(nextStop([], 0, 'next'), undefined);
+  });
+});
+
+describe('how the caret walks the steps of an activity summary', () => {
+  test('enters on the header line walking in from above', () => {
+    assert.equal(entryItem(3, 'next'), null);
+    assert.equal(entryItem(0, 'next'), null);
+  });
+
+  test('enters on the last step walking in from below', () => {
+    assert.equal(entryItem(3, 'previous'), 2);
+  });
+
+  test('enters on the header alone when the summary shows no steps', () => {
+    assert.equal(entryItem(0, 'previous'), null);
+  });
+
+  test('walks the steps in order from the header down', () => {
+    assert.equal(nextItem(null, 3, 'next'), 0);
+    assert.equal(nextItem(0, 3, 'next'), 1);
+    assert.equal(nextItem(1, 3, 'next'), 2);
+  });
+
+  test('walks the steps back up to the header line', () => {
+    assert.equal(nextItem(2, 3, 'previous'), 1);
+    assert.equal(nextItem(1, 3, 'previous'), 0);
+    assert.equal(nextItem(0, 3, 'previous'), null);
+  });
+
+  test('leaves past the last step and before the header line', () => {
+    assert.equal(nextItem(2, 3, 'next'), 'leave');
+    assert.equal(nextItem(null, 3, 'previous'), 'leave');
+  });
+
+  test('leaves from the header when the summary shows no steps', () => {
+    assert.equal(nextItem(null, 0, 'next'), 'leave');
+    assert.equal(nextItem(null, 0, 'previous'), 'leave');
   });
 });
 
