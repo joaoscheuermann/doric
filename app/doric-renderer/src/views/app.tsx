@@ -41,8 +41,9 @@ export function App() {
   const workspace = useWorkspace();
   const { actions } = workspace;
   // The sandbox panel starts open, and stays where the user leaves it; the
-  // count of agent writes below is what tells it to reread what it shows: the
-  // Project owns the sandbox, the Thread only reports.
+  // count of agent writes below is what tells it to reread what it shows. It is
+  // rooted at the selected Thread's working directory, so it follows the Thread
+  // as well as the Project.
   const [filesOpen, setFilesOpen] = useState(true);
   const [filesRevision, setFilesRevision] = useState(0);
   // What the conversation's composer offers the footer, and how the two talk.
@@ -104,6 +105,7 @@ export function App() {
   // nothing, and the file viewer is drawn from the one file this holds.
   const files = useProjectFiles({
     projectId: filesOpen ? selectedProject?.id : undefined,
+    cwd: selectedThread?.cwd,
     revision: filesRevision,
   });
   const openFilePath = files.selectedPath;
@@ -140,6 +142,7 @@ export function App() {
               onSend={send}
               onStop={stop}
               running={running}
+              thread={selectedThread}
             />
           }
           header={

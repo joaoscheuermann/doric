@@ -97,7 +97,8 @@ After a server restart, interrupted work is marked failed rather than resumed.
 | POST      | `/projects/:id/terminate`     | 200       | Terminate the Project and its Threads.                 |
 | DELETE    | `/projects/:id`               | 204       | Delete a terminal Project.                             |
 | GET       | `/threads/:id`                | 200       | Read public Thread metadata.                           |
-| PATCH     | `/threads/:id`                | 200       | Rename a Thread.                                       |
+| PATCH     | `/threads/:id`                | 200       | Rename a Thread or move its working directory.         |
+| GET       | `/threads/:id/git`            | 200       | Read the Git summary of the Thread's directory.        |
 | POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.               |
 | POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns.     |
 | GET       | `/threads/:id/events`         | 200       | Replay durable events.                                 |
@@ -176,10 +177,11 @@ curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 
 Project creation requires `{ "name": "..." }` and answers with the Project the
 host marked with a random color from its palette. Thread creation requires
-`{ "name": "..." }` and accepts an optional `parentThreadId`. Both PATCH
-operations require the same name-only body. Names are trimmed, reject NUL, and
-contain 1–80 Unicode characters. The prompt body accepts only `prompt`. Public
-callers cannot forge parent/result origins or correlation.
+`{ "name": "..." }` and accepts an optional `parentThreadId`, which starts the
+child in its parent's working directory. The Project PATCH requires the
+name-only body; the Thread PATCH takes `name`, `cwd`, or both. Names are trimmed,
+reject NUL, and contain 1–80 Unicode characters. The prompt body accepts only
+`prompt`. Public callers cannot forge parent/result origins or correlation.
 Rewind accepts only `{ "promptId", "prompt" }` and answers `202 { promptId }`
 like a prompt. It removes the named turn and every later turn from the durable
 event log and the provider-ready history, then accepts the edited text as a new
@@ -199,7 +201,39 @@ normalised, resolved against the workspace root, and rejected with `422` when it
 escapes; a missing path is `404`. Content is capped at 256 KiB (`CONTENT_LIMIT_BYTES`)
 and reported with `truncated` and `binary` flags, so a binary file is never
 rendered as mangled text. A Git diff never contains untracked files, so the
-`changes` list supplies them alongside `diff`.
+`changes` list supplies them alongside `diff`. A `path` on `/diff` also scopes
+discovery: the repositories it reads are the ones that path belongs to or holds,
+which is how one Thread reads the changes of its own working directory.
+
+### The Thread working directory
+
+Every Thread owns a working directory inside its Project's shared sandbox. It
+starts at `/workspace`, and the agent moves it with its `cwd` tool, which calls
+the same rule the HTTP route does. `PATCH /threads/:id` takes an optional `cwd`:
+an absolute sandbox path, or one relative to the Thread's current directory the
+way `cd` reads it. A move that would leave the workspace root answers
+`400 { code: 'invalid_cwd' }`, and so does one that names no directory or names a
+file; a valid move answers the updated Thread. The Thread record carries the
+directory as `cwd` plus a cheap hint as `cwdRepo`: absent unless the directory's
+own root holds a `.git` marker, then `github` when that repository's `origin`
+points at github.com and `git` otherwise. The hint is an observation, refreshed
+whenever the directory moves, when one of the Thread's prompts settles, and when
+the Git summary below is read — and `thread:updated` is published only when it
+really changed.
+
+`GET /threads/:id/git` answers the Git summary of the Thread's working directory:
+`{ repo: false }` when the directory holds, or lies in, no repository, else its
+`root`, `head` (the branch, or the short commit when HEAD is detached),
+`detached`, `unborn`, `upstream`, `ahead`, `behind`, `dirty`
+(`staged`/`modified`/`untracked`), `conflicted`, `operation`
+(`merge`/`rebase`/`cherry-pick`/`revert`/`bisect`), `worktree`, `shallow`, and
+`stash` count. One sandbox command per probe reads all of it — a
+`git status --porcelain=v2 --branch` document whose headers already carry the
+branch, its upstream, and the ahead/behind counts, plus the labeled facts a small
+shell script prints around it — and the answer is cached per Thread until the
+directory moves, a prompt settles, or the renderer asks for it. Like the other
+lease-bound resources, the route answers `409` while the Project's sandbox is not
+readable, and `404` for an unknown Thread.
 
 The existing CLI now uses these operations:
 
@@ -225,7 +259,10 @@ per Thread, not globally ordered across Threads. Each event contains:
 
 Events are persisted before publication. Their bodies include model reasoning,
 provider replay, tool inputs/results, usage, and failures. Credentials are
-redacted before persistence. Full prompt/event payloads are not operational logs.
+redacted before persistence, and the characters PostgreSQL refuses — U+0000 and
+an unpaired surrogate, which binary tool output can carry — become U+FFFD, so a
+single binary match cannot fail a Thread. Full prompt/event payloads are not
+operational logs.
 
 Rewind appends one `history.truncated` event whose body is
 `{ type: 'history.truncated', afterSequence }`; `afterSequence` is the sequence
@@ -242,10 +279,13 @@ import { Manager } from 'socket.io-client';
 
 const manager = new Manager('http://127.0.0.1:3000');
 const status = manager.socket('/status');
-const thread = manager.socket('/threads', {
+const project = manager.socket('/projects', { auth: { projectId } });
+
+// Every watched Thread owns a Manager of its own, so that closing that
+// connection is what ends the subscription the host holds for the Thread.
+const thread = new Manager('http://127.0.0.1:3000').socket('/threads', {
   auth: { threadId, afterSequence: 42 },
 });
-const project = manager.socket('/projects', { auth: { projectId } });
 ```
 
 | Namespace               | Event              | Payload                                                |
@@ -261,8 +301,9 @@ const project = manager.socket('/projects', { auth: { projectId } });
 | `/threads`, `/projects` | `workspace:error`  | Sanitized `{ code, message }`; connection then closes. |
 
 `/status` requires no parameters and emits no application payload. Reuse one
-`Manager` for `/status` and workspace subscriptions so they share one Engine.IO
-connection.
+`Manager` for `/status` and the Project subscription so they share one Engine.IO
+connection, and give each watched Thread a `Manager` of its own: closing that
+connection is what ends the Thread's subscription.
 
 Missing snapshot resources are `null`. The Project snapshot contains the full
 Thread tree as a flat array with `parentThreadId` links. Project reconnection

@@ -64,6 +64,33 @@ describe('terminal tool', () => {
     ]);
   });
 
+  test('runs in the working directory the thread moved to', async () => {
+    const sandbox = fakeSandbox(execResult());
+    const host = fakeHost({ cwd: '/workspace/repo' });
+    const tool = createTool();
+
+    await host.workspace.setCwd('src');
+
+    const byDefault = await tool(sandbox, host).execute({ command: 'pwd' });
+
+    await tool(sandbox, host).execute({
+      command: 'ls',
+      working_directory: 'lib',
+    });
+
+    await tool(sandbox, host).execute({
+      command: 'ls',
+      working_directory: '/workspace/other',
+    });
+
+    assert.deepEqual(
+      sandbox.execs.map((exec) => exec.cwd),
+      ['/workspace/repo/src', '/workspace/repo/src/lib', '/workspace/other'],
+    );
+
+    assert.equal(byDefault.working_directory, '/workspace/repo/src');
+  });
+
   test('maps a sandbox result without an exit code to -1', async () => {
     const sandbox = fakeSandbox(
       execResult({

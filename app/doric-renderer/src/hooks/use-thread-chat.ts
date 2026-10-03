@@ -1,26 +1,9 @@
 import type { PendingSend } from '@/domain/pending-turns';
-import {
-  emptyProjection,
-  projectEvents,
-  sandboxWrites,
-  type Turn,
-} from '@/domain/projector';
-import {
-  messageFrom,
-  type Thread,
-  type ThreadEvent,
-  type ThreadHistory,
-} from '@/domain/workspace';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-/**
- * How long a stream's events wait before they reach the projection. A live run
- * writes its log thousands of events at a time, and every event that reached the
- * projection would re-read the whole of it — the cost a whole run pays, not one
- * event. A flush carries a burst instead, and the first event of one lands at
- * once, so a turn the reader is waiting for is not the one that waits.
- */
-const STREAM_FLUSH_MS = 100;
+import { emptyProjection, sandboxWrites, type Turn } from '@/domain/projector';
+import type { Thread, ThreadEvent } from '@/domain/workspace';
+import { threadChatsStore } from '@/stores/thread-chats';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useStore } from 'zustand/react';
 
 /** What a conversation surface needs from one Thread's chat. */
 export type ThreadChat = {
@@ -51,191 +34,69 @@ export type ThreadChat = {
 };
 
 /**
- * The lifecycle of one Thread's chat, and the only place that reads its events.
+ * One Thread's chat, read from the store that holds every opened Thread.
  *
- * It opens a Thread from the local snapshot the main process kept — the
- * conversation is on screen before the stream answers — then subscribes where
- * that snapshot ends, accumulates every event it receives into one ordered log,
- * exposes that log and its projection, and sends prompts. It
- * renders nothing: a conversation surface is free to read the events and decide
- * what to do with them, which is the whole point of keeping the pipeline here.
+ * The store opens a Thread from the local snapshot the main process kept — the
+ * conversation is on screen before the stream answers — subscribes where that
+ * snapshot ends, accumulates every event into the Thread's own ordered log, and
+ * sends prompts. This hook only binds a surface to one Thread's slice of that
+ * store, so switching Threads shows the state it already had: the Thread left
+ * behind keeps its projection and its watch, and nothing is replayed.
  *
- * Two things about this log are worth knowing. It is a merge, not a replacement:
- * a reconnect replays only what follows the cursor the subscription already
- * holds, so an arriving snapshot is folded into what is on screen. And it is
- * ordered by `sequence`, then `createdAt`, then `promptId`, with anything a
- * rewind already discarded dropped — both of those live in `projector.ts`.
+ * Two things about the log are worth knowing, and both happen in the store. It
+ * is a merge, not a replacement: a reconnect replays only what follows the
+ * cursor the subscription already holds, so an arriving snapshot is folded into
+ * what is on screen. And it is ordered by `sequence`, then `createdAt`, then
+ * `promptId`, with anything a rewind already discarded dropped — both of those
+ * live in `projector.ts`.
  */
 export const useThreadChat = (thread: Thread): ThreadChat => {
-  const [record, setRecord] = useState(thread);
-  const [projection, setProjection] = useState(emptyProjection);
-  const [error, setError] = useState<string>();
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string>();
-  const [sent, setSent] = useState<PendingSend>();
+  const open = threadChatsStore.getState().open;
 
+  // Opening is idempotent: a Thread already held is only shown, so this runs on
+  // every selection without resetting the Thread the surface came from.
   useEffect(() => {
-    // A new Thread reopens the surface: every piece of per-Thread state goes
-    // back to what a fresh mount would hold, so the hook is correct on its own
-    // instead of relying on the pane remounting it with a `key`. The reset reads
-    // the Thread of the render that changed it; the subscription restarts only
-    // when the id changes, so renaming a Thread does not reopen its log.
-    setRecord(thread);
-    setProjection(emptyProjection);
-    setError(undefined);
-    setSendError(undefined);
-    setSending(false);
-    setSent(undefined);
+    open(thread);
+  }, [open, thread]);
 
-    // A stream's events are held until one flush carries them, and a flush waits
-    // out the window before the last one unless nothing has flushed for longer.
-    const queued: ThreadEvent[] = [];
-    let flush: ReturnType<typeof setTimeout> | undefined;
-    let flushedAt = 0;
-    let unwatch: (() => void) | undefined;
-    let closed = false;
-
-    const drain = (): void => {
-      flush = undefined;
-      flushedAt = Date.now();
-      const batch = queued.splice(0);
-      if (batch.length > 0) {
-        setProjection((current) => projectEvents(current, batch));
-      }
-    };
-
-    // The conversation is drawn from the local snapshot the main process kept
-    // before the stream answers, and the subscription picks up where that
-    // snapshot ends — or replays the whole log when the app holds none. Either
-    // way, what arrives merges into what is on screen.
-    const subscribe = (cached: ThreadHistory | null): void => {
-      if (closed) return;
-      if (cached !== null) {
-        if (cached.thread !== null) setRecord(cached.thread);
-        setProjection(projectEvents(emptyProjection, cached.events));
-      }
-      unwatch = window.doric.threads.watch(
-        thread.id,
-        cached?.lastSequence ?? 0,
-        (update) => {
-          if (update.kind === 'snapshot') {
-            setProjection((current) =>
-              projectEvents(current, update.snapshot.events),
-            );
-            if (update.snapshot.thread !== null)
-              setRecord(update.snapshot.thread);
-          } else if (update.kind === 'event') {
-            queued.push(update.event);
-            if (flush === undefined) {
-              flush = setTimeout(
-                drain,
-                Math.max(0, STREAM_FLUSH_MS - (Date.now() - flushedAt)),
-              );
-            }
-          } else if (update.kind === 'updated') {
-            setRecord(update.thread);
-          } else if (update.kind === 'error') {
-            setError(update.message);
-          } else if (update.kind === 'deleted') {
-            setError('This thread was deleted.');
-          }
-        },
-      );
-    };
-
-    // A cache read that lands after the surface moved on is ignored.
-    void window.doric.threads
-      .history(thread.id)
-      .then(subscribe)
-      .catch(() => subscribe(null));
-
-    return () => {
-      closed = true;
-      if (flush !== undefined) clearTimeout(flush);
-      unwatch?.();
-    };
-  }, [thread.id]);
-
-  const send = useCallback(
-    async (
-      request: (text: string) => Promise<unknown>,
-      text: string,
-    ): Promise<boolean> => {
-      if (text.trim().length === 0) return false;
-      setSending(true);
-      setSendError(undefined);
-      try {
-        await request(text);
-        return true;
-      } catch (reason) {
-        setSendError(messageFrom(reason));
-        return false;
-      } finally {
-        setSending(false);
-      }
-    },
-    [],
+  const chat = useStore(threadChatsStore, (state) =>
+    state.chats.chats.get(thread.id),
+  );
+  const deleted = useStore(threadChatsStore, (state) =>
+    state.chats.deleted.has(thread.id),
   );
 
-  // The reader's own prompts in the log: one more of them than there were when a
-  // send left is that send accepted, whatever else the log has done since.
-  const ownPrompts = useMemo(
-    () =>
-      projection.turns.filter(
-        (turn) => turn.type === 'user' && turn.delegated === undefined,
-      ).length,
-    [projection.turns],
-  );
-
-  const prompt = useCallback(
-    async (text: string): Promise<boolean> => {
-      const words = text.trim();
-      if (words.length === 0) return false;
-      // Drawn at once: the words leave the prompt before the log holds them, so
-      // the surface shows them as the turn they are about to become.
-      setSent({ text: words, before: ownPrompts });
-      const accepted = await send(
-        (value) => window.doric.threads.prompt(record.id, value),
-        text,
-      );
-      // A refused send has nothing to wait for; the surface puts the words back
-      // into the prompt.
-      if (!accepted) setSent(undefined);
-      return accepted;
-    },
-    [ownPrompts, record.id, send],
-  );
-
-  const rewind = useCallback(
-    (promptId: string, text: string) =>
-      send(
-        (value) => window.doric.threads.rewind(record.id, promptId, value),
-        text,
-      ),
-    [record.id, send],
-  );
-
+  const projection = chat?.projection ?? emptyProjection;
   const writes = useMemo(
     () => sandboxWrites(projection.events),
     [projection.events],
   );
 
-  // The words stop being pending once the log has accepted one more prompt of
-  // the reader's own; the state is dropped then, and the surface stops drawing
-  // them in the same render the accepted turn appears.
-  useEffect(() => {
-    if (sent !== undefined && ownPrompts > sent.before) setSent(undefined);
-  }, [ownPrompts, sent]);
+  const prompt = useCallback(
+    (text: string) => threadChatsStore.getState().prompt(thread.id, text),
+    [thread.id],
+  );
+  const rewind = useCallback(
+    (promptId: string, text: string) =>
+      threadChatsStore.getState().rewind(thread.id, promptId, text),
+    [thread.id],
+  );
 
   return {
-    thread: record,
+    thread: chat?.thread ?? thread,
     events: projection.events,
     turns: projection.turns,
     writes,
-    error,
-    sending,
-    sendError,
-    pending: sent,
+    // A Thread the surface no longer holds is one a `deleted` update dropped.
+    error:
+      chat !== undefined
+        ? chat.error
+        : deleted
+          ? 'This thread was deleted.'
+          : undefined,
+    sending: chat?.sending ?? false,
+    sendError: chat?.sendError,
+    pending: chat?.pending,
     prompt,
     rewind,
   };

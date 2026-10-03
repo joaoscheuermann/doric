@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { SandboxExecInput } from 'sandbox';
+
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import type { Credential } from '../src/lib/credentials/kind.js';
 import type { ThreadExecution } from '../src/lib/workspace/runtime.js';
@@ -141,6 +143,25 @@ const commands = (
 ): readonly string[] => environment.execs.map(({ cmd }) => cmd.join(' '));
 
 /**
+ * The commands that apply credentials to a sandbox: the Git identity and helper
+ * settings, the credential-store write, and the `gh` hosts write. Everything
+ * else the host runs there — the repository probe above all — is not a
+ * credential, so a case counting what a prompt re-applied counts these.
+ */
+const credentialCommands = (
+  environment: ReturnType<typeof fakeSandbox>,
+): readonly SandboxExecInput[] =>
+  environment.execs.filter(
+    ({ cmd, env }) =>
+      cmd[0] === 'git' ||
+      (env ?? []).some(
+        (entry) =>
+          entry.startsWith('DORIC_GIT_CREDENTIAL=') ||
+          entry.startsWith('DORIC_GH_TOKEN='),
+      ),
+  );
+
+/**
  * The token may leave the host only through a sandbox process environment: one
  * entry per secret write, and never a command line.
  */
@@ -234,12 +255,19 @@ test('writes the credential files only when a token is stored', async () => {
   const hostUnderTest = host([identity()], { git: gitId });
   await hostUnderTest.open();
 
-  assert.deepEqual(commands(hostUnderTest.environment), [
-    'git config --global user.name doric-agent',
-    'git config --global user.email agent@example.com',
-  ]);
+  assert.deepEqual(
+    credentialCommands(hostUnderTest.environment).map(({ cmd }) =>
+      cmd.join(' '),
+    ),
+    [
+      'git config --global user.name doric-agent',
+      'git config --global user.email agent@example.com',
+    ],
+  );
   assert.equal(
-    hostUnderTest.environment.execs.some(({ cmd }) => cmd[0] === 'sh'),
+    credentialCommands(hostUnderTest.environment).some(
+      ({ cmd }) => cmd[0] === 'sh',
+    ),
     false,
   );
 });
@@ -272,7 +300,7 @@ test('issues no Git command when no credential is configured', async () => {
     'hello',
   );
   assert.equal(accepted.status, 'accepted');
-  assert.deepEqual(hostUnderTest.environment.execs, []);
+  assert.deepEqual(credentialCommands(hostUnderTest.environment), []);
 });
 
 test('resolves the kind when the configuration names no credential', async () => {
@@ -297,10 +325,15 @@ test('refuses to guess between two credentials of the same kind', async () => {
   const hostUnderTest = host([identity(), token(), other]);
   await hostUnderTest.open();
 
-  assert.deepEqual(commands(hostUnderTest.environment), [
-    'git config --global user.name doric-agent',
-    'git config --global user.email agent@example.com',
-  ]);
+  assert.deepEqual(
+    credentialCommands(hostUnderTest.environment).map(({ cmd }) =>
+      cmd.join(' '),
+    ),
+    [
+      'git config --global user.name doric-agent',
+      'git config --global user.email agent@example.com',
+    ],
+  );
   assert.equal(hostUnderTest.warnings.length, 1);
   assert.match(String(hostUnderTest.warnings[0]?.[1]), /API_TOKEN/u);
   assert.equal(
@@ -326,12 +359,19 @@ test("keeps a provider's key out of GitHub authentication", async () => {
 
   // The identity is still applied; no secret file is written, and the key never
   // reaches the sandbox.
-  assert.deepEqual(commands(hostUnderTest.environment), [
-    'git config --global user.name doric-agent',
-    'git config --global user.email agent@example.com',
-  ]);
+  assert.deepEqual(
+    credentialCommands(hostUnderTest.environment).map(({ cmd }) =>
+      cmd.join(' '),
+    ),
+    [
+      'git config --global user.name doric-agent',
+      'git config --global user.email agent@example.com',
+    ],
+  );
   assert.equal(
-    hostUnderTest.environment.execs.some(({ cmd }) => cmd[0] === 'sh'),
+    credentialCommands(hostUnderTest.environment).some(
+      ({ cmd }) => cmd[0] === 'sh',
+    ),
     false,
   );
   assert.equal(
@@ -344,7 +384,8 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
   const { stored, choices } = configured();
   const hostUnderTest = host(stored, choices);
   const { thread } = await hostUnderTest.open();
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
+  const writes = () => credentialCommands(hostUnderTest.environment);
+  assert.equal(writes().length, APPLY_COMMANDS);
   // The credentials the sandbox received are the ones in force, so nothing has
   // been learned for redaction yet.
   assert.deepEqual(hostUnderTest.registered, []);
@@ -354,7 +395,7 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
     (await hostUnderTest.service.threads.prompt(thread.id, 'one')).status,
     'accepted',
   );
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
+  assert.equal(writes().length, APPLY_COMMANDS);
   assert.deepEqual(hostUnderTest.registered, []);
 
   const rotated = token('ghp_rotated_token');
@@ -363,19 +404,19 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
     (await hostUnderTest.service.threads.prompt(thread.id, 'two')).status,
     'accepted',
   );
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS * 2);
+  assert.equal(writes().length, APPLY_COMMANDS * 2);
   // The host just wrote the rotated token into the sandbox, so it is registered
   // for redaction before an event can carry it: the sandbox's credential file is
   // readable by the agent's own tools.
   assert.deepEqual(hostUnderTest.registered, ['ghp_rotated_token']);
-  assert.deepEqual(hostUnderTest.environment.execs[APPLY_COMMANDS]?.cmd, [
+  assert.deepEqual(writes()[APPLY_COMMANDS]?.cmd, [
     'git',
     'config',
     '--global',
     'user.name',
     identity().username,
   ]);
-  const [credential, gh] = hostUnderTest.environment.execs.slice(-2);
+  const [credential, gh] = writes().slice(-2);
   assert.equal(
     credential?.env?.[0],
     `DORIC_GIT_CREDENTIAL=https://${identity().username}:${rotated.secret}@github.com`,
@@ -388,7 +429,7 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
     (await hostUnderTest.service.threads.prompt(thread.id, 'three')).status,
     'accepted',
   );
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS * 2);
+  assert.equal(writes().length, APPLY_COMMANDS * 2);
 
   // An emptied store has nothing to apply; it cannot be unset remotely.
   hostUnderTest.store([]);
@@ -396,13 +437,13 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
     (await hostUnderTest.service.threads.prompt(thread.id, 'four')).status,
     'accepted',
   );
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS * 2);
+  assert.equal(writes().length, APPLY_COMMANDS * 2);
 });
 
 test('applies newly saved credentials to a Project that captured none', async () => {
   const hostUnderTest = host();
   const { thread } = await hostUnderTest.open();
-  assert.deepEqual(hostUnderTest.environment.execs, []);
+  assert.deepEqual(credentialCommands(hostUnderTest.environment), []);
 
   const { stored } = configured();
   hostUnderTest.store(stored);
@@ -410,7 +451,10 @@ test('applies newly saved credentials to a Project that captured none', async ()
     (await hostUnderTest.service.threads.prompt(thread.id, 'hello')).status,
     'accepted',
   );
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
+  assert.equal(
+    credentialCommands(hostUnderTest.environment).length,
+    APPLY_COMMANDS,
+  );
   assertTokenIsEnvOnly(hostUnderTest.environment, token().secret, 2);
 });
 
@@ -427,7 +471,10 @@ test('applies the current credentials before a rewound prompt is enqueued', asyn
     'edited',
   );
   assert.equal(rewound.status, 'accepted');
-  assert.equal(hostUnderTest.environment.execs.length, APPLY_COMMANDS);
+  assert.equal(
+    credentialCommands(hostUnderTest.environment).length,
+    APPLY_COMMANDS,
+  );
   assertTokenIsEnvOnly(hostUnderTest.environment, token().secret, 2);
 });
 

@@ -289,7 +289,13 @@ void app.whenReady().then(() => {
   threadHistory = createThreadHistoryStore(
     join(app.getPath('userData'), 'thread-history'),
   );
-  threadEvents = createThreadEventService(manager, threadHistory);
+  // The status and Project tree namespaces share the manager above; every
+  // watched Thread gets a manager of its own, so its subscription ends when
+  // its watch does.
+  threadEvents = createThreadEventService(
+    createConnectionManager,
+    threadHistory,
+  );
   projectEvents = createProjectEventService(manager);
   app.once('will-quit', () => {
     threadEvents?.close();

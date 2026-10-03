@@ -16,6 +16,7 @@ import {
   relativePath,
   senderIsAllowed,
   sequence,
+  workingDirectory,
 } from './validation';
 
 type Result<Value> =
@@ -204,6 +205,18 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:set-cwd',
+    safe(allowedUrls, (value: unknown, cwd: unknown) =>
+      workspaceApi.threads.setCwd(identifier(value), workingDirectory(cwd)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:git',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.threads.git(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:prompt',
     safe(allowedUrls, (value: unknown, nextPrompt: unknown) =>
       workspaceApi.threads.prompt(identifier(value), prompt(nextPrompt)),
@@ -250,9 +263,13 @@ export const registerWorkspaceHandlers = (
       // Invalid send payloads never cross the main-process boundary.
     }
   });
-  ipcMain.on('doric:threads:unwatch', (event) => {
+  ipcMain.on('doric:threads:unwatch', (event, value) => {
     if (!senderIsAllowed(event.senderFrame?.url, allowedUrls)) return;
-    events.stop(event.sender);
+    try {
+      events.stop(event.sender, identifier(value));
+    } catch {
+      // Invalid send payloads never cross the main-process boundary.
+    }
   });
   ipcMain.on('doric:projects:watch', (event, value) => {
     if (!senderIsAllowed(event.senderFrame?.url, allowedUrls)) return;

@@ -144,7 +144,7 @@ export const workspace = () => {
     reconcile: async () => 0,
   };
   const threads: ThreadStore = {
-    create: async (projectId, name, parentThreadId) => {
+    create: async (projectId, name, parentThreadId, inherit) => {
       const thread = {
         id: randomUUID(),
         projectId,
@@ -152,6 +152,8 @@ export const workspace = () => {
         name,
         state: 'queued' as const,
         lastSequence: 0,
+        cwd: inherit?.cwd ?? '/workspace',
+        ...(inherit?.cwdRepo === undefined ? {} : { cwdRepo: inherit.cwdRepo }),
         createdAt: now,
         updatedAt: now,
       };
@@ -182,6 +184,15 @@ export const workspace = () => {
       const record = threadRecords.get(id);
       if (!record) return undefined;
       const thread = { ...record.thread, name };
+      threadRecords.set(id, { ...record, thread });
+      notify();
+      return thread;
+    },
+    setCwd: async (id, cwd, cwdRepo) => {
+      const record = threadRecords.get(id);
+      if (!record) return undefined;
+      // The hint is written with the directory, so an absent one clears it.
+      const thread = { ...record.thread, cwd, cwdRepo };
       threadRecords.set(id, { ...record, thread });
       notify();
       return thread;
@@ -295,9 +306,7 @@ export const workspace = () => {
       ),
     eventsAfterPage: async (id, sequence, limit) => {
       const page = events
-        .filter(
-          (event) => event.threadId === id && event.sequence > sequence,
-        )
+        .filter((event) => event.threadId === id && event.sequence > sequence)
         .slice(0, limit);
       const last = page.at(-1);
       return {
@@ -385,11 +394,34 @@ export type FakeSandboxEntry = {
   readonly content?: string;
 };
 
+/**
+ * The Git answers one scripted repository gives the probe. `status` is the whole
+ * `git status --porcelain=v2 --branch` document, headers included, so a case
+ * states the exact bytes Git prints rather than an interpretation of them.
+ */
+export type FakeGitProbe = {
+  /** `git status --porcelain=v2 --branch`, whole records as Git prints them. */
+  readonly status?: string;
+  readonly operation?: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
+  readonly shallow?: boolean;
+  readonly stash?: number;
+  /** How many submodules the repository declares; the fact prints only then. */
+  readonly submodules?: number;
+  readonly worktree?: boolean;
+  /** The short commit the probe reads while HEAD is detached. */
+  readonly short?: string;
+  /** What `git config --get remote.origin.url` answers. */
+  readonly origin?: string;
+};
+
 /** One repository the fake sandbox holds, with the output git returns for it. */
 export type FakeRepository = {
   readonly path: string;
+  /** `git status --porcelain`, which the workspace changes view reads. */
   readonly status?: string;
   readonly diff?: string;
+  /** The answers this repository gives the Git probe and the repository hint. */
+  readonly git?: FakeGitProbe;
 };
 
 export type FakeSandboxOptions = {
@@ -399,9 +431,16 @@ export type FakeSandboxOptions = {
   /** `git status --porcelain` of the repository at the workspace root. */
   readonly status?: string;
   readonly diff?: string;
+  /** The Git probe answers of the repository at the workspace root. */
+  readonly git?: FakeGitProbe;
   /** Repositories to discover, each by its workspace-relative root; `''` is the
    * workspace root. */
   readonly repositories?: readonly FakeRepository[];
+  /**
+   * Workspace-relative directories that read as inside the root but resolve
+   * outside it, as a symbolic link does: the physical probe answers `outside`.
+   */
+  readonly escapes?: readonly string[];
 };
 
 /**
@@ -415,6 +454,11 @@ export type FakeSandboxOptions = {
  * - `sh -c '<rules>' ignores <deep|shallow> <root> <ancestors...>` dumps every
  *   applicable `.gitignore` in one framed stream;
  * - `find <root> ( -name .git ) -prune -print` finds each scripted repository;
+ * - `sh -c '<kind test>' sh <absolute path>` reports directory/file/missing;
+ * - `sh -c '<git probe>' git-probe <absolute path>` answers the labeled Git
+ *   facts and the repository's scripted porcelain-v2 status, or `repo false`;
+ * - `sh -c '<hint>' git-hint <absolute path>` reports the repository hint of a
+ *   directory whose own root holds a `.git`;
  * - `wc -c <absolute paths>` reports each file's byte size;
  * - `head -c <n> -- <path>` returns the first `n` bytes of the file;
  * - `git -C <root> status --porcelain` fails for a root without a repository;
@@ -464,7 +508,14 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
   for (const repository of [
     ...(options.status === undefined
       ? []
-      : [{ path: '', status: options.status, diff: options.diff }]),
+      : [
+          {
+            path: '',
+            status: options.status,
+            diff: options.diff,
+            git: options.git,
+          },
+        ]),
     ...(options.repositories ?? []),
   ]) {
     const path = clean(repository.path);
@@ -495,6 +546,68 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
     return [...repositories.keys()]
       .map((path) => absolute(path === '' ? '.git' : `${path}/.git`))
       .join('\n');
+  };
+  /**
+   * The repository a directory lies in, found the way Git walks up: the
+   * directory itself when it is a repository root, else its nearest ancestor.
+   */
+  const enclosing = (
+    value: string,
+  ):
+    | { readonly root: string; readonly repository: FakeRepository }
+    | undefined => {
+    const target = relative(value);
+    const parts = target === '' ? [''] : target.split('/');
+    for (let depth = parts.length; depth > 0; depth -= 1) {
+      const root = parts.slice(0, depth).join('/');
+      const repository = repositories.get(root);
+      if (repository !== undefined) return { root, repository };
+    }
+    return undefined;
+  };
+  const operationMarkers = {
+    rebase: 'REBASE_HEAD',
+    'cherry-pick': 'CHERRY_PICK_HEAD',
+    revert: 'REVERT_HEAD',
+    merge: 'MERGE_HEAD',
+    bisect: 'BISECT_LOG',
+  } as const;
+  /** The one-round-trip Git probe, in the shape the host's script prints it. */
+  const gitProbe = (value: string): string => {
+    const found = enclosing(value);
+    if (found === undefined) return 'repo false';
+    const facts = found.repository.git ?? {};
+    const dot = absolute(found.root === '' ? '.git' : `${found.root}/.git`);
+    const lines = [
+      'repo true',
+      `top ${absolute(found.root)}`,
+      `gitdir ${facts.worktree === true ? `${dot}/worktrees/wt` : dot}`,
+      `commondir ${dot}`,
+      `shallow ${String(facts.shallow === true)}`,
+    ];
+    if (facts.short !== undefined) lines.push(`short ${facts.short}`);
+    if (facts.operation !== undefined)
+      lines.push(`operation ${operationMarkers[facts.operation]}`);
+    lines.push(`stash ${String(facts.stash ?? 0)}`);
+    // The host's script reads the recursive listing only when the repository
+    // declares submodules, so the scripted answer prints the fact only then.
+    if (facts.submodules !== undefined)
+      lines.push(`submodules ${String(facts.submodules)}`);
+    if (facts.origin !== undefined) lines.push(`origin ${facts.origin}`);
+    lines.push('status', facts.status ?? '');
+    return lines.join('\n');
+  };
+  /**
+   * The repository hint: a directory whose own root holds a `.git` marker, and
+   * the `origin` of the repository that marker belongs to. A scripted
+   * repository holds one, exactly as the `find` above reports it.
+   */
+  const gitHint = (value: string): string => {
+    const target = relative(value);
+    const marker = target === '' ? '.git' : `${target}/.git`;
+    if (!repositories.has(target) && kindOf(marker) === 'missing') return '';
+    const origin = repositories.get(target)?.git?.origin;
+    return `present\n${origin === undefined ? '' : `${origin}\n`}`;
   };
   /** The lines a shell `read` loop sees: split on newlines, final newline silent. */
   const shellLines = (content: string): readonly string[] => {
@@ -546,6 +659,16 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
       if (label === 'entries' || label === 'ignores')
         return ok(
           dump(label, args[3] === 'deep', args[4] ?? root, args.slice(5)),
+        );
+      if (label === 'git-probe') return ok(gitProbe(args[3] ?? root));
+      if (label === 'git-hint') return ok(gitHint(args[3] ?? root));
+      // The physical probe: a path the scripted workspace declares as escaping
+      // resolves outside the root, and every other path resolves inside it.
+      if (label === 'cwd-physical')
+        return ok(
+          (options.escapes ?? []).includes(relative(args[4] ?? root))
+            ? 'outside'
+            : 'inside',
         );
       return ok(args.length > 2 ? kindOf(args.at(-1) ?? root) : '');
     }

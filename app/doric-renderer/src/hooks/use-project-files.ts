@@ -1,3 +1,4 @@
+import { workspacePath } from '@/domain/cwd';
 import {
   diffReadState,
   fileReadState,
@@ -22,6 +23,12 @@ export type { ReadState };
 export type ProjectFilesOptions = {
   /** The selected Project; the surface is empty without one. */
   readonly projectId?: string;
+  /**
+   * The selected Thread's working directory, sandbox-absolute. The panel draws
+   * the tree from it, and the changes view looks at the repository it sits in;
+   * without one the panel draws the Project's workspace root.
+   */
+  readonly cwd?: string;
   /** Bumped by the conversation whenever the agent writes to the sandbox. */
   readonly revision: number;
 };
@@ -42,7 +49,7 @@ export type ProjectFilesActions = {
  */
 export type ProjectFiles = {
   readonly actions: ProjectFilesActions;
-  /** The workspace diff behind the changes view, once it has been asked for. */
+  /** The cwd repository's diff, behind the changes view, once it is asked for. */
   readonly changes: ReadState<ProjectDiff>;
   /** The last rejected read; the panel shows it and Refresh tries again. */
   readonly error?: string;
@@ -63,18 +70,20 @@ export type ProjectFiles = {
 };
 
 /**
- * The sandbox surface of one Project. The sandbox belongs to the Project rather
- * than to a Thread, so this hook reads only the Project it is given and forgets
- * everything the previous one answered.
+ * The sandbox surface of one Project, rooted at the selected Thread's working
+ * directory. The sandbox belongs to the Project, but what a Thread sees of it
+ * starts at its own cwd, so this hook reads the Project it is given and the root
+ * the cwd names, and forgets everything the previous root answered.
  *
- * Two things drive it: the Project, which starts the surface over and reads the
- * whole tree of the new sandbox in one request, and `revision` growing, which
- * invalidates what is on screen because the agent has just written to the
+ * Two things drive it: the Project or the cwd, which starts the surface over and
+ * reads the whole tree of the new root in one request, and `revision` growing,
+ * which invalidates what is on screen because the agent has just written to the
  * sandbox. There is no watcher: the surface reads on demand and never writes,
  * and one file's content is read only when it is opened.
  */
 export const useProjectFiles = ({
   projectId,
+  cwd,
   revision,
 }: ProjectFilesOptions): ProjectFiles => {
   const queryClient = useQueryClient();
@@ -94,9 +103,13 @@ export const useProjectFiles = ({
     toggleDirectory: toggleStoredDirectory,
   } = filesStore.getState();
 
+  // The sandbox speaks workspace-relative paths; the Thread's cwd is
+  // sandbox-absolute, and the root of the mount is the empty path.
+  const root = cwd === undefined ? ROOT_PATH : workspacePath(cwd);
+
   const tree = useQuery({
-    queryKey: queryKeys.files.tree(projectId),
-    queryFn: () => window.doric.projects.tree(projectId as string, ROOT_PATH),
+    queryKey: queryKeys.files.tree(projectId, cwd),
+    queryFn: () => window.doric.projects.tree(projectId as string, root),
     enabled: projectId !== undefined,
     gcTime: 0,
   });
@@ -108,21 +121,31 @@ export const useProjectFiles = ({
     gcTime: 0,
   });
   const changes = useQuery({
-    queryKey: queryKeys.files.diff(projectId),
-    queryFn: () => window.doric.projects.diff(projectId as string),
+    queryKey: queryKeys.files.diff(projectId, cwd),
+    queryFn: () =>
+      window.doric.projects.diff(
+        projectId as string,
+        root === ROOT_PATH ? undefined : root,
+      ),
     enabled: projectId !== undefined && changesRequested,
     gcTime: 0,
   });
 
-  // A new Project is a new sandbox, so nothing of the old one stays open and no
-  // answer the previous Project still owes can land on the new surface.
-  const previousProject = useRef(projectId);
+  // A new Project is a new sandbox and a new cwd is a new root within it, so
+  // nothing of the old surface stays open and no answer the previous root still
+  // owes can land on the new one.
+  const previousRoot = useRef({ projectId, root });
   useEffect(() => {
-    if (previousProject.current === projectId) return;
-    previousProject.current = projectId;
+    if (
+      previousRoot.current.projectId === projectId &&
+      previousRoot.current.root === root
+    ) {
+      return;
+    }
+    previousRoot.current = { projectId, root };
     reset();
     setError(undefined);
-  }, [projectId, reset]);
+  }, [projectId, reset, root]);
 
   // The agent wrote to the sandbox, so what the surface shows may be stale.
   const seenRevision = useRef(revision);
@@ -191,9 +214,9 @@ export const useProjectFiles = ({
     if (projectId === undefined) return;
     requestChanges();
     void queryClient.invalidateQueries({
-      queryKey: queryKeys.files.diff(projectId),
+      queryKey: queryKeys.files.diff(projectId, cwd),
     });
-  }, [projectId, queryClient, requestChanges]);
+  }, [cwd, projectId, queryClient, requestChanges]);
 
   const refresh = useCallback((): void => {
     setError(undefined);

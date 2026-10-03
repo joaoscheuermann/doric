@@ -4,11 +4,14 @@
 communicates with the local Direct host at `http://127.0.0.1:3000` over HTTP and
 Socket.IO, and exposes only named Project and Thread operations, three read-only
 Project filesystem reads (one directory listing, one bounded file content read,
-and the workspace Git diff), the host configuration, an event subscription for
-one selected Thread and one selected Project, and semantic connection status
-through a sandboxed, origin-checked preload bridge. The
-`/status`, `/threads`, and `/projects` namespaces share one process-long
-Engine.IO connection; the renderer never accesses any transport directly.
+and the workspace Git diff), the Thread working directory and the Git summary of
+its repository, the host configuration, an event subscription for
+every watched Thread and for one selected Project, and semantic connection
+status through a sandboxed, origin-checked preload bridge. The `/status` and
+`/projects` namespaces share one process-long Engine.IO connection, while each
+watched Thread owns a connection of its own, so a Thread's subscription ends
+when the renderer stops watching it; the renderer never accesses any transport
+directly.
 
 The `config` namespace crosses the same boundary: `config.get` reads the host
 configuration, which is credential-free except for GitHub's username, email and
@@ -25,6 +28,16 @@ reaches the host — no absolute path, no `..` segment, no NUL character — and
 returns the host's lease states (`pending` with the host's `Retry-After` hint,
 `expired`, `unavailable`, `missing`) as data instead of throwing, so the
 renderer can explain a Project whose sandbox is not usable yet.
+
+The `threads` namespace crosses that boundary too. `threads.setCwd` moves a
+Thread's working directory — an absolute sandbox path, or one relative to the
+directory it is in — and answers the updated Thread; `threads.git` answers the
+Git summary of that directory, or `{ repo: false }` when it holds no repository.
+A Thread record carries the directory as `cwd` and the cheap repository hint as
+`cwdRepo`, and the main process refuses a working-directory value it could not
+even forward: a non-string, an empty or over-long value, or one holding NUL.
+What the path may resolve to — inside the sandbox, an existing directory — stays
+the host's rule, and the host is what reports a refusal.
 
 At startup a frameless, square, dark splash window shows the centered `Doric`
 name while the main process waits for the local Direct API to answer. The splash

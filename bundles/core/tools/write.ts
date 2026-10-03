@@ -6,7 +6,7 @@ import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
 
 const description =
-  "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.";
+  "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. A relative path resolves against the current working directory.";
 
 export const input = z
   .object({
@@ -35,13 +35,13 @@ const factory = defineTool({
   input,
   output,
   execute: (sandbox, host, input): Promise<WriteOutput> =>
-    execute(sandbox.root, sandbox, input),
+    execute(host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
-  workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<WriteOutput> => {
@@ -49,7 +49,7 @@ const execute = async (
     return writeError('Path must not be empty');
   }
 
-  const filePath = resolvePath(workspaceRoot, input.path);
+  const filePath = resolvePath(cwd, input.path);
   const oldContent = await sandbox.readFile(filePath).catch(() => '');
 
   try {
@@ -164,10 +164,8 @@ const formatLine = (
   width: number,
 ): string => `${String(line).padStart(width, ' ')} ${marker}${text}`;
 
-const resolvePath = (workspaceRoot: string, value: string): string =>
-  path.normalize(
-    path.isAbsolute(value) ? value : path.join(workspaceRoot, value),
-  );
+const resolvePath = (cwd: string, value: string): string =>
+  path.normalize(path.isAbsolute(value) ? value : path.join(cwd, value));
 
 const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);

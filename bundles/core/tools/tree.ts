@@ -6,7 +6,7 @@ import { listSandboxTree, type SandboxTreeNode } from 'sandbox';
 import { defineTool } from 'tool';
 
 const description =
-  'Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents.';
+  'Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents. A relative path resolves against the current working directory.';
 
 export const input = z
   .object({
@@ -27,7 +27,7 @@ const factory = defineTool({
   input,
   output,
   execute: (sandbox, host, input): Promise<TreeOutput> =>
-    execute(sandbox.root, sandbox, input),
+    execute(sandbox.root, host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
@@ -38,13 +38,14 @@ export default factory;
  */
 const execute = async (
   workspaceRoot: string,
+  cwd: string,
   sandbox: Parameters<typeof listSandboxTree>[0],
   input: Input,
 ): Promise<TreeOutput> => {
   const displayPath =
     input.path === undefined || input.path === '' ? '.' : input.path;
   const result = await listSandboxTree(sandbox, {
-    path: input.path ?? '',
+    path: resolvePath(cwd, input.path ?? ''),
     ...(input.exclude === undefined ? {} : { exclude: input.exclude }),
   });
 
@@ -74,6 +75,10 @@ const execute = async (
 
   return `${lines.join('\n')}\n`;
 };
+
+/** Absolute paths stay absolute; a relative one names a place inside `cwd`. */
+const resolvePath = (cwd: string, value: string): string =>
+  path.isAbsolute(value) ? path.normalize(value) : path.join(cwd, value);
 
 const appendTree = (
   entries: readonly SandboxTreeNode[],

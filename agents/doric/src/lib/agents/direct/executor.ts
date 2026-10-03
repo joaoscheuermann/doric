@@ -52,8 +52,8 @@ export const runDirectPrompt: ThreadExecution = async ({
   host,
 }) => {
   signal.throwIfAborted();
-  const record = await store.find(thread.id).catch(() => {
-    throw new ThreadPersistenceError();
+  const record = await store.find(thread.id).catch((cause) => {
+    throw new ThreadPersistenceError(cause);
   });
   if (record === undefined) throw new Error('Thread no longer exists.');
   const messages = createMessageStorage(record.messages);
@@ -93,8 +93,8 @@ export const runDirectPrompt: ThreadExecution = async ({
           eventJson(value, generation.redactions()),
         );
         publisher.event(stored);
-      } catch {
-        throw new ThreadPersistenceError();
+      } catch (cause) {
+        throw new ThreadPersistenceError(cause);
       }
       signal.throwIfAborted();
       if (value.type === 'agent.finished') text = value.response.text;
@@ -109,8 +109,8 @@ export const runDirectPrompt: ThreadExecution = async ({
           generation.redactions(),
         ) as unknown as readonly ProviderMessage[],
       );
-    } catch {
-      throw new ThreadPersistenceError();
+    } catch (cause) {
+      throw new ThreadPersistenceError(cause);
     }
   }
 };

@@ -4,7 +4,7 @@ import type {
   ThreadEvent as StoredEvent,
 } from '../../generated/prisma/client.js';
 import type { Database } from '../database.js';
-import type { Thread, ThreadEvent, ThreadStore } from './types.js';
+import type { CwdRepo, Thread, ThreadEvent, ThreadStore } from './types.js';
 import {
   before,
   checkLimit,
@@ -12,6 +12,7 @@ import {
   json,
   page,
   states,
+  storable,
   storedState,
   terminal,
   timestamps,
@@ -24,6 +25,8 @@ const recordColumns = {
   parentThreadId: true,
   name: true,
   state: true,
+  cwd: true,
+  cwdRepo: true,
   activePromptId: true,
   errorCode: true,
   lastSequence: true,
@@ -39,7 +42,7 @@ const recordColumns = {
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({
-  async create(projectId, name, parentThreadId) {
+  async create(projectId, name, parentThreadId, inherit) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId}::uuid FOR UPDATE`;
       const owner = await tx.project.findUniqueOrThrow({
@@ -70,7 +73,14 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         }
       }
       const stored = await tx.thread.create({
-        data: { projectId, name, parentThreadId },
+        data: {
+          projectId,
+          name,
+          parentThreadId,
+          ...(inherit === undefined
+            ? {}
+            : { cwd: inherit.cwd, cwdRepo: inherit.cwdRepo ?? null }),
+        },
         select: recordColumns,
       });
       return { thread: thread(stored), messages: [], checkpoints: {} };
@@ -136,6 +146,21 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     const result = await database.thread.updateMany({
       where: { id },
       data: { name },
+    });
+    if (result.count === 0) return undefined;
+    const stored = await database.thread.findUnique({
+      where: { id },
+      select: recordColumns,
+    });
+    return stored === null ? undefined : thread(stored);
+  },
+
+  async setCwd(id, cwd, cwdRepo) {
+    // The directory and its hint are one write: a hint can never describe a
+    // directory the Thread is no longer in.
+    const result = await database.thread.updateMany({
+      where: { id },
+      data: { cwd, cwdRepo: cwdRepo ?? null },
     });
     if (result.count === 0) return undefined;
     const stored = await database.thread.findUnique({
@@ -306,7 +331,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     await database.thread.updateMany({
       where: { id },
       data: {
-        resultText: result.text,
+        resultText: storable(result.text),
         resultStatus: result.status,
         resultPromptId: result.promptId,
         resultAt: new Date(result.at),
@@ -363,6 +388,8 @@ const thread = (
   name: stored.name,
   state: states[stored.state],
   lastSequence: stored.lastSequence,
+  cwd: stored.cwd,
+  ...(stored.cwdRepo === null ? {} : { cwdRepo: stored.cwdRepo as CwdRepo }),
   ...(stored.activePromptId === null
     ? {}
     : { activePromptId: stored.activePromptId }),

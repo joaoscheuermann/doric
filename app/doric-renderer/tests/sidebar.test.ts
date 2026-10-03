@@ -22,6 +22,7 @@ import {
   settleDelete,
   type Sidebar,
   startRename,
+  threadIconKind,
 } from '../src/domain/sidebar';
 import type { Draft, Entity, Project, Thread } from '../src/domain/workspace';
 
@@ -38,6 +39,7 @@ const thread: Thread = {
   projectId: 'project',
   name: 'thread',
   state: 'ready',
+  cwd: '/workspace/doric',
   createdAt: '',
   updatedAt: '',
 };
@@ -178,5 +180,19 @@ describe('the one error a failed request surfaces', () => {
       clearError(report(emptySidebar, 'Stream broke.')).error,
       undefined,
     );
+  });
+});
+
+describe('the icon a thread row leads with', () => {
+  test('is an ordinary conversation without the host hint', () => {
+    assert.equal(threadIconKind(thread), 'conversation');
+  });
+
+  test('is git when the cwd root is a repository', () => {
+    assert.equal(threadIconKind({ ...thread, cwdRepo: 'git' }), 'git');
+  });
+
+  test('is github only for the GitHub hint', () => {
+    assert.equal(threadIconKind({ ...thread, cwdRepo: 'github' }), 'github');
   });
 });

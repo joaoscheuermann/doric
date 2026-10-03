@@ -1,4 +1,24 @@
-import { type Draft, type Entity, messageFrom } from './workspace';
+import { type Draft, type Entity, messageFrom, type Thread } from './workspace';
+
+/**
+ * The icon a Thread row leads with. It is a semantic kind rather than a glyph:
+ * the component layer chooses which icon paints each one, so the rule can be
+ * stated and tested without React.
+ */
+export type ThreadIconKind = 'conversation' | 'git' | 'github';
+
+/**
+ * The icon kind a Thread leads with, decided from the host's hint alone: a
+ * working directory whose root holds a repository is `git`, a GitHub `origin`
+ * makes it `github`, and everything else — including a Thread the host has not
+ * yet described — stays a conversation. Nothing is inferred from the parent
+ * Thread or from another tool.
+ */
+export const threadIconKind = (thread: Thread): ThreadIconKind => {
+  if (thread.cwdRepo === 'github') return 'github';
+  if (thread.cwdRepo === 'git') return 'git';
+  return 'conversation';
+};
 
 /**
  * The workspace sidebar's transient state: the dialog in progress and the one

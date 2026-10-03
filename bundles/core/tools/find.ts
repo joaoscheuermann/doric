@@ -8,7 +8,7 @@ import { defineTool } from 'tool';
 const DEFAULT_LIMIT = 1000;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const description =
-  'Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).';
+  'Search for files by glob pattern. Returns matching file paths relative to the search directory. A relative path resolves against the current working directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).';
 
 export const input = z
   .object({
@@ -46,18 +46,19 @@ const factory = defineTool({
   input,
   output,
   execute: (sandbox, host, input): Promise<FindOutput> =>
-    execute(sandbox.root, sandbox, input),
+    execute(sandbox.root, host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
   workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<FindOutput> => {
   const searchDir = input.path ?? '.';
-  const searchPath = resolvePath(workspaceRoot, searchDir);
+  const searchPath = resolvePath(workspaceRoot, cwd, searchDir);
 
   if (typeof searchPath === 'string') {
     return empty(searchPath);
@@ -300,12 +301,13 @@ const compileGlob = (pattern: string): RegExp | string => {
 
 const resolvePath = (
   workspaceRoot: string,
+  cwd: string,
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
 
   const resolved = normalizePath(
-    path.isAbsolute(value) ? value : path.join(root, value),
+    path.isAbsolute(value) ? value : path.join(cwd, value),
   );
 
   if (!contains(root, resolved)) {

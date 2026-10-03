@@ -16,8 +16,8 @@ import type {
 
 /** A failed durable write must stop this conversation, not retry on stale history. */
 export class ThreadPersistenceError extends Error {
-  constructor() {
-    super('Thread persistence failed.');
+  constructor(cause?: unknown) {
+    super('Thread persistence failed.', { cause });
     this.name = 'ThreadPersistenceError';
   }
 }
@@ -38,6 +38,11 @@ export type ThreadExecution = (options: {
   readonly host: Host;
 }) => Promise<string>;
 export type ThreadRuntime = {
+  /**
+   * The Thread's durable record, alive here so that what one prompt's tool does
+   * is what the next tool of the same prompt sees — its working directory, for
+   * instance.
+   */
   thread: Thread;
   readonly jobs: PromptJob[];
   closing: boolean;

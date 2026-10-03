@@ -33,13 +33,22 @@ const thread = (
   parentThreadId?: string,
 ): Thread =>
   parentThreadId === undefined
-    ? { id, projectId, name: id, state: 'ready', createdAt: '', updatedAt: '' }
+    ? {
+        id,
+        projectId,
+        name: id,
+        state: 'ready',
+        cwd: '/workspace/doric',
+        createdAt: '',
+        updatedAt: '',
+      }
     : {
         id,
         projectId,
         parentThreadId,
         name: id,
         state: 'ready',
+        cwd: '/workspace/doric',
         createdAt: '',
         updatedAt: '',
       };

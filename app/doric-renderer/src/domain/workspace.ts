@@ -10,6 +10,7 @@ import type {
   ToolCatalogEntry,
 } from './config';
 import type { ConnectionApi } from './connection';
+import type { ThreadGit } from './thread-git';
 
 /**
  * The colors a Project can be marked with. The vocabulary is the host's; this
@@ -58,6 +59,14 @@ export type Thread = {
   readonly state: string;
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
+  /** The Thread's working directory, absolute inside the sandbox. */
+  readonly cwd: string;
+  /**
+   * The repository the cwd root is, as the host read it from the disk alone:
+   * `'github'` only when the `origin` remote is on github.com. Absent when the
+   * root holds no `.git` entry.
+   */
+  readonly cwdRepo?: 'git' | 'github';
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -90,7 +99,15 @@ export type ThreadUpdate =
       readonly projectId: string;
       readonly threadId: string;
     }
-  | { readonly kind: 'error'; readonly message: string };
+  /**
+   * A stream failure, named for the Thread whose watch raised it, so a surface
+   * draws it in that Thread's conversation and in no other.
+   */
+  | {
+      readonly kind: 'error';
+      readonly threadId: string;
+      readonly message: string;
+    };
 
 /**
  * The app's best-effort local snapshot of one Thread's durable log: its
@@ -218,6 +235,17 @@ export type WorkspaceApi = {
   readonly threads: {
     list(projectId: string): Promise<readonly Thread[]>;
     get(id: string): Promise<Thread | undefined>;
+    /**
+     * The git summary of one Thread's working directory, read from the disk:
+     * whether the cwd root is a repository, and if so every fact the footer and
+     * its popover state about it.
+     */
+    git(id: string): Promise<ThreadGit>;
+    /**
+     * Moves a Thread's working directory, returning the Thread as the host
+     * stored it. A path the host refuses is a rejection carrying the reason.
+     */
+    setCwd(id: string, cwd: string): Promise<Thread>;
     create(
       projectId: string,
       name: string,
@@ -238,6 +266,14 @@ export type WorkspaceApi = {
      * instantly and reconciles with the stream afterwards.
      */
     history(id: string): Promise<ThreadHistory | null>;
+    /**
+     * Follows one Thread's updates. Several watches coexist, one per Thread the
+     * surface holds open, and each carries only its own Thread's updates: a
+     * `snapshot`, `event` or `updated` names the Thread it belongs to, a
+     * `deleted` names the Thread it dropped, and an `error` belongs to the watch
+     * that delivered it. The returned function releases only this Thread's watch
+     * and is safe to call twice, or after a newer watch for the same Thread.
+     */
     watch(
       id: string,
       afterSequence: number,

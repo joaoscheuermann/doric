@@ -17,6 +17,10 @@ export type Thread = {
   readonly projectId: string;
   readonly parentThreadId?: string;
   readonly state: string;
+  /** The Thread's own working directory, absolute inside its Project's sandbox. */
+  readonly cwd: string;
+  /** `git` or `github` when the working directory's own root holds one. */
+  readonly cwdRepo?: 'git' | 'github';
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
   readonly createdAt: string;
@@ -106,6 +110,43 @@ export type ProjectDiffResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+/**
+ * The Git summary of one Thread's working directory. `repo: false` says the
+ * directory holds, or lies in, no repository; every other field describes the
+ * one it does lie in.
+ */
+export type ThreadGit =
+  | { readonly repo: false }
+  | {
+      readonly repo: true;
+      readonly root: string;
+      readonly head: string;
+      readonly detached: boolean;
+      readonly unborn: boolean;
+      readonly upstream: string | null;
+      readonly ahead: number;
+      readonly behind: number;
+      readonly dirty: {
+        readonly staged: number;
+        readonly modified: number;
+        readonly untracked: number;
+      };
+      readonly conflicted: number;
+      readonly operation: GitOperation | null;
+      readonly worktree: boolean;
+      readonly shallow: boolean;
+      readonly stash: number;
+      /** How many submodules the repository declares, at any depth. */
+      readonly submodules: number;
+    };
+
+export type GitOperation =
+  | 'merge'
+  | 'rebase'
+  | 'cherry-pick'
+  | 'revert'
+  | 'bisect';
+
 export const reasoningEfforts = [
   'none',
   'minimal',
@@ -154,12 +195,7 @@ export type ProviderKind = {
 };
 
 /** The value kinds a tool configuration field can carry. */
-export type ToolConfigFieldKind =
-  | 'text'
-  | 'url'
-  | 'number'
-  | 'enum'
-  | 'secret';
+export type ToolConfigFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
 /** One configuration field a tool declares, as the host answers it. */
 export type ToolConfigField = {
@@ -333,6 +369,8 @@ const threadFrom = (value: unknown): Thread => {
     (value.parentThreadId !== undefined &&
       typeof value.parentThreadId !== 'string') ||
     typeof value.state !== 'string' ||
+    typeof value.cwd !== 'string' ||
+    !isCwdRepo(value.cwdRepo) ||
     typeof value.createdAt !== 'string' ||
     typeof value.updatedAt !== 'string'
   ) {
@@ -340,6 +378,12 @@ const threadFrom = (value: unknown): Thread => {
   }
   return value as Thread;
 };
+
+const cwdRepos = ['git', 'github'] as const;
+
+/** The repository hint of a Thread, when the host names one. */
+const isCwdRepo = (value: unknown): boolean =>
+  value === undefined || (cwdRepos as readonly unknown[]).includes(value);
 
 const reasoningEffortValues = new Set<string>(reasoningEfforts);
 
@@ -1009,6 +1053,50 @@ const diffFrom = (value: unknown): ProjectDiff => {
   };
 };
 
+const gitOperations: readonly GitOperation[] = [
+  'merge',
+  'rebase',
+  'cherry-pick',
+  'revert',
+  'bisect',
+];
+
+const wholeCount = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+/**
+ * One Git summary, read the way the host answers it: the two shapes are exact,
+ * so a field this window cannot draw never reaches a view.
+ */
+const threadGitFrom = (value: unknown): ThreadGit => {
+  if (!isRecord(value)) return invalidResponse();
+  if (value.repo === false) return { repo: false };
+  if (
+    value.repo !== true ||
+    typeof value.root !== 'string' ||
+    typeof value.head !== 'string' ||
+    typeof value.detached !== 'boolean' ||
+    typeof value.unborn !== 'boolean' ||
+    (value.upstream !== null && typeof value.upstream !== 'string') ||
+    !wholeCount(value.ahead) ||
+    !wholeCount(value.behind) ||
+    !isRecord(value.dirty) ||
+    !wholeCount(value.dirty.staged) ||
+    !wholeCount(value.dirty.modified) ||
+    !wholeCount(value.dirty.untracked) ||
+    !wholeCount(value.conflicted) ||
+    (value.operation !== null &&
+      !gitOperations.includes(value.operation as GitOperation)) ||
+    typeof value.worktree !== 'boolean' ||
+    typeof value.shallow !== 'boolean' ||
+    !wholeCount(value.stash) ||
+    !wholeCount(value.submodules)
+  ) {
+    return invalidResponse();
+  }
+  return value as ThreadGit;
+};
+
 const filesResultFrom = (answer: ProjectAnswer): ProjectFilesResult => {
   if (answer.kind !== 'ready') return outcomeFrom(answer);
   if (
@@ -1268,6 +1356,15 @@ export const workspaceApi = {
         method: 'PATCH',
         body: body({ name }),
       }),
+    /** Moves the Thread's working directory for the next prompt and tool call. */
+    setCwd: (threadId: string, cwd: string) =>
+      request<Thread>(`/threads/${id(threadId)}`, {
+        method: 'PATCH',
+        body: body({ cwd }),
+      }),
+    /** The Git summary of the Thread's working directory, probed on the host. */
+    git: async (threadId: string) =>
+      threadGitFrom(await request<unknown>(`/threads/${id(threadId)}/git`)),
     prompt: async (threadId: string, prompt: string) =>
       promptReceiptFrom(
         await request<unknown>(`/threads/${id(threadId)}/prompt`, {

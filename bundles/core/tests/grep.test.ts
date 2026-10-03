@@ -39,6 +39,38 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  test('searches the working directory and leaves an absolute path absolute', async () => {
+    const root = await workspace('grep-cwd');
+
+    await write(root, 'src/one.ts', 'before\nTarget\n');
+
+    await write(root, 'two.txt', 'Target\n');
+
+    const host = fakeHost({ cwd: '/workspace/src' });
+    const sandbox = createFakeSandbox(root);
+
+    const relative = await factory(sandbox, host).execute({
+      pattern: 'Target',
+    });
+
+    assert.deepEqual(
+      relative.matches.map((match) => match.file),
+      ['one.ts'],
+    );
+
+    const absolute = await factory(sandbox, host).execute({
+      pattern: 'Target',
+      path: '/workspace',
+    });
+
+    assert.deepEqual(
+      absolute.matches.map((match) => match.file),
+      ['src/one.ts', 'two.txt'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test('returns a structured error for invalid regular expressions', async () => {
     const root = await workspace('grep-invalid-regex');
 

@@ -130,6 +130,23 @@ export const relativePath = (value: unknown): string => {
   return value;
 };
 
+/**
+ * A Thread working directory a client may name: an absolute path inside the
+ * sandbox, or one relative to the Thread's current directory the way `cd` reads
+ * it. What it may resolve to is the host's rule, not this one's.
+ */
+export const workingDirectory = (value: unknown): string => {
+  if (
+    typeof value !== 'string' ||
+    value.includes('\0') ||
+    value.trim().length === 0 ||
+    value.length > maximumPathLength
+  ) {
+    throw new WorkspaceError('The working directory is invalid.');
+  }
+  return value;
+};
+
 export const sequence = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new WorkspaceError('The event cursor is invalid.');

@@ -371,7 +371,9 @@ export const createWorkspaceService = ({
         if (kind === 'escaped') return { status: 'invalid_path' as const };
         if (kind === 'missing') return { status: 'not_found' as const };
       }
-      const repositories = await projectChanges(sandbox);
+      // Discovery is scoped to the requested path, so the renderer reads the
+      // changes of one Thread's working directory rather than the whole sandbox.
+      const repositories = await projectChanges(sandbox, path ?? '');
       return {
         status: 'ready' as const,
         ...(path === undefined ? {} : { path }),
@@ -480,6 +482,34 @@ export const createWorkspaceService = ({
           }
           return value;
         });
+      },
+      setCwd: async (id, cwd) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        const project = runtimes.get(record.projectId);
+        const thread = project?.threads.get(id);
+        if (project === undefined || thread === undefined)
+          return { status: 'inactive' };
+        return runner.setCwd(project, thread, cwd);
+      },
+      git: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        const project = runtimes.get(record.projectId);
+        const thread = project?.threads.get(id);
+        const sandbox = project?.lease?.sandbox;
+        if (
+          project === undefined ||
+          project.closing ||
+          thread === undefined ||
+          thread.closing ||
+          sandbox === undefined
+        )
+          return { status: 'inactive' };
+        return {
+          status: 'ready',
+          git: await runner.git(project, thread, sandbox),
+        };
       },
       prompt: async (id, prompt) => {
         const record = await threads.record(id);

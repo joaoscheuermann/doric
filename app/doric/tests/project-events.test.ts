@@ -111,6 +111,7 @@ const thread: Thread = {
   name: 'Main',
   projectId: 'project-id',
   state: 'ready',
+  cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -199,7 +200,33 @@ describe('Project event subscription', () => {
 
     target.destroy();
     assert.equal(manager.socket.disconnects, 2);
-    manager.socket.emit('thread:updated', thread);
+    manager.socket.emit('thread:updated', {
+      ...thread,
+      projectId: 'second-project',
+    });
+    assert.deepEqual(target.updates, []);
+  });
+
+  test('ignores every update of another Project', () => {
+    const { manager, service, target } = setup();
+    service.watch(target, 'project-id');
+
+    manager.socket.emit('project:snapshot', {
+      projectId: 'other-project',
+      project: { ...project, id: 'other-project' },
+      threads: [thread],
+    });
+    manager.socket.emit('thread:updated', {
+      ...thread,
+      projectId: 'other-project',
+    });
+    manager.socket.emit('thread:deleted', {
+      projectId: 'other-project',
+      threadId: 'thread-id',
+    });
+    manager.socket.emit('project:updated', { ...project, id: 'other-project' });
+    manager.socket.emit('project:deleted', { projectId: 'other-project' });
+
     assert.deepEqual(target.updates, []);
   });
 

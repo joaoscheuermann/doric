@@ -22,35 +22,38 @@ The renderer has no direct network access to Doric. It uses the semantic
   `promptId`; it does not persist a second message history.
 - The surface above that projection is, for now, deliberately bare: a prompt
   input, a submit button, and the Thread's own log rendered verbatim as JSON,
-  with no styling. `use-thread-chat.ts` owns the subscription, the log and the
-  sending, and the surface only reads them. It is a stand-in while the rendering
-  of prose, reasoning, tool calls, delegated input and comments is rebuilt by
-  hand, so it promises no shape yet for any of them.
+  with no styling. The Thread chat store owns the subscriptions, the logs and the
+  sending for every Thread the reader has opened; `use-thread-chat.ts` binds a
+  surface to one Thread's slice of that state and renders nothing. It is a
+  stand-in while the rendering of prose, reasoning, tool calls, delegated input
+  and comments is rebuilt by hand, so it promises no shape yet for any of them.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
   Thread created by an agent appears in the sidebar without a reload.
-- The Project's sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files
-  tree and a Changes view. It belongs to the Project rather than to the selected
-  Thread, it only reads, and it holds every state a read can answer with —
-  `pending` with the host's retry hint, `expired`, `unavailable`, `missing`, a
-  refused path — as data, so an unusable sandbox is explained instead of failing.
-  The panel starts open, its tabs sit in its header in place of a title, and its
-  toggle stays at the window's right corner whether the panel is expanded or
-  collapsed (collapsed the panel is not mounted at all, and the main header
-  carries the control that reopens it).
-  `use-project-files.ts` owns the tree, the expansion, the open file and the
-  diff. The whole tree arrives in one read through `projects.tree`, so expanding
-  a directory reads nothing: `expanded` is view state over a tree already held,
-  and only a file's content is read on demand, when it is opened. The diff is
-  read only when the changes view is first shown, and it lists every Git
-  repository the workspace tree holds: each repository's root path is a sticky
-  header (rendered `.` for the workspace root) over that repository's own rows and
-  its own diff, a repository with nothing changed is not shown, and a workspace
-  with no repository at all says so. There is no watcher: the panel
-  re-reads on its own refresh, and on `useThreadChat`'s `writes` growing, which
-  counts the finished `write`, `edit` and `terminal` calls in the Thread's log
-  (`projector.ts`). `domain/files.ts` holds the path rules, the diff
-  classification and the sentences the states show, and is covered by
-  `tests/files.test.ts`.
+- The sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files tree
+  and a Changes view, rooted at the selected Thread's working directory rather
+  than at the Project. It only reads, and it holds every state a read can answer
+  with — `pending` with the host's retry hint, `expired`, `unavailable`,
+  `missing`, a refused path — as data, so an unusable sandbox is explained
+  instead of failing. The panel starts open, its tabs sit in its header in place
+  of a title, and its toggle stays at the window's right corner whether the panel
+  is expanded or collapsed (collapsed the panel is not mounted at all, and the
+  main header carries the control that reopens it). `use-project-files.ts` owns
+  the tree, the expansion, the open file and the diff. The whole tree arrives in
+  one read through `projects.tree`, from the workspace-relative path the Thread's
+  cwd names, so expanding a directory reads nothing: `expanded` is view state over
+  a tree already held, and only a file's content is read on demand, when it is
+  opened. The diff is read only when the changes view is first shown, and it is
+  scoped to the cwd, so it lists the repository that directory sits in: each
+  repository's root path is a sticky header (rendered `.` for the root) over that
+  repository's own rows and its own diff, a repository with nothing changed is not
+  shown, and a directory with no repository at all says so. There is no watcher:
+  the panel re-reads on its own refresh, and on `useThreadChat`'s `writes`
+  growing, which counts the finished `write`, `edit` and `terminal` calls in the
+  Thread's log (`projector.ts`). `domain/files.ts` holds the workspace path rules,
+  and `domain/cwd.ts` the one translation between the sandbox-absolute cwd and the
+  workspace-relative path the endpoints expect; together with the diff
+  classification and the sentences the states show, `tests/files.test.ts` and
+  `tests/cwd.test.ts` cover them.
 - Selecting a file opens the file viewer (`components/organisms/file-viewer.tsx`)
   as a resizable division of its own between the conversation and the sandbox
   panel, so the tree it was opened from stays where it is. Its header names the
@@ -85,23 +88,63 @@ layout side.
 
 The preload conversation contract also exposes
 `threads.prompt(id, markdown): Promise<{ promptId: string }>`,
-`threads.rewind(id, promptId, markdown): Promise<{ promptId: string }>`, and
+`threads.rewind(id, promptId, markdown): Promise<{ promptId: string }>`,
 `threads.get(id): Promise<Thread | undefined>`, where `undefined` means the
-Thread no longer exists. `ThreadUpdate` is a discriminated union with
+Thread no longer exists,
+`threads.git(id): Promise<ThreadGit>` for the working directory's git summary, and
+`threads.setCwd(id, cwd): Promise<Thread>` which moves it and answers the Thread
+the host stored. `ThreadUpdate` is a discriminated union with
 `snapshot`, `event`, `updated`, `deleted`, and safe `error` variants, and
 `ProjectUpdate` with `snapshot`, `thread-updated`, `thread-deleted`,
-`project-updated`, `project-deleted`, and safe `error`. Both subscriptions share
-the Electron process's single Engine.IO connection.
+`project-updated`, `project-deleted`, and safe `error`. Both subscriptions route
+by identity — a Thread stream reaches only the watch of its own Thread — and
+while the Project subscription shares the process's long-lived connection with
+the status namespace, each watched Thread holds a connection of its own, so its
+stream ends with the watch that opened it.
 
 The sandbox surface reads through
 `projects.tree(projectId, path?)`, `projects.file(projectId, path)`,
 `projects.files(projectId, path)` and `projects.diff(projectId, path)`, where
 every path is workspace-relative and the empty one is the workspace root. A diff
 answer carries a `repositories` list — one `{ path, diff, changes }` entry per Git
-repository the workspace tree holds, each discovering its own boundary — rather
-than a single repository. Those
+repository the tree holds — rather than a single repository. Those
 results are typed next to `WorkspaceApi` in `domain/workspace.ts`, and a rejected
 call arrives as a thrown `Error`.
+
+## Working directory
+
+Every Thread has a working directory of its own, stated the way the sandbox states
+it — absolute, inside the mount the host serves (for example `/workspace/doric`).
+The host decides, from the disk alone, whether that directory's root holds a
+repository (a `.git` entry, directory or file) and whether its `origin` remote is
+on github.com; the renderer never infers either from the parent Thread or from
+another tool, and `Thread` carries both as `cwd` and the optional `cwdRepo` of
+`'git' | 'github'`.
+
+The conversation footer's left side shows that directory as a monospaced path
+truncated from the left (`…/projetos/doric`, from `compactPath` in
+`domain/cwd.ts`), then, when it is a repository, its git badge and line. The line
+reads branch identity (`main`, `DETACHED @a1b2c3`, `main · initial` for an unborn
+branch), then `↑n ↓m` when the branch tracks an upstream and the counts are not
+zero, one dirty sign carrying the non-zero counts (`+2 !1 ?3`), and finally any
+conflict or operation marker — `CONFLICT·2`, `MERGE`, `REBASE` — which are never
+hidden. That rule is `gitLine` in `domain/thread-git.ts`, stated as the string it
+renders and covered by `tests/thread-git.test.ts`.
+
+The path is a button opening one popover: the repository's slower facts
+(`gitDetails`: full upstream, dirty breakdown, conflict count, stash, shallow
+clone, linked worktree) and a field that moves the directory through
+`window.doric.threads.setCwd`, whose refusal the host's own message states.
+`use-thread-git.ts` holds the summary for the selected Thread and keeps it fresh:
+when the Thread is shown, when its cwd changes, when one of its prompts settles,
+when the window regains focus, and every 3 s while the Thread is `running`, which
+stops as soon as it is ready.
+
+The sidebar's Thread rows lead with a semantic icon kind, not a glyph:
+`threadIconKind(thread)` in `domain/sidebar.ts` answers `'conversation'`,
+`'git'` or `'github'` from the host's hint alone, `ThreadBranches` takes it as an
+optional resolver defaulting to a conversation, and only the component layer maps
+a kind to a Lucide icon.
 
 ## Settings
 

@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
 const STREAM_EDGE_BYTES = 12_000;
 const description =
-  'Runs one non-interactive Git command in the sandbox from structured arguments, without shell interpretation. Supports repository inspection and mutation, including clone, worktree, commit, fetch, push, rebase, and conflict workflows.';
+  "Runs one non-interactive Git command in the sandbox from structured arguments, without shell interpretation. Supports repository inspection and mutation, including clone, worktree, commit, fetch, push, rebase, and conflict workflows. Runs in the current working directory, and a relative working_directory resolves against it. After a clone, move the thread's working directory into the repository with the cwd tool.";
 
 export const input = z
   .object({
@@ -60,22 +60,26 @@ export const createTool = (): ToolFactory<typeof input, typeof output> =>
     input,
     output,
     execute: (sandbox, host, input): Promise<GitOutput> =>
-      execute(sandbox, input),
+      execute(sandbox, host.workspace.cwd(), input),
   });
 
 export default createTool();
 
-const execute = async (sandbox: Sandbox, input: Input): Promise<GitOutput> => {
+const execute = async (
+  sandbox: Sandbox,
+  cwd: string,
+  input: Input,
+): Promise<GitOutput> => {
   const started = Date.now();
 
   const requested =
     input.working_directory?.trim() === ''
-      ? sandbox.root
-      : (input.working_directory ?? sandbox.root);
+      ? cwd
+      : (input.working_directory ?? cwd);
   let workingDirectory = requested;
 
   try {
-    workingDirectory = resolvePath(sandbox.root, requested);
+    workingDirectory = resolvePath(sandbox.root, cwd, requested);
 
     const result = await sandbox.exec({
       cmd: ['git', ...input.args],
@@ -147,11 +151,11 @@ const compact = (value: string): z.output<typeof stream> => {
   };
 };
 
-const resolvePath = (root: string, value: string): string => {
+const resolvePath = (root: string, cwd: string, value: string): string => {
   const workspace = path.normalize(root);
 
   const resolved = path.normalize(
-    path.isAbsolute(value) ? value : path.join(workspace, value),
+    path.isAbsolute(value) ? value : path.join(cwd, value),
   );
 
   if (resolved !== workspace && !resolved.startsWith(`${workspace}/`)) {

@@ -88,6 +88,88 @@ integrationTest(
 );
 
 integrationTest(
+  'stores event text PostgreSQL refuses as replacement characters',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    // A search or read over a binary file returns bytes no PostgreSQL string
+    // accepts: U+0000, and surrogates no pair completes. Astral pairs are text
+    // and must survive untouched.
+    await threads.appendEvent(thread.id, promptId, {
+      type: 'tool.finished',
+      output: 'before\u0000after\uD800tail \uD83D\uDE00',
+    });
+    assert.deepEqual((await threads.eventsAfter(thread.id, 0))[0]?.event, {
+      type: 'tool.finished',
+      output: 'before\uFFFDafter\uFFFDtail \uD83D\uDE00',
+    });
+  },
+);
+
+integrationTest(
+  'stores result text PostgreSQL refuses as replacement characters',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    await threads.setResult(thread.id, {
+      status: 'completed',
+      text: 'report\u0000published',
+      promptId,
+      at: '2026-01-01T00:00:00.000Z',
+    });
+    assert.equal(
+      (await threads.record(thread.id))?.result?.text,
+      'report\uFFFDpublished',
+    );
+  },
+);
+
+integrationTest(
+  'stores a Thread working directory with its hint, and lets a child inherit both',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const root = (await threads.create(project.id, 'Root')).thread;
+    assert.equal(root.cwd, '/workspace');
+    assert.equal(root.cwdRepo, undefined);
+
+    const moved = await threads.setCwd(root.id, '/workspace/doric', 'github');
+    assert.equal(moved?.cwd, '/workspace/doric');
+    assert.equal(moved?.cwdRepo, 'github');
+    assert.deepEqual(await threads.record(root.id), moved);
+
+    // A child starts where its parent is, and carries the hint it had.
+    const child = (
+      await threads.create(project.id, 'Child', root.id, {
+        cwd: '/workspace/doric',
+        cwdRepo: 'github',
+      })
+    ).thread;
+    assert.equal(child.cwd, '/workspace/doric');
+    assert.equal(child.cwdRepo, 'github');
+
+    // Moving on clears a hint the new directory no longer earns.
+    const deeper = await threads.setCwd(root.id, '/workspace/doric/src');
+    assert.equal(deeper?.cwd, '/workspace/doric/src');
+    assert.equal(deeper?.cwdRepo, undefined);
+    assert.equal((await threads.record(child.id))?.cwdRepo, 'github');
+
+    assert.equal(await threads.setCwd(randomUUID(), '/workspace'), undefined);
+  },
+);
+
+integrationTest(
   'reads a thread or project record alone and answers nothing when it is missing',
   async ({ configs, projects, threads }) => {
     const { project } = await projects.create(
@@ -490,7 +572,7 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by the incremental naming, checkpoint, color, GitHub, credential, provider-kind, provider-model, upstream-model, and execution-effort migrations', async () => {
+test('ships the baseline followed by every incremental migration', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
@@ -502,6 +584,10 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
     '20260927000000_provider_models_and_identity',
     '20260930000000_drop_upstream_model',
     '20260930010000_optional_execution_effort',
+    '20260930020000_add_tool_config',
+    '20260930030000_thread_result',
+    '20260930040000_tool_output_limit',
+    '20260930050000_thread_cwd',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -585,6 +671,14 @@ test('ships the baseline followed by the incremental naming, checkpoint, color, 
   );
   assert.match(models, /- 'identityId' - 'identityName'/u);
   assert.match(models, /DROP COLUMN "reasoning_efforts";/u);
+
+  const cwd = await readFile(
+    `${migrationDirectory}/20260930050000_thread_cwd/migration.sql`,
+    'utf8',
+  );
+  // Every Thread that predates the column keeps the workspace root it ran in.
+  assert.match(cwd, /ADD COLUMN "cwd" TEXT NOT NULL DEFAULT '\/workspace',/u);
+  assert.match(cwd, /ADD COLUMN "cwd_repo" TEXT;/u);
 });
 
 test(

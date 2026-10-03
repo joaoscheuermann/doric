@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { isAbsolute, join, normalize } from 'node:path';
 
-import type { ThreadControl } from 'host';
+import type { ThreadControl, WorkspaceControl } from 'host';
+import { type Sandbox, workspacePathKind } from 'sandbox';
 
 import { eventJson } from '../events/serialization.js';
+import { physicallyInside } from './cwd.js';
+import { cwdRepoHint, threadGit } from './git-status.js';
 import { nameFromPrompt } from './names.js';
 import {
   subtreeIds,
@@ -14,9 +18,13 @@ import {
 } from './runtime.js';
 import {
   isTerminal,
+  type CwdRefusal,
+  type CwdRepo,
+  type CwdResult,
   type InputSource,
   type InterruptResult,
   type Thread,
+  type ThreadGit,
 } from './types.js';
 
 /** Owns independent prompt loops. Only queue/state mutations use the project lock. */
@@ -163,7 +171,10 @@ export const createThreadRunner = (context: RuntimeContext) => {
           signal: active.controller.signal,
           store,
           publisher,
-          host: { threads: coordinate(project, thread, active.job) },
+          host: {
+            threads: coordinate(project, thread, active.job),
+            workspace: workspace(project, thread, active.job),
+          },
         });
         active.controller.signal.throwIfAborted();
       } catch (error) {
@@ -184,6 +195,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         thread.active = undefined;
         if (!thread.closing && !project.closing) await state(thread, 'ready');
       });
+      await hint(project, thread);
     }
   };
   const start = (project: ProjectRuntime, thread: ThreadRuntime) => {
@@ -196,11 +208,11 @@ export const createThreadRunner = (context: RuntimeContext) => {
     )
       return;
     thread.task = run(project, thread)
-      .catch(async () => {
+      .catch(async (error) => {
         thread.active?.controller.abort();
         // Fail closed on a persistence fault; never run further jobs with stale history.
         context.logger.error(
-          { threadId: thread.thread.id },
+          { threadId: thread.thread.id, err: error },
           'Thread persistence failed',
         );
         await exclusive(project.project.id, () =>
@@ -213,9 +225,9 @@ export const createThreadRunner = (context: RuntimeContext) => {
             thread.active.job,
             'failed',
             'Thread persistence failed.',
-          ).catch(() => {
+          ).catch((error) => {
             context.logger.error(
-              { threadId: thread.thread.id },
+              { threadId: thread.thread.id, err: error },
               'Prompt failure persistence failed',
             );
           });
@@ -233,12 +245,28 @@ export const createThreadRunner = (context: RuntimeContext) => {
     parentThreadId?: string,
   ) => {
     if (project.closing) return { status: 'inactive' as const };
+    let inherit:
+      | { readonly cwd: string; readonly cwdRepo?: CwdRepo }
+      | undefined;
     if (parentThreadId !== undefined) {
       const parent = project.threads.get(parentThreadId);
       if (parent === undefined) return { status: 'invalid_parent' as const };
       if (parent.closing) return { status: 'inactive' as const };
+      // A child reads the same sandbox as its parent, so it starts where its
+      // parent is right now and carries the hint that directory had.
+      inherit = {
+        cwd: parent.thread.cwd,
+        ...(parent.thread.cwdRepo === undefined
+          ? {}
+          : { cwdRepo: parent.thread.cwdRepo }),
+      };
     }
-    const record = await store.create(project.project.id, name, parentThreadId);
+    const record = await store.create(
+      project.project.id,
+      name,
+      parentThreadId,
+      inherit,
+    );
     const runtime: ThreadRuntime = {
       thread: record.thread,
       jobs: [],
@@ -347,21 +375,165 @@ export const createThreadRunner = (context: RuntimeContext) => {
         });
     }
   };
+  /**
+   * Whether one prompt is still the prompt its Thread is running. Every
+   * prompt-scoped capability checks it, so neither the delegation tools nor the
+   * working directory outlive the prompt that reached them.
+   */
+  const active = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    job: PromptJob,
+  ) => {
+    if (
+      project.closing ||
+      thread.closing ||
+      thread.active?.job.id !== job.id ||
+      thread.active.finished ||
+      thread.active.controller.signal.aborted
+    )
+      throw new Error('Thread control is no longer active.');
+  };
+  /**
+   * `cd` semantics for one working directory: an absolute path stands alone and
+   * a relative one resolves against the current directory, so the `cwd` tool and
+   * `PATCH /threads/:id` agree on every path either of them is given. The result
+   * is normalized, so `.` and `..` segments can neither leave the sandbox root
+   * nor leave a trailing slash in the stored value; an escape is `undefined`,
+   * which the caller reports as the `outside` refusal.
+   */
+  const resolveCwd = (
+    root: string,
+    current: string,
+    path: string,
+  ): string | undefined => {
+    const resolved = normalize(isAbsolute(path) ? path : join(current, path));
+    const trimmed =
+      resolved.length > 1 ? resolved.replace(/\/+$/u, '') : resolved;
+    const inside =
+      root === '/'
+        ? trimmed.startsWith('/')
+        : trimmed === root || trimmed.startsWith(`${root}/`);
+
+    return inside ? trimmed : undefined;
+  };
+  const refused = (change: CwdRefusal['status']): CwdResult => ({
+    status: 'refused',
+    change: { status: change },
+  });
+  /**
+   * Moves one Thread's working directory: the single rule the agent's `cwd` tool
+   * and the HTTP route both call. It refuses anything outside the sandbox or that
+   * is no directory, then writes the directory and its repository hint together,
+   * under the project lock, so nothing observes the record between the probe and
+   * the write.
+   */
+  const setCwd = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    path: string,
+  ): Promise<CwdResult> => {
+    const lease = project.lease;
+    if (project.closing || lease === undefined) return { status: 'inactive' };
+    const sandbox = lease.sandbox;
+
+    return exclusive(project.project.id, async () => {
+      if (project.closing || thread.closing || project.lease !== lease)
+        return { status: 'inactive' as const };
+      const target = resolveCwd(sandbox.root, thread.thread.cwd, path);
+      if (target === undefined) return refused('outside');
+      // The path is already inside the root, so what is left to ask is whether
+      // it exists and whether it is a directory.
+      const kind = await workspacePathKind(sandbox, target);
+      if (kind === 'missing') return refused('missing');
+      if (kind !== 'directory') return refused('not-directory');
+      // A path that reads as inside the root can still resolve outside it
+      // through a symbolic link, which only the sandbox can see; that is the
+      // same refusal as a path that leaves the root outright.
+      if (!(await physicallyInside(sandbox, sandbox.root, target)))
+        return refused('outside');
+      const cwdRepo = await cwdRepoHint(sandbox, target);
+      const updated = await store.setCwd(thread.thread.id, target, cwdRepo);
+      if (updated === undefined) return { status: 'missing' as const };
+      thread.thread = updated;
+      publisher.threadUpdated(updated);
+      return { status: 'updated' as const, thread: updated };
+    });
+  };
+  /**
+   * Re-reads the working directory's repository hint after a job settles, when
+   * the job may have created, removed, or re-origined a repository. The probe
+   * runs outside the project lock and the write re-checks the directory it
+   * probed, so a hint can never describe a directory the Thread has left; a
+   * probe that fails keeps the hint the record already had, because a hint is an
+   * optimization and no prompt should fail over one.
+   */
+  const hint = async (project: ProjectRuntime, thread: ThreadRuntime) => {
+    const sandbox = project.lease?.sandbox;
+    if (sandbox === undefined || thread.closing) return;
+    const cwd = thread.thread.cwd;
+    let cwdRepo: CwdRepo | undefined;
+    try {
+      cwdRepo = await cwdRepoHint(sandbox, cwd);
+    } catch (error) {
+      context.logger.debug(
+        { threadId: thread.thread.id, err: error },
+        'Thread Git hint probe failed',
+      );
+      return;
+    }
+    await exclusive(project.project.id, async () => {
+      if (thread.closing || thread.thread.cwd !== cwd) return;
+      if (thread.thread.cwdRepo === cwdRepo) return;
+      const updated = await store.setCwd(thread.thread.id, cwd, cwdRepo);
+      if (updated === undefined) return;
+      thread.thread = updated;
+      publisher.threadUpdated(updated);
+    });
+  };
+  /**
+   * The Git summary of one Thread's working directory. The read probes the
+   * sandbox every time: a working directory changes under the agent while one of
+   * its prompts runs, and a summary served from a cache would be the state of
+   * the last settle rather than the state the reader is watching. Reading it
+   * also refreshes the record's hint, so opening a changes view is what catches
+   * the Thread record up with the sandbox.
+   */
+  const git = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    sandbox: Sandbox,
+  ): Promise<ThreadGit> => {
+    const summary = await threadGit(sandbox, thread.thread.cwd);
+    await hint(project, thread);
+    return summary;
+  };
+  /**
+   * The prompt's own working directory, bound to the Thread that owns the prompt
+   * rather than to a snapshot of it: a move is the very next `cwd()` reads, in
+   * the same prompt.
+   */
+  const workspace = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    job: PromptJob,
+  ): WorkspaceControl => ({
+    cwd: () => thread.thread.cwd,
+    setCwd: async (path) => {
+      active(project, thread, job);
+      const result = await setCwd(project, thread, path);
+      if (result.status === 'updated')
+        return { status: 'set', cwd: result.thread.cwd };
+      if (result.status === 'refused') return result.change;
+      throw new Error('Thread control is no longer active.');
+    },
+  });
   const coordinate = (
     project: ProjectRuntime,
     parent: ThreadRuntime,
     job: PromptJob,
   ): ThreadControl => {
-    const allowed = () => {
-      if (
-        project.closing ||
-        parent.closing ||
-        parent.active?.job.id !== job.id ||
-        parent.active.finished ||
-        parent.active.controller.signal.aborted
-      )
-        throw new Error('Thread control is no longer active.');
-    };
+    const allowed = () => active(project, parent, job);
     const child = async (id: string) => {
       allowed();
       const record = await store.record(id);
@@ -456,5 +628,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     descendants,
     close,
     state,
+    setCwd,
+    git,
   };
 };

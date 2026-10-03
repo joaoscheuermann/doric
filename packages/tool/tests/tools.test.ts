@@ -16,7 +16,8 @@ import {
 } from '../src/index.js';
 
 const sandbox = { id: 'sandbox', root: '/workspace' } as Sandbox;
-const host = { threads: {} } as unknown as Host;
+// Binding tests never call the facade; it only has to exist.
+const host = { threads: {}, workspace: {} } as unknown as Host;
 
 test('exports a JSON-Schema-compatible tool definition schema', () => {
   const value = {
@@ -65,7 +66,7 @@ test('infers typed payloads from Zod schemas at compile time', async () => {
     execute(received, host, payload) {
       assert.equal(received, sandbox);
 
-      assert.deepEqual(Object.keys(host), ['threads']);
+      assert.deepEqual(Object.keys(host), ['threads', 'workspace']);
 
       expectString(payload.query);
 

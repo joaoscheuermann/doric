@@ -241,7 +241,13 @@ const directHarness = (
         signal,
         store: store as never,
         publisher: { event: () => undefined } as never,
-        host: { threads: {} } as never,
+        host: {
+          threads: {},
+          workspace: {
+            cwd: () => '/workspace',
+            setCwd: async () => ({ status: 'set', cwd: '/workspace' }),
+          },
+        } as never,
       }),
   };
 };

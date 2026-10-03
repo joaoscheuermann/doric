@@ -53,13 +53,14 @@ main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
 The main process alone communicates with Doric HTTP and Socket.IO at
 `127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
-operations, one selected-Thread event subscription, one selected-Project tree
+operations, one event subscription per watched Thread, one selected-Project tree
 subscription, one Thread history snapshot read, and connection status through a
-preload IPC boundary. The status, Thread, and
-Project namespaces share one process-long Socket.IO Manager and Engine.IO
-connection. The renderer keeps the Threads it has read for each Project, so every
-open Project row renders its own subtree while live updates continue to follow
-the selected Project alone.
+preload IPC boundary. The status and Project namespaces share one process-long
+Socket.IO Manager and Engine.IO connection, while each watched Thread is given a
+Manager and connection of its own, so that Thread's subscription lives and dies
+with its watch. The renderer keeps the Threads it has read for each Project, so
+every open Project row renders its own subtree while live updates continue to
+follow the selected Project alone.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named
@@ -74,15 +75,18 @@ for create, color, lifecycle-aware delete, and copying Thread IDs.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
-and a Thread's message icon — never a generic file icon. Selecting a Thread opens its durable
+and a Thread's message icon, or the Git or GitHub icon once the host marks the
+Thread's working directory as a repository — never a generic file icon.
+Selecting a Thread opens its durable
 event-derived conversation; the header names it. The app keeps a best-effort
 local snapshot of each Thread's durable event log in the Electron main process:
 a Thread's conversation renders instantly from that snapshot when it opens, then
 reconciles through the subscription cursor and rewind markers. The conversation surface is, for now, deliberately bare: the rendering of it is
-being rebuilt by hand. `useThreadChat` is the only reader of the durable event
-stream — it subscribes to the selected Thread, accumulates every event into one
-ordered log, projects that log into turns, and exposes both, the Thread's record
-and the send and rewind operations — and the surface itself is a plain input, a
+being rebuilt by hand. The renderer's Thread chat store is the only reader of the durable event
+stream: it keeps every Thread the reader has opened subscribed on a connection of
+its own, accumulates each Thread's events into that Thread's one ordered log,
+projects each log into turns, and hands a surface one Thread's record, log, turns
+and send and rewind operations — while the surface itself is a plain input, a
 submit button and that log rendered verbatim as JSON, with no styling.
 `threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
 PostgreSQL Thread events remain the sole conversation-history source. Because that
@@ -101,17 +105,23 @@ and disappears when the sidebar closes; it draws no grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to, whether it thinks, and how hard — beside the
-settings trigger. The header names the selected Thread as a breadcrumb of its
+settings trigger, and names the selected Thread's working directory with the
+host's Git line for it beside that path: the branch, its ahead/behind counts,
+whether the worktree is dirty, and any Git operation in progress. The header
+names the selected Thread as a breadcrumb of its
 Project and the chain of Threads above it, and every part but the last selects
 what it names.
 
 A Project-scoped sandbox surface sits in a resizable right-hand panel that starts
 open, and whose collapsed state is a narrow rail carrying its own toggle, so the
 one control that expands and collapses the panel stays at the window's right
-corner and never duplicates the sidebar's own toggle. It
-belongs to the selected Project rather than to the selected Thread, and it only
-reads: a Files tab shows the sandbox's whole directory tree, read in one request,
-and a Changes tab shows every Git repository the workspace tree holds, each
+corner and never duplicates the sidebar's own toggle. It reads the selected
+Project's one sandbox, but roots its tree at the selected Thread's working
+directory rather than at the workspace root, so selecting another Thread
+re-roots what it shows while the sandbox it reads stays the Project's, and it
+only reads: a Files tab shows that working directory's whole directory tree,
+read in one request, and a Changes tab shows every Git repository the workspace
+tree holds, each
 repository's root as a sticky header over that repository's own changed or
 untracked files — one row and one status badge each — and the repository's own
 diff. The tabs sit in the
@@ -129,7 +139,7 @@ content is read on demand, and the diff only when the Changes tab is shown. The
 sandbox belongs to the Project and may not be usable at all: a queued,
 failed or terminated Project explains itself — with the host's own retry hint
 when the lease is pending — instead of erroring. There is no filesystem watcher;
-the panel rereads on its own refresh, when the selected Project changes, and when
+the panel rereads on its own refresh, when the selected Project or Thread changes, and when
 the selected Thread's event stream reports a finished `write`, `edit` or
 `terminal` call, which is the signal that the agent changed the sandbox.
 
@@ -185,7 +195,8 @@ the execution provider, model, reasoning effort, and turn limit.
 
 The host architecture replaces Session with a Project that owns
 one sandbox lease and Threads that own
-independent conversations, histories, and serial input queues. Threads may have
+independent conversations, histories, serial input queues, and working
+directories. Threads may have
 child Threads; a child executing work delegated by its parent is a subagent,
 not a different runtime or a conversation inaccessible to the user. Users can
 send prompts to any active Thread, including agent-created children; parent
@@ -194,7 +205,12 @@ agents can coordinate their children through host-bound tools.
 Distinct Threads execute independently in parallel, with no Doric-imposed
 Thread count or concurrent-execution cap, globally or per Project. Execution
 within each Thread remains serial. Threads share their Project's sandbox;
-the existing sandbox-pool capacity governs Projects, not Threads.
+each Thread's working directory starts at the sandbox's workspace root
+`/workspace` and is inherited by a child Thread at creation. The agent moves it
+with the `cwd` tool, and a reader moves the same Thread's with
+`PATCH /threads/:id` or the field the conversation footer opens; both reach one
+rule, which refuses any path that resolves outside the workspace root. The
+existing sandbox-pool capacity governs Projects, not Threads.
 
 The migration replaces the Session-facing APIs and clients without legacy
 compatibility adapters. Creating a Project and creating a Thread are separate
@@ -238,8 +254,11 @@ This organization does not change bundle ownership or runtime behavior.
 Repository-owned executable bundles live as individual Nx packages immediately
 below `/bundles`; each bundle owns its package metadata, TypeScript build, and
 isolated output below `agents/doric/dist/bundles/<name>`. `/bundles/core` owns
-the built-in `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write`
-tools. `/bundles/git` owns the routable `git` tool plus focused skills for
+the built-in `cwd`, `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and
+`write` tools; the `cwd` tool reports the calling Thread's working directory and
+moves it, and a relative path a tool is given resolves against that directory
+rather than the workspace root, exactly as `cd` resolves one against the current
+directory; a move that resolves outside the workspace root changes nothing. `/bundles/git` owns the routable `git` tool plus focused skills for
 cloning, commit preparation, conflict resolution, rebasing, remote
 synchronization, and linked worktrees. The Git tool executes structured argv
 directly without shell interpretation, forces non-interactive Git behavior,
@@ -279,7 +298,9 @@ bundle depends on this package for the contract, never on `agents/doric`
 internals, and the host implements it in the composition root. A `Host` is
 prompt-scoped; it closes over the calling prompt's Project and Thread, so
 `host.threads.*` reaches only that prompt's direct children and stops when the
-prompt ends. The only namespace today is `threads`; future namespaces
+prompt ends, and `host.workspace.*` reports and moves only that prompt's own
+Thread's working directory. Today's namespaces are `threads` and `workspace`;
+future namespaces
 (`config`, `vms`, `providers`) are added only for a concrete need, never as a
 state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch.
 Exposing a host facade to every tool handler is an approved tool-privilege
@@ -603,11 +624,16 @@ Socket.IO uses separate `/status`, `/projects`, and `/threads` namespaces.
 `/status` accepts no subscription input or application payload and provides the
 long-lived connectivity signal consumed by the Electron main process. Project
 and Thread subscription parameters travel through namespace-scoped handshake
-auth so clients can multiplex those sockets with `/status` through one Manager
-and one Engine.IO transport. Project subscriptions expose environment and tree
-updates; Thread subscriptions use `threadId` and optional `afterSequence` for
-durable playback followed by live events without a replay/live gap. Each Thread
-event is `{ projectId, threadId, promptId, sequence, type, event, createdAt }`.
+auth. The status and Project namespaces multiplex those sockets through one
+process-long Manager and one Engine.IO connection, while each watched Thread is
+given a Manager and connection of its own: closing that connection is what ends
+the Thread's subscription, so a Thread the renderer has stopped watching can
+never keep publishing into a window. A subscription forwards only updates that
+name its own Project or Thread. Project subscriptions expose environment and
+tree updates; Thread subscriptions use `threadId` and optional `afterSequence`
+for durable playback followed by live events without a replay/live gap. Each
+Thread event is `{ projectId, threadId, promptId, sequence, type, event,
+createdAt }`.
 PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.
@@ -956,7 +982,9 @@ the per-prompt host facade, the deterministic
 all-skills system prompt, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
-or partial history, redacting configured credentials. Provider/tool failures
+or partial history, redacting configured credentials and replacing the
+characters PostgreSQL refuses (U+0000 and unpaired surrogates, which binary tool
+output can carry) with U+FFFD rather than failing the Thread. Provider/tool failures
 return the Thread to `ready`; history or event persistence failures fail the
 Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue

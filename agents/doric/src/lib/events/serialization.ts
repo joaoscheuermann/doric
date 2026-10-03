@@ -1,6 +1,17 @@
 const marker = (name: string, detail?: string): string =>
   detail === undefined ? `[${name}]` : `[${name}: ${detail}]`;
 
+/**
+ * Whether a value is a plain record: an object literal, or one built with no
+ * prototype. Only such a value is JSON `{}` when it holds no property; anything
+ * else that exposes none is marked instead, because its contents are not the
+ * model's to read.
+ */
+const isPlainRecord = (value: object): boolean => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
 /** Converts arbitrary agent events into redacted, cycle-safe JSON values. */
 export const eventJson = (
   value: unknown,
@@ -99,7 +110,10 @@ export const eventJson = (
       names.add('cause');
     }
 
-    if (names.size === 0) {
+    // A plain record with no own property is the empty object, and JSON spells
+    // it `{}`; the marker is for a value whose properties are not the model's to
+    // read, such as a Map, a Set, or a class instance keeping its state private.
+    if (names.size === 0 && !isPlainRecord(current)) {
       return marker(
         current.constructor?.name ?? 'Object',
         redact(String(current)),

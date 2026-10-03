@@ -15,7 +15,16 @@ import terminate from '../tools/thread-terminate.js';
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 
-const host = (control: ThreadControl): Host => ({ threads: control });
+/** Thread tools never reach the workspace; the facade only has to carry one. */
+const host = (control: ThreadControl): Host => ({
+  threads: control,
+  workspace: {
+    cwd: () => '/workspace',
+    setCwd: () => {
+      throw new Error('Thread tests never move the working directory');
+    },
+  },
+});
 const tools = [spawn, list, get, events, send, interrupt, terminate] as const;
 
 test('exposes thread tools in the established model-visible order', () => {

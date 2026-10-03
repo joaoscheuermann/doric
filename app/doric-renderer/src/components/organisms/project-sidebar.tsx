@@ -32,6 +32,7 @@ import {
   withProjectOpen,
   withProjectToggled,
 } from '@/domain/project-tree';
+import { threadIconKind } from '@/domain/sidebar';
 import { threadLevel } from '@/domain/thread-tree';
 import type {
   Draft,
@@ -257,6 +258,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                               ? model.editing.value.id
                               : undefined
                           }
+                          icon={threadIconKind}
                           level={level}
                           onExpand={expandThread}
                           onToggle={toggleThread}

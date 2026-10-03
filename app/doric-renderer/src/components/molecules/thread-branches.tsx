@@ -13,10 +13,16 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
+import type { ThreadIconKind } from '@/domain/sidebar';
 import { isExpanded, type ThreadLevel } from '@/domain/thread-tree';
 import type { Thread } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import { ChevronRightIcon, MessageSquareIcon } from 'lucide-react';
+import {
+  ChevronRightIcon,
+  GitBranchIcon,
+  GithubIcon,
+  MessageSquareIcon,
+} from 'lucide-react';
 
 export type ThreadBranchesActions = {
   readonly beginChild: (thread: Thread) => void;
@@ -35,10 +41,23 @@ type ThreadBranchesProps = {
   readonly collapsed: ReadonlySet<string>;
   readonly depth: number;
   readonly editingThreadId?: string;
+  /**
+   * The icon kind each row leads with, decided by the caller from the Thread
+   * alone. It defaults to a conversation, so a caller that knows no better draws
+   * the rows it always drew.
+   */
+  readonly icon?: (thread: Thread) => ThreadIconKind;
   readonly level: ThreadLevel;
   readonly onExpand: (id: string) => void;
   readonly onToggle: (id: string) => void;
   readonly selectedThreadId?: string;
+};
+
+/** The glyph each semantic icon kind paints. */
+const iconByKind: Record<ThreadIconKind, typeof MessageSquareIcon> = {
+  conversation: MessageSquareIcon,
+  git: GitBranchIcon,
+  github: GithubIcon,
 };
 
 /**
@@ -51,6 +70,7 @@ export function ThreadBranches({
   collapsed,
   depth,
   editingThreadId,
+  icon = () => 'conversation',
   level,
   onExpand,
   onToggle,
@@ -62,6 +82,7 @@ export function ThreadBranches({
         const { thread } = node;
         const selected = selectedThreadId === thread.id;
         const expanded = isExpanded(node, collapsed);
+        const Icon = iconByKind[icon(thread)];
         const addChild = () => {
           onExpand(thread.id);
           actions.beginChild(thread);
@@ -103,7 +124,7 @@ export function ThreadBranches({
                       }
                     }}
                   >
-                    <MessageSquareIcon />
+                    <Icon />
                     {node.expandable && (
                       <ChevronRightIcon
                         aria-hidden
@@ -136,6 +157,7 @@ export function ThreadBranches({
                   collapsed={collapsed}
                   depth={depth + 1}
                   editingThreadId={editingThreadId}
+                  icon={icon}
                   level={node.children}
                   onExpand={onExpand}
                   onToggle={onToggle}

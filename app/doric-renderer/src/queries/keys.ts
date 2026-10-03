@@ -26,17 +26,35 @@ export const queryKeys = {
   threads: (projectId: string) => ['threads', projectId],
   /** One Thread record, read to validate a restored selection. */
   thread: (threadId: string) => ['thread', threadId],
+  /** One Thread's git summary, read for the footer's line and popover. */
+  threadGit: (threadId: string | undefined) => ['thread', threadId, 'git'],
   /** Everything read from one Project's sandbox. */
   files: {
     /** The prefix that invalidates the tree, the open file and the diff. */
     ofProject: (projectId: string | undefined) => ['files', projectId],
-    tree: (projectId: string | undefined) => ['files', projectId, 'tree'],
+    /**
+     * The tree is rooted at the selected Thread's working directory, so that
+     * root is part of the key: two Threads with different directories are two
+     * different reads rather than one answer reused.
+     */
+    tree: (projectId: string | undefined, cwd: string | undefined) => [
+      'files',
+      projectId,
+      'tree',
+      cwd,
+    ],
     file: (projectId: string | undefined, path: string | undefined) => [
       'files',
       projectId,
       'file',
       path,
     ],
-    diff: (projectId: string | undefined) => ['files', projectId, 'diff'],
+    /** The changes view reads the cwd's repository, so the cwd keys it too. */
+    diff: (projectId: string | undefined, cwd: string | undefined) => [
+      'files',
+      projectId,
+      'diff',
+      cwd,
+    ],
   },
 };

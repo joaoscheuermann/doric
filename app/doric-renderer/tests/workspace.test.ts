@@ -19,6 +19,7 @@ const thread = (id: string, projectId: string): Thread => ({
   projectId,
   name: id,
   state: 'ready',
+  cwd: '/workspace/doric',
   createdAt: '',
   updatedAt: '',
 });

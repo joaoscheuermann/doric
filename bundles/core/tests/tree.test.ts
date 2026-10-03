@@ -36,6 +36,27 @@ describe('tree tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  test('renders the working directory when no path is given', async () => {
+    const root = await workspace('tree-cwd');
+
+    await write(root, 'src/deep.ts', 'deep');
+
+    await write(root, 'outside.ts', 'outside');
+
+    const output = await factory(
+      createFakeSandbox(root),
+      fakeHost({ cwd: '/workspace/src' }),
+    ).execute({});
+
+    assert.match(output, /^\/workspace\/src\n/);
+
+    assert.match(output, /deep\.ts/);
+
+    assert.doesNotMatch(output, /outside\.ts/);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test('honors gitignore whitelist rules while rendering', async () => {
     const root = await workspace('tree-ignore-whitelist');
 

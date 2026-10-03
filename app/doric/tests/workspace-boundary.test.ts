@@ -13,6 +13,7 @@ import {
   relativePath,
   senderIsAllowed,
   sequence,
+  workingDirectory,
 } from '../src/workspace/validation';
 
 const thread = {
@@ -20,6 +21,7 @@ const thread = {
   name: 'Main',
   projectId: 'project-id',
   state: 'ready',
+  cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -266,6 +268,102 @@ describe('Thread HTTP boundary', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test('moves a Thread working directory and reads its Git summary', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), init });
+      return requests.length === 1
+        ? Response.json({ ...thread, cwd: '/workspace/doric', cwdRepo: 'git' })
+        : Response.json({
+            repo: true,
+            root: '/workspace/doric',
+            head: 'main',
+            detached: false,
+            unborn: false,
+            upstream: null,
+            ahead: 0,
+            behind: 0,
+            dirty: { staged: 1, modified: 2, untracked: 3 },
+            conflicted: 0,
+            operation: 'rebase',
+            worktree: false,
+            shallow: false,
+            stash: 1,
+            submodules: 0,
+          });
+    };
+
+    try {
+      assert.deepEqual(
+        await workspaceApi.threads.setCwd('thread-id', '/workspace/doric'),
+        { ...thread, cwd: '/workspace/doric', cwdRepo: 'git' },
+      );
+      assert.deepEqual(await workspaceApi.threads.git('thread-id'), {
+        repo: true,
+        root: '/workspace/doric',
+        head: 'main',
+        detached: false,
+        unborn: false,
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        dirty: { staged: 1, modified: 2, untracked: 3 },
+        conflicted: 0,
+        operation: 'rebase',
+        worktree: false,
+        shallow: false,
+        stash: 1,
+        submodules: 0,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(requests[0]?.url, 'http://127.0.0.1:3000/threads/thread-id');
+    assert.equal(requests[0]?.init?.method, 'PATCH');
+    assert.equal(requests[0]?.init?.body, '{"cwd":"/workspace/doric"}');
+    assert.equal(
+      requests[1]?.url,
+      'http://127.0.0.1:3000/threads/thread-id/git',
+    );
+  });
+
+  test('rejects a malformed Git summary and a Thread without a working directory', async () => {
+    const originalFetch = globalThis.fetch;
+    const responses = [
+      Response.json({ repo: true, root: '/workspace' }),
+      Response.json({ ...thread, cwd: 7 }),
+    ];
+    globalThis.fetch = async () => responses.shift() as Response;
+
+    try {
+      await assert.rejects(
+        workspaceApi.threads.git('thread-id'),
+        WorkspaceError,
+      );
+      await assert.rejects(
+        workspaceApi.threads.get('thread-id'),
+        WorkspaceError,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('rejects a working directory that is not a path a sandbox could hold', () => {
+    assert.equal(
+      workingDirectory('/workspace/doric/src'),
+      '/workspace/doric/src',
+    );
+    assert.equal(workingDirectory('doric'), 'doric');
+    assert.throws(() => workingDirectory(''), WorkspaceError);
+    assert.throws(() => workingDirectory('   '), WorkspaceError);
+    assert.throws(() => workingDirectory('a\0b'), WorkspaceError);
+    assert.throws(() => workingDirectory('a'.repeat(4097)), WorkspaceError);
+    assert.throws(() => workingDirectory(7), WorkspaceError);
   });
 });
 

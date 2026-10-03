@@ -16,7 +16,7 @@ const MAX_LINE_CHARS = 1000;
 const DIAGNOSTIC_LINE_LIMIT = 20;
 const DIAGNOSTIC_CONTEXT_RADIUS = 2;
 const description =
-  'Executes shell commands inside the injected sandbox session. Returns compact stdout/stderr summaries, diagnostics, exit_code, duration, and a raw_output_ref when trace storage is enabled.';
+  'Executes shell commands inside the injected sandbox session. Returns compact stdout/stderr summaries, diagnostics, exit_code, duration, and a raw_output_ref when trace storage is enabled. Runs in the current working directory, and a relative working_directory resolves against it.';
 
 export const input = z
   .object({
@@ -104,19 +104,19 @@ export const createTool = (
     input,
     output,
     execute: (sandbox, host, input): Promise<TerminalOutput> =>
-      execute(sandbox.root, sandbox, options.traceDir, input),
+      execute(host.workspace.cwd(), sandbox, options.traceDir, input),
   });
 
 export default createTool();
 
 const execute = async (
-  workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   traceDir: string | undefined,
   input: Input,
 ): Promise<TerminalOutput> => {
   const workingDirectory = resolvePath(
-    workspaceRoot,
+    cwd,
     input.working_directory?.trim() === ''
       ? '.'
       : (input.working_directory ?? '.'),
@@ -471,9 +471,7 @@ const capLine = (line: string): string =>
     ? line
     : `${line.slice(0, MAX_LINE_CHARS)} [line truncated; ${line.length - MAX_LINE_CHARS} chars omitted]`;
 
-const resolvePath = (workspaceRoot: string, value: string): string =>
+const resolvePath = (cwd: string, value: string): string =>
   path.posix.normalize(
-    path.posix.isAbsolute(value)
-      ? value
-      : path.posix.join(workspaceRoot, value),
+    path.posix.isAbsolute(value) ? value : path.posix.join(cwd, value),
   );

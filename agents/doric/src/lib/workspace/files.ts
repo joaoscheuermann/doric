@@ -60,8 +60,11 @@ export type ProjectChangeSet = {
 
 /**
  * The workspace's Git state, one entry per repository it holds: each repository's
- * tracked diff plus its own change list, including the untracked files. The
- * changes list cannot come from `Sandbox.diff`, because a diff never contains
+ * tracked diff plus its own change list, including the untracked files. A `path`
+ * scopes discovery to the repositories that path belongs to or holds, which is
+ * how the renderer reads the changes view of one Thread's working directory; an
+ * absent path names the workspace root, whose own repositories are all of them.
+ * The changes list cannot come from `Sandbox.diff`, because a diff never contains
  * untracked files, so it is read through `exec` at the repository root; the diff
  * itself still goes through the `Sandbox` contract, scoped to that same root.
  * Discovery stops at each repository boundary, so a repository nested in another
@@ -69,6 +72,7 @@ export type ProjectChangeSet = {
  */
 export const projectChanges = async (
   sandbox: Sandbox,
+  path = '',
 ): Promise<readonly ProjectChangeSet[]> => {
   const repos = await listSandboxRepos(sandbox);
 
@@ -76,10 +80,11 @@ export const projectChanges = async (
   if (repos.status !== 'listed') return [];
 
   const entries = await Promise.all(
-    repos.repositories.map(
-      async ({ path }): Promise<ProjectChangeSet | undefined> => {
+    repos.repositories
+      .filter(({ path: root }) => reachable(path, root))
+      .map(async ({ path: root }): Promise<ProjectChangeSet | undefined> => {
         // `-C` sets the repository; the workspace root is git's own default.
-        const cwd = path === '' ? sandbox.root : path;
+        const cwd = root === '' ? sandbox.root : root;
 
         const status = await sandbox.exec({
           cmd: ['git', '-C', cwd, 'status', '--porcelain'],
@@ -89,19 +94,29 @@ export const projectChanges = async (
         if (status.exitCode !== 0) return undefined;
 
         return {
-          path,
+          path: root,
           diff: await sandbox.diff({ cwd }),
           changes: status.stdout.split('\n').flatMap((line) => {
             const change = parseChange(line);
             return change === undefined ? [] : [change];
           }),
         };
-      },
-    ),
+      }),
   );
 
   return entries.filter((entry) => entry !== undefined);
 };
+
+/**
+ * Whether a repository belongs to the scope: the scope lies inside it, or it
+ * lies inside the scope. An empty scope holds every repository, which keeps an
+ * unscoped read the whole-workspace read it always was.
+ */
+const reachable = (scope: string, root: string): boolean =>
+  scope === '' || under(scope, root) || under(root, scope);
+
+const under = (base: string, value: string): boolean =>
+  base === '' || value === base || value.startsWith(`${base}/`);
 
 /** One porcelain line: two status characters, a space, then the path. */
 const parseChange = (line: string): ProjectChange | undefined => {

@@ -14,7 +14,7 @@ describe('git tool', () => {
   test('executes structured Git arguments without a shell', async () => {
     const sandbox = fakeSandbox(result({ stdout: 'main\n' }));
 
-    const output = await createTool()(sandbox, {} as never).execute({
+    const output = await createTool()(sandbox, fakeHost('/workspace')).execute({
       args: ['branch', '--show-current'],
       working_directory: 'repo',
       timeout_ms: 5000,
@@ -45,23 +45,43 @@ describe('git tool', () => {
     assert.equal(output.working_directory, '/workspace/repo');
   });
 
-  test('uses the workspace root by default and caps the timeout', async () => {
+  test('runs in the working directory by default and caps the timeout', async () => {
     const sandbox = fakeSandbox(result());
 
-    await createTool()(sandbox, {} as never).execute({
+    await createTool()(sandbox, fakeHost('/workspace/repo')).execute({
       args: ['status', '--short'],
       timeout_ms: 999_999,
     });
 
-    assert.equal(sandbox.execs[0]?.cwd, '/workspace');
+    assert.equal(sandbox.execs[0]?.cwd, '/workspace/repo');
 
     assert.equal(sandbox.execs[0]?.timeoutMs, 600_000);
+  });
+
+  test('resolves a relative working directory against the current one', async () => {
+    const sandbox = fakeSandbox(result());
+    const host = fakeHost('/workspace/repo');
+
+    await createTool()(sandbox, host).execute({
+      args: ['status', '--short'],
+      working_directory: 'src',
+    });
+
+    await createTool()(sandbox, host).execute({
+      args: ['status', '--short'],
+      working_directory: '/workspace/other',
+    });
+
+    assert.deepEqual(
+      sandbox.execs.map((exec) => exec.cwd),
+      ['/workspace/repo/src', '/workspace/other'],
+    );
   });
 
   test('returns execution errors as observable Git failures', async () => {
     const output = await createTool()(
       fakeSandbox(new Error('exec failed')),
-      {} as never,
+      fakeHost('/workspace'),
     ).execute({ args: ['status'] });
 
     assert.equal(output.success, false);
@@ -76,7 +96,7 @@ describe('git tool', () => {
 
     const output = await createTool()(
       fakeSandbox(result({ stdout })),
-      {} as never,
+      fakeHost('/workspace'),
     ).execute({
       args: ['log', '--oneline', '--all'],
     });
@@ -116,6 +136,17 @@ const fakeSandbox = (behavior: SandboxExecResult | Error): FakeSandbox => {
     ssh: async () => undefined,
   };
 };
+
+/** Git tests only read the working directory; they never move it. */
+const fakeHost = (cwd: string) => ({
+  threads: {} as never,
+  workspace: {
+    cwd: () => cwd,
+    setCwd: () => {
+      throw new Error('Git tests never move the working directory');
+    },
+  },
+});
 
 const result = ({
   exitCode = 0,

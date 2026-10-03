@@ -61,12 +61,14 @@ type ProjectFilesSidebarProps = {
 type PanelView = 'files' | 'changes';
 
 /**
- * The Project's sandbox, as a right-hand panel beside the conversation. It is
- * scoped to the Project, not to the selected Thread, reads nothing it does not
- * show, and never writes: the tree opens directories on demand and the changes
- * view lists the workspace diff. A file is not shown here — selecting one opens
- * the file viewer panel that sits beside this one, so the tree it was opened
- * from stays where it is.
+ * The sandbox, as a right-hand panel beside the conversation, rooted at the
+ * selected Thread's working directory. It is scoped to that directory rather than
+ * to the Project as a whole: the tree starts where the Thread works and the
+ * changes view looks at the repository that directory sits in. It reads nothing
+ * it does not show, and never writes: the whole tree arrives in one read, the
+ * changes view lists that repository's diff, and a file is not shown here —
+ * selecting one opens the file viewer panel that sits beside this one, so the
+ * tree it was opened from stays where it is.
  *
  * The two views are icon-only tabs in the header in place of a title, because
  * they name what the panel is showing and select it among a set. They wear the
@@ -309,7 +311,7 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
   if (repositories.length === 0) {
     return (
       <PanelState
-        description="This workspace holds no git repository."
+        description="This directory holds no git repository."
         title="No repositories"
       />
     );

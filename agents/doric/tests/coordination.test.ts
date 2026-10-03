@@ -120,13 +120,13 @@ test(
     const prompt = await service.threads.prompt(parent.id, 'coordinate');
     assert.ok(prompt.status === 'accepted');
     await started.promise;
-    assert.equal((await control.get(child.id, 0)).thread.id, child.id);
+    assert.equal((await control.get(child.id)).thread.id, child.id);
     assert.deepEqual(
       (await control.list(100)).items.map(({ id }) => id),
       [child.id],
     );
     for (const id of [parent.id, sibling.id, grandchild.id, foreign.id]) {
-      await assert.rejects(control.get(id, 0));
+      await assert.rejects(control.get(id));
       await assert.rejects(control.send(id, 'forged access'));
       await assert.rejects(control.interrupt(id, prompt.promptId));
       await assert.rejects(control.terminate(id));

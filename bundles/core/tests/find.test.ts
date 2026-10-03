@@ -31,6 +31,34 @@ describe('find tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  test('searches the working directory and leaves an absolute path absolute', async () => {
+    const root = await workspace('find-cwd');
+
+    await write(root, 'src/a.ts', 'a');
+
+    await write(root, 'b.ts', 'b');
+
+    const host = fakeHost({ cwd: '/workspace/src' });
+    const sandbox = createFakeSandbox(root);
+
+    assert.deepEqual(
+      (await factory(sandbox, host).execute({ pattern: '*.ts' })).results,
+      ['a.ts'],
+    );
+
+    assert.deepEqual(
+      (
+        await factory(sandbox, host).execute({
+          pattern: '*.ts',
+          path: '/workspace',
+        })
+      ).results,
+      ['b.ts', 'src/a.ts'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test('respects gitignore files while walking', async () => {
     const root = await workspace('find-ignore');
 

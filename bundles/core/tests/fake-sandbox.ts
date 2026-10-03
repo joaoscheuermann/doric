@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, stat } from 'node:fs/promises';
 import hostPath from 'node:path';
 import { posix as sandboxPath } from 'node:path';
 
@@ -307,5 +307,81 @@ const normalizePath = (value: string): string => {
 const unsupported = (): Error =>
   new Error('Fake sandbox method not implemented');
 
-/** Tool tests never reach host capabilities; the facade only has to exist. */
-export const fakeHost = (): Host => ({ threads: {} as never });
+/** What a fake facade needs to know about the workspace it stands for. */
+export interface FakeHostOptions {
+  /** The workspace root a working directory must stay inside. */
+  readonly root?: string;
+  /** Where the working directory starts; the root by default. */
+  readonly cwd?: string;
+  /** Where `root` lives on this machine, so a move can see what is there. */
+  readonly localRoot?: string;
+}
+
+/**
+ * The facade a tool test binds a tool to. Threads are never reached here, so
+ * only the workspace control is real: it answers the way the host's own does,
+ * resolving a relative path against the current directory and moving only to a
+ * directory inside the root. Without `localRoot` the fake cannot see what
+ * exists, so every path inside the root counts as a directory.
+ */
+export const fakeHost = (options: FakeHostOptions = {}): Host => {
+  const root = normalizePath(options.root ?? WORKSPACE_ROOT);
+  const localRoot = options.localRoot;
+  let cwd = normalizePath(options.cwd ?? root);
+
+  return {
+    threads: {} as never,
+
+    workspace: {
+      cwd: () => cwd,
+
+      async setCwd(path) {
+        const resolved = normalizePath(
+          sandboxPath.isAbsolute(path) ? path : sandboxPath.join(cwd, path),
+        );
+
+        if (!within(root, resolved)) {
+          return { status: 'outside' };
+        }
+
+        const kind = await directoryKind(localRoot, root, resolved);
+
+        if (kind === 'missing') {
+          return { status: 'missing' };
+        }
+
+        if (kind === 'other') {
+          return { status: 'not-directory' };
+        }
+
+        cwd = resolved;
+
+        return { status: 'set', cwd };
+      },
+    },
+  };
+};
+
+/** What the machine says `resolved` is; a directory when it cannot be seen. */
+const directoryKind = async (
+  localRoot: string | undefined,
+  root: string,
+  resolved: string,
+): Promise<'directory' | 'other' | 'missing'> => {
+  if (localRoot === undefined) {
+    return 'directory';
+  }
+
+  const stats = await stat(toLocalPath(localRoot, root, resolved)).catch(
+    () => undefined,
+  );
+
+  if (stats === undefined) {
+    return 'missing';
+  }
+
+  return stats.isDirectory() ? 'directory' : 'other';
+};
+
+const within = (root: string, child: string): boolean =>
+  child === root || child.startsWith(`${root}/`);

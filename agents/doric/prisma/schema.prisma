@@ -140,6 +140,13 @@ model Thread {
   parentThreadId String?       @map("parent_thread_id") @db.Uuid
   name           String
   state          ThreadState   @default(QUEUED)
+  /// The Thread's own working directory, absolute inside its Project's sandbox.
+  /// Every Thread starts at the sandbox workspace root.
+  cwd            String        @default("/workspace")
+  /// The cheap `is this a Git repository` hint of `cwd`: `git` when the
+  /// directory's own root holds a `.git` marker, `github` when its `origin`
+  /// points at github.com, and absent until a probe observes one.
+  cwdRepo        String?       @map("cwd_repo")
   messages       Json          @default("[]") @db.JsonB
   checkpoints    Json          @default("{}") @db.JsonB
   activePromptId String?       @map("active_prompt_id") @db.Uuid

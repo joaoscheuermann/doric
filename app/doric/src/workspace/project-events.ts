@@ -53,6 +53,9 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
  * Forwards the selected Project's Thread tree to one renderer while it stays
  * open. There is no cursor: every (re)connect delivers a fresh, authoritative
  * snapshot, so the renderer simply replaces its cached tree each time.
+ *
+ * A watch forwards only notices that name its own Project, so an update can
+ * never reach the renderer through a watch of another Project.
  */
 export const createProjectEventService = (
   manager: Pick<Manager, 'socket'>,
@@ -91,39 +94,40 @@ export const createProjectEventService = (
 
       socket.on('project:snapshot', (value: unknown) => {
         const snapshot = record(value);
-        if (snapshot === undefined || !Array.isArray(snapshot.threads)) {
+        // Another Project's snapshot is not this watch's to report.
+        if (snapshot === undefined || snapshot.projectId !== projectId) return;
+        if (!Array.isArray(snapshot.threads)) {
           send(current, { kind: 'error', message: failed });
           return;
         }
         send(current, { kind: 'snapshot', snapshot: value as ProjectSnapshot });
       });
       socket.on('thread:updated', (value: unknown) => {
+        const updated = record(value);
+        if (updated === undefined || updated.projectId !== projectId) return;
         send(current, { kind: 'thread-updated', thread: value as Thread });
       });
       socket.on('thread:deleted', (value: unknown) => {
         const deleted = record(value);
         if (
-          typeof deleted?.projectId === 'string' &&
+          deleted?.projectId === projectId &&
           typeof deleted.threadId === 'string'
         ) {
           send(current, {
             kind: 'thread-deleted',
-            projectId: deleted.projectId,
+            projectId,
             threadId: deleted.threadId,
           });
         }
       });
       socket.on('project:updated', (value: unknown) => {
+        if (record(value)?.id !== projectId) return;
         send(current, { kind: 'project-updated', project: value as Project });
       });
       socket.on('project:deleted', (value: unknown) => {
         const deleted = record(value);
-        if (typeof deleted?.projectId === 'string') {
-          send(current, {
-            kind: 'project-deleted',
-            projectId: deleted.projectId,
-          });
-        }
+        if (deleted?.projectId !== projectId) return;
+        send(current, { kind: 'project-deleted', projectId });
       });
       socket.on('workspace:error', () => {
         // The raw payload never crosses the main-process boundary.

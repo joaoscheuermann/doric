@@ -94,14 +94,15 @@ contract change are two moves, so that one of them can be reviewed on its own.
 
 The renderer never opens HTTP or Socket.IO. Everything it knows about the host
 arrives through `window.doric`, typed in `src/doric.d.ts` and implemented by the
-preload in `app/doric`. The main process owns the connection, the single
-selected-Thread subscription and the selected-Project tree; the renderer asks
-for those and subscribes to what comes back. Adding a transport to the renderer
-is a boundary change, not a feature.
+preload in `app/doric`. The main process owns the connections, one subscription
+per watched Thread and the selected-Project tree; the renderer asks for those
+and subscribes to what comes back. Adding a transport to the renderer is a
+boundary change, not a feature.
 
 Conversation history is durable in PostgreSQL and replayed, never invented
-locally: a surface subscribes, accumulates what arrives, and treats its own copy
-as a view. `useThreadChat` is the one place that does this for a Thread.
+locally: the Thread chat store subscribes each opened Thread on a connection of
+its own, accumulates what arrives, and treats its own copy as a view, while
+`useThreadChat` binds a surface to one Thread's slice of that state.
 
 ## Styling
 

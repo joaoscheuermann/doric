@@ -21,6 +21,7 @@ const thread = (
   parentThreadId,
   name: id,
   state: 'ready',
+  cwd: '/workspace/doric',
   createdAt: '',
   updatedAt: '',
 });

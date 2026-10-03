@@ -27,11 +27,46 @@ type Thread = {
   readonly projectId: string;
   readonly parentThreadId?: string;
   readonly state: string;
+  /** The Thread's own working directory, absolute inside its Project's sandbox. */
+  readonly cwd: string;
+  /** `git` or `github` when the working directory's own root holds one. */
+  readonly cwdRepo?: 'git' | 'github';
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
+
+type GitOperation = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
+
+/**
+ * The Git summary of one Thread's working directory. `repo: false` says the
+ * directory holds, or lies in, no repository; every other field describes the
+ * one it does lie in.
+ */
+type ThreadGit =
+  | { readonly repo: false }
+  | {
+      readonly repo: true;
+      readonly root: string;
+      readonly head: string;
+      readonly detached: boolean;
+      readonly unborn: boolean;
+      readonly upstream: string | null;
+      readonly ahead: number;
+      readonly behind: number;
+      readonly dirty: {
+        readonly staged: number;
+        readonly modified: number;
+        readonly untracked: number;
+      };
+      readonly conflicted: number;
+      readonly operation: GitOperation | null;
+      readonly worktree: boolean;
+      readonly shallow: boolean;
+      readonly stash: number;
+      readonly submodules: number;
+    };
 
 type ReasoningEffort =
   | 'none'
@@ -274,14 +309,35 @@ ipcRenderer.on(connectionStatusChannel, (_event, status: ConnectionStatus) => {
   connection.update(status);
 });
 
-let threadListener: ((update: ThreadUpdate) => void) | undefined;
-ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
-  threadListener?.(update);
-});
-
 let projectListener: ((update: ProjectUpdate) => void) | undefined;
 ipcRenderer.on(projectUpdateChannel, (_event, update: ProjectUpdate) => {
   projectListener?.(update);
+});
+
+/**
+ * The listener of every Thread this window watches, by Thread id. Each update
+ * is handed to the watch of the Thread it names, so a stream can never draw one
+ * Thread's events inside another's conversation.
+ */
+const threadIdOf = (update: ThreadUpdate): string | undefined => {
+  switch (update.kind) {
+    case 'snapshot':
+      return update.snapshot.threadId;
+    case 'event':
+      return update.event.threadId;
+    case 'updated':
+      return update.thread.id;
+    case 'deleted':
+      return update.threadId;
+    case 'error':
+      return update.threadId;
+  }
+};
+
+const threadListeners = new Map<string, (update: ThreadUpdate) => void>();
+ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
+  const threadId = threadIdOf(update);
+  if (threadId !== undefined) threadListeners.get(threadId)?.(update);
 });
 
 contextBridge.exposeInMainWorld('doric', {
@@ -379,6 +435,11 @@ contextBridge.exposeInMainWorld('doric', {
       invoke<Thread>('doric:threads:create', projectId, name, parentThreadId),
     rename: (id: string, name: string) =>
       invoke<Thread>('doric:threads:rename', id, name),
+    /** Moves the Thread's working directory and answers the updated Thread. */
+    setCwd: (id: string, cwd: string) =>
+      invoke<Thread>('doric:threads:set-cwd', id, cwd),
+    /** The Git summary of the Thread's working directory, probed on the host. */
+    git: (id: string) => invoke<ThreadGit>('doric:threads:git', id),
     prompt: (id: string, prompt: string) =>
       invoke<{ readonly promptId: string }>('doric:threads:prompt', id, prompt),
     watch: (
@@ -386,12 +447,14 @@ contextBridge.exposeInMainWorld('doric', {
       afterSequence: number,
       listener: (update: ThreadUpdate) => void,
     ) => {
-      threadListener = listener;
+      threadListeners.set(id, listener);
       ipcRenderer.send('doric:threads:watch', id, afterSequence);
+      // Releasing one watch never touches another Thread's, and calling it
+      // twice, or after a newer watch of the same Thread, does nothing.
       return () => {
-        if (threadListener !== listener) return;
-        threadListener = undefined;
-        ipcRenderer.send('doric:threads:unwatch');
+        if (threadListeners.get(id) !== listener) return;
+        threadListeners.delete(id);
+        ipcRenderer.send('doric:threads:unwatch', id);
       };
     },
     rewind: (id: string, promptId: string, prompt: string) =>

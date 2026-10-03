@@ -30,6 +30,7 @@ const thread: Thread = {
   name: 'Thread',
   state: 'ready',
   lastSequence: 0,
+  cwd: '/workspace',
   createdAt: '',
   updatedAt: '',
 };
@@ -379,6 +380,74 @@ test('forwards the replay cursor, prohibits caching and validates identifiers an
   assert.equal((await host.request('/threads/not-an-id')).status, 400);
 });
 
+test('moves a Thread working directory, and reports a refusal as an invalid cwd', async (t) => {
+  const host = await serve({
+    threads: {
+      setCwd: async (id, cwd) => {
+        if (id !== threadId) return { status: 'missing' };
+        if (cwd === 'outside') {
+          return { status: 'refused', change: { status: 'outside' } };
+        }
+        return {
+          status: 'updated',
+          thread: { ...thread, cwd: `/workspace/${cwd}` },
+        };
+      },
+    },
+  });
+  t.after(host.close);
+
+  const moved = await host.request(`/threads/${threadId}`, 'PATCH', {
+    cwd: 'alpha',
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(((await moved.json()) as Thread).cwd, '/workspace/alpha');
+
+  const refused = await host.request(`/threads/${threadId}`, 'PATCH', {
+    cwd: 'outside',
+  });
+  assert.equal(refused.status, 400);
+  const body = (await refused.json()) as ErrorBody & {
+    error: { message: string };
+  };
+  assert.equal(body.error.code, 'invalid_cwd');
+  assert.ok(body.error.message.length > 0);
+
+  // A patch that names nothing is not a change, and neither is a blank
+  // directory; an unknown Thread is 404.
+  assert.equal(
+    (await host.request(`/threads/${threadId}`, 'PATCH', {})).status,
+    422,
+  );
+  assert.equal(
+    (await host.request(`/threads/${threadId}`, 'PATCH', { cwd: '  ' })).status,
+    422,
+  );
+  assert.equal(
+    (await host.request(`/threads/${promptId}`, 'PATCH', { cwd: 'alpha' }))
+      .status,
+    404,
+  );
+});
+
+test('serves a Thread Git summary and reports a missing or inactive Thread', async (t) => {
+  const host = await serve({
+    threads: {
+      git: async (id) =>
+        id === threadId
+          ? { status: 'ready', git: { repo: false } }
+          : { status: 'inactive' },
+    },
+  });
+  t.after(host.close);
+
+  const response = await host.request(`/threads/${threadId}/git`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { repo: false });
+  assert.equal((await host.request(`/threads/${promptId}/git`)).status, 409);
+});
+
 test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
   const host = await serve();
   t.after(host.close);
@@ -604,6 +673,14 @@ const serve = async (
       list: async () => ({ items: [] }),
       rename: async (id, name) =>
         id === threadId ? { ...thread, name } : undefined,
+      setCwd: async (id, cwd) =>
+        id === threadId
+          ? { status: 'updated', thread: { ...thread, cwd } }
+          : { status: 'missing' },
+      git: async (id) =>
+        id === threadId
+          ? { status: 'ready', git: { repo: false } }
+          : { status: 'missing' },
       prompt: async () => ({ status: 'accepted', promptId }),
       rewind: async (id) =>
         id === threadId

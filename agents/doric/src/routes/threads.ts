@@ -5,7 +5,24 @@ import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { WorkspaceService } from '../lib/workspace/types.js';
 import { conflict, missing, nameInput, validateId } from './workspace-input.js';
 
-const threadInput = z.object({ name: nameInput }).strict();
+/**
+ * A working directory as a client may name it: absolute inside the sandbox, or
+ * relative to the Thread's current directory the way `cd` reads it. What that
+ * path may resolve to is the service's rule, not this input's.
+ */
+const cwdInput = z
+  .string()
+  .refine(
+    (value) =>
+      value.trim().length > 0 &&
+      value.length <= 4096 &&
+      value.includes('\0') === false,
+  );
+/** A patch changes the name, the working directory, or both. */
+const threadInput = z
+  .object({ name: nameInput.optional(), cwd: cwdInput.optional() })
+  .strict()
+  .refine((value) => value.name !== undefined || value.cwd !== undefined);
 const promptInput = z
   .object({
     prompt: z.string().refine((value) => value.trim().length > 0),
@@ -22,6 +39,15 @@ const eventsInput = z.object({
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
 
+/** What one refused working directory means, in one sentence per outcome. */
+const cwdRefusal: Readonly<
+  Record<'outside' | 'missing' | 'not-directory', string>
+> = {
+  outside: 'The working directory must stay inside the workspace.',
+  missing: 'No such directory.',
+  'not-directory': 'The working directory must be a directory.',
+};
+
 /** Human input cannot supply a privileged origin or delegation correlation. */
 export const createThreadsRouter = (service: WorkspaceService): Router => {
   const router = Router();
@@ -33,16 +59,47 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
         response,
         422,
         'invalid_thread',
-        'A Thread name between 1 and 80 characters is required.',
+        'A Thread name, a working directory, or both are required.',
       );
       return;
     }
-    const thread = await service.threads.rename(
-      request.params.id,
-      input.data.name,
-    );
+    const { name, cwd } = input.data;
+    let thread;
+    if (name !== undefined) {
+      thread = await service.threads.rename(request.params.id, name);
+      if (thread === undefined) {
+        missing(response, 'thread');
+        return;
+      }
+    }
+    if (cwd !== undefined) {
+      const result = await service.threads.setCwd(request.params.id, cwd);
+      if (result.status === 'missing') {
+        missing(response, 'thread');
+        return;
+      }
+      if (result.status === 'inactive') {
+        conflict(response, 'thread', 'inactive');
+        return;
+      }
+      if (result.status === 'refused') {
+        sendError(
+          response,
+          400,
+          'invalid_cwd',
+          cwdRefusal[result.change.status],
+        );
+        return;
+      }
+      thread = result.thread;
+    }
     if (thread === undefined) {
-      missing(response, 'thread');
+      sendError(
+        response,
+        422,
+        'invalid_thread',
+        'A Thread change is required.',
+      );
       return;
     }
     response.json(thread);
@@ -145,6 +202,19 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
       return;
     }
     response.json(events);
+  });
+  router.get('/:id/git', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const result = await service.threads.git(request.params.id);
+    if (result.status === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result.status !== 'ready') {
+      conflict(response, 'thread', 'inactive');
+      return;
+    }
+    response.json(result.git);
   });
   router.post('/:id/interrupt', async (request, response) => {
     const input = interruptInput.safeParse(request.body);

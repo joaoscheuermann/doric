@@ -6,7 +6,7 @@ import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
 
 const description =
-  "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit.";
+  "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit. A relative path resolves against the current working directory.";
 
 const entry = z
   .object({
@@ -58,17 +58,17 @@ const factory = defineTool({
   input,
   output,
   execute: (sandbox, host, input): Promise<EditOutput> =>
-    execute(sandbox.root, sandbox, input),
+    execute(host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
-  workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<EditOutput> => {
-  const filePath = resolvePath(workspaceRoot, input.path);
+  const filePath = resolvePath(cwd, input.path);
   const readResult = await readTarget(sandbox, filePath, input.path);
 
   if (!readResult.ok) {
@@ -369,10 +369,8 @@ const formatLine = (
   width: number,
 ): string => `${String(line).padStart(width, ' ')} ${marker}${text}`;
 
-const resolvePath = (workspaceRoot: string, value: string): string =>
-  path.normalize(
-    path.isAbsolute(value) ? value : path.join(workspaceRoot, value),
-  );
+const resolvePath = (cwd: string, value: string): string =>
+  path.normalize(path.isAbsolute(value) ? value : path.join(cwd, value));
 
 const readFailure = (filePath: string, error: unknown): string =>
   hasCode(error, 'ENOENT')
