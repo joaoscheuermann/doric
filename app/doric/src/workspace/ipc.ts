@@ -223,6 +223,12 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:resume',
+    safe(allowedUrls, (threadId: unknown, promptId: unknown) =>
+      workspaceApi.threads.resume(identifier(threadId), identifier(promptId)),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:rewind',
     safe(
       allowedUrls,

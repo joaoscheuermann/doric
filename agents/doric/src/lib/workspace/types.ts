@@ -5,6 +5,7 @@ import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
 import type { ProjectChangeSet } from './files.js';
+import type { PromptFailure, PromptProgress } from './prompts.js';
 
 export type ProjectState =
   | 'queued'
@@ -166,6 +167,16 @@ export type InterruptResult =
   | 'inactive'
   | 'not_running';
 /**
+ * What taking one already-accepted prompt up again did. `unknown_prompt` is a
+ * prompt this Thread has not left unfinished, and `busy` is the prompt the
+ * Thread already holds as active or queued work.
+ */
+export type ResumeResult =
+  | { readonly status: 'resumed'; readonly thread: Thread }
+  | {
+      readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
+    };
+/**
  * What moving a Thread's working directory did. A refusal is a value, because it
  * is an answer the agent's tool and the renderer both report rather than a
  * failure they handle.
@@ -301,6 +312,11 @@ export interface ThreadStore {
     errorCode?: string,
   ): Promise<Thread | undefined>;
   saveMessages(id: string, messages: readonly ProviderMessage[]): Promise<void>;
+  /**
+   * Records the provider-history length a turn started from, once per turn: a
+   * turn that is resumed already has its boundary, and it is the history that
+   * turn originally read. Rewind truncates exactly there.
+   */
   saveCheckpoint(id: string, promptId: string): Promise<void>;
   /** Removes the prompt's turn and every later one, returning its marker event. */
   rewind(id: string, promptId: string): Promise<ThreadEvent | undefined>;
@@ -325,6 +341,15 @@ export interface ThreadStore {
   }>;
   /** Records the result of a finished prompt, replacing any earlier one. */
   setResult(id: string, result: ThreadOutcome): Promise<void>;
+  /**
+   * Every prompt the log accepted without a `prompt.finished` counterpart, in
+   * log order, or one Thread's alone. It is the host's read of the log: which
+   * prompts are unfinished, why each was interrupted, and how often the host
+   * already took it up again.
+   */
+  unfinishedPrompts(id?: string): Promise<readonly PromptProgress[]>;
+  /** Closes one unfinished prompt as a failure, in the shape a run leaves. */
+  failPrompt(prompt: PromptProgress, failure: PromptFailure): Promise<void>;
   deleteSubtree(id: string): Promise<DeleteResult>;
   reconcile(): Promise<number>;
 }
@@ -373,6 +398,11 @@ export interface WorkspaceService {
     /** The Git summary of the Thread's working directory, probed on demand. */
     git(id: string): Promise<ThreadGitResult>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
+    /**
+     * Takes up one prompt an interruption left unfinished, bringing the
+     * Project's sandbox back when the host holds none, and answers the Thread.
+     */
+    resume(id: string, promptId: string): Promise<ResumeResult>;
     rewind(id: string, promptId: string, prompt: string): Promise<RewindResult>;
     events(
       id: string,
@@ -388,6 +418,12 @@ export interface WorkspaceService {
     terminate(id: string): Promise<Thread | undefined>;
     delete(id: string): Promise<DeleteResult>;
   };
+  /**
+   * Takes up every prompt the host owes a run before anyone asks: the ones its
+   * own interruptions left unfinished, and the ones a crash left accepted but
+   * never started. Answers how many prompts it re-enqueued.
+   */
+  resumeInterrupted(): Promise<number>;
   sshForVm(
     id: string,
   ): Promise<

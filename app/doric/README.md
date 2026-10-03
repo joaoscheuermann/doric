@@ -33,11 +33,14 @@ The `threads` namespace crosses that boundary too. `threads.setCwd` moves a
 Thread's working directory — an absolute sandbox path, or one relative to the
 directory it is in — and answers the updated Thread; `threads.git` answers the
 Git summary of that directory, or `{ repo: false }` when it holds no repository.
-A Thread record carries the directory as `cwd` and the cheap repository hint as
-`cwdRepo`, and the main process refuses a working-directory value it could not
-even forward: a non-string, an empty or over-long value, or one holding NUL.
-What the path may resolve to — inside the sandbox, an existing directory — stays
-the host's rule, and the host is what reports a refusal.
+`threads.resume` takes up a prompt an interruption left unfinished — the one the
+renderer's own stop paused, or a prompt the host stopped and does not take up
+again — and answers the Thread the host is running it on. A Thread record carries
+the directory as `cwd` and the cheap repository hint as `cwdRepo`, and the main
+process refuses a working-directory value it could not even forward: a non-string,
+an empty or over-long value, or one holding NUL. What the path may resolve to —
+inside the sandbox, an existing directory — stays the host's rule, and the host is
+what reports a refusal.
 
 At startup a frameless, square, dark splash window shows the centered `Doric`
 name while the main process waits for the local Direct API to answer. The splash

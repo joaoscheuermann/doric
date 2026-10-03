@@ -9,6 +9,17 @@ import {
   type AgentTurnNode,
 } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import {
+  $createFailureTurnNode,
+  $isFailureTurnNode,
+  type FailureTurnNode,
+} from '@/components/organisms/conversation/nodes/failure-turn-node';
+import {
+  $createLifecycleTurnNode,
+  $isLifecycleTurnNode,
+  type LifecycleTurnNode,
+  type ResumePrompt,
+} from '@/components/organisms/conversation/nodes/lifecycle-turn-node';
+import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
@@ -47,13 +58,15 @@ import {
 } from 'lexical';
 import { useEffect, useRef } from 'react';
 
-/** Any of the five turn blocks, once it is in the editor. */
+/** Any of the seven turn blocks, once it is in the editor. */
 type TurnBlock =
   | UserTurnNode
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
-  | ActivityTurnNode;
+  | ActivityTurnNode
+  | LifecycleTurnNode
+  | FailureTurnNode;
 
 /**
  * A turn as the editor holds it: the turn's block, and the author line that
@@ -72,10 +85,16 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
-  $isActivityTurnNode(node);
+  $isActivityTurnNode(node) ||
+  $isLifecycleTurnNode(node) ||
+  $isFailureTurnNode(node);
 
 /** The block a turn becomes: one node class per kind of turn. */
-const $createBlock = (turn: Turn, key: string): TurnBlock => {
+const $createBlock = (
+  turn: Turn,
+  key: string,
+  onResume: ResumePrompt,
+): TurnBlock => {
   switch (turn.type) {
     case 'user':
       return $createUserTurnNode(
@@ -111,6 +130,15 @@ const $createBlock = (turn: Turn, key: string): TurnBlock => {
         turn.args,
         turn.status,
       );
+    case 'lifecycle':
+      return $createLifecycleTurnNode(
+        key,
+        turn.promptId,
+        turn.lifecycle,
+        onResume,
+      );
+    case 'failure':
+      return $createFailureTurnNode(key, turn.promptId, turn.failure);
   }
 };
 
@@ -154,6 +182,10 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   else if (turn.type === 'tool_call' && $isToolTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'activity' && $isActivityTurnNode(block))
+    block.setTurn(turn);
+  else if (turn.type === 'lifecycle' && $isLifecycleTurnNode(block))
+    block.setTurn(turn);
+  else if (turn.type === 'failure' && $isFailureTurnNode(block))
     block.setTurn(turn);
 };
 
@@ -257,8 +289,11 @@ const readScroll = (editor: LexicalEditor): ScrollReading | null => {
  */
 export function InsertThreadTurnNodes({
   turns,
+  onResume,
 }: {
   readonly turns: readonly Turn[];
+  /** What a marker's Retomar action asks the surface for. */
+  readonly onResume: ResumePrompt;
 }) {
   const [editor] = useLexicalComposerContext();
   const seated = useRef<LexicalEditor | null>(null);
@@ -333,7 +368,7 @@ export function InsertThreadTurnNodes({
               continue;
             }
 
-            const block = $createBlock(step.turn, step.key);
+            const block = $createBlock(step.turn, step.key, onResume);
             const after =
               step.after === null ? undefined : tails.get(step.after);
             if (after !== undefined) {
@@ -397,7 +432,7 @@ export function InsertThreadTurnNodes({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [editor, turns]);
+  }, [editor, onResume, turns]);
 
   /**
    * The prompt cannot be deleted. The sync above runs when the chat changes; this

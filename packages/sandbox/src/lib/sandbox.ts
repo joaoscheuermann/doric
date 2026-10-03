@@ -53,6 +53,7 @@ export const createSandbox = async (
     image: options.image,
     imagePullPolicy: options.imagePullPolicy,
     name: options.name,
+    workspace: options.workspace,
     root,
     resources: options.resources,
     network: normalizeSandboxNetwork(options.network),

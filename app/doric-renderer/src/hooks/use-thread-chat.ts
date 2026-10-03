@@ -31,6 +31,8 @@ export type ThreadChat = {
   readonly prompt: (text: string) => Promise<boolean>;
   /** Replaces a past prompt through `threads.rewind`. */
   readonly rewind: (promptId: string, text: string) => Promise<boolean>;
+  /** Takes up a paused prompt through `threads.resume`. */
+  readonly resume: (promptId: string) => Promise<boolean>;
 };
 
 /**
@@ -81,6 +83,11 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
       threadChatsStore.getState().rewind(thread.id, promptId, text),
     [thread.id],
   );
+  const resume = useCallback(
+    (promptId: string) =>
+      threadChatsStore.getState().resume(thread.id, promptId),
+    [thread.id],
+  );
 
   return {
     thread: chat?.thread ?? thread,
@@ -99,5 +106,6 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     pending: chat?.pending,
     prompt,
     rewind,
+    resume,
   };
 };

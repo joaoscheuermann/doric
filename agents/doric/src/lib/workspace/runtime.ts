@@ -46,6 +46,13 @@ export type ThreadRuntime = {
   thread: Thread;
   readonly jobs: PromptJob[];
   closing: boolean;
+  /**
+   * Why a deliberate abort is ending this Thread's run. It is set just before
+   * the controller aborts, so the run ends as a *pause* the host takes up again
+   * instead of as a failure; an explicit termination leaves it unset and stays
+   * terminal.
+   */
+  pausing?: 'host_stopped' | 'reader_stopped';
   active?: {
     readonly job: PromptJob;
     readonly controller: AbortController;
@@ -63,6 +70,13 @@ export type ProjectRuntime = {
   lease?: SandboxLease;
   /** The credentials this sandbox last received; see `applyCurrentGit`. */
   appliedGit?: GitCredentials;
+  /**
+   * Set when this runtime was loaded from durable state rather than created in
+   * this process. A prompt to a resumed Project waits for its in-flight
+   * acquisition before enqueuing, so prompts that race to bring it back keep
+   * arrival order; a freshly created Project queues work while it acquires.
+   */
+  resumed?: boolean;
   acquisition?: Promise<void>;
   ending?: Promise<void>;
 };

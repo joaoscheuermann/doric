@@ -4,11 +4,13 @@ import { describe, test } from 'node:test';
 import {
   type ActivityTurn,
   emptyProjection,
+  type LifecycleTurn,
   projectEvents,
   sandboxWrites,
   type ToolTurn,
   type Turn,
 } from '../src/domain/projector';
+import type { PromptFailure } from '../src/domain/prompt-lifecycle';
 import type { ThreadEvent } from '../src/domain/workspace';
 
 const event = (
@@ -35,9 +37,10 @@ const types = (turns: readonly Turn[]): readonly string[] =>
   turns.map((turn) => turn.type);
 
 const textOf = (turn: Turn | undefined): string | undefined =>
-  turn === undefined || turn.type === 'tool_call' || turn.type === 'activity'
-    ? undefined
-    : turn.text;
+  turn !== undefined &&
+  (turn.type === 'user' || turn.type === 'agent' || turn.type === 'thinking')
+    ? turn.text
+    : undefined;
 
 const agentStatus = (turn: Turn | undefined): string | undefined =>
   turn?.type === 'agent' ? turn.status : undefined;
@@ -53,6 +56,19 @@ const awaitingOf = (turn: Turn | undefined): boolean | undefined =>
 
 const activityOf = (turn: Turn | undefined): ActivityTurn | undefined =>
   turn?.type === 'activity' ? turn : undefined;
+
+const lifecycleOf = (
+  turn: Turn | undefined,
+): LifecycleTurn['lifecycle'] | undefined =>
+  turn?.type === 'lifecycle' ? turn.lifecycle : undefined;
+
+const standingOf = (turn: Turn | undefined): boolean | undefined => {
+  const lifecycle = lifecycleOf(turn);
+  return lifecycle?.kind === 'pause' ? lifecycle.standing : undefined;
+};
+
+const failureOf = (turn: Turn | undefined): PromptFailure | undefined =>
+  turn?.type === 'failure' ? turn.failure : undefined;
 
 describe('thread event projection', () => {
   test('opens a user turn for the human prompt', () => {
@@ -544,6 +560,166 @@ describe('thread event projection', () => {
     ]);
 
     assert.deepEqual(types(projection.turns), []);
+  });
+});
+
+describe('the prompt lifecycle in a log', () => {
+  test('places a resumed final answer after its marker without replacing earlier output', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'Earlier output' }),
+      event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+      event(4, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'Final answer',
+      }),
+    ]);
+    assert.deepEqual(types(projection.turns), [
+      'agent',
+      'lifecycle',
+      'lifecycle',
+      'agent',
+    ]);
+    assert.equal(textOf(projection.turns[0]), 'Earlier output');
+    assert.equal(textOf(projection.turns[3]), 'Final answer');
+  });
+  test('opens a pause block at the point the run was interrupted', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'half an ans' }),
+      event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent', 'lifecycle']);
+    assert.deepEqual(lifecycleOf(projection.turns[1]), {
+      at: '2026-01-01T00:00:02.000Z',
+      kind: 'pause',
+      reason: 'host_stopped',
+      standing: true,
+    });
+  });
+
+  test('opens a resume block before the run it took up again', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'before' }),
+      event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+      event(4, 'one', { type: 'text.delta', delta: 'after' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), [
+      'agent',
+      'lifecycle',
+      'lifecycle',
+      'agent',
+    ]);
+    assert.deepEqual(lifecycleOf(projection.turns[1]), {
+      at: '2026-01-01T00:00:02.000Z',
+      kind: 'pause',
+      reason: 'host_stopped',
+      // The resume took it up, so the pause no longer offers the reader action.
+      standing: false,
+    });
+    assert.deepEqual(lifecycleOf(projection.turns[2]), {
+      attempt: 1,
+      kind: 'resume',
+    });
+    assert.equal(textOf(projection.turns[0]), 'before');
+    assert.equal(textOf(projection.turns[3]), 'after');
+  });
+
+  test('keeps a pause standing until the prompt is taken up or finished', () => {
+    const stillPaused = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+    ]);
+    assert.equal(standingOf(stillPaused.turns[0]), true);
+
+    const finished = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'cancelled',
+        text: '',
+      }),
+    ]);
+    assert.equal(standingOf(finished.turns[0]), false);
+  });
+
+  test('ignores a pause or resume that names nothing to read', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'somewhere' }),
+      event(2, 'one', { type: 'prompt.resumed' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), []);
+  });
+
+  test('keeps the reading of a pause in the projection it was returned with', () => {
+    const first = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+    ]);
+    const after = projectEvents(first, [
+      event(2, 'one', { type: 'prompt.resumed', attempt: 1 }),
+    ]);
+
+    assert.equal(standingOf(first.turns[0]), true);
+    assert.equal(standingOf(after.turns[0]), false);
+  });
+
+  test('opens a failure block carrying the code and message of the run', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'agent.failed',
+        error: {
+          name: 'ResumeExhaustedError',
+          code: 'resume_exhausted',
+          message: 'A execução foi interrompida três vezes.',
+        },
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['failure']);
+    assert.deepEqual(failureOf(projection.turns[0]), {
+      name: 'ResumeExhaustedError',
+      code: 'resume_exhausted',
+      message: 'A execução foi interrompida três vezes.',
+    });
+    assert.equal(agentStatus(projection.turns[0]), undefined);
+  });
+
+  test('keeps the partial output of a failed run above its failure block', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'still useful' }),
+      event(2, 'one', {
+        type: 'agent.failed',
+        error: { name: 'Error', code: 'boom', message: 'it stopped' },
+      }),
+      event(3, 'one', {
+        type: 'prompt.finished',
+        status: 'failed',
+        text: 'The prompt failed.',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent', 'failure']);
+    assert.equal(textOf(projection.turns[0]), 'still useful');
+    assert.equal(failureOf(projection.turns[1])?.message, 'it stopped');
+  });
+
+  test('falls back to the finished text when a failure says nothing', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'agent.failed' }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'failed',
+        text: 'The prompt failed.',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent']);
+    assert.equal(textOf(projection.turns[0]), 'The prompt failed.');
   });
 });
 

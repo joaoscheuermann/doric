@@ -61,6 +61,11 @@ selection, and per-call cancellation.
 The system prompt is included in provider requests but is not persisted into
 external message storage.
 
+Pass `resume: true` to `complete` or `stream` to continue the supplied message
+history without appending the input again. The input still identifies the run in
+`agent.started`; existing messages retain their order. The caller owns loading
+durable history and supplying results for any interrupted tool calls.
+
 Each `complete` or `stream` run may set `maxTurns` to a positive safe integer.
 One turn is one provider invocation, including a direct or terminal response,
 a response containing any number of tool calls, or a structured-output repair

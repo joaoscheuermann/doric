@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ProviderMessage } from 'llms';
+
 import type {
   Thread as StoredThread,
   ThreadEvent as StoredEvent,
 } from '../../generated/prisma/client.js';
 import type { Database } from '../database.js';
-import type { CwdRepo, Thread, ThreadEvent, ThreadStore } from './types.js';
+import type { PauseReason, PromptFailure, PromptProgress } from './prompts.js';
+import { delegatedResult } from './prompts.js';
 import {
   before,
   checkLimit,
@@ -17,6 +21,13 @@ import {
   terminal,
   timestamps,
 } from './storage.js';
+import type {
+  CwdRepo,
+  InputSource,
+  Thread,
+  ThreadEvent,
+  ThreadStore,
+} from './types.js';
 
 /** What a record read selects; `messages` and `checkpoints` stay out of it. */
 const recordColumns = {
@@ -211,11 +222,14 @@ export const createThreadStore = (database: Database): ThreadStore => ({
 
   async saveCheckpoint(id, promptId) {
     // The database owns the count so it matches the exact history a turn reads.
+    // A turn records its boundary once: a turn that is resumed already has the
+    // one it started at, and writing the length it reads now would make the
+    // history it continues from look like history it had not read yet.
     await database.$executeRaw`
       UPDATE "thread"
-      SET "checkpoints" = "checkpoints" || jsonb_build_object(
+      SET "checkpoints" = jsonb_build_object(
         ${promptId}::text, jsonb_array_length("messages")
-      )
+      ) || "checkpoints"
       WHERE "id" = ${id}::uuid`;
   },
 
@@ -270,36 +284,8 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     });
   },
 
-  async appendEvent(id, promptId, value) {
-    return database.$transaction(async (tx) => {
-      // UPDATE acquires the row lock before reading the sequence, including
-      // writers using a different Prisma client or host process.
-      const current = await tx.thread.update({
-        where: { id },
-        data: { lastSequence: { increment: 1 } },
-        select: { projectId: true, lastSequence: true },
-      });
-      const type =
-        typeof value === 'object' &&
-        value !== null &&
-        'type' in value &&
-        typeof value.type === 'string'
-          ? value.type
-          : 'unknown';
-      return event(
-        await tx.threadEvent.create({
-          data: {
-            projectId: current.projectId,
-            threadId: id,
-            promptId,
-            sequence: current.lastSequence,
-            type,
-            event: json(value),
-          },
-        }),
-      );
-    });
-  },
+  appendEvent: (id, promptId, value) =>
+    appendEvent(database, id, promptId, value),
 
   async eventsAfter(id, sequence) {
     return (
@@ -339,6 +325,14 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     });
   },
 
+  async unfinishedPrompts(id) {
+    return unfinishedPrompts(database, await openThreads(database, id));
+  },
+
+  async failPrompt(prompt, failure) {
+    await closePrompt(database, prompt, failure);
+  },
+
   async deleteSubtree(id) {
     return database.$transaction(async (tx) => {
       const current = await tx.thread.findUnique({
@@ -364,14 +358,38 @@ export const createThreadStore = (database: Database): ThreadStore => ({
   },
 
   async reconcile() {
-    const result = await database.thread.updateMany({
-      where: { state: { notIn: [...terminal] } },
+    // A host that restarted resumes its Threads rather than failing them, and its
+    // Threads stay resumable too: a prompt whose run started but never recorded a
+    // pause was interrupted by the restart itself, so the reboot records that
+    // reason and leaves the prompt unfinished for the boot to take up. Nothing is
+    // closed here; a prompt that never started is already resumable as it stands.
+    // It returns how many Threads the resume pass moved to `ready`; a termination
+    // completed here is not resumed and is not counted.
+    const live = await openThreads(database);
+    for (const prompt of await unfinishedPrompts(database, live))
+      if (prompt.started && prompt.paused === undefined)
+        await appendEvent(database, prompt.threadId, prompt.promptId, {
+          type: 'prompt.paused',
+          reason: 'host_restarted',
+        });
+    // A resumed record carries no stale error.
+    await database.thread.updateMany({
+      where: { state: { notIn: [...terminal] }, errorCode: { not: null } },
+      data: { errorCode: null },
+    });
+    // Complete a termination the previous host began instead of resuming it:
+    // CANCELLING is a user's termination, not work a restart should revive.
+    await database.thread.updateMany({
+      where: { state: 'CANCELLING' },
       data: {
-        state: 'FAILED',
+        state: 'CANCELLED',
         activePromptId: null,
-        errorCode: 'process_interrupted',
         finishedAt: new Date(),
       },
+    });
+    const result = await database.thread.updateMany({
+      where: { state: { notIn: [...terminal, 'CANCELLING', 'READY'] } },
+      data: { state: 'READY', activePromptId: null },
     });
     return result.count;
   },
@@ -431,3 +449,223 @@ const event = (stored: StoredEvent): ThreadEvent => ({
   event: stored.event,
   createdAt: stored.createdAt.toISOString(),
 });
+
+/**
+ * Appends one ordered event, taking the row lock before reading the sequence so
+ * writers in another host process cannot collide. Shared by the store and the
+ * boot reconcile, which records a pause from outside a run.
+ */
+const appendEvent = async (
+  database: Database,
+  id: string,
+  promptId: string,
+  value: unknown,
+): Promise<ThreadEvent> => {
+  return database.$transaction((tx) => writeEvent(tx, id, promptId, value));
+};
+
+/** Writes an event inside the caller's transaction. */
+const writeEvent = async (
+  tx: Pick<Database, 'thread' | 'threadEvent'>,
+  id: string,
+  promptId: string,
+  value: unknown,
+): Promise<ThreadEvent> => {
+  const current = await tx.thread.update({
+    where: { id },
+    data: { lastSequence: { increment: 1 } },
+    select: { projectId: true, lastSequence: true },
+  });
+  const type =
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    typeof value.type === 'string'
+      ? value.type
+      : 'unknown';
+  return event(
+    await tx.threadEvent.create({
+      data: {
+        projectId: current.projectId,
+        threadId: id,
+        promptId,
+        sequence: current.lastSequence,
+        type,
+        event: json(value),
+      },
+    }),
+  );
+};
+
+/**
+ * The Threads a host resume pass may act on: the non-terminal ones, or the named
+ * one. Its state and owner are all the pass needs to name the Project a prompt
+ * belongs to.
+ */
+const openThreads = (database: Database, id?: string) =>
+  database.thread.findMany({
+    where: {
+      state: { notIn: [...terminal] },
+      ...(id === undefined ? {} : { id }),
+    },
+    select: { id: true, projectId: true },
+  });
+
+/** The event types that decide whether a prompt is unfinished, and how. */
+const progressTypes = [
+  'prompt.accepted',
+  'prompt.finished',
+  'prompt.paused',
+  'prompt.resumed',
+  'agent.started',
+] as const;
+
+const pauseReasons = [
+  'host_stopped',
+  'host_restarted',
+  'reader_stopped',
+] as const;
+
+const isPauseReason = (value: unknown): value is PauseReason =>
+  (pauseReasons as readonly unknown[]).includes(value);
+
+/** What one prompt's events amount to while the log is folded over them. */
+type Progress = {
+  -readonly [Key in keyof PromptProgress]: PromptProgress[Key];
+};
+
+/**
+ * Every prompt the log accepted without a `prompt.finished` counterpart, over
+ * the given Threads, in the order the log accepted them. `prompt.finished` is
+ * the one event that closes a turn, so an accepted prompt that never reached it
+ * — whether the host died while it was running or after `enqueue` persisted it
+ * but before the job ran — is exactly the unfinished set, and the rest of its
+ * events say why it stopped: whether a run started at all, the pause that still
+ * stands, and how many times it was taken up again. The accepted event carries
+ * the input text and the source the host resumes the prompt with, so a resumed
+ * run asks for the same thing and a delegated prompt stays correlated.
+ */
+const unfinishedPrompts = async (
+  database: Database,
+  threads: readonly { readonly id: string; readonly projectId: string }[],
+): Promise<readonly PromptProgress[]> => {
+  if (threads.length === 0) return [];
+  const owners = new Map(threads.map(({ id, projectId }) => [id, projectId]));
+  const rows = await database.threadEvent.findMany({
+    where: {
+      threadId: { in: [...owners.keys()] },
+      type: { in: [...progressTypes] },
+    },
+    orderBy: [{ sequence: 'asc' }, { threadId: 'asc' }],
+    select: { threadId: true, promptId: true, type: true, event: true },
+  });
+  const pending = new Map<string, Progress>();
+  for (const row of rows) {
+    const projectId = owners.get(row.threadId);
+    if (projectId === undefined) continue;
+    const key = `${row.threadId}:${row.promptId}`;
+    if (row.type === 'prompt.accepted') {
+      if (pending.has(key)) continue;
+      const accepted = row.event as {
+        readonly text?: string;
+        readonly source?: InputSource;
+      } | null;
+      pending.set(key, {
+        projectId,
+        threadId: row.threadId,
+        promptId: row.promptId,
+        text: accepted?.text ?? '',
+        source: accepted?.source ?? { kind: 'user' },
+        started: false,
+        attempts: 0,
+      });
+      continue;
+    }
+    const progress = pending.get(key);
+    // Only a prompt this read accepted can be unfinished, and it cannot be
+    // closed before it was accepted.
+    if (progress === undefined) continue;
+    if (row.type === 'prompt.finished') pending.delete(key);
+    else if (row.type === 'agent.started') progress.started = true;
+    else if (row.type === 'prompt.resumed') {
+      progress.attempts += 1;
+      progress.paused = undefined;
+    } else {
+      const reason = (row.event as { readonly reason?: unknown } | null)
+        ?.reason;
+      if (isPauseReason(reason)) progress.paused = reason;
+    }
+  }
+  return [...pending.values()];
+};
+
+/**
+ * Closes one unfinished prompt the host will not take up again, durably and in
+ * the shape a failed run produces: the failure event naming why, the finished
+ * event carrying the source the accepted input recorded, and the materialized
+ * result. Nothing is left looking live.
+ */
+const closePrompt = async (
+  database: Database,
+  prompt: PromptProgress,
+  failure: PromptFailure,
+): Promise<void> => {
+  await database.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM thread WHERE id = ${prompt.threadId}::uuid FOR UPDATE`;
+    if (
+      await tx.threadEvent.findFirst({
+        where: {
+          threadId: prompt.threadId,
+          promptId: prompt.promptId,
+          type: 'prompt.finished',
+        },
+      })
+    )
+      return;
+    await writeEvent(tx, prompt.threadId, prompt.promptId, {
+      type: 'agent.failed',
+      error: failure,
+    });
+    await writeEvent(tx, prompt.threadId, prompt.promptId, {
+      type: 'prompt.finished',
+      status: 'failed',
+      text: 'The prompt failed.',
+      source: prompt.source,
+    });
+    await tx.thread.updateMany({
+      where: { id: prompt.threadId },
+      data: {
+        resultText: storable('The prompt failed.'),
+        resultStatus: 'failed',
+        resultPromptId: prompt.promptId,
+        resultAt: new Date(),
+      },
+    });
+    if (prompt.source.kind !== 'parent') return;
+    const parent = await tx.thread.findFirst({
+      where: {
+        id: prompt.source.threadId,
+        projectId: prompt.projectId,
+        state: { notIn: [...terminal, 'CANCELLING'] },
+      },
+      select: { id: true },
+    });
+    if (parent === null) return;
+    await writeEvent(tx, parent.id, randomUUID(), {
+      type: 'prompt.accepted',
+      text: delegatedResult(
+        prompt.threadId,
+        prompt.promptId,
+        prompt.source.promptId,
+        'failed',
+        failure.message,
+      ),
+      source: {
+        kind: 'result',
+        threadId: prompt.threadId,
+        promptId: prompt.promptId,
+        requestPromptId: prompt.source.promptId,
+      },
+    });
+  });
+};

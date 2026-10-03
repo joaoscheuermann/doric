@@ -65,6 +65,8 @@ export type AgentRunOptions<
   Output = JsonValue,
   Schema extends StructuredOutputSchema = StructuredOutputSchema,
 > = {
+  /** Continue the supplied message history without appending input again. */
+  readonly resume?: boolean;
   readonly maxTurns?: number;
   readonly maxToolCallRepairs?: number;
   /**

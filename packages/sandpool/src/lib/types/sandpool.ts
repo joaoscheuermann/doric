@@ -9,12 +9,24 @@ export type SandpoolOptions = {
   readonly maxSandboxes: number;
   /** Consecutive failed factory calls allowed before pending waits fail. Defaults to 3. */
   readonly maxCreateAttempts?: number;
-  readonly create: () => Promise<SandboxSession>;
+  /**
+   * Creates one session. `identity` names the caller the session serves; a
+   * session created without one serves any caller.
+   */
+  readonly create: (identity?: string) => Promise<SandboxSession>;
   readonly logger: Logger;
 };
 
 export type SandpoolWaitOptions = {
   readonly signal?: AbortSignal;
+};
+
+export type SandpoolAcquireOptions = SandpoolWaitOptions & {
+  /**
+   * Names the caller the session serves. An identified acquisition is always
+   * provisioned its own session and never takes an idle one.
+   */
+  readonly identity?: string;
 };
 
 export type PooledSandbox = Sandbox;
@@ -41,7 +53,7 @@ export type Sandpool = {
 
   waitUntilHeated(options?: SandpoolWaitOptions): Promise<void>;
 
-  acquire(options?: SandpoolWaitOptions): Promise<SandboxLease>;
+  acquire(options?: SandpoolAcquireOptions): Promise<SandboxLease>;
 
   status(): SandpoolStatus;
 

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { Host } from 'host';
+
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { InputSource } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
@@ -185,12 +187,17 @@ for (const outcome of ['failed', 'cancelled'] as const) {
       const started = deferred();
       const finish = deferred();
       const delivered = deferred<{ source: InputSource; prompt: string }>();
+      let coordinate: Host['threads'] | undefined;
       const service = createWorkspaceService({
         ...harness.dependencies,
         pool: pool(),
         execute: async ({ job, host }) => {
           if (job.prompt === 'coordinate') {
+            coordinate = host.threads;
             spawned.resolve(await host.threads.spawn('child'));
+            // Stay in the prompt while the child works, so the facade the test
+            // interrupts through is still the one its prompt owns.
+            await finish.promise;
           } else if (job.source.kind === 'parent') {
             started.resolve();
             await finish.promise;
@@ -212,8 +219,11 @@ for (const outcome of ['failed', 'cancelled'] as const) {
       const child = await spawned.promise;
       await started.promise;
       if (outcome === 'cancelled') {
+        // A parent Thread stops a child outright; only the reader's own stop
+        // pauses a run, which is why this goes through the parent's facade.
+        assert.ok(coordinate !== undefined);
         assert.equal(
-          await service.threads.interrupt(child.threadId, child.promptId),
+          await coordinate.interrupt(child.threadId, child.promptId),
           'interrupted',
         );
       }

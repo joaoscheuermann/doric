@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import {
   createDockerClient,
+  discardWorkspace,
   type DockerClient,
   DockerHttpError,
   DockerRequestAbortedError,
@@ -314,6 +315,195 @@ test('provisions Sandbox runtimes with CPU memory and writable disk limits', asy
   );
 });
 
+test('mounts a durable workspace volume and labels the container', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/volumes/create') {
+        return jsonResponse(201, { Name: 'doric-workspace-project-a' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    workspace: 'project-a',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  const volume = requests.find(({ path }) => path === '/volumes/create');
+
+  assert.ok(volume);
+
+  assert.equal(volume.method, 'POST');
+
+  assert.deepEqual(volume.body, {
+    Name: 'doric-workspace-project-a',
+    Labels: { 'doric.sandbox.workspace': 'project-a' },
+  });
+
+  const create = requests.find(({ path }) => path === '/containers/create');
+
+  assert.ok(create);
+
+  const body = create.body as {
+    readonly HostConfig: { readonly Binds: readonly string[] };
+    readonly Labels: Readonly<Record<string, string>>;
+  };
+
+  assert.deepEqual(body.HostConfig.Binds, [
+    'doric-workspace-project-a:/workspace',
+  ]);
+
+  assert.deepEqual(body.Labels, {
+    'doric.sandbox': 'true',
+    'doric.sandbox.root': '/workspace',
+    'doric.sandbox.workspace': 'project-a',
+  });
+
+  assert.ok(
+    requests.findIndex(({ path }) => path === '/volumes/create') <
+      requests.findIndex(({ path }) => path === '/containers/create'),
+  );
+
+  // The container goes away with the sandbox; the workspace volume does not.
+  assert.equal(
+    requests.some(
+      ({ method, path }) => method === 'DELETE' && path.includes('/volumes/'),
+    ),
+    false,
+  );
+
+  await discardWorkspace(client, 'project-a');
+
+  assert.deepEqual(requests.at(-1)?.path, '/volumes/doric-workspace-project-a');
+});
+
+test('leaves a sandbox without a workspace unbound', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  assert.equal(
+    requests.some(({ path }) => path === '/volumes/create'),
+    false,
+  );
+
+  const create = requests.find(({ path }) => path === '/containers/create');
+
+  assert.ok(create);
+
+  const body = create.body as {
+    readonly HostConfig: { readonly Binds: readonly string[] };
+    readonly Labels: Readonly<Record<string, string>>;
+  };
+
+  assert.deepEqual(body.HostConfig.Binds, []);
+
+  assert.equal(body.Labels['doric.sandbox.workspace'], undefined);
+});
+
+test('rejects a workspace identity that cannot name a volume', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  await assert.rejects(
+    client.provision({
+      image: 'node:22-slim',
+      root: '/workspace',
+      workspace: 'project a',
+      resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+      network: { mode: 'disabled', ssh: false },
+    }),
+    /workspace identity must match/u,
+  );
+
+  assert.equal(
+    requests.some(({ path }) => path === '/containers/create'),
+    false,
+  );
+});
+
+test('removes a workspace volume and tolerates a missing one', async () => {
+  const requests: DockerTransportRequest[] = [];
+  const statuses = [204, 404];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      return {
+        status: statuses.shift() ?? 500,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  await discardWorkspace(client, 'project-a');
+
+  await discardWorkspace(client, 'project-a');
+
+  assert.deepEqual(
+    requests.map(({ method, path, query }) => [method, path, query]),
+    [
+      ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
+      ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
+    ],
+  );
+});
+
 test('inspects containers and starts detached execs', async () => {
   const requests: DockerTransportRequest[] = [];
 
@@ -410,6 +600,64 @@ test('retries without a disk quota when Docker does not support one', async () =
     Memory: 536_870_912,
     NanoCpus: 1_000_000_000,
   });
+});
+
+test('keeps the workspace mount when retrying without a disk quota', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return requests.filter(({ path }) => path === '/containers/create')
+          .length === 1
+          ? textResponse(500, 'storage-opt size is not supported')
+          : jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/volumes/create') {
+        return jsonResponse(201, { Name: 'doric-workspace-project-a' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    workspace: 'project-a',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  const creates = requests.filter(({ path }) => path === '/containers/create');
+
+  assert.equal(creates.length, 2);
+
+  assert.deepEqual(
+    creates.map(
+      ({ body }) =>
+        (body as { readonly HostConfig: { readonly Binds: unknown } })
+          .HostConfig.Binds,
+    ),
+    [
+      ['doric-workspace-project-a:/workspace'],
+      ['doric-workspace-project-a:/workspace'],
+    ],
+  );
+
+  assert.equal(
+    requests.filter(({ path }) => path === '/volumes/create').length,
+    1,
+  );
 });
 
 test('renders host-input and protected-destination Docker rules', () => {

@@ -295,6 +295,32 @@ integrationTest(
 );
 
 integrationTest(
+  'records each turn boundary once, so a resumed turn keeps the one it began at',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    const promptId = randomUUID();
+    await threads.saveCheckpoint(thread.id, promptId);
+    // The turn writes the history it built, and the host starts it again: the
+    // boundary that stands is the history the turn began at, not the partial
+    // history a resumed run reads.
+    await threads.saveMessages(thread.id, [
+      { role: 'user', content: 'input' },
+      { role: 'assistant', content: 'partial' },
+    ]);
+    await threads.saveCheckpoint(thread.id, promptId);
+
+    assert.deepEqual((await threads.find(thread.id))?.checkpoints, {
+      [promptId]: 0,
+    });
+  },
+);
+
+integrationTest(
   'preserves terminal and cancelling states and clears the active prompt when not running',
   async ({ configs, projects, threads }) => {
     const { project } = await projects.create(
@@ -475,9 +501,10 @@ integrationTest(
 );
 
 integrationTest(
-  'reconciles only nonterminal records and preserves history and configuration',
+  'resumes nonterminal records, pausing an interrupted prompt and preserving history',
   async ({ configs, projects, threads }) => {
     const snapshot = await configs.load();
+    const parentId = randomUUID();
     const projectCases = [];
     for (const state of [
       'queued',
@@ -511,6 +538,21 @@ integrationTest(
             },
           ];
           await threads.saveMessages(thread.id, messages);
+          // A running Thread accepted and started a prompt before the crash, so
+          // the pause the boot records carries that prompt's own correlation
+          // rather than inventing one.
+          if (threadState === 'running') {
+            await threads.appendEvent(thread.id, promptId, {
+              type: 'prompt.accepted',
+              text: 'interrupted',
+              source: { kind: 'parent', threadId: parentId, promptId },
+            });
+            await threads.appendEvent(thread.id, promptId, {
+              type: 'agent.started',
+              model: 'test-model',
+              input: 'interrupted',
+            });
+          }
           await threads.setState(
             thread.id,
             threadState,
@@ -530,19 +572,22 @@ integrationTest(
         threadCases,
       });
     }
-    assert.equal(await threads.reconcile(), 4);
-    assert.equal(await projects.reconcile(), 3);
+    // Reconcile completes the terminations the crash began (a CANCELLING record
+    // becomes CANCELLED) and resumes the rest; only the resumed records are
+    // counted: the queued and running Threads, and the ready Project.
+    assert.equal(await threads.reconcile(), 2);
+    assert.equal(await projects.reconcile(), 1);
     for (const { before, threadCases } of projectCases) {
       const after = (await projects.find(before.project.id))!;
       const terminal = ['failed', 'cancelled'].includes(before.project.state);
+      const cancelling = before.project.state === 'cancelling';
       assert.equal(
         after.project.state,
-        terminal ? before.project.state : 'failed',
+        terminal ? before.project.state : cancelling ? 'cancelled' : 'queued',
       );
-      assert.equal(
-        after.project.errorCode,
-        terminal ? 'original' : 'process_interrupted',
-      );
+      assert.equal(after.project.errorCode, terminal ? 'original' : undefined);
+      // A termination completed by reconcile carries the finish time it lacked.
+      if (cancelling) assert.ok(after.project.finishedAt !== undefined);
       assert.deepEqual(after.snapshot, snapshot);
       if (terminal) assert.deepEqual(after, before);
       for (const { before: record, event } of threadCases) {
@@ -550,25 +595,109 @@ integrationTest(
         const terminalThread = ['failed', 'cancelled'].includes(
           record.thread.state,
         );
+        const cancellingThread = record.thread.state === 'cancelling';
         assert.equal(
           restored.thread.state,
-          terminalThread ? record.thread.state : 'failed',
+          terminalThread
+            ? record.thread.state
+            : cancellingThread
+              ? 'cancelled'
+              : 'ready',
         );
+        if (cancellingThread)
+          assert.ok(restored.thread.finishedAt !== undefined);
         assert.equal(
           restored.thread.errorCode,
-          terminalThread ? 'original' : 'process_interrupted',
+          terminalThread ? 'original' : undefined,
         );
         assert.equal(restored.thread.activePromptId, undefined);
-        assert.equal(restored.thread.lastSequence, record.thread.lastSequence);
         assert.deepEqual(restored.messages, record.messages);
-        assert.deepEqual(await threads.eventsAfter(record.thread.id, 0), [
-          event,
-        ]);
-        if (terminalThread) assert.deepEqual(restored, record);
+        if (terminalThread) {
+          assert.deepEqual(restored, record);
+          assert.deepEqual(await threads.eventsAfter(record.thread.id, 0), [
+            event,
+          ]);
+          continue;
+        }
+        if (record.thread.state === 'running') {
+          // The interrupted run is paused durably instead of closed: the reboot
+          // names the restart as the reason, keeps the prompt unfinished, and
+          // leaves the prompt, its history, and its Thread resumable.
+          const events = await threads.eventsAfter(record.thread.id, 0);
+          assert.deepEqual(events.at(-1)?.event, {
+            type: 'prompt.paused',
+            reason: 'host_restarted',
+          });
+          assert.equal(events.at(-1)?.promptId, promptId);
+          assert.equal(restored.thread.result, undefined);
+          assert.equal(
+            events.some(({ type }) => type === 'prompt.finished'),
+            false,
+          );
+          assert.equal(
+            restored.thread.lastSequence,
+            record.thread.lastSequence + 1,
+          );
+        } else {
+          assert.equal(
+            restored.thread.lastSequence,
+            record.thread.lastSequence,
+          );
+          assert.deepEqual(await threads.eventsAfter(record.thread.id, 0), [
+            event,
+          ]);
+        }
       }
     }
     assert.equal(await threads.reconcile(), 0);
     assert.equal(await projects.reconcile(), 0);
+  },
+);
+
+integrationTest(
+  'leaves an accepted prompt that never started unfinished for the boot',
+  async ({ configs, projects, threads }) => {
+    const { project } = await projects.create(
+      'Project',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Thread');
+    const queuedPromptId = randomUUID();
+    // The crash landed between `prompt.accepted` and the first run: the Thread
+    // never entered `running`, so there is no run to pause.
+    await threads.setState(thread.id, 'ready');
+    await threads.appendEvent(thread.id, queuedPromptId, {
+      type: 'prompt.accepted',
+      text: 'queued',
+      source: { kind: 'user' },
+    });
+    assert.equal(
+      (await threads.find(thread.id))!.thread.activePromptId,
+      undefined,
+    );
+
+    assert.equal(await threads.reconcile(), 0);
+    const restored = (await threads.find(thread.id))!;
+    assert.equal(restored.thread.state, 'ready');
+    assert.equal(restored.thread.result, undefined);
+    assert.deepEqual(
+      (await threads.eventsAfter(thread.id, 0)).map(({ event }) => event),
+      [{ type: 'prompt.accepted', text: 'queued', source: { kind: 'user' } }],
+    );
+    // Nothing was closed and nothing was written: the boot reads this prompt as
+    // one it owes a run, with its input and origin intact.
+    assert.deepEqual(await threads.unfinishedPrompts(thread.id), [
+      {
+        projectId: project.id,
+        threadId: thread.id,
+        promptId: queuedPromptId,
+        text: 'queued',
+        source: { kind: 'user' },
+        started: false,
+        attempts: 0,
+      },
+    ]);
   },
 );
 
@@ -999,6 +1128,7 @@ test(
       const configuration =
         await resources.database.doricConfiguration.findUniqueOrThrow({
           where: { id: 1 },
+          select: { gitCredentialId: true, githubCredentialId: true },
         });
       assert.equal(configuration.gitCredentialId, null);
       assert.equal(configuration.githubCredentialId, null);
@@ -1312,6 +1442,21 @@ test(
         },
       ]);
 
+      // The current store reads today's schema. Finish the remaining migrations
+      // before using it to verify that the converted data is still readable.
+      for (const migration of (await readdir(migrationDirectory)).sort()) {
+        if (
+          migration <= '20260927000000_provider_models_and_identity' ||
+          migration === 'migration_lock.toml'
+        )
+          continue;
+        await resources.migrate(
+          await readFile(
+            `${migrationDirectory}/${migration}/migration.sql`,
+            'utf8',
+          ),
+        );
+      }
       const configuration =
         await resources.database.doricConfiguration.findUniqueOrThrow({
           where: { id: 1 },

@@ -31,6 +31,7 @@ src/lib/
 │   ├── service.ts
 │   ├── runtime.ts
 │   ├── runner.ts
+│   ├── prompts.ts
 │   ├── projects.ts
 │   ├── threads.ts
 │   └── storage.ts
@@ -72,8 +73,50 @@ Terminating a Project cancels all its Threads before releasing its lease.
 Cancellation is cooperative; it does not undo sandbox changes.
 
 Projects do not expire automatically. Terminate unused Projects to release their
-environments. Physical deletion requires terminal state, including descendants.
-After a server restart, interrupted work is marked failed rather than resumed.
+environments. Physical deletion requires terminal state, including descendants,
+and discards the Project's durable workspace volume.
+
+A Project survives a host restart. A host stop is not a termination: it releases
+the lease, writes the Project back as `queued` (it needs a sandbox again) and its
+non-terminal Threads as `ready`, and _pauses_ the prompt that was running — the
+prompt stays unfinished, with `prompt.paused { reason: 'host_stopped' }`, so the
+next boot takes it up again. The next boot reconciles instead of failing: a
+non-terminal Project becomes `queued`, a non-terminal Thread becomes `ready`, and
+a prompt whose run started but never recorded a pause gets
+`prompt.paused { reason: 'host_restarted' }`, because the restart is what
+interrupted it. A record a crash left `cancelling` becomes `cancelled` instead:
+reviving it would resurrect work the reader stopped.
+
+That boot also takes up the work itself. For every Project holding a prompt the
+host interrupted — one whose pause it recorded, one whose restart only the boot
+discovered, or one that never started at all — it acquires the Project's own
+sandbox and re-enqueues those prompts in the order the log accepted them, each
+opening its next attempt with `prompt.resumed { attempt }`. The queue is restored
+before HTTP starts listening, while sandbox acquisition continues in the
+background so full capacity cannot block boot. Only such a Project
+pays for a sandbox before anyone asks for one; a Project with nothing pending
+stays `queued` and acquires nothing. A prompt the host has already taken up twice
+is closed as a failure instead, with `resume_exhausted` and a message telling the
+reader to send the prompt again, so a host that keeps dying on one prompt stops
+circling it. An interrupted prompt resumes from the provider history persisted as
+its run advanced — the assistant turns and tool results it already had; a history
+that ends in a tool call the restart interrupted is answered before it continues,
+and the reader's own input is never repeated. A prompt the reader stopped is the
+reader's to take up again, through `POST /threads/:id/resume`, which no budget
+bounds.
+
+Acquisition is on demand. Sending a prompt to a Project that has no runtime
+reacquires its sandbox first — with the Project's own identity, so it returns to
+the same files — sets the Project and its Threads `ready`, and then runs the
+prompt, keeping arrival order when several prompts race to bring it back; a read
+that needs a lease keeps answering `pending`/`unavailable` and never resumes a
+Project by itself, which is what makes the boot resume the one exception.
+Terminating a Thread needs no runtime: a Thread of a resumed Project still takes
+itself and its subtree through `cancelling -> cancelled` durably, so it can be
+deleted without prompting first. Every reacquired sandbox is validated against
+each Thread's working directory in one probe, and a directory it no longer holds
+is reset to the workspace root. An explicit termination still goes
+`cancelling -> cancelled` and stays terminal.
 
 ## REST API
 
@@ -100,6 +143,7 @@ After a server restart, interrupted work is marked failed rather than resumed.
 | PATCH     | `/threads/:id`                | 200       | Rename a Thread or move its working directory.         |
 | GET       | `/threads/:id/git`            | 200       | Read the Git summary of the Thread's directory.        |
 | POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.               |
+| POST      | `/threads/:id/resume`         | 202       | Take up a prompt no run has finished; returns Thread.  |
 | POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns.     |
 | GET       | `/threads/:id/events`         | 200       | Replay durable events.                                 |
 | POST      | `/threads/:id/interrupt`      | 200       | Interrupt the specified active prompt.                 |
@@ -172,6 +216,9 @@ curl -X POST -H 'content-type: application/json' \
 curl -X POST -H 'content-type: application/json' \
   -d '{"promptId":"PROMPT_ID"}' \
   http://127.0.0.1:3000/threads/THREAD_ID/interrupt
+curl -X POST -H 'content-type: application/json' \
+  -d '{"promptId":"PROMPT_ID"}' \
+  http://127.0.0.1:3000/threads/THREAD_ID/resume
 curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 ```
 
@@ -191,7 +238,12 @@ queued input refuses with `409 thread_busy`, so queued work never runs on
 truncated history; a `promptId` without a recorded turn in that Thread returns
 `404 prompt_not_found`. Sequence numbers are never reused.
 A stale interrupt returns `409 thread_not_running`, never cancelling a later
-execution. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
+execution. Resume accepts only `{ "promptId" }` and answers `202` with the Thread;
+it re-enqueues that one prompt — bringing the Project's sandbox back when the host
+holds none — and appends the next `prompt.resumed` attempt. A prompt the Thread
+has not left unfinished is `404 prompt_not_found`, one it already holds running or
+queued is `409 thread_busy`, and a Project that cannot run is `409
+thread_inactive`. `GET /projects/:id/ssh` returns 202 with `Retry-After: 1` while
 pending, 409 when unavailable, and 410 when expired. SSH responses forbid caches.
 
 `GET /projects/:id/files`, `/files/content`, and `/diff` share those lease
@@ -219,7 +271,13 @@ own root holds a `.git` marker, then `github` when that repository's `origin`
 points at github.com and `git` otherwise. The hint is an observation, refreshed
 whenever the directory moves, when one of the Thread's prompts settles, and when
 the Git summary below is read — and `thread:updated` is published only when it
-really changed.
+really changed. When a Project reacquires a sandbox, every Thread whose directory
+is not the workspace root is checked in one probe: a directory the sandbox no
+longer holds — missing, no longer a directory, or resolving outside the root — is
+reset to `/workspace` with its hint cleared, and one `thread:updated` is published
+for each reset. Only an explicit negative answer resets a directory: a probe that
+cannot run keeps every stored directory, because a command that failed is not
+evidence that the directories are gone.
 
 `GET /threads/:id/git` answers the Git summary of the Thread's working directory:
 `{ repo: false }` when the directory holds, or lies in, no repository, else its
@@ -319,6 +377,17 @@ origin. The host emits `prompt.finished` with `{ type, status, text, source }`;
 after conversation history is saved. Use this event, not the inner
 `agent.finished`. A persistence failure can instead make the Thread terminal
 with `persistence_failed`; clients must also observe Thread state.
+
+An interruption that leaves a prompt unfinished emits `prompt.paused` with
+`{ type, reason }`, where `reason` is `host_stopped` when the host stopped,
+`host_restarted` when a boot discovered the restart a run never recorded, and
+`reader_stopped` when the reader stopped the run. A prompt that never started is
+left without one: it was never running. The host takes its own interruptions up
+again by appending `prompt.resumed` with `{ type, attempt }`, counting from `1`,
+and a reader's own resume of the same prompt does the same under the prompt's own
+`promptId`: a resumable prompt is unfinished, and a client that sees one — no
+`prompt.finished`, and a pause or a `prompt.resumed` as its last word — can offer
+the reader `POST /threads/:id/resume`.
 
 Delegated results are queued automatically for the parent without interrupting
 its current prompt. They can trigger additional model/tool activity. The

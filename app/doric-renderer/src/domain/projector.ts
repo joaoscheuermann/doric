@@ -1,6 +1,14 @@
 import type { ThreadEvent } from '@/domain/workspace';
 
 import { type DelegatedInput, delegatedInput } from './delegated';
+import {
+  type LifecycleEvent,
+  pauseReason,
+  type PromptFailure,
+  promptFailure,
+  resumeAttempt,
+  statesFailure,
+} from './prompt-lifecycle';
 
 export type PromptStatus =
   | 'queued'
@@ -98,13 +106,31 @@ export type ActivityTurn = TurnBase & {
   readonly items: readonly ActivityItem[];
 };
 
+/**
+ * A pause that left a prompt unfinished, or the resume that took it up again: a
+ * quiet row between the blocks it sits between, with the option to take the
+ * prompt up again when the pause still stands.
+ */
+export type LifecycleTurn = TurnBase & {
+  readonly type: 'lifecycle';
+  readonly lifecycle: LifecycleEvent;
+};
+
+/** A prompt the host closed as a failure, and what it was closed with. */
+export type FailureTurn = TurnBase & {
+  readonly type: 'failure';
+  readonly failure: PromptFailure;
+};
+
 /** One block of the conversation, in the order the log produced it. */
 export type Turn =
   | UserTurn
   | AgentTurn
   | ThinkingTurn
   | ToolTurn
-  | ActivityTurn;
+  | ActivityTurn
+  | LifecycleTurn
+  | FailureTurn;
 
 export type Projection = {
   /** Every event the log holds, in durable order, deduplicated. */
@@ -176,6 +202,18 @@ export type Draft =
       status: ToolStatus;
       result?: string;
       error?: string;
+    }
+  | {
+      type: 'lifecycle';
+      promptId: string;
+      events: ThreadEvent[];
+      lifecycle: LifecycleEvent;
+    }
+  | {
+      type: 'failure';
+      promptId: string;
+      events: ThreadEvent[];
+      failure: PromptFailure;
     };
 
 /** The draft a completed burst groups: a run of reasoning, or a tool call. */
@@ -282,10 +320,38 @@ const lastAgent = (
 ): Draft | undefined => {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
+    if (turn?.type === 'lifecycle' && turn.promptId === promptId)
+      return undefined;
     if (turn?.type === 'agent' && turn.promptId === promptId) return turn;
   }
   return undefined;
 };
+
+/** The failure block a job's `agent.failed` wrote, which states why it closed. */
+const lastFailure = (
+  turns: readonly Draft[],
+  promptId: string,
+): PromptFailure | undefined => {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn?.type === 'failure' && turn.promptId === promptId)
+      return turn.failure;
+  }
+  return undefined;
+};
+
+/**
+ * Whether a run already states a failed job: its own `agent.failed` carries the
+ * reason, so the host's generic finished text would only repeat it. A completion
+ * is never explained this way, and a failure that says nothing for itself leaves
+ * the finished text to state it.
+ */
+const statedByRun = (
+  turns: readonly Draft[],
+  promptId: string,
+  terminal: PromptStatus,
+): boolean =>
+  terminal === 'failed' && lastFailure(turns, promptId) !== undefined;
 
 /**
  * The conversation a log holds: one turn per contiguous run of events, in the
@@ -405,7 +471,10 @@ const readEvent = (
       if (agent?.type === 'agent') {
         agent.text = finished;
         agent.events.push(item);
-      } else if (finished.length > 0) {
+      } else if (
+        finished.length > 0 &&
+        !statedByRun(turns, promptId, terminal)
+      ) {
         turns.push({
           type: 'agent',
           promptId,
@@ -416,7 +485,40 @@ const readEvent = (
       }
     }
     status.set(promptId, terminal);
+  } else if (event?.type === 'prompt.paused') {
+    const reason = pauseReason(event.reason);
+    if (reason !== undefined) {
+      turns.push({
+        type: 'lifecycle',
+        promptId,
+        events: [item],
+        // Whether the pause still stands is settled once the whole log is read:
+        // a resume or a completion later in it is what takes it away.
+        lifecycle: {
+          kind: 'pause',
+          reason,
+          at: item.createdAt,
+          standing: true,
+        },
+      });
+    }
+  } else if (event?.type === 'prompt.resumed') {
+    const attempt = resumeAttempt(event.attempt);
+    if (attempt !== undefined) {
+      turns.push({
+        type: 'lifecycle',
+        promptId,
+        events: [item],
+        lifecycle: { kind: 'resume', attempt },
+      });
+    }
   } else if (event?.type === 'agent.failed') {
+    // The run's own failure event states why it was closed, so it is the block a
+    // surface renders rather than the host's generic failed text below. A failure
+    // that says nothing for itself leaves the finished text to state it.
+    const failure = promptFailure(event.error);
+    if (statesFailure(failure))
+      turns.push({ type: 'failure', promptId, events: [item], failure });
     status.set(promptId, 'failed');
   } else if (event?.type === 'agent.cancelled') {
     status.set(promptId, 'cancelled');
@@ -424,8 +526,8 @@ const readEvent = (
 };
 
 /**
- * The job's lifecycle each of its agent turns carries, and the one turn of a job
- * still running that is still being written.
+ * The job's lifecycle each of its agent turns carries, whether each pause still
+ * stands, and the one turn of a job still running that is still being written.
  */
 const settle = (
   turns: Draft[],
@@ -435,6 +537,30 @@ const settle = (
     if (turn.type !== 'agent') continue;
     const settled = status.get(turn.promptId);
     if (settled !== undefined && turn.status !== settled) turn.status = settled;
+  }
+
+  // A pause stands until the prompt is taken up again or finished: a later resume
+  // of the same prompt, or a terminal status, is what takes the reader's action
+  // away. Read backwards so each pause learns whether anything after it did.
+  const takenUp = new Set<string>();
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn === undefined || turn.type !== 'lifecycle') continue;
+    const lifecycle = turn.lifecycle;
+    if (lifecycle.kind === 'resume') {
+      takenUp.add(turn.promptId);
+      continue;
+    }
+    const standing = !takenUp.has(turn.promptId) && !status.has(turn.promptId);
+    if (lifecycle.standing !== standing)
+      // A new event object, never a write into the one a returned projection
+      // already holds: the two readings share the turn they did not change.
+      turn.lifecycle = {
+        at: lifecycle.at,
+        kind: 'pause',
+        reason: lifecycle.reason,
+        standing,
+      };
   }
 
   // The transcript's last turn is the one the log is still at. A prompt there,

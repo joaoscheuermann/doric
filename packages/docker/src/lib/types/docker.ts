@@ -103,6 +103,15 @@ export type RemoveContainerOptions = DockerRequestOptions & {
   readonly link?: boolean;
 };
 
+export type CreateVolumeInput = {
+  readonly name: string;
+  readonly labels?: Readonly<Record<string, string>>;
+};
+
+export type RemoveVolumeOptions = DockerRequestOptions & {
+  readonly force?: boolean;
+};
+
 export type ExecInput = DockerRequestOptions & {
   readonly cmd: readonly string[];
   readonly env?: readonly string[];
@@ -183,6 +192,15 @@ export interface DockerClient extends SandboxProvider {
     input: ArchiveReadInput,
     options?: DockerRequestOptions,
   ): Promise<Uint8Array>;
+
+  /** Creates a named volume, or keeps the existing volume with that name. */
+  createVolume(
+    input: CreateVolumeInput,
+    options?: DockerRequestOptions,
+  ): Promise<void>;
+
+  /** Removes a named volume; a volume that is not there is not an error. */
+  removeVolume(name: string, options?: RemoveVolumeOptions): Promise<void>;
 }
 
 import type { SandboxProvider } from 'sandbox';

@@ -6,6 +6,7 @@ import type {
   PooledSandbox,
   SandboxLease,
   Sandpool,
+  SandpoolAcquireOptions,
   SandpoolOptions,
   SandpoolStatus,
   SandpoolWaitOptions,
@@ -22,6 +23,8 @@ type AcquireWaiter = {
   readonly reject: (cause: unknown) => void;
   readonly signal: AbortSignal | undefined;
   readonly onAbort: () => void;
+  readonly identity: string | undefined;
+  creating: boolean;
 };
 
 type HeatWaiter = {
@@ -177,7 +180,7 @@ const waitUntilHeated = (
 
 const acquire = (
   state: State,
-  options: SandpoolWaitOptions,
+  options: SandpoolAcquireOptions,
 ): Promise<SandboxLease> => {
   ensureActive(state);
 
@@ -190,6 +193,8 @@ const acquire = (
       resolve,
       reject,
       signal: options.signal,
+      identity: options.identity,
+      creating: false,
       onAbort: () => {
         const index = state.acquisitions.indexOf(waiter);
 
@@ -222,21 +227,24 @@ const pump = (state: State): void => {
     return;
   }
 
-  while (state.idle.length > 0 && state.acquisitions.length > 0) {
-    const record = state.idle.shift();
-    const waiter = state.acquisitions.shift();
+  for (;;) {
+    // Identified waiters are provisioned their own session, so an idle session
+    // only ever serves a waiter that can take any of them.
+    const waiter = state.acquisitions.find(
+      ({ identity }) => identity === undefined,
+    );
 
-    if (record === undefined || waiter === undefined) {
+    if (waiter === undefined || state.idle.length === 0) {
       break;
     }
 
-    waiter.signal?.removeEventListener('abort', waiter.onAbort);
+    const record = state.idle.shift();
 
-    record.phase = 'leased';
+    if (record === undefined) {
+      break;
+    }
 
-    log(state, 'sandbox leased', { sandboxId: record.session.id });
-
-    waiter.resolve(lease(state, record));
+    deliver(state, waiter, record);
   }
 
   announceHeatTransition(state);
@@ -253,24 +261,74 @@ const startRequiredCreations = (state: State): void => {
 
   const known = state.records.size + state.creating;
   const capacity = state.options.maxSandboxes - known;
-  const deficit =
-    state.acquisitions.length + state.options.minIdle - state.idle.length;
+  const requests = creationRequests(state);
   const remainingAttempts =
     state.maxCreateAttempts - state.createFailures - state.creating;
-  const count = Math.max(0, Math.min(capacity, deficit, remainingAttempts));
+  const count = Math.max(
+    0,
+    Math.min(capacity, requests.length, remainingAttempts),
+  );
 
   for (let index = 0; index < count; index += 1) {
-    state.creating += 1;
-
-    log(state, 'sandbox creation started');
-
-    void createOne(state);
+    startCreation(state, requests[index]);
   }
 };
 
-const createOne = async (state: State): Promise<void> => {
+/**
+ * The sessions this pool still needs, in the order its waiters arrived: an
+ * identified waiter always needs a session of its own, a waiter without an
+ * identity needs one only while no idle session is left for it, and idle
+ * sessions are refilled up to `minIdle`.
+ */
+const creationRequests = (state: State): (AcquireWaiter | undefined)[] => {
+  const requests: (AcquireWaiter | undefined)[] = [];
+
+  for (const waiter of state.acquisitions) {
+    if (waiter.creating) {
+      continue;
+    }
+
+    // Pairing above leaves idle sessions only when no unnamed waiter is left.
+    if (waiter.identity === undefined && state.idle.length > 0) {
+      continue;
+    }
+
+    requests.push(waiter.identity === undefined ? undefined : waiter);
+  }
+
+  const warming = state.options.minIdle - state.idle.length;
+
+  for (let index = 0; index < warming; index += 1) {
+    requests.push(undefined);
+  }
+
+  return requests;
+};
+
+const startCreation = (
+  state: State,
+  waiter: AcquireWaiter | undefined,
+): void => {
+  state.creating += 1;
+
+  if (waiter !== undefined) {
+    waiter.creating = true;
+  }
+
+  log(state, 'sandbox creation started');
+
+  void createOne(state, waiter);
+};
+
+const createOne = async (
+  state: State,
+  waiter: AcquireWaiter | undefined,
+): Promise<void> => {
   try {
-    const session = await state.options.create();
+    const session =
+      waiter === undefined
+        ? await state.options.create()
+        : await state.options.create(waiter.identity);
 
     state.creating -= 1;
 
@@ -288,13 +346,18 @@ const createOne = async (state: State): Promise<void> => {
 
     state.records.add(record);
 
-    if (state.lifecycle === 'active') {
+    log(state, 'sandbox created', { sandboxId: session.id });
+
+    if (state.lifecycle !== 'active') {
+      void startDisposal(state, record);
+    } else if (waiter === undefined) {
       state.idle.push(record);
-
-      log(state, 'sandbox created', { sandboxId: session.id });
+    } else if (state.acquisitions.includes(waiter)) {
+      deliver(state, waiter, record);
     } else {
-      log(state, 'sandbox created', { sandboxId: session.id });
-
+      // A session provisioned for one caller must not become a warmed session
+      // that an unrelated caller leases; the next acquisition with that
+      // identity provisions a new one.
       void startDisposal(state, record);
     }
   } catch (cause) {
@@ -319,7 +382,32 @@ const createOne = async (state: State): Promise<void> => {
     }
   }
 
+  if (waiter !== undefined) {
+    // Lets a later pump pass retry a waiter whose session failed to provision.
+    waiter.creating = false;
+  }
+
   pump(state);
+};
+
+const deliver = (
+  state: State,
+  waiter: AcquireWaiter,
+  record: SessionRecord,
+): void => {
+  const index = state.acquisitions.indexOf(waiter);
+
+  if (index >= 0) {
+    state.acquisitions.splice(index, 1);
+  }
+
+  waiter.signal?.removeEventListener('abort', waiter.onAbort);
+
+  record.phase = 'leased';
+
+  log(state, 'sandbox leased', { sandboxId: record.session.id });
+
+  waiter.resolve(lease(state, record));
 };
 
 const exhaustCreationAttempts = (state: State): void => {

@@ -22,6 +22,7 @@ import {
   socketPath,
   stringField,
   versionFrom,
+  volumeCreateBody,
   withDefaultTimeout,
 } from './mapping.js';
 import { provisionDocker } from './provider.js';
@@ -274,6 +275,31 @@ export const createDockerClient = (
           200,
         )
       ).body;
+    },
+
+    async createVolume(input, control = {}) {
+      await send(
+        {
+          method: 'POST',
+          path: '/volumes/create',
+          body: volumeCreateBody(input),
+          ...control,
+        },
+        201,
+      );
+    },
+
+    async removeVolume(name, options = {}) {
+      await send(
+        {
+          method: 'DELETE',
+          path: `/volumes/${encodeURIComponent(name)}`,
+          query: { force: options.force },
+          signal: options.signal,
+          timeoutMs: options.timeoutMs,
+        },
+        [204, 404],
+      );
     },
   };
 

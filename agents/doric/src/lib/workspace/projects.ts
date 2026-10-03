@@ -2,7 +2,6 @@ import type { Project as StoredProject } from '../../generated/prisma/client.js'
 import type { DoricConfig } from '../config/schema.js';
 import type { Database } from '../database.js';
 import { isProjectColor } from './colors.js';
-import type { Project, ProjectStore } from './types.js';
 import {
   before,
   checkLimit,
@@ -14,6 +13,7 @@ import {
   terminal,
   timestamps,
 } from './storage.js';
+import type { Project, ProjectStore } from './types.js';
 
 /** What a record read selects; `configSnapshot` stays out of it. */
 const recordColumns = {
@@ -158,13 +158,22 @@ export const createProjectStore = (database: Database): ProjectStore => ({
   },
 
   async reconcile() {
+    // A host that restarted resumes its Projects rather than failing them, but
+    // it completes a termination it finds in progress: CANCELLING means the user
+    // terminated the Project, so reviving it would resurrect work they stopped.
+    // It returns how many Projects the resume pass moved to `queued`; a
+    // completed termination is not resumed and is not counted.
+    await database.project.updateMany({
+      where: { state: { notIn: [...terminal] }, errorCode: { not: null } },
+      data: { errorCode: null },
+    });
+    await database.project.updateMany({
+      where: { state: 'CANCELLING' },
+      data: { state: 'CANCELLED', finishedAt: new Date() },
+    });
     const result = await database.project.updateMany({
-      where: { state: { notIn: [...terminal] } },
-      data: {
-        state: 'FAILED',
-        errorCode: 'process_interrupted',
-        finishedAt: new Date(),
-      },
+      where: { state: { notIn: [...terminal, 'CANCELLING', 'QUEUED'] } },
+      data: { state: 'QUEUED' },
     });
     return result.count;
   },

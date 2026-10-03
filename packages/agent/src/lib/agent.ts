@@ -14,7 +14,6 @@ import type {
   AgentRunOptions,
 } from './types/agent.js';
 import type { ToolCallRecord } from './types/tool-call-storage.js';
-import { runTools } from './utils/run-tools.js';
 import {
   notifyStructuredAttempt,
   notifyToolCallRepair,
@@ -25,12 +24,13 @@ import {
   toolResultEnvelope,
   turnGuard,
 } from './utils/run.js';
+import { runTools } from './utils/run-tools.js';
 import {
   createStructuredOutputTool,
   nextStructuredOutputRepair,
   parseStructuredOutputTool,
-  structuredOutputInstruction,
   type StructuredOutputBaseline,
+  structuredOutputInstruction,
   type StructuredOutputTool,
 } from './utils/structured-output.js';
 
@@ -175,7 +175,8 @@ export const createAgent = (options: AgentOptions): Agent => {
 
       try {
         /** The caller input starts the run-local conversation. */
-        options.messages.push({ role: 'user', content: input });
+        if (!runOptions.resume)
+          options.messages.push({ role: 'user', content: input });
 
         /** This value remains stable across every provider turn in the run. */
         const terminal = outputTool(runOptions);
@@ -313,7 +314,8 @@ export const createAgent = (options: AgentOptions): Agent => {
 
       try {
         /** Streaming uses the same message and terminal-tool contract as complete. */
-        options.messages.push({ role: 'user', content: input });
+        if (!runOptions.resume)
+          options.messages.push({ role: 'user', content: input });
         const terminal = outputTool(runOptions);
         const maxRepairs = repairLimit(runOptions.maxToolCallRepairs);
         let invalidSubmissions = 0;

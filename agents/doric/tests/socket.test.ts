@@ -440,6 +440,8 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     rewind: unsupported,
     appendEvent: unsupported,
     setResult: unsupported,
+    unfinishedPrompts: unsupported,
+    failPrompt: unsupported,
     deleteSubtree: unsupported,
     reconcile: unsupported,
     ...overrides,

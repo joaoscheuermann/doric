@@ -182,6 +182,7 @@ test('passes normalized inputs to the provider and wraps workspace helpers', asy
     image: 'node:22-slim',
     imagePullPolicy: 'if-not-present',
     name: undefined,
+    workspace: undefined,
     root: '/workspace',
     resources,
     network: { mode: 'disabled', ssh: false },
@@ -195,6 +196,19 @@ test('passes normalized inputs to the provider and wraps workspace helpers', asy
   assert.equal(await sandbox.readFile('/workspace/src/hello.txt'), 'hello');
 
   await assert.rejects(sandbox.getFile('/etc/passwd'), /must stay under/u);
+});
+
+test('forwards the durable workspace identity to the provider', async () => {
+  const value = fake();
+
+  await createSandbox({
+    provider: value.provider,
+    image: 'node:22-slim',
+    resources,
+    workspace: 'project-a',
+  });
+
+  assert.equal(value.provisions[0]?.workspace, 'project-a');
 });
 
 test('clones and diffs through provider-neutral exec', async () => {

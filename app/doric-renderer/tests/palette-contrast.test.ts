@@ -82,6 +82,7 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
   ['destructive-foreground', 'destructive'],
+  ['warning', 'background'],
 ];
 
 /** Pairs that carry meaning only as a surface: a hover, a highlight, an edge. */

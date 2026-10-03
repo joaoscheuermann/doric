@@ -35,23 +35,36 @@ const turnKey = (turn: Turn): string =>
   `${turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
 
 /**
+ * A block that reads as chrome between the run's turns rather than as a turn of
+ * its own story: a lifecycle row, or the failure a prompt was closed with.
+ */
+const isChrome = (turn: Turn): boolean =>
+  turn.type === 'lifecycle' || turn.type === 'failure';
+
+/**
  * The author line a turn trails, or `null` when it wears none. The reader's own
  * turn always wears one. So does the agent, but only on the last turn of its run
  * — the one before the next user turn — so the line trails the run's whole
- * reasoning, tool calls and answer rather than its first turn.
+ * reasoning, tool calls and answer rather than its first turn. A lifecycle or
+ * failure row wears none and does not end the run a line trails, so a pause
+ * between two halves of one job leaves the line where the job ends.
  */
 const authorFor = (
   turns: readonly Turn[],
   index: number,
 ): AuthorDraft | null => {
   const turn = turns[index];
+  if (turn === undefined) return null;
   const at = turn.events.at(-1)?.createdAt;
   if (turn.type === 'user')
     // A prompt the host has not accepted yet is drawn dimmed and nameless; the
     // name arrives with the accepted turn the log holds.
     return turn.accepted ? { role: 'user', name: READER_NAME, at } : null;
-  const next = turns[index + 1];
-  return next === undefined || next.type === 'user'
+  if (isChrome(turn)) return null;
+  let next = index + 1;
+  while (next < turns.length && isChrome(turns[next])) next += 1;
+  const after = turns[next];
+  return after === undefined || after.type === 'user'
     ? { role: 'agent', name: AGENT_NAME, at }
     : null;
 };

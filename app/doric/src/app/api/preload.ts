@@ -442,6 +442,12 @@ contextBridge.exposeInMainWorld('doric', {
     git: (id: string) => invoke<ThreadGit>('doric:threads:git', id),
     prompt: (id: string, prompt: string) =>
       invoke<{ readonly promptId: string }>('doric:threads:prompt', id, prompt),
+    /**
+     * Takes up a prompt an interruption left unfinished again on the host, which
+     * answers the Thread it is running it on.
+     */
+    resume: (id: string, promptId: string) =>
+      invoke<Thread>('doric:threads:resume', id, promptId),
     watch: (
       id: string,
       afterSequence: number,

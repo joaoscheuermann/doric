@@ -9,6 +9,7 @@ import {
 } from './host.js';
 import type { ContainerRef, DockerClient } from './types/docker.js';
 import { extractFirstFile, packFile } from './utils/tar.js';
+import { ensureWorkspaceVolume } from './workspace.js';
 
 /** Provisions a Docker-backed implementation of the common sandbox runtime. */
 export const provisionDocker = async (
@@ -22,6 +23,19 @@ export const provisionDocker = async (
 
   await ensureImage(client, input);
 
+  // A durable workspace outlives the container, so it is a named volume keyed by
+  // the identity the caller provisioned for. Provisioning the same identity
+  // again reattaches the volume and keeps the files inside it.
+  const workspace =
+    input.workspace === undefined
+      ? undefined
+      : {
+          identity: input.workspace,
+          volume: await ensureWorkspaceVolume(client, input.workspace, {
+            timeoutMs: input.timeoutMs,
+          }),
+        };
+
   const ssh = input.network.ssh;
 
   const create = (diskQuota: boolean): Promise<ContainerRef> =>
@@ -34,10 +48,16 @@ export const provisionDocker = async (
         labels: {
           'doric.sandbox': 'true',
           'doric.sandbox.root': input.root,
+          ...(workspace === undefined
+            ? {}
+            : { 'doric.sandbox.workspace': workspace.identity }),
         },
         hostConfig: {
           AutoRemove: false,
-          Binds: [],
+          Binds:
+            workspace === undefined
+              ? []
+              : [`${workspace.volume}:${input.root}`],
           NetworkMode: input.network.mode === 'disabled' ? 'none' : 'bridge',
           Memory: input.resources.memoryMiB * 1024 * 1024,
           NanoCpus: input.resources.cpuCount * 1_000_000_000,

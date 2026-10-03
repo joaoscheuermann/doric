@@ -19,6 +19,10 @@ import {
   credentialByKind,
 } from '../../src/lib/credentials/resolve.js';
 import type {
+  PauseReason,
+  PromptProgress,
+} from '../../src/lib/workspace/prompts.js';
+import type {
   ProjectRecord,
   ProjectStore,
   ThreadEvent,
@@ -71,11 +75,80 @@ export const deferred = <T = void>() => {
   return { promise, resolve };
 };
 
+/** The reasons a durable pause event can carry. */
+const pauseReasons = [
+  'host_stopped',
+  'host_restarted',
+  'reader_stopped',
+] as const;
+
+/**
+ * The store's read of its own log: every prompt the named Threads accepted
+ * without a `prompt.finished` counterpart, with what its own events say about
+ * it. It mirrors what the durable fold derives, so a service driven by this fake
+ * sees the same prompts the real store would name.
+ */
+const unfinished = (
+  values: readonly ThreadRecord[],
+  events: readonly ThreadEvent[],
+  id?: string,
+): readonly PromptProgress[] => {
+  const owners = new Map(
+    values
+      .filter(({ thread }) => !['failed', 'cancelled'].includes(thread.state))
+      .filter(({ thread }) => id === undefined || thread.id === id)
+      .map(({ thread }) => [thread.id, thread.projectId]),
+  );
+  const progress = new Map<
+    string,
+    { -readonly [Key in keyof PromptProgress]: PromptProgress[Key] }
+  >();
+  for (const stored of events) {
+    const projectId = owners.get(stored.threadId);
+    if (projectId === undefined) continue;
+    const key = `${stored.threadId}:${stored.promptId}`;
+    if (stored.type === 'prompt.accepted') {
+      if (progress.has(key)) continue;
+      const accepted = stored.event as {
+        readonly text?: string;
+        readonly source?: PromptProgress['source'];
+      } | null;
+      progress.set(key, {
+        projectId,
+        threadId: stored.threadId,
+        promptId: stored.promptId,
+        text: accepted?.text ?? '',
+        source: accepted?.source ?? { kind: 'user' },
+        started: false,
+        attempts: 0,
+      });
+      continue;
+    }
+    const prompt = progress.get(key);
+    if (prompt === undefined) continue;
+    if (stored.type === 'prompt.finished') progress.delete(key);
+    else if (stored.type === 'agent.started') prompt.started = true;
+    else if (stored.type === 'prompt.resumed') {
+      prompt.attempts += 1;
+      prompt.paused = undefined;
+    } else if (
+      (pauseReasons as readonly unknown[]).includes(
+        (stored.event as { readonly reason?: unknown } | null)?.reason,
+      )
+    ) {
+      prompt.paused = (stored.event as { readonly reason: PauseReason }).reason;
+    }
+  }
+  return [...progress.values()];
+};
+
 /** In-memory durable boundaries with notifications for deterministic assertions. */
 export const workspace = () => {
   const projectRecords = new Map<string, ProjectRecord>();
   const threadRecords = new Map<string, ThreadRecord>();
   const events: ThreadEvent[] = [];
+  /** Identities the service asked the workspace dependency to discard. */
+  const discarded: string[] = [];
   const changes = new Set<() => void>();
   const notify = () => {
     for (const change of changes) change();
@@ -222,6 +295,8 @@ export const workspace = () => {
     saveCheckpoint: async (id, promptId) => {
       const record = threadRecords.get(id);
       if (!record) return;
+      // A turn records its boundary once, the way the durable store does.
+      if (record.checkpoints[promptId] !== undefined) return;
       threadRecords.set(id, {
         ...record,
         checkpoints: {
@@ -322,6 +397,34 @@ export const workspace = () => {
         thread: { ...record.thread, result },
       });
     },
+    unfinishedPrompts: async (id) =>
+      unfinished([...threadRecords.values()], events, id),
+    failPrompt: async (prompt, failure) => {
+      await threads.appendEvent(prompt.threadId, prompt.promptId, {
+        type: 'agent.failed',
+        error: failure,
+      });
+      await threads.appendEvent(prompt.threadId, prompt.promptId, {
+        type: 'prompt.finished',
+        status: 'failed',
+        text: 'The prompt failed.',
+        source: prompt.source,
+      });
+      const record = threadRecords.get(prompt.threadId);
+      if (record === undefined) return;
+      threadRecords.set(prompt.threadId, {
+        ...record,
+        thread: {
+          ...record.thread,
+          result: {
+            status: 'failed',
+            text: 'The prompt failed.',
+            promptId: prompt.promptId,
+            at: now,
+          },
+        },
+      });
+    },
     deleteSubtree: async () => {
       throw new Error('Deletion is not used in execution tests');
     },
@@ -350,6 +453,7 @@ export const workspace = () => {
     threads,
     publisher,
     events,
+    discarded,
     projectState: (id: string, state: string) =>
       waitFor(() => projectRecords.get(id)?.project.state === state),
     threadState: (id: string, state: string) =>
@@ -372,6 +476,9 @@ export const workspace = () => {
       } as never,
       credentials: credentialResolver(),
       logger: { debug: () => undefined, error: () => undefined } as never,
+      discardWorkspace: async (identity: string) => {
+        discarded.push(identity);
+      },
     },
   };
 };
@@ -669,6 +776,20 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}) => {
           (options.escapes ?? []).includes(relative(args[4] ?? root))
             ? 'outside'
             : 'inside',
+        );
+      // The lease-time validation of every Thread working directory: one
+      // NUL-terminated record per path named after the root, `K` when it is
+      // still a directory inside the root and `X` otherwise.
+      if (label === 'cwd-validate')
+        return ok(
+          args
+            .slice(4)
+            .map((path) => {
+              const escaped = (options.escapes ?? []).includes(relative(path));
+              const kept = kindOf(path) === 'directory' && !escaped;
+              return `${kept ? 'K' : 'X'} ${path}`;
+            })
+            .join('\0'),
         );
       return ok(args.length > 2 ? kindOf(args.at(-1) ?? root) : '');
     }

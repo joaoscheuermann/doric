@@ -8,21 +8,22 @@ import { eventJson } from '../events/serialization.js';
 import { physicallyInside } from './cwd.js';
 import { cwdRepoHint, threadGit } from './git-status.js';
 import { nameFromPrompt } from './names.js';
+import { delegatedResult } from './prompts.js';
 import {
-  subtreeIds,
-  ThreadPersistenceError,
   type ProjectRuntime,
   type PromptJob,
   type RuntimeContext,
+  subtreeIds,
+  ThreadPersistenceError,
   type ThreadRuntime,
 } from './runtime.js';
 import {
-  isTerminal,
   type CwdRefusal,
   type CwdRepo,
   type CwdResult,
   type InputSource,
   type InterruptResult,
+  isTerminal,
   type Thread,
   type ThreadGit,
 } from './types.js';
@@ -81,6 +82,40 @@ export const createThreadRunner = (context: RuntimeContext) => {
     start(project, thread);
     return { status: 'accepted' as const, promptId: job.id };
   };
+  /**
+   * Queues one prompt the log already accepted, opening the attempt the host is
+   * taking up instead of accepting the input a second time: a resumed prompt is
+   * the same turn continuing, so it keeps its own id and its own events, and it
+   * is never duplicated while the Thread still holds it.
+   */
+  // Caller holds the project's mutation lock.
+  const resume = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    job: PromptJob,
+    attempt: number,
+  ): Promise<
+    | { readonly status: 'resumed'; readonly thread: Thread }
+    | { readonly status: 'inactive' | 'busy' }
+  > => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state)) {
+      return { status: 'inactive' as const };
+    }
+    if (
+      thread.active?.job.id === job.id ||
+      thread.jobs.some(({ id }) => id === job.id)
+    ) {
+      return { status: 'busy' as const };
+    }
+    await publish(thread, job, { type: 'prompt.resumed', attempt });
+    thread.jobs.push(job);
+    // The event moved the Thread's last sequence, so the record this answers with
+    // is read back rather than handed out one event behind the log.
+    const current = await store.record(thread.thread.id);
+    if (current !== undefined) thread.thread = current;
+    start(project, thread);
+    return { status: 'resumed' as const, thread: thread.thread };
+  };
   const notify = async (
     project: ProjectRuntime,
     thread: ThreadRuntime,
@@ -96,18 +131,13 @@ export const createThreadRunner = (context: RuntimeContext) => {
       await enqueue(
         project,
         parent,
-        [
-          '# Delegated task result',
-          '',
-          `Child thread: ${thread.thread.id}`,
-          `Child prompt: ${job.id}`,
-          `Originating prompt: ${source.promptId}`,
-          `Status: ${status}`,
-          '',
-          '## Result',
-          '',
+        delegatedResult(
+          thread.thread.id,
+          job.id,
+          source.promptId,
+          status,
           String(eventJson(text, context.generation().redactions())),
-        ].join('\n'),
+        ),
         {
           kind: 'result',
           threadId: thread.thread.id,
@@ -162,6 +192,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
       if (active === undefined) return;
       let status = 'completed';
       let text = '';
+      let paused = false;
       try {
         text = await context.execute({
           thread: thread.thread,
@@ -179,18 +210,28 @@ export const createThreadRunner = (context: RuntimeContext) => {
         active.controller.signal.throwIfAborted();
       } catch (error) {
         if (error instanceof ThreadPersistenceError) throw error;
-        status = active.controller.signal.aborted ? 'cancelled' : 'failed';
-        text =
-          status === 'cancelled'
-            ? 'The prompt was cancelled.'
-            : 'The prompt failed.';
-        await publish(thread, active.job, {
-          type: status === 'cancelled' ? 'agent.cancelled' : 'agent.failed',
-          error,
-        });
+        const reason = thread.pausing;
+        if (reason !== undefined) {
+          // A deliberate abort pauses the prompt: it stays unfinished, so the
+          // host takes it up again — at the next boot for a stop, when the
+          // reader asks for one the reader made — and no result is written.
+          paused = true;
+          thread.pausing = undefined;
+          await publish(thread, active.job, { type: 'prompt.paused', reason });
+        } else {
+          status = active.controller.signal.aborted ? 'cancelled' : 'failed';
+          text =
+            status === 'cancelled'
+              ? 'The prompt was cancelled.'
+              : 'The prompt failed.';
+          await publish(thread, active.job, {
+            type: status === 'cancelled' ? 'agent.cancelled' : 'agent.failed',
+            error,
+          });
+        }
       }
       active.finished = true;
-      await finishJob(project, thread, active.job, status, text);
+      if (!paused) await finishJob(project, thread, active.job, status, text);
       await exclusive(project.project.id, async () => {
         thread.active = undefined;
         if (!thread.closing && !project.closing) await state(thread, 'ready');
@@ -280,10 +321,14 @@ export const createThreadRunner = (context: RuntimeContext) => {
   const interrupt = (
     thread: ThreadRuntime,
     promptId: string,
+    reason?: 'reader_stopped',
   ): InterruptResult => {
     if (thread.closing) return 'inactive';
     if (thread.active?.job.id !== promptId || thread.active.finished)
       return 'not_running';
+    // A reader's stop pauses the run, so the reader can take it up again; any
+    // other caller stops the run outright, exactly as it always did.
+    if (reason !== undefined) thread.pausing = reason;
     thread.active.controller.abort();
     return 'interrupted';
   };
@@ -371,6 +416,45 @@ export const createThreadRunner = (context: RuntimeContext) => {
           context.logger.error(
             { threadId: thread.thread.id },
             'Thread termination persistence failed',
+          );
+        });
+    }
+  };
+  /**
+   * Suspends every live Thread of a host that is stopping, without terminating
+   * it. The run that is executing is *paused* — left unfinished, so the next boot
+   * takes it up again — and the queue the Thread was holding stays accepted and
+   * unfinished for the same reason. Each Thread is written back as `ready`.
+   * Explicit termination stays `close`, which is terminal.
+   */
+  // Caller holds the project's mutation lock.
+  const suspend = (
+    project: ProjectRuntime,
+    values: readonly ThreadRuntime[],
+  ) => {
+    const targets = values.filter(
+      (thread) => !thread.closing && !isTerminal(thread.thread.state),
+    );
+    for (const thread of targets) {
+      thread.closing = true;
+      if (thread.active !== undefined && !thread.active.finished) {
+        thread.pausing = 'host_stopped';
+        thread.active.controller.abort();
+      }
+    }
+    for (const thread of targets) {
+      const task = thread.task;
+      thread.ending = Promise.resolve()
+        .then(async () => {
+          // The aborted run settles here, writing its own pause before the
+          // Thread is written back as ready.
+          await task;
+          await exclusive(project.project.id, () => state(thread, 'ready'));
+        })
+        .catch(() => {
+          context.logger.error(
+            { threadId: thread.thread.id },
+            'Thread suspension persistence failed',
           );
         });
     }
@@ -619,16 +703,33 @@ export const createThreadRunner = (context: RuntimeContext) => {
         }),
     };
   };
+  /**
+   * Resets one Thread's working directory to the workspace root after a reacquired
+   * sandbox no longer holds it, clearing the repository hint with it. The caller
+   * holds the project lock, because a reset belongs to the acquisition that
+   * proved the directory gone.
+   */
+  const resetCwd = async (project: ProjectRuntime, thread: ThreadRuntime) => {
+    const root = project.lease?.sandbox.root;
+    if (root === undefined) return;
+    const updated = await store.setCwd(thread.thread.id, root, undefined);
+    if (updated === undefined) return;
+    thread.thread = updated;
+    publisher.threadUpdated(updated);
+  };
   return {
     start,
     enqueue,
+    resume,
     create,
     interrupt,
     rewind,
     descendants,
     close,
+    suspend,
     state,
     setCwd,
+    resetCwd,
     git,
   };
 };

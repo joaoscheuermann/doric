@@ -15,18 +15,27 @@ import type { ConfigService } from '../config/service.js';
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
 import { randomProjectColor } from './colors.js';
+import { workingDirectoriesInside } from './cwd.js';
 import { projectChanges, readProjectFile } from './files.js';
 import {
   applyGitCredentials,
   type GitCredentials,
   sameGitCredentials,
 } from './git.js';
+import {
+  hostOwesRun,
+  type PromptProgress,
+  resumeExhausted,
+  resumeExhaustedError,
+} from './prompts.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
   type ProjectRuntime,
+  type PromptJob,
   subtreeIds,
   type ThreadExecution,
+  type ThreadRuntime,
 } from './runtime.js';
 import {
   isTerminal,
@@ -37,6 +46,7 @@ import {
   type ProjectSsh,
   type ProjectStore,
   type ProjectTree,
+  type Thread,
   type ThreadStore,
   type WorkspacePublisher,
   type WorkspaceService,
@@ -57,8 +67,24 @@ type Options = {
   readonly pool: Sandpool;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;
+  /**
+   * Discards a deleted Project's durable workspace volume. The service calls it
+   * after the record is gone; a rejection is logged and never fails the deletion.
+   */
+  readonly discardWorkspace: (identity: string) => Promise<void>;
   readonly execute?: ThreadExecution;
 };
+
+/**
+ * The job a resumed prompt re-runs: the prompt's own id, so its events keep
+ * belonging to the same turn, and the input the log accepted, which the resumed
+ * run continues rather than repeats.
+ */
+const jobFor = (prompt: PromptProgress): PromptJob => ({
+  id: prompt.promptId,
+  prompt: prompt.text,
+  source: prompt.source,
+});
 
 /** Composes project-owned sandboxes with independently scheduled conversations. */
 export const createWorkspaceService = ({
@@ -69,6 +95,7 @@ export const createWorkspaceService = ({
   pool,
   publisher,
   logger,
+  discardWorkspace,
   execute = runDirectPrompt,
 }: Options): WorkspaceService => {
   const runtimes = new Map<string, ProjectRuntime>();
@@ -119,16 +146,7 @@ export const createWorkspaceService = ({
             await thread.ending;
           }),
         );
-        let errorCode = failure;
-        const lease = runtime.lease;
-        runtime.lease = undefined;
-        if (lease !== undefined) {
-          try {
-            await lease.release();
-          } catch {
-            errorCode = 'sandbox_release_failed';
-          }
-        }
+        const errorCode = (await releaseLease(runtime)) ?? failure;
         await exclusive(runtime.project.id, async () => {
           try {
             await setProject(
@@ -148,6 +166,66 @@ export const createWorkspaceService = ({
         );
       });
     return runtime.project;
+  };
+  /**
+   * Ends every live Project of a host that is stopping without terminating it:
+   * the lease is released, the Project is written back as `queued` (it needs a
+   * sandbox again), and its non-terminal Threads as `ready`, while any prompt
+   * that was running is paused for the next boot. Called
+   * under the project lock; cleanup never waits while holding that lock.
+   */
+  const suspendProject = (runtime: ProjectRuntime) => {
+    if (runtime.closing) return runtime.project;
+    runtime.closing = true;
+    runtime.controller.abort();
+    for (const thread of runtime.threads.values())
+      thread.active?.controller.abort();
+    runner.suspend(runtime, [...runtime.threads.values()]);
+    runtime.ending = Promise.resolve()
+      .then(async () => {
+        await runtime.acquisition;
+        await Promise.all(
+          [...runtime.threads.values()].map(async (thread) => {
+            await thread.task;
+            await thread.ending;
+          }),
+        );
+        const errorCode = await releaseLease(runtime);
+        await exclusive(runtime.project.id, async () => {
+          try {
+            // A host stop never terminates a Project, so even a lease that would
+            // not release leaves it resumable rather than `failed`.
+            await setProject(runtime, 'queued', errorCode);
+          } finally {
+            runtimes.delete(runtime.project.id);
+          }
+        });
+      })
+      .catch(() => {
+        logger.error(
+          { projectId: runtime.project.id },
+          'Project suspension persistence failed',
+        );
+      });
+    return runtime.project;
+  };
+  /**
+   * Releases the Project lease exactly once, after active work has settled. A
+   * failure is reported as the `sandbox_release_failed` code rather than thrown,
+   * so a stop continues even when the provider cannot confirm the release.
+   */
+  const releaseLease = async (
+    runtime: ProjectRuntime,
+  ): Promise<string | undefined> => {
+    const lease = runtime.lease;
+    runtime.lease = undefined;
+    if (lease === undefined) return undefined;
+    try {
+      await lease.release();
+      return undefined;
+    } catch {
+      return 'sandbox_release_failed';
+    }
   };
   /**
    * Resolves the Git identity and the GitHub token the current configuration
@@ -212,7 +290,12 @@ export const createWorkspaceService = ({
   };
   const acquire = async (runtime: ProjectRuntime) => {
     try {
-      const lease = await pool.acquire({ signal: runtime.controller.signal });
+      const lease = await pool.acquire({
+        signal: runtime.controller.signal,
+        // The pool hands an identified acquisition the Project's own durable
+        // workspace, so a resumed Project comes back to the same files.
+        identity: runtime.project.id,
+      });
       // The credentials in force are what a fresh sandbox starts with, and the
       // next prompt re-applies them when they have moved on.
       const git = gitCredentials(
@@ -224,12 +307,17 @@ export const createWorkspaceService = ({
         projectId: runtime.project.id,
       });
       runtime.appliedGit = git;
+      // A reacquired sandbox may be a fresh volume: every Thread whose directory
+      // is not the workspace root is probed in one command, and every directory
+      // it no longer holds is reset before any Thread runs.
+      const resets = await missingDirectories(runtime, lease.sandbox);
       await exclusive(runtime.project.id, async () => {
         runtime.lease = lease;
         if (runtime.closing) return;
         await setProject(runtime, 'ready');
+        for (const thread of resets) await runner.resetCwd(runtime, thread);
         for (const thread of runtime.threads.values()) {
-          if (thread.closing) continue;
+          if (thread.closing || isTerminal(thread.thread.state)) continue;
           await runner.state(thread, 'ready');
           runner.start(runtime, thread);
         }
@@ -240,6 +328,135 @@ export const createWorkspaceService = ({
           await endProject(runtime, 'sandbox_acquisition_failed');
       });
     }
+  };
+  /**
+   * The Threads whose working directory a just-acquired sandbox no longer holds.
+   * The probe is one sandbox command for every candidate path, so a resumed
+   * Project with many Threads pays one round trip, and a Thread already at the
+   * workspace root is never named to it.
+   */
+  const missingDirectories = async (
+    runtime: ProjectRuntime,
+    sandbox: Sandbox,
+  ): Promise<readonly ThreadRuntime[]> => {
+    const root = sandbox.root;
+    const candidates = [...runtime.threads.values()].filter(
+      (thread) =>
+        !thread.closing &&
+        !isTerminal(thread.thread.state) &&
+        thread.thread.cwd !== root,
+    );
+    if (candidates.length === 0) return [];
+    const kept = await workingDirectoriesInside(
+      sandbox,
+      root,
+      candidates.map((thread) => thread.thread.cwd),
+    );
+    // A probe that could not run proves nothing, so its directories are kept:
+    // the acquisition still becomes ready rather than resetting them silently.
+    if (kept === undefined) {
+      logger.debug(
+        { projectId: runtime.project.id },
+        'Working directory probe could not run; keeping stored directories',
+      );
+      return [];
+    }
+    return candidates.filter((thread) => !kept.has(thread.thread.cwd));
+  };
+  /** Builds the process-local runtime for one durable Project, or `undefined`. */
+  const runtimeFromStored = async (
+    id: string,
+  ): Promise<ProjectRuntime | undefined> => {
+    const record = await projects.record(id);
+    if (record === undefined) return undefined;
+    const values = await threads.listByProject(id);
+    const runtime: ProjectRuntime = {
+      project: record,
+      controller: new AbortController(),
+      threads: new Map(
+        values.map((thread) => [
+          thread.id,
+          { thread, jobs: [], closing: false },
+        ]),
+      ),
+      closing: false,
+    };
+    runtimes.set(id, runtime);
+    return runtime;
+  };
+  /**
+   * Brings a durable, non-terminal Project back on demand: it loads the Project
+   * and its Threads and starts the acquisition, so a prompt reaching a Project
+   * the host has not resumed yet reacquires its sandbox first. It runs under the
+   * creation lock, so a shutting-down host can never add a runtime after it set
+   * its flag, and a read never calls it, so reading does not resume a Project.
+   */
+  const resumeProject = async (
+    id: string,
+  ): Promise<ProjectRuntime | undefined> =>
+    exclusive('creation', async () => {
+      if (disposed) return undefined;
+      const existing = runtimes.get(id);
+      if (existing !== undefined) return existing;
+      const record = await projects.record(id);
+      if (record === undefined || isTerminal(record.state)) return undefined;
+      const runtime = await runtimeFromStored(id);
+      if (runtime === undefined) return undefined;
+      runtime.resumed = true;
+      runtime.acquisition = acquire(runtime).catch(() => {
+        logger.error(
+          { projectId: id },
+          'Project acquisition persistence failed',
+        );
+      });
+      return runtime;
+    });
+  /**
+   * The runtime a new turn needs: the Project's live one, or one brought back
+   * from durable state on demand. A prompt to a just-resumed Project waits for
+   * the acquisition in flight before it enqueues, so prompts that race to bring
+   * it back keep arrival order rather than the second running ahead of the
+   * first; a Project that could not come back is not a runtime at all.
+   */
+  const projectFor = async (
+    projectId: string,
+  ): Promise<ProjectRuntime | undefined> => {
+    const runtime = runtimes.get(projectId) ?? (await resumeProject(projectId));
+    if (runtime === undefined) return undefined;
+    if (runtime.resumed === true) {
+      await runtime.acquisition;
+      if (runtime.closing || runtime.lease === undefined) return undefined;
+    }
+    return runtime;
+  };
+  /**
+   * Cancels a Thread and its subtree for a Project the host has no runtime for.
+   * The live path runs `runner.close`, which has in-memory jobs to settle; here
+   * there are none, so the store is taken through `cancelling` and then
+   * `cancelled`, publishing each change, and the target Thread is answered in
+   * the shape the live path answers. Deletion then works on the terminal subtree
+   * exactly as it does after a live termination.
+   */
+  const terminateStored = async (
+    projectId: string,
+    id: string,
+  ): Promise<Thread | undefined> => {
+    const values = await threads.listByProject(projectId);
+    const ids = subtreeIds(values, id);
+    const targets = values.filter(
+      (value) => ids.has(value.id) && !isTerminal(value.state),
+    );
+    for (const value of targets) {
+      const cancelling = await threads.setState(value.id, 'cancelling');
+      if (cancelling !== undefined) publisher.threadUpdated(cancelling);
+    }
+    let target: Thread | undefined;
+    for (const value of targets) {
+      const cancelled = await threads.setState(value.id, 'cancelled');
+      if (cancelled !== undefined) publisher.threadUpdated(cancelled);
+      if (value.id === id) target = cancelled;
+    }
+    return target ?? (await threads.record(id));
   };
   /**
    * The Git identity and the GitHub token follow the current configuration, so a
@@ -431,9 +648,17 @@ export const createWorkspaceService = ({
       terminate: (id) =>
         exclusive(id, async () => {
           const runtime = runtimes.get(id);
-          return runtime === undefined
-            ? projects.record(id)
-            : endProject(runtime);
+          if (runtime !== undefined) return endProject(runtime);
+          // A Project with no runtime has not been resumed; build one under the
+          // creation lock so a shutting-down host can never add it after
+          // disposal set its flag.
+          return exclusive('creation', async () => {
+            if (disposed) return projects.record(id);
+            const record = await projects.record(id);
+            if (record === undefined || isTerminal(record.state)) return record;
+            const loaded = await runtimeFromStored(id);
+            return loaded === undefined ? record : endProject(loaded);
+          });
         }),
       delete: (id) =>
         exclusive(id, async () => {
@@ -443,6 +668,14 @@ export const createWorkspaceService = ({
             for (const thread of values) publisher.threadDeleted(id, thread.id);
             publisher.projectDeleted(id);
             runtimes.delete(id);
+            // The record is gone; the workspace volume is discarded with it. A
+            // failure to discard is logged and never fails the deletion.
+            await discardWorkspace(id).catch(() => {
+              logger.error(
+                { projectId: id },
+                'Project workspace discard failed',
+              );
+            });
           }
           return outcome;
         }),
@@ -514,15 +747,53 @@ export const createWorkspaceService = ({
       prompt: async (id, prompt) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
+        // New input is what brings a Project the host has not resumed yet back:
+        // acquire its sandbox first, then enqueue the prompt as usual. A lease
+        // that cannot be acquired ends the Project, so the prompt is answered as
+        // inactive exactly as a prompt to a failed Project is.
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return { status: 'inactive' };
         // New input is the point where a live sandbox catches up with a rotated
         // or newly saved credential, before the prompt is enqueued.
         await applyCurrentGit(runtimes.get(record.projectId));
         return exclusive(record.projectId, async () => {
-          const project = runtimes.get(record.projectId);
-          const thread = project?.threads.get(id);
-          if (project === undefined || thread === undefined)
+          const current = runtimes.get(record.projectId);
+          const thread = current?.threads.get(id);
+          if (current === undefined || thread === undefined)
             return { status: 'inactive' as const };
-          return runner.enqueue(project, thread, prompt, { kind: 'user' });
+          return runner.enqueue(current, thread, prompt, { kind: 'user' });
+        });
+      },
+      resume: async (id, promptId) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        // Only work that has not finished can be taken up; anything else is not
+        // this Thread's unfinished prompt.
+        if (isTerminal(record.state)) return { status: 'inactive' };
+        if (
+          !(await threads.unfinishedPrompts(id)).some(
+            (prompt) => prompt.promptId === promptId,
+          )
+        )
+          return { status: 'unknown_prompt' };
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return { status: 'inactive' };
+        const thread = project.threads.get(id);
+        if (thread === undefined) return { status: 'inactive' };
+        await applyCurrentGit(project);
+        return exclusive(record.projectId, async () => {
+          // Acquisition and credential refresh can outlive the run we read.
+          const progress = (await threads.unfinishedPrompts(id)).find(
+            (prompt) => prompt.promptId === promptId,
+          );
+          if (progress === undefined)
+            return { status: 'unknown_prompt' as const };
+          return runner.resume(
+            project,
+            thread,
+            jobFor(progress),
+            progress.attempts + 1,
+          );
         });
       },
       rewind: async (id, promptId, prompt) => {
@@ -557,7 +828,9 @@ export const createWorkspaceService = ({
           const thread = runtimes.get(record.projectId)?.threads.get(id);
           return thread === undefined
             ? 'inactive'
-            : runner.interrupt(thread, promptId);
+            : // The reader's own stop pauses the run, so the reader can take it
+              // up again; a parent Thread's tool stops a child outright.
+              runner.interrupt(thread, promptId, 'reader_stopped');
         });
       },
       terminate: async (id) => {
@@ -565,9 +838,11 @@ export const createWorkspaceService = ({
         if (record === undefined) return undefined;
         return exclusive(record.projectId, async () => {
           const project = runtimes.get(record.projectId);
-          if (project === undefined) return record;
-          await runner.close(project, runner.descendants(project, id));
-          return project.threads.get(id)?.thread ?? record;
+          if (project !== undefined) {
+            await runner.close(project, runner.descendants(project, id));
+            return project.threads.get(id)?.thread ?? record;
+          }
+          return terminateStored(record.projectId, id);
         });
       },
       delete: async (id) => {
@@ -586,6 +861,50 @@ export const createWorkspaceService = ({
         });
       },
     },
+    /**
+     * Takes up the prompts the host owes a run before anyone asks for one: work
+     * the reader asked for and a host interruption left unfinished, and work a
+     * crash left accepted but never started. Only such a Project pays for a
+     * sandbox before a reader asks for one; a Project with nothing pending is
+     * left `queued` and acquires nothing. Each Project comes back on demand and
+     * its prompts are re-enqueued in the order the log accepted them, opening the
+     * next attempt of each one — until a prompt has been taken up as often as the
+     * budget allows, which is closed as a failure instead, so a host that keeps
+     * dying on the same prompt stops circling it.
+     */
+    resumeInterrupted: async () => {
+      const owed = (await threads.unfinishedPrompts()).filter(hostOwesRun);
+      for (const prompt of owed) {
+        if (resumeExhausted(prompt))
+          await threads.failPrompt(prompt, resumeExhaustedError);
+      }
+      // Closing a delegated prompt can accept a result for its parent in the
+      // same transaction. Include that new work in this boot's queue.
+      const pending = new Map<string, PromptProgress[]>();
+      for (const prompt of (await threads.unfinishedPrompts()).filter(
+        hostOwesRun,
+      )) {
+        const group = pending.get(prompt.projectId);
+        if (group === undefined) pending.set(prompt.projectId, [prompt]);
+        else group.push(prompt);
+      }
+      let resumed = 0;
+      for (const [projectId, prompts] of pending) {
+        const runtime = await resumeProject(projectId);
+        if (runtime === undefined) continue;
+        // Queue before the listener opens. Acquisition starts the runner when a
+        // lease is ready; waiting here would block boot when capacity is full.
+        for (const prompt of prompts) {
+          const thread = runtime.threads.get(prompt.threadId);
+          if (thread === undefined || runtime.closing) continue;
+          const outcome = await exclusive(projectId, () =>
+            runner.resume(runtime, thread, jobFor(prompt), prompt.attempts + 1),
+          );
+          if (outcome.status === 'resumed') resumed += 1;
+        }
+      }
+      return resumed;
+    },
     sshForVm: async (id) => {
       const runtime = [...runtimes.values()].find(
         (value) => !value.closing && value.lease?.sandbox.id === id,
@@ -597,18 +916,22 @@ export const createWorkspaceService = ({
         : undefined;
     },
     dispose: async () => {
-      await exclusive('creation', async () => {
+      await exclusive('creation', () => {
         disposed = true;
+        return Promise.resolve();
       });
       const values = [...runtimes.values()];
       await Promise.all(
         values.map((runtime) =>
-          exclusive(runtime.project.id, async () => {
-            await endProject(runtime);
+          exclusive(runtime.project.id, () => {
+            suspendProject(runtime);
+            return Promise.resolve();
           }),
         ),
       );
-      await Promise.all(values.map((runtime) => runtime.ending));
+      await Promise.all(
+        values.map((runtime) => Promise.resolve(runtime.ending)),
+      );
     },
   };
 };

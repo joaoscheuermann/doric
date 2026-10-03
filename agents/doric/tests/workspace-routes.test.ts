@@ -321,6 +321,42 @@ test('maps rewind conflicts and unknown prompts to stable error codes', async (t
   }
 });
 
+test('resumes one paused prompt and reports its refusal reasons', async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const path = `/threads/${threadId}/resume`;
+  const accepted = await host.request(path, 'POST', { promptId });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(await accepted.json(), thread);
+  for (const body of [{}, { promptId: 'not-an-id' }, { promptId, extra: 1 }]) {
+    assert.equal((await host.request(path, 'POST', body)).status, 422);
+  }
+  assert.equal(
+    (await host.request(`/threads/${promptId}/resume`, 'POST', { promptId }))
+      .status,
+    404,
+  );
+
+  const cases = [
+    ['unknown_prompt', 404, 'prompt_not_found'],
+    ['busy', 409, 'thread_busy'],
+    ['inactive', 409, 'thread_inactive'],
+  ] as const;
+  for (const [status, expected, code] of cases) {
+    const other = await serve({
+      threads: { resume: async () => ({ status }) },
+    });
+    t.after(other.close);
+    const response = await other.request(path, 'POST', { promptId });
+    assert.equal(response.status, expected);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(body.error.code, code);
+    assert.ok(body.error.message.length > 0);
+  }
+});
+
 test('requires prompt-scoped interruption and reports stale execution conflicts', async (t) => {
   const host = await serve();
   t.after(host.close);
@@ -473,6 +509,7 @@ test('rejects invalid project and thread IDs before handling resource operations
         ['DELETE', ''],
         ['GET', '/events'],
         ['POST', '/prompt'],
+        ['POST', '/resume'],
         ['POST', '/rewind'],
         ['POST', '/interrupt'],
         ['POST', '/terminate'],
@@ -682,6 +719,10 @@ const serve = async (
           ? { status: 'ready', git: { repo: false } }
           : { status: 'missing' },
       prompt: async () => ({ status: 'accepted', promptId }),
+      resume: async (id, target) =>
+        id === threadId && target === promptId
+          ? { status: 'resumed', thread }
+          : { status: 'missing' },
       rewind: async (id) =>
         id === threadId
           ? { status: 'accepted', promptId }
@@ -694,6 +735,7 @@ const serve = async (
       ...overrides.threads,
     },
     sshForVm: async () => undefined,
+    resumeInterrupted: async () => 0,
     dispose: async () => undefined,
   };
   const app = express();

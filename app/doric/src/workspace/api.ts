@@ -1372,6 +1372,17 @@ export const workspaceApi = {
           body: body({ prompt }),
         }),
       ),
+    /**
+     * Takes up a prompt an interruption left unfinished, and answers the Thread
+     * the host is running it on.
+     */
+    resume: async (threadId: string, promptId: string) =>
+      threadFrom(
+        await request<unknown>(`/threads/${id(threadId)}/resume`, {
+          method: 'POST',
+          body: body({ promptId }),
+        }),
+      ),
     /** Replaces an earlier prompt and discards the turns after it. */
     rewind: async (threadId: string, promptId: string, prompt: string) =>
       promptReceiptFrom(

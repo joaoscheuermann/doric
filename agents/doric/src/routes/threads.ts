@@ -29,6 +29,7 @@ const promptInput = z
   })
   .strict();
 const interruptInput = z.object({ promptId: z.uuid() }).strict();
+const resumeInput = z.object({ promptId: z.uuid() }).strict();
 const rewindInput = z
   .object({
     promptId: z.uuid(),
@@ -136,6 +137,35 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
       return;
     }
     response.status(202).json({ promptId: result.promptId });
+  });
+  router.post('/:id/resume', async (request, response) => {
+    const input = resumeInput.safeParse(request.body);
+    if (!input.success) {
+      sendError(response, 422, 'invalid_resume', 'A promptId is required.');
+      return;
+    }
+    const result = await service.threads.resume(
+      request.params.id,
+      input.data.promptId,
+    );
+    if (result.status === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result.status === 'unknown_prompt') {
+      sendError(
+        response,
+        404,
+        'prompt_not_found',
+        'The prompt was not found in this Thread.',
+      );
+      return;
+    }
+    if (result.status !== 'resumed') {
+      conflict(response, 'thread', result.status);
+      return;
+    }
+    response.status(202).json(result.thread);
   });
   router.post('/:id/rewind', async (request, response) => {
     const input = rewindInput.safeParse(request.body);

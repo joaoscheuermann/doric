@@ -66,6 +66,8 @@ export type SandboxProvisionInput = {
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
   readonly name?: string;
+  /** The durable workspace this sandbox serves; absent means a scratch one. */
+  readonly workspace?: string;
   readonly root: string;
   readonly resources: SandboxResources;
   readonly network: NormalizedSandboxNetworkPolicy;
@@ -117,6 +119,8 @@ export type CreateSandboxOptions = {
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
   readonly name?: string;
+  /** The durable workspace this sandbox serves; absent means a scratch one. */
+  readonly workspace?: string;
   readonly root?: string;
   readonly resources: SandboxResources;
   readonly network?: SandboxNetworkPolicy;

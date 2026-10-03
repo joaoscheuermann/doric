@@ -487,7 +487,11 @@ rather than a silent first match.
 background warming, bounded factory-attempt batches, replacement, and disposal.
 It accepts an injected sandbox factory, depends only on the public `sandbox`
 contract at runtime, never reuses released sessions, and has no
-provider-specific creation policy or persistence. A batch rejects pending FIFO
+provider-specific creation policy or persistence. An acquisition may name the
+caller it serves: a named acquisition provisions a session for that identity
+instead of taking a warmed one, so a Project always leases a sandbox made for it,
+while an unnamed acquisition keeps taking the warmed session; Doric warms none
+because every acquisition it makes names its Project. A batch rejects pending FIFO
 acquisitions and heat waiters after `maxCreateAttempts` consecutive factory
 failures; the default is three, and later demand starts a fresh batch so a
 recovered provider can serve new work. Doric explicitly uses that three-attempt
@@ -497,7 +501,16 @@ guards SSH access exactly as it guards other operations. `packages/sandbox` owns
 the provider-neutral
 `SandboxProvider` and `SandboxRuntime` boundary plus workspace, Git, file, diff,
 repository discovery, network-policy normalization, and disposed-session
-behavior. It also owns the
+behavior. A session may be provisioned for a durable workspace: the Docker
+provider keeps it in the volume `doric-workspace-<identity>`, binds that volume
+at the sandbox root, and labels the container with it, so provisioning the same
+identity again reattaches the same files — across a container, a host restart,
+and the next lease for that Project — and `discardWorkspace` removes it when the
+Project is deleted. A sandbox provisioned without a workspace binds nothing and
+loses its files with the container, which is what the Firecracker profile still
+does: its guest disks live under the per-run state directory. The durable volume
+holds its files on the host's own storage, so a sandbox's `diskMiB` bounds only
+the container's writable layer. It also owns the
 one implementation of the workspace visibility rules — root confinement,
 `.gitignore` handling with negation, hidden entries except `.agents`, and
 directories-first ordering — which the `/bundles/core` `tree` tool and Doric's
@@ -654,8 +667,14 @@ approved schema changes may be consolidated into the clean Project/Thread
 baseline rather than retained as incremental migrations. Existing incompatible
 development databases must be explicitly recreated. Session-era migrations and
 data-conversion SQL are removed as part of the approved cutover.
-Startup marks every non-terminal Project and Thread failed with the sanitized
-`process_interrupted` code; events remain replayable.
+Startup resumes every non-terminal Project and Thread instead of failing them:
+the Project becomes `queued` because it needs a sandbox again, the Thread becomes
+`ready`, and an interrupted prompt receives a durable pause marker before the
+boot queues it for automatic resumption. Accepted inputs that never started are
+queued too. Acquisition runs in the background, so a full sandbox pool does not
+block the HTTP listener. Reader-paused prompts wait for an explicit resume.
+A record a crash left `cancelling` is completed to `cancelled` instead, so a
+restart cannot revive work the reader terminated; events remain replayable.
 Physical Thread deletion requires its entire subtree to be terminal; Project
 deletion requires every Thread terminal and cascades to its Threads and events.
 The local Compose surface pins PostgreSQL 18.4, mounts its PostgreSQL-18 volume
@@ -873,6 +892,11 @@ append incomplete results for unresolved assistant tool calls, without
 duplicating completed results or creating synthetic tool-call records.
 Callback exceptions retain their identity and do not misreport a completed
 tool as failed. Direct checks cancellation again after awaited event writes.
+Agent runs may set `resume: true` to continue their supplied history without
+appending the input again, in both complete and stream modes. Direct uses this
+when a persisted checkpoint shows that the input is already stored, preserving
+the original message order across repeated resumptions. It supplies incomplete
+results only for unanswered calls in an interrupted tool batch.
 Agent runs may declare an optional positive safe-integer `maxTurns`; omission
 keeps the loop unbounded. Invalid values fail with `TypeError` before message
 storage or provider activity. The budget is checked immediately before every
@@ -976,7 +1000,21 @@ Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
 `queued` to `ready` after sandbox acquisition; Threads wait for their Project
 and each FIFO input transitions `ready -> running -> ready`. Project and Thread
 termination use `cancelling -> cancelled`; acquisition or reconciliation
-failures use `failed`. A fresh Agent per prompt
+failures use `failed`. A host stop is not a termination: it releases the lease and
+writes the Project back as `queued` with its non-terminal Threads `ready`, pausing
+the prompt that was running so the next boot takes it up again, so the next prompt
+reacquires a sandbox for that Project — the same durable workspace on the Docker
+provider — and runs. A reader's own stop pauses the same way, and only the reader
+takes that prompt up again; terminating a Project or Thread is the terminal act,
+not stopping one. Reading a Project that holds no lease still answers
+`pending`/`unavailable` and never acquires — except for a Project that holds an
+unfinished prompt whose interruption came from the host: the boot resumes it
+itself, because work the reader asked for and that the host interrupted is work
+the host owes them, and only such a Project pays for a sandbox before anyone
+asks. Termination needs no live runtime: a
+Thread whose Project holds no lease still takes itself and its subtree through
+`cancelling -> cancelled` durably, so a reader can terminate and delete a resumed
+Thread without prompting it first. A fresh Agent per prompt
 receives a fresh tool-call store, every bundle tool bound to that sandbox and
 the per-prompt host facade, the deterministic
 all-skills system prompt, and
@@ -989,11 +1027,22 @@ return the Thread to `ready`; history or event persistence failures fail the
 Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue
 even if cancellation-state persistence fails.
-Doric adds `history.truncated`, `prompt.accepted`, `prompt.finished`,
+Doric adds `history.truncated`, `prompt.accepted`, `prompt.paused`,
+`prompt.resumed`, `prompt.finished`,
 `agent.failed`, and
 `agent.cancelled` events around the Agent stream. `prompt.accepted` carries the
 input text and its source after the standard configured-credential redaction.
-`prompt.finished` carries the input source, terminal status, and response text;
+`prompt.paused` carries the reason an interruption left the prompt unfinished —
+`host_stopped` when the host stopped, `host_restarted` when a restart was only
+discovered at the next boot, `reader_stopped` when the reader stopped the run —
+and `prompt.resumed` carries the attempt number of a prompt the host took up
+again. An interrupted prompt is resumed from the provider history persisted as
+the run advanced, so it continues where it stopped, and an attempt budget counted
+from those events stops a prompt that keeps interrupting the host: it is closed
+as a failure carrying the `resume_exhausted` code. Closing an exhausted delegated
+prompt also accepts its correlated result for an active parent in the same
+transaction; the boot queues that result once. `prompt.finished` carries the
+input source, terminal status, and response text;
 successful completion requires history persistence. Clients use it, not the
 inner `agent.finished`, to acknowledge prompt completion. `history.truncated`
 carries `{ type, afterSequence }`, where `afterSequence` is the sequence of the
@@ -1002,6 +1051,12 @@ replacement input is accepted, and sequence numbers are never reused, so the
 discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
+The conversation states the two lifecycle events as markers between the blocks
+they sit between: a pause reads as a quiet row — its icon, and the reason it
+paused — and a resume as a quiet row naming its attempt, with the option to take
+a reader-paused prompt up again offered on that row. A prompt closed because its
+attempts ran out is the one that is not quiet: it reads as a warning, alert icon
+and all, in the theme's own warning tone, because it needs the reader's decision.
 Arbitrary Agent event values are converted to JSON without dropping reasoning,
 replay, tool payloads/results, errors, or defined stacks, causes, and own error
 properties. Undefined object properties are omitted. Undefined array entries,
@@ -1009,8 +1064,9 @@ cycles, and other non-JSON values receive explicit markers, and configured
 credential values are redacted. Process-local runtime state owns live Project
 leases, independent Thread FIFO queues, abort controllers, and Socket.IO
 subscribers. It is not the
-replay source of truth, does not resume accepted or queued prompts after
-restart, and requires no distributed Socket.IO adapter because Doric currently
+replay source of truth, does not resume accepted or queued prompts by itself
+except through the boot pass described above — the one place a host takes work up
+again without a reader asking — and requires no distributed Socket.IO adapter because Doric currently
 supports one host instance.
 
 ## Hard Constraints

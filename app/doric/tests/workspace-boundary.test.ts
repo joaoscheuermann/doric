@@ -224,6 +224,31 @@ describe('Thread HTTP boundary', () => {
     );
   });
 
+  test('resumes a paused prompt through the existing route', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), init });
+      return Response.json(thread);
+    };
+
+    try {
+      assert.deepEqual(
+        await workspaceApi.threads.resume('thread/id', 'prompt-id'),
+        thread,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(
+      requests[0]?.url,
+      'http://127.0.0.1:3000/threads/thread%2Fid/resume',
+    );
+    assert.equal(requests[0]?.init?.method, 'POST');
+    assert.equal(requests[0]?.init?.body, '{"promptId":"prompt-id"}');
+  });
+
   test('reports a deleted Thread as absent rather than as a failure', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>

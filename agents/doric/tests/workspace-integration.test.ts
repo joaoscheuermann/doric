@@ -213,6 +213,7 @@ test(
       pool,
       logger,
       publisher: createWorkspaceSocket(sockets, projects, threads),
+      discardWorkspace: async () => undefined,
     });
     cleanup.defer(() => service.dispose());
     registerHttpRoutes(app, {
@@ -400,7 +401,7 @@ test(
     const sibling = await request<Thread>(
       `/projects/${project.id}/threads`,
       'POST',
-      {},
+      { name: 'Sibling thread' },
       201,
     );
     const siblingSocket = subscribe('threads', { threadId: sibling.id });

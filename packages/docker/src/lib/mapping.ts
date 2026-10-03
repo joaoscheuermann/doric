@@ -4,6 +4,7 @@ import type {
   ContainerInspect,
   ContainerRef,
   CreateContainerInput,
+  CreateVolumeInput,
   DockerConnection,
   DockerTransportRequest,
   DockerVersion,
@@ -41,6 +42,13 @@ export const execCreateBody = (input: ExecInput): Record<string, unknown> => ({
   ...(input.env === undefined ? {} : { Env: [...input.env] }),
   ...(input.workingDir === undefined ? {} : { WorkingDir: input.workingDir }),
   ...(input.user === undefined ? {} : { User: input.user }),
+});
+
+export const volumeCreateBody = (
+  input: CreateVolumeInput,
+): Record<string, unknown> => ({
+  Name: input.name,
+  ...(input.labels === undefined ? {} : { Labels: { ...input.labels } }),
 });
 
 export const encodeBody = (

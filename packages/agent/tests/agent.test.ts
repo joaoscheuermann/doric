@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AgentErrorObject, type AgentEvent } from '../src/index.js';
 import { z } from 'zod';
+
+import type { ProviderFinished } from 'llms';
+import { createMessageStorage } from 'messages';
+import { createToolStorage, defineTool } from 'tool';
+
+import { AgentErrorObject, type AgentEvent } from '../src/index.js';
 import {
   call,
   collect,
@@ -12,9 +17,35 @@ import {
   createTools,
   streamEvents,
 } from './fakes.js';
-import type { ProviderFinished } from 'llms';
-import { createMessageStorage } from 'messages';
-import { createToolStorage, defineTool } from 'tool';
+
+for (const mode of ['complete', 'stream'] as const) {
+  void test(`${mode} resumes stored history without moving or repeating the input`, async () => {
+    const history = [
+      { role: 'user' as const, content: 'Original request.' },
+      { role: 'assistant' as const, content: 'Already completed step.' },
+    ];
+    const fake = createProvider({
+      stream: () => streamEvents(completeFinish('done')),
+    });
+    const messages = createMessageStorage(history);
+    const agent = createAgent({
+      provider: fake.provider,
+      tools: createToolStorage([]),
+      messages,
+      system: '',
+      model: 'fake-model',
+    });
+    if (mode === 'complete')
+      await agent.complete('Original request.', { resume: true });
+    else await collect(agent.stream('Original request.', { resume: true }));
+    assert.deepEqual(fake.requests[0]?.messages, history);
+    assert.deepEqual(messages.list().slice(0, history.length), history);
+    assert.equal(
+      messages.list().filter(({ role }) => role === 'user').length,
+      1,
+    );
+  });
+}
 
 test('complete executes requested tools and calls the provider again with tool results', async () => {
   const lookup = call('lookup', { query: 'doric' });

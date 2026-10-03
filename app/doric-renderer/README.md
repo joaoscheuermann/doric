@@ -27,6 +27,21 @@ The renderer has no direct network access to Doric. It uses the semantic
   surface to one Thread's slice of that state and renders nothing. It is a
   stand-in while the rendering of prose, reasoning, tool calls, delegated input
   and comments is rebuilt by hand, so it promises no shape yet for any of them.
+- The prompt lifecycle projects into blocks of its own: `prompt.paused` and
+  `prompt.resumed` become `LifecycleTurn`s between the blocks the log put them
+  between, and `agent.failed` becomes a `FailureTurn` carrying the run's own
+  `{ name, code, message }` rather than leaving the host's generic failed text to
+  state it. `domain/prompt-lifecycle.ts` says how each one reads — its icon and its
+  line (`Execução pausada · o host parou às 14:31`,
+  `Execução pausada · o host foi reiniciado inesperadamente`,
+  `Execução pausada · você parou a execução`, `Retomada · tentativa 1`) — whether a
+  pause still offers the Retomar action, and whether a failure code is the one that
+  reads as a warning. The lifecycle row is the shadcn `Marker`, drawn by
+  `PromptMarker` through `LifecycleTurnNode`; the failure is `FailureNotice`
+  through `FailureTurnNode`, whose `resume_exhausted` code fills a `TriangleAlert`
+  in the palette's `--warning` tone. Retomar calls
+  `window.doric.threads.resume(id, promptId)` through the Thread chat store, which
+  draws the Thread the host answers with.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
   Thread created by an agent appears in the sidebar without a reload.
 - The sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files tree
@@ -89,6 +104,8 @@ layout side.
 The preload conversation contract also exposes
 `threads.prompt(id, markdown): Promise<{ promptId: string }>`,
 `threads.rewind(id, promptId, markdown): Promise<{ promptId: string }>`,
+`threads.resume(id, promptId): Promise<Thread>` for a prompt an interruption left
+unfinished,
 `threads.get(id): Promise<Thread | undefined>`, where `undefined` means the
 Thread no longer exists,
 `threads.git(id): Promise<ThreadGit>` for the working directory's git summary, and

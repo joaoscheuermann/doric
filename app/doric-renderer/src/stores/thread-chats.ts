@@ -52,6 +52,12 @@ export type ThreadChatsState = {
     promptId: string,
     text: string,
   ) => Promise<boolean>;
+  /**
+   * Takes up a prompt an interruption left unfinished through `threads.resume`,
+   * drawing the Thread the host answers with so the surface leaves the pause
+   * behind at once instead of waiting for the stream.
+   */
+  readonly resume: (id: string, promptId: string) => Promise<boolean>;
 };
 
 /** The live watches, one per open Thread, released by id. */
@@ -207,5 +213,25 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
         (value) => window.doric.threads.rewind(id, promptId, value),
         text,
       ),
+
+    resume: async (id, promptId) => {
+      setChats(withSending(get().chats, id, true));
+      setChats(withSendError(get().chats, id, undefined));
+      try {
+        const thread = await window.doric.threads.resume(id, promptId);
+        // The host's reply refreshes the Thread while the event stream catches up.
+        const change = applyThreadUpdate(get().chats, id, {
+          kind: 'updated',
+          thread,
+        });
+        commit(change.effects, change.chats);
+        return true;
+      } catch (reason) {
+        setChats(withSendError(get().chats, id, messageFrom(reason)));
+        return false;
+      } finally {
+        setChats(withSending(get().chats, id, false));
+      }
+    },
   };
 });

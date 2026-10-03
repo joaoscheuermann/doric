@@ -8,7 +8,7 @@ import pretty from 'pino-pretty';
 import { Server as SocketServer } from 'socket.io';
 
 import { loadBundles } from 'bundle';
-import { createDockerClient } from 'docker';
+import { createDockerClient, discardWorkspace } from 'docker';
 import { createFirecrackerClient } from 'firecracker';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
@@ -69,10 +69,9 @@ async function main() {
 
   startupStage = 'sandbox_pool';
   startup.info({ sandboxProviderName }, 'Configuring sandbox pool');
-  const sandboxProvider =
-    sandboxProviderName === 'firecracker'
-      ? createFirecrackerClient()
-      : createDockerClient();
+  const dockerClient =
+    sandboxProviderName === 'firecracker' ? undefined : createDockerClient();
+  const sandboxProvider = dockerClient ?? createFirecrackerClient();
 
   const vms = createVmRegistry(sandboxProviderName, sandboxProvider);
   // The image is a deployment choice, so it comes from the environment and
@@ -86,7 +85,10 @@ async function main() {
     diskMiB: 4096,
   } as const;
   const poolLimits = {
-    minIdle: 1,
+    // Every acquisition Doric makes names the Project it serves, and the pool
+    // provisions a new session for an identified acquisition instead of leasing
+    // a warmed one, so warming would only hold capacity Doric cannot use.
+    minIdle: 0,
     maxSandboxes: 10,
     maxCreateAttempts: 3,
   } as const;
@@ -94,12 +96,14 @@ async function main() {
   const pool = createSandpool({
     ...poolLimits,
     logger,
-    create: () =>
+    create: (identity) =>
       createSandbox({
         provider: vms.provider,
         image: sandboxImage,
         imagePullPolicy: 'if-not-present',
         resources: sandboxResources,
+        // The Project id names the durable workspace the sandbox reattaches.
+        workspace: identity,
         network: {
           mode: 'egress',
           ssh: sandboxSshEnabled,
@@ -179,7 +183,21 @@ async function main() {
     pool,
     publisher,
     logger,
+    // A durable workspace is the Docker provider's own storage. The Firecracker
+    // profile keeps its guest disks per run, so it has no workspace volume to
+    // remove yet.
+    discardWorkspace: async (identity) => {
+      if (dockerClient !== undefined)
+        await discardWorkspace(dockerClient, identity);
+    },
   });
+
+  // Work the reader asked for and a host interruption left unfinished is work
+  // this boot owes them, so every such prompt is taken up before the host starts
+  // serving new ones: it comes back on demand, with its own identity, and its
+  // prompts queue in the order the log accepted them.
+  const resumedPrompts = await service.resumeInterrupted();
+  startup.info({ resumedPrompts }, 'Interrupted prompts resumed');
 
   registerHttpRoutes(app, {
     config,

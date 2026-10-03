@@ -1,6 +1,8 @@
 import { ThreadNavRail } from '@/components/molecules/thread-nav-rail';
 import { ActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
+import { FailureTurnNode } from '@/components/organisms/conversation/nodes/failure-turn-node';
+import { LifecycleTurnNode } from '@/components/organisms/conversation/nodes/lifecycle-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import { TurnAuthorNode } from '@/components/organisms/conversation/nodes/turn-author-node';
@@ -54,7 +56,8 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
 const exampleTheme: EditorThemeClasses = {
@@ -226,6 +229,8 @@ const conversationExtension = defineExtension({
     ToolTurnNode,
     TurnAuthorNode,
     ActivityTurnNode,
+    LifecycleTurnNode,
+    FailureTurnNode,
     UserPromptNode,
     // The blocks the agent's markdown becomes; a heading, a quote, a list, a
     // fence and a table are nodes the editor has to know to hold the answer's
@@ -273,6 +278,10 @@ export function Conversation({
   readonly sendRequest?: number;
 }) {
   const chat = useThreadChat(thread);
+  useEffect(() => {
+    if (chat.sendError !== undefined)
+      toast.error(chat.sendError, { id: `thread-send-${thread.id}` });
+  }, [chat.sendError, thread.id]);
   /**
    * The element the editor edits, built once and kept.
    *
@@ -330,7 +339,7 @@ export function Conversation({
             <TableBlocksPlugin />
             <MarkdownPromptPlugin />
             <PromptLineBreaks />
-            <InsertThreadTurnNodes turns={turns} />
+            <InsertThreadTurnNodes turns={turns} onResume={chat.resume} />
             <SendPrompt
               canStop={running}
               promptSignal={promptSignal}

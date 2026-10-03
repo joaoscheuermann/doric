@@ -23,6 +23,12 @@ export const TURN_AUTHOR_BLOCK = 'turn-author-node';
  */
 export const ACTIVITY_TURN_BLOCK = 'activity-turn-node';
 
+/** A prompt's pause or resume: a quiet row between the blocks it sits between. */
+export const LIFECYCLE_TURN_BLOCK = 'lifecycle-turn-node';
+
+/** A prompt the host closed as a failure, and what it was closed with. */
+export const FAILURE_TURN_BLOCK = 'failure-turn-node';
+
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
 
@@ -34,11 +40,14 @@ const UNDELETABLE = new Set([
   USER_TURN_BLOCK,
   USER_PROMPT_BLOCK,
   ACTIVITY_TURN_BLOCK,
+  LIFECYCLE_TURN_BLOCK,
+  FAILURE_TURN_BLOCK,
 ]);
 
 /**
- * Only the agent's turn needs this rule: the thinking and tool turns render as
- * decorators, which the editor already refuses to let anyone type into.
+ * Only the agent's turn needs this rule: the thinking, tool, lifecycle and
+ * failure turns render as decorators, which the editor already refuses to let
+ * anyone type into.
  */
 const READ_ONLY = new Set([AGENT_TURN_BLOCK]);
 

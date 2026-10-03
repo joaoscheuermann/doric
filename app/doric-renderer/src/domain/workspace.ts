@@ -261,6 +261,12 @@ export type WorkspaceApi = {
     /** Stops the prompt a Thread is running, leaving its queue alone. */
     interrupt(id: string, promptId: string): Promise<void>;
     /**
+     * Takes up a prompt an interruption left unfinished, returning the Thread as
+     * the host stored it. A prompt the host owes no run is refused with the
+     * reason.
+     */
+    resume(id: string, promptId: string): Promise<Thread>;
+    /**
      * The local snapshot of one Thread's durable log the main process kept,
      * or `null` when the app holds none. A conversation opens from it
      * instantly and reconciles with the stream afterwards.
