@@ -12,31 +12,33 @@ import type {
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
-  ProviderStructuredFinished,
+  ProviderRerankRequest,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   ProviderToolCall,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   recordField,
   stringField,
 } from '../utils/json.js';
+import { parseSseEvents } from '../utils/sse.js';
+import { authorization, type SecretSource } from './auth.js';
 import {
   parseEmbedding,
-  parseRerank,
   parseJsonBody,
+  parseRerank,
   requireEmbeddingInput,
-  requireRerankInput,
   requireRequestInput,
+  requireRerankInput,
   streamErrorEvent,
 } from './common.js';
-import { parseStructuredOutput } from './structured.js';
-import { authorization, type SecretSource } from './auth.js';
+import { requestJson, withProviderErrors } from './http.js';
+import { withProviderLogging } from './logging.js';
 import { openAiBody } from './openai/body.js';
 import {
   createTextSnapshots,
@@ -45,20 +47,18 @@ import {
   streamEvent,
   streamText,
 } from './openai/parse.js';
-import { parseSseEvents } from '../utils/sse.js';
-import { withProviderLogging } from './logging.js';
-import { requestJson, withProviderErrors } from './http.js';
+import { parseStructuredOutput } from './structured.js';
 
 export type { SecretSource } from './auth.js';
 export { openAiBody } from './openai/body.js';
 
-export type OpenAiProviderDeps = {
+export interface OpenAiProviderDeps {
   readonly transport: HttpTransport;
   readonly apiKey?: SecretSource;
   readonly authorization?: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
+}
 
 export type OpenAiCompatibleProviderDeps = OpenAiProviderDeps & {
   readonly identity: {

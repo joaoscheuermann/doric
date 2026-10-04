@@ -8,22 +8,22 @@ export type DockerConnection =
       readonly pipePath?: string;
     };
 
-export type CreateDockerClientOptions = {
+export interface CreateDockerClientOptions {
   readonly connection?: DockerConnection;
   readonly request?: DockerTransport;
   readonly timeoutMs?: number;
   readonly dropbearPath?: string;
   readonly statePath?: string;
-};
+}
 
 export type DockerRequestQuery = Readonly<
   Record<string, string | number | boolean | undefined>
 >;
 
-export type DockerRequestOptions = {
+export interface DockerRequestOptions {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
-};
+}
 
 export type DockerTransportRequest = DockerRequestOptions & {
   readonly method: string;
@@ -33,19 +33,19 @@ export type DockerTransportRequest = DockerRequestOptions & {
   readonly body?: unknown;
 };
 
-export type DockerResponse = {
+export interface DockerResponse {
   readonly status: number;
   readonly headers: Readonly<
     Record<string, string | readonly string[] | undefined>
   >;
   readonly body: Uint8Array;
-};
+}
 
 export type DockerTransport = (
   request: DockerTransportRequest,
 ) => Promise<DockerResponse>;
 
-export type DockerVersion = {
+export interface DockerVersion {
   readonly version?: string;
   readonly apiVersion?: string;
   readonly minApiVersion?: string;
@@ -56,9 +56,9 @@ export type DockerVersion = {
   readonly kernelVersion?: string;
   readonly experimental?: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
 
-export type CreateContainerInput = {
+export interface CreateContainerInput {
   readonly image: string;
   readonly cmd?: readonly string[];
   readonly env?: readonly string[];
@@ -69,23 +69,23 @@ export type CreateContainerInput = {
   readonly hostConfig?: Readonly<Record<string, unknown>>;
   readonly networkDisabled?: boolean;
   readonly exposedPorts?: readonly string[];
-};
+}
 
-export type PullImageInput = {
+export interface PullImageInput {
   readonly image: string;
-};
+}
 
-export type ImageInspect = {
+export interface ImageInspect {
   readonly id: string;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
 
-export type ContainerRef = {
+export interface ContainerRef {
   readonly id: string;
   readonly warnings: readonly string[];
-};
+}
 
-export type ContainerInspect = {
+export interface ContainerInspect {
   readonly id: string;
   readonly ipAddress?: string;
   readonly ports: Readonly<
@@ -95,7 +95,7 @@ export type ContainerInspect = {
     >
   >;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
 
 export type RemoveContainerOptions = DockerRequestOptions & {
   readonly force?: boolean;
@@ -103,10 +103,10 @@ export type RemoveContainerOptions = DockerRequestOptions & {
   readonly link?: boolean;
 };
 
-export type CreateVolumeInput = {
+export interface CreateVolumeInput {
   readonly name: string;
   readonly labels?: Readonly<Record<string, string>>;
-};
+}
 
 export type RemoveVolumeOptions = DockerRequestOptions & {
   readonly force?: boolean;
@@ -120,24 +120,24 @@ export type ExecInput = DockerRequestOptions & {
   readonly tty?: boolean;
 };
 
-export type ExecResult = {
+export interface ExecResult {
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   readonly stdoutBytes: Uint8Array;
   readonly stderrBytes: Uint8Array;
-};
+}
 
-export type ArchiveWriteInput = {
+export interface ArchiveWriteInput {
   readonly path: string;
   readonly archive: Uint8Array;
   readonly noOverwriteDirNonDir?: boolean;
   readonly copyUidGid?: boolean;
-};
+}
 
-export type ArchiveReadInput = {
+export interface ArchiveReadInput {
   readonly path: string;
-};
+}
 
 export interface DockerClient extends SandboxProvider {
   ping(options?: DockerRequestOptions): Promise<void>;

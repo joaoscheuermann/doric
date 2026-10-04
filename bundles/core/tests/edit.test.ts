@@ -10,8 +10,8 @@ import type { SandboxSession } from 'sandbox';
 import factory from '../tools/edit.js';
 import { fakeHost } from './fake-sandbox.js';
 
-describe('edit tool', () => {
-  test('updates a unique exact match and returns first changed line', async () => {
+void describe('edit tool', () => {
+  void test('updates a unique exact match and returns first changed line', async () => {
     const sandbox = await fakeSandbox('edit-exact');
 
     await sandbox.seed(
@@ -47,7 +47,7 @@ describe('edit tool', () => {
     await sandbox.dispose();
   });
 
-  test('edits the file a relative path names inside the working directory', async () => {
+  void test('edits the file a relative path names inside the working directory', async () => {
     const sandbox = await fakeSandbox('edit-cwd');
 
     await sandbox.seed('/workspace/repo/src/lib.ts', 'one\noldCall();\n');
@@ -72,7 +72,7 @@ describe('edit tool', () => {
     await sandbox.dispose();
   });
 
-  test('rejects duplicate old text with context guidance', async () => {
+  void test('rejects duplicate old text with context guidance', async () => {
     const sandbox = await fakeSandbox('edit-duplicate');
 
     await sandbox.seed('/workspace/repo/same.txt', 'same\nsame\n');
@@ -92,7 +92,7 @@ describe('edit tool', () => {
     await sandbox.dispose();
   });
 
-  test('distinguishes missing files from other read failures', async () => {
+  void test('distinguishes missing files from other read failures', async () => {
     const sandbox = await fakeSandbox('edit-read-errors');
 
     await sandbox.mkdir('/workspace/repo/src');

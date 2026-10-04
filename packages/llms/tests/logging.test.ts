@@ -18,7 +18,7 @@ type LogRecord = Readonly<Record<string, unknown>> & {
   readonly msg: string;
 };
 
-test('emits uniform debug events with safe metadata for all operations', async () => {
+void test('emits uniform debug events with safe metadata for all operations', async () => {
   const captured = captureLogger();
   const transport = fakeTransport({
     responses: [
@@ -134,7 +134,7 @@ test('emits uniform debug events with safe metadata for all operations', async (
   }
 });
 
-test('lets the caller disable operation logs through its logger', async () => {
+void test('lets the caller disable operation logs through its logger', async () => {
   const captured = captureLogger();
   const provider = createOpenAiProvider({
     logger: captured.logger,
@@ -179,7 +179,7 @@ test('lets the caller disable operation logs through its logger', async () => {
   );
 });
 
-test('logs Jev decisions without logging state questions or answers', async () => {
+void test('logs Jev decisions without logging state questions or answers', async () => {
   const captured = captureLogger();
   const provider = createOpenRouterProvider({
     logger: captured.logger,
@@ -245,7 +245,7 @@ test('logs Jev decisions without logging state questions or answers', async () =
   );
 });
 
-test('logs failed unsupported operations without logging the error', async () => {
+void test('logs failed unsupported operations without logging the error', async () => {
   const captured = captureLogger();
   const provider = createLmStudioProvider({
     transport: fakeTransport({}),
@@ -267,7 +267,7 @@ test('logs failed unsupported operations without logging the error', async () =>
   assert.doesNotMatch(JSON.stringify(captured.records), /PRIVATE_INPUT/u);
 });
 
-test('logs a cancelled terminal when a stream consumer stops early', async () => {
+void test('logs a cancelled terminal when a stream consumer stops early', async () => {
   const captured = captureLogger();
   const provider = createOpenAiProvider({
     logger: captured.logger,
@@ -287,7 +287,7 @@ test('logs a cancelled terminal when a stream consumer stops early', async () =>
   );
 });
 
-test('keeps later stream events after logging the first error terminal', async () => {
+void test('keeps later stream events after logging the first error terminal', async () => {
   const captured = captureLogger();
   const provider = createLmStudioProvider({
     logger: captured.logger,
@@ -319,7 +319,7 @@ test('keeps later stream events after logging the first error terminal', async (
   );
 });
 
-test('Codex complete and model validation do not duplicate internal events', async () => {
+void test('Codex complete and model validation do not duplicate internal events', async () => {
   const captured = captureLogger();
   const provider = createCodexProvider({
     authorization: 'Bearer private',
@@ -356,7 +356,7 @@ test('Codex complete and model validation do not duplicate internal events', asy
   assert.ok(captured.records.every(({ provider }) => provider === 'codex'));
 });
 
-test('validates logger methods synchronously for every provider factory', () => {
+void test('validates logger methods synchronously for every provider factory', () => {
   const transport = fakeTransport({});
   const invalid = null as never;
   const factories = [
@@ -382,7 +382,9 @@ test('validates logger methods synchronously for every provider factory', () => 
       createOpenAiProvider({
         transport,
         logger: {
-          debug() {},
+          debug() {
+            /* Intentionally incomplete logger fixture. */
+          },
           child: () => null,
         } as never,
       }),
@@ -390,7 +392,7 @@ test('validates logger methods synchronously for every provider factory', () => 
   );
 });
 
-test('preserves thrown error identity while logging only a failed terminal', async () => {
+void test('preserves thrown error identity while logging only a failed terminal', async () => {
   const captured = captureLogger();
   const failure = new Error('PRIVATE_CAUSE');
   const transport: HttpTransport = {
@@ -398,7 +400,7 @@ test('preserves thrown error identity while logging only a failed terminal', asy
       throw failure;
     },
     async *stream() {
-      return;
+      yield* [];
     },
   };
   const provider = createOpenAiProvider({ transport, logger: captured.logger });

@@ -1,9 +1,9 @@
 import { parseDocument } from 'yaml';
 
-export type TreeEntry = {
+export interface TreeEntry {
   readonly path: string;
   readonly description: string;
-};
+}
 
 type Tree = Map<string, Tree | TreeEntry>;
 

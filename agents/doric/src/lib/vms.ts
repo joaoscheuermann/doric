@@ -2,17 +2,17 @@ import type { SandboxProvider, SandboxRuntime } from 'sandbox';
 
 export type VmProvider = 'docker' | 'firecracker';
 
-export type RunningVm = {
+export interface RunningVm {
   readonly id: string;
   readonly provider: VmProvider;
-};
+}
 
-export type VmRegistry = {
+export interface VmRegistry {
   readonly provider: SandboxProvider;
   list(): readonly RunningVm[];
 
   find(id: string): RunningVm | undefined;
-};
+}
 
 /** Tracks successfully provisioned runtimes until their disposal completes. */
 export const createVmRegistry = (

@@ -11,7 +11,7 @@ import {
   response,
 } from './fakes.js';
 
-test('allows OpenAI structured output from stream finishes without parsing', async () => {
+void test('allows OpenAI structured output from stream finishes without parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -50,7 +50,7 @@ test('allows OpenAI structured output from stream finishes without parsing', asy
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenAI content part stream snapshots without structured parsing', async () => {
+void test('allows OpenAI content part stream snapshots without structured parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -87,7 +87,7 @@ test('allows OpenAI content part stream snapshots without structured parsing', a
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenAI stream snapshots when final output text is empty', async () => {
+void test('allows OpenAI stream snapshots when final output text is empty', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -124,7 +124,7 @@ test('allows OpenAI stream snapshots when final output text is empty', async () 
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('prefers OpenAI text deltas over stream snapshots without structured parsing', async () => {
+void test('prefers OpenAI text deltas over stream snapshots without structured parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -168,7 +168,7 @@ test('prefers OpenAI text deltas over stream snapshots without structured parsin
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenAI output item stream snapshots without structured parsing', async () => {
+void test('allows OpenAI output item stream snapshots without structured parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -209,7 +209,7 @@ test('allows OpenAI output item stream snapshots without structured parsing', as
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenAI text done stream snapshots without structured parsing', async () => {
+void test('allows OpenAI text done stream snapshots without structured parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -246,7 +246,7 @@ test('allows OpenAI text done stream snapshots without structured parsing', asyn
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('returns OpenAI stream refusals without structured parsing', async () => {
+void test('returns OpenAI stream refusals without structured parsing', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -283,7 +283,7 @@ test('returns OpenAI stream refusals without structured parsing', async () => {
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows invalid OpenAI structured JSON from streams', async () => {
+void test('allows invalid OpenAI structured JSON from streams', async () => {
   const completeProvider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
@@ -337,7 +337,7 @@ test('allows invalid OpenAI structured JSON from streams', async () => {
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('includes schema validation diagnostics in structured output errors', async () => {
+void test('includes schema validation diagnostics in structured output errors', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
@@ -367,7 +367,7 @@ test('includes schema validation diagnostics in structured output errors', async
   assert.match(caught.data.diagnostic ?? '', /answer/);
 });
 
-test('retains invalid structured text and its parse cause', async () => {
+void test('retains invalid structured text and its parse cause', async () => {
   const text = 'not-json sk-testSecret123';
   const provider = createOpenAiProvider({
     transport: fakeTransport({

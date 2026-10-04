@@ -1,9 +1,9 @@
-export type DockerHttpErrorData = {
+export interface DockerHttpErrorData {
   readonly status: number;
   readonly method: string;
   readonly path: string;
   readonly body: string;
-};
+}
 
 export class DockerHttpError extends Error {
   readonly body: string;

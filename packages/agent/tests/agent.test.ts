@@ -47,7 +47,7 @@ for (const mode of ['complete', 'stream'] as const) {
   });
 }
 
-test('complete executes requested tools and calls the provider again with tool results', async () => {
+void test('complete executes requested tools and calls the provider again with tool results', async () => {
   const lookup = call('lookup', { query: 'doric' });
   const fake = createProvider({
     complete: (_request, index) =>
@@ -83,8 +83,10 @@ test('complete executes requested tools and calls the provider again with tool r
   ]);
   assert.equal(stored[2]?.role, 'tool');
   assert.equal(stored[2]?.toolCallId, lookup.id);
-  assert.match(String(stored[2]?.content), /# Tool Result/u);
-  assert.match(String(stored[2]?.content), /\{"found":true\}/u);
+  const content = stored[2]?.content;
+  assert.ok(typeof content === 'string');
+  assert.match(content, /# Tool Result/u);
+  assert.match(content, /\{"found":true\}/u);
   assert.deepEqual(stored[3], {
     role: 'assistant',
     content: 'Tool says result.',
@@ -92,7 +94,7 @@ test('complete executes requested tools and calls the provider again with tool r
   assert.deepEqual(fake.requests[1]?.messages, messages.list().slice(0, 3));
 });
 
-test('rejects an invalid tool-call batch before any handler executes', async () => {
+void test('rejects an invalid tool-call batch before any handler executes', async () => {
   let executions = 0;
   const tools = createToolStorage(
     ['first', 'second'].map((name) =>
@@ -143,7 +145,7 @@ test('rejects an invalid tool-call batch before any handler executes', async () 
   );
 });
 
-test('stream yields provider events tool events and final agent event across a tool loop', async () => {
+void test('stream yields provider events tool events and final agent event across a tool loop', async () => {
   const lookup = call('lookup', { query: 'stream' });
   const fake = createProvider({
     stream: (_request, index) =>
@@ -204,7 +206,7 @@ test('stream yields provider events tool events and final agent event across a t
   );
 });
 
-test('rejects concurrent runs with AgentErrorObject before storage mutation', async () => {
+void test('rejects concurrent runs with AgentErrorObject before storage mutation', async () => {
   let release!: (finish: ProviderFinished) => void;
   const pending = new Promise<ProviderFinished>((resolve) => {
     release = resolve;
@@ -232,7 +234,7 @@ test('rejects concurrent runs with AgentErrorObject before storage mutation', as
   await first;
 });
 
-test('stream yields tool.failed and propagates tool execution errors', async () => {
+void test('stream yields tool.failed and propagates tool execution errors', async () => {
   const failure = new Error('tool failed');
   const lookup = call('lookup');
   const fake = createProvider({
@@ -263,7 +265,7 @@ test('stream yields tool.failed and propagates tool execution errors', async () 
   });
 });
 
-test('complete propagates provider errors unchanged', async () => {
+void test('complete propagates provider errors unchanged', async () => {
   const failure = new Error('provider failed');
   const fake = createProvider({
     complete: () => {
@@ -284,7 +286,7 @@ test('complete propagates provider errors unchanged', async () => {
   );
 });
 
-test('stream propagates provider errors unchanged', async () => {
+void test('stream propagates provider errors unchanged', async () => {
   const failure = new Error('provider stream failed');
   const fake = createProvider({
     stream: () => {
@@ -305,7 +307,7 @@ test('stream propagates provider errors unchanged', async () => {
   );
 });
 
-test('stream throws AgentErrorObject when the provider omits response.finished', async () => {
+void test('stream throws AgentErrorObject when the provider omits response.finished', async () => {
   const fake = createProvider({
     stream: () =>
       (async function* () {
@@ -331,7 +333,7 @@ test('stream throws AgentErrorObject when the provider omits response.finished',
   );
 });
 
-test('serializes string object and undefined tool results into tool messages', async () => {
+void test('serializes string object and undefined tool results into tool messages', async () => {
   const first = call('string');
   const second = call('object');
   const third = call('empty');
@@ -363,12 +365,14 @@ test('serializes string object and undefined tool results into tool messages', a
     results.map(({ toolCallId }) => toolCallId),
     [first.id, second.id, third.id],
   );
-  ['plain text', '{"ok":true}', '## Output'].forEach((output, index) =>
-    assert.ok(String(results[index]?.content).includes(output)),
-  );
+  ['plain text', '{"ok":true}', '## Output'].forEach((output, index) => {
+    const content = results[index]?.content;
+    assert.ok(typeof content === 'string');
+    assert.ok(content.includes(output));
+  });
 });
 
-test('throws AgentErrorObject when a tool result cannot be serialized', async () => {
+void test('throws AgentErrorObject when a tool result cannot be serialized', async () => {
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
   const cycle = call('cycle');
@@ -402,7 +406,7 @@ test('throws AgentErrorObject when a tool result cannot be serialized', async ()
   );
 });
 
-test('continues tool loops until the provider returns a final response', async () => {
+void test('continues tool loops until the provider returns a final response', async () => {
   const fake = createProvider({
     complete: (_request, index) =>
       index < 3

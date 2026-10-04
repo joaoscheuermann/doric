@@ -81,18 +81,18 @@ export type TerminalOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type Options = {
+interface Options {
   readonly traceDir?: string;
-};
+}
 
-type Execution = {
+interface Execution {
   readonly command: string;
   readonly workingDirectory: string;
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
   readonly durationMs: number;
-};
+}
 
 /** Creates the provider-neutral sandbox terminal tool. */
 export const createTool = (
@@ -454,9 +454,7 @@ const isCargoVerification = (command: string): boolean => {
     .replace(/\\/g, '/')
     .toLowerCase();
 
-  return /(?:^|[\s;\/])cargo(?:\.exe)?\s+(test|check|clippy)\b/.test(
-    normalized,
-  );
+  return /(?:^|[\s;/])cargo(?:\.exe)?\s+(test|check|clippy)\b/.test(normalized);
 };
 
 const splitLines = (value: string): readonly string[] =>

@@ -2,39 +2,39 @@ import type { ToolFactory } from 'tool';
 
 import type { SkillRecord } from '../schemas/skill.js';
 
-export type BundleManifestTool = {
+export interface BundleManifestTool {
   readonly path: string;
   readonly alwaysAvailable: boolean;
-};
+}
 
-export type BundleManifestSkill = {
+export interface BundleManifestSkill {
   readonly path: string;
   readonly alwaysAvailable: boolean;
-};
+}
 
-export type BundleManifest = {
+export interface BundleManifest {
   readonly name: string;
   readonly description: string;
   readonly tools: readonly BundleManifestTool[];
   readonly skills: readonly BundleManifestSkill[];
-};
+}
 
-export type BundleTool = {
+export interface BundleTool {
   readonly factory: ToolFactory;
   readonly alwaysAvailable: boolean;
-};
+}
 
 /** Alias preserved for current catalog consumers. */
 export type Skill = SkillRecord;
 
-export type BundleSkill = {
+export interface BundleSkill {
   readonly skill: Skill;
   readonly alwaysAvailable: boolean;
-};
+}
 
-export type Bundle = {
+export interface Bundle {
   readonly name: string;
   readonly description: string;
   readonly tools: readonly BundleTool[];
   readonly skills: readonly BundleSkill[];
-};
+}

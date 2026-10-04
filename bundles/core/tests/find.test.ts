@@ -7,8 +7,8 @@ import { describe, test } from 'node:test';
 import factory from '../tools/find.js';
 import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
-describe('find tool', () => {
-  test('returns matching files relative to the requested search path', async () => {
+void describe('find tool', () => {
+  void test('returns matching files relative to the requested search path', async () => {
     const root = await workspace('find-matches');
 
     await write(root, 'src/a.ts', 'a');
@@ -31,7 +31,7 @@ describe('find tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('searches the working directory and leaves an absolute path absolute', async () => {
+  void test('searches the working directory and leaves an absolute path absolute', async () => {
     const root = await workspace('find-cwd');
 
     await write(root, 'src/a.ts', 'a');
@@ -59,7 +59,7 @@ describe('find tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('respects gitignore files while walking', async () => {
+  void test('respects gitignore files while walking', async () => {
     const root = await workspace('find-ignore');
 
     await write(root, '.gitignore', '*.txt\n!keep.txt\n');

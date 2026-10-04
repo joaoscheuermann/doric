@@ -49,11 +49,11 @@ export type GrepOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type IgnorePattern = {
+interface IgnorePattern {
   readonly base: string;
   readonly pattern: string;
   readonly negated: boolean;
-};
+}
 
 type PathKind = 'directory' | 'file' | 'missing' | 'other';
 

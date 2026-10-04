@@ -5,50 +5,50 @@ import type { ProviderMetadata, UsageMetadata } from './provider.js';
 /** JSON content accepted by System One state, instructions, and criteria. */
 export type DecisionEntry = string | JsonObject | JsonArray | null;
 
-export type NoulQuestion = {
+export interface NoulQuestion {
   readonly type: 'noul';
   readonly instructions: DecisionEntry;
   readonly criteria?: {
     readonly true: DecisionEntry;
     readonly false: DecisionEntry;
   };
-};
+}
 
-export type ChoiceQuestion<Choice extends string = string> = {
+export interface ChoiceQuestion<Choice extends string = string> {
   readonly type: 'choice';
   readonly instructions: DecisionEntry;
   readonly criteria: Readonly<Record<Choice, DecisionEntry>>;
-};
+}
 
-export type ScoreQuestion = {
+export interface ScoreQuestion {
   readonly type: 'score';
   readonly instructions: DecisionEntry;
   readonly criteria: readonly DecisionEntry[];
-};
+}
 
 export type DecisionQuestion = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 
 export type DecisionQuestions = Readonly<Record<string, DecisionQuestion>>;
 
-export type NoulAnswer = {
+export interface NoulAnswer {
   readonly type: 'noul';
   readonly noul: number;
-};
+}
 
-export type ChoiceAnswer<Choice extends string = string> = {
+export interface ChoiceAnswer<Choice extends string = string> {
   readonly type: 'choice';
   readonly choice: Choice;
   readonly confidence: number;
   readonly probabilities: Readonly<Record<Choice, number>>;
-};
+}
 
-export type ScoreAnswer = {
+export interface ScoreAnswer {
   readonly type: 'score';
   readonly score: number;
   readonly confidence: number;
   readonly legend: Readonly<Record<string, DecisionEntry>>;
   readonly probabilities: Readonly<Record<string, number>>;
-};
+}
 
 export type DecisionAnswer<Question extends DecisionQuestion> =
   Question extends ChoiceQuestion<infer Choice>
@@ -57,22 +57,22 @@ export type DecisionAnswer<Question extends DecisionQuestion> =
       ? ScoreAnswer
       : NoulAnswer;
 
-export type ProviderDecisionRequest<
+export interface ProviderDecisionRequest<
   Questions extends DecisionQuestions = DecisionQuestions,
-> = {
+> {
   readonly model: string;
   readonly state: DecisionEntry;
   readonly questions: Questions;
   readonly signal?: AbortSignal;
-};
+}
 
-export type ProviderDecisionFinished<Questions extends DecisionQuestions> = {
+export interface ProviderDecisionFinished<Questions extends DecisionQuestions> {
   readonly model: string;
   readonly answers: {
     readonly [Key in keyof Questions]: DecisionAnswer<Questions[Key]>;
   };
   readonly usage?: UsageMetadata;
-};
+}
 
 /** Typed decision-model contract for System One models such as Jev. */
 export interface DecisionProvider {

@@ -5,13 +5,12 @@ import type {
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
-  ProviderStructuredFinished,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
   UsageMetadata,
 } from '../types/provider.js';
-import { parseStructuredOutput } from './structured.js';
 import { withProviderLogging } from './logging.js';
 import {
   createOpenRouterProviderCore,
@@ -20,6 +19,7 @@ import {
   type OpenRouterProviderDeps,
 } from './openrouter.js';
 import { createOpenRouterModelsLoader } from './openrouter/models.js';
+import { parseStructuredOutput } from './structured.js';
 import { createOpenRouterCatalog } from './unified/catalog.js';
 import { createUnifiedRequestPreparer } from './unified/prepare.js';
 
@@ -209,7 +209,7 @@ const addCost = (
 const usage = (value: UsageMetadata): UsageMetadata =>
   Object.fromEntries(
     Object.entries(value).filter(([, child]) => child !== undefined),
-  ) as UsageMetadata;
+  );
 
 const add = (
   left: number | undefined,

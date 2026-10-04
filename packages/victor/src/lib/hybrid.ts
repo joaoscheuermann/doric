@@ -49,10 +49,10 @@ const addRanking = <Data>(
 };
 
 const fuse = <Data>(
-  rankings: ReadonlyArray<ReadonlyArray<SearchResult<Data>>>,
+  rankings: readonly (readonly SearchResult<Data>[])[],
   key: (data: Data) => string,
   topK: number,
-): ReadonlyArray<SearchResult<Data>> => {
+): readonly SearchResult<Data>[] => {
   const fused = new Map<string, Fused<Data>>();
 
   for (const ranking of rankings) {
@@ -91,7 +91,7 @@ export const createHybridSearch = <Data = unknown>(
   logger.debug({}, 'hybrid search created');
 
   return {
-    async search(query, topK): Promise<ReadonlyArray<SearchResult<Data>>> {
+    async search(query, topK): Promise<readonly SearchResult<Data>[]> {
       const safeTopK = Number.isFinite(topK) ? topK : undefined;
       const fields = { topK: safeTopK };
 

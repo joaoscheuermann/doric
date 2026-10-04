@@ -3,9 +3,10 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import express from 'express';
+
 import type {
-  SandboxProvisionInput,
   SandboxProvider,
+  SandboxProvisionInput,
   SandboxRuntime,
 } from 'sandbox';
 
@@ -19,7 +20,7 @@ const input: SandboxProvisionInput = {
   network: { mode: 'disabled', ssh: false },
 };
 
-test('tracks provisioned VMs until disposal completes', async () => {
+void test('tracks provisioned VMs until disposal completes', async () => {
   let release!: () => void;
   const disposing = new Promise<void>((resolve) => {
     release = resolve;
@@ -62,7 +63,7 @@ test('tracks provisioned VMs until disposal completes', async () => {
   await second.dispose();
 });
 
-test('keeps a VM registered when disposal fails', async () => {
+void test('keeps a VM registered when disposal fails', async () => {
   let reject!: (cause: Error) => void;
   const disposal = new Promise<void>((_resolve, fail) => {
     reject = fail;
@@ -89,7 +90,7 @@ test('keeps a VM registered when disposal fails', async () => {
   assert.equal(registry.find('vm-1')?.id, 'vm-1');
 });
 
-test('returns every running VM', async () => {
+void test('returns every running VM', async () => {
   const host = await serveVms();
 
   try {
@@ -105,7 +106,7 @@ test('returns every running VM', async () => {
   }
 });
 
-test('returns leased VM SSH access without permitting caches', async () => {
+void test('returns leased VM SSH access without permitting caches', async () => {
   const host = await serveVms();
 
   try {
@@ -122,7 +123,7 @@ test('returns leased VM SSH access without permitting caches', async () => {
   }
 });
 
-test('rejects SSH access for an idle VM', async () => {
+void test('rejects SSH access for an idle VM', async () => {
   const host = await serveVms();
 
   try {
@@ -138,7 +139,7 @@ test('rejects SSH access for an idle VM', async () => {
   }
 });
 
-test('reports missing VMs through the stable error code', async () => {
+void test('reports missing VMs through the stable error code', async () => {
   const host = await serveVms();
 
   try {

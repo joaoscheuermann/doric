@@ -87,12 +87,7 @@ export type ProviderKind = {
 };
 
 /** The value kinds a tool configuration field can carry. */
-export type ToolConfigFieldKind =
-  | 'text'
-  | 'url'
-  | 'number'
-  | 'enum'
-  | 'secret';
+export type ToolConfigFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
 /**
  * One configuration field a tool declares. Like a provider kind's field, the tool

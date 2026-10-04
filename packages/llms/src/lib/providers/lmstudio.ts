@@ -13,10 +13,10 @@ import type {
   ProviderMessage,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
-  ProviderStructuredFinished,
+  ProviderRerankRequest,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
   UsageMetadata,
@@ -29,6 +29,7 @@ import {
   stringField,
 } from '../utils/json.js';
 import { parseSseEvents } from '../utils/sse.js';
+import { authorization, type SecretSource } from './auth.js';
 import {
   deltaEvent,
   messageText,
@@ -36,22 +37,20 @@ import {
   requireRequestInput,
   streamErrorEvent,
 } from './common.js';
+import { requestJson, withProviderErrors } from './http.js';
+import { withProviderLogging } from './logging.js';
 import {
   messagesWithStructuredSchema,
   parseStructuredOutput,
 } from './structured.js';
-import { withProviderLogging } from './logging.js';
 
-import { authorization, type SecretSource } from './auth.js';
-import { requestJson, withProviderErrors } from './http.js';
-
-export type LmStudioProviderDeps = {
+export interface LmStudioProviderDeps {
   readonly transport: HttpTransport;
   readonly apiKey?: SecretSource;
   readonly authorization?: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
+}
 
 export const lmStudioMetadata: ProviderMetadata = {
   id: 'lmstudio',
@@ -239,21 +238,25 @@ export const createLmStudioProvider = (
       async embedding(
         _request: ProviderEmbeddingRequest,
       ): Promise<ProviderEmbeddingFinished> {
-        throw new ProviderErrorObject({
-          provider: 'lmstudio',
-          code: 'unsupported_embeddings',
-          message: 'LM Studio provider does not support embeddings.',
-        });
+        return Promise.reject(
+          new ProviderErrorObject({
+            provider: 'lmstudio',
+            code: 'unsupported_embeddings',
+            message: 'LM Studio provider does not support embeddings.',
+          }),
+        );
       },
 
       async rerank(
         _request: ProviderRerankRequest,
       ): Promise<ProviderRerankFinished> {
-        throw new ProviderErrorObject({
-          provider: 'lmstudio',
-          code: 'unsupported_reranking',
-          message: 'LM Studio provider does not support reranking.',
-        });
+        return Promise.reject(
+          new ProviderErrorObject({
+            provider: 'lmstudio',
+            code: 'unsupported_reranking',
+            message: 'LM Studio provider does not support reranking.',
+          }),
+        );
       },
 
       async models(signal?: AbortSignal): Promise<readonly Model[]> {

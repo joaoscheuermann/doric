@@ -40,10 +40,10 @@ interface ProviderInput {
   readonly models?: readonly ProviderModelInput[];
 }
 
-export type ConfigStore = {
+export interface ConfigStore {
   load(): Promise<DoricConfig>;
   replace(config: ConfigInput): Promise<DoricConfig>;
-};
+}
 
 /**
  * The one value a kind carries that has to be a real column: a `secret` field is
@@ -135,7 +135,9 @@ const fromStored = (stored: StoredConfig): DoricConfig => {
         ? {}
         : { maxToolResultChars: stored.maxToolResultChars }),
     },
-    tools: stored.toolConfig as Readonly<Record<string, Readonly<Record<string, string>>>>,
+    tools: stored.toolConfig as Readonly<
+      Record<string, Readonly<Record<string, string>>>
+    >,
     ...(stored.gitCredentialId === null
       ? {}
       : { gitCredentialId: stored.gitCredentialId }),

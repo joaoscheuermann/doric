@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+interface RequestBody extends Record<string, unknown> {
+  messages: { role: string; content: string }[];
+  response_format?: { type?: string };
+}
+
 import { z } from 'zod';
 
 import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
@@ -34,7 +39,7 @@ for (const stream of [false, true]) {
     { name: 'lookup' },
   ] as const) {
     for (const parallel of [false, true]) {
-      test(`sends LM Studio tool selection ${JSON.stringify(choice)} and parallel=${parallel} in ${stream ? 'stream' : 'complete'}`, async () => {
+      void test(`sends LM Studio tool selection ${JSON.stringify(choice)} and parallel=${parallel} in ${stream ? 'stream' : 'complete'}`, async () => {
         const transport = fakeTransport({
           responses: [response({ choices: [{ message: { content: 'ok' } }] })],
           streams: [['data: [DONE]\n\n']],
@@ -60,7 +65,9 @@ for (const stream of [false, true]) {
           await provider.complete(request);
         }
 
-        const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+        const body = JSON.parse(
+          transport.requests[0]?.body ?? '{}',
+        ) as RequestBody;
         assert.deepEqual(
           body.tool_choice,
           typeof choice === 'string'
@@ -73,7 +80,7 @@ for (const stream of [false, true]) {
   }
 }
 
-test('sends LM Studio OpenAI-compatible structured output requests without tools through response format', async () => {
+void test('sends LM Studio OpenAI-compatible structured output requests without tools through response format', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -99,7 +106,7 @@ test('sends LM Studio OpenAI-compatible structured output requests without tools
     temperature: 0.2,
     maxOutputTokens: 64,
   });
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal(provider.metadata.id, 'lmstudio-openai');
 
@@ -153,7 +160,7 @@ test('sends LM Studio OpenAI-compatible structured output requests without tools
   });
 });
 
-test('adds a schema system instruction while retaining LM Studio response format', async () => {
+void test('adds a schema system instruction while retaining LM Studio response format', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -179,7 +186,7 @@ test('adds a schema system instruction while retaining LM Studio response format
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   });
 
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.deepEqual(
     body.messages.map((message: { readonly role: string }) => message.role),
@@ -197,10 +204,10 @@ test('adds a schema system instruction while retaining LM Studio response format
 
   assert.equal(body.messages[3].content, 'Return JSON.');
 
-  assert.equal(body.response_format.type, 'json_schema');
+  assert.equal(body.response_format?.type, 'json_schema');
 });
 
-test('sends LM Studio OpenAI-compatible reasoning effort as top-level chat field', async () => {
+void test('sends LM Studio OpenAI-compatible reasoning effort as top-level chat field', async () => {
   const transport = fakeTransport({
     responses: [response({ choices: [{ message: { content: 'ok' } }] })],
   });
@@ -213,12 +220,12 @@ test('sends LM Studio OpenAI-compatible reasoning effort as top-level chat field
     flags: { reasoning: { effort: 'high' } },
   });
 
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal(body.reasoning_effort, 'minimal');
 });
 
-test('rejects LM Studio OpenAI-compatible structured requests with tools before sending HTTP', async () => {
+void test('rejects LM Studio OpenAI-compatible structured requests with tools before sending HTTP', async () => {
   const transport = fakeTransport({});
   const provider = createLmStudioOpenAiProvider({ transport });
 
@@ -245,7 +252,7 @@ test('rejects LM Studio OpenAI-compatible structured requests with tools before 
   assert.equal(transport.requests.length, 0);
 });
 
-test('sends LM Studio OpenAI-compatible tool requests without structured output', async () => {
+void test('sends LM Studio OpenAI-compatible tool requests without structured output', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -282,7 +289,7 @@ test('sends LM Studio OpenAI-compatible tool requests without structured output'
       },
     ],
   });
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal('response_format' in body, false);
 
@@ -307,7 +314,7 @@ test('sends LM Studio OpenAI-compatible tool requests without structured output'
   ]);
 });
 
-test('lists LM Studio OpenAI-compatible models with custom base URL and API key auth', async () => {
+void test('lists LM Studio OpenAI-compatible models with custom base URL and API key auth', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -346,7 +353,7 @@ test('lists LM Studio OpenAI-compatible models with custom base URL and API key 
   assert.equal((await provider.validateModel('local-model')).id, 'local-model');
 });
 
-test('maps LM Studio OpenAI-compatible authorization modes', async () => {
+void test('maps LM Studio OpenAI-compatible authorization modes', async () => {
   const blank = fakeTransport({
     responses: [response({ choices: [{ message: { content: 'ok' } }] })],
   });
@@ -395,7 +402,7 @@ test('maps LM Studio OpenAI-compatible authorization modes', async () => {
   );
 });
 
-test('streams LM Studio OpenAI-compatible chat completion events', async () => {
+void test('streams LM Studio OpenAI-compatible chat completion events', async () => {
   const provider = createLmStudioOpenAiProvider({
     transport: fakeTransport({
       streams: [
@@ -480,7 +487,7 @@ test('streams LM Studio OpenAI-compatible chat completion events', async () => {
   });
 });
 
-test('rejects LM Studio OpenAI-compatible structured streams with tools before starting transport', async () => {
+void test('rejects LM Studio OpenAI-compatible structured streams with tools before starting transport', async () => {
   const transport = fakeTransport({});
   const provider = createLmStudioOpenAiProvider({ transport });
 

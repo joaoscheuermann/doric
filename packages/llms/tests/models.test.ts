@@ -3,8 +3,8 @@ import { describe, test } from 'node:test';
 
 import { modelCatalog } from '../src/index.js';
 
-describe('an endpoint model catalog', () => {
-  test('names each model with what it advertises', () => {
+void describe('an endpoint model catalog', () => {
+  void test('names each model with what it advertises', () => {
     const catalog = modelCatalog({
       data: [
         {
@@ -38,7 +38,7 @@ describe('an endpoint model catalog', () => {
     });
   });
 
-  test('reads the default effort and the reasoning a catalog pins on', () => {
+  void test('reads the default effort and the reasoning a catalog pins on', () => {
     const catalog = modelCatalog({
       data: [
         {
@@ -76,7 +76,7 @@ describe('an endpoint model catalog', () => {
     });
   });
 
-  test('reads an answer that lists nothing as an empty catalog', () => {
+  void test('reads an answer that lists nothing as an empty catalog', () => {
     assert.deepEqual([...modelCatalog({}).keys()], []);
     assert.deepEqual([...modelCatalog({ data: 'none' }).keys()], []);
   });

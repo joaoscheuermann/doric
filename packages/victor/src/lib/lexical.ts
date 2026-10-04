@@ -6,15 +6,15 @@ import type {
 import { selectTop } from './utils/top.js';
 import { invalid, validateLogger, validateTopK } from './utils/validation.js';
 
-type Entry<Data> = {
+interface Entry<Data> {
   readonly data: Data;
   readonly length: number;
-};
+}
 
-type Posting = {
+interface Posting {
   readonly index: number;
   readonly count: number;
-};
+}
 
 const K1 = 1.2;
 const B = 0.75;
@@ -109,6 +109,7 @@ export const createLexicalIndex = <Data = unknown>(
           { entryCount: entries.length },
           'lexical index add completed',
         );
+        return Promise.resolve();
       } catch (error) {
         logger.debug(
           { entryCount: entries.length },
@@ -119,7 +120,7 @@ export const createLexicalIndex = <Data = unknown>(
       }
     },
 
-    async search(query, topK): Promise<ReadonlyArray<SearchResult<Data>>> {
+    async search(query, topK): Promise<readonly SearchResult<Data>[]> {
       const safeTopK = Number.isFinite(topK) ? topK : undefined;
       const fields = { entryCount: entries.length, topK: safeTopK };
 
@@ -134,7 +135,7 @@ export const createLexicalIndex = <Data = unknown>(
             'lexical index search completed',
           );
 
-          return [];
+          return Promise.resolve([]);
         }
 
         const queryTerms = new Set(tokens(query));
@@ -145,7 +146,7 @@ export const createLexicalIndex = <Data = unknown>(
             'lexical index search completed',
           );
 
-          return [];
+          return Promise.resolve([]);
         }
 
         const averageLength = totalLength / entries.length;
@@ -180,7 +181,7 @@ export const createLexicalIndex = <Data = unknown>(
           'lexical index search completed',
         );
 
-        return results;
+        return Promise.resolve(results);
       } catch (error) {
         logger.debug(fields, 'lexical index search failed');
 

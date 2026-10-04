@@ -57,7 +57,7 @@ const memoryStore = (rows: StoredCredential[] = []) => {
   return { store, rows };
 };
 
-test('satisfies exactly the field set of each kind', () => {
+void test('satisfies exactly the field set of each kind', () => {
   assert.deepEqual(credentialFields('API_TOKEN'), {
     required: ['secret'],
     optional: [],
@@ -72,7 +72,7 @@ test('satisfies exactly the field set of each kind', () => {
   });
 });
 
-test('rejects a value the kind forbids and accepts the ones it requires', () => {
+void test('rejects a value the kind forbids and accepts the ones it requires', () => {
   const cases = [
     { kind: 'API_TOKEN' as const, values: {}, accepted: false },
     { kind: 'API_TOKEN' as const, values: { secret: 'x' }, accepted: true },
@@ -126,7 +126,7 @@ test('rejects a value the kind forbids and accepts the ones it requires', () => 
     );
 });
 
-test('validates a create body against the kind it names', () => {
+void test('validates a create body against the kind it names', () => {
   const cases = [
     { body: { kind: 'API_TOKEN', name: 'key', secret: 'x' }, accepted: true },
     { body: { kind: 'API_TOKEN', name: 'key' }, accepted: false },
@@ -186,7 +186,7 @@ test('validates a create body against the kind it names', () => {
     );
 });
 
-test('accepts the clear, keep, and set forms on a patch', () => {
+void test('accepts the clear, keep, and set forms on a patch', () => {
   for (const body of [
     {},
     { secret: null },
@@ -201,7 +201,7 @@ test('accepts the clear, keep, and set forms on a patch', () => {
     );
 });
 
-test('resolves the single credential of a requested kind', () => {
+void test('resolves the single credential of a requested kind', () => {
   const only = apiToken('x');
 
   assert.deepEqual(credentialByKind([], 'API_TOKEN'), undefined);
@@ -209,7 +209,7 @@ test('resolves the single credential of a requested kind', () => {
   assert.deepEqual(credentialByKind([only], 'GIT'), undefined);
 });
 
-test('refuses to guess when several credentials share a kind', () => {
+void test('refuses to guess when several credentials share a kind', () => {
   const first = apiToken('x');
   const second = {
     ...apiToken('y'),
@@ -224,7 +224,7 @@ test('refuses to guess when several credentials share a kind', () => {
   );
 });
 
-test('resolves an explicit reference and rejects a broken one', () => {
+void test('resolves an explicit reference and rejects a broken one', () => {
   const only = apiToken('x');
 
   assert.deepEqual(credentialById([only], only.id), only);
@@ -234,7 +234,7 @@ test('resolves an explicit reference and rejects a broken one', () => {
   );
 });
 
-test('wraps a secret in a versioned envelope that only its key opens', () => {
+void test('wraps a secret in a versioned envelope that only its key opens', () => {
   const cipher = createSecretCipher(key);
   assert.ok(cipher);
 
@@ -254,14 +254,14 @@ test('wraps a secret in a versioned envelope that only its key opens', () => {
   assert.throws(() => cipher.decrypt('v2:a:b:c'));
 });
 
-test('refuses an unusable key and reports an absent one', () => {
+void test('refuses an unusable key and reports an absent one', () => {
   assert.equal(createSecretCipher(undefined), undefined);
   assert.equal(createSecretCipher('  '), undefined);
   assert.throws(() => createSecretCipher('short'));
   assert.throws(() => createSecretCipher('!'.repeat(44)));
 });
 
-test('stores the secret encrypted and answers it only to the host', async () => {
+void test('stores the secret encrypted and answers it only to the host', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,
@@ -291,7 +291,7 @@ test('stores the secret encrypted and answers it only to the host', async () => 
   assert.equal(JSON.stringify(view).includes('sk_secret'), false);
 });
 
-test('refuses to start when a stored secret has no key', async () => {
+void test('refuses to start when a stored secret has no key', async () => {
   const memory = memoryStore([
     {
       id: '00000000-0000-4000-8000-000000000001',
@@ -326,7 +326,7 @@ test('refuses to start when a stored secret has no key', async () => {
 });
 
 /** A secret the host wrote into a sandbox is redacted like a stored one. */
-test('redacts a secret it learned after the store was read', async () => {
+void test('redacts a secret it learned after the store was read', async () => {
   const empty = memoryStore([]);
   const service = await createCredentialService({
     store: empty.store,
@@ -343,7 +343,7 @@ test('redacts a secret it learned after the store was read', async () => {
   assert.deepEqual(service.secrets(), [learned]);
 });
 
-test('keeps, clears, and sets a stored field through one rule', async () => {
+void test('keeps, clears, and sets a stored field through one rule', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,
@@ -386,7 +386,7 @@ test('keeps, clears, and sets a stored field through one rule', async () => {
   );
 });
 
-test('keeps a provider key out of an unclaimed-kind fallback', async () => {
+void test('keeps a provider key out of an unclaimed-kind fallback', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,
@@ -421,7 +421,7 @@ test('keeps a provider key out of an unclaimed-kind fallback', async () => {
   );
 });
 
-test('stops resolving a credential once it is deleted', async () => {
+void test('stops resolving a credential once it is deleted', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,
@@ -441,7 +441,7 @@ test('stops resolving a credential once it is deleted', async () => {
   assert.equal(await service.remove(id), 'missing');
 });
 
-test('applies the field rule to a create the route did not check', async () => {
+void test('applies the field rule to a create the route did not check', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,
@@ -468,7 +468,7 @@ test('applies the field rule to a create the route did not check', async () => {
   assert.equal(accepted.status, 'saved');
 });
 
-test('refuses to write a secret without a key', async () => {
+void test('refuses to write a secret without a key', async () => {
   const memory = memoryStore();
   const service = await createCredentialService({
     store: memory.store,

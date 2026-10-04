@@ -102,13 +102,13 @@ change accepted scope or invent current implementation facts.
 
 ## Inputs
 
-| Input | Path | Purpose |
-| ----- | ---- | ------- |
-| Accepted PRD | `<run>/prd/PRD.md` | Defines the product source of truth, goals, non-goals, user-visible behavior, requirements, acceptance criteria, and validation expectations. |
-| Prompt architecture state | `<run>/PROMPT.md` | Preserves architecture-scoped prompt constraints, architecture-tagged questions, accepted technical context, and prompt facts that the PRD did not supersede. |
-| Technical grounding bundle | Run-specific grounding artifacts | Provides hard technical constraints, convention parameters, package ownership, dependency direction, validation expectations, and human-gate decisions. |
-| Current architecture evidence | Source, manifests, schemas, tests, docs | Anchors package boundaries, existing APIs, data models, runtime behavior, test tooling, and migration constraints in the real repository. |
-| Prior technical gaps | `<run>/tdd/GAPS.md` when repairing | Supplies the active blocking technical gap that a Challenger must resolve. |
+| Input                         | Path                                    | Purpose                                                                                                                                                       |
+| ----------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accepted PRD                  | `<run>/prd/PRD.md`                      | Defines the product source of truth, goals, non-goals, user-visible behavior, requirements, acceptance criteria, and validation expectations.                 |
+| Prompt architecture state     | `<run>/PROMPT.md`                       | Preserves architecture-scoped prompt constraints, architecture-tagged questions, accepted technical context, and prompt facts that the PRD did not supersede. |
+| Technical grounding bundle    | Run-specific grounding artifacts        | Provides hard technical constraints, convention parameters, package ownership, dependency direction, validation expectations, and human-gate decisions.       |
+| Current architecture evidence | Source, manifests, schemas, tests, docs | Anchors package boundaries, existing APIs, data models, runtime behavior, test tooling, and migration constraints in the real repository.                     |
+| Prior technical gaps          | `<run>/tdd/GAPS.md` when repairing      | Supplies the active blocking technical gap that a Challenger must resolve.                                                                                    |
 
 Step 03 must refuse to run if `<run>/prd/PRD.md` is missing, still has active
 product gaps, or lacks the approval evidence required by the PRD phase.
@@ -128,22 +128,22 @@ assumptions it must avoid.
 
 Default lenses:
 
-| Architect lens | Focus | Failure avoided |
-| -------------- | ----- | --------------- |
-| System Boundary Architect | Package ownership, dependency direction, API surfaces, event flow, and integration seams | A plausible design that violates repository architecture |
-| Implementation Feasibility Architect | Concrete code paths, data flow, test seams, rollout size, and compatibility with existing tooling | A desirable design that cannot be implemented or proven incrementally |
-| Risk And Operations Architect | Security, persistence, migration, observability, failure recovery, command execution, and blast radius | A fluent design that hides operational or safety risk |
+| Architect lens                       | Focus                                                                                                  | Failure avoided                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| System Boundary Architect            | Package ownership, dependency direction, API surfaces, event flow, and integration seams               | A plausible design that violates repository architecture              |
+| Implementation Feasibility Architect | Concrete code paths, data flow, test seams, rollout size, and compatibility with existing tooling      | A desirable design that cannot be implemented or proven incrementally |
+| Risk And Operations Architect        | Security, persistence, migration, observability, failure recovery, command execution, and blast radius | A fluent design that hides operational or safety risk                 |
 
 Optional lenses may be added only when the accepted PRD, prompt, or repository
 evidence requires them:
 
-| Optional lens | Use when |
-| ------------- | -------- |
-| Data Or Persistence Architect | Stored state, schema, migration, replay, cache, retention, or durability concerns matter. |
-| Security Architect | Auth, permissions, secrets, untrusted input, code execution, network access, or sensitive data are involved. |
-| UX Or Workflow Architect | CLI, TUI, web, onboarding, recovery, progress, error, or daily operator flows change. |
-| Performance Architect | Throughput, latency, memory, concurrency, streaming, cancellation, or scale constraints matter. |
-| Testing Architect | The feature depends on complex fixtures, mocks, regression suites, generated contracts, or test architecture. |
+| Optional lens                 | Use when                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Data Or Persistence Architect | Stored state, schema, migration, replay, cache, retention, or durability concerns matter.                     |
+| Security Architect            | Auth, permissions, secrets, untrusted input, code execution, network access, or sensitive data are involved.  |
+| UX Or Workflow Architect      | CLI, TUI, web, onboarding, recovery, progress, error, or daily operator flows change.                         |
+| Performance Architect         | Throughput, latency, memory, concurrency, streaming, cancellation, or scale constraints matter.               |
+| Testing Architect             | The feature depends on complex fixtures, mocks, regression suites, generated contracts, or test architecture. |
 
 The Supervisor chooses lenses before spawning architect agents. Architect agents
 do not select their own lenses after work begins.
@@ -261,10 +261,10 @@ tests, generated contracts, or existing Doric artifacts.
 
 Recommended capabilities:
 
-| Capability | Use |
-| ---------- | --- |
-| `read()` | Read specific prompt artifacts, PRDs, grounding documents, architecture summaries, manifests, schemas, tests, code files, or prior gap reports. |
-| `tree()` | Inspect workspace, package, code, or documentation structure so a draft respects actual boundaries. |
+| Capability        | Use                                                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read()`          | Read specific prompt artifacts, PRDs, grounding documents, architecture summaries, manifests, schemas, tests, code files, or prior gap reports.    |
+| `tree()`          | Inspect workspace, package, code, or documentation structure so a draft respects actual boundaries.                                                |
 | Search-like tools | Find terminology, existing APIs, data models, state transitions, validation patterns, event contracts, or user-facing strings that affect the TDD. |
 
 Architect agents can use tools to understand context, but they cannot mutate
@@ -461,16 +461,16 @@ evidence already exists.
 
 ## Failure Modes
 
-| Failure mode | Mitigation |
-| ------------ | ---------- |
-| Architect agents converge on the same design | Use distinct lenses and prevent architects from reading each other's drafts during initial generation. |
-| Architect agents invent current code facts | Require repository evidence for package, API, schema, runtime, and test claims. |
-| Product scope changes inside the TDD | Treat `<run>/prd/PRD.md` as authoritative and route product changes back to PRD repair or user input. |
-| Design skips Dependency Hops | Exclude malformed drafts before Proximity or spawn a replacement architect. |
-| Proximity filters too aggressively | Preserve at least one representative per materially distinct architecture, state, API, or rollout strategy. |
-| Raw draft is treated as final | Mark all architect outputs as raw candidates and block direct promotion. |
-| Missing architecture input is repaired by Generation | Ask the user or return to the correct gate for scope-defining or irreversible decisions. |
-| Too many architect lenses are spawned | Use the default three lenses and add more only from evidence. |
+| Failure mode                                         | Mitigation                                                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Architect agents converge on the same design         | Use distinct lenses and prevent architects from reading each other's drafts during initial generation.      |
+| Architect agents invent current code facts           | Require repository evidence for package, API, schema, runtime, and test claims.                             |
+| Product scope changes inside the TDD                 | Treat `<run>/prd/PRD.md` as authoritative and route product changes back to PRD repair or user input.       |
+| Design skips Dependency Hops                         | Exclude malformed drafts before Proximity or spawn a replacement architect.                                 |
+| Proximity filters too aggressively                   | Preserve at least one representative per materially distinct architecture, state, API, or rollout strategy. |
+| Raw draft is treated as final                        | Mark all architect outputs as raw candidates and block direct promotion.                                    |
+| Missing architecture input is repaired by Generation | Ask the user or return to the correct gate for scope-defining or irreversible decisions.                    |
+| Too many architect lenses are spawned                | Use the default three lenses and add more only from evidence.                                               |
 
 ## Minimal Implementation
 

@@ -3,8 +3,8 @@ import { Router } from 'express';
 import { ConfigInputSchema } from '../lib/config/schema.js';
 import {
   ConfigCredentialError,
-  ConfigToolError,
   type ConfigService,
+  ConfigToolError,
 } from '../lib/config/service.js';
 import { sendError } from '../lib/http/errors.js';
 

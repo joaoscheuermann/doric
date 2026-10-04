@@ -19,19 +19,19 @@ import type { FirecrackerConfig } from './types.js';
 
 const converterVersion = 'oci-ext4-v1';
 
-export type PreparedImage = {
+export interface PreparedImage {
   readonly disk: string;
   readonly digest: string;
   readonly env: readonly string[];
   readonly user: string;
   release(): Promise<void>;
-};
+}
 
-type ImageMetadata = {
+interface ImageMetadata {
   readonly digest: string;
   readonly env: readonly string[];
   readonly user: string;
-};
+}
 
 /** Resolves a public linux/amd64 OCI image and returns an immutable cached ext4 disk. */
 export const prepareImage = async (

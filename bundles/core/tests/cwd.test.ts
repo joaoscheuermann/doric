@@ -10,8 +10,8 @@ import type { Sandbox } from 'sandbox';
 import factory from '../tools/cwd.js';
 import { fakeHost, WORKSPACE_ROOT } from './fake-sandbox.js';
 
-describe('cwd tool', () => {
-  test('reports the current directory without a path', async () => {
+void describe('cwd tool', () => {
+  void test('reports the current directory without a path', async () => {
     const host = fakeHost({ cwd: '/workspace/repo' });
 
     assert.deepEqual(await tool(host).execute({}), {
@@ -33,7 +33,7 @@ describe('cwd tool', () => {
     assert.equal(host.workspace.cwd(), '/workspace/repo');
   });
 
-  test('moves to a relative path resolved against the current directory', async () => {
+  void test('moves to a relative path resolved against the current directory', async () => {
     const host = fakeHost();
 
     assert.deepEqual(await tool(host).execute({ path: 'repo' }), {
@@ -54,7 +54,7 @@ describe('cwd tool', () => {
     assert.equal(host.workspace.cwd(), '/workspace/repo');
   });
 
-  test('moves to an absolute path and reports the resolved directory', async () => {
+  void test('moves to an absolute path and reports the resolved directory', async () => {
     const host = fakeHost();
 
     assert.deepEqual(
@@ -73,7 +73,7 @@ describe('cwd tool', () => {
     assert.equal(host.workspace.cwd(), '/workspace/repo/src');
   });
 
-  test('refuses a path that is missing or is not a directory', async () => {
+  void test('refuses a path that is missing or is not a directory', async () => {
     const root = await workspace('cwd-refused');
     const host = fakeHost({ localRoot: root });
 
@@ -101,7 +101,7 @@ describe('cwd tool', () => {
     }
   });
 
-  test('refuses a path outside the workspace root', async () => {
+  void test('refuses a path outside the workspace root', async () => {
     const root = await workspace('cwd-outside');
     const host = fakeHost({ localRoot: root });
 

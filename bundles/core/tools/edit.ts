@@ -35,17 +35,17 @@ export type EditOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type NormalizedEdit = {
+interface NormalizedEdit {
   readonly oldText: string;
   readonly newText: string;
-};
+}
 
-type MatchedEdit = {
+interface MatchedEdit {
   readonly editIndex: number;
   readonly matchIndex: number;
   readonly matchLength: number;
   readonly newText: string;
-};
+}
 
 type ReadResult =
   | { readonly ok: true; readonly content: string }
@@ -349,7 +349,7 @@ const normalizeToLf = (value: string): string =>
   value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
 const detectLineEnding = (value: string): string =>
-  value.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+  value.includes('\r\n') ? '\r\n' : '\n';
 
 const restoreLineEndings = (value: string, ending: string): string =>
   ending === '\r\n' ? value.replaceAll('\n', '\r\n') : value;

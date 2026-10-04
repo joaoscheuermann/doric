@@ -98,33 +98,33 @@ creative refinement and the run records that as the trigger.
 
 Required fields:
 
-| Field | Purpose |
-| --- | --- |
-| `parent_candidate_id` | Stable identifier of the TDD being evolved. |
-| `parent_title` | Human-readable parent title. |
-| `parent_path` | Parent artifact path. |
-| `parent_origin` | Architect lens, prior Evolution run, user contribution, or other origin. |
-| `parent_review_evidence` | Reflection evidence attached to the parent. |
-| `trigger` | Why Evolution is running. |
-| `triggering_findings` | Specific findings, warnings, match notes, Dependency Hop notes, or proximity notes to address. |
-| `grounding_snapshot` | Hard constraints and convention parameters active for the run. |
-| `accepted_prd_snapshot` | PRD requirements, non-goals, acceptance criteria, and validation expectations relevant to the repair. |
-| `architecture_context` | Current repository evidence relevant to the repair. |
-| `allowed_change_scope` | Sections, claims, contracts, Dependency Hops, or test strategy items Evolution may modify. |
-| `preserve_requirements` | PRD requirements, prompt constraints, and technical decisions that must remain intact. |
-| `lineage_chain` | Ordered ancestry from original candidate to the parent. |
+| Field                    | Purpose                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `parent_candidate_id`    | Stable identifier of the TDD being evolved.                                                           |
+| `parent_title`           | Human-readable parent title.                                                                          |
+| `parent_path`            | Parent artifact path.                                                                                 |
+| `parent_origin`          | Architect lens, prior Evolution run, user contribution, or other origin.                              |
+| `parent_review_evidence` | Reflection evidence attached to the parent.                                                           |
+| `trigger`                | Why Evolution is running.                                                                             |
+| `triggering_findings`    | Specific findings, warnings, match notes, Dependency Hop notes, or proximity notes to address.        |
+| `grounding_snapshot`     | Hard constraints and convention parameters active for the run.                                        |
+| `accepted_prd_snapshot`  | PRD requirements, non-goals, acceptance criteria, and validation expectations relevant to the repair. |
+| `architecture_context`   | Current repository evidence relevant to the repair.                                                   |
+| `allowed_change_scope`   | Sections, claims, contracts, Dependency Hops, or test strategy items Evolution may modify.            |
+| `preserve_requirements`  | PRD requirements, prompt constraints, and technical decisions that must remain intact.                |
+| `lineage_chain`          | Ordered ancestry from original candidate to the parent.                                               |
 
 Common trigger values:
 
-| Trigger | Meaning |
-| --- | --- |
-| `reflection_needs_evolution` | Reflection found repairable gaps before tournament eligibility. |
-| `tournament_champion_repair` | The tournament found a strong champion with repairable warnings. |
-| `tournament_concept_graft` | A losing reviewed candidate has a useful compatible technical concept. |
-| `proximity_combination` | Proximity found related candidates whose strengths may combine safely. |
-| `dependency_hop_gap` | A Dependency Hop is unverified, impossible, missing evidence, or needs a fallback. |
-| `meta_review_recurring_gap` | Meta-review found a repeated weakness that should be repaired in a child. |
-| `human_directed_refinement` | The user explicitly asked to refine a reviewed candidate. |
+| Trigger                      | Meaning                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| `reflection_needs_evolution` | Reflection found repairable gaps before tournament eligibility.                    |
+| `tournament_champion_repair` | The tournament found a strong champion with repairable warnings.                   |
+| `tournament_concept_graft`   | A losing reviewed candidate has a useful compatible technical concept.             |
+| `proximity_combination`      | Proximity found related candidates whose strengths may combine safely.             |
+| `dependency_hop_gap`         | A Dependency Hop is unverified, impossible, missing evidence, or needs a fallback. |
+| `meta_review_recurring_gap`  | Meta-review found a repeated weakness that should be repaired in a child.          |
+| `human_directed_refinement`  | The user explicitly asked to refine a reviewed candidate.                          |
 
 Evolution may read the parent TDD, parent assumptions, proposed design,
 Dependency Hops, contracts, testing strategy, risks, tradeoffs, review
@@ -139,21 +139,21 @@ The child is a new raw TDD candidate with its own artifact path.
 
 Required fields:
 
-| Field | Purpose |
-| --- | --- |
-| `candidate_id` | Stable identifier for the child. |
-| `title` | Human-readable child title. |
-| `path` | Child artifact path. |
-| `parent_candidate_id` | Direct parent id. |
-| `parent_path` | Direct parent artifact path. |
-| `evolution_trigger` | Trigger copied from the input package. |
-| `evolution_operation` | Operation used to create the child. |
-| `addressed_findings` | Findings the child attempted to repair. |
-| `addressed_dependency_hops` | Dependency Hops the child repaired, removed, replaced, or converted to blocking questions. |
-| `preserved_from_parent` | PRD requirements, scope boundaries, architecture constraints, or technical contracts preserved. |
-| `changed_from_parent` | Sections, claims, contracts, Dependency Hops, or tests changed. |
-| `new_assumptions` | New assumptions introduced, clearly labeled. |
-| `lineage_chain` | Parent lineage plus the child id. |
+| Field                       | Purpose                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `candidate_id`              | Stable identifier for the child.                                                                |
+| `title`                     | Human-readable child title.                                                                     |
+| `path`                      | Child artifact path.                                                                            |
+| `parent_candidate_id`       | Direct parent id.                                                                               |
+| `parent_path`               | Direct parent artifact path.                                                                    |
+| `evolution_trigger`         | Trigger copied from the input package.                                                          |
+| `evolution_operation`       | Operation used to create the child.                                                             |
+| `addressed_findings`        | Findings the child attempted to repair.                                                         |
+| `addressed_dependency_hops` | Dependency Hops the child repaired, removed, replaced, or converted to blocking questions.      |
+| `preserved_from_parent`     | PRD requirements, scope boundaries, architecture constraints, or technical contracts preserved. |
+| `changed_from_parent`       | Sections, claims, contracts, Dependency Hops, or tests changed.                                 |
+| `new_assumptions`           | New assumptions introduced, clearly labeled.                                                    |
+| `lineage_chain`             | Parent lineage plus the child id.                                                               |
 
 The child should be recorded separately from the parent, for example:
 
@@ -192,18 +192,18 @@ The record should include:
 
 ## Operations
 
-| Operation | Use When | Guardrail |
-| --- | --- | --- |
-| Grounding repair | The candidate misses hard constraints, convention parameters, accepted PRD context, or repository grounding. | Do not add new product scope. |
-| Architecture fit repair | The candidate violates package ownership, dependency direction, current boundaries, or repo patterns. | Prefer existing architecture before adding structure. |
-| Dependency Hop repair | A hop is missing evidence, impossible, vague, or lacks a fallback. | Repair the assumption or convert it into a blocking question. |
-| Interface repair | APIs, commands, events, tools, schemas, or UI states are ambiguous or untestable. | Keep interfaces minimal and aligned to current boundaries. |
-| Test strategy repair | The validation path is too broad, missing, flaky, or detached from existing tooling. | Preserve PRD acceptance criteria while making proof practical. |
-| Security and operations repair | The candidate under-specifies trust boundaries, secrets, permissions, command execution, network access, failure, or observability. | Do not weaken safety or permission boundaries. |
-| Concept grafting | A reviewed losing candidate contains one compatible technical idea that improves the parent. | Import only the compatible concept, not unresolved blockers. |
-| Candidate combination | Reviewed candidates have complementary strengths and compatibility evidence. | Do not create a bloated union of every idea. |
-| Simplification | The parent is too broad, costly, risky, or difficult to verify. | Preserve accepted PRD requirements. |
-| Divergent child | Candidates are stuck, overfit, too similar, or repeatedly fail the same review. | Stay within accepted PRD intent and run full Reflection. |
+| Operation                      | Use When                                                                                                                            | Guardrail                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Grounding repair               | The candidate misses hard constraints, convention parameters, accepted PRD context, or repository grounding.                        | Do not add new product scope.                                  |
+| Architecture fit repair        | The candidate violates package ownership, dependency direction, current boundaries, or repo patterns.                               | Prefer existing architecture before adding structure.          |
+| Dependency Hop repair          | A hop is missing evidence, impossible, vague, or lacks a fallback.                                                                  | Repair the assumption or convert it into a blocking question.  |
+| Interface repair               | APIs, commands, events, tools, schemas, or UI states are ambiguous or untestable.                                                   | Keep interfaces minimal and aligned to current boundaries.     |
+| Test strategy repair           | The validation path is too broad, missing, flaky, or detached from existing tooling.                                                | Preserve PRD acceptance criteria while making proof practical. |
+| Security and operations repair | The candidate under-specifies trust boundaries, secrets, permissions, command execution, network access, failure, or observability. | Do not weaken safety or permission boundaries.                 |
+| Concept grafting               | A reviewed losing candidate contains one compatible technical idea that improves the parent.                                        | Import only the compatible concept, not unresolved blockers.   |
+| Candidate combination          | Reviewed candidates have complementary strengths and compatibility evidence.                                                        | Do not create a bloated union of every idea.                   |
+| Simplification                 | The parent is too broad, costly, risky, or difficult to verify.                                                                     | Preserve accepted PRD requirements.                            |
+| Divergent child                | Candidates are stuck, overfit, too similar, or repeatedly fail the same review.                                                     | Stay within accepted PRD intent and run full Reflection.       |
 
 Grounding repair usually adds missing constraints, makes conventions explicit,
 removes unsupported claims, or explains justified deviations.
@@ -381,13 +381,13 @@ Evolution may proceed when:
 
 Recommended defaults:
 
-| Rule | Default |
-| --- | --- |
-| Attempts per Reflection cycle | 1 |
-| Attempts after champion repair | 1 |
-| Full cycles before asking user | 2 |
-| Divergent children per stuck loop | 1 |
-| Combination parents | 2 unless explicitly configured |
+| Rule                              | Default                        |
+| --------------------------------- | ------------------------------ |
+| Attempts per Reflection cycle     | 1                              |
+| Attempts after champion repair    | 1                              |
+| Full cycles before asking user    | 2                              |
+| Divergent children per stuck loop | 1                              |
+| Combination parents               | 2 unless explicitly configured |
 
 Stop when:
 
@@ -408,11 +408,11 @@ promoted to `<run>/tdd/TDD.md`, and decomposition still requires
 
 A minimal implementation persists:
 
-| Artifact | Purpose |
-| --- | --- |
-| `<run>/tdd/logs/evolution.md` | Child candidate entries, evolution records, lineage, blockers, and champion summaries. |
-| `<run>/tdd/TDD.md` | Current champion after accepted promotion. |
-| `<run>/tdd/GAPS.md` | Active blocking technical gap that a Challenger must resolve. |
+| Artifact                        | Purpose                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `<run>/tdd/logs/evolution.md`   | Child candidate entries, evolution records, lineage, blockers, and champion summaries.                                   |
+| `<run>/tdd/TDD.md`              | Current champion after accepted promotion.                                                                               |
+| `<run>/tdd/GAPS.md`             | Active blocking technical gap that a Challenger must resolve.                                                            |
 | `<run>/STATE.md` Agent receipts | Harness-generated audit projection of spawn proof and acceptance status for Evolution, mutation, and championship roles. |
 
 Each child should be discoverable from parent id, parent path, child id, child
@@ -426,18 +426,18 @@ decides whether the child is eligible.
 
 ## Failure Modes
 
-| Failure mode | Risk | Mitigation |
-| --- | --- | --- |
-| Evolution edits the parent in place | Review and tournament evidence becomes unrecoverable. | Always write a child candidate with a distinct path. |
-| Evolution invents missing product intent | The workflow silently chooses for the user. | Route scope-defining gaps to the user or PRD repair. |
-| Evolution invents current architecture facts | The TDD becomes unimplementable or unsafe. | Require repository evidence for current-code claims. |
-| Evolution bypasses Reflection | Repaired drafts enter ranking without review. | Treat every child as raw until Reflection approves it. |
-| Combination bloats the TDD | The child accumulates every idea from every parent. | Combine only compatible strengths tied to findings. |
-| Simplification removes required scope | The child becomes easy but wrong. | Preserve accepted PRD requirements unless the user changes them. |
-| Grounding repair adds unsupported constraints | Assumptions are treated as authoritative. | Distinguish hard constraints from conventions and assumptions. |
-| Dependency Hop repair hides a blocker | A false assumption reaches decomposition. | Convert unsupported hops into explicit blockers or fallbacks. |
-| Divergent Evolution becomes new Generation | Repair restarts exploration without bounds. | Use divergent children only for repeated failures and run full Reflection. |
-| Lineage is incomplete | Humans and agents cannot reconstruct why the child exists. | Require parent id, parent path, trigger, findings, changed sections, and affected hops. |
+| Failure mode                                  | Risk                                                       | Mitigation                                                                              |
+| --------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Evolution edits the parent in place           | Review and tournament evidence becomes unrecoverable.      | Always write a child candidate with a distinct path.                                    |
+| Evolution invents missing product intent      | The workflow silently chooses for the user.                | Route scope-defining gaps to the user or PRD repair.                                    |
+| Evolution invents current architecture facts  | The TDD becomes unimplementable or unsafe.                 | Require repository evidence for current-code claims.                                    |
+| Evolution bypasses Reflection                 | Repaired drafts enter ranking without review.              | Treat every child as raw until Reflection approves it.                                  |
+| Combination bloats the TDD                    | The child accumulates every idea from every parent.        | Combine only compatible strengths tied to findings.                                     |
+| Simplification removes required scope         | The child becomes easy but wrong.                          | Preserve accepted PRD requirements unless the user changes them.                        |
+| Grounding repair adds unsupported constraints | Assumptions are treated as authoritative.                  | Distinguish hard constraints from conventions and assumptions.                          |
+| Dependency Hop repair hides a blocker         | A false assumption reaches decomposition.                  | Convert unsupported hops into explicit blockers or fallbacks.                           |
+| Divergent Evolution becomes new Generation    | Repair restarts exploration without bounds.                | Use divergent children only for repeated failures and run full Reflection.              |
+| Lineage is incomplete                         | Humans and agents cannot reconstruct why the child exists. | Require parent id, parent path, trigger, findings, changed sections, and affected hops. |
 
 ## Minimal Implementation
 

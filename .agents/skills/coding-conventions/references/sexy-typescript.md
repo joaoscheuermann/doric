@@ -5,6 +5,7 @@ Use these rules when writing or refactoring TypeScript. The outcome is code that
 This is the TypeScript-specific implementation polish layer for the coding-conventions skill. Do not apply TypeScript-only mechanics mechanically to Rust, Python, or other languages. For mixed-language work, preserve the invariant intent and express it in the target language's idioms.
 
 ## Success criteria
+
 - Core domain logic is written as a functional core with imperative boundaries.
 - Functions prefer inputs in, values out, and no hidden mutation, I/O, time, random, process, network, or filesystem dependencies.
 - Values are immutable by default with `const`, readonly types, and structural sharing where practical.
@@ -15,11 +16,13 @@ This is the TypeScript-specific implementation polish layer for the coding-conve
 - Imperative code is used deliberately when it is clearer, faster, easier to debug, or required by an API.
 
 ## Retrieval & stop rules
+
 This reference is self-contained. Stop reading once these success criteria and decision rules are enough to make the TypeScript code idiomatic for the current task. Look elsewhere only when project-specific APIs, framework behavior, or existing patterns would materially affect the implementation.
 
 ## Decision rules
 
 ### Prefer functional programming over imperative programming
+
 Prefer functional programming over imperative programming for TypeScript domain logic.
 
 Write code as small pure functions that transform input values into output values. Push mutation, I/O, logging, caching, timers, randomness, process state, filesystem access, network access, and framework side effects to the edges of the module or package.
@@ -52,7 +55,7 @@ Prefer expression-oriented transforms over stepwise mutation when the expression
 
 ```ts
 const activeUserIds = users
-  .filter((user) => user.status === "active")
+  .filter((user) => user.status === 'active')
   .map((user) => user.id);
 ```
 
@@ -73,6 +76,7 @@ const firstInvalid = (items: readonly Item[]): Item | undefined => {
 Do not optimize for code that only looks functional. Avoid dense chains, clever `reduce` calls, point-free style, unnecessary currying, and abstraction-heavy helper layers when named intermediate values or a plain function would be clearer.
 
 ### Sexy Packages
+
 When working in an Nx TypeScript package, keep `src/lib/` organized by concern so the main implementation file does not become a dumping ground.
 
 Use `src/lib/classes/` for classes that are required by runtime contracts, such as `Error` subclasses, framework base-class adapters, stream subclasses, or other APIs where subclassing is the behavior. Do not introduce classes only to satisfy the folder structure.
@@ -100,6 +104,7 @@ packages/<name>/
 The goal is separation of concerns: type contracts live in `types/`, necessary class adapters live in `classes/`, supporting helpers live in `utils/`, and behavior remains in cohesive implementation modules.
 
 ### Avoid classes unless subclassing is required
+
 Do not introduce classes for domain modeling, service objects, dependency containers, namespaces, state bags, or ordinary polymorphism. Prefer plain objects, functions, closures, interfaces, discriminated unions, and explicit dependency parameters.
 
 Classes are permitted only when extending an existing class-based runtime or library contract is the behavior that makes the code work. Valid examples include extending `Error` to preserve JavaScript error semantics, extending Node.js stream classes such as `Readable`, `Writable`, or `Transform`, or extending a framework base class when the framework requires subclassing for lifecycle behavior.
@@ -113,14 +118,14 @@ type ParseIssue = {
 };
 
 const formatParseMessage = (issues: readonly ParseIssue[]): string =>
-  issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ");
+  issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
 
 export class ParseError extends Error {
   readonly issues: readonly ParseIssue[];
 
   constructor(issues: readonly ParseIssue[]) {
     super(formatParseMessage(issues));
-    this.name = "ParseError";
+    this.name = 'ParseError';
     this.issues = issues;
   }
 }

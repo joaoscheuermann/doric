@@ -76,7 +76,7 @@ void test('multiplexes status and workspace namespaces over one Engine.IO connec
   assert.equal(host.engineConnections(), 1);
 });
 
-test('replays ordered durable history then delivers project-scoped live events', async (t) => {
+void test('replays ordered durable history then delivers project-scoped live events', async (t) => {
   const host = await serve();
   t.after(host.close);
   const socket = host.connect('/threads', { threadId });
@@ -113,7 +113,7 @@ void test('emits the fixed thread snapshot payload on subscription', async (t) =
   ]);
 });
 
-test('deduplicates exclusive replay and buffers out-of-order live publications', async (t) => {
+void test('deduplicates exclusive replay and buffers out-of-order live publications', async (t) => {
   const gate = deferred<readonly ThreadEvent[]>();
   const host = await serve({ eventsAfter: () => gate.promise });
   t.after(host.close);
@@ -139,7 +139,7 @@ test('deduplicates exclusive replay and buffers out-of-order live publications',
   assert.deepEqual(received, [4, 5]);
 });
 
-test('buffers thread lifecycle notifications until replay is visible', async (t) => {
+void test('buffers thread lifecycle notifications until replay is visible', async (t) => {
   const gate = deferred<readonly ThreadEvent[]>();
   const host = await serve({ eventsAfter: () => gate.promise });
   t.after(host.close);
@@ -147,7 +147,7 @@ test('buffers thread lifecycle notifications until replay is visible', async (t)
   t.after(() => socket.close());
   await next(socket, 'connect');
   const order: string[] = [];
-  socket.onAny((name) => order.push(name));
+  socket.onAny((name: string) => order.push(name));
   const deleted = next(socket, 'thread:deleted');
   host.publisher.threadUpdated({ ...thread, state: 'cancelled' });
   host.publisher.threadDeleted(projectId, threadId);
@@ -160,7 +160,7 @@ test('buffers thread lifecycle notifications until replay is visible', async (t)
   ]);
 });
 
-test('snapshots the complete project tree and buffers its updates', async (t) => {
+void test('snapshots the complete project tree and buffers its updates', async (t) => {
   const gate = deferred<readonly Thread[]>();
   const host = await serve({ listByProject: () => gate.promise });
   t.after(host.close);
@@ -169,7 +169,7 @@ test('snapshots the complete project tree and buffers its updates', async (t) =>
   await next(socket, 'connect');
   const child = { ...thread, id: promptId, parentThreadId: threadId };
   const order: string[] = [];
-  socket.onAny((name) => order.push(name));
+  socket.onAny((name: string) => order.push(name));
   const snapshot = next<{ threads: Thread[]; project: Project }>(
     socket,
     'project:snapshot',
@@ -189,7 +189,7 @@ test('snapshots the complete project tree and buffers its updates', async (t) =>
   ]);
 });
 
-test('resnapshots a disconnected client without leaking its buffered notifications', async (t) => {
+void test('resnapshots a disconnected client without leaking its buffered notifications', async (t) => {
   const gate = deferred<readonly ThreadEvent[]>();
   const started = deferred<void>();
   const settled = deferred<void>();
@@ -208,7 +208,7 @@ test('resnapshots a disconnected client without leaking its buffered notificatio
   await next(socket, 'connect');
   await started.promise;
   const stale: string[] = [];
-  socket.onAny((name) => stale.push(name));
+  socket.onAny((name: string) => stale.push(name));
   host.publisher.threadUpdated({ ...thread, state: 'cancelled' });
   host.publisher.event(event(2));
   const disconnected = new Promise<void>((resolve) =>
@@ -225,7 +225,7 @@ test('resnapshots a disconnected client without leaking its buffered notificatio
   const reconnected = host.connect('/threads', { threadId, afterSequence: 1 });
   t.after(() => reconnected.close());
   const deliveries: string[] = [];
-  reconnected.onAny((name, value) =>
+  reconnected.onAny((name: string, value: ThreadEvent) =>
     deliveries.push(name === 'agent:event' ? `event:${value.sequence}` : name),
   );
   const snapshot = await next<{ events: ThreadEvent[] }>(
@@ -249,7 +249,7 @@ test('resnapshots a disconnected client without leaking its buffered notificatio
   assert.deepEqual(stale, []);
 });
 
-test('sanitizes failed replay and disconnects instead of leaving a partial subscription', async (t) => {
+void test('sanitizes failed replay and disconnects instead of leaving a partial subscription', async (t) => {
   const host = await serve({
     eventsAfter: async () => {
       throw new Error('secret');
@@ -272,7 +272,7 @@ test('sanitizes failed replay and disconnects instead of leaving a partial subsc
   assert.equal(socket.connected, false);
 });
 
-test('handles a durable replay rejection after the subscriber disconnects', async (t) => {
+void test('handles a durable replay rejection after the subscriber disconnects', async (t) => {
   const gate = deferred<readonly ThreadEvent[]>();
   let replay = 0;
   const host = await serve({
@@ -295,7 +295,7 @@ test('handles a durable replay rejection after the subscriber disconnects', asyn
   assert.equal(snapshot.thread.id, threadId);
 });
 
-test('rejects invalid auth and does not expose the removed namespace', async (t) => {
+void test('rejects invalid auth and does not expose the removed namespace', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const [namespace, auth] of [
@@ -330,7 +330,7 @@ void test('rejects legacy query-only workspace subscriptions', async (t) => {
   }
 });
 
-test('routes live notifications only to the subscribed Thread and Project', async (t) => {
+void test('routes live notifications only to the subscribed Thread and Project', async (t) => {
   const host = await serve({
     find: async (id) => ({
       thread: { ...thread, id },
@@ -467,7 +467,7 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
         reconnection: false,
         auth,
       }),
-    close: () => new Promise<void>((resolve) => io.close(() => resolve())),
+    close: () => io.close(),
   };
 };
 const deferred = <T>() => {

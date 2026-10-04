@@ -2,7 +2,9 @@ export type JsonlPrimitive = string | number | boolean | null;
 
 export type JsonlArray = readonly JsonlValue[];
 
-export type JsonlObject = { readonly [key: string]: JsonlValue };
+export interface JsonlObject {
+  readonly [key: string]: JsonlValue;
+}
 
 export type JsonlValue = JsonlPrimitive | JsonlArray | JsonlObject;
 

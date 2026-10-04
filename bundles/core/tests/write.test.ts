@@ -10,8 +10,8 @@ import type { SandboxSession } from 'sandbox';
 import factory from '../tools/write.js';
 import { fakeHost } from './fake-sandbox.js';
 
-describe('write tool', () => {
-  test('creates parent directories and returns byte count with diff', async () => {
+void describe('write tool', () => {
+  void test('creates parent directories and returns byte count with diff', async () => {
     const sandbox = await fakeSandbox('write');
 
     const result = await factory(
@@ -40,7 +40,7 @@ describe('write tool', () => {
     await sandbox.dispose();
   });
 
-  test('resolves relative paths against the working directory the thread holds', async () => {
+  void test('resolves relative paths against the working directory the thread holds', async () => {
     const sandbox = await fakeSandbox('write-cwd');
     const host = fakeHost({ cwd: '/workspace/repo' });
     const tool = factory(sandbox, host);
@@ -67,7 +67,7 @@ describe('write tool', () => {
     await sandbox.dispose();
   });
 
-  test('rejects empty paths with structured error output', async () => {
+  void test('rejects empty paths with structured error output', async () => {
     const sandbox = await fakeSandbox('write-empty');
 
     const result = await factory(

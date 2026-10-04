@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
+
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+
 import { PrismaClient } from '../../src/generated/prisma/client.js';
 
 export const migrationDirectory = 'agents/doric/prisma/migrations';
@@ -26,11 +28,11 @@ export function cleanupStack() {
   };
 }
 
-type Connection = {
+interface Connection {
   connect(): Promise<unknown>;
   query(sql: string): Promise<unknown>;
   end(): Promise<unknown>;
-};
+}
 const defaults = {
   connect: (connectionString: string): Connection =>
     new pg.Client({ connectionString, connectionTimeoutMillis: 5000 }),
@@ -79,7 +81,7 @@ export async function persistenceFixture(
       database: client(),
       second: client(),
       migrate: (migration: string) => sql.query(migration),
-      close: cleanup.close,
+      close: () => cleanup.close(),
     };
   } catch (error) {
     try {
@@ -88,6 +90,7 @@ export async function persistenceFixture(
       throw new AggregateError(
         [error, cleanupError],
         'Fixture setup and cleanup failed',
+        { cause: cleanupError },
       );
     }
     throw error;

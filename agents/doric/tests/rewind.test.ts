@@ -88,7 +88,7 @@ const conversation = async () => {
   };
 };
 
-test('rewinds an earlier prompt onto the history that preceded it', async () => {
+void test('rewinds an earlier prompt onto the history that preceded it', async () => {
   const { service, harness, thread, published, gate, run, events, record } =
     await conversation();
   const first = await run('first');
@@ -168,7 +168,7 @@ test('rewinds an earlier prompt onto the history that preceded it', async () => 
   await service.dispose();
 });
 
-test('truncates to empty history when the first turn is edited', async () => {
+void test('truncates to empty history when the first turn is edited', async () => {
   const { service, harness, thread, gate, run, events, record } =
     await conversation();
   const first = await run('first');
@@ -203,7 +203,7 @@ test('truncates to empty history when the first turn is edited', async () => {
   await service.dispose();
 });
 
-test('refuses to rewind while the Thread is running', async () => {
+void test('refuses to rewind while the Thread is running', async () => {
   const { service, harness, thread, gate, submit, events, record } =
     await conversation();
   const running = gate('first');
@@ -231,7 +231,7 @@ test('refuses to rewind while the Thread is running', async () => {
   await service.dispose();
 });
 
-test('refuses to rewind while inputs are queued and preserves their order', async () => {
+void test('refuses to rewind while inputs are queued and preserves their order', async () => {
   const { service, harness, thread, gate, submit, events, record } =
     await conversation();
   const first = gate('first');
@@ -271,7 +271,7 @@ test('refuses to rewind while inputs are queued and preserves their order', asyn
   await service.dispose();
 });
 
-test('rejects a prompt that belongs to another Thread', async () => {
+void test('rejects a prompt that belongs to another Thread', async () => {
   const { service, harness, thread, gate, submit, run, events, record } =
     await conversation();
   const other = await createThread(service, thread.projectId);

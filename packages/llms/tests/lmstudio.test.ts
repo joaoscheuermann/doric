@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+interface RequestBody extends Record<string, unknown> {
+  system_prompt: string;
+}
+
 import { z } from 'zod';
 
 import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
@@ -27,7 +31,7 @@ const assertSchemaInstruction = (prompt: string): void => {
   assert.match(prompt, /"answer"/u);
 };
 
-test('sends LM Studio chat requests to the default native endpoint without auth', async () => {
+void test('sends LM Studio chat requests to the default native endpoint without auth', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -59,7 +63,7 @@ test('sends LM Studio chat requests to the default native endpoint without auth'
       serviceTier: 'priority',
     },
   });
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal(provider.metadata.id, 'lmstudio');
 
@@ -106,7 +110,7 @@ test('sends LM Studio chat requests to the default native endpoint without auth'
   assert.deepEqual(result.toolCalls, []);
 });
 
-test('adds one structured schema instruction after authored native system messages', async () => {
+void test('adds one structured schema instruction after authored native system messages', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -129,7 +133,7 @@ test('adds one structured schema instruction after authored native system messag
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   } as const;
   const result = await provider.complete(request);
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.ok(
     body.system_prompt.startsWith('First policy.\n\nSecond policy.\n\n'),
@@ -148,7 +152,7 @@ test('adds one structured schema instruction after authored native system messag
   assert.equal(request.messages, messages);
 });
 
-test('uses the same structured schema instruction for native streams', async () => {
+void test('uses the same structured schema instruction for native streams', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -171,14 +175,14 @@ test('uses the same structured schema instruction for native streams', async () 
     }),
   );
 
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assertSchemaInstruction(body.system_prompt);
 
   assert.equal(body.input, 'Answer.');
 });
 
-test('does not add schema instructions unless both the flag and schema are present', async () => {
+void test('does not add schema instructions unless both the flag and schema are present', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -209,13 +213,14 @@ test('does not add schema instructions unless both the flag and schema are prese
 
   assert.deepEqual(
     transport.requests.map(
-      (request) => JSON.parse(request.body ?? '{}').system_prompt,
+      (request) =>
+        (JSON.parse(request.body ?? '{}') as RequestBody).system_prompt,
     ),
     ['Policy.', 'Policy.'],
   );
 });
 
-test('normalizes top-level LM Studio reasoning effort values for native requests', async () => {
+void test('normalizes top-level LM Studio reasoning effort values for native requests', async () => {
   const transport = fakeTransport({
     responses: [
       response({ output: [{ type: 'message', content: 'ok' }] }),
@@ -245,13 +250,13 @@ test('normalizes top-level LM Studio reasoning effort values for native requests
 
   assert.deepEqual(
     transport.requests.map(
-      (request) => JSON.parse(request.body ?? '{}').reasoning,
+      (request) => (JSON.parse(request.body ?? '{}') as RequestBody).reasoning,
     ),
     ['off', 'low', 'high'],
   );
 });
 
-test('maps LM Studio authorization modes', async () => {
+void test('maps LM Studio authorization modes', async () => {
   const blank = fakeTransport({
     responses: [response({ output: [{ type: 'message', content: 'ok' }] })],
   });
@@ -299,7 +304,7 @@ test('maps LM Studio authorization modes', async () => {
   );
 });
 
-test('rejects ambiguous LM Studio authorization', async () => {
+void test('rejects ambiguous LM Studio authorization', async () => {
   const provider = createLmStudioProvider({
     transport: fakeTransport({}),
     apiKey: 'local-key',
@@ -318,7 +323,7 @@ test('rejects ambiguous LM Studio authorization', async () => {
   );
 });
 
-test('maps LM Studio named stream events to provider events', async () => {
+void test('maps LM Studio named stream events to provider events', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -347,7 +352,7 @@ test('maps LM Studio named stream events to provider events', async () => {
       messages: [{ role: 'user', content: 'Hi' }],
     }),
   );
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
   const finished = events.at(-1);
 
   assert.equal(transport.requests[0]?.url, 'http://localhost:1234/api/v1/chat');
@@ -402,7 +407,7 @@ test('maps LM Studio named stream events to provider events', async () => {
   });
 });
 
-test('emits no LM Studio delta for an event whose content is empty', async () => {
+void test('emits no LM Studio delta for an event whose content is empty', async () => {
   const provider = createLmStudioProvider({
     transport: fakeTransport({
       streams: [
@@ -442,7 +447,7 @@ test('emits no LM Studio delta for an event whose content is empty', async () =>
   );
 });
 
-test('continues LM Studio streams after provider error events', async () => {
+void test('continues LM Studio streams after provider error events', async () => {
   const provider = createLmStudioProvider({
     transport: fakeTransport({
       streams: [
@@ -503,7 +508,7 @@ test('continues LM Studio streams after provider error events', async () => {
   });
 });
 
-test('maps LM Studio model identity and validation errors', async () => {
+void test('maps LM Studio model identity and validation errors', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -566,7 +571,7 @@ test('maps LM Studio model identity and validation errors', async () => {
   );
 });
 
-test('sends LM Studio model requests with API key auth', async () => {
+void test('sends LM Studio model requests with API key auth', async () => {
   const transport = fakeTransport({
     responses: [response({ models: [{ key: 'local-model', type: 'llm' }] })],
   });

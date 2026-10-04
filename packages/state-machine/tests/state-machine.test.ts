@@ -8,19 +8,19 @@ import {
   type StateMachineHandler,
 } from '../src/index.js';
 
-type Context = {
+interface Context {
   readonly runId: string;
-};
+}
 
-type State = {
+interface State extends Record<string, unknown> {
   count: number;
-};
+}
 
-type DomainFailure = {
+interface DomainFailure {
   readonly code: 'cancelled';
-};
+}
 
-test('infers available handlers from the initialized object', () => {
+void test('infers available handlers from the initialized object', () => {
   const definition = createStateMachine<
     Context,
     State,
@@ -76,7 +76,7 @@ test('infers available handlers from the initialized object', () => {
   assert.equal(typeof assertTypes, 'function');
 });
 
-test('copies the explicitly supplied state before calling the next handler', async () => {
+void test('copies the explicitly supplied state before calling the next handler', async () => {
   const received: State[] = [];
   const supplied: State[] = [];
 
@@ -138,7 +138,7 @@ test('copies the explicitly supplied state before calling the next handler', asy
   });
 });
 
-test('returns the exact domain failure and current state', async () => {
+void test('returns the exact domain failure and current state', async () => {
   const failure: DomainFailure = { code: 'cancelled' };
 
   const definition = createStateMachine<
@@ -174,11 +174,13 @@ test('returns the exact domain failure and current state', async () => {
   }
 });
 
-test('preserves a thrown handler value as the engine error cause', async () => {
+void test('preserves a thrown handler value as the engine error cause', async () => {
   const thrown = { reason: 'boom' };
 
   const definition = createStateMachine<Context, State>()({
     start: () => {
+      // Deliberately exercise a handler that throws a non-Error value.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw thrown;
     },
   });
@@ -202,11 +204,11 @@ test('preserves a thrown handler value as the engine error cause', async () => {
   }
 });
 
-test('reuses one definition for independent concurrent runs', async () => {
-  type ConcurrentState = {
+void test('reuses one definition for independent concurrent runs', async () => {
+  interface ConcurrentState extends Record<string, unknown> {
     value: string;
     gate: Promise<void>;
-  };
+  }
 
   const definition = createStateMachine<Context, ConcurrentState, string>()({
     start: async (state, context, { finish }) => {
@@ -258,7 +260,7 @@ test('reuses one definition for independent concurrent runs', async () => {
   );
 });
 
-test('returns an engine error when a handler returns an invalid action', async () => {
+void test('returns an engine error when a handler returns an invalid action', async () => {
   const definition = createStateMachine<Context, State>()({
     start: (() => undefined) as unknown as StateMachineHandler<
       Context,
@@ -282,7 +284,7 @@ test('returns an engine error when a handler returns an invalid action', async (
   }
 });
 
-test('defensively returns an engine error when a handler is missing', async () => {
+void test('defensively returns an engine error when a handler is missing', async () => {
   const handlers = {} as Record<
     'start',
     StateMachineHandler<Context, State, 'start'>

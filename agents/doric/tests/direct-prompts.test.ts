@@ -38,11 +38,11 @@ const skill = (name: string, body: string): Skill => ({
   indexText: `${name} ${body}`,
 });
 
-test('states the per-thread working directory in the base Direct prompt', () => {
+void test('states the per-thread working directory in the base Direct prompt', () => {
   assert.match(directSystemPrompt([]), workingDirectoryInstruction);
 });
 
-test('keeps the working-directory instruction in the assembled Direct prompt', () => {
+void test('keeps the working-directory instruction in the assembled Direct prompt', () => {
   const prompt = directSystemPrompt([
     skill('sandbox', 'Inspect before reporting.'),
   ]);
@@ -51,7 +51,7 @@ test('keeps the working-directory instruction in the assembled Direct prompt', (
   assert.ok(prompt.includes('Inspect before reporting.'));
 });
 
-test('moves each git skill into the working directory with the cwd tool', async () => {
+void test('moves each git skill into the working directory with the cwd tool', async () => {
   const cloning = await readSkill('bundles/git/skills/git-cloning/SKILL.md');
   const worktrees = await readSkill(
     'bundles/git/skills/git-worktrees/SKILL.md',

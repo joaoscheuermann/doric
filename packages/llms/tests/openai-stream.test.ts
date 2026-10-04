@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { type ProviderStreamEvent } from '../src/index.js';
 import { collect, createOpenAiProvider, fakeTransport } from './fakes.js';
 
-test('streams OpenAI requests without an authorization header when credentials are omitted', async () => {
+void test('streams OpenAI requests without an authorization header when credentials are omitted', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -42,7 +42,7 @@ test('streams OpenAI requests without an authorization header when credentials a
   );
 });
 
-test('streams OpenAI text reasoning usage finish and tool calls', async () => {
+void test('streams OpenAI text reasoning usage finish and tool calls', async () => {
   const stream = [
     sse({ type: 'response.output_text.delta', delta: 'Hel' }),
     sse({ type: 'response.output_text.delta', delta: 'lo' }),
@@ -140,7 +140,7 @@ test('streams OpenAI text reasoning usage finish and tool calls', async () => {
   ]);
 });
 
-test('keeps streamed OpenAI tool calls from completed responses without output', async () => {
+void test('keeps streamed OpenAI tool calls from completed responses without output', async () => {
   const stream = [
     sse({
       type: 'response.function_call_arguments.delta',
@@ -198,7 +198,7 @@ test('keeps streamed OpenAI tool calls from completed responses without output',
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('returns stream error event for malformed OpenAI stream payloads', async () => {
+void test('returns stream error event for malformed OpenAI stream payloads', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({ streams: [['data: not-json\n\n']] }),
     apiKey: 'sk-testSecret123',
@@ -214,7 +214,7 @@ test('returns stream error event for malformed OpenAI stream payloads', async ()
   assert.equal(events.at(-1)?.type, 'error');
 });
 
-test('emits no OpenAI delta for a chunk whose delta is empty', async () => {
+void test('emits no OpenAI delta for a chunk whose delta is empty', async () => {
   const stream = [
     sse({ type: 'response.output_text.delta', delta: '' }),
     sse({ type: 'response.output_text.delta', delta: 'Hi' }),

@@ -42,7 +42,7 @@ const deferred = (): {
   return { promise, resolve };
 };
 
-test('finds all nested files before processing them', async (context) => {
+void test('finds all nested files before processing them', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all([
@@ -73,7 +73,7 @@ test('finds all nested files before processing them', async (context) => {
   ]);
 });
 
-test('runs one concurrent batch at a time up to batchSize', async (context) => {
+void test('runs one concurrent batch at a time up to batchSize', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all(
@@ -81,7 +81,7 @@ test('runs one concurrent batch at a time up to batchSize', async (context) => {
   );
 
   const started: string[] = [];
-  const releases: Array<() => void> = [];
+  const releases: (() => void)[] = [];
   const reached = [deferred(), deferred(), deferred()];
   let active = 0;
   let maximum = 0;
@@ -163,7 +163,7 @@ test('runs one concurrent batch at a time up to batchSize', async (context) => {
   ]);
 });
 
-test('does not process files created after discovery', async (context) => {
+void test('does not process files created after discovery', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all([write(root, 'a.txt'), write(root, 'b.txt')]);
@@ -190,7 +190,7 @@ test('does not process files created after discovery', async (context) => {
   );
 });
 
-test('honors scoped gitignore rules and all-depth explicit excludes', async (context) => {
+void test('honors scoped gitignore rules and all-depth explicit excludes', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all([
@@ -224,7 +224,7 @@ test('honors scoped gitignore rules and all-depth explicit excludes', async (con
   assert.deepEqual([...seen].sort(), ['src/keep.log', 'src/kept.ts']);
 });
 
-test('does not read symlinked files or symlinked gitignore rules', async (context) => {
+void test('does not read symlinked files or symlinked gitignore rules', async (context) => {
   const root = await tempRoot(context);
   const outside = await tempRoot(context);
 
@@ -253,7 +253,7 @@ test('does not read symlinked files or symlinked gitignore rules', async (contex
   assert.deepEqual(seen, ['visible.txt:visible']);
 });
 
-test('rejects a non-positive or fractional batchSize', async (context) => {
+void test('rejects a non-positive or fractional batchSize', async (context) => {
   const root = await tempRoot(context);
 
   await assert.rejects(

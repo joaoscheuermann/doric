@@ -4,7 +4,7 @@ import test from 'node:test';
 import { diagnosticExcerpt, parseSseEvents } from '../src/index.js';
 import { collect } from './fakes.js';
 
-test('bounds diagnostic excerpts without changing their content', () => {
+void test('bounds diagnostic excerpts without changing their content', () => {
   const content = 'provider output';
 
   assert.equal(diagnosticExcerpt(content, content.length), content);
@@ -15,7 +15,7 @@ test('bounds diagnostic excerpts without changing their content', () => {
   );
 });
 
-test('parses SSE comments chunk boundaries multi-line data and done markers', async () => {
+void test('parses SSE comments chunk boundaries multi-line data and done markers', async () => {
   const events = await collect(
     parseSseEvents(
       (async function* () {

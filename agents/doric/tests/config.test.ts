@@ -63,11 +63,11 @@ const withProvider = (
   },
 });
 
-test('accepts the complete default configuration', () => {
+void test('accepts the complete default configuration', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
 
-test('carries each provider kind with the values that kind declares', () => {
+void test('carries each provider kind with the values that kind declares', () => {
   // Every kind the catalog declares is a kind a stored configuration can name.
   assert.deepEqual(
     providerKinds.map(({ id }) => id).sort(),
@@ -121,13 +121,13 @@ const valueFor = (field: ProviderKind['fields'][number]): string => {
   }
 };
 
-test('rejects a provider kind the catalog does not know', () => {
+void test('rejects a provider kind the catalog does not know', () => {
   const invalid = withProvider({ ...providerOf(), kind: 'anthropic' });
 
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects a value the kind does not declare, including a credential of its own', () => {
+void test('rejects a value the kind does not declare, including a credential of its own', () => {
   const invalid = withProvider({
     ...providerOf(),
     configuration: { ...providerOf().configuration, apiKey: 'private' },
@@ -136,7 +136,7 @@ test('rejects a value the kind does not declare, including a credential of its o
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects a provider that omits a value its kind requires', () => {
+void test('rejects a provider that omits a value its kind requires', () => {
   // OpenRouter authenticates with a stored token, and a provider without one
   // cannot be built.
   const invalid = withProvider({
@@ -149,7 +149,7 @@ test('rejects a provider that omits a value its kind requires', () => {
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects an optional value that is set to nothing', () => {
+void test('rejects an optional value that is set to nothing', () => {
   // Absence is how an optional field is unset; an empty string is a value the
   // provider cannot use and the settings surface must not send.
   const invalid = withProvider({
@@ -162,7 +162,7 @@ test('rejects an optional value that is set to nothing', () => {
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects a provider credential reference that is not a UUID', () => {
+void test('rejects a provider credential reference that is not a UUID', () => {
   const invalid = withProvider({
     ...providerOf(),
     configuration: {
@@ -174,7 +174,7 @@ test('rejects a provider credential reference that is not a UUID', () => {
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects provider URLs outside HTTP and HTTPS', () => {
+void test('rejects provider URLs outside HTTP and HTTPS', () => {
   const invalid = withProvider({
     ...providerOf(),
     configuration: {
@@ -186,7 +186,7 @@ test('rejects provider URLs outside HTTP and HTTPS', () => {
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects a number value that is not a number and an enum value outside its options', () => {
+void test('rejects a number value that is not a number and an enum value outside its options', () => {
   const unified = {
     id: 'unified',
     kind: 'unified',
@@ -233,7 +233,7 @@ test('rejects a number value that is not a number and an enum value outside its 
   );
 });
 
-test('rejects a list the kind does not keep, and a kind that omits one it does', () => {
+void test('rejects a list the kind does not keep, and a kind that omits one it does', () => {
   // Codex keeps no model list, and the OpenAI-compatible kind keeps one.
   assert.equal(
     ConfigInputSchema.safeParse(
@@ -275,7 +275,7 @@ test('rejects a list the kind does not keep, and a kind that omits one it does',
   );
 });
 
-test('accepts a model list a kind keeps while it holds nothing yet', () => {
+void test('accepts a model list a kind keeps while it holds nothing yet', () => {
   // A migrated provider has no models of its own until an operator names them,
   // and the execution section is what falls back to a typed model.
   const [provider] = defaultConfig.providers;
@@ -283,7 +283,7 @@ test('accepts a model list a kind keeps while it holds nothing yet', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
 
-test('rejects a model list entry that repeats, is empty, or carries a bad effort', () => {
+void test('rejects a model list entry that repeats, is empty, or carries a bad effort', () => {
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
@@ -319,24 +319,24 @@ test('rejects a model list entry that repeats, is empty, or carries a bad effort
   );
 });
 
-test('rejects model profiles that reference an unavailable provider', () => {
+void test('rejects model profiles that reference an unavailable provider', () => {
   const invalid = structuredClone(defaultConfig);
   invalid.models.execution.providerId = 'missing';
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects fields outside the Direct configuration contract', () => {
+void test('rejects fields outside the Direct configuration contract', () => {
   const invalid = { ...structuredClone(defaultConfig), routing: {} };
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects duplicate provider identifiers', () => {
+void test('rejects duplicate provider identifiers', () => {
   const invalid = structuredClone(defaultConfig);
   invalid.providers.push(structuredClone(invalid.providers[0]));
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('names the credential each provider secret field carries', () => {
+void test('names the credential each provider secret field carries', () => {
   const [provider] = defaultConfig.providers;
   assert.ok(provider !== undefined);
 
@@ -358,7 +358,7 @@ test('names the credential each provider secret field carries', () => {
   );
 });
 
-test('rejects a provider that references a credential of the wrong kind', async () => {
+void test('rejects a provider that references a credential of the wrong kind', async () => {
   const harness = await configHarness({
     credentials: [providerCredential, gitCredential],
   });
@@ -374,7 +374,7 @@ test('rejects a provider that references a credential of the wrong kind', async 
   assert.deepEqual(harness.writes, []);
 });
 
-test('rejects a configuration that references an unstored credential', async () => {
+void test('rejects a configuration that references an unstored credential', async () => {
   const harness = await configHarness({ credentials: [providerCredential] });
   const invalid = structuredClone(defaultConfig);
   invalid.gitCredentialId = gitCredential.id;
@@ -383,7 +383,7 @@ test('rejects a configuration that references an unstored credential', async () 
   assert.deepEqual(harness.writes, []);
 });
 
-test('accepts a Git identity and a GitHub token of the right kinds', async () => {
+void test('accepts a Git identity and a GitHub token of the right kinds', async () => {
   const harness = await configHarness({
     credentials: [providerCredential, gitCredential],
   });
@@ -406,7 +406,7 @@ test('accepts a Git identity and a GitHub token of the right kinds', async () =>
   assert.deepEqual(harness.writes, [defaultConfig.models.execution.model]);
 });
 
-test('builds every configured provider through the kind it names', async () => {
+void test('builds every configured provider through the kind it names', async () => {
   const configuration: ConfigInput = {
     ...structuredClone(defaultConfig),
     providers: [
@@ -444,7 +444,7 @@ test('builds every configured provider through the kind it names', async () => {
   assert.throws(() => providerFor(generation, 'missing'));
 });
 
-test('redacts every stored secret from event values', async () => {
+void test('redacts every stored secret from event values', async () => {
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials: credentialResolver(() => [providerCredential]),
@@ -472,7 +472,7 @@ test('redacts every stored secret from event values', async () => {
   );
 });
 
-test('redacts a secret the credentials learned after the generation was built', async () => {
+void test('redacts a secret the credentials learned after the generation was built', async () => {
   const rotated = 'ghp_rotated_later';
   const credentials: CredentialService = credentialResolver();
   const generation = await createGeneration({
@@ -492,7 +492,7 @@ test('redacts a secret the credentials learned after the generation was built', 
   });
 });
 
-test('serializes concurrent replacements in request order', async () => {
+void test('serializes concurrent replacements in request order', async () => {
   const harness = await configHarness({ blockedBuild: 'first' });
   const first = configured('first');
   const second = configured('second');
@@ -510,7 +510,7 @@ test('serializes concurrent replacements in request order', async () => {
   );
 });
 
-test('keeps the active generation and accepts later replacements after a build failure', async () => {
+void test('keeps the active generation and accepts later replacements after a build failure', async () => {
   const harness = await configHarness({ failedBuild: 'broken-build' });
 
   await assert.rejects(harness.service.replace(configured('broken-build')));
@@ -528,7 +528,7 @@ test('keeps the active generation and accepts later replacements after a build f
   );
 });
 
-test('keeps the active generation when persistent replacement fails', async () => {
+void test('keeps the active generation when persistent replacement fails', async () => {
   const harness = await configHarness({ failedWrite: 'broken-store' });
   const original = harness.service.current();
 

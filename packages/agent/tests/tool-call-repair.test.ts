@@ -45,7 +45,7 @@ const assertIncomplete = (messages: MessageStorage, callId: string): void => {
   assert.equal(result.toolResultStatus, 'incomplete');
 };
 
-test('structured stream suppresses every provider event from a rejected executable batch', async () => {
+void test('structured stream suppresses every provider event from a rejected executable batch', async () => {
   const marker = 'rejected-private-event';
   let executions = 0;
 
@@ -138,7 +138,7 @@ test('structured stream suppresses every provider event from a rejected executab
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} stores an incomplete result for a final rejected terminal call`, async () => {
+  void test(`${mode} stores an incomplete result for a final rejected terminal call`, async () => {
     const callId = `terminal-${mode}`;
 
     const provider = createProvider({
@@ -188,7 +188,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assertIncomplete(messages, callId);
   });
 
-  test(`${mode} stores an incomplete result for a final rejected executable call`, async () => {
+  void test(`${mode} stores an incomplete result for a final rejected executable call`, async () => {
     const callId = `executable-${mode}`;
     let executions = 0;
 

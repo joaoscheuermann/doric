@@ -65,7 +65,7 @@ const eventsOf = (events: readonly ThreadEvent[], promptId: string) =>
 const validateCommands = (execs: readonly SandboxExecInput[]) =>
   execs.filter(({ cmd }) => cmd.includes('cwd-validate'));
 
-test(
+void test(
   'a host stop suspends the Project and its Threads instead of terminating them',
   { timeout: 3000 },
   async () => {
@@ -143,7 +143,7 @@ test(
   },
 );
 
-test(
+void test(
   'a prompt resumes a queued Project on demand and reacquires its own identity',
   { timeout: 3000 },
   async () => {
@@ -210,7 +210,7 @@ test(
   },
 );
 
-test(
+void test(
   'an acquisition that fails while resuming leaves the Project failed and the prompt inactive',
   { timeout: 3000 },
   async () => {
@@ -253,7 +253,7 @@ test(
   },
 );
 
-test(
+void test(
   'one acquire validates every Thread working directory and resets the missing ones',
   { timeout: 3000 },
   async () => {
@@ -338,7 +338,7 @@ test(
   },
 );
 
-test(
+void test(
   'terminating a queued Project without a runtime stays terminal without acquiring one',
   { timeout: 3000 },
   async () => {
@@ -389,7 +389,7 @@ test(
   },
 );
 
-test(
+void test(
   'deleting a Project discards its workspace after the record is gone',
   { timeout: 3000 },
   async () => {
@@ -425,7 +425,7 @@ test(
   },
 );
 
-test(
+void test(
   'a workspace discard that fails never fails the deletion',
   { timeout: 3000 },
   async () => {
@@ -454,7 +454,7 @@ test(
   },
 );
 
-test(
+void test(
   'terminating a Thread of a Project with no runtime cancels it durably',
   { timeout: 3000 },
   async () => {
@@ -518,7 +518,7 @@ test(
   },
 );
 
-test(
+void test(
   'two prompts that arrive together keep arrival order on resume',
   { timeout: 3000 },
   async () => {
@@ -571,7 +571,7 @@ test(
   },
 );
 
-test(
+void test(
   'a probe that cannot run keeps every stored directory and still acquires',
   { timeout: 3000 },
   async () => {
@@ -640,7 +640,7 @@ test(
   },
 );
 
-test(
+void test(
   'a working directory path containing a newline survives reacquisition',
   { timeout: 3000 },
   async () => {
@@ -684,7 +684,7 @@ test(
   },
 );
 
-test(
+void test(
   'terminating after disposal began never adds a runtime',
   { timeout: 3000 },
   async () => {

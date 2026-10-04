@@ -48,15 +48,15 @@ export type ProjectChangeStatus =
   | 'deleted'
   | 'renamed'
   | 'untracked';
-export type ProjectChange = {
+export interface ProjectChange {
   readonly path: string;
   readonly status: ProjectChangeStatus;
-};
-export type ProjectChangeSet = {
+}
+export interface ProjectChangeSet {
   readonly path: string;
   readonly diff: string;
   readonly changes: readonly ProjectChange[];
-};
+}
 
 /**
  * The workspace's Git state, one entry per repository it holds: each repository's

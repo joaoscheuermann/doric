@@ -14,14 +14,14 @@ export type UnifiedLab =
   | 'minimax'
   | 'unknown';
 
-export type UnifiedModelProfile = {
+export interface UnifiedModelProfile {
   readonly lab: UnifiedLab;
   readonly tools: boolean;
   readonly forcedToolChoice: 'full' | 'auto_none';
   readonly forcedToolChoiceWithReasoning: boolean;
   readonly replay: 'all' | 'tool_calls';
   readonly strictTools: boolean;
-};
+}
 
 const profile = (
   lab: UnifiedLab,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProviderErrorObject, type LlmProvider } from '../src/index.js';
+import { type LlmProvider, ProviderErrorObject } from '../src/index.js';
 import {
   createCodexProvider,
   createLmStudioOpenAiProvider,
@@ -12,13 +12,13 @@ import {
   response,
 } from './fakes.js';
 
-type CompatibleProvider = {
+interface CompatibleProvider {
   readonly name: string;
   readonly provider: LlmProvider;
   readonly transport: ReturnType<typeof fakeTransport>;
   readonly endpoint: string;
   readonly authorization?: string;
-};
+}
 
 const compatibleProviders = (): readonly CompatibleProvider[] => {
   const openAiTransport = fakeTransport({
@@ -66,7 +66,7 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
 };
 
 for (const fixture of compatibleProviders()) {
-  test(`creates embeddings through ${fixture.name}`, async () => {
+  void test(`creates embeddings through ${fixture.name}`, async () => {
     const controller = new AbortController();
 
     const result = await fixture.provider.embedding({
@@ -93,7 +93,7 @@ for (const fixture of compatibleProviders()) {
   });
 }
 
-test('preserves OpenRouter embedding usage and cost', async () => {
+void test('preserves OpenRouter embedding usage and cost', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -127,7 +127,7 @@ test('preserves OpenRouter embedding usage and cost', async () => {
   assert.equal(result.usage?.totalTokens, 7);
 });
 
-test('rejects malformed OpenAI embedding responses', async () => {
+void test('rejects malformed OpenAI embedding responses', async () => {
   const transport = fakeTransport({
     responses: [
       response({ data: [] }),
@@ -151,7 +151,7 @@ test('rejects malformed OpenAI embedding responses', async () => {
   }
 });
 
-test('rejects OpenAI embedding requests without a model or input before networking', async () => {
+void test('rejects OpenAI embedding requests without a model or input before networking', async () => {
   const transport = fakeTransport({});
   const provider = createOpenAiProvider({ transport, apiKey: 'openai-key' });
 
@@ -170,7 +170,7 @@ test('rejects OpenAI embedding requests without a model or input before networki
   assert.equal(transport.requests.length, 0);
 });
 
-test('rejects invalid embedding dimensions before networking', async () => {
+void test('rejects invalid embedding dimensions before networking', async () => {
   const transport = fakeTransport({});
   const provider = createOpenAiProvider({ transport, apiKey: 'openai-key' });
 
@@ -208,7 +208,7 @@ for (const fixture of [
         })
       : createLmStudioProvider({ transport: fixture.transport });
 
-  test(`rejects embeddings before networking through ${fixture.name}`, async () => {
+  void test(`rejects embeddings before networking through ${fixture.name}`, async () => {
     await assert.rejects(
       provider.embedding({
         model: 'text-embedding-3-small',

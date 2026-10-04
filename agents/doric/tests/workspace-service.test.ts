@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
-import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { ConfigService } from '../src/lib/config/service.js';
 import { isProjectColor } from '../src/lib/workspace/colors.js';
+import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type {
   InputSource,
   Project,
@@ -24,7 +24,7 @@ const createThread = async (
   return result.thread;
 };
 
-test('creates, lists, and renames named Projects and Threads', async () => {
+void test('creates, lists, and renames named Projects and Threads', async () => {
   const harness = workspace();
   const service = createWorkspaceService({
     ...harness.dependencies,
@@ -62,7 +62,7 @@ test('creates, lists, and renames named Projects and Threads', async () => {
   await service.dispose();
 });
 
-test('marks each new Project with a color from the host palette', async () => {
+void test('marks each new Project with a color from the host palette', async () => {
   const harness = workspace();
   const service = createWorkspaceService({
     ...harness.dependencies,
@@ -87,12 +87,12 @@ test('marks each new Project with a color from the host palette', async () => {
   await service.dispose();
 });
 
-test('serializes Project rename with terminal state publication', async () => {
+void test('serializes Project rename with terminal state publication', async () => {
   const harness = workspace();
   const stateCaptured = deferred();
   const releaseState = deferred();
   const updates: Project[] = [];
-  const setState = harness.projects.setState;
+  const setState = harness.projects.setState.bind(harness.projects);
   harness.projects.setState = async (...args) => {
     const value = await setState(...args);
     if (args[1] === 'cancelled') {
@@ -130,12 +130,12 @@ test('serializes Project rename with terminal state publication', async () => {
   assert.equal((await service.projects.find(project.id))?.name, 'Renamed');
 });
 
-test('serializes Thread rename with terminal state publication', async () => {
+void test('serializes Thread rename with terminal state publication', async () => {
   const harness = workspace();
   const stateCaptured = deferred();
   const releaseState = deferred();
   const updates: Thread[] = [];
-  const setState = harness.threads.setState;
+  const setState = harness.threads.setState.bind(harness.threads);
   harness.threads.setState = async (...args) => {
     const value = await setState(...args);
     if (args[1] === 'cancelled') {
@@ -174,7 +174,7 @@ test('serializes Thread rename with terminal state publication', async () => {
   await service.dispose();
 });
 
-test('derives delegated Thread names without splitting Unicode characters', async () => {
+void test('derives delegated Thread names without splitting Unicode characters', async () => {
   const harness = workspace();
   const spawned = deferred<{ threadId: string; promptId: string }>();
   const prompt = '😀'.repeat(81);
@@ -199,7 +199,7 @@ test('derives delegated Thread names without splitting Unicode characters', asyn
   await service.dispose();
 });
 
-test(
+void test(
   'shares one Project lease while Threads run independently and each preserves FIFO',
   { timeout: 3000 },
   async () => {
@@ -258,7 +258,7 @@ test(
   },
 );
 
-test(
+void test(
   'interrupts only the targeted prompt and leaves its queue and daughter running',
   { timeout: 3000 },
   async () => {
@@ -325,7 +325,7 @@ test(
   },
 );
 
-test(
+void test(
   'terminates a subtree without terminating its sibling or Project',
   { timeout: 3000 },
   async () => {
@@ -374,7 +374,7 @@ test(
   },
 );
 
-test(
+void test(
   'blocks creation during Project termination and releases once after execution stops',
   { timeout: 3000 },
   async () => {
@@ -431,7 +431,7 @@ test(
   },
 );
 
-test(
+void test(
   'keeps queued work usable after a prompt fails without exposing execution secrets',
   { timeout: 3000 },
   async () => {
@@ -465,7 +465,7 @@ test(
   },
 );
 
-test(
+void test(
   'accepts many simultaneous Threads without imposing execution slots',
   { timeout: 3000 },
   async () => {
@@ -502,7 +502,7 @@ test(
   },
 );
 
-test(
+void test(
   'fails the Project when acquiring its sandbox fails',
   { timeout: 3000 },
   async () => {
@@ -531,7 +531,7 @@ test(
   },
 );
 
-test(
+void test(
   'queues one correlated delegation result for its busy parent and keeps later human input independent',
   { timeout: 3000 },
   async () => {
@@ -609,7 +609,7 @@ test(
   },
 );
 
-test(
+void test(
   'does not reopen a terminated parent when its delegated execution finishes late',
   { timeout: 3000 },
   async () => {
@@ -656,7 +656,7 @@ test(
   },
 );
 
-test('runs each prompt with the configuration in force, not the one its Project was created with', async () => {
+void test('runs each prompt with the configuration in force, not the one its Project was created with', async () => {
   const harness = workspace();
   const captured = (harness.dependencies.config as ConfigService).current();
   const saved = {

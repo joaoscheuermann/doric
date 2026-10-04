@@ -8,9 +8,15 @@ import { z } from 'zod';
 
 import { loadBundles, SkillSchema } from '../src/index.js';
 
-type ToolEntry = { readonly path: string; readonly alwaysAvailable: boolean };
+interface ToolEntry {
+  readonly path: string;
+  readonly alwaysAvailable: boolean;
+}
 
-type SkillEntry = { readonly path: string; readonly alwaysAvailable: boolean };
+interface SkillEntry {
+  readonly path: string;
+  readonly alwaysAvailable: boolean;
+}
 
 const skill = (name: string, allowedTools: readonly string[] = []) => `---
 name: ${name}
@@ -25,7 +31,7 @@ Follow this procedure.
 
 const createRoot = () => mkdtemp(join(tmpdir(), 'bundle-test-'));
 
-test('exports a JSON-Schema-compatible skill schema', () => {
+void test('exports a JSON-Schema-compatible skill schema', () => {
   const value = {
     name: 'example',
     description: 'Example skill.',
@@ -48,7 +54,7 @@ test('exports a JSON-Schema-compatible skill schema', () => {
   ]);
 });
 
-test('normalizes canonical skill records and ignores supplied index text', () => {
+void test('normalizes canonical skill records and ignores supplied index text', () => {
   assert.deepEqual(
     SkillSchema.parse({
       name: '  example  ',
@@ -124,7 +130,7 @@ const writeTool = async (bundle: string, file: string, name: string) =>
     export default factory;`,
   );
 
-test('preserves lexical bundle order and manifest resource order', async () => {
+void test('preserves lexical bundle order and manifest resource order', async () => {
   const root = await createRoot();
 
   try {
@@ -141,7 +147,7 @@ test('preserves lexical bundle order and manifest resource order', async () => {
   }
 });
 
-test('loads executable tools, availability flags, and skill frontmatter', async () => {
+void test('loads executable tools, availability flags, and skill frontmatter', async () => {
   const root = await createRoot();
 
   try {
@@ -175,7 +181,7 @@ test('loads executable tools, availability flags, and skill frontmatter', async 
   }
 });
 
-test('loads missing allowed-tools as an empty array', async () => {
+void test('loads missing allowed-tools as an empty array', async () => {
   const root = await createRoot();
 
   try {
@@ -211,7 +217,7 @@ Follow this procedure.
   }
 });
 
-test('loads the same canonical skill record exposed by SkillSchema', async () => {
+void test('loads the same canonical skill record exposed by SkillSchema', async () => {
   const root = await createRoot();
 
   try {
@@ -252,7 +258,7 @@ indexText: untrusted
   }
 });
 
-test('rejects invalid manifests, undeclared-compatible paths, and missing files contextually', async () => {
+void test('rejects invalid manifests, undeclared-compatible paths, and missing files contextually', async () => {
   const root = await createRoot();
 
   try {
@@ -290,7 +296,7 @@ test('rejects invalid manifests, undeclared-compatible paths, and missing files 
   }
 });
 
-test('rejects incompatible exports and unresolved local tool references', async () => {
+void test('rejects incompatible exports and unresolved local tool references', async () => {
   const root = await createRoot();
 
   try {
@@ -337,7 +343,7 @@ test('rejects incompatible exports and unresolved local tool references', async 
   }
 });
 
-test('rejects globally duplicated bundle, skill, and tool names', async () => {
+void test('rejects globally duplicated bundle, skill, and tool names', async () => {
   const scenarios = ['bundle', 'skill', 'tool'] as const;
 
   for (const scenario of scenarios) {

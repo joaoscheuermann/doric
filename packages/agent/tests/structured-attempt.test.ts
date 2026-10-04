@@ -23,7 +23,7 @@ const terminal = (request: {
 }): string => request.tools?.at(-1)?.name ?? 'missing';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} awaits safe structured-attempt events in submission order`, async () => {
+  void test(`${mode} awaits safe structured-attempt events in submission order`, async () => {
     const provider = createProvider({
       complete: (request, index) =>
         completeFinish('', [
@@ -88,7 +88,7 @@ for (const mode of ['complete', 'stream'] as const) {
     });
   });
 
-  test(`${mode} aborts immediately when the structured-attempt callback fails`, async () => {
+  void test(`${mode} aborts immediately when the structured-attempt callback fails`, async () => {
     const failure = new Error('observer stopped the run');
 
     const provider = createProvider({
@@ -135,7 +135,7 @@ for (const mode of ['complete', 'stream'] as const) {
     ]);
   });
 
-  test(`${mode} reports no feedback after the final rejected submission`, async () => {
+  void test(`${mode} reports no feedback after the final rejected submission`, async () => {
     const provider = createProvider({
       complete: (request) =>
         completeFinish('', [call(terminal(request), { answer: 42 })]),

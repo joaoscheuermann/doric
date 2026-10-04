@@ -84,21 +84,21 @@ not the manually edited source of truth for whether a PRD candidate may advance.
 
 Reflection may route PRD drafts to these review steps:
 
-| Review step | Main question |
-| ----------- | ------------- |
-| Initial Review | Should this draft be discarded, blocked, or sent to deeper reviews? |
-| Grounding Review | Does the draft obey hard constraints and grounding evidence? |
-| Product Alignment Review | Does the draft solve the accepted request without scope drift? |
-| Architecture Review | Does the draft fit the existing architecture without unnecessary structural change? |
-| Behavior Review | Is the proposed user-visible behavior coherent end to end? |
-| Simulation Review | Does a step-by-step trace expose state, protocol, or control-flow gaps? |
-| Validation Review | Does the draft define enough proof to trust downstream work? |
-| Risk Review | Does the draft introduce operational, workflow, data, or irreversible-action risk? |
-| Persistence Review | Does the draft affect stored state, migration, replay, caches, or durability? |
-| Security Review | Does the draft affect trust boundaries, secrets, auth, permissions, untrusted input, command execution, or network access? |
-| Observability Review | Will users or operators be able to see progress, failures, and recovery paths? |
-| Decomposition Readiness Review | Is the draft precise enough to feed technical design and implementation planning? |
-| Meta-review | What patterns across reviews should inform ranking, evolution, or future reviews? |
+| Review step                    | Main question                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Initial Review                 | Should this draft be discarded, blocked, or sent to deeper reviews?                                                        |
+| Grounding Review               | Does the draft obey hard constraints and grounding evidence?                                                               |
+| Product Alignment Review       | Does the draft solve the accepted request without scope drift?                                                             |
+| Architecture Review            | Does the draft fit the existing architecture without unnecessary structural change?                                        |
+| Behavior Review                | Is the proposed user-visible behavior coherent end to end?                                                                 |
+| Simulation Review              | Does a step-by-step trace expose state, protocol, or control-flow gaps?                                                    |
+| Validation Review              | Does the draft define enough proof to trust downstream work?                                                               |
+| Risk Review                    | Does the draft introduce operational, workflow, data, or irreversible-action risk?                                         |
+| Persistence Review             | Does the draft affect stored state, migration, replay, caches, or durability?                                              |
+| Security Review                | Does the draft affect trust boundaries, secrets, auth, permissions, untrusted input, command execution, or network access? |
+| Observability Review           | Will users or operators be able to see progress, failures, and recovery paths?                                             |
+| Decomposition Readiness Review | Is the draft precise enough to feed technical design and implementation planning?                                          |
+| Meta-review                    | What patterns across reviews should inform ranking, evolution, or future reviews?                                          |
 
 ## Initial Review
 
@@ -200,15 +200,15 @@ function run_reflection(draft, phase_contract, run_state):
 
 Mandatory routing rules:
 
-| Trigger | Required reviews |
-| ------- | ---------------- |
-| PRD phase | Product Alignment, Grounding, Validation, Decomposition Readiness |
-| Structural or ownership change | Architecture |
-| User-visible behavior change | Behavior |
-| State transition, protocol, async flow, recovery, streaming, retry, cancellation, or event handling | Simulation, Observability |
-| Persisted data, configuration, cache, migration, durable artifact, or replay | Persistence |
-| Trust boundary, auth, secret, shell, filesystem write, network, external service, permission, or untrusted input | Security, Risk |
-| Multiple candidates or repeated review patterns | Meta-review |
+| Trigger                                                                                                          | Required reviews                                                  |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| PRD phase                                                                                                        | Product Alignment, Grounding, Validation, Decomposition Readiness |
+| Structural or ownership change                                                                                   | Architecture                                                      |
+| User-visible behavior change                                                                                     | Behavior                                                          |
+| State transition, protocol, async flow, recovery, streaming, retry, cancellation, or event handling              | Simulation, Observability                                         |
+| Persisted data, configuration, cache, migration, durable artifact, or replay                                     | Persistence                                                       |
+| Trust boundary, auth, secret, shell, filesystem write, network, external service, permission, or untrusted input | Security, Risk                                                    |
+| Multiple candidates or repeated review patterns                                                                  | Meta-review                                                       |
 
 ## Review Focus
 
@@ -305,12 +305,12 @@ function merge_review_results(results):
 
 Severity guidance:
 
-| Severity | Meaning |
-| -------- | ------- |
-| `fatal` | Violates a hard constraint, contradicts accepted scope, requires unsafe action without approval, or cannot be repaired without restarting the phase. |
-| `blocking` | Likely grounding, alignment, architecture, validation, security, behavior, or decomposition failure that can be repaired by Evolution. |
-| `warning` | Convention deviation, minor ambiguity, or residual risk that should be recorded but does not block ranking eligibility. |
-| `note` | Useful observation for Ranking, Evolution, or Handover. |
+| Severity   | Meaning                                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fatal`    | Violates a hard constraint, contradicts accepted scope, requires unsafe action without approval, or cannot be repaired without restarting the phase. |
+| `blocking` | Likely grounding, alignment, architecture, validation, security, behavior, or decomposition failure that can be repaired by Evolution.               |
+| `warning`  | Convention deviation, minor ambiguity, or residual risk that should be recorded but does not block ranking eligibility.                              |
+| `note`     | Useful observation for Ranking, Evolution, or Handover.                                                                                              |
 
 ## Ranking And Evolution Loop
 

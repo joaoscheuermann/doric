@@ -5,6 +5,7 @@ Use these rules only when writing or refactoring Rust. The outcome is code that 
 This is the Rust-specific implementation polish layer for the coding-conventions skill. Do not apply Rust-only mechanics such as typestate, `?`, `Option`/`Result` combinators, or conversion traits to TypeScript, JavaScript, Python, or other languages. For mixed-language work, keep the invariant intent and translate it into the target language's idioms.
 
 ## Success criteria
+
 - Domain invariants are encoded in types near system boundaries instead of repeatedly validated in core logic.
 - Functions prefer expression-oriented Rust, implicit tail returns, and scoped blocks that keep temporary setup local.
 - Error and optional-value handling stays flat with `?`, `ok_or`, `map`, `and_then`, `unwrap_or_else`, `if let`, `while let`, and focused `match` expressions.
@@ -15,11 +16,13 @@ This is the Rust-specific implementation polish layer for the coding-conventions
 - Code is formatted with `rustfmt` and checked with `clippy` where project tooling supports it.
 
 ## Retrieval & stop rules
+
 This reference is self-contained. Stop reading once these success criteria and decision rules are enough to make the Rust code idiomatic for the current task. Look elsewhere only when project-specific APIs, crate behavior, or existing patterns would materially affect the implementation.
 
 ## Decision rules
 
 ### Type-driven design
+
 Prefer parsing raw input into strong domain types at the boundary. Let the type system carry guarantees through the rest of the code.
 
 Use enums, newtypes, and constructors returning `Result` or `Option` to make illegal states unrepresentable.
@@ -43,6 +46,7 @@ fn process(amount: PositiveAmount, currency: Currency) {
 ```
 
 ### Expression-oriented code
+
 Prefer assigning from expressions instead of mutating a variable across branches. Use implicit tail returns for the final expression in a block when it improves clarity.
 
 ```rust
@@ -59,6 +63,7 @@ let config = {
 ```
 
 ### Flat control flow
+
 Use `?` for error propagation and combinators for simple `Option` or `Result` transformations. Avoid deeply nested `match` blocks when a flat expression communicates the path better.
 
 ```rust
@@ -69,6 +74,7 @@ fn role(id: UserId) -> Result<Role, Error> {
 ```
 
 ### Pattern matching and destructuring
+
 Use `if let` or `while let` when only one case matters. Use `match` when multiple cases are meaningful or exhaustive handling is clearer.
 
 ```rust
@@ -82,6 +88,7 @@ if let [first, second, ..] = items.as_slice() {
 ```
 
 ### Iterators
+
 Prefer iterator chains when they express collection transformations declaratively without hiding important control flow.
 
 ```rust
@@ -95,6 +102,7 @@ let even_squares: Vec<i32> = numbers
 Use an explicit loop when it is easier to debug, involves complex branching, or better communicates side effects.
 
 ### Functional Rust
+
 Prefer a functional core with imperative boundaries. Use Rust's ownership model to keep transformations predictable, but do not optimize for a functional-looking style when it makes ownership, allocation, or branching harder to read.
 
 - Keep domain transformations pure when practical: inputs in, values out, no hidden I/O, global mutation, or ambient state.
@@ -107,6 +115,7 @@ Prefer a functional core with imperative boundaries. Use Rust's ownership model 
 - Keep closure captures narrow. Prefer a small named function when a closure grows enough to hide intent.
 
 ### Typestate
+
 Use typestate for APIs where only some operations are valid after specific transitions. Model state transitions by consuming `self` when that makes invalid call sequences fail at compile time.
 
 ```rust
@@ -135,6 +144,7 @@ impl File<Opened> {
 ```
 
 ### API boundary conversions
+
 Use standard conversion traits to make call sites clean without sacrificing explicit boundaries.
 
 - Implement `From<T>` when conversion is infallible and obvious.
@@ -150,4 +160,5 @@ fn greet(name: impl Into<String>) {
 ```
 
 ### Tooling-enforced consistency
+
 Use `rustfmt` for formatting and `clippy` for idiom, readability, and correctness suggestions. Treat tooling feedback as the default unless a project-specific constraint justifies a different choice.

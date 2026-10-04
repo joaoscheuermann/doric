@@ -13,13 +13,16 @@ const threadAuth = z.object({
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
 const projectAuth = z.object({ projectId: z.uuid() });
-type Notice = { readonly name: string; readonly value: unknown };
-type Subscription = {
+interface Notice {
+  readonly name: string;
+  readonly value: unknown;
+}
+interface Subscription {
   ready: boolean;
   lastSequence: number;
   readonly events: Map<number, ThreadEvent>;
   readonly notices: Notice[];
-};
+}
 type Subscribers = Map<string, Map<Socket, Subscription>>;
 
 /** Subscribe before reading durable data, then deduplicate replay against live events. */

@@ -1,14 +1,14 @@
 import { ProviderErrorObject } from '../classes/provider-error.js';
 import type {
   FinishReason,
-  ProviderError,
   ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
+  ProviderError,
   ProviderId,
   ProviderMessage,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
+  ProviderRerankRequest,
   ProviderRerankResult,
   ReasoningEffort,
   UsageMetadata,
@@ -299,7 +299,7 @@ export const parseEmbedding = (
   if (embedding.length > 0 && embedding.every(isFiniteNumber)) {
     const usage = parseUsage(recordField(body, 'usage'), costUnit);
     return {
-      embedding: embedding as readonly number[],
+      embedding: embedding,
       ...(usage === undefined ? {} : { usage }),
     };
   }

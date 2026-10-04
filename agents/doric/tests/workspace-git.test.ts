@@ -51,7 +51,7 @@ const repositoryAt = (git: FakeGitProbe) =>
     repositories: [{ path: 'alpha', git }],
   });
 
-test('summarizes a clean repository from its porcelain-v2 headers', async () => {
+void test('summarizes a clean repository from its porcelain-v2 headers', async () => {
   assert.deepEqual(
     await threadGit(repositoryAt({ status: clean }), '/workspace/alpha'),
     {
@@ -74,7 +74,7 @@ test('summarizes a clean repository from its porcelain-v2 headers', async () => 
   );
 });
 
-test('reads the repository root of a directory inside one, with ahead and behind from its upstream', async () => {
+void test('reads the repository root of a directory inside one, with ahead and behind from its upstream', async () => {
   assert.deepEqual(
     await threadGit(repositoryAt({ status: ahead }), '/workspace/alpha/src'),
     {
@@ -97,7 +97,7 @@ test('reads the repository root of a directory inside one, with ahead and behind
   );
 });
 
-test('names a detached HEAD by its short commit and an unborn repository as unborn', async () => {
+void test('names a detached HEAD by its short commit and an unborn repository as unborn', async () => {
   const detachedHead = await threadGit(
     repositoryAt({ status: detached, short: '19bbd36' }),
     '/workspace/alpha',
@@ -117,7 +117,7 @@ test('names a detached HEAD by its short commit and an unborn repository as unbo
   assert.equal(fresh.detached, false);
 });
 
-test('counts staged, modified, renamed and untracked records', async () => {
+void test('counts staged, modified, renamed and untracked records', async () => {
   const summary = await threadGit(
     repositoryAt({ status: dirty }),
     '/workspace/alpha',
@@ -126,7 +126,7 @@ test('counts staged, modified, renamed and untracked records', async () => {
   assert.deepEqual(summary.dirty, { staged: 2, modified: 1, untracked: 1 });
 });
 
-test('reports an unmerged record and the operation that left it', async () => {
+void test('reports an unmerged record and the operation that left it', async () => {
   const merge = await threadGit(
     repositoryAt({ status: conflicted, operation: 'merge' }),
     '/workspace/alpha',
@@ -152,7 +152,7 @@ test('reports an unmerged record and the operation that left it', async () => {
   assert.equal(picking.operation, 'cherry-pick');
 });
 
-test('reports a linked worktree, a shallow clone, and the stash count', async () => {
+void test('reports a linked worktree, a shallow clone, and the stash count', async () => {
   const summary = await threadGit(
     repositoryAt({ status: clean, worktree: true, shallow: true, stash: 2 }),
     '/workspace/alpha',
@@ -163,7 +163,7 @@ test('reports a linked worktree, a shallow clone, and the stash count', async ()
   assert.equal(summary.stash, 2);
 });
 
-test('counts the submodules a repository declares, and none when it declares none', async () => {
+void test('counts the submodules a repository declares, and none when it declares none', async () => {
   const declaring = await threadGit(
     repositoryAt({ status: clean, submodules: 3 }),
     '/workspace/alpha',
@@ -179,7 +179,7 @@ test('counts the submodules a repository declares, and none when it declares non
   assert.equal(plain.submodules, 0);
 });
 
-test('answers that a directory holding no repository is not one', async () => {
+void test('answers that a directory holding no repository is not one', async () => {
   const inside = fakeSandbox({
     entries: [{ path: 'plain/file.txt', content: 'x' }],
   });
@@ -191,7 +191,7 @@ test('answers that a directory holding no repository is not one', async () => {
   });
 });
 
-test('hints at a repository only when the directory holds its own .git marker', async () => {
+void test('hints at a repository only when the directory holds its own .git marker', async () => {
   const github = repositoryAt({
     status: clean,
     origin: 'git@github.com:owner/repo.git',
@@ -210,7 +210,7 @@ test('hints at a repository only when the directory holds its own .git marker', 
   assert.equal(await cwdRepoHint(worktree, '/workspace/wt'), 'git');
 });
 
-test('names a repository without a GitHub origin as a repository', async () => {
+void test('names a repository without a GitHub origin as a repository', async () => {
   assert.equal(
     await cwdRepoHint(repositoryAt({ status: clean }), '/workspace/alpha'),
     'git',
@@ -234,7 +234,7 @@ test('names a repository without a GitHub origin as a repository', async () => {
   );
 });
 
-test('reads every GitHub spelling of an origin URL', async () => {
+void test('reads every GitHub spelling of an origin URL', async () => {
   for (const origin of [
     'https://github.com/owner/repo.git',
     'ssh://git@github.com/owner/repo.git',

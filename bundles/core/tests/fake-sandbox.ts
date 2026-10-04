@@ -210,11 +210,11 @@ const shellLines = (content: string): readonly string[] => {
   return parts;
 };
 
-type WalkOptions = {
+interface WalkOptions {
   readonly type: string | undefined;
   readonly name: string | undefined;
   readonly pruneNodeModules: boolean;
-};
+}
 
 const walk = async (
   local: string,

@@ -116,6 +116,8 @@ export const eventJson = (
     if (names.size === 0 && !isPlainRecord(current)) {
       return marker(
         current.constructor?.name ?? 'Object',
+        // The marker deliberately describes opaque instances by their string form.
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         redact(String(current)),
       );
     }

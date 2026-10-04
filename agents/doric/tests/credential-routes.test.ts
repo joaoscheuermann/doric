@@ -18,7 +18,7 @@ const stored: Credential = {
   secret,
 };
 
-test('answers every credential without its secret', async () => {
+void test('answers every credential without its secret', async () => {
   const host = await serve({ list: () => [stored] });
 
   try {
@@ -40,7 +40,7 @@ test('answers every credential without its secret', async () => {
   }
 });
 
-test('creates a credential and answers it without the secret', async () => {
+void test('creates a credential and answers it without the secret', async () => {
   let received: unknown;
   const host = await serve({
     create: async (input) => {
@@ -71,7 +71,7 @@ test('creates a credential and answers it without the secret', async () => {
   }
 });
 
-test('rejects a create body that does not match its kind', async () => {
+void test('rejects a create body that does not match its kind', async () => {
   let creates = 0;
   const host = await serve({
     create: async () => {
@@ -106,7 +106,7 @@ test('rejects a create body that does not match its kind', async () => {
   }
 });
 
-test('updates a credential and reports the shared failures', async () => {
+void test('updates a credential and reports the shared failures', async () => {
   const host = await serve({
     update: async (_id, input) => {
       if (input.kind !== undefined) return { status: 'immutable' };
@@ -139,7 +139,7 @@ test('updates a credential and reports the shared failures', async () => {
   }
 });
 
-test('reports a credential that was never stored as missing', async () => {
+void test('reports a credential that was never stored as missing', async () => {
   const host = await serve({ update: async () => ({ status: 'missing' }) });
 
   try {
@@ -155,7 +155,7 @@ test('reports a credential that was never stored as missing', async () => {
   }
 });
 
-test('refuses to delete a credential a provider or the configuration uses', async () => {
+void test('refuses to delete a credential a provider or the configuration uses', async () => {
   const host = await serve({
     remove: async (target) => (target === id ? 'referenced' : 'deleted'),
   });
@@ -180,7 +180,7 @@ test('refuses to delete a credential a provider or the configuration uses', asyn
   }
 });
 
-test('reports a delete for a credential that was never stored', async () => {
+void test('reports a delete for a credential that was never stored', async () => {
   const host = await serve({ remove: async () => 'missing' });
 
   try {
@@ -198,7 +198,7 @@ test('reports a delete for a credential that was never stored', async () => {
   }
 });
 
-test('answers an unusable host key as an unavailable store', async () => {
+void test('answers an unusable host key as an unavailable store', async () => {
   const host = await serve({
     create: async () => {
       throw new MissingKeyError();

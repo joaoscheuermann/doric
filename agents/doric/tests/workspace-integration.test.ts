@@ -65,7 +65,7 @@ for (const format of [
   },
   { name: 'plain JSON', heading: 'Task', wrap: (json: string) => json },
 ]) {
-  test(`scripted model accepts ${format.name} without losing tool evidence checks`, async () => {
+  void test(`scripted model accepts ${format.name} without losing tool evidence checks`, async () => {
     const provider = scriptedProvider();
     const respond = async (input: string, output?: object) => {
       const messages = [{ role: 'user' as const, content: input }];
@@ -86,7 +86,7 @@ for (const format of [
       }))
         events.push(event);
       assert.equal(events.length, 1);
-      const event = events[0]!;
+      const event = events[0];
       assert.equal(event.type, 'response.finished');
       assert.ok(event.type === 'response.finished');
       return event.finish;
@@ -135,7 +135,7 @@ for (const format of [
 
 // Build doric first to populate dist/bundles. No provider credentials are read:
 // the only replaced boundary is LlmProvider; tools and all host services are real.
-test(
+void test(
   'delegates across isolated conversations sharing a real project sandbox and durable API events',
   {
     skip: enabled
@@ -146,7 +146,7 @@ test(
   async (t) => {
     assert.ok(connectionString);
     const cleanup = cleanupStack();
-    t.after(cleanup.close);
+    t.after(() => cleanup.close());
     const resources = await persistenceFixture(connectionString);
     cleanup.defer(resources.close);
     const { database } = resources;
@@ -202,9 +202,7 @@ test(
     const app = express();
     const server = createServer(app);
     const sockets = new Server(server);
-    cleanup.defer(
-      () => new Promise<void>((resolve) => sockets.close(() => resolve())),
-    );
+    cleanup.defer(() => sockets.close());
     const service = createWorkspaceService({
       projects,
       threads,
@@ -222,9 +220,9 @@ test(
       logger: { warn: () => undefined } as never,
       service,
       vms: {
-        list: vms.list,
-        find: vms.find,
-        ssh: service.sshForVm,
+        list: () => vms.list(),
+        find: (id) => vms.find(id),
+        ssh: (id) => service.sshForVm(id),
       },
     });
     await new Promise<void>((resolve) =>
@@ -324,7 +322,7 @@ test(
       `/projects/${project.id}/threads?parentThreadId=${root.id}`,
     );
     assert.equal(children.items.length, 1);
-    const child = children.items[0]!;
+    const child = children.items[0];
     assert.equal(source.threadId, child.id);
     const childEvents = await request<{ events: ThreadEvent[] }>(
       `/threads/${child.id}/events`,
@@ -350,7 +348,7 @@ test(
       rootSocket.values<ThreadEvent>('agent:event'),
       rootEvents.events,
     );
-    const cursor = rootEvents.events[1]!.sequence;
+    const cursor = rootEvents.events[1].sequence;
     const replay = subscribe('threads', {
       threadId: root.id,
       afterSequence: cursor,
@@ -454,5 +452,9 @@ test(
   },
 );
 
-type Completion = { status: string; text: string; source: InputSource };
+interface Completion {
+  status: string;
+  text: string;
+  source: InputSource;
+}
 const completion = (event: ThreadEvent) => event.event as Completion;

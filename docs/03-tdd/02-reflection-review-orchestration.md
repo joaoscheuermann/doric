@@ -93,22 +93,22 @@ not the manually edited source of truth for whether a TDD candidate may advance.
 
 Reflection may route TDD drafts to these review steps:
 
-| Review step | Main question |
-| ----------- | ------------- |
-| Initial Review | Should this draft be discarded, blocked, or sent to deeper reviews? |
-| Grounding Review | Does the draft obey hard constraints and grounding evidence? |
-| PRD Traceability Review | Does every major PRD requirement have a technical path without product-scope drift? |
-| Architecture Fit Review | Does the draft fit current package ownership, dependency direction, boundaries, and repo patterns? |
-| Dependency Hop Review | Are Dependency Hops concrete, evidence-backed, falsifiable, and paired with fallbacks or blocking questions? |
-| Interface Contract Review | Are APIs, commands, events, tools, schemas, or UI states explicit enough to implement and test? |
-| Data And Persistence Review | Does the draft handle stored state, migrations, durability, replay, cleanup, and compatibility? |
-| Simulation Review | Does a step-by-step trace expose state, protocol, async, cancellation, retry, or recovery gaps? |
-| Security Review | Does the draft handle trust boundaries, secrets, auth, permissions, command execution, file writes, network access, and untrusted input? |
-| Performance And Operations Review | Does the draft handle latency, concurrency, scaling, resource use, observability, failure, and recovery? |
-| Testing Review | Does the draft define enough proof to trust downstream implementation? |
-| Rollout And Migration Review | Can the design ship incrementally without unsafe compatibility or data risks? |
-| Decomposition Readiness Review | Is the draft precise enough to produce ordered effort files? |
-| Meta-review | What patterns across reviews should inform ranking, evolution, or future reviews? |
+| Review step                       | Main question                                                                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial Review                    | Should this draft be discarded, blocked, or sent to deeper reviews?                                                                      |
+| Grounding Review                  | Does the draft obey hard constraints and grounding evidence?                                                                             |
+| PRD Traceability Review           | Does every major PRD requirement have a technical path without product-scope drift?                                                      |
+| Architecture Fit Review           | Does the draft fit current package ownership, dependency direction, boundaries, and repo patterns?                                       |
+| Dependency Hop Review             | Are Dependency Hops concrete, evidence-backed, falsifiable, and paired with fallbacks or blocking questions?                             |
+| Interface Contract Review         | Are APIs, commands, events, tools, schemas, or UI states explicit enough to implement and test?                                          |
+| Data And Persistence Review       | Does the draft handle stored state, migrations, durability, replay, cleanup, and compatibility?                                          |
+| Simulation Review                 | Does a step-by-step trace expose state, protocol, async, cancellation, retry, or recovery gaps?                                          |
+| Security Review                   | Does the draft handle trust boundaries, secrets, auth, permissions, command execution, file writes, network access, and untrusted input? |
+| Performance And Operations Review | Does the draft handle latency, concurrency, scaling, resource use, observability, failure, and recovery?                                 |
+| Testing Review                    | Does the draft define enough proof to trust downstream implementation?                                                                   |
+| Rollout And Migration Review      | Can the design ship incrementally without unsafe compatibility or data risks?                                                            |
+| Decomposition Readiness Review    | Is the draft precise enough to produce ordered effort files?                                                                             |
+| Meta-review                       | What patterns across reviews should inform ranking, evolution, or future reviews?                                                        |
 
 ## Initial Review
 
@@ -216,16 +216,16 @@ function run_tdd_reflection(draft, phase_contract, run_state):
 
 Mandatory routing rules:
 
-| Trigger | Required reviews |
-| ------- | ---------------- |
-| Technical-design phase | PRD Traceability, Grounding, Architecture Fit, Dependency Hop, Testing, Decomposition Readiness |
-| Package ownership or dependency change | Architecture Fit |
-| API, command, event, tool, schema, or UI-state change | Interface Contract, Testing |
-| State transition, protocol, async flow, recovery, streaming, retry, cancellation, or event handling | Simulation, Performance And Operations |
-| Persisted data, configuration, cache, migration, durable artifact, generated contract, or replay | Data And Persistence, Rollout And Migration |
-| Trust boundary, auth, secret, shell, filesystem write, network, external service, permission, or untrusted input | Security |
-| Performance, concurrency, resource, observability, daemon, worker, or operational behavior change | Performance And Operations |
-| Multiple candidates or repeated review patterns | Meta-review |
+| Trigger                                                                                                          | Required reviews                                                                                |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Technical-design phase                                                                                           | PRD Traceability, Grounding, Architecture Fit, Dependency Hop, Testing, Decomposition Readiness |
+| Package ownership or dependency change                                                                           | Architecture Fit                                                                                |
+| API, command, event, tool, schema, or UI-state change                                                            | Interface Contract, Testing                                                                     |
+| State transition, protocol, async flow, recovery, streaming, retry, cancellation, or event handling              | Simulation, Performance And Operations                                                          |
+| Persisted data, configuration, cache, migration, durable artifact, generated contract, or replay                 | Data And Persistence, Rollout And Migration                                                     |
+| Trust boundary, auth, secret, shell, filesystem write, network, external service, permission, or untrusted input | Security                                                                                        |
+| Performance, concurrency, resource, observability, daemon, worker, or operational behavior change                | Performance And Operations                                                                      |
+| Multiple candidates or repeated review patterns                                                                  | Meta-review                                                                                     |
 
 ## Review Focus
 
@@ -326,12 +326,12 @@ function merge_review_results(results):
 
 Severity guidance:
 
-| Severity | Meaning |
-| -------- | ------- |
-| `fatal` | Violates a hard constraint, contradicts accepted PRD scope, requires unsafe action without approval, or cannot be repaired without restarting the phase. |
-| `blocking` | Likely grounding, architecture, dependency, validation, security, behavior, or decomposition failure that can be repaired by Evolution. |
-| `warning` | Convention deviation, minor ambiguity, or residual risk that should be recorded but does not block ranking eligibility. |
-| `note` | Useful observation for Ranking, Evolution, Decomposition, or Handover. |
+| Severity   | Meaning                                                                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fatal`    | Violates a hard constraint, contradicts accepted PRD scope, requires unsafe action without approval, or cannot be repaired without restarting the phase. |
+| `blocking` | Likely grounding, architecture, dependency, validation, security, behavior, or decomposition failure that can be repaired by Evolution.                  |
+| `warning`  | Convention deviation, minor ambiguity, or residual risk that should be recorded but does not block ranking eligibility.                                  |
+| `note`     | Useful observation for Ranking, Evolution, Decomposition, or Handover.                                                                                   |
 
 ## Ranking And Evolution Loop
 

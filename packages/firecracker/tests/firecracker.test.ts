@@ -17,7 +17,7 @@ import {
 } from '../src/index.js';
 import { renderFirecrackerNetworkRules } from '../src/lib/network.js';
 
-test('configures the Firecracker API in boot-safe order', async () => {
+void test('configures the Firecracker API in boot-safe order', async () => {
   const requests: FirecrackerRequest[] = [];
 
   const api = createFirecrackerApi(
@@ -58,7 +58,7 @@ test('configures the Firecracker API in boot-safe order', async () => {
   assert.deepEqual(requests.at(-1)?.body, { action_type: 'InstanceStart' });
 });
 
-test('rejects non-success API responses without including response bodies', async () => {
+void test('rejects non-success API responses without including response bodies', async () => {
   const api = createFirecrackerApi('/run/firecracker.socket', async () => ({
     status: 400,
     body: Buffer.from('secret diagnostic'),
@@ -73,7 +73,7 @@ test('rejects non-success API responses without including response bodies', asyn
   );
 });
 
-test('uses container defaults and preflights before delegated provisioning', async () => {
+void test('uses container defaults and preflights before delegated provisioning', async () => {
   let checked = false;
   let provisioned: SandboxProvisionInput | undefined;
 
@@ -123,7 +123,7 @@ test('uses container defaults and preflights before delegated provisioning', asy
   assert.equal(provisioned, input);
 });
 
-test('renders host-input and protected-destination VM rules', () => {
+void test('renders host-input and protected-destination VM rules', () => {
   const rules = renderFirecrackerNetworkRules('doric_test', 'doric0', {
     mode: 'egress',
     ssh: false,
@@ -146,7 +146,7 @@ test('renders host-input and protected-destination VM rules', () => {
   );
 });
 
-test('reuses an if-not-present OCI cache entry without image tooling', async () => {
+void test('reuses an if-not-present OCI cache entry without image tooling', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'doric-image-cache-'));
   const cache = join(directory, 'cache');
   const state = join(directory, 'state');
@@ -211,7 +211,7 @@ test('reuses an if-not-present OCI cache entry without image tooling', async () 
   }
 });
 
-test('rejects non-registry OCI transport references before acquisition', async () => {
+void test('rejects non-registry OCI transport references before acquisition', async () => {
   const config: FirecrackerConfig = {
     paths: DEFAULT_FIRECRACKER_PATHS,
     networkPool: '10.231.0.0/16',

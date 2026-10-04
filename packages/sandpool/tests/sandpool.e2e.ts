@@ -6,7 +6,7 @@ import pino from 'pino';
 import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
-test('warms, leases, replaces, releases, and shuts down sandboxes', async () => {
+void test('warms, leases, replaces, releases, and shuts down sandboxes', async () => {
   let nextId = 0;
   const disposed: string[] = [];
 

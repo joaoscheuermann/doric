@@ -496,17 +496,17 @@ export const pool = (
   }) as never;
 
 /** One scripted workspace entry; a missing `content` marks an empty directory. */
-export type FakeSandboxEntry = {
+export interface FakeSandboxEntry {
   readonly path: string;
   readonly content?: string;
-};
+}
 
 /**
  * The Git answers one scripted repository gives the probe. `status` is the whole
  * `git status --porcelain=v2 --branch` document, headers included, so a case
  * states the exact bytes Git prints rather than an interpretation of them.
  */
-export type FakeGitProbe = {
+export interface FakeGitProbe {
   /** `git status --porcelain=v2 --branch`, whole records as Git prints them. */
   readonly status?: string;
   readonly operation?: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
@@ -519,19 +519,19 @@ export type FakeGitProbe = {
   readonly short?: string;
   /** What `git config --get remote.origin.url` answers. */
   readonly origin?: string;
-};
+}
 
 /** One repository the fake sandbox holds, with the output git returns for it. */
-export type FakeRepository = {
+export interface FakeRepository {
   readonly path: string;
   /** `git status --porcelain`, which the workspace changes view reads. */
   readonly status?: string;
   readonly diff?: string;
   /** The answers this repository gives the Git probe and the repository hint. */
   readonly git?: FakeGitProbe;
-};
+}
 
-export type FakeSandboxOptions = {
+export interface FakeSandboxOptions {
   readonly root?: string;
   readonly id?: string;
   readonly entries?: readonly FakeSandboxEntry[];
@@ -548,7 +548,7 @@ export type FakeSandboxOptions = {
    * outside it, as a symbolic link does: the physical probe answers `outside`.
    */
   readonly escapes?: readonly string[];
-};
+}
 
 /**
  * A deterministic stand-in for a leased sandbox that answers the exact command

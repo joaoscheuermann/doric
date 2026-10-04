@@ -1,6 +1,6 @@
 import type { SandboxProvisionInput, SandboxRuntime } from 'sandbox';
 
-export type FirecrackerPaths = {
+export interface FirecrackerPaths {
   readonly firecracker: string;
   readonly jailer: string;
   readonly kernel: string;
@@ -8,26 +8,26 @@ export type FirecrackerPaths = {
   readonly dropbear: string;
   readonly state: string;
   readonly cache: string;
-};
+}
 
-export type FirecrackerRequest = {
+export interface FirecrackerRequest {
   readonly method: 'GET' | 'PUT' | 'PATCH';
   readonly path: string;
   readonly body?: unknown;
   readonly signal?: AbortSignal;
-};
+}
 
-export type FirecrackerResponse = {
+export interface FirecrackerResponse {
   readonly status: number;
   readonly body: Uint8Array;
-};
+}
 
 export type FirecrackerTransport = (
   socketPath: string,
   request: FirecrackerRequest,
 ) => Promise<FirecrackerResponse>;
 
-export type FirecrackerConfig = {
+export interface FirecrackerConfig {
   readonly paths: FirecrackerPaths;
   readonly networkPool: string;
   readonly cacheLimitBytes: number;
@@ -35,9 +35,9 @@ export type FirecrackerConfig = {
   readonly jailerUid: number;
   readonly jailerGid: number;
   readonly transport: FirecrackerTransport;
-};
+}
 
-export type CreateFirecrackerClientOptions = {
+export interface CreateFirecrackerClientOptions {
   readonly paths?: Partial<FirecrackerPaths>;
   readonly networkPool?: string;
   readonly cacheLimitBytes?: number;
@@ -51,9 +51,9 @@ export type CreateFirecrackerClientOptions = {
     input: SandboxProvisionInput,
     config: FirecrackerConfig,
   ) => Promise<SandboxRuntime>;
-};
+}
 
-export type FirecrackerApi = {
+export interface FirecrackerApi {
   request(input: FirecrackerRequest): Promise<void>;
 
   configure(input: {
@@ -68,4 +68,4 @@ export type FirecrackerApi = {
   }): Promise<void>;
 
   start(signal?: AbortSignal): Promise<void>;
-};
+}

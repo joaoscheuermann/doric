@@ -308,10 +308,10 @@ const execution = z
   .object({ maxTurns: limit, maxToolResultChars: limit.optional() })
   .strict();
 
-type ProviderReferences = {
+interface ProviderReferences {
   readonly providers: readonly { readonly id: string }[];
   readonly models: { readonly execution: { readonly providerId: string } };
-};
+}
 
 /** Provider IDs stay unique and every model profile references a known one. */
 const referencesKnownProviders = (
@@ -358,9 +358,7 @@ const referencesKnownProviders = (
  * time rather than by this static schema. A `secret` value names a stored
  * credential, exactly as a provider's secret field does.
  */
-const tools = z
-  .record(z.string(), z.record(z.string(), z.string()))
-  .optional();
+const tools = z.record(z.string(), z.record(z.string(), z.string())).optional();
 
 export const ConfigInputSchema = z
   .object({
@@ -379,11 +377,11 @@ export type ConfigInput = z.output<typeof ConfigInputSchema>;
 /** Per-tool values as stored: a keyed string map per tool, or none yet. */
 export type ToolConfigInput = NonNullable<ConfigInput['tools']>;
 
-export type DoricConfig = {
+export interface DoricConfig {
   readonly configuration: ConfigInput;
   readonly revision: number;
   readonly updatedAt: string;
-};
+}
 
 /**
  * Every credential one configured provider names, with the field that named it.

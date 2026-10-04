@@ -36,7 +36,7 @@ const textResponse = (status: number, body: string): DockerResponse => ({
   body: Buffer.from(body),
 });
 
-test('sends create container requests with Docker API paths and JSON body', async () => {
+void test('sends create container requests with Docker API paths and JSON body', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -77,7 +77,7 @@ test('sends create container requests with Docker API paths and JSON body', asyn
   });
 });
 
-test('maps Docker HTTP failures into structured errors', async () => {
+void test('maps Docker HTTP failures into structured errors', async () => {
   const client = createDockerClient({
     request: async () => textResponse(500, 'daemon failed'),
   });
@@ -93,7 +93,7 @@ test('maps Docker HTTP failures into structured errors', async () => {
   );
 });
 
-test('pulls images through the Docker image create endpoint', async () => {
+void test('pulls images through the Docker image create endpoint', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -113,7 +113,7 @@ test('pulls images through the Docker image create endpoint', async () => {
   assert.deepEqual(requests[0]?.query, { fromImage: 'node:slim' });
 });
 
-test('honors timeout and abort controls around the injected transport', async () => {
+void test('honors timeout and abort controls around the injected transport', async () => {
   const never: DockerTransport = async () => new Promise(() => undefined);
 
   const timeoutClient = createDockerClient({
@@ -138,7 +138,7 @@ test('honors timeout and abort controls around the injected transport', async ()
   );
 });
 
-test(
+void test(
   'uses DOCKER_HOST as the default Unix socket path when set',
   {
     skip: process.platform === 'win32',
@@ -170,7 +170,7 @@ test(
   },
 );
 
-test('creates starts and inspects execs while demuxing non TTY output', async () => {
+void test('creates starts and inspects execs while demuxing non TTY output', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -224,7 +224,7 @@ test('creates starts and inspects execs while demuxing non TTY output', async ()
   assert.equal(result.stderr, 'err\n');
 });
 
-test('uses Docker archive endpoints for upload and download', async () => {
+void test('uses Docker archive endpoints for upload and download', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -262,7 +262,7 @@ test('uses Docker archive endpoints for upload and download', async () => {
   assert.equal(Buffer.from(archive).toString('utf8'), 'archive');
 });
 
-test('provisions Sandbox runtimes with CPU memory and writable disk limits', async () => {
+void test('provisions Sandbox runtimes with CPU memory and writable disk limits', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -315,7 +315,7 @@ test('provisions Sandbox runtimes with CPU memory and writable disk limits', asy
   );
 });
 
-test('mounts a durable workspace volume and labels the container', async () => {
+void test('mounts a durable workspace volume and labels the container', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -396,7 +396,7 @@ test('mounts a durable workspace volume and labels the container', async () => {
   assert.deepEqual(requests.at(-1)?.path, '/volumes/doric-workspace-project-a');
 });
 
-test('leaves a sandbox without a workspace unbound', async () => {
+void test('leaves a sandbox without a workspace unbound', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -443,7 +443,7 @@ test('leaves a sandbox without a workspace unbound', async () => {
   assert.equal(body.Labels['doric.sandbox.workspace'], undefined);
 });
 
-test('rejects a workspace identity that cannot name a volume', async () => {
+void test('rejects a workspace identity that cannot name a volume', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -475,7 +475,7 @@ test('rejects a workspace identity that cannot name a volume', async () => {
   );
 });
 
-test('removes a workspace volume and tolerates a missing one', async () => {
+void test('removes a workspace volume and tolerates a missing one', async () => {
   const requests: DockerTransportRequest[] = [];
   const statuses = [204, 404];
 
@@ -504,7 +504,7 @@ test('removes a workspace volume and tolerates a missing one', async () => {
   );
 });
 
-test('inspects containers and starts detached execs', async () => {
+void test('inspects containers and starts detached execs', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -549,7 +549,7 @@ test('inspects containers and starts detached execs', async () => {
   assert.deepEqual(requests.at(-1)?.body, { Detach: true, Tty: false });
 });
 
-test('retries without a disk quota when Docker does not support one', async () => {
+void test('retries without a disk quota when Docker does not support one', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -602,7 +602,7 @@ test('retries without a disk quota when Docker does not support one', async () =
   });
 });
 
-test('keeps the workspace mount when retrying without a disk quota', async () => {
+void test('keeps the workspace mount when retrying without a disk quota', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -660,7 +660,7 @@ test('keeps the workspace mount when retrying without a disk quota', async () =>
   );
 });
 
-test('renders host-input and protected-destination Docker rules', () => {
+void test('renders host-input and protected-destination Docker rules', () => {
   const rules = renderDockerFirewall('doric_test', '172.17.0.2', {
     mode: 'egress',
     ssh: false,
@@ -683,7 +683,7 @@ test('renders host-input and protected-destination Docker rules', () => {
   );
 });
 
-test('selects nftables only on Linux and rejects unknown platforms', () => {
+void test('selects nftables only on Linux and rejects unknown platforms', () => {
   assert.equal(firewallStrategy('linux'), 'nftables');
 
   assert.equal(firewallStrategy('darwin'), 'docker-desktop');
@@ -696,7 +696,7 @@ test('selects nftables only on Linux and rejects unknown platforms', () => {
   );
 });
 
-test('leaves Docker Desktop firewall and bridge networking unchanged', async () => {
+void test('leaves Docker Desktop firewall and bridge networking unchanged', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'doric-docker-host-'));
 
   const client = new Proxy({} as DockerClient, {
@@ -746,7 +746,7 @@ test('leaves Docker Desktop firewall and bridge networking unchanged', async () 
   }
 });
 
-test('rejects unknown platforms before provisioning', async () => {
+void test('rejects unknown platforms before provisioning', async () => {
   await assert.rejects(
     preflightDockerHost(
       { mode: 'disabled', ssh: false },

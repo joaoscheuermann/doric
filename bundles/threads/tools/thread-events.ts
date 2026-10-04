@@ -1,14 +1,13 @@
+import { z } from 'zod';
+
 import type { ThreadEventView } from 'host';
 import { defineTool } from 'tool';
-import { z } from 'zod';
 
 /** How much of one event a digest line carries. */
 const summaryLimit = 400;
 
 const excerpt = (value: string): string =>
-  value.length <= summaryLimit
-    ? value
-    : `${value.slice(0, summaryLimit)}…`;
+  value.length <= summaryLimit ? value : `${value.slice(0, summaryLimit)}…`;
 
 /**
  * A compact, always-safe summary of one persisted event. Assistant text and

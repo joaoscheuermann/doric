@@ -3,19 +3,19 @@ import test from 'node:test';
 
 import {
   createFetchTransport,
-  ProviderErrorObject,
   type HttpTransport,
   type LlmProvider,
+  ProviderErrorObject,
 } from '../src/index.js';
 import {
+  createCodexProvider,
+  createLmStudioOpenAiProvider,
+  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
-  createLmStudioProvider,
-  createLmStudioOpenAiProvider,
-  createCodexProvider,
 } from './fakes.js';
 
-test('includes response diagnostics when opening a stream fails', async () => {
+void test('includes response diagnostics when opening a stream fails', async () => {
   const transport = createFetchTransport(async () => {
     return new Response('failed with Bearer secret-token-value', {
       status: 400,
@@ -64,7 +64,7 @@ const providers: readonly (readonly [
 
 for (const [id, create] of providers) {
   for (const status of [401, 429, 500]) {
-    test(`preserves ${id} stream HTTP ${status} status and diagnostics`, async () => {
+    void test(`preserves ${id} stream HTTP ${status} status and diagnostics`, async () => {
       const transport = createFetchTransport(
         async () =>
           new Response('failed with Bearer secret-token-value', { status }),
@@ -97,7 +97,7 @@ for (const [id, create] of providers) {
     });
   }
 
-  test(`preserves ${id} cancellation and arbitrary transport errors`, async () => {
+  void test(`preserves ${id} cancellation and arbitrary transport errors`, async () => {
     for (const failure of [
       new DOMException('cancelled', 'AbortError'),
       new TypeError('programming error'),

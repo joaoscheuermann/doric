@@ -34,11 +34,11 @@ const lookupDefinition = {
 
 type Mode = 'complete' | 'stream';
 
-type InvalidSubmission = {
+interface InvalidSubmission {
   readonly name: string;
   readonly reason: RegExp;
   readonly finish: (request: ProviderRequest<unknown>) => ProviderFinished;
-};
+}
 
 const terminalName = (request: ProviderRequest<unknown>): string => {
   const terminal = request.tools?.find(
@@ -126,7 +126,7 @@ const invalidSubmissions: readonly InvalidSubmission[] = [
 
 for (const mode of ['complete', 'stream'] as const) {
   for (const submission of invalidSubmissions) {
-    test(`${mode} repairs ${submission.name} without executing it`, async () => {
+    void test(`${mode} repairs ${submission.name} without executing it`, async () => {
       const fake = createProvider({
         complete: (request, index) =>
           index === 0
@@ -194,7 +194,7 @@ for (const mode of ['complete', 'stream'] as const) {
   }
 }
 
-test('correction feedback includes at most ten normalized issues without rejected values', async () => {
+void test('correction feedback includes at most ten normalized issues without rejected values', async () => {
   const schema = z.object({
     items: z.array(z.object({ count: z.number() })),
   });
@@ -249,7 +249,7 @@ test('correction feedback includes at most ten normalized issues without rejecte
   assert.doesNotMatch(correction, /private-value/);
 });
 
-test('correction feedback preserves additional diagnostic lines', async () => {
+void test('correction feedback preserves additional diagnostic lines', async () => {
   const schema = z.object({
     answer: z.string().superRefine((_, context) => {
       context.addIssue({
@@ -297,7 +297,7 @@ test('correction feedback preserves additional diagnostic lines', async () => {
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} throws after two repair attempts with its latest error`, async () => {
+  void test(`${mode} throws after two repair attempts with its latest error`, async () => {
     const fake = createProvider({
       complete: (request, index) => exhaustionFinish(request, index),
       stream: (request, index) =>
@@ -343,7 +343,7 @@ for (const mode of ['complete', 'stream'] as const) {
   });
 }
 
-test('ordinary tool turns consume transient corrections without changing the retry budget', async () => {
+void test('ordinary tool turns consume transient corrections without changing the retry budget', async () => {
   const sequence = ['first', 'second', 'third'] as const;
 
   const fake = createProvider({
@@ -438,7 +438,7 @@ test('ordinary tool turns consume transient corrections without changing the ret
   );
 });
 
-test('stream suppresses invalid deltas and the invalid finished event', async () => {
+void test('stream suppresses invalid deltas and the invalid finished event', async () => {
   const fake = createProvider({
     stream: (request, index) =>
       streamEvents(
@@ -502,7 +502,7 @@ test('stream suppresses invalid deltas and the invalid finished event', async ()
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} leaves provider failures unchanged for structured runs`, async () => {
+  void test(`${mode} leaves provider failures unchanged for structured runs`, async () => {
     const failure = new ProviderErrorObject({
       provider: 'fake',
       code: 'invalid_structured_output',

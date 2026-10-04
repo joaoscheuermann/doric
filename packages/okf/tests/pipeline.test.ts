@@ -17,7 +17,7 @@ import {
 import { renderEvidence } from '../src/lib/summarize.js';
 import { createProvider } from './fakes.js';
 
-test('renders collision-safe evidence with exact source and interface YAML', () => {
+void test('renders collision-safe evidence with exact source and interface YAML', () => {
   const content = '````\n~~~~~~~~\nconst pattern = /a\\/b/g;\n';
 
   const rendered = renderEvidence({
@@ -48,7 +48,7 @@ test('renders collision-safe evidence with exact source and interface YAML', () 
   assert.match(rendered, /Terminal newline: yes/u);
 });
 
-test('frames JSON and no-terminal-newline content losslessly', () => {
+void test('frames JSON and no-terminal-newline content losslessly', () => {
   const content = '{"label":"olá"}';
 
   const rendered = renderEvidence({
@@ -64,7 +64,7 @@ test('frames JSON and no-terminal-newline content losslessly', () => {
   assert.equal(extractFramedContent(rendered), content);
 });
 
-test('hashes source metadata relationships prompt provider model and effort', () => {
+void test('hashes source metadata relationships prompt provider model and effort', () => {
   const hashInput = (value: unknown): string =>
     recipeHash(value as Parameters<typeof recipeHash>[0]);
   const first = createProvider().provider;
@@ -139,7 +139,7 @@ test('hashes source metadata relationships prompt provider model and effort', ()
   assert.equal(RECIPE_VERSIONS.pipeline, 'summary-description-tags-v1');
 });
 
-test('pins parser grammar and YAML recipe versions to exact dependencies', async () => {
+void test('pins parser grammar and YAML recipe versions to exact dependencies', async () => {
   const packageJson = JSON.parse(
     await fs.readFile(
       path.join(process.cwd(), 'packages', 'okf', 'package.json'),
@@ -161,7 +161,7 @@ test('pins parser grammar and YAML recipe versions to exact dependencies', async
   );
 });
 
-test('renders flow scalar arrays and compares only parsed exact hashes', () => {
+void test('renders flow scalar arrays and compares only parsed exact hashes', () => {
   const markdown = renderConcept({
     source: 'src/main.ts',
     type: 'ts',

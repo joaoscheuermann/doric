@@ -14,11 +14,11 @@ export type {
   JsonlValue,
 } from './types/jsonl.js';
 
-type JsonlState = {
+interface JsonlState {
   readonly path: string;
   pending: Promise<void>;
   stream: WriteStream | undefined;
-};
+}
 
 /** Creates a stream-backed JSONL file handle for appending and reading records. */
 export function jsonl(path: string): JsonlFile {

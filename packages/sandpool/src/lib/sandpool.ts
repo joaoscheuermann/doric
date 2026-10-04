@@ -12,29 +12,29 @@ import type {
   SandpoolWaitOptions,
 } from './types/sandpool.js';
 
-type SessionRecord = {
+interface SessionRecord {
   readonly session: SandboxSession;
   phase: 'idle' | 'leased' | 'disposing';
   disposal: Promise<void> | undefined;
-};
+}
 
-type AcquireWaiter = {
+interface AcquireWaiter {
   readonly resolve: (lease: SandboxLease) => void;
   readonly reject: (cause: unknown) => void;
   readonly signal: AbortSignal | undefined;
   readonly onAbort: () => void;
   readonly identity: string | undefined;
   creating: boolean;
-};
+}
 
-type HeatWaiter = {
+interface HeatWaiter {
   readonly resolve: () => void;
   readonly reject: (cause: unknown) => void;
   readonly signal: AbortSignal | undefined;
   readonly onAbort: () => void;
-};
+}
 
-type State = {
+interface State {
   readonly options: SandpoolOptions;
   readonly maxCreateAttempts: number;
   readonly logger: Logger;
@@ -48,11 +48,11 @@ type State = {
   creationExhausted: boolean;
   creationBackoffMs: number;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
-  lastFailure: unknown | undefined;
+  lastFailure: unknown;
   disposePromise: Promise<void> | undefined;
   finishDispose: (() => void) | undefined;
   wasHeated: boolean;
-};
+}
 
 const INITIAL_BACKOFF_MS = 250;
 const MAX_BACKOFF_MS = 5_000;

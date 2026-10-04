@@ -6,7 +6,7 @@ import type { NormalizedSandboxNetworkPolicy } from 'sandbox';
 import { run } from './command.js';
 import type { FirecrackerConfig } from './types.js';
 
-export type VmNetwork = {
+export interface VmNetwork {
   readonly tap: string;
   readonly host: string;
   readonly guest: string;
@@ -14,7 +14,7 @@ export type VmNetwork = {
   readonly mac: string;
   readonly table: string;
   dispose(): Promise<void>;
-};
+}
 
 const protectedCidrs = [
   '0.0.0.0/8',
@@ -190,13 +190,13 @@ const removeRules = async (table: string): Promise<void> => {
   }).catch(() => undefined);
 };
 
-type Allocation = {
+interface Allocation {
   readonly host: string;
   readonly guest: string;
   readonly guestCidr: string;
   readonly mac: string;
   release(): Promise<void>;
-};
+}
 
 const allocate = async (
   id: string,

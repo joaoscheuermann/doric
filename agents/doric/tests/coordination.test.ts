@@ -17,7 +17,7 @@ const create = async (
   return value.thread;
 };
 
-test(
+void test(
   'allows bound parent controls to interrupt and terminate child work',
   { timeout: 5000 },
   async () => {
@@ -92,7 +92,7 @@ test(
   },
 );
 
-test(
+void test(
   'binds coordination to direct children and to the lifetime of the calling prompt',
   { timeout: 5000 },
   async () => {
@@ -139,7 +139,7 @@ test(
   },
 );
 
-test(
+void test(
   'redacts credentials before delivering delegated output to another Agent',
   { timeout: 5000 },
   async () => {
@@ -171,7 +171,7 @@ test(
   },
 );
 
-test(
+void test(
   'releases a late acquired lease after a queued Project is terminated',
   { timeout: 5000 },
   async () => {

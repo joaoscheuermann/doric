@@ -16,7 +16,7 @@ import {
 } from './fakes.js';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} finishes each tool before starting the next provider-ordered call`, async () => {
+  void test(`${mode} finishes each tool before starting the next provider-ordered call`, async () => {
     const trace: string[] = [];
     let releaseFirst!: () => void;
     let markFirstStarted!: () => void;

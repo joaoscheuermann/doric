@@ -19,12 +19,12 @@ const MAX_OUTPUT_BYTES = 50 * 1024;
 const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/u;
 const RESERVED = new Set(['index.md', 'log.md']);
 
-type YamlModule = {
+interface YamlModule {
   readonly parse?: (value: string, options?: object) => unknown;
   readonly default?: {
     readonly parse?: (value: string, options?: object) => unknown;
   };
-};
+}
 
 const yaml = YAML as unknown as YamlModule;
 const parseYaml = yaml.parse ?? yaml.default?.parse;
@@ -78,10 +78,10 @@ type Concept = Omit<OkfSearchResult, 'contentTruncated' | 'score'> & {
   readonly sourceTruncated: boolean;
 };
 
-type Ranked = {
+interface Ranked {
   readonly concept: Concept;
   readonly score: number;
-};
+}
 
 type LoadResult = { readonly concept: Concept } | { readonly skipped: true };
 

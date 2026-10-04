@@ -37,7 +37,7 @@ const thread: Thread = {
 
 // These are HTTP adapter tests: service outcomes are controlled below.
 // Workspace lifecycle and persistence are exercised in their own suites.
-test('maps separate Project and Thread creation and list results', async (t) => {
+void test('maps separate Project and Thread creation and list results', async (t) => {
   const host = await serve({
     threads: { list: async () => ({ items: [thread] }) },
   });
@@ -68,7 +68,7 @@ test('maps separate Project and Thread creation and list results', async (t) => 
   assert.equal(projects.items[0]?.name, 'Project');
 });
 
-test('production HTTP registration exposes no legacy Session aliases', async (t) => {
+void test('production HTTP registration exposes no legacy Session aliases', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const [method, path] of [
@@ -80,7 +80,7 @@ test('production HTTP registration exposes no legacy Session aliases', async (t)
   }
 });
 
-test('creates child threads and rejects privileged creation input', async (t) => {
+void test('creates child threads and rejects privileged creation input', async (t) => {
   const host = await serve();
   t.after(host.close);
   const child = await host.request(`/projects/${projectId}/threads`, 'POST', {
@@ -101,7 +101,7 @@ test('creates child threads and rejects privileged creation input', async (t) =>
   }
 });
 
-test('rejects invalid names for Project and Thread creation', async (t) => {
+void test('rejects invalid names for Project and Thread creation', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const body of [
@@ -122,7 +122,7 @@ test('rejects invalid names for Project and Thread creation', async (t) => {
   }
 });
 
-test('accepts names containing up to 80 Unicode code points', async (t) => {
+void test('accepts names containing up to 80 Unicode code points', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const name of ['x'.repeat(80), '😀'.repeat(80)]) {
@@ -139,7 +139,7 @@ test('accepts names containing up to 80 Unicode code points', async (t) => {
   }
 });
 
-test('assigns and clears a Project color from the fixed palette', async (t) => {
+void test('assigns and clears a Project color from the fixed palette', async (t) => {
   const host = await serve({
     projects: {
       setColor: async (id, color) =>
@@ -161,7 +161,7 @@ test('assigns and clears a Project color from the fixed palette', async (t) => {
   assert.equal('color' in ((await cleared.json()) as Project), false);
 });
 
-test('rejects colors outside the palette and missing Projects', async (t) => {
+void test('rejects colors outside the palette and missing Projects', async (t) => {
   const host = await serve({
     projects: {
       setColor: async (id) => (id === projectId ? project : undefined),
@@ -190,7 +190,7 @@ test('rejects colors outside the palette and missing Projects', async (t) => {
   );
 });
 
-test('renames Projects and Threads with normalized names', async (t) => {
+void test('renames Projects and Threads with normalized names', async (t) => {
   const host = await serve({
     projects: {
       rename: async (id, name) =>
@@ -217,7 +217,7 @@ test('renames Projects and Threads with normalized names', async (t) => {
   assert.equal(((await renamedThread.json()) as Thread).name, 'Renamed thread');
 });
 
-test('returns 404 for missing rename targets and rejects invalid rename input', async (t) => {
+void test('returns 404 for missing rename targets and rejects invalid rename input', async (t) => {
   const host = await serve();
   t.after(host.close);
   assert.equal(
@@ -254,7 +254,7 @@ test('returns 404 for missing rename targets and rejects invalid rename input', 
   );
 });
 
-test('accepts human prompts but rejects blank text and forged origin', async (t) => {
+void test('accepts human prompts but rejects blank text and forged origin', async (t) => {
   const host = await serve();
   t.after(host.close);
   const path = `/threads/${threadId}/prompt`;
@@ -270,7 +270,7 @@ test('accepts human prompts but rejects blank text and forged origin', async (t)
   }
 });
 
-test('rewinds an earlier prompt and reports its refusal reasons', async (t) => {
+void test('rewinds an earlier prompt and reports its refusal reasons', async (t) => {
   const host = await serve();
   t.after(host.close);
   const path = `/threads/${threadId}/rewind`;
@@ -299,7 +299,7 @@ test('rewinds an earlier prompt and reports its refusal reasons', async (t) => {
   );
 });
 
-test('maps rewind conflicts and unknown prompts to stable error codes', async (t) => {
+void test('maps rewind conflicts and unknown prompts to stable error codes', async (t) => {
   const cases = [
     ['busy', 409, 'thread_busy'],
     ['unknown_prompt', 404, 'prompt_not_found'],
@@ -321,7 +321,7 @@ test('maps rewind conflicts and unknown prompts to stable error codes', async (t
   }
 });
 
-test('resumes one paused prompt and reports its refusal reasons', async (t) => {
+void test('resumes one paused prompt and reports its refusal reasons', async (t) => {
   const host = await serve();
   t.after(host.close);
   const path = `/threads/${threadId}/resume`;
@@ -357,7 +357,7 @@ test('resumes one paused prompt and reports its refusal reasons', async (t) => {
   }
 });
 
-test('requires prompt-scoped interruption and reports stale execution conflicts', async (t) => {
+void test('requires prompt-scoped interruption and reports stale execution conflicts', async (t) => {
   const host = await serve();
   t.after(host.close);
   const path = `/threads/${threadId}/interrupt`;
@@ -371,7 +371,7 @@ test('requires prompt-scoped interruption and reports stale execution conflicts'
   assert.deepEqual(await interrupted.json(), { status: 'interrupted' });
 });
 
-test('forwards the replay cursor, prohibits caching and validates identifiers and pages', async (t) => {
+void test('forwards the replay cursor, prohibits caching and validates identifiers and pages', async (t) => {
   const host = await serve({
     threads: {
       events: async (id, cursor) => {
@@ -416,7 +416,7 @@ test('forwards the replay cursor, prohibits caching and validates identifiers an
   assert.equal((await host.request('/threads/not-an-id')).status, 400);
 });
 
-test('moves a Thread working directory, and reports a refusal as an invalid cwd', async (t) => {
+void test('moves a Thread working directory, and reports a refusal as an invalid cwd', async (t) => {
   const host = await serve({
     threads: {
       setCwd: async (id, cwd) => {
@@ -466,7 +466,7 @@ test('moves a Thread working directory, and reports a refusal as an invalid cwd'
   );
 });
 
-test('serves a Thread Git summary and reports a missing or inactive Thread', async (t) => {
+void test('serves a Thread Git summary and reports a missing or inactive Thread', async (t) => {
   const host = await serve({
     threads: {
       git: async (id) =>
@@ -484,7 +484,7 @@ test('serves a Thread Git summary and reports a missing or inactive Thread', asy
   assert.equal((await host.request(`/threads/${promptId}/git`)).status, 409);
 });
 
-test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
+void test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const [kind, operations] of [
@@ -532,7 +532,7 @@ test('rejects invalid project and thread IDs before handling resource operations
   }
 });
 
-test('reports missing resources and refuses active deletion', async (t) => {
+void test('reports missing resources and refuses active deletion', async (t) => {
   const host = await serve();
   t.after(host.close);
   for (const [kind, id] of [
@@ -544,7 +544,7 @@ test('reports missing resources and refuses active deletion', async (t) => {
   }
 });
 
-test('maps termination and successful deletion outcomes for Projects and Threads', async (t) => {
+void test('maps termination and successful deletion outcomes for Projects and Threads', async (t) => {
   const host = await serve({
     projects: { delete: async () => 'deleted' },
     threads: { delete: async () => 'deleted' },
@@ -564,7 +564,7 @@ test('maps termination and successful deletion outcomes for Projects and Threads
   }
 });
 
-test('returns private project SSH access and sanitizes unexpected failures', async (t) => {
+void test('returns private project SSH access and sanitizes unexpected failures', async (t) => {
   const host = await serve();
   t.after(host.close);
   const response = await host.request(`/projects/${projectId}/ssh`);
@@ -590,7 +590,7 @@ for (const [status, expected] of [
   ['unavailable', 409],
   ['missing', 404],
 ] as const) {
-  test(`reports ${status} project SSH access without exposing or caching credentials`, async (t) => {
+  void test(`reports ${status} project SSH access without exposing or caching credentials`, async (t) => {
     const host = await serve({ projects: { ssh: async () => ({ status }) } });
     t.after(host.close);
     const response = await host.request(`/projects/${projectId}/ssh`);
@@ -602,7 +602,7 @@ for (const [status, expected] of [
   });
 }
 
-test('rejects cross-project parenting and inputs into inactive threads', async (t) => {
+void test('rejects cross-project parenting and inputs into inactive threads', async (t) => {
   const host = await serve({
     threads: {
       create: async () => ({ status: 'invalid_parent' }),
@@ -629,7 +629,7 @@ test('rejects cross-project parenting and inputs into inactive threads', async (
   );
 });
 
-test('forwards pagination cursors and parent filters and preserves the next cursor', async (t) => {
+void test('forwards pagination cursors and parent filters and preserves the next cursor', async (t) => {
   const host = await serve({
     threads: {
       list: async (_id, limit, cursor, parentThreadId) => ({
@@ -649,7 +649,9 @@ test('forwards pagination cursors and parent filters and preserves the next curs
   assert.equal(page.nextCursor, threadId);
 });
 
-type ErrorBody = { error: { code: string } };
+interface ErrorBody {
+  error: { code: string };
+}
 
 const serve = async (
   overrides: {
@@ -747,7 +749,11 @@ const serve = async (
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,
-    vms: { list: () => [], find: () => undefined, ssh: service.sshForVm },
+    vms: {
+      list: () => [],
+      find: () => undefined,
+      ssh: (id) => service.sshForVm(id),
+    },
   });
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

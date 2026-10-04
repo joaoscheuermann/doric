@@ -96,7 +96,6 @@ export function SendPrompt({
     [editor, promptSignal, $promptHasWords],
   );
 
-
   // The prompt a surface opens on may already hold words — a refused send puts
   // them back, a rewind draws them — so the value is stated once on the way in
   // rather than waiting for the next keystroke.

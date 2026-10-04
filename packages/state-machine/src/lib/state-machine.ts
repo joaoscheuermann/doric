@@ -40,15 +40,14 @@ export const createStateMachine =
     Failed = unknown,
   >() =>
   /** Creates a reusable definition whose run state is isolated to each call. */
-  <Handlers extends string>(handlers: {
-    readonly [Handler in Handlers]: StateMachineHandler<
-      Context,
-      State,
-      NoInfer<Handlers>,
-      Finished,
-      Failed
-    >;
-  }): StateMachineDefinition<Handlers, State, Context, Finished, Failed> => {
+  <Handlers extends string>(
+    handlers: Readonly<
+      Record<
+        Handlers,
+        StateMachineHandler<Context, State, NoInfer<Handlers>, Finished, Failed>
+      >
+    >,
+  ): StateMachineDefinition<Handlers, State, Context, Finished, Failed> => {
     const runtimeHandlers = { ...handlers } as RuntimeHandlers<
       Handlers,
       State,

@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createMessageStorage } from 'messages';
 import { z } from 'zod';
+
+import { createMessageStorage } from 'messages';
 
 import {
   AgentErrorObject,
+  type AgentToolEvent,
   createAgent,
   createToolCallStorage,
-  type AgentToolEvent,
 } from '../src/index.js';
 import {
   call,
@@ -19,7 +20,7 @@ import {
   streamEvents,
 } from './fakes.js';
 
-test('appends immutable records with deterministic unique opaque IDs', () => {
+void test('appends immutable records with deterministic unique opaque IDs', () => {
   const ids = ['observation-1', 'observation-2'];
   const storage = createToolCallStorage({ createId: () => ids.shift() ?? '' });
   const first = storage.append(
@@ -44,7 +45,7 @@ test('appends immutable records with deterministic unique opaque IDs', () => {
   );
 });
 
-test('creates distinct UUIDs by default', () => {
+void test('creates distinct UUIDs by default', () => {
   const storage = createToolCallStorage();
   const first = storage.append(
     { id: 'call-1', name: 'lookup', payload: {} },
@@ -61,7 +62,7 @@ test('creates distinct UUIDs by default', () => {
 });
 
 for (const id of ['', '   ']) {
-  test(`rejects the invalid observation ID ${JSON.stringify(id)}`, () => {
+  void test(`rejects the invalid observation ID ${JSON.stringify(id)}`, () => {
     const storage = createToolCallStorage({ createId: () => id });
     assert.throws(
       () => storage.append({ id: 'call-1', name: 'lookup', payload: {} }, 'ok'),
@@ -72,7 +73,7 @@ for (const id of ['', '   ']) {
   });
 }
 
-test('rejects observation ID collisions without appending a second record', () => {
+void test('rejects observation ID collisions without appending a second record', () => {
   const storage = createToolCallStorage({ createId: () => 'same-id' });
   storage.append({ id: 'call-1', name: 'lookup', payload: {} }, 'first');
 
@@ -86,7 +87,7 @@ test('rejects observation ID collisions without appending a second record', () =
   assert.equal(storage.list().length, 1);
 });
 
-test('rejects an unserializable tool input without appending a record', () => {
+void test('rejects an unserializable tool input without appending a record', () => {
   const payload: Record<string, unknown> = {};
   payload.self = payload;
   const storage = createToolCallStorage({ createId: () => 'observation-1' });
@@ -104,7 +105,7 @@ test('rejects an unserializable tool input without appending a record', () => {
   assert.deepEqual(storage.list(), []);
 });
 
-test('aborts an agent run when a generated observation ID collides', async () => {
+void test('aborts an agent run when a generated observation ID collides', async () => {
   const storage = createToolCallStorage({ createId: () => 'same-id' });
   const agent = createAgent({
     provider: createProvider({
@@ -128,7 +129,7 @@ test('aborts an agent run when a generated observation ID collides', async () =>
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} shares one observation ID across storage message and events`, async () => {
+  void test(`${mode} shares one observation ID across storage message and events`, async () => {
     const observationId = `observation-${mode}`;
     const storage = createToolCallStorage({ createId: () => observationId });
     const messages = createMessageStorage();
@@ -172,7 +173,8 @@ for (const mode of ['complete', 'stream'] as const) {
       output: '{"exit_code":1}',
     });
     const message = messages.list().find(({ role }) => role === 'tool');
-    assert.match(String(message?.content), new RegExp(observationId, 'u'));
+    assert.ok(typeof message?.content === 'string');
+    assert.match(message.content, new RegExp(observationId, 'u'));
     const finished = events.find(({ type }) => type === 'tool.finished');
     assert.deepEqual(
       finished?.type === 'tool.finished' ? finished.record : undefined,
@@ -185,7 +187,7 @@ for (const mode of ['complete', 'stream'] as const) {
   });
 }
 
-test('does not append terminal structured output or handler failures', async () => {
+void test('does not append terminal structured output or handler failures', async () => {
   const storage = createToolCallStorage({ createId: () => 'unused' });
   const schema = z.object({ answer: z.string() });
   const provider = createProvider({
@@ -222,7 +224,7 @@ test('does not append terminal structured output or handler failures', async () 
   assert.deepEqual(storage.list(), []);
 });
 
-test('does not append an unserializable result', async () => {
+void test('does not append an unserializable result', async () => {
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
   const storage = createToolCallStorage({ createId: () => 'observation-1' });
@@ -246,7 +248,7 @@ test('does not append an unserializable result', async () => {
   assert.deepEqual(storage.list(), []);
 });
 
-test('keeps the final permitted turn in the ledger before turn exhaustion', async () => {
+void test('keeps the final permitted turn in the ledger before turn exhaustion', async () => {
   const storage = createToolCallStorage({ createId: () => 'observation-1' });
   const agent = createAgent({
     provider: createProvider({

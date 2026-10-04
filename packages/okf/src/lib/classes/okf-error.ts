@@ -26,12 +26,12 @@ export type OkfErrorStage =
   | 'write'
   | 'index';
 
-type Definition = {
+interface Definition {
   readonly stage: OkfErrorStage;
   readonly message: string;
   readonly hint: string;
   readonly source?: true;
-};
+}
 
 const DEFINITIONS: Readonly<Record<OkfErrorCode, Definition>> = {
   OKF_ROOT_INVALID: {

@@ -102,14 +102,14 @@ missing requirement link, invalid effort order, or repository-grounding failure.
 
 ## Inputs
 
-| Input | Path | Purpose |
-| ----- | ---- | ------- |
-| Prompt state | `<run>/PROMPT.md` | Preserves accepted task framing, unresolved non-blocking questions, and user decisions that remain relevant to effort scope. |
-| Accepted PRD | `<run>/PRD.md` or resolved promoted PRD path | Defines product requirements, user-visible behavior, non-goals, acceptance criteria, and validation expectations. |
-| Accepted TDD | `<run>/TDD.md` or resolved promoted TDD path | Defines technical components, Dependency Hops, repository boundaries, rollout constraints, and testing strategy. |
-| Grounding | `GROUNDING.md`, `AGENTS.md`, `.agents/skills/doric/SKILL.md` | Defines hard workflow gates, artifact contracts, package responsibilities, and sub-agent proof requirements. |
-| Repo evidence | Current source, manifests, schemas, tests, docs | Anchors target files, coupled files, regression suites, package boundaries, and ownership risks in the real repository. |
-| State projection | `<run>/STATE.md` | Displays harness-generated current phase, approvals, required agents, active locks, effort order, and legal next action for audit and review. |
+| Input            | Path                                                         | Purpose                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt state     | `<run>/PROMPT.md`                                            | Preserves accepted task framing, unresolved non-blocking questions, and user decisions that remain relevant to effort scope.                  |
+| Accepted PRD     | `<run>/PRD.md` or resolved promoted PRD path                 | Defines product requirements, user-visible behavior, non-goals, acceptance criteria, and validation expectations.                             |
+| Accepted TDD     | `<run>/TDD.md` or resolved promoted TDD path                 | Defines technical components, Dependency Hops, repository boundaries, rollout constraints, and testing strategy.                              |
+| Grounding        | `GROUNDING.md`, `AGENTS.md`, `.agents/skills/doric/SKILL.md` | Defines hard workflow gates, artifact contracts, package responsibilities, and sub-agent proof requirements.                                  |
+| Repo evidence    | Current source, manifests, schemas, tests, docs              | Anchors target files, coupled files, regression suites, package boundaries, and ownership risks in the real repository.                       |
+| State projection | `<run>/STATE.md`                                             | Displays harness-generated current phase, approvals, required agents, active locks, effort order, and legal next action for audit and review. |
 
 The Supervisor should read only the repository evidence needed to identify
 impact, ownership, and tests. Broaden discovery only when a candidate crosses
@@ -147,16 +147,16 @@ evidence.
 Use the smallest set that covers the feature. The default decomposition roles
 are:
 
-| Role | Agent type | Purpose | Output |
-| ---- | ---------- | ------- | ------ |
-| requirement extractor | explorer | Map PRD requirements, user-value hops, TDD components, and Dependency Hops to extracted features. | Draft or reviewed `<run>/FEATURES.md`. |
-| repo impact cartographer | explorer | Identify target files, coupled files, regression suites, generated artifacts, and ownership risks. | Impact notes for `FEATURES.md` and effort planning. |
-| effort planner candidates | worker | Generate two or three materially different effort-plan candidates when more than one valid sequencing exists. | Candidate effort maps and draft effort files or structured plans. |
-| proximity/dedup reviewer | explorer | Remove near-duplicate effort plans and identify overlapping or split-too-fine effort boundaries. | Dedup and similarity report. |
-| decomposition reflection validator | explorer | Check requirement coverage, grounding, order, ownership, scope, and testability. | Validity findings and candidate eligibility. |
-| ranking judge | explorer, optional | Rank only validated candidates when multiple candidates remain. | Ranking notes tied to validation evidence. |
-| evolution repair agent | worker, optional | Repair one selected candidate when gaps are concrete and repairable without changing accepted PRD/TDD scope. | Child candidate plus lineage and addressed findings. |
-| publisher | worker | Publish `FEATURES.md` and contiguous effort files from the selected validated candidate. | Final artifacts under the run root and `efforts/`. |
+| Role                               | Agent type         | Purpose                                                                                                       | Output                                                            |
+| ---------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| requirement extractor              | explorer           | Map PRD requirements, user-value hops, TDD components, and Dependency Hops to extracted features.             | Draft or reviewed `<run>/FEATURES.md`.                            |
+| repo impact cartographer           | explorer           | Identify target files, coupled files, regression suites, generated artifacts, and ownership risks.            | Impact notes for `FEATURES.md` and effort planning.               |
+| effort planner candidates          | worker             | Generate two or three materially different effort-plan candidates when more than one valid sequencing exists. | Candidate effort maps and draft effort files or structured plans. |
+| proximity/dedup reviewer           | explorer           | Remove near-duplicate effort plans and identify overlapping or split-too-fine effort boundaries.              | Dedup and similarity report.                                      |
+| decomposition reflection validator | explorer           | Check requirement coverage, grounding, order, ownership, scope, and testability.                              | Validity findings and candidate eligibility.                      |
+| ranking judge                      | explorer, optional | Rank only validated candidates when multiple candidates remain.                                               | Ranking notes tied to validation evidence.                        |
+| evolution repair agent             | worker, optional   | Repair one selected candidate when gaps are concrete and repairable without changing accepted PRD/TDD scope.  | Child candidate plus lineage and addressed findings.              |
+| publisher                          | worker             | Publish `FEATURES.md` and contiguous effort files from the selected validated candidate.                      | Final artifacts under the run root and `efforts/`.                |
 
 For a small or obvious feature, the Supervisor may skip candidate plurality,
 ranking, and evolution. It still must run coverage extraction, validation,
@@ -445,16 +445,16 @@ Sources:
 
 ## Failure Modes
 
-| Failure mode | Mitigation |
-| ------------ | ---------- |
-| Candidate ranking rewards fluency over validity | Validate coverage, grounding, order, and ownership before ranking. |
-| Decomposition drops a PRD requirement | Require a coverage map from PRD requirements to features and efforts. |
-| Decomposition drops a TDD component | Require a technical coverage map from TDD components and Dependency Hops to efforts. |
-| Efforts overlap or duplicate ownership | Run proximity/dedup review and record write scopes in every effort. |
-| Effort order has gaps or duplicates | Enforce contiguous prefixes and project the ordered list into `STATE.md`. |
-| Effort scope is too broad | Require target files, coupled files, tests, ownership, and acceptance criteria. |
-| Decomposition starts development implicitly | Block all development roles until `decomposition_to_implementation` is approved. |
-| Repair changes accepted scope | Stop and return to the user or earlier phase instead of repairing locally. |
+| Failure mode                                    | Mitigation                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Candidate ranking rewards fluency over validity | Validate coverage, grounding, order, and ownership before ranking.                   |
+| Decomposition drops a PRD requirement           | Require a coverage map from PRD requirements to features and efforts.                |
+| Decomposition drops a TDD component             | Require a technical coverage map from TDD components and Dependency Hops to efforts. |
+| Efforts overlap or duplicate ownership          | Run proximity/dedup review and record write scopes in every effort.                  |
+| Effort order has gaps or duplicates             | Enforce contiguous prefixes and project the ordered list into `STATE.md`.            |
+| Effort scope is too broad                       | Require target files, coupled files, tests, ownership, and acceptance criteria.      |
+| Decomposition starts development implicitly     | Block all development roles until `decomposition_to_implementation` is approved.     |
+| Repair changes accepted scope                   | Stop and return to the user or earlier phase instead of repairing locally.           |
 
 ## Minimal Implementation
 

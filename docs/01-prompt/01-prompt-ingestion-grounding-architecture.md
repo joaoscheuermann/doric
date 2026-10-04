@@ -23,23 +23,23 @@ Prompt ingestion is complete when Doric has:
 
 ## Core Concepts
 
-| Concept | Contract |
-| ------- | -------- |
-| Initial prompt | The user's starting request. It is task context, not a complete plan. |
-| Prompt state | The current normalized understanding of the request. Stored durably in `PROMPT.md`. |
-| Prompt Supervisor | The phase-local coordinator for Step 01. It owns the prompt loop, artifacts, and human-gate interactions, and submits workflow transition requests to the state harness. |
-| Workflow state harness | Target architecture component that owns canonical workflow state transitions, including legal phase moves, approval state, required-agent gates, and stop states. |
-| `STATE.md` projection | A durable, human-readable generated projection and audit ledger of harness state. Agents and humans read it for visibility and review; they do not treat manual edits as the canonical transition source. |
-| Grounding context | The rules and constraints that govern the run. It includes safety, repository, workflow, and user-approved run constraints. |
-| Hard constraint | A non-negotiable invariant. If it conflicts with the prompt, the run blocks or asks for a decision. |
-| Convention parameter | A default preference or project convention. It guides work but can be overridden with justification. |
-| Clarification lens | A focused angle for questioning, such as scope, validation, technical context, or risk. |
-| Fresh question agent | A short-lived worker for one lens or round. It reads current state and proposes questions. |
-| Human Gate Channel | The interaction point where Doric asks the user for decisions or missing information. |
-| Answer Integrator | The component that turns explicit user answers into prompt-state revisions. |
-| Prompt Reflection | The quality gate that checks completeness, consistency, grounding, and readiness for extraction. |
-| Product Needs Extractor | Writes the product-scoped section of `PROMPT.md` without choosing implementation details. |
-| Technical Needs Extractor | Writes the architecture-scoped section of `PROMPT.md` without becoming a technical design. |
+| Concept                   | Contract                                                                                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial prompt            | The user's starting request. It is task context, not a complete plan.                                                                                                                                     |
+| Prompt state              | The current normalized understanding of the request. Stored durably in `PROMPT.md`.                                                                                                                       |
+| Prompt Supervisor         | The phase-local coordinator for Step 01. It owns the prompt loop, artifacts, and human-gate interactions, and submits workflow transition requests to the state harness.                                  |
+| Workflow state harness    | Target architecture component that owns canonical workflow state transitions, including legal phase moves, approval state, required-agent gates, and stop states.                                         |
+| `STATE.md` projection     | A durable, human-readable generated projection and audit ledger of harness state. Agents and humans read it for visibility and review; they do not treat manual edits as the canonical transition source. |
+| Grounding context         | The rules and constraints that govern the run. It includes safety, repository, workflow, and user-approved run constraints.                                                                               |
+| Hard constraint           | A non-negotiable invariant. If it conflicts with the prompt, the run blocks or asks for a decision.                                                                                                       |
+| Convention parameter      | A default preference or project convention. It guides work but can be overridden with justification.                                                                                                      |
+| Clarification lens        | A focused angle for questioning, such as scope, validation, technical context, or risk.                                                                                                                   |
+| Fresh question agent      | A short-lived worker for one lens or round. It reads current state and proposes questions.                                                                                                                |
+| Human Gate Channel        | The interaction point where Doric asks the user for decisions or missing information.                                                                                                                     |
+| Answer Integrator         | The component that turns explicit user answers into prompt-state revisions.                                                                                                                               |
+| Prompt Reflection         | The quality gate that checks completeness, consistency, grounding, and readiness for extraction.                                                                                                          |
+| Product Needs Extractor   | Writes the product-scoped section of `PROMPT.md` without choosing implementation details.                                                                                                                 |
+| Technical Needs Extractor | Writes the architecture-scoped section of `PROMPT.md` without becoming a technical design.                                                                                                                |
 
 ## Authority And Grounding
 
@@ -150,16 +150,16 @@ transition state is owned by the harness and projected into `STATE.md`.
 
 ## Clarification Lenses
 
-| Lens | What It Checks |
-| ---- | -------------- |
-| Product objective | What outcome the user wants and why it matters. |
-| Users and workflows | Who uses the result and which workflows change. |
-| Scope and non-goals | What is in scope, out of scope, or deferred. |
-| Acceptance criteria | How success will be recognized. |
-| Technical context | Platforms, packages, integrations, data, and architecture boundaries. |
-| Validation | What evidence is expected before completion. |
+| Lens                 | What It Checks                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| Product objective    | What outcome the user wants and why it matters.                                          |
+| Users and workflows  | Who uses the result and which workflows change.                                          |
+| Scope and non-goals  | What is in scope, out of scope, or deferred.                                             |
+| Acceptance criteria  | How success will be recognized.                                                          |
+| Technical context    | Platforms, packages, integrations, data, and architecture boundaries.                    |
+| Validation           | What evidence is expected before completion.                                             |
 | Risk and permissions | Destructive actions, third-party services, security, privacy, migrations, and approvals. |
-| Grounding | Hard constraints and convention parameters that govern the run. |
+| Grounding            | Hard constraints and convention parameters that govern the run.                          |
 
 A non-trivial run should cover the required lenses instead of asking random or
 repetitive questions. Doric should stop early when the prompt is saturated and
@@ -171,14 +171,14 @@ Every accepted change to `PROMPT.md` needs a clear trigger and provenance.
 
 ### Revision Triggers
 
-| Trigger | Meaning |
-| ------- | ------- |
-| `initial_prompt_normalization` | The first prompt is structured without adding hidden assumptions. |
-| `user_answer_integrated` | A user answer resolves, narrows, expands, or corrects part of the prompt state. |
-| `user_correction` | The user replaces an earlier interpretation or answer. |
-| `grounding_conflict_resolution` | A conflict between prompt intent and grounding is resolved. |
-| `prompt_reflection_followup` | Prompt Reflection finds a gap and sends Step 01 back to clarification. |
-| `scope_boundary_confirmed` | The user confirms in-scope or out-of-scope behavior. |
+| Trigger                         | Meaning                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| `initial_prompt_normalization`  | The first prompt is structured without adding hidden assumptions.               |
+| `user_answer_integrated`        | A user answer resolves, narrows, expands, or corrects part of the prompt state. |
+| `user_correction`               | The user replaces an earlier interpretation or answer.                          |
+| `grounding_conflict_resolution` | A conflict between prompt intent and grounding is resolved.                     |
+| `prompt_reflection_followup`    | Prompt Reflection finds a gap and sends Step 01 back to clarification.          |
+| `scope_boundary_confirmed`      | The user confirms in-scope or out-of-scope behavior.                            |
 
 ### Revision Record
 
@@ -473,18 +473,18 @@ Doric must not proceed to PRD generation when:
 
 ## Failure Modes
 
-| Failure Mode | Consequence | Guard |
-| ------------ | ----------- | ----- |
-| Raw prompt goes directly to PRD generation | Drafts solve a guessed problem. | Require Prompt Reflection and prompt artifacts before PRD generation. |
-| Long chat is treated as memory | Downstream agents miss or distort decisions. | Persist normalized prompt state in `PROMPT.md`. |
-| Prompt state changes without provenance | Later agents cannot tell why scope or constraints changed. | Require revision triggers, changed sections, and decision provenance. |
-| Answer integration silently changes scope | Clarification becomes unauthorized product decision-making. | Supervisor accepts revisions and asks the user on contradictions. |
-| Fresh agents receive incomplete state | Rounds repeat or contradict earlier answers. | Give each round current `PROMPT.md`, grounding summary, and question ledger. |
-| Questions are too broad | User answers do not reduce uncertainty. | Use lens-specific questions tied to downstream risk. |
-| Preferences are treated as hard constraints | Downstream work becomes overconstrained or invalid. | Separate hard constraints from convention parameters and preferences. |
-| Hard constraints are treated as preferences | Invalid work reaches PRD generation. | Load grounding early and block on conflicts. |
-| Technical extraction becomes design | The PRD phase is biased prematurely. | Restrict architecture requirements to constraints and needs. |
-| Clarification rounds become mechanical | User is asked redundant questions. | Cover distinct lenses and stop when saturation is reached. |
+| Failure Mode                                | Consequence                                                 | Guard                                                                        |
+| ------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Raw prompt goes directly to PRD generation  | Drafts solve a guessed problem.                             | Require Prompt Reflection and prompt artifacts before PRD generation.        |
+| Long chat is treated as memory              | Downstream agents miss or distort decisions.                | Persist normalized prompt state in `PROMPT.md`.                              |
+| Prompt state changes without provenance     | Later agents cannot tell why scope or constraints changed.  | Require revision triggers, changed sections, and decision provenance.        |
+| Answer integration silently changes scope   | Clarification becomes unauthorized product decision-making. | Supervisor accepts revisions and asks the user on contradictions.            |
+| Fresh agents receive incomplete state       | Rounds repeat or contradict earlier answers.                | Give each round current `PROMPT.md`, grounding summary, and question ledger. |
+| Questions are too broad                     | User answers do not reduce uncertainty.                     | Use lens-specific questions tied to downstream risk.                         |
+| Preferences are treated as hard constraints | Downstream work becomes overconstrained or invalid.         | Separate hard constraints from convention parameters and preferences.        |
+| Hard constraints are treated as preferences | Invalid work reaches PRD generation.                        | Load grounding early and block on conflicts.                                 |
+| Technical extraction becomes design         | The PRD phase is biased prematurely.                        | Restrict architecture requirements to constraints and needs.                 |
+| Clarification rounds become mechanical      | User is asked redundant questions.                          | Cover distinct lenses and stop when saturation is reached.                   |
 
 ## Minimal First Implementation
 

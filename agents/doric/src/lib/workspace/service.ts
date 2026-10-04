@@ -59,7 +59,7 @@ type LeaseOutcome<Value> =
   | { readonly status: 'missing' | 'pending' | 'unavailable' | 'expired' }
   | { readonly status: 'ready'; readonly value: Value };
 
-type Options = {
+interface Options {
   readonly projects: ProjectStore;
   readonly threads: ThreadStore;
   readonly config: ConfigService;
@@ -73,7 +73,7 @@ type Options = {
    */
   readonly discardWorkspace: (identity: string) => Promise<void>;
   readonly execute?: ThreadExecution;
-};
+}
 
 /**
  * The job a resumed prompt re-runs: the prompt's own id, so its events keep
@@ -826,11 +826,13 @@ export const createWorkspaceService = ({
         if (record === undefined) return 'missing';
         return exclusive(record.projectId, async () => {
           const thread = runtimes.get(record.projectId)?.threads.get(id);
-          return thread === undefined
-            ? 'inactive'
-            : // The reader's own stop pauses the run, so the reader can take it
-              // up again; a parent Thread's tool stops a child outright.
-              runner.interrupt(thread, promptId, 'reader_stopped');
+          return Promise.resolve(
+            thread === undefined
+              ? 'inactive'
+              : // The reader's own stop pauses the run, so the reader can take it
+                // up again; a parent Thread's tool stops a child outright.
+                runner.interrupt(thread, promptId, 'reader_stopped'),
+          );
         });
       },
       terminate: async (id) => {

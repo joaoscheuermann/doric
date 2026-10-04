@@ -7,38 +7,38 @@ export type ReasoningEffort =
   | 'xhigh'
   | 'max';
 
-export type GithubConfig = {
+export interface GithubConfig {
   readonly repo: {
     readonly url: string;
     readonly branch?: string;
   };
   readonly token: string;
-};
+}
 
-export type ProviderConfig = {
+export interface ProviderConfig {
   readonly id: string;
   readonly type: string;
   readonly token?: string;
   readonly baseUrl?: string;
-};
+}
 
-export type ModelConfig = {
+export interface ModelConfig {
   readonly id: string;
   readonly provider: string;
   readonly model: string;
   readonly effort?: ReasoningEffort;
   readonly reasoning?: ReasoningEffort;
   readonly internal_key?: string;
-};
+}
 
-export type TaskConfig = {
+export interface TaskConfig {
   readonly id: string;
   readonly model: string;
-};
+}
 
-export type AgentConfig = {
+export interface AgentConfig {
   readonly github: GithubConfig;
   readonly providers: readonly ProviderConfig[];
   readonly models: readonly ModelConfig[];
   readonly tasks: readonly TaskConfig[];
-};
+}

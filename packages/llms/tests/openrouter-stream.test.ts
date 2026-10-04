@@ -11,7 +11,7 @@ import {
   response,
 } from './fakes.js';
 
-test('streams OpenRouter deltas usage finish and accumulated tool calls', async () => {
+void test('streams OpenRouter deltas usage finish and accumulated tool calls', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [
@@ -156,7 +156,7 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenRouter structured output from stream finishes without parsing', async () => {
+void test('allows OpenRouter structured output from stream finishes without parsing', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [
@@ -192,7 +192,7 @@ test('allows OpenRouter structured output from stream finishes without parsing',
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows invalid OpenRouter structured JSON from streams', async () => {
+void test('allows invalid OpenRouter structured JSON from streams', async () => {
   const completeProvider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
@@ -252,7 +252,7 @@ test('allows invalid OpenRouter structured JSON from streams', async () => {
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('returns OpenRouter stream error events for malformed and provider errors', async () => {
+void test('returns OpenRouter stream error events for malformed and provider errors', async () => {
   const malformed = createOpenRouterProvider({
     transport: fakeTransport({ streams: [['data: not-json\n\n']] }),
     apiKey: 'key',
@@ -290,7 +290,7 @@ test('returns OpenRouter stream error events for malformed and provider errors',
   );
 });
 
-test('emits no OpenRouter delta for a chunk that carries no text', async () => {
+void test('emits no OpenRouter delta for a chunk that carries no text', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [

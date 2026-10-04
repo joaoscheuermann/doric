@@ -48,7 +48,7 @@ test.before(async () => {
   await sandbox.dispose();
 });
 
-test('executes, transfers bytes, filters egress, and exposes strict SSH', async () => {
+void test('executes, transfers bytes, filters egress, and exposes strict SSH', async () => {
   const docker = createDockerClient({ timeoutMs });
   let sandbox: SandboxSession | undefined;
 
@@ -131,7 +131,7 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
   }
 });
 
-test('keeps a durable workspace across sandbox re-creation', async () => {
+void test('keeps a durable workspace across sandbox re-creation', async () => {
   const docker = createDockerClient({ timeoutMs });
   const workspace = `e2e-${randomUUID()}`;
   const provision = () =>
@@ -168,7 +168,7 @@ test('keeps a durable workspace across sandbox re-creation', async () => {
   }
 });
 
-test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
+void test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
   const docker = createDockerClient({ timeoutMs });
 
   await reachable(docker);

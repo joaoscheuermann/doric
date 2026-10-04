@@ -18,7 +18,9 @@ import {
 import { createProvider } from './fakes.js';
 
 const tempRoot = async (context: TestContext): Promise<string> => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'okf-generate-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'okf-generate-')),
+  );
   context.after(() => fs.rm(root, { recursive: true, force: true }));
   return root;
 };
@@ -53,7 +55,7 @@ const okfFailure = (
   return true;
 };
 
-test('generates one deterministic YAML concept through the public API', async (context) => {
+void test('generates one deterministic YAML concept through the public API', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'README.md'), '# Example\n', 'utf-8');
   const fake = createProvider();
@@ -88,7 +90,7 @@ test('generates one deterministic YAML concept through the public API', async (c
   );
 });
 
-test('uses a contained custom output and rejects other locations', async (context) => {
+void test('uses a contained custom output and rejects other locations', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.txt'), 'Guide', 'utf-8');
   const custom = path.join(root, '.agents', 'bundles', 'custom');
@@ -109,7 +111,7 @@ test('uses a contained custom output and rejects other locations', async (contex
   );
 });
 
-test('rejects an output that escapes through an existing junction', async (context) => {
+void test('rejects an output that escapes through an existing junction', async (context) => {
   const root = await tempRoot(context);
   const outside = await tempRoot(context);
   const bundles = path.join(root, '.agents', 'bundles');
@@ -128,7 +130,7 @@ test('rejects an output that escapes through an existing junction', async (conte
   assert.equal(fake.requests.length, 0);
 });
 
-test('uses parsed exact recipe hashes for cache hits', async (context) => {
+void test('uses parsed exact recipe hashes for cache hits', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n', 'utf-8');
   const fake = createProvider();
@@ -152,7 +154,7 @@ test('uses parsed exact recipe hashes for cache hits', async (context) => {
   assert.equal(fake.requests.length, 6);
 });
 
-test('sends exact raw content in one collision-safe Markdown request', async (context) => {
+void test('sends exact raw content in one collision-safe Markdown request', async (context) => {
   const root = await tempRoot(context);
   const content =
     '{"pattern":"/secret\\d+/gi","value":7}\r\n```\r\n~~~~~~~~\r\n';
@@ -177,7 +179,7 @@ test('sends exact raw content in one collision-safe Markdown request', async (co
   );
 });
 
-test('uses a JSON fence for valid JSON evidence', async (context) => {
+void test('uses a JSON fence for valid JSON evidence', async (context) => {
   const root = await tempRoot(context);
   const content = '{"enabled":true}\n';
   await fs.writeFile(path.join(root, 'config.json'), content, 'utf-8');
@@ -195,7 +197,7 @@ test('uses a JSON fence for valid JSON evidence', async (context) => {
   );
 });
 
-test('replaces provider errors that contain private rationales', async (context) => {
+void test('replaces provider errors that contain private rationales', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n', 'utf-8');
   const sentinel = 'RATIONALE_PROVIDER_PRIVATE';
@@ -225,12 +227,12 @@ test('replaces provider errors that contain private rationales', async (context)
         (error as Error & { readonly cause?: unknown }).cause,
         undefined,
       );
-      return /valid source summary for guide\.md/u.test(error.message);
+      return error.message.includes('valid source summary for guide.md');
     },
   );
 });
 
-test('rejects supported syntax errors before requesting or writing', async (context) => {
+void test('rejects supported syntax errors before requesting or writing', async (context) => {
   const cases = [
     ['broken.ts', 'export const = 1;'],
     ['broken.js', 'const = ;'],
@@ -253,7 +255,7 @@ test('rejects supported syntax errors before requesting or writing', async (cont
   }
 });
 
-test('treats JSONC and JSON5 as unsupported ordinary text', async (context) => {
+void test('treats JSONC and JSON5 as unsupported ordinary text', async (context) => {
   const root = await tempRoot(context);
   await Promise.all([
     fs.writeFile(
@@ -273,7 +275,7 @@ test('treats JSONC and JSON5 as unsupported ordinary text', async (context) => {
   assert.equal(fake.requests.length, 6);
 });
 
-test('invalidates cache after relationships model effort or source change', async (context) => {
+void test('invalidates cache after relationships model effort or source change', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(
     path.join(root, 'main.ts'),
@@ -318,7 +320,7 @@ test('invalidates cache after relationships model effort or source change', asyn
   assert.match(main, /target: "dep\.ts"/u);
 });
 
-test('rejects invalid or missing prompt targets before provider calls', async (context) => {
+void test('rejects invalid or missing prompt targets before provider calls', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide', 'utf-8');
   const fake = createProvider();
@@ -339,7 +341,7 @@ test('rejects invalid or missing prompt targets before provider calls', async (c
   assert.equal(fake.requests.length, 0);
 });
 
-test('skips NUL and invalid UTF-8 binary content', async (context) => {
+void test('skips NUL and invalid UTF-8 binary content', async (context) => {
   const root = await tempRoot(context);
   await Promise.all([
     fs.writeFile(path.join(root, 'nul.bin'), Buffer.from([65, 0, 66])),
@@ -356,7 +358,7 @@ test('skips NUL and invalid UTF-8 binary content', async (context) => {
   assert.equal(await fs.readFile(result.index, 'utf-8'), '# Project\n\n');
 });
 
-test('builds a concept with three isolated schema-less calls', async (context) => {
+void test('builds a concept with three isolated schema-less calls', async (context) => {
   const root = await tempRoot(context);
   const content = 'export const PRIVATE_SOURCE_SENTINEL = 7;\n';
   const summary =
@@ -413,7 +415,7 @@ test('builds a concept with three isolated schema-less calls', async (context) =
   assert.match(concept, /# Module Summary/u);
 });
 
-test('retains permissive plain-text tags with only structural trimming', async (context) => {
+void test('retains permissive plain-text tags with only structural trimming', async (context) => {
   const cases = [
     {
       output: ' Tags:  Request Logger, HTTP_server\n2. `TypeScript!` ',
@@ -488,7 +490,7 @@ test('retains permissive plain-text tags with only structural trimming', async (
   }
 });
 
-test('accepts one whole Markdown fence around tags', async (context) => {
+void test('accepts one whole Markdown fence around tags', async (context) => {
   const cases = [
     [
       '```text\nTags:\n- Request Logger\n- HTTP_server\n```',
@@ -523,7 +525,7 @@ test('accepts one whole Markdown fence around tags', async (context) => {
   }
 });
 
-test('retains exact non-empty strings from supported JSON tag payloads', async (context) => {
+void test('retains exact non-empty strings from supported JSON tag payloads', async (context) => {
   const cases = [
     [
       '[" Request Logger ", "", "HTTP_server!", "Request Logger", "seventh", "eighth", "ninth"]',
@@ -565,7 +567,7 @@ test('retains exact non-empty strings from supported JSON tag payloads', async (
   }
 });
 
-test('falls back to the original completion for ambiguous structured or prose tag output', async (context) => {
+void test('falls back to the original completion for ambiguous structured or prose tag output', async (context) => {
   const cases = [
     '[request-logger, http-logging]',
     '{"tags":["request-logger"],"reason":"PRIVATE_JSON_SENTINEL"}',
@@ -605,7 +607,7 @@ test('falls back to the original completion for ambiguous structured or prose ta
   }
 });
 
-test('frames an adversarial summary exactly for both downstream calls and routes each system prompt', async (context) => {
+void test('frames an adversarial summary exactly for both downstream calls and routes each system prompt', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n');
   const summary = [
@@ -657,7 +659,7 @@ test('frames an adversarial summary exactly for both downstream calls and routes
   });
 });
 
-test('does not continue after invalid summary or empty tags output', async (context) => {
+void test('does not continue after invalid summary or empty tags output', async (context) => {
   const cases = [
     [
       '---\ntitle: forbidden\n---\n# Summary',
@@ -694,7 +696,7 @@ test('does not continue after invalid summary or empty tags output', async (cont
   }
 });
 
-test('preserves any non-empty trimmed description and continues to tags', async (context) => {
+void test('preserves any non-empty trimmed description and continues to tags', async (context) => {
   const descriptions = [
     `  ${'Long description '.repeat(20)}  `,
     '\nDescription without punctuation\n',
@@ -729,7 +731,7 @@ test('preserves any non-empty trimmed description and continues to tags', async 
   }
 });
 
-test('rejects only an empty description with actionable curated details', async (context) => {
+void test('rejects only an empty description with actionable curated details', async (context) => {
   for (const [index, description] of ['', ' \t\r\n '].entries()) {
     const root = await tempRoot(context);
     const source = `empty-description-${index}.md`;
@@ -762,7 +764,7 @@ test('rejects only an empty description with actionable curated details', async 
   }
 });
 
-test('rejects only empty tags with actionable curated details', async (context) => {
+void test('rejects only empty tags with actionable curated details', async (context) => {
   for (const [index, tags] of ['', ' \t\r\n '].entries()) {
     const root = await tempRoot(context);
     const source = `empty-tags-${index}.md`;
@@ -795,7 +797,7 @@ test('rejects only empty tags with actionable curated details', async (context) 
   }
 });
 
-test('reports provider description failures with the non-empty description contract', async (context) => {
+void test('reports provider description failures with the non-empty description contract', async (context) => {
   const root = await tempRoot(context);
   const source = 'provider-description.md';
   await fs.writeFile(path.join(root, source), '# Guide\n', 'utf-8');
@@ -830,7 +832,7 @@ test('reports provider description failures with the non-empty description contr
   assert.equal(fake.requests.length, 2);
 });
 
-test('reports the complete normalized progress lifecycle', async (context) => {
+void test('reports the complete normalized progress lifecycle', async (context) => {
   const root = await tempRoot(context);
   await fs.mkdir(path.join(root, 'nested'));
   await fs.writeFile(path.join(root, 'nested', 'guide.md'), '# Guide\n');
@@ -869,7 +871,7 @@ test('reports the complete normalized progress lifecycle', async (context) => {
   }
 });
 
-test('preserves observer exception identity and emits nothing later', async (context) => {
+void test('preserves observer exception identity and emits nothing later', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n');
   const failure = new Error('observer failed');
@@ -893,7 +895,7 @@ test('preserves observer exception identity and emits nothing later', async (con
   assert.equal(fake.requests.length, 0);
 });
 
-test('gates concurrent progress after the first observer exception', async (context) => {
+void test('gates concurrent progress after the first observer exception', async (context) => {
   const root = await tempRoot(context);
   await Promise.all([
     fs.writeFile(path.join(root, 'a.md'), '# A\n'),
@@ -929,7 +931,7 @@ test('gates concurrent progress after the first observer exception', async (cont
   assert.deepEqual(late, []);
 });
 
-test('authenticates package errors and rejects a prototype-forged observer error', async (context) => {
+void test('authenticates package errors and rejects a prototype-forged observer error', async (context) => {
   const root = await tempRoot(context);
   await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n');
   const forged = Object.assign(Object.create(OkfError.prototype) as OkfError, {
@@ -955,7 +957,7 @@ test('authenticates package errors and rejects a prototype-forged observer error
   );
 });
 
-test('reports setup prompt syntax and cache failures with curated details', async (context) => {
+void test('reports setup prompt syntax and cache failures with curated details', async (context) => {
   const base = await tempRoot(context);
   const fake = createProvider();
   await assert.rejects(
@@ -989,7 +991,7 @@ test('reports setup prompt syntax and cache failures with curated details', asyn
   );
 });
 
-test('reports output preparation and discovery failures with curated details', async (context) => {
+void test('reports output preparation and discovery failures with curated details', async (context) => {
   const outputRoot = await tempRoot(context);
   await fs.mkdir(path.join(outputRoot, '.agents', 'bundles'), {
     recursive: true,
@@ -1036,7 +1038,7 @@ test('reports output preparation and discovery failures with curated details', a
   );
 });
 
-test('sanitizes private model failures for every generation stage', async (context) => {
+void test('sanitizes private model failures for every generation stage', async (context) => {
   const cases = [
     [0, 'OKF_SUMMARY_FAILED', 'summary'],
     [1, 'OKF_DESCRIPTION_FAILED', 'description'],
@@ -1064,7 +1066,7 @@ test('sanitizes private model failures for every generation stage', async (conte
   }
 });
 
-test('reports write and index failures without filesystem leakage', async (context) => {
+void test('reports write and index failures without filesystem leakage', async (context) => {
   const writeRoot = await tempRoot(context);
   await fs.writeFile(path.join(writeRoot, 'guide.md'), '# Guide\n');
   const writeTarget = conceptPath(writeRoot, 'guide.md');
@@ -1105,7 +1107,7 @@ test('reports write and index failures without filesystem leakage', async (conte
   );
 });
 
-test('preserves sanitized AbortError semantics at every model stage', async (context) => {
+void test('preserves sanitized AbortError semantics at every model stage', async (context) => {
   for (const failedCall of [0, 1, 2]) {
     const root = await tempRoot(context);
     await fs.writeFile(path.join(root, 'guide.md'), '# Guide\n');

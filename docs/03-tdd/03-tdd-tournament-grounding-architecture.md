@@ -11,17 +11,17 @@ stable technical criteria.
 
 ## Core Concepts
 
-| Concept | Meaning |
-| ------- | ------- |
-| Candidate | A TDD draft that passed Reflection as `eligible` or `eligible_with_warnings`. |
-| Grounding | The hard constraints, conventions, accepted prompt artifacts, accepted PRD, repository evidence, and human-gate decisions that govern the run. |
-| Proximity evidence | Cluster and similarity information used to choose useful candidate matchups. |
-| Reflection evidence | Review verdicts, warnings, rationale, Dependency Hop findings, and decomposition-readiness notes attached to each candidate. |
-| Match | A pairwise comparison between two candidates. |
-| Rating | A relative score updated after each match. New candidates start at `1200` unless a runtime has a calibrated alternative. |
-| Champion recommendation | The highest-ranked eligible candidate plus the rationale and promotion decision. |
-| Workflow state harness | Target architecture component that owns canonical promotion, blocked, and handoff transitions after tournament evidence is produced. |
-| `STATE.md` projection | Generated human-readable audit ledger of harness state, including tournament receipts and promotion visibility. |
+| Concept                 | Meaning                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate               | A TDD draft that passed Reflection as `eligible` or `eligible_with_warnings`.                                                                  |
+| Grounding               | The hard constraints, conventions, accepted prompt artifacts, accepted PRD, repository evidence, and human-gate decisions that govern the run. |
+| Proximity evidence      | Cluster and similarity information used to choose useful candidate matchups.                                                                   |
+| Reflection evidence     | Review verdicts, warnings, rationale, Dependency Hop findings, and decomposition-readiness notes attached to each candidate.                   |
+| Match                   | A pairwise comparison between two candidates.                                                                                                  |
+| Rating                  | A relative score updated after each match. New candidates start at `1200` unless a runtime has a calibrated alternative.                       |
+| Champion recommendation | The highest-ranked eligible candidate plus the rationale and promotion decision.                                                               |
+| Workflow state harness  | Target architecture component that owns canonical promotion, blocked, and handoff transitions after tournament evidence is produced.           |
+| `STATE.md` projection   | Generated human-readable audit ledger of harness state, including tournament receipts and promotion visibility.                                |
 
 Ratings help order candidates, but they do not prove correctness. A candidate
 must pass promotion gates before it can become the accepted TDD.
@@ -231,21 +231,21 @@ decomposition.
 
 The pairwise judge compares candidates against:
 
-| Criterion | Question |
-| --------- | -------- |
-| PRD traceability | Which candidate better satisfies the accepted PRD without scope drift? |
-| Hard constraints | Does either candidate violate a non-negotiable constraint? |
-| Architecture fit | Which candidate better respects package ownership, dependency direction, and current boundaries? |
-| Grounding quality | Which candidate better applies run grounding and repository evidence? |
-| Dependency Hops | Which candidate exposes assumptions with stronger evidence, fallbacks, and failure modes? |
-| Interface clarity | Which candidate defines clearer API, command, event, data, tool, or UI contracts? |
-| Validation readiness | Which candidate gives downstream agents a stronger proof path? |
-| Decomposition readiness | Which candidate can produce ordered efforts without guesswork? |
-| Security and privacy | Which candidate handles trust boundaries, secrets, auth, permissions, command execution, network access, and data exposure better? |
-| Performance and operations | Which candidate handles latency, concurrency, observability, failure, recovery, and resource use better? |
-| Migration and rollout | Which candidate can ship with less compatibility, migration, and rollback risk? |
-| Simplicity | Which candidate solves the problem with less unnecessary structure? |
-| Reflection evidence | Which candidate has fewer or less severe remaining warnings? |
+| Criterion                  | Question                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| PRD traceability           | Which candidate better satisfies the accepted PRD without scope drift?                                                             |
+| Hard constraints           | Does either candidate violate a non-negotiable constraint?                                                                         |
+| Architecture fit           | Which candidate better respects package ownership, dependency direction, and current boundaries?                                   |
+| Grounding quality          | Which candidate better applies run grounding and repository evidence?                                                              |
+| Dependency Hops            | Which candidate exposes assumptions with stronger evidence, fallbacks, and failure modes?                                          |
+| Interface clarity          | Which candidate defines clearer API, command, event, data, tool, or UI contracts?                                                  |
+| Validation readiness       | Which candidate gives downstream agents a stronger proof path?                                                                     |
+| Decomposition readiness    | Which candidate can produce ordered efforts without guesswork?                                                                     |
+| Security and privacy       | Which candidate handles trust boundaries, secrets, auth, permissions, command execution, network access, and data exposure better? |
+| Performance and operations | Which candidate handles latency, concurrency, observability, failure, recovery, and resource use better?                           |
+| Migration and rollout      | Which candidate can ship with less compatibility, migration, and rollback risk?                                                    |
+| Simplicity                 | Which candidate solves the problem with less unnecessary structure?                                                                |
+| Reflection evidence        | Which candidate has fewer or less severe remaining warnings?                                                                       |
 
 The judge should not reward more prose, bigger architecture, premature
 implementation detail, unsupported current-code claims, aesthetic polish
@@ -362,15 +362,15 @@ rewrite the champion.
 
 The tournament stops when one condition is met:
 
-| Stop condition | Meaning |
-| -------------- | ------- |
-| Champion confidence reached | The leader has enough wins against relevant challengers. |
-| Match budget exhausted | The configured compute budget is spent. |
-| Rating stability reached | Additional matches are unlikely to change the leader. |
-| Hard-constraint conflict found | A candidate or the whole set is blocked by grounding. |
-| Blocking Dependency Hop found | The current leader depends on an unverified or impossible assumption. |
-| No safe champion | All candidates have blocking issues or unresolved user dependencies. |
-| Human gate required | The next decision depends on user judgment. |
+| Stop condition                 | Meaning                                                               |
+| ------------------------------ | --------------------------------------------------------------------- |
+| Champion confidence reached    | The leader has enough wins against relevant challengers.              |
+| Match budget exhausted         | The configured compute budget is spent.                               |
+| Rating stability reached       | Additional matches are unlikely to change the leader.                 |
+| Hard-constraint conflict found | A candidate or the whole set is blocked by grounding.                 |
+| Blocking Dependency Hop found  | The current leader depends on an unverified or impossible assumption. |
+| No safe champion               | All candidates have blocking issues or unresolved user dependencies.  |
+| Human gate required            | The next decision depends on user judgment.                           |
 
 `best_under_budget` is a reportable tournament outcome, not an accepted TDD. It
 can feed a user decision, another generation round, or a narrower prompt, but
@@ -381,13 +381,13 @@ it must not advance to decomposition unless promotion gates and
 
 A generic implementation should persist:
 
-| Artifact | Purpose |
-| -------- | ------- |
-| `<run>/tdd/logs/tournament_evals.json` | Candidate registry, pairwise outcomes, ratings, and final ranking. |
-| `<run>/tdd/logs/evolution.md` | Human-readable tournament summary, champion rationale, lineage, and residual risk. |
-| `<run>/tdd/TDD.md` | Accepted zero-gap champion after promotion. |
-| `<run>/tdd/GAPS.md` | Active technical gap when the champion is not yet promotable. |
-| `<run>/STATE.md` Agent receipts | Harness-generated audit projection of spawn proof and acceptance status for tournament evaluator work. |
+| Artifact                               | Purpose                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `<run>/tdd/logs/tournament_evals.json` | Candidate registry, pairwise outcomes, ratings, and final ranking.                                     |
+| `<run>/tdd/logs/evolution.md`          | Human-readable tournament summary, champion rationale, lineage, and residual risk.                     |
+| `<run>/tdd/TDD.md`                     | Accepted zero-gap champion after promotion.                                                            |
+| `<run>/tdd/GAPS.md`                    | Active technical gap when the champion is not yet promotable.                                          |
+| `<run>/STATE.md` Agent receipts        | Harness-generated audit projection of spawn proof and acceptance status for tournament evaluator work. |
 
 The harness may maintain machine-readable canonical state, but the
 human-readable projection is required because TDD selection affects
@@ -400,17 +400,17 @@ on them.
 
 ## Failure Modes
 
-| Failure mode | Mitigation |
-| ------------ | ---------- |
-| Raw drafts enter the tournament. | Admit only Reflection-reviewed candidates. |
-| Rating hides hard-constraint failures. | Treat hard constraints as eligibility gates and match losses. |
-| Judge rewards complexity or novelty. | Use stable criteria and concise match rationales. |
-| Proximity is ignored. | Build match queues from Proximity clusters. |
-| Reflection evidence is ignored. | Attach Reflection findings to every match prompt. |
-| Dependency Hops are ignored. | Treat unverified or impossible hops as eligibility failures. |
-| Champion has unresolved warnings. | Promote only clean champions or send repairable champions to Evolution. |
-| Too many matches run. | Use budgets, single-turn matches, and confidence stop rules. |
-| Too few matches run. | Require relevant wins against similar and distinct challengers. |
+| Failure mode                           | Mitigation                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| Raw drafts enter the tournament.       | Admit only Reflection-reviewed candidates.                              |
+| Rating hides hard-constraint failures. | Treat hard constraints as eligibility gates and match losses.           |
+| Judge rewards complexity or novelty.   | Use stable criteria and concise match rationales.                       |
+| Proximity is ignored.                  | Build match queues from Proximity clusters.                             |
+| Reflection evidence is ignored.        | Attach Reflection findings to every match prompt.                       |
+| Dependency Hops are ignored.           | Treat unverified or impossible hops as eligibility failures.            |
+| Champion has unresolved warnings.      | Promote only clean champions or send repairable champions to Evolution. |
+| Too many matches run.                  | Use budgets, single-turn matches, and confidence stop rules.            |
+| Too few matches run.                   | Require relevant wins against similar and distinct challengers.         |
 
 ## Minimal Implementation
 

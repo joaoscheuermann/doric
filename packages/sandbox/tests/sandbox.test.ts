@@ -21,14 +21,14 @@ const ok = (stdout = ''): SandboxExecResult => ({
   stderrBytes: new Uint8Array(),
 });
 
-type Fake = {
+interface Fake {
   provider: SandboxProvider;
   readonly provisions: SandboxProvisionInput[];
   readonly execs: SandboxExecInput[];
   readonly files: Map<string, Uint8Array>;
   disposals: number;
   access: SandboxSshAccess | undefined;
-};
+}
 
 const fake = (): Fake => {
   const value: Fake = {
@@ -82,7 +82,7 @@ const fake = (): Fake => {
   return value;
 };
 
-test('normalizes omitted and SSH network policies', () => {
+void test('normalizes omitted and SSH network policies', () => {
   assert.deepEqual(normalizeSandboxNetwork(undefined), {
     mode: 'disabled',
     ssh: false,
@@ -106,7 +106,7 @@ test('normalizes omitted and SSH network policies', () => {
   );
 });
 
-test('rejects unsafe or incomplete network policies', () => {
+void test('rejects unsafe or incomplete network policies', () => {
   assert.throws(
     () => normalizeSandboxNetwork({ mode: 'egress' }),
     /requires at least one DNS/u,
@@ -151,7 +151,7 @@ test('rejects unsafe or incomplete network policies', () => {
   );
 });
 
-test('requires positive integer resource limits before provisioning', async () => {
+void test('requires positive integer resource limits before provisioning', async () => {
   const value = fake();
 
   await assert.rejects(
@@ -166,7 +166,7 @@ test('requires positive integer resource limits before provisioning', async () =
   assert.equal(value.provisions.length, 0);
 });
 
-test('passes normalized inputs to the provider and wraps workspace helpers', async () => {
+void test('passes normalized inputs to the provider and wraps workspace helpers', async () => {
   const value = fake();
 
   const sandbox = await createSandbox({
@@ -198,7 +198,7 @@ test('passes normalized inputs to the provider and wraps workspace helpers', asy
   await assert.rejects(sandbox.getFile('/etc/passwd'), /must stay under/u);
 });
 
-test('forwards the durable workspace identity to the provider', async () => {
+void test('forwards the durable workspace identity to the provider', async () => {
   const value = fake();
 
   await createSandbox({
@@ -211,7 +211,7 @@ test('forwards the durable workspace identity to the provider', async () => {
   assert.equal(value.provisions[0]?.workspace, 'project-a');
 });
 
-test('clones and diffs through provider-neutral exec', async () => {
+void test('clones and diffs through provider-neutral exec', async () => {
   const value = fake();
 
   const sandbox = await createSandbox({
@@ -233,7 +233,7 @@ test('clones and diffs through provider-neutral exec', async () => {
   });
 });
 
-test('forwards SSH and guards every operation after idempotent disposal', async () => {
+void test('forwards SSH and guards every operation after idempotent disposal', async () => {
   const value = fake();
 
   value.access = {

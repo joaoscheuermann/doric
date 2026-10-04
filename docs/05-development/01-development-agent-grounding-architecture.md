@@ -100,15 +100,15 @@ repository-level hard constraints or current source truth.
 
 ## Inputs
 
-| Input | Path | Purpose |
-| ----- | ---- | ------- |
-| State projection | `<run>/STATE.md` | Displays harness-generated approval, current effort, next legal effort, active locks, required-agent rows, validation records, and commit checkpoints for audit and review. |
-| Effort file | `<run>/efforts/NN_<name>.md` | Defines goal, target files, coupled files, ownership, tests, regression suites, and acceptance criteria for the active effort. |
-| Feature map | `<run>/FEATURES.md` | Provides requirement and technical coverage back to accepted PRD/TDD scope. |
-| Accepted PRD/TDD | `<run>/PRD.md`, `<run>/TDD.md`, or resolved promoted paths | Provides product and technical source of truth when effort scope or acceptance is unclear. |
-| Grounding | `GROUNDING.md`, `AGENTS.md`, `.agents/skills/doric/SKILL.md` | Defines hard gates, worktree policy, package responsibilities, and proof expectations. |
-| Coding conventions | `.agents/skills/coding-conventions/SKILL.md` | Defines repository implementation and testing standards for development workers. |
-| Repo evidence | Current source, tests, manifests, schemas, docs | Anchors localization, test placement, implementation, validation, and review in real files. |
+| Input              | Path                                                         | Purpose                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State projection   | `<run>/STATE.md`                                             | Displays harness-generated approval, current effort, next legal effort, active locks, required-agent rows, validation records, and commit checkpoints for audit and review. |
+| Effort file        | `<run>/efforts/NN_<name>.md`                                 | Defines goal, target files, coupled files, ownership, tests, regression suites, and acceptance criteria for the active effort.                                              |
+| Feature map        | `<run>/FEATURES.md`                                          | Provides requirement and technical coverage back to accepted PRD/TDD scope.                                                                                                 |
+| Accepted PRD/TDD   | `<run>/PRD.md`, `<run>/TDD.md`, or resolved promoted paths   | Provides product and technical source of truth when effort scope or acceptance is unclear.                                                                                  |
+| Grounding          | `GROUNDING.md`, `AGENTS.md`, `.agents/skills/doric/SKILL.md` | Defines hard gates, worktree policy, package responsibilities, and proof expectations.                                                                                      |
+| Coding conventions | `.agents/skills/coding-conventions/SKILL.md`                 | Defines repository implementation and testing standards for development workers.                                                                                            |
+| Repo evidence      | Current source, tests, manifests, schemas, docs              | Anchors localization, test placement, implementation, validation, and review in real files.                                                                                 |
 
 Every development worker that touches or approves tests or implementation must
 load `.agents/skills/coding-conventions/SKILL.md`, then read only the
@@ -149,14 +149,14 @@ projection.
 
 ## Agent Set
 
-| Role | Agent type | Purpose | Write scope |
-| ---- | ---------- | ------- | ----------- |
-| test planner | worker | Translate effort acceptance criteria into concrete focused and regression commands. | Usually validation notes or response only. |
-| test writer | worker | Add or update tests, then capture expected failing output before implementation. | Test files only. |
-| code writer | worker | Implement the minimal patch that satisfies the active effort and recorded failing tests. | Implementation files listed by effort ownership. |
-| validator/refactor | worker | Run focused and regression checks, apply narrow refactors only when within ownership, and record green evidence. | Validation record and scoped code/test files when refactor is approved. |
-| reviewer | explorer or worker | Review diff against effort scope, grounding, coding conventions, tests, validation, and state proof. | Read-only unless writing a review artifact. |
-| repair writer | worker, optional | Fix concrete validator or reviewer findings inside the active effort. | Narrow files named by the finding and active locks. |
+| Role               | Agent type         | Purpose                                                                                                          | Write scope                                                             |
+| ------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| test planner       | worker             | Translate effort acceptance criteria into concrete focused and regression commands.                              | Usually validation notes or response only.                              |
+| test writer        | worker             | Add or update tests, then capture expected failing output before implementation.                                 | Test files only.                                                        |
+| code writer        | worker             | Implement the minimal patch that satisfies the active effort and recorded failing tests.                         | Implementation files listed by effort ownership.                        |
+| validator/refactor | worker             | Run focused and regression checks, apply narrow refactors only when within ownership, and record green evidence. | Validation record and scoped code/test files when refactor is approved. |
+| reviewer           | explorer or worker | Review diff against effort scope, grounding, coding conventions, tests, validation, and state proof.             | Read-only unless writing a review artifact.                             |
+| repair writer      | worker, optional   | Fix concrete validator or reviewer findings inside the active effort.                                            | Narrow files named by the finding and active locks.                     |
 
 Repair writers are fresh bounded agents. They do not replace validator or
 reviewer roles, and their output must be validated and reviewed before the
@@ -446,17 +446,17 @@ Sources:
 
 ## Failure Modes
 
-| Failure mode | Mitigation |
-| ------------ | ---------- |
-| Development starts before implementation approval | Check `decomposition_to_implementation` and effort order before any worker spawn. |
-| A later effort starts early | Resolve only the row where `Index == Next effort index`. |
-| Test writer also writes implementation | Give test writer test-only ownership and review changed paths before accepting. |
-| Code writer edits outside ownership | Use active locks, changed-path review, and block on scope conflicts. |
-| Red evidence is skipped | Require validation record red evidence before code writing, with explicit exceptions only. |
-| Green evidence is weak | Reviewer verifies focused and regression commands against effort acceptance criteria. |
-| Repair loops drift | Spawn fresh bounded repair writers only for concrete findings and rerun validation. |
-| Unrelated dirty work is staged | Inspect status, stage exact paths only, and record blockers instead of rollback. |
-| Commit fails after status update | Restore status to `in-progress`, keep locks, record blocker, and do not advance. |
+| Failure mode                                      | Mitigation                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Development starts before implementation approval | Check `decomposition_to_implementation` and effort order before any worker spawn.          |
+| A later effort starts early                       | Resolve only the row where `Index == Next effort index`.                                   |
+| Test writer also writes implementation            | Give test writer test-only ownership and review changed paths before accepting.            |
+| Code writer edits outside ownership               | Use active locks, changed-path review, and block on scope conflicts.                       |
+| Red evidence is skipped                           | Require validation record red evidence before code writing, with explicit exceptions only. |
+| Green evidence is weak                            | Reviewer verifies focused and regression commands against effort acceptance criteria.      |
+| Repair loops drift                                | Spawn fresh bounded repair writers only for concrete findings and rerun validation.        |
+| Unrelated dirty work is staged                    | Inspect status, stage exact paths only, and record blockers instead of rollback.           |
+| Commit fails after status update                  | Restore status to `in-progress`, keep locks, record blocker, and do not advance.           |
 
 ## Minimal Implementation
 

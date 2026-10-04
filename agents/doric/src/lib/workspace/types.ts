@@ -14,7 +14,7 @@ export type ProjectState =
   | 'cancelled'
   | 'failed';
 export type ThreadState = ProjectState | 'running';
-export type Project = {
+export interface Project {
   readonly id: string;
   readonly name: string;
   readonly color?: ProjectColor;
@@ -25,18 +25,18 @@ export type Project = {
   readonly updatedAt: string;
   readonly startedAt?: string;
   readonly finishedAt?: string;
-};
+}
 /**
  * The materialized result of a thread's most recent finished prompt. It is
  * stored on the thread so reading a child's state never reconstructs it from
  * the event log.
  */
-export type ThreadOutcome = {
+export interface ThreadOutcome {
   readonly status: string;
   readonly text: string;
   readonly promptId: string;
   readonly at: string;
-};
+}
 
 /**
  * What a Thread's working directory is, as far as a cheap probe can tell: `git`
@@ -95,7 +95,7 @@ export type ThreadGit =
       readonly submodules: number;
     };
 
-export type Thread = {
+export interface Thread {
   readonly id: string;
   readonly projectId: string;
   readonly parentThreadId?: string;
@@ -113,7 +113,7 @@ export type Thread = {
   readonly startedAt?: string;
   readonly finishedAt?: string;
   readonly result?: ThreadOutcome;
-};
+}
 export type InputSource =
   | { readonly kind: 'user' }
   | {
@@ -127,7 +127,7 @@ export type InputSource =
       readonly promptId: string;
       readonly requestPromptId: string;
     };
-export type ThreadEvent = {
+export interface ThreadEvent {
   readonly projectId: string;
   readonly threadId: string;
   readonly promptId: string;
@@ -135,20 +135,20 @@ export type ThreadEvent = {
   readonly type: string;
   readonly event: unknown;
   readonly createdAt: string;
-};
-export type ProjectRecord = {
+}
+export interface ProjectRecord {
   readonly project: Project;
   readonly snapshot: DoricConfig;
-};
-export type ThreadRecord = {
+}
+export interface ThreadRecord {
   readonly thread: Thread;
   readonly messages: readonly ProviderMessage[];
   readonly checkpoints: Readonly<Record<string, number>>;
-};
-export type Page<Value> = {
+}
+export interface Page<Value> {
   readonly items: readonly Value[];
   readonly nextCursor?: string;
-};
+}
 export type DeleteResult = 'deleted' | 'active' | 'missing';
 export type ThreadResult =
   | { readonly status: 'created'; readonly thread: Thread }

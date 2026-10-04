@@ -7,20 +7,20 @@ import type {
 import { selectTop } from './utils/top.js';
 import { invalid, validateLogger, validateTopK } from './utils/validation.js';
 
-type Entry<Data> = {
+interface Entry<Data> {
   readonly data: Data;
-  readonly embedding: ReadonlyArray<number>;
-};
+  readonly embedding: readonly number[];
+}
 
-type Magnitude = {
+interface Magnitude {
   readonly scale: number;
   readonly norm: number;
-};
+}
 
 const invalidVector = (message: string): TypeError =>
   invalid('vector index', message);
 
-const magnitudeOf = (vector: ReadonlyArray<number>): Magnitude | undefined => {
+const magnitudeOf = (vector: readonly number[]): Magnitude | undefined => {
   let scale = 0;
   let sum = 0;
 
@@ -57,10 +57,7 @@ function validateEmbedding(embedding: unknown): asserts embedding is Embedding {
   }
 }
 
-const normalize = (
-  value: unknown,
-  dimensions: number,
-): ReadonlyArray<number> => {
+const normalize = (value: unknown, dimensions: number): readonly number[] => {
   if (!Array.isArray(value) || value.length !== dimensions) {
     throw invalidVector(
       `embedding result: expected an array with ${dimensions} dimensions`,
@@ -68,11 +65,12 @@ const normalize = (
   }
 
   // Copy first so sparse arrays are validated as undefined entries.
-  const vector = [...value];
+  const vector: unknown[] = Array.from(value as unknown[]);
 
   if (
     !vector.every(
-      (entry) => typeof entry === 'number' && Number.isFinite(entry),
+      (entry): entry is number =>
+        typeof entry === 'number' && Number.isFinite(entry),
     )
   ) {
     throw invalidVector('embedding result: expected only finite numbers');
@@ -92,10 +90,7 @@ const normalize = (
   return vector;
 };
 
-const cosine = (
-  left: ReadonlyArray<number>,
-  right: ReadonlyArray<number>,
-): number => {
+const cosine = (left: readonly number[], right: readonly number[]): number => {
   let score = 0;
 
   for (let index = 0; index < left.length; index += 1) {
@@ -121,7 +116,7 @@ export const createVectorIndex = <Data = unknown>(
 
   const logger = parentLogger.child({ component: 'victor' });
   const entries: Entry<Data>[] = [];
-  const embed = async (data: string): Promise<ReadonlyArray<number>> =>
+  const embed = async (data: string): Promise<readonly number[]> =>
     normalize(await embedding(data), dimensions);
 
   logger.debug({ dimensions }, 'vector database created');
@@ -162,7 +157,7 @@ export const createVectorIndex = <Data = unknown>(
       }
     },
 
-    async search(query, topK): Promise<ReadonlyArray<SearchResult<Data>>> {
+    async search(query, topK): Promise<readonly SearchResult<Data>[]> {
       const safeTopK = Number.isFinite(topK) ? topK : undefined;
       const fields = { dimensions, entryCount: entries.length, topK: safeTopK };
 

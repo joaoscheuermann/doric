@@ -13,8 +13,8 @@ import {
 } from '../src/index.js';
 import { createLocalSandbox } from './fake-sandbox.js';
 
-describe('workspace listing', () => {
-  test('lists one level with names, relative paths, sizes and ordering', async () => {
+void describe('workspace listing', () => {
+  void test('lists one level with names, relative paths, sizes and ordering', async () => {
     const root = await workspace('listing');
 
     await write(root, 'b.txt', 'bb');
@@ -35,7 +35,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('never recurses into a directory it lists', async () => {
+  void test('never recurses into a directory it lists', async () => {
     const root = await workspace('listing-depth');
 
     await write(root, 'src/lib/deep.ts', 'deep');
@@ -54,7 +54,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('hides dot entries but keeps .agents', async () => {
+  void test('hides dot entries but keeps .agents', async () => {
     const root = await workspace('listing-hidden');
 
     await write(root, '.agents/skill.md', 'skill');
@@ -74,7 +74,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('applies .gitignore with negation from every ancestor directory', async () => {
+  void test('applies .gitignore with negation from every ancestor directory', async () => {
     const root = await workspace('listing-ignore');
 
     await write(root, '.gitignore', '*.log\n!keep.log\nbuild/\n');
@@ -107,7 +107,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('rejects a path that leaves the workspace root', async () => {
+  void test('rejects a path that leaves the workspace root', async () => {
     const root = await workspace('listing-escape');
     const sandbox = createLocalSandbox(root);
 
@@ -126,7 +126,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('reports a missing path and a file where a directory was listed', async () => {
+  void test('reports a missing path and a file where a directory was listed', async () => {
     const root = await workspace('listing-kind');
     const sandbox = createLocalSandbox(root);
 
@@ -145,7 +145,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('rejects an unsupported exclude pattern and an excluded root', async () => {
+  void test('rejects an unsupported exclude pattern and an excluded root', async () => {
     const root = await workspace('listing-exclude');
     const sandbox = createLocalSandbox(root);
 
@@ -250,7 +250,7 @@ describe('workspace listing', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('builds the recursive tree the tree tool renders', async () => {
+  void test('builds the recursive tree the tree tool renders', async () => {
     const root = await workspace('listing-tree');
 
     await write(root, 'src/lib/inner.ts', 'inner');
@@ -295,8 +295,8 @@ describe('workspace listing', () => {
   });
 });
 
-describe('workspace repositories', () => {
-  test('finds each repository, stopping at a nested boundary', async () => {
+void describe('workspace repositories', () => {
+  void test('finds each repository, stopping at a nested boundary', async () => {
     const root = await workspace('repos-nested');
 
     await write(root, 'outer/.git/HEAD', 'ref: refs/heads/main');
@@ -317,7 +317,7 @@ describe('workspace repositories', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('matches a .git file, as a submodule or a linked worktree writes it', async () => {
+  void test('matches a .git file, as a submodule or a linked worktree writes it', async () => {
     const root = await workspace('repos-worktree');
 
     await write(root, 'worktree/.git', 'gitdir: /elsewhere/.git/worktrees/wt');
@@ -334,7 +334,7 @@ describe('workspace repositories', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('finds the workspace root as a repository when it is one', async () => {
+  void test('finds the workspace root as a repository when it is one', async () => {
     const root = await workspace('repos-root');
 
     await write(root, '.git/HEAD', 'ref: refs/heads/main');
@@ -351,7 +351,7 @@ describe('workspace repositories', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('reports no repository for a workspace without one', async () => {
+  void test('reports no repository for a workspace without one', async () => {
     const root = await workspace('repos-none');
 
     await write(root, 'src/main.ts', 'main');

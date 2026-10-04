@@ -18,8 +18,8 @@ type FakeSandbox = SandboxSession & {
   readonly execs: SandboxExecInput[];
 };
 
-describe('terminal tool', () => {
-  test('executes a command from the requested sandbox working directory', async () => {
+void describe('terminal tool', () => {
+  void test('executes a command from the requested sandbox working directory', async () => {
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
     const result = await createTool()(sandbox, fakeHost()).execute({
@@ -47,7 +47,7 @@ describe('terminal tool', () => {
     assert.deepEqual(result.stdout.head, ['hello']);
   });
 
-  test('uses the sandbox workspace root by default and caps timeout', async () => {
+  void test('uses the sandbox workspace root by default and caps timeout', async () => {
     const sandbox = fakeSandbox(execResult());
 
     await createTool()(sandbox, fakeHost()).execute({
@@ -64,7 +64,7 @@ describe('terminal tool', () => {
     ]);
   });
 
-  test('runs in the working directory the thread moved to', async () => {
+  void test('runs in the working directory the thread moved to', async () => {
     const sandbox = fakeSandbox(execResult());
     const host = fakeHost({ cwd: '/workspace/repo' });
     const tool = createTool();
@@ -91,7 +91,7 @@ describe('terminal tool', () => {
     assert.equal(byDefault.working_directory, '/workspace/repo/src');
   });
 
-  test('maps a sandbox result without an exit code to -1', async () => {
+  void test('maps a sandbox result without an exit code to -1', async () => {
     const sandbox = fakeSandbox(
       execResult({
         exitCode: null,
@@ -111,7 +111,7 @@ describe('terminal tool', () => {
     assert.match(result.stderr.head.join('\n'), /timed out/u);
   });
 
-  test('returns sandbox execution errors as compact terminal output', async () => {
+  void test('returns sandbox execution errors as compact terminal output', async () => {
     const sandbox = fakeSandbox(new Error('container exec failed'));
 
     const result = await createTool()(sandbox, fakeHost()).execute({
@@ -126,7 +126,7 @@ describe('terminal tool', () => {
     assert.match(result.stderr.head.join('\n'), /container exec failed/u);
   });
 
-  test('extracts diagnostics from sandbox stderr', async () => {
+  void test('extracts diagnostics from sandbox stderr', async () => {
     const sandbox = fakeSandbox(
       execResult({
         exitCode: 1,
@@ -148,7 +148,7 @@ describe('terminal tool', () => {
     assert.match(result.diagnostics[0]?.text ?? '', /TS2304/u);
   });
 
-  test('writes raw output traces on the host when trace storage is enabled', async () => {
+  void test('writes raw output traces on the host when trace storage is enabled', async () => {
     const traceDir = await mkdtemp(path.join(os.tmpdir(), 'doric-terminal-'));
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 

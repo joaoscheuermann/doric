@@ -50,6 +50,44 @@ test('enforces the official TypeScript array style', async () => {
   );
 });
 
+test('allows immediate async test doubles but requires async work in production', async () => {
+  const source = 'export const fixture = async () => 1;';
+  const [fixture] = await lint.lintText(source, {
+    filePath: 'packages/agent/tests/fakes.ts',
+  });
+  const [production] = await lint.lintText(source, { filePath: typedFile });
+  assert.equal(fixture.errorCount, 0, JSON.stringify(fixture.messages));
+  assert.ok(
+    production.messages.some(
+      ({ ruleId }) => ruleId === '@typescript-eslint/require-await',
+    ),
+  );
+});
+
+test('still reports unhandled promises inside tests', async () => {
+  const [result] = await lint.lintText(
+    'export function exercise() { Promise.resolve(1); }',
+    { filePath: 'packages/agent/tests/fakes.ts' },
+  );
+  assert.ok(
+    result.messages.some(
+      ({ ruleId }) => ruleId === '@typescript-eslint/no-floating-promises',
+    ),
+  );
+});
+
+test('allows deliberately unused parameters but catches accidental unused values', async () => {
+  const [result] = await lint.lintText(
+    'export function fixture(_unused: string) { const forgotten = 1; return 2; }',
+    { filePath: typedFile },
+  );
+  const unused = result.messages.filter(
+    ({ ruleId }) => ruleId === '@typescript-eslint/no-unused-vars',
+  );
+  assert.equal(unused.length, 1);
+  assert.match(unused[0].message, /forgotten/);
+});
+
 test('reports unhandled promises in bundle entrypoints', async () => {
   for (const filePath of [
     'bundles/core/index.mts',

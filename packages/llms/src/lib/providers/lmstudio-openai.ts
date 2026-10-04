@@ -13,32 +13,30 @@ import type {
   ProviderMessage,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
-  ProviderStructuredFinished,
+  ProviderRerankRequest,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   ProviderToolCall,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
-import { asRecord, arrayField, stringField } from '../utils/json.js';
+import { arrayField, asRecord, stringField } from '../utils/json.js';
 import { parseSseEvents } from '../utils/sse.js';
+import { authorization, type SecretSource } from './auth.js';
 import {
-  parseEmbedding,
-  parseRerank,
   messageText,
+  parseEmbedding,
   parseJsonBody,
-  requireEmbeddingInput,
-  requireRerankInput,
+  parseRerank,
   requestReasoningEffort,
+  requireEmbeddingInput,
   requireRequestInput,
+  requireRerankInput,
   streamErrorEvent,
 } from './common.js';
-import {
-  messagesWithStructuredSchema,
-  parseStructuredOutput,
-  structuredJsonSchema,
-} from './structured.js';
+import { requestJson, withProviderErrors } from './http.js';
+import { withProviderLogging } from './logging.js';
 import {
   createStreamState,
   hasProviderError,
@@ -47,17 +45,19 @@ import {
   streamFinish,
   streamToolCalls,
 } from './openrouter/parse.js';
-import { withProviderLogging } from './logging.js';
-import { authorization, type SecretSource } from './auth.js';
-import { requestJson, withProviderErrors } from './http.js';
+import {
+  messagesWithStructuredSchema,
+  parseStructuredOutput,
+  structuredJsonSchema,
+} from './structured.js';
 
-export type LmStudioOpenAiProviderDeps = {
+export interface LmStudioOpenAiProviderDeps {
   readonly transport: HttpTransport;
   readonly apiKey?: SecretSource;
   readonly authorization?: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
+}
 
 export const lmStudioOpenAiMetadata: ProviderMetadata = {
   id: 'lmstudio-openai',

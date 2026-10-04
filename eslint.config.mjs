@@ -59,6 +59,16 @@ export default tseslint.config(
   {
     files: ['**/*.{ts,mts,cts,tsx}'],
     extends: [tseslint.configs.recommended],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
   },
   {
     files: [
@@ -99,6 +109,14 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    files: ['**/tests/**/*.{ts,mts,cts,tsx}'],
+    rules: {
+      // Async doubles implement Promise/AsyncIterable contracts even when their
+      // fixture data is immediately available. Keep production enforcement.
+      '@typescript-eslint/require-await': 'off',
     },
   },
   // Keep formatting with Prettier, including when upstream presets evolve.

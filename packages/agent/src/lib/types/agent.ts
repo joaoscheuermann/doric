@@ -16,7 +16,7 @@ import type { ToolCall, ToolStorage } from 'tool';
 
 import type { ToolCallRecord, ToolCallStorage } from './tool-call-storage.js';
 
-export type AgentOptions = {
+export interface AgentOptions {
   readonly provider: LlmProvider;
   readonly tools: ToolStorage;
   readonly messages: MessageStorage;
@@ -27,7 +27,7 @@ export type AgentOptions = {
   readonly flags?: ProviderCallFlags;
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
-};
+}
 
 /** Safe runtime evidence for one terminal structured-output submission. */
 export interface AgentStructuredAttemptEvent {
@@ -61,10 +61,10 @@ export type AgentToolEvent =
       readonly error: unknown;
     };
 
-export type AgentRunOptions<
-  Output = JsonValue,
+export interface AgentRunOptions<
+  _Output = JsonValue,
   Schema extends StructuredOutputSchema = StructuredOutputSchema,
-> = {
+> {
   /** Continue the supplied message history without appending input again. */
   readonly resume?: boolean;
   readonly maxTurns?: number;
@@ -84,9 +84,9 @@ export type AgentRunOptions<
     event: AgentToolCallRepairEvent,
   ) => void | Promise<void>;
   readonly onToolEvent?: (event: AgentToolEvent) => void | Promise<void>;
-};
+}
 
-export type Agent = {
+export interface Agent {
   readonly complete: {
     <
       Schema extends StructuredOutputSchema,
@@ -119,13 +119,13 @@ export type Agent = {
       options?: AgentRunOptions<Output>,
     ): AsyncIterable<AgentEvent<Output>>;
   };
-};
+}
 
 export type AgentComplete = Agent['complete'];
 
 export type AgentStream = Agent['stream'];
 
-export type AgentResponse<Output = JsonValue> = {
+export interface AgentResponse<Output = JsonValue> {
   readonly text: string;
   readonly finishReason: FinishReason;
   readonly usage?: UsageMetadata;
@@ -133,7 +133,7 @@ export type AgentResponse<Output = JsonValue> = {
   readonly refusal?: string;
   readonly structured?: Output;
   readonly finish: ProviderFinished<Output>;
-};
+}
 
 export type AgentEvent<Output = JsonValue> =
   | ProviderStreamEvent<Output>
@@ -158,8 +158,8 @@ export type AgentErrorCode =
   | 'turn_limit_exceeded'
   | 'tool_result_serialization_failed';
 
-export type AgentError = {
+export interface AgentError {
   readonly code: AgentErrorCode;
   readonly message: string;
   readonly diagnostic?: string;
-};
+}

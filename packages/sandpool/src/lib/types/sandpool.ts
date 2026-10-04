@@ -4,7 +4,7 @@ import type { Sandbox, SandboxSession } from 'sandbox';
 
 export type SandpoolLifecycle = 'active' | 'disposing' | 'disposed';
 
-export type SandpoolOptions = {
+export interface SandpoolOptions {
   readonly minIdle: number;
   readonly maxSandboxes: number;
   /** Consecutive failed factory calls allowed before pending waits fail. Defaults to 3. */
@@ -15,11 +15,11 @@ export type SandpoolOptions = {
    */
   readonly create: (identity?: string) => Promise<SandboxSession>;
   readonly logger: Logger;
-};
+}
 
-export type SandpoolWaitOptions = {
+export interface SandpoolWaitOptions {
   readonly signal?: AbortSignal;
-};
+}
 
 export type SandpoolAcquireOptions = SandpoolWaitOptions & {
   /**
@@ -31,12 +31,12 @@ export type SandpoolAcquireOptions = SandpoolWaitOptions & {
 
 export type PooledSandbox = Sandbox;
 
-export type SandboxLease = {
+export interface SandboxLease {
   readonly sandbox: PooledSandbox;
   readonly release: () => Promise<void>;
-};
+}
 
-export type SandpoolStatus = {
+export interface SandpoolStatus {
   readonly lifecycle: SandpoolLifecycle;
   readonly idle: number;
   readonly leased: number;
@@ -45,10 +45,10 @@ export type SandpoolStatus = {
   readonly queued: number;
   readonly total: number;
   readonly heated: boolean;
-  readonly lastFailure: unknown | undefined;
-};
+  readonly lastFailure: unknown;
+}
 
-export type Sandpool = {
+export interface Sandpool {
   heated(): boolean;
 
   waitUntilHeated(options?: SandpoolWaitOptions): Promise<void>;
@@ -58,4 +58,4 @@ export type Sandpool = {
   status(): SandpoolStatus;
 
   dispose(): Promise<void>;
-};
+}

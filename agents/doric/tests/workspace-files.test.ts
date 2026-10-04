@@ -37,7 +37,7 @@ const withService = async (options: FakeSandboxOptions = {}) => {
   };
 };
 
-test('lists the whole workspace as one nested tree', async (t) => {
+void test('lists the whole workspace as one nested tree', async (t) => {
   const harness = await withService({
     entries: [
       { path: 'README.md', content: 'hello' },
@@ -72,7 +72,7 @@ test('lists the whole workspace as one nested tree', async (t) => {
   });
 });
 
-test('reads the tree from a subdirectory and refuses a path outside it', async (t) => {
+void test('reads the tree from a subdirectory and refuses a path outside it', async (t) => {
   const harness = await withService({
     entries: [{ path: 'src/deep/b.ts', content: 'abcd' }],
   });
@@ -103,7 +103,7 @@ test('reads the tree from a subdirectory and refuses a path outside it', async (
   );
 });
 
-test('keeps the files route listing one level while the tree nests', async (t) => {
+void test('keeps the files route listing one level while the tree nests', async (t) => {
   const harness = await withService({
     entries: [{ path: 'src/deep/b.ts', content: 'abcd' }],
   });
@@ -132,7 +132,7 @@ test('keeps the files route listing one level while the tree nests', async (t) =
   ]);
 });
 
-test('lists a workspace directory with names, relative paths, types and sizes', async (t) => {
+void test('lists a workspace directory with names, relative paths, types and sizes', async (t) => {
   const harness = await withService({
     entries: [
       { path: 'README.md', content: 'hello' },
@@ -159,7 +159,7 @@ test('lists a workspace directory with names, relative paths, types and sizes', 
   );
 });
 
-test('rejects a path that escapes the workspace before touching the sandbox', async (t) => {
+void test('rejects a path that escapes the workspace before touching the sandbox', async (t) => {
   const harness = await withService({
     entries: [{ path: 'a.ts', content: 'x' }],
   });
@@ -186,7 +186,7 @@ test('rejects a path that escapes the workspace before touching the sandbox', as
   assert.deepEqual(harness.environment.execs, []);
 });
 
-test('caps file content, flagging truncation and binary payloads', async (t) => {
+void test('caps file content, flagging truncation and binary payloads', async (t) => {
   const harness = await withService({
     entries: [
       { path: 'big.txt', content: 'a'.repeat(CONTENT_LIMIT_BYTES + 10) },
@@ -216,7 +216,7 @@ test('caps file content, flagging truncation and binary payloads', async (t) => 
   assert.equal(binary.content, '');
 });
 
-test('reports a missing file and a directory read as content', async (t) => {
+void test('reports a missing file and a directory read as content', async (t) => {
   const harness = await withService({
     entries: [
       { path: 'a.ts', content: 'x' },
@@ -239,7 +239,7 @@ test('reports a missing file and a directory read as content', async (t) => {
   );
 });
 
-test('returns one entry per repository, each with its own changes and diff', async (t) => {
+void test('returns one entry per repository, each with its own changes and diff', async (t) => {
   const harness = await withService({
     repositories: [
       {
@@ -280,7 +280,7 @@ test('returns one entry per repository, each with its own changes and diff', asy
   });
 });
 
-test('reports no repositories when the workspace holds none', async (t) => {
+void test('reports no repositories when the workspace holds none', async (t) => {
   const harness = await withService({
     entries: [{ path: 'a.ts', content: 'x' }],
   });
@@ -292,7 +292,7 @@ test('reports no repositories when the workspace holds none', async (t) => {
   });
 });
 
-test('echoes a requested path without scoping the repositories', async (t) => {
+void test('echoes a requested path without scoping the repositories', async (t) => {
   const harness = await withService({
     repositories: [{ path: 'alpha', status: ' M src/a.ts\n' }],
   });
@@ -308,7 +308,9 @@ test('echoes a requested path without scoping the repositories', async (t) => {
   assert.deepEqual(harness.environment.diffs, [{ cwd: 'alpha' }]);
 });
 
-type ErrorBody = { error: { code: string } };
+interface ErrorBody {
+  error: { code: string };
+}
 
 const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
   const service = {
@@ -347,7 +349,7 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
   };
 };
 
-test('serves a scoped directory listing from the files route', async (t) => {
+void test('serves a scoped directory listing from the files route', async (t) => {
   let received: string | undefined;
   const host = await serve({
     files: async (_id, path) => {
@@ -371,7 +373,7 @@ test('serves a scoped directory listing from the files route', async (t) => {
   });
 });
 
-test('serves the whole tree, nested, from the tree route', async (t) => {
+void test('serves the whole tree, nested, from the tree route', async (t) => {
   let received: string | undefined;
   const host = await serve({
     tree: async (_id, path) => {
@@ -413,7 +415,7 @@ test('serves the whole tree, nested, from the tree route', async (t) => {
   });
 });
 
-test('rejects an escaping tree path with 422 and a missing one with 404', async (t) => {
+void test('rejects an escaping tree path with 422 and a missing one with 404', async (t) => {
   const escaping = await serve({
     tree: async () => ({ status: 'invalid_path' }),
   });
@@ -437,7 +439,7 @@ test('rejects an escaping tree path with 422 and a missing one with 404', async 
   );
 });
 
-test('rejects an escaping path with 422 and a missing path with 404', async (t) => {
+void test('rejects an escaping path with 422 and a missing path with 404', async (t) => {
   const escaping = await serve({
     files: async () => ({ status: 'invalid_path' }),
   });
@@ -469,7 +471,7 @@ for (const [status, expected] of [
   ['unavailable', 409],
   ['missing', 404],
 ] as const) {
-  test(`reports ${status} for the files route without caching`, async (t) => {
+  void test(`reports ${status} for the files route without caching`, async (t) => {
     const host = await serve({ files: async () => ({ status }) });
     t.after(host.close);
     const response = await host.request(`/projects/${projectId}/files`);
@@ -479,7 +481,7 @@ for (const [status, expected] of [
       assert.equal(response.headers.get('retry-after'), '1');
   });
 
-  test(`reports ${status} for the tree route without caching`, async (t) => {
+  void test(`reports ${status} for the tree route without caching`, async (t) => {
     const host = await serve({ tree: async () => ({ status }) });
     t.after(host.close);
     const response = await host.request(`/projects/${projectId}/tree`);
@@ -490,7 +492,7 @@ for (const [status, expected] of [
   });
 }
 
-test('serves file content and maps its path failures', async (t) => {
+void test('serves file content and maps its path failures', async (t) => {
   const ready = await serve({
     file: async (_id, path) => ({
       status: 'ready',
@@ -530,7 +532,7 @@ test('serves file content and maps its path failures', async (t) => {
   );
 });
 
-test('rejects a file content request without a path or with a NUL byte', async (t) => {
+void test('rejects a file content request without a path or with a NUL byte', async (t) => {
   const host = await serve();
   t.after(host.close);
   assert.equal(
@@ -547,7 +549,7 @@ test('rejects a file content request without a path or with a NUL byte', async (
   );
 });
 
-test('serves the diff and echoes a scoped path', async (t) => {
+void test('serves the diff and echoes a scoped path', async (t) => {
   const host = await serve({
     diff: async (_id, path) => ({
       status: 'ready',
@@ -581,7 +583,7 @@ test('serves the diff and echoes a scoped path', async (t) => {
   assert.equal(((await scoped.json()) as { path: string }).path, 'a.ts');
 });
 
-test('maps diff path failures to 404 and 422', async (t) => {
+void test('maps diff path failures to 404 and 422', async (t) => {
   const absent = await serve({ diff: async () => ({ status: 'not_found' }) });
   t.after(absent.close);
   assert.equal(

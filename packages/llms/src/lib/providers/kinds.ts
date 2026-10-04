@@ -33,7 +33,7 @@ export type ProviderKindId =
 
 export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
-export type ProviderField = {
+export interface ProviderField {
   readonly key: string;
   readonly label: string;
   readonly kind: ProviderFieldKind;
@@ -47,7 +47,7 @@ export type ProviderField = {
    * keep it out of the way and show the necessary fields alone.
    */
   readonly advanced?: boolean;
-};
+}
 
 /**
  * The per-provider lists a kind keeps: edited as tables, read by other sections.
@@ -57,7 +57,7 @@ export type ProviderField = {
  */
 export type ProviderListId = 'models' | 'reasonings';
 
-export type ProviderKind = {
+export interface ProviderKind {
   readonly id: ProviderKindId;
   readonly label: string;
   readonly description: string;
@@ -65,7 +65,7 @@ export type ProviderKind = {
   readonly fields: readonly ProviderField[];
   /** Which per-provider lists this kind keeps. */
   readonly lists: readonly ProviderListId[];
-};
+}
 
 /**
  * A base URL. Absent means the factory's own endpoint, which is why the default
@@ -287,7 +287,7 @@ export const providerKind = (id: string): ProviderKind | undefined =>
  */
 export type ProviderValues = Readonly<Record<string, SecretSource>>;
 
-export type ProviderKindDeps = {
+export interface ProviderKindDeps {
   readonly transport: HttpTransport;
   readonly logger: Logger;
   /**
@@ -299,7 +299,7 @@ export type ProviderKindDeps = {
     readonly id: string;
     readonly name: string;
   };
-};
+}
 
 /**
  * The provider a configured provider names. It answers what it was built from,

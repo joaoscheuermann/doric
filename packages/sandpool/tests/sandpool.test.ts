@@ -7,20 +7,20 @@ import type { SandboxSession } from 'sandbox';
 
 import { createSandpool } from '../src/index.js';
 
-type Deferred<T> = {
+interface Deferred<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
   readonly reject: (cause: unknown) => void;
-};
+}
 
-type Fake = {
+interface Fake {
   readonly session: SandboxSession;
   readonly disposals: () => number;
-};
+}
 
 const logger = pino({ enabled: false });
 
-test('validates pool limits synchronously', () => {
+void test('validates pool limits synchronously', () => {
   const create = async () => fake('unused').session;
 
   for (const minIdle of [-1, 0.5, Number.NaN]) {
@@ -52,7 +52,7 @@ test('validates pool limits synchronously', () => {
   }
 });
 
-test('returns synchronously and warms the minimum idle sessions in parallel', async () => {
+void test('returns synchronously and warms the minimum idle sessions in parallel', async () => {
   const creations = [deferred<SandboxSession>(), deferred<SandboxSession>()];
   let calls = 0;
 
@@ -89,7 +89,7 @@ test('returns synchronously and warms the minimum idle sessions in parallel', as
   await pool.dispose();
 });
 
-test('serves acquisitions in FIFO order without exceeding capacity', async () => {
+void test('serves acquisitions in FIFO order without exceeding capacity', async () => {
   let id = 0;
 
   const pool = createSandpool({
@@ -124,7 +124,7 @@ test('serves acquisitions in FIFO order without exceeding capacity', async () =>
   await pool.dispose();
 });
 
-test('provisions each identified acquisition its own session', async () => {
+void test('provisions each identified acquisition its own session', async () => {
   const created: (string | undefined)[] = [];
   let warm = 0;
 
@@ -177,7 +177,7 @@ test('provisions each identified acquisition its own session', async () => {
   await pool.dispose();
 });
 
-test('serves an acquisition without an identity from an idle session', async () => {
+void test('serves an acquisition without an identity from an idle session', async () => {
   let created = 0;
 
   const pool = createSandpool({
@@ -206,7 +206,7 @@ test('serves an acquisition without an identity from an idle session', async () 
   await pool.dispose();
 });
 
-test('provisions mixed acquisitions in queue order within capacity', async () => {
+void test('provisions mixed acquisitions in queue order within capacity', async () => {
   const identities: (string | undefined)[] = [];
   const creations: Deferred<SandboxSession>[] = [];
 
@@ -268,7 +268,7 @@ test('provisions mixed acquisitions in queue order within capacity', async () =>
   await pool.dispose();
 });
 
-test('counts failed identified creations toward the attempt batch', async () => {
+void test('counts failed identified creations toward the attempt batch', async () => {
   const failure = new Error('factory unavailable');
   let attempts = 0;
 
@@ -308,7 +308,7 @@ test('counts failed identified creations toward the attempt batch', async () => 
   await pool.dispose();
 });
 
-test('disposes a session whose identified caller cancelled the acquisition', async () => {
+void test('disposes a session whose identified caller cancelled the acquisition', async () => {
   const creation = deferred<SandboxSession>();
   const provisioned = fake('provisioned');
 
@@ -340,7 +340,7 @@ test('disposes a session whose identified caller cancelled the acquisition', asy
   await pool.dispose();
 });
 
-test('cancels queued acquisitions and heat waiters', async () => {
+void test('cancels queued acquisitions and heat waiters', async () => {
   const creation = deferred<SandboxSession>();
 
   const pool = createSandpool({
@@ -374,7 +374,7 @@ test('cancels queued acquisitions and heat waiters', async () => {
   assert.equal(created.disposals(), 1);
 });
 
-test('release is idempotent, invalidates the lease, and replaces with a new session', async () => {
+void test('release is idempotent, invalidates the lease, and replaces with a new session', async () => {
   const sessions: Fake[] = [];
 
   const pool = createSandpool({
@@ -425,7 +425,7 @@ test('release is idempotent, invalidates the lease, and replaces with a new sess
   await pool.dispose();
 });
 
-test('retries transient creation failures and preserves the last failure', async () => {
+void test('retries transient creation failures and preserves the last failure', async () => {
   const failure = new Error('factory unavailable');
   let attempts = 0;
 
@@ -453,7 +453,7 @@ test('retries transient creation failures and preserves the last failure', async
   await pool.dispose();
 });
 
-test('rejects pending acquisitions after the creation limit and allows a later retry batch', async () => {
+void test('rejects pending acquisitions after the creation limit and allows a later retry batch', async () => {
   const failure = new Error('factory unavailable');
   let attempts = 0;
 
@@ -496,7 +496,7 @@ test('rejects pending acquisitions after the creation limit and allows a later r
   await pool.dispose();
 });
 
-test('counts disposal until a transient disposal failure recovers', async () => {
+void test('counts disposal until a transient disposal failure recovers', async () => {
   let attempts = 0;
 
   const created = fake('retry-dispose', async () => {
@@ -531,7 +531,7 @@ test('counts disposal until a transient disposal failure recovers', async () => 
   await pool.dispose();
 });
 
-test('dispose rejects waits, invalidates leases, and waits for pending factories', async () => {
+void test('dispose rejects waits, invalidates leases, and waits for pending factories', async () => {
   const pending = deferred<SandboxSession>();
   const first = fake('leased');
   let calls = 0;

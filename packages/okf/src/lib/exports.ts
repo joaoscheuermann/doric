@@ -7,13 +7,13 @@ type Node = Parser.SyntaxNode;
 
 type Category = keyof Required<ModuleExports>;
 
-type Sets = { readonly [Key in Category]: Set<string> };
+type Sets = Readonly<Record<Category, Set<string>>>;
 
-type Declaration = {
+interface Declaration {
   readonly category: Exclude<Category, 'methods' | 'reexports'>;
   readonly display: string;
   readonly members?: readonly string[];
-};
+}
 
 /** Extracts ESM and CommonJS exports from queried TS/JS nodes. */
 export const extractExports = (
@@ -499,7 +499,7 @@ const bracketExport = (left: Node): string | undefined => {
 
   const [base, index] = left.namedChildren;
 
-  if (!base || !index || index.type !== 'string') {
+  if (!base || index?.type !== 'string') {
     return undefined;
   }
 

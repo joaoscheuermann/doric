@@ -1,9 +1,9 @@
 import { DockerProtocolError } from '../classes/errors.js';
 
-export type DemuxedOutput = {
+export interface DemuxedOutput {
   readonly stdout: Uint8Array;
   readonly stderr: Uint8Array;
-};
+}
 
 /** Demultiplexes Docker's non-TTY exec stream into stdout and stderr bytes. */
 export const demuxDockerOutput = (stream: Uint8Array): DemuxedOutput => {

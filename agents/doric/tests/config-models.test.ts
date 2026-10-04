@@ -125,7 +125,7 @@ const read = (
     transport: http,
   });
 
-test('writes the efforts each model its catalog describes accepts', async () => {
+void test('writes the efforts each model its catalog describes accepts', async () => {
   const http = transport(() =>
     entries(
       { id: 'openai/gpt-5', supported_efforts: ['low', 'medium', 'high'] },
@@ -158,7 +158,7 @@ test('writes the efforts each model its catalog describes accepts', async () => 
   ]);
 });
 
-test('writes the default effort and the reasoning a catalog pins on', async () => {
+void test('writes the default effort and the reasoning a catalog pins on', async () => {
   const http = transport(() =>
     entries(
       {
@@ -195,7 +195,7 @@ test('writes the default effort and the reasoning a catalog pins on', async () =
   ]);
 });
 
-test('drops catalog properties the endpoint no longer describes', async () => {
+void test('drops catalog properties the endpoint no longer describes', async () => {
   const http = transport(() =>
     entries({ id: 'openai/gpt-5', supported_efforts: ['medium'] }),
   );
@@ -225,7 +225,7 @@ test('drops catalog properties the endpoint no longer describes', async () => {
   ]);
 });
 
-test('leaves a provider as it was when its catalog cannot be read', async () => {
+void test('leaves a provider as it was when its catalog cannot be read', async () => {
   const warnings: unknown[][] = [];
   const http = unreachable as unknown as HttpTransport;
   const stored = configuration(
@@ -247,7 +247,7 @@ test('leaves a provider as it was when its catalog cannot be read', async () => 
   );
 });
 
-test('resolves the execution effort away when its model lists none', async () => {
+void test('resolves the execution effort away when its model lists none', async () => {
   const http = transport(() => entries({ id: 'openai/gpt-5' }));
   const filled = await read(
     configuration([{ name: 'openai/gpt-5' }], 'medium'),
@@ -258,7 +258,7 @@ test('resolves the execution effort away when its model lists none', async () =>
   assert.equal(filled.models.execution.model, 'openai/gpt-5');
 });
 
-test('keeps the execution effort when its model lists efforts', async () => {
+void test('keeps the execution effort when its model lists efforts', async () => {
   const http = transport(() =>
     entries({ id: 'openai/gpt-5', supported_efforts: ['medium'] }),
   );
@@ -270,7 +270,7 @@ test('keeps the execution effort when its model lists efforts', async () => {
   assert.equal(filled.models.execution.effort, 'medium');
 });
 
-test("starts the execution effort at the model's own default", async () => {
+void test("starts the execution effort at the model's own default", async () => {
   const http = transport(() =>
     entries({
       id: 'openai/gpt-5',
@@ -283,7 +283,7 @@ test("starts the execution effort at the model's own default", async () => {
   assert.equal(filled.models.execution.effort, 'high');
 });
 
-test("starts the execution effort at the model's first effort other than none", async () => {
+void test("starts the execution effort at the model's first effort other than none", async () => {
   const http = transport(() =>
     entries({ id: 'openai/gpt-5', supported_efforts: ['none', 'low', 'high'] }),
   );
@@ -292,7 +292,7 @@ test("starts the execution effort at the model's first effort other than none", 
   assert.equal(filled.models.execution.effort, 'low');
 });
 
-test('keeps the off an operator named for a model that lists efforts', async () => {
+void test('keeps the off an operator named for a model that lists efforts', async () => {
   const http = transport(() =>
     entries({ id: 'openai/gpt-5', supported_efforts: ['none', 'low', 'high'] }),
   );
@@ -304,7 +304,7 @@ test('keeps the off an operator named for a model that lists efforts', async () 
   assert.equal(filled.models.execution.effort, 'none');
 });
 
-test('reads no catalog for a kind that declares no models URL', async () => {
+void test('reads no catalog for a kind that declares no models URL', async () => {
   const http = transport(() => entries({ id: 'local/one' }));
   const stored = ConfigInputSchema.parse({
     providers: [

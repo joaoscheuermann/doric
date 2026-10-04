@@ -13,11 +13,11 @@ import {
 } from '../../utils/json.js';
 import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
-export type TextSnapshots = {
+export interface TextSnapshots {
   readonly outputItems: string[];
   readonly outputTexts: string[];
   readonly contentParts: string[];
-};
+}
 
 export const createTextSnapshots = (): TextSnapshots => ({
   outputItems: [],

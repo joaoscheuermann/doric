@@ -21,7 +21,7 @@ const catalogTools = async (): Promise<readonly ToolFactory[]> =>
     tools.map(({ factory }) => factory),
   );
 
-test(
+void test(
   'executes delegated work through real Direct tools and resumes the parent automatically',
   { timeout: 5000 },
   async () => {
@@ -38,10 +38,10 @@ test(
       metadata: { id: 'local', name: 'local' },
       stream: async function* (request: ProviderRequest) {
         requests.push(request);
-        const input = String(
-          request.messages.filter(({ role }) => role === 'user').at(-1)
-            ?.content,
-        );
+        const input = request.messages
+          .filter(({ role }) => role === 'user')
+          .at(-1)?.content;
+        assert.ok(typeof input === 'string');
         if (input.startsWith('# Child result')) {
           assert.match(input, /child evidence/u);
           resumed.resolve();
@@ -119,7 +119,7 @@ test(
   },
 );
 
-test(
+void test(
   'stops queued execution when Direct cannot persist its resulting history',
   { timeout: 5000 },
   async () => {
@@ -182,7 +182,7 @@ test(
   },
 );
 
-test(
+void test(
   'releases the sandbox despite transient cancellation persistence failures',
   { timeout: 5000 },
   async () => {
@@ -241,7 +241,7 @@ test(
   },
 );
 
-test(
+void test(
   'fails closed when Direct cannot persist a streamed event after queued acceptance',
   { timeout: 5000 },
   async () => {

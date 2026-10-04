@@ -39,7 +39,7 @@ test.before(async () => {
   });
 });
 
-test(
+void test(
   'runs node, transfers bytes, filters egress, and exposes strict SSH',
   { timeout: 10 * 60_000 },
   async () => {
@@ -149,7 +149,7 @@ test(
   },
 );
 
-test(
+void test(
   'warms, isolates, replaces, and shuts down Firecracker sandboxes',
   { timeout: 15 * 60_000 },
   async () => {

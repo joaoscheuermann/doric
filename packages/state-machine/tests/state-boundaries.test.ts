@@ -8,7 +8,9 @@ import {
 } from '../src/index.js';
 
 type State = Record<string, unknown>;
-type Context = { runId: string };
+interface Context {
+  runId: string;
+}
 
 class Instance {
   count = 1;
@@ -31,7 +33,7 @@ const invalidStates: [string, unknown][] = [
 ];
 
 for (const [label, invalid] of invalidStates) {
-  test(`rejects ${label} initial state without invoking its handler`, async () => {
+  void test(`rejects ${label} initial state without invoking its handler`, async () => {
     let invoked = false;
     const definition = createStateMachine<Context, State>()({
       start: (_state, _context, { finish }) => {
@@ -59,7 +61,7 @@ for (const [label, invalid] of invalidStates) {
   });
 
   for (const style of ['literal', 'helper'] as const) {
-    test(`rejects ${label} ${style} transition state at the source handler`, async () => {
+    void test(`rejects ${label} ${style} transition state at the source handler`, async () => {
       let reachedTarget = false;
       const definition = createStateMachine<Context, State>()({
         start: (_state, _context, { transition }) =>
@@ -90,7 +92,7 @@ for (const [label, invalid] of invalidStates) {
 
 for (const style of ['literal', 'helper'] as const) {
   for (const asynchronous of [false, true]) {
-    test(`copies ${style} transition state after the ${asynchronous ? 'async' : 'sync'} handler completes`, async () => {
+    void test(`copies ${style} transition state after the ${asynchronous ? 'async' : 'sync'} handler completes`, async () => {
       const nested = { count: 1 };
       const supplied = { count: 1, nested };
       const start: StateMachineHandler<
@@ -141,7 +143,7 @@ for (const style of ['literal', 'helper'] as const) {
     });
   }
 
-  test(`accepts null-prototype initial and ${style} transition states and normalizes only the transition`, async () => {
+  void test(`accepts null-prototype initial and ${style} transition states and normalizes only the transition`, async () => {
     const initial = Object.assign(Object.create(null), { count: 0 }) as State;
     const supplied = Object.assign(Object.create(null), { count: 1 }) as State;
     const definition = createStateMachine<Context, State>()({
@@ -168,7 +170,7 @@ for (const style of ['literal', 'helper'] as const) {
   });
 }
 
-test('accepts arbitrary nested values without cloning them', async () => {
+void test('accepts arbitrary nested values without cloning them', async () => {
   const state = {
     array: [1],
     date: new Date(0),

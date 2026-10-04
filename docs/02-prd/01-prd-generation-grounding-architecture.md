@@ -89,12 +89,12 @@ accepted scope.
 
 ## Inputs
 
-| Input | Path | Purpose |
-| ----- | ---- | ------- |
-| Prompt state | `<run>/PROMPT.md` | Preserves accepted prompt history, clarification decisions, open-question status, Prompt Reflection status, known constraints, and unresolved conflicts. |
-| Product requirements | `<run>/PROMPT.md` | Defines the user-visible problem, goals, non-goals, users, workflows, outcomes, and acceptance expectations. This is the main PRD input. |
-| Architecture requirements | `<run>/PROMPT.md` | Captures platform constraints, integration boundaries, architecture-relevant facts, validation needs, and feasibility limits without becoming technical design. |
-| Grounding bundle | Run-specific grounding artifacts | Provides hard constraints, convention parameters, current architecture or product evidence, user approvals, and human-gate decisions. |
+| Input                     | Path                             | Purpose                                                                                                                                                         |
+| ------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt state              | `<run>/PROMPT.md`                | Preserves accepted prompt history, clarification decisions, open-question status, Prompt Reflection status, known constraints, and unresolved conflicts.        |
+| Product requirements      | `<run>/PROMPT.md`                | Defines the user-visible problem, goals, non-goals, users, workflows, outcomes, and acceptance expectations. This is the main PRD input.                        |
+| Architecture requirements | `<run>/PROMPT.md`                | Captures platform constraints, integration boundaries, architecture-relevant facts, validation needs, and feasibility limits without becoming technical design. |
+| Grounding bundle          | Run-specific grounding artifacts | Provides hard constraints, convention parameters, current architecture or product evidence, user approvals, and human-gate decisions.                           |
 
 Step 02 must refuse to run if `PROMPT.md` says Prompt Reflection is blocked or
 scope-defining questions remain open.
@@ -114,22 +114,22 @@ avoid.
 
 Default lenses:
 
-| PM lens | Focus | Failure avoided |
-| ------- | ----- | --------------- |
-| User Value PM | User workflows, outcomes, acceptance criteria, non-goals | A plausible PRD that does not solve the user's problem |
-| Feasibility PM | Technical constraints, system boundaries, validation realism | A desirable PRD that cannot be implemented or proven |
-| Risk And Grounding PM | Hard constraints, permissions, security, ambiguity, irreversible actions | A fluent PRD that violates constraints or hides risk |
+| PM lens               | Focus                                                                    | Failure avoided                                        |
+| --------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| User Value PM         | User workflows, outcomes, acceptance criteria, non-goals                 | A plausible PRD that does not solve the user's problem |
+| Feasibility PM        | Technical constraints, system boundaries, validation realism             | A desirable PRD that cannot be implemented or proven   |
+| Risk And Grounding PM | Hard constraints, permissions, security, ambiguity, irreversible actions | A fluent PRD that violates constraints or hides risk   |
 
 Optional lenses may be added only when the accepted prompt or grounding requires
 them:
 
-| Optional lens | Use when |
-| ------------- | -------- |
-| Business Or Company PM | Rollout, cost, support, adoption, compliance, or operating constraints matter. |
-| Security PM | Auth, permissions, secrets, untrusted input, code execution, network access, or sensitive data are involved. |
-| Code Quality PM | Maintainability, package boundaries, migration burden, testing strategy, or repeated workflows are central. |
-| UX Or Workflow PM | Human-facing CLI, TUI, web, onboarding, error, recovery, or daily operator flows change. |
-| Domain Expert PM | The product area depends on specialized domain knowledge. |
+| Optional lens          | Use when                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Business Or Company PM | Rollout, cost, support, adoption, compliance, or operating constraints matter.                               |
+| Security PM            | Auth, permissions, secrets, untrusted input, code execution, network access, or sensitive data are involved. |
+| Code Quality PM        | Maintainability, package boundaries, migration burden, testing strategy, or repeated workflows are central.  |
+| UX Or Workflow PM      | Human-facing CLI, TUI, web, onboarding, error, recovery, or daily operator flows change.                     |
+| Domain Expert PM       | The product area depends on specialized domain knowledge.                                                    |
 
 The Supervisor chooses lenses before spawning PM agents. PM agents do not select
 their own lenses after work begins.
@@ -242,11 +242,11 @@ accepted run artifacts.
 
 Recommended capabilities:
 
-| Capability | Use |
-| ---------- | --- |
-| `read()` | Read specific prompt artifacts, grounding documents, product notes, technical notes, architecture summaries, requirements, examples, tests, or code files. |
-| `tree()` | Inspect workspace, package, code, or documentation structure so a draft respects actual boundaries. |
-| Search-like tools | Find terminology, constraints, workflows, APIs, data models, existing behavior, validation patterns, or user-facing strings that affect the PRD. |
+| Capability        | Use                                                                                                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read()`          | Read specific prompt artifacts, grounding documents, product notes, technical notes, architecture summaries, requirements, examples, tests, or code files. |
+| `tree()`          | Inspect workspace, package, code, or documentation structure so a draft respects actual boundaries.                                                        |
+| Search-like tools | Find terminology, constraints, workflows, APIs, data models, existing behavior, validation patterns, or user-facing strings that affect the PRD.           |
 
 PM agents can use tools to understand context, but they cannot mutate context.
 They should call tools only when the brief or lens requires evidence, record
@@ -428,16 +428,16 @@ already exists.
 
 ## Failure Modes
 
-| Failure mode | Mitigation |
-| ------------ | ---------- |
-| PM agents converge on the same draft | Use distinct lenses and prevent PMs from reading each other's drafts during initial generation. |
-| PM agents invent user facts | Treat archetype output as assumptions unless backed by accepted evidence. |
-| Technical PM writes a technical design | Restrict technical content to constraints, risks, and validation expectations. |
-| Product PM ignores hard constraints | Include hard constraints in the shared brief and run artifact checks before Proximity. |
-| Proximity filters too aggressively | Preserve at least one representative per materially distinct scope, user, or risk strategy. |
-| Raw draft is treated as final | Mark all PM outputs as raw candidates and block direct promotion. |
-| Missing user intent is repaired by Generation | Return to Step 01 or human alignment for scope-defining gaps. |
-| Too many PM lenses are spawned | Use the default three lenses and add more only from evidence. |
+| Failure mode                                  | Mitigation                                                                                      |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| PM agents converge on the same draft          | Use distinct lenses and prevent PMs from reading each other's drafts during initial generation. |
+| PM agents invent user facts                   | Treat archetype output as assumptions unless backed by accepted evidence.                       |
+| Technical PM writes a technical design        | Restrict technical content to constraints, risks, and validation expectations.                  |
+| Product PM ignores hard constraints           | Include hard constraints in the shared brief and run artifact checks before Proximity.          |
+| Proximity filters too aggressively            | Preserve at least one representative per materially distinct scope, user, or risk strategy.     |
+| Raw draft is treated as final                 | Mark all PM outputs as raw candidates and block direct promotion.                               |
+| Missing user intent is repaired by Generation | Return to Step 01 or human alignment for scope-defining gaps.                                   |
+| Too many PM lenses are spawned                | Use the default three lenses and add more only from evidence.                                   |
 
 ## Minimal Implementation
 

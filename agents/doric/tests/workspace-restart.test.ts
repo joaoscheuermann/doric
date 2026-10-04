@@ -187,7 +187,7 @@ const until = async (
   assert.fail('The resumed runs never arrived.');
 };
 
-test(
+void test(
   'the boot takes up every prompt the host interrupted and leaves the rest',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {
@@ -351,7 +351,7 @@ test(
   },
 );
 
-test(
+void test(
   'continues a resumed prompt from the history it had already written',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {
@@ -445,7 +445,7 @@ test(
   },
 );
 
-test(
+void test(
   'closes a prompt the host interrupted three times and still honours the reader',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {
@@ -573,7 +573,7 @@ test(
   },
 );
 
-test(
+void test(
   'resumes one reader-paused prompt on demand, bringing its Project back',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {

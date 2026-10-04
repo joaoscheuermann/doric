@@ -19,7 +19,7 @@ const deferred = <T>() => {
 };
 
 for (const cancelled of ['initiator', 'follower'] as const) {
-  test(`cancels the ${cancelled} promptly without interrupting shared catalog loading`, async () => {
+  void test(`cancels the ${cancelled} promptly without interrupting shared catalog loading`, async () => {
     const loading = deferred<readonly Model[]>();
     let loads = 0;
     const catalog = createOpenRouterCatalog((signal) => {
@@ -61,7 +61,7 @@ for (const cancelled of ['initiator', 'follower'] as const) {
   });
 }
 
-test('rejects already aborted callers without loading, including cached lookups', async () => {
+void test('rejects already aborted callers without loading, including cached lookups', async () => {
   let loads = 0;
   const catalog = createOpenRouterCatalog(async () => {
     loads += 1;
@@ -81,7 +81,7 @@ test('rejects already aborted callers without loading, including cached lookups'
   assert.equal(loads, 1);
 });
 
-test('uses the cache until TTL and preserves stale support after refresh failure', async (t) => {
+void test('uses the cache until TTL and preserves stale support after refresh failure', async (t) => {
   let now = 100;
   t.mock.method(Date, 'now', () => now);
   let loads = 0;
@@ -104,7 +104,7 @@ test('uses the cache until TTL and preserves stale support after refresh failure
   });
 });
 
-test('returns unknown support on initial failure and retries on the next lookup', async () => {
+void test('returns unknown support on initial failure and retries on the next lookup', async () => {
   let offline = true;
   const catalog = createOpenRouterCatalog(async () => {
     if (offline) throw new Error('offline');

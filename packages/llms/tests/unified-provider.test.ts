@@ -22,7 +22,7 @@ const modelCatalog = (id: string, supportedParameters: readonly string[]) =>
     ],
   });
 
-test('selects native structured output from live OpenRouter capabilities', async () => {
+void test('selects native structured output from live OpenRouter capabilities', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('openai/gpt-5', [
@@ -60,7 +60,7 @@ test('selects native structured output from live OpenRouter capabilities', async
   assert.deepEqual(body.provider, { require_parameters: true });
 });
 
-test('falls back from JSON mode to a schema prompt and repairs locally', async () => {
+void test('falls back from JSON mode to a schema prompt and repairs locally', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('google/gemma-3-27b-it', []),
@@ -132,7 +132,7 @@ test('falls back from JSON mode to a schema prompt and repairs locally', async (
   });
 });
 
-test('buffers direct structured streams until validation succeeds', async () => {
+void test('buffers direct structured streams until validation succeeds', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('mistralai/mistral-small', ['response_format']),
@@ -163,7 +163,7 @@ test('buffers direct structured streams until validation succeeds', async () => 
   assert.equal(transport.requests[1]?.headers?.accept, 'application/json');
 });
 
-test('rejects non-emulatable feature combinations before completion', async () => {
+void test('rejects non-emulatable feature combinations before completion', async () => {
   const transport = fakeTransport({
     responses: [modelCatalog('anthropic/claude-sonnet-4', ['tools'])],
   });
@@ -206,7 +206,7 @@ const disabledReasoning: readonly {
 ];
 
 for (const { name, options } of disabledReasoning) {
-  test(`allows forced tools when reasoning is disabled by ${name}`, async () => {
+  void test(`allows forced tools when reasoning is disabled by ${name}`, async () => {
     const transport = fakeTransport({
       responses: [
         modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
@@ -234,7 +234,7 @@ for (const { name, options } of disabledReasoning) {
   });
 }
 
-test('rejects forced tools when explicit effort overrides a disabled reasoning flag', async () => {
+void test('rejects forced tools when explicit effort overrides a disabled reasoning flag', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
@@ -259,7 +259,7 @@ test('rejects forced tools when explicit effort overrides a disabled reasoning f
   );
 });
 
-test('allows an unknown laboratory only when live capabilities prove tools and forced choice', async () => {
+void test('allows an unknown laboratory only when live capabilities prove tools and forced choice', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('acme/model', ['tools', 'tool_choice']),
@@ -295,7 +295,7 @@ test('allows an unknown laboratory only when live capabilities prove tools and f
   assert.equal(finish.toolCalls[0]?.name, 'lookup');
 });
 
-test('emulates sequential tools when the model does not advertise parallel control', async () => {
+void test('emulates sequential tools when the model does not advertise parallel control', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('openai/gpt-5', ['tools']),
@@ -347,7 +347,7 @@ test('emulates sequential tools when the model does not advertise parallel contr
   );
 });
 
-test('forwards parallel tool control when the model advertises it', async () => {
+void test('forwards parallel tool control when the model advertises it', async () => {
   const transport = fakeTransport({
     responses: [
       modelCatalog('z-ai/glm-5', ['tools', 'parallel_tool_calls']),
@@ -374,7 +374,7 @@ test('forwards parallel tool control when the model advertises it', async () => 
   assert.equal(body.parallel_tool_calls, false);
 });
 
-test('rejects native schema and tools in the same unified request', async () => {
+void test('rejects native schema and tools in the same unified request', async () => {
   const provider = createUnifiedProvider({
     transport: fakeTransport({}),
     apiKey: 'key',

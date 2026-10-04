@@ -205,7 +205,7 @@ const complete = async (
   return provider;
 };
 
-test('lists every provider integration the package can build, once each', () => {
+void test('lists every provider integration the package can build, once each', () => {
   assert.deepEqual(
     providerKinds.map(({ id }) => id),
     [
@@ -250,7 +250,7 @@ test('lists every provider integration the package can build, once each', () => 
   }
 });
 
-test('builds each kind from its required values alone, leaving optional dependencies to the factory', async () => {
+void test('builds each kind from its required values alone, leaving optional dependencies to the factory', async () => {
   for (const entry of cases) {
     const kind = kindOf(entry.kind);
     const transport = entry.transport();
@@ -276,7 +276,7 @@ test('builds each kind from its required values alone, leaving optional dependen
   }
 });
 
-test('sends every value a kind declares, including its endpoint and its own identity', async () => {
+void test('sends every value a kind declares, including its endpoint and its own identity', async () => {
   for (const entry of cases) {
     const kind = kindOf(entry.kind);
     const transport = entry.transport();
@@ -298,7 +298,7 @@ test('sends every value a kind declares, including its endpoint and its own iden
   }
 });
 
-test('answers the kind and the fields a provider was built from', async () => {
+void test('answers the kind and the fields a provider was built from', async () => {
   for (const entry of cases) {
     const kind = kindOf(entry.kind);
     const transport = entry.transport();
@@ -310,7 +310,7 @@ test('answers the kind and the fields a provider was built from', async () => {
   }
 });
 
-test('refuses a kind whose required value is absent or blank', () => {
+void test('refuses a kind whose required value is absent or blank', () => {
   const deps = {
     transport: fakeTransport({}),
     logger: silentLogger,
@@ -343,7 +343,7 @@ test('refuses a kind whose required value is absent or blank', () => {
   }
 });
 
-test('refuses a value its factory cannot use', () => {
+void test('refuses a value its factory cannot use', () => {
   const deps = {
     transport: fakeTransport({}),
     logger: silentLogger,
@@ -376,7 +376,7 @@ test('refuses a value its factory cannot use', () => {
   );
 });
 
-test('passes a number field through to its factory', async () => {
+void test('passes a number field through to its factory', async () => {
   const kind = kindOf('unified');
   const structured = {
     model: 'catalog-model',

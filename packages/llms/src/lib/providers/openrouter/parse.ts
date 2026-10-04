@@ -13,7 +13,7 @@ import {
 } from '../../utils/json.js';
 import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
-export type StreamState = {
+export interface StreamState {
   readonly text: string[];
   readonly reasoning: string[];
   readonly refusal: string[];
@@ -21,7 +21,7 @@ export type StreamState = {
   readonly replay: ProviderReplayItem[];
   usage?: ProviderFinished['usage'];
   finishReason?: ProviderFinished['finishReason'];
-};
+}
 
 export const createStreamState = (): StreamState => ({
   text: [],

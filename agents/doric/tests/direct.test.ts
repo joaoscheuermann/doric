@@ -12,7 +12,7 @@ import {
 } from '../src/lib/agents/direct/executor.js';
 import { defaultConfig } from '../src/lib/config/schema.js';
 
-test('includes the Direct instruction and every skill body once in bundle order', () => {
+void test('includes the Direct instruction and every skill body once in bundle order', () => {
   const system = directSystemPrompt([
     skill('first', 'First body.'),
     skill('second', 'Second body.'),
@@ -26,7 +26,7 @@ test('includes the Direct instruction and every skill body once in bundle order'
   assert.equal(system.lastIndexOf('Second body.'), second);
 });
 
-test('preserves skill whitespace and separates each skill from the preceding prompt', () => {
+void test('preserves skill whitespace and separates each skill from the preceding prompt', () => {
   assert.equal(
     directSystemPrompt([
       skill('first', '\nFirst body.\n'),
@@ -36,7 +36,7 @@ test('preserves skill whitespace and separates each skill from the preceding pro
   );
 });
 
-test('feeds complete persisted history into each fresh Direct agent', async () => {
+void test('feeds complete persisted history into each fresh Direct agent', async () => {
   const harness = directHarness();
   await harness.run('prompt-1');
   await harness.run('prompt-2');
@@ -48,7 +48,7 @@ test('feeds complete persisted history into each fresh Direct agent', async () =
   ]);
 });
 
-test('binds every fresh Direct agent to the project sandbox', async () => {
+void test('binds every fresh Direct agent to the project sandbox', async () => {
   const harness = directHarness();
   await harness.run('prompt-1');
   await harness.run('prompt-2');
@@ -57,7 +57,7 @@ test('binds every fresh Direct agent to the project sandbox', async () => {
   assert.deepEqual(harness.boundSandboxes, ['vm-1', 'vm-1']);
 });
 
-test('persists streamed Direct events', async () => {
+void test('persists streamed Direct events', async () => {
   const harness = directHarness();
   await harness.run('prompt');
 
@@ -68,7 +68,7 @@ test('persists streamed Direct events', async () => {
   );
 });
 
-test('persists partial history after failure for the next prompt', async () => {
+void test('persists partial history after failure for the next prompt', async () => {
   const harness = directHarness();
   await assert.rejects(harness.run('fail'));
   await harness.run('after-failure');
@@ -79,7 +79,7 @@ test('persists partial history after failure for the next prompt', async () => {
   ]);
 });
 
-test('uses the configured execution model and effort', async () => {
+void test('uses the configured execution model and effort', async () => {
   const configuration = structuredClone(defaultConfig);
   configuration.models.execution.model = 'configured-model';
   configuration.models.execution.effort = 'high';
@@ -91,7 +91,7 @@ test('uses the configured execution model and effort', async () => {
   assert.equal(harness.requests[0]?.effort, 'high');
 });
 
-test('enforces the configured Direct turn limit', async () => {
+void test('enforces the configured Direct turn limit', async () => {
   const configuration = structuredClone(defaultConfig);
   configuration.execution.maxTurns = 1;
   const harness = directHarness(configuration);
@@ -104,7 +104,7 @@ test('enforces the configured Direct turn limit', async () => {
   assert.equal(harness.requests.length, 1);
 });
 
-test('does not start a sandbox tool after interruption and retains resumable tool history', async () => {
+void test('does not start a sandbox tool after interruption and retains resumable tool history', async () => {
   const controller = new AbortController();
   const harness = directHarness(structuredClone(defaultConfig), (value) => {
     if ((value as { type: string }).type === 'tool.started') controller.abort();
@@ -123,7 +123,7 @@ test('does not start a sandbox tool after interruption and retains resumable too
   );
 });
 
-test('resumes an interrupted run from the history it had already written', async () => {
+void test('resumes an interrupted run from the history it had already written', async () => {
   const controller = new AbortController();
   const harness = directHarness(structuredClone(defaultConfig), (value) => {
     if ((value as { type: string }).type === 'tool.finished')
@@ -152,7 +152,7 @@ test('resumes an interrupted run from the history it had already written', async
   assert.equal(sent[1]?.role, 'user');
 });
 
-test('answers a resumed history that ends in a tool call with no result', async () => {
+void test('answers a resumed history that ends in a tool call with no result', async () => {
   const harness = directHarness();
   // A host stop in the middle of a tool leaves a history no provider accepts: an
   // assistant call the run never answered.
@@ -240,7 +240,7 @@ const directHarness = (
   let checkpoints: Readonly<Record<string, number>> = {};
   let executions = 0;
   const requests: ProviderRequest[] = [];
-  const events: Array<{ event: unknown }> = [];
+  const events: { event: unknown }[] = [];
   const boundSandboxes: string[] = [];
   /** What the host held when it asked the provider for each turn. */
   const calls: {
@@ -252,10 +252,9 @@ const directHarness = (
     stream: async function* (request: ProviderRequest) {
       requests.push(request);
       calls.push({ persisted: messages, executions });
-      const input = String(request.messages.at(-1)?.content).replace(
-        '# User request\n\n',
-        '',
-      );
+      const content = request.messages.at(-1)?.content;
+      assert.equal(typeof content, 'string');
+      const input = (content as string).replace('# User request\n\n', '');
       yield {
         type: 'response.started' as const,
         provider: { id: 'provider', name: 'provider' },

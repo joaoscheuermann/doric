@@ -9,7 +9,7 @@ import {
   parseMessageConfigUpdate,
 } from '../src/index.js';
 
-test('returns config data when message metadata contains configuration', () => {
+void test('returns config data when message metadata contains configuration', () => {
   const config = sampleConfig();
 
   assert.deepEqual(
@@ -21,7 +21,7 @@ test('returns config data when message metadata contains configuration', () => {
   );
 });
 
-test('parses config objects directly when the payload is valid', () => {
+void test('parses config objects directly when the payload is valid', () => {
   const config = sampleConfig({
     models: [
       {
@@ -37,7 +37,7 @@ test('parses config objects directly when the payload is valid', () => {
   assert.deepEqual(parseConfig(config), config);
 });
 
-test('parses provider-neutral model effort values', () => {
+void test('parses provider-neutral model effort values', () => {
   const config = sampleConfig({
     models: [
       {
@@ -57,7 +57,7 @@ test('parses provider-neutral model effort values', () => {
   });
 });
 
-test('rejects conflicting model effort and legacy reasoning values', () => {
+void test('rejects conflicting model effort and legacy reasoning values', () => {
   assertConfigError(
     () =>
       parseConfig(
@@ -78,7 +78,7 @@ test('rejects conflicting model effort and legacy reasoning values', () => {
   );
 });
 
-test('rejects invalid model effort values', () => {
+void test('rejects invalid model effort values', () => {
   assertConfigError(
     () =>
       parseConfig({
@@ -97,7 +97,7 @@ test('rejects invalid model effort values', () => {
   );
 });
 
-test('parses optional GitHub repository branch when provided', () => {
+void test('parses optional GitHub repository branch when provided', () => {
   const config = sampleConfig({
     github: {
       repo: {
@@ -114,7 +114,7 @@ test('parses optional GitHub repository branch when provided', () => {
   });
 });
 
-test('parses OpenAI provider when token is omitted', () => {
+void test('parses OpenAI provider when token is omitted', () => {
   const config = sampleConfig({
     providers: [
       {
@@ -130,7 +130,7 @@ test('parses OpenAI provider when token is omitted', () => {
   });
 });
 
-test('parses optional provider base URL when provided', () => {
+void test('parses optional provider base URL when provided', () => {
   const config = sampleConfig({
     providers: [
       {
@@ -148,7 +148,7 @@ test('parses optional provider base URL when provided', () => {
   });
 });
 
-test('returns config update when later message metadata contains configuration', () => {
+void test('returns config update when later message metadata contains configuration', () => {
   const config = sampleConfig();
 
   assert.deepEqual(
@@ -160,7 +160,7 @@ test('returns config update when later message metadata contains configuration',
   );
 });
 
-test('returns undefined when later message omits metadata configuration', () => {
+void test('returns undefined when later message omits metadata configuration', () => {
   assert.equal(
     parseMessageConfigUpdate({
       metadata: {},
@@ -170,7 +170,7 @@ test('returns undefined when later message omits metadata configuration', () => 
   );
 });
 
-test('rejects messages without metadata configuration', () => {
+void test('rejects messages without metadata configuration', () => {
   assertConfigError(
     () => parseInitialMessageConfig({ parts: [] }),
     'missing_configuration',
@@ -178,7 +178,7 @@ test('rejects messages without metadata configuration', () => {
   );
 });
 
-test('rejects metadata without configuration', () => {
+void test('rejects metadata without configuration', () => {
   assertConfigError(
     () =>
       parseInitialMessageConfig({
@@ -190,7 +190,7 @@ test('rejects metadata without configuration', () => {
   );
 });
 
-test('rejects non-object metadata configuration', () => {
+void test('rejects non-object metadata configuration', () => {
   assertConfigError(
     () =>
       parseInitialMessageConfig({
@@ -202,7 +202,7 @@ test('rejects non-object metadata configuration', () => {
   );
 });
 
-test('rejects first-part config data when metadata configuration is missing', () => {
+void test('rejects first-part config data when metadata configuration is missing', () => {
   assertConfigError(
     () =>
       parseInitialMessageConfig({
@@ -215,7 +215,7 @@ test('rejects first-part config data when metadata configuration is missing', ()
   );
 });
 
-test('rejects malformed config fields with the invalid field path', () => {
+void test('rejects malformed config fields with the invalid field path', () => {
   const config = sampleConfig();
 
   assertConfigError(

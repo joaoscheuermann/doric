@@ -18,24 +18,25 @@ import type {
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
-  ProviderStructuredFinished,
+  ProviderRerankRequest,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
 import { parseSseEvents } from '../utils/sse.js';
 import {
   parseEmbedding,
-  parseRerank,
   parseJsonBody,
+  parseRerank,
   requireEmbeddingInput,
-  requireRerankInput,
   requireRequestInput,
+  requireRerankInput,
   streamErrorEvent,
 } from './common.js';
-import { parseStructuredOutput } from './structured.js';
+import { requestJson, withProviderErrors } from './http.js';
+import { withProviderLogging } from './logging.js';
 import { authorization } from './openrouter/auth.js';
 import {
   openRouterBody,
@@ -56,32 +57,31 @@ import {
   streamFinish,
   streamToolCalls,
 } from './openrouter/parse.js';
-import { withProviderLogging } from './logging.js';
-import { requestJson, withProviderErrors } from './http.js';
+import { parseStructuredOutput } from './structured.js';
 
 export { openRouterBody } from './openrouter/body.js';
 
-export type OpenRouterProviderDeps = {
+export interface OpenRouterProviderDeps {
   readonly transport: HttpTransport;
   readonly apiKey: string | (() => string | Promise<string>);
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
+}
 
 export type OpenRouterProvider = LlmProvider & DecisionProvider;
 
-export type PreparedOpenRouterRequest = {
+export interface PreparedOpenRouterRequest {
   readonly request: ProviderRequest<unknown>;
   readonly bodyOptions?: OpenRouterBodyOptions;
-};
+}
 
-export type OpenRouterProviderCoreOptions = {
+export interface OpenRouterProviderCoreOptions {
   readonly metadata?: ProviderMetadata;
   readonly validateStructuredOutput?: boolean;
   readonly prepare?: (
     request: ProviderRequest<unknown>,
   ) => PreparedOpenRouterRequest | Promise<PreparedOpenRouterRequest>;
-};
+}
 
 export const openRouterMetadata: ProviderMetadata = {
   id: 'openrouter',

@@ -23,7 +23,7 @@ import {
   resolveCodexAuth,
 } from '../src/index.js';
 
-test('builds PKCE authorization URL and exchanges callback code', async () => {
+void test('builds PKCE authorization URL and exchanges callback code', async () => {
   let opened = '';
   const saved: OAuthTokenRecord[] = [];
   const store = memoryStore();
@@ -100,7 +100,7 @@ test('builds PKCE authorization URL and exchanges callback code', async () => {
   assert.equal(saved.length, 1);
 });
 
-test('rejects OAuth callback state mismatch before token exchange', async () => {
+void test('rejects OAuth callback state mismatch before token exchange', async () => {
   const transport = fakeTransport({});
 
   await assert.rejects(
@@ -125,7 +125,7 @@ test('rejects OAuth callback state mismatch before token exchange', async () => 
   assert.equal(transport.requests.length, 0);
 });
 
-test('rejects OAuth callback provider errors', async () => {
+void test('rejects OAuth callback provider errors', async () => {
   await assert.rejects(
     createOAuthClient({
       profile: testProfile,
@@ -146,7 +146,7 @@ test('rejects OAuth callback provider errors', async () => {
   );
 });
 
-test('rejects invalid OAuth token responses', async () => {
+void test('rejects invalid OAuth token responses', async () => {
   await assert.rejects(
     authWithResponse(response('not-json')).authorize(),
     hasCode('oauth_invalid_token_response'),
@@ -158,7 +158,7 @@ test('rejects invalid OAuth token responses', async () => {
   );
 });
 
-test('refreshes OAuth credentials before use when expiry is inside skew', async () => {
+void test('refreshes OAuth credentials before use when expiry is inside skew', async () => {
   const saved: OAuthTokenRecord[] = [];
 
   const store = memoryStore({
@@ -202,7 +202,7 @@ test('refreshes OAuth credentials before use when expiry is inside skew', async 
   assert.equal(saved[0]?.expiresAt, 11_000);
 });
 
-test('forces OAuth refresh even when stored credentials are not expiring', async () => {
+void test('forces OAuth refresh even when stored credentials are not expiring', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -234,7 +234,7 @@ test('forces OAuth refresh even when stored credentials are not expiring', async
   assert.equal(transport.requests.length, 1);
 });
 
-test('rejects OAuth refresh when the stored credential lacks a refresh token', async () => {
+void test('rejects OAuth refresh when the stored credential lacks a refresh token', async () => {
   await assert.rejects(
     createOAuthClient({
       profile: testProfile,
@@ -259,7 +259,7 @@ test('rejects OAuth refresh when the stored credential lacks a refresh token', a
   );
 });
 
-test('parses JWT claims and renders OAuth credentials', async () => {
+void test('parses JWT claims and renders OAuth credentials', async () => {
   const accessToken = jwt({ sub: 'user_1', email: 'a@example.com' });
   const store = memoryStore();
 
@@ -288,7 +288,7 @@ test('parses JWT claims and renders OAuth credentials', async () => {
   });
 });
 
-test('uses Codex OAuth profile defaults', async () => {
+void test('uses Codex OAuth profile defaults', async () => {
   let opened = '';
 
   const client = createCodexOAuth({
@@ -337,7 +337,7 @@ test('uses Codex OAuth profile defaults', async () => {
   assert.equal(url.searchParams.get('originator'), CODEX_OAUTH_ORIGINATOR);
 });
 
-test('resolves Codex ChatGPT auth from auth.json with account headers', async () => {
+void test('resolves Codex ChatGPT auth from auth.json with account headers', async () => {
   await withTempDir(async (dir) => {
     const accessToken = jwt({
       exp: 10_000,
@@ -373,7 +373,7 @@ test('resolves Codex ChatGPT auth from auth.json with account headers', async ()
   });
 });
 
-test('resolves Codex authorization header from env', async () => {
+void test('resolves Codex authorization header from env', async () => {
   const accessToken = jwt({
     'https://api.openai.com/auth': {
       chatgpt_account_id: 'acct_env',
@@ -390,7 +390,7 @@ test('resolves Codex authorization header from env', async () => {
   assert.equal(credential.accountId, 'acct_env');
 });
 
-test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client id', async () => {
+void test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client id', async () => {
   await withTempDir(async (dir) => {
     await writeCodexAuth(dir, {
       auth_mode: 'chatgpt',
@@ -417,8 +417,12 @@ test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client id', a
       now: () => 1_000_000,
       transport,
     });
-    const requestBody = JSON.parse(transport.requests[0]?.body ?? '{}');
-    const saved = JSON.parse(await readFile(join(dir, 'auth.json'), 'utf8'));
+    const requestBody = JSON.parse(
+      transport.requests[0]?.body ?? '{}',
+    ) as Record<string, unknown>;
+    const saved = JSON.parse(
+      await readFile(join(dir, 'auth.json'), 'utf8'),
+    ) as { tokens: Record<string, unknown> };
 
     assert.equal(
       transport.requests[0]?.url,

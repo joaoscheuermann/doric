@@ -52,9 +52,7 @@ export function SettingsTools({ draft, onChange }: SettingsToolsProps) {
   const tools = catalog.list.filter((tool) => tool.settings.length > 0);
 
   if (catalog.error !== undefined) {
-    return (
-      <p className="text-destructive text-sm">{catalog.error}</p>
-    );
+    return <p className="text-destructive text-sm">{catalog.error}</p>;
   }
 
   if (catalog.loading && catalog.list.length === 0) {
@@ -108,7 +106,12 @@ export function SettingsTools({ draft, onChange }: SettingsToolsProps) {
                   value={fieldValue(draft, tool.name, field)}
                   onChange={(event) =>
                     onChange(
-                      withToolValue(draft, tool.name, field.key, event.target.value),
+                      withToolValue(
+                        draft,
+                        tool.name,
+                        field.key,
+                        event.target.value,
+                      ),
                     )
                   }
                 />

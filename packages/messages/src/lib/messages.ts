@@ -2,11 +2,11 @@ import type { ProviderFinished, ProviderMessage } from 'llms';
 
 export type MessageStorageEntry = ProviderMessage | ProviderFinished;
 
-export type MessageStorage = {
+export interface MessageStorage {
   list(): readonly ProviderMessage[];
 
   push(entry: MessageStorageEntry): number;
-};
+}
 
 const isFinished = (entry: MessageStorageEntry): entry is ProviderFinished =>
   'finishReason' in entry;

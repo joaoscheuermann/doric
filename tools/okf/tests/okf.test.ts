@@ -7,8 +7,8 @@ import { describe, test } from 'node:test';
 import { createTool } from '../src/index.js';
 import { createFakeSandbox, WORKSPACE_ROOT } from './fake-sandbox.js';
 
-describe('OKF search tool', () => {
-  test('searches bundles and ranks metadata above body matches', async () => {
+void describe('OKF search tool', () => {
+  void test('searches bundles and ranks metadata above body matches', async () => {
     const root = await workspace('rank');
 
     await concept(root, 'project/source.md', {
@@ -47,7 +47,7 @@ describe('OKF search tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('parses YAML metadata permissively and derives a missing title', async () => {
+  void test('parses YAML metadata permissively and derives a missing title', async () => {
     const root = await workspace('metadata');
 
     await write(
@@ -95,7 +95,7 @@ describe('OKF search tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('skips reserved and malformed documents without rejecting a bundle', async () => {
+  void test('skips reserved and malformed documents without rejecting a bundle', async () => {
     const root = await workspace('permissive');
 
     await write(root, '.agents/bundles/project/index.md', '# Project\n');
@@ -130,7 +130,7 @@ describe('OKF search tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('rejects bundle traversal without reading outside the bundle root', async () => {
+  void test('rejects bundle traversal without reading outside the bundle root', async () => {
     const root = await workspace('traversal');
 
     await write(root, '.agents/skills/private.md', 'PRIVATE_SENTINEL');
@@ -151,7 +151,7 @@ describe('OKF search tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('does not follow symlinks and reports missing bundle roots', async () => {
+  void test('does not follow symlinks and reports missing bundle roots', async () => {
     const root = await workspace('symlink');
 
     await write(
@@ -195,7 +195,7 @@ describe('OKF search tool', () => {
     await rm(missingRoot, { recursive: true, force: true });
   });
 
-  test('bounds result count and returned concept content', async () => {
+  void test('bounds result count and returned concept content', async () => {
     const root = await workspace('bounds');
 
     await concept(root, 'project/one.md', {
@@ -233,13 +233,13 @@ describe('OKF search tool', () => {
   });
 });
 
-type Concept = {
+interface Concept {
   readonly type: string;
   readonly title?: string;
   readonly description?: string;
   readonly tags?: readonly string[];
   readonly body: string;
-};
+}
 
 const workspace = (name: string): Promise<string> =>
   mkdtemp(path.join(os.tmpdir(), `doric-okf-${name}-`));

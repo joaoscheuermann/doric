@@ -1,6 +1,6 @@
 import type { JsonValue, ProviderFinished } from 'llms';
-import { AgentErrorObject } from '../classes/agent-error.js';
 
+import { AgentErrorObject } from '../classes/agent-error.js';
 import type {
   AgentResponse,
   AgentRunOptions,

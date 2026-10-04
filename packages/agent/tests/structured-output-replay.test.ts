@@ -16,7 +16,7 @@ import {
 } from './fakes.js';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} retains opaque replay from a rejected structured submission`, async () => {
+  void test(`${mode} retains opaque replay from a rejected structured submission`, async () => {
     const replay = [{ type: 'opaque-reasoning', id: `replay-${mode}` }];
 
     const provider = createProvider({

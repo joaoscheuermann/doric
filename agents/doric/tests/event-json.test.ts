@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { eventJson } from '../src/lib/events/serialization.js';
 
-test('preserves reasoning replay and tool IO while redacting credentials', () => {
+void test('preserves reasoning replay and tool IO while redacting credentials', () => {
   const event = {
     type: 'response.finished',
     finish: {
@@ -25,19 +25,19 @@ test('preserves reasoning replay and tool IO while redacting credentials', () =>
   });
 });
 
-test('omits undefined object properties while marking array entries', () => {
+void test('omits undefined object properties while marking array entries', () => {
   assert.deepEqual(eventJson({ absent: undefined, values: [undefined] }, []), {
     values: ['[Undefined]'],
   });
 });
 
-test('keeps an empty record as the empty object, and marks what exposes no property', () => {
+void test('keeps an empty record as the empty object, and marks what exposes no property', () => {
   // A tool called without arguments carries an empty payload, and that is `{}`:
   // a marker here would reach the transcript as "[Object: [object Object]]".
   assert.deepEqual(eventJson({ call: { payload: {} } }, []), {
     call: { payload: {} },
   });
-  assert.deepEqual(eventJson({ built: Object.create(null) }, []), {
+  assert.deepEqual(eventJson({ built: Object.create(null) as object }, []), {
     built: {},
   });
 
@@ -50,7 +50,7 @@ test('keeps an empty record as the empty object, and marks what exposes no prope
   });
 });
 
-test('serializes Error fields own properties cycles and non-JSON values', () => {
+void test('serializes Error fields own properties cycles and non-JSON values', () => {
   const cause = new Error('root secret');
 
   const error = new Error('failed secret', { cause }) as Error & {

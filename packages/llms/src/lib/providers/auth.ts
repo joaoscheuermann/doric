@@ -2,10 +2,10 @@ import { ProviderErrorObject } from '../classes/provider-error.js';
 
 export type SecretSource = string | (() => string | Promise<string>);
 
-export type AuthDeps = {
+export interface AuthDeps {
   readonly apiKey?: SecretSource;
   readonly authorization?: SecretSource;
-};
+}
 
 export const authorization = async (
   deps: AuthDeps,

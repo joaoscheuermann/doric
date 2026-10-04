@@ -10,8 +10,8 @@ type FakeSandbox = Sandbox & {
   readonly execs: SandboxExecInput[];
 };
 
-describe('git tool', () => {
-  test('executes structured Git arguments without a shell', async () => {
+void describe('git tool', () => {
+  void test('executes structured Git arguments without a shell', async () => {
     const sandbox = fakeSandbox(result({ stdout: 'main\n' }));
 
     const output = await createTool()(sandbox, fakeHost('/workspace')).execute({
@@ -45,7 +45,7 @@ describe('git tool', () => {
     assert.equal(output.working_directory, '/workspace/repo');
   });
 
-  test('runs in the working directory by default and caps the timeout', async () => {
+  void test('runs in the working directory by default and caps the timeout', async () => {
     const sandbox = fakeSandbox(result());
 
     await createTool()(sandbox, fakeHost('/workspace/repo')).execute({
@@ -58,7 +58,7 @@ describe('git tool', () => {
     assert.equal(sandbox.execs[0]?.timeoutMs, 600_000);
   });
 
-  test('resolves a relative working directory against the current one', async () => {
+  void test('resolves a relative working directory against the current one', async () => {
     const sandbox = fakeSandbox(result());
     const host = fakeHost('/workspace/repo');
 
@@ -78,7 +78,7 @@ describe('git tool', () => {
     );
   });
 
-  test('returns execution errors as observable Git failures', async () => {
+  void test('returns execution errors as observable Git failures', async () => {
     const output = await createTool()(
       fakeSandbox(new Error('exec failed')),
       fakeHost('/workspace'),
@@ -91,7 +91,7 @@ describe('git tool', () => {
     assert.match(output.stderr.text, /exec failed/u);
   });
 
-  test('bounds large stdout while preserving its beginning and end', async () => {
+  void test('bounds large stdout while preserving its beginning and end', async () => {
     const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
 
     const output = await createTool()(

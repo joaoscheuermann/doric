@@ -25,7 +25,7 @@ const providerCredential: Credential = {
 
 const logger = pino({ enabled: false });
 
-test('answers the provider-kind catalog the host can build', async () => {
+void test('answers the provider-kind catalog the host can build', async () => {
   const app = express();
 
   app.use(
@@ -62,7 +62,7 @@ test('answers the provider-kind catalog the host can build', async () => {
   }
 });
 
-test('answers the models a provider catalog describes', async () => {
+void test('answers the models a provider catalog describes', async () => {
   const catalog = 'https://catalog.example.com/models';
   const requests: { readonly url: string }[] = [];
   const host = await serveProviders({
@@ -118,7 +118,7 @@ test('answers the models a provider catalog describes', async () => {
   }
 });
 
-test('answers a catalog it cannot read as its own error', async () => {
+void test('answers a catalog it cannot read as its own error', async () => {
   const host = await serveProviders({
     credentials: credentialResolver(),
     transport: {
@@ -148,7 +148,7 @@ test('answers a catalog it cannot read as its own error', async () => {
   }
 });
 
-test('refuses provider values the kind does not declare', async () => {
+void test('refuses provider values the kind does not declare', async () => {
   const host = await serveProviders({ credentials: credentialResolver() });
 
   try {
@@ -173,7 +173,7 @@ test('refuses provider values the kind does not declare', async () => {
   }
 });
 
-test('returns the active configuration at the root config route', async () => {
+void test('returns the active configuration at the root config route', async () => {
   const active = snapshot(1);
 
   const host = await serveConfig({
@@ -191,7 +191,7 @@ test('returns the active configuration at the root config route', async () => {
   }
 });
 
-test('replaces the complete configuration at the root config route', async () => {
+void test('replaces the complete configuration at the root config route', async () => {
   let active = snapshot(1);
 
   const host = await serveConfig({
@@ -225,7 +225,7 @@ test('replaces the complete configuration at the root config route', async () =>
   }
 });
 
-test('rejects an invalid configuration without activating it', async () => {
+void test('rejects an invalid configuration without activating it', async () => {
   let replacements = 0;
 
   const host = await serveConfig({
@@ -257,7 +257,7 @@ test('rejects an invalid configuration without activating it', async () => {
   }
 });
 
-test('rejects a configuration whose credential reference is unusable', async () => {
+void test('rejects a configuration whose credential reference is unusable', async () => {
   let replacements = 0;
 
   const host = await serveConfig({
@@ -287,7 +287,7 @@ test('rejects a configuration whose credential reference is unusable', async () 
   }
 });
 
-test('returns a stable error when configuration activation fails', async () => {
+void test('returns a stable error when configuration activation fails', async () => {
   const host = await serveConfig({
     current: () => ({ snapshot: snapshot(1) }),
     replace: async () => {

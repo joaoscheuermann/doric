@@ -27,7 +27,7 @@ const host = (control: ThreadControl): Host => ({
 });
 const tools = [spawn, list, get, events, send, interrupt, terminate] as const;
 
-test('exposes thread tools in the established model-visible order', () => {
+void test('exposes thread tools in the established model-visible order', () => {
   const expected = [
     'thread-spawn',
     'thread-list',
@@ -43,7 +43,7 @@ test('exposes thread tools in the established model-visible order', () => {
   );
 });
 
-test('preserves thread control arguments, defaults, and serialized results', async () => {
+void test('preserves thread control arguments, defaults, and serialized results', async () => {
   const control: ThreadControl = {
     spawn: async (prompt) => {
       assert.equal(prompt, ' task ');
@@ -112,7 +112,7 @@ test('preserves thread control arguments, defaults, and serialized results', asy
   );
 });
 
-test('rejects invalid thread control inputs at the tool boundary', async () => {
+void test('rejects invalid thread control inputs at the tool boundary', async () => {
   const storage = createToolStorage(
     tools.map((tool) => tool({} as never, host({} as never))),
   );

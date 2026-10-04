@@ -205,9 +205,9 @@ async function main() {
     logger,
     service,
     vms: {
-      list: vms.list,
-      find: vms.find,
-      ssh: service.sshForVm,
+      list: () => vms.list(),
+      find: (id) => vms.find(id),
+      ssh: (id) => service.sshForVm(id),
     },
   });
   startup.info(
@@ -234,7 +234,7 @@ async function main() {
     const closed = new Promise<void>((resolve) =>
       server.close(() => resolve()),
     );
-    io.close();
+    await io.close();
     await closed;
     await service.dispose();
     await pool.dispose();

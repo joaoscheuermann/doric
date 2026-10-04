@@ -4,7 +4,7 @@ import test from 'node:test';
 import { ProviderErrorObject } from '../src/index.js';
 import { createOpenRouterProvider, fakeTransport, response } from './fakes.js';
 
-test('evaluates Jev questions through the OpenRouter Decisions API', async () => {
+void test('evaluates Jev questions through the OpenRouter Decisions API', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -102,7 +102,7 @@ test('evaluates Jev questions through the OpenRouter Decisions API', async () =>
   });
 });
 
-test('uses the configured OpenRouter API base for Jev decisions', async () => {
+void test('uses the configured OpenRouter API base for Jev decisions', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -134,7 +134,7 @@ test('uses the configured OpenRouter API base for Jev decisions', async () => {
   );
 });
 
-test('rejects malformed Jev answers at the provider boundary', async () => {
+void test('rejects malformed Jev answers at the provider boundary', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [

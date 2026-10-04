@@ -51,7 +51,7 @@ const invoke = async <Output>(
 };
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} repairs one nested leaf without accepting collateral changes`, async () => {
+  void test(`${mode} repairs one nested leaf without accepting collateral changes`, async () => {
     const schema = z.object({
       profile: z.object({ name: z.string(), age: z.number() }),
       stable: z.string(),
@@ -104,7 +104,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assert.doesNotMatch(correction(provider.requests[1]), /private|corrupt/u);
   });
 
-  test(`${mode} repairs criteria 12 while preserving valid criteria 5 and 7`, async () => {
+  void test(`${mode} repairs criteria 12 while preserving valid criteria 5 and 7`, async () => {
     const criterion = z.object({
       criterionIndex: z.number(),
       satisfied: z.boolean(),
@@ -164,7 +164,7 @@ for (const mode of ['complete', 'stream'] as const) {
     );
   });
 
-  test(`${mode} repairs multiple primitive paths including a missing field`, async () => {
+  void test(`${mode} repairs multiple primitive paths including a missing field`, async () => {
     const schema = z.object({
       count: z.number(),
       nested: z.object({ enabled: z.boolean(), label: z.string() }),
@@ -218,7 +218,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assert.match(correction(provider.requests[1]), /nested\.label/u);
   });
 
-  test(`${mode} accepts the whole retry when composition fails a cross-field refinement`, async () => {
+  void test(`${mode} accepts the whole retry when composition fails a cross-field refinement`, async () => {
     const schema = z
       .object({ left: z.number(), right: z.number() })
       .refine(({ left, right }) => left === right, 'Values must match.');
@@ -252,7 +252,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assert.equal(response.text, JSON.stringify(retry));
   });
 
-  test(`${mode} clears the baseline after an ordinary tool turn`, async () => {
+  void test(`${mode} clears the baseline after an ordinary tool turn`, async () => {
     const schema = z.object({ fixed: z.number(), stable: z.string() });
 
     const lookup = {
@@ -306,7 +306,7 @@ for (const mode of ['complete', 'stream'] as const) {
   });
 }
 
-test('stream suppresses every rejected provider event and candidate value', async () => {
+void test('stream suppresses every rejected provider event and candidate value', async () => {
   const schema = z.object({ answer: z.string() });
 
   const provider = createProvider({

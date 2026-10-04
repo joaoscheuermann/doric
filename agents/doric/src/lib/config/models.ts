@@ -12,8 +12,8 @@ import {
 import type { CredentialService } from '../credentials/service.js';
 import {
   type ConfigInput,
-  type ProviderValuesRef,
   providerCredentials,
+  type ProviderValuesRef,
 } from './schema.js';
 
 /** One provider the configuration carries. */

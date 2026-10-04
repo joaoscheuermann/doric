@@ -3,16 +3,22 @@ import test from 'node:test';
 
 import { createStateMachine, type StateMachineHandler } from '../src/index.js';
 
-type State = { count: number };
-type Context = { runId: string };
+interface State extends Record<string, unknown> {
+  count: number;
+}
+interface Context {
+  runId: string;
+}
 
-test('preserves an asynchronous rejection and the active state and context', async () => {
+void test('preserves an asynchronous rejection and the active state and context', async () => {
   const cause = { reason: 'rejected' };
   const state = { count: 1 };
   const context = { runId: 'rejection' };
   const definition = createStateMachine<Context, State>()({
     start: async () => {
       await Promise.resolve();
+      // The contract preserves rejection identity even for non-Error values.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw cause;
     },
   });
@@ -45,7 +51,7 @@ const invalidActions: [string, unknown][] = [
 ];
 
 for (const [label, action] of invalidActions) {
-  test(`returns invalid_handler_return for ${label}`, async () => {
+  void test(`returns invalid_handler_return for ${label}`, async () => {
     const definition = createStateMachine<Context, State>()({
       start: (() => action) as StateMachineHandler<Context, State, 'start'>,
     });
@@ -64,7 +70,7 @@ for (const [label, action] of invalidActions) {
   });
 }
 
-test('reports a missing transition target with the transitioned state', async () => {
+void test('reports a missing transition target with the transitioned state', async () => {
   const supplied = { count: 2 };
   const definition = createStateMachine<Context, State>()({
     start: (() => ({
@@ -91,7 +97,7 @@ test('reports a missing transition target with the transitioned state', async ()
   }
 });
 
-test('provides frozen actions without exposing mutable helpers to later handlers', async () => {
+void test('provides frozen actions without exposing mutable helpers to later handlers', async () => {
   const definition = createStateMachine<Context, State, number>()({
     start: (state, _context, actions) => {
       assert.equal(Object.isFrozen(actions), true);
@@ -121,7 +127,7 @@ test('provides frozen actions without exposing mutable helpers to later handlers
   }
 });
 
-test('reuses one definition sequentially after both a failure and a finish', async () => {
+void test('reuses one definition sequentially after both a failure and a finish', async () => {
   const definition = createStateMachine<Context, State, string, string>()({
     start: (state, _context, { fail, transition }) =>
       state.count < 0 ? fail('negative') : transition('done', state),

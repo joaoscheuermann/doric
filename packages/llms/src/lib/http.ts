@@ -1,5 +1,5 @@
-import type { HttpRequest, HttpResponse, HttpTransport } from './types/http.js';
 import { HttpStreamError } from './classes/http-error.js';
+import type { HttpRequest, HttpResponse, HttpTransport } from './types/http.js';
 
 const headersToRecord = (headers: Headers): Record<string, string> =>
   Object.fromEntries(headers.entries());

@@ -51,7 +51,7 @@ const cases = [
 ] as const;
 
 for (const { name, usage, expected } of cases) {
-  test(`${name} for completion and stream finishes`, async () => {
+  void test(`${name} for completion and stream finishes`, async () => {
     const body = { status: 'completed', output_text: 'Done', usage };
     const provider = createOpenAiProvider({
       apiKey: 'test-key',

@@ -20,15 +20,15 @@ import {
   createToolCallStorage,
 } from '../src/index.js';
 
-type ProviderFake = {
+interface ProviderFake {
   readonly provider: LlmProvider;
   readonly requests: ProviderRequest<unknown>[];
-};
+}
 
-type ToolFake = {
+interface ToolFake {
   readonly storage: ToolStorage;
   readonly calls: ToolCall[];
-};
+}
 
 export const createTestAgent = (options: Omit<AgentOptions, 'toolCalls'>) =>
   createAgent({ ...options, toolCalls: createToolCallStorage() });
@@ -132,6 +132,8 @@ export const createTools = (
       calls.push(parsed);
 
       if (options.failure !== undefined) {
+        // Exercise propagation of arbitrary failures from external tool handlers.
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw options.failure;
       }
 

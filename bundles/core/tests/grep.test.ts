@@ -7,8 +7,8 @@ import { describe, test } from 'node:test';
 import factory from '../tools/grep.js';
 import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
-describe('grep tool', () => {
-  test('finds matching lines with requested context and glob filtering', async () => {
+void describe('grep tool', () => {
+  void test('finds matching lines with requested context and glob filtering', async () => {
     const root = await workspace('grep-context');
 
     await write(
@@ -39,7 +39,7 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('searches the working directory and leaves an absolute path absolute', async () => {
+  void test('searches the working directory and leaves an absolute path absolute', async () => {
     const root = await workspace('grep-cwd');
 
     await write(root, 'src/one.ts', 'before\nTarget\n');
@@ -71,7 +71,7 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('returns a structured error for invalid regular expressions', async () => {
+  void test('returns a structured error for invalid regular expressions', async () => {
     const root = await workspace('grep-invalid-regex');
 
     const result = await factory(createFakeSandbox(root), fakeHost()).execute({
@@ -85,7 +85,7 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('honors gitignore whitelist rules while walking', async () => {
+  void test('honors gitignore whitelist rules while walking', async () => {
     const root = await workspace('grep-ignore-whitelist');
 
     await write(root, '.gitignore', '*.txt\n!keep.txt\n');

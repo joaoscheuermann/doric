@@ -30,7 +30,7 @@ import {
 } from './ssh.js';
 import type { FirecrackerConfig } from './types.js';
 
-type Resources = {
+interface Resources {
   readonly id: string;
   readonly directory: string;
   readonly jailDirectory: string;
@@ -40,7 +40,7 @@ type Resources = {
   process?: ChildProcess;
   baseMounted: boolean;
   proxy?: Awaited<ReturnType<typeof exposeUserSsh>>;
-};
+}
 
 /** Provisions one jailed Firecracker microVM and its management channel. */
 export const provisionFirecracker = async (
@@ -165,8 +165,8 @@ const runtime = (
     exec: (input) => connection.exec(input),
     putFile: (path, bytes) => connection.putFile(path, bytes),
     getFile: (path) => connection.getFile(path),
-    async ssh() {
-      return resources.proxy?.access;
+    ssh() {
+      return Promise.resolve(resources.proxy?.access);
     },
     async dispose() {
       if (disposed) {
@@ -219,7 +219,7 @@ const copyBootArtifacts = async (
 };
 
 const mountBase = async (source: string, target: string): Promise<void> => {
-  (await open(target, 'w', 0o400)).close();
+  await (await open(target, 'w', 0o400)).close();
 
   await run({ file: 'mount', args: ['--bind', source, target] });
 
@@ -341,7 +341,7 @@ const close = (
   server: NonNullable<Resources['proxy']>['server'],
 ): Promise<void> =>
   new Promise((resolveClose, reject) => {
-    if (server === undefined || !server.listening) {
+    if (!server?.listening) {
       resolveClose();
 
       return;

@@ -1,10 +1,10 @@
 import type { Model } from '../../types/provider.js';
 import { arrayField, asRecord } from '../../utils/json.js';
 
-export type OpenRouterModelSupport = {
+export interface OpenRouterModelSupport {
   readonly known: boolean;
   readonly parameters: ReadonlySet<string>;
-};
+}
 
 const emptySupport: OpenRouterModelSupport = {
   known: false,
@@ -68,8 +68,10 @@ const waitForRefresh = async (
 ): Promise<ReadonlyMap<string, OpenRouterModelSupport>> => {
   if (signal === undefined) return refresh;
 
-  let onAbort = () => {};
+  let onAbort!: () => void;
   const aborted = new Promise<never>((_, reject) => {
+    // AbortSignal permits any reason; preserve the caller's cancellation identity.
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
     onAbort = () => reject(signal.reason);
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) onAbort();

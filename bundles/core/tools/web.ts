@@ -56,12 +56,12 @@ export type WebOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type FetchResponse = {
+interface FetchResponse {
   readonly ok: boolean;
   readonly status: number;
   readonly statusText?: string;
   text(): Promise<string>;
-};
+}
 
 type FetchLike = (
   url: string,
@@ -75,10 +75,10 @@ type FetchTextResult =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly error: string };
 
-type Options = {
+interface Options {
   readonly fetch?: FetchLike;
   readonly requestTimeoutMs?: number;
-};
+}
 
 /** Creates the provider-neutral web tool. */
 export const createTool = (

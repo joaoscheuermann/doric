@@ -97,7 +97,7 @@ const sandboxWithAlpha = (git: FakeGitProbe = {}) =>
     repositories: [{ path: 'alpha', git: { status: clean, ...git } }],
   });
 
-test('refuses a directory that reads as inside the root but resolves outside it', async () => {
+void test('refuses a directory that reads as inside the root but resolves outside it', async () => {
   // A symbolic link in the workspace pointing out of it: its lexical path is
   // inside the root, its physical one is not, and only the sandbox can see that.
   const { harness, service, updated } = serviceAt(
@@ -127,7 +127,7 @@ test('refuses a directory that reads as inside the root but resolves outside it'
   await service.dispose();
 });
 
-test('moves a Thread working directory, publishing the record once with its hint', async () => {
+void test('moves a Thread working directory, publishing the record once with its hint', async () => {
   const { harness, service, updated } = serviceAt(
     sandboxWithAlpha({ origin: 'git@github.com:owner/repo.git' }),
   );
@@ -158,7 +158,7 @@ test('moves a Thread working directory, publishing the record once with its hint
   await service.dispose();
 });
 
-test('refuses a path outside the workspace, a missing one, and one that is no directory', async () => {
+void test('refuses a path outside the workspace, a missing one, and one that is no directory', async () => {
   const { harness, service, updated } = serviceAt(sandboxWithAlpha());
   const project = await service.projects.create('Project');
   await harness.projectState(project.id, 'ready');
@@ -189,7 +189,7 @@ test('refuses a path outside the workspace, a missing one, and one that is no di
   await service.dispose();
 });
 
-test('refuses a move while the Project has no sandbox to resolve against', async () => {
+void test('refuses a move while the Project has no sandbox to resolve against', async () => {
   const harness = workspace();
   const held = deferred<unknown>();
   const service = createWorkspaceService({
@@ -210,7 +210,7 @@ test('refuses a move while the Project has no sandbox to resolve against', async
   assert.equal((await service.threads.find(thread.id))?.cwd, '/workspace');
 });
 
-test('starts a child in its parent working directory, as a snapshot of that moment', async () => {
+void test('starts a child in its parent working directory, as a snapshot of that moment', async () => {
   const { harness, service } = serviceAt(
     sandboxWithAlpha({ origin: 'git@github.com:owner/repo.git' }),
   );
@@ -233,7 +233,7 @@ test('starts a child in its parent working directory, as a snapshot of that mome
   await service.dispose();
 });
 
-test('binds each prompt to its own working directory, live across its tool calls', async () => {
+void test('binds each prompt to its own working directory, live across its tool calls', async () => {
   const harness = workspace();
   const seen: { cwd: string; move: unknown }[] = [];
   const service = createWorkspaceService({
@@ -274,7 +274,7 @@ test('binds each prompt to its own working directory, live across its tool calls
   await service.dispose();
 });
 
-test('keeps a prompt working directory its own, and answers one Thread at a time', async () => {
+void test('keeps a prompt working directory its own, and answers one Thread at a time', async () => {
   const { harness, service } = serviceAt(sandboxWithAlpha());
   const project = await service.projects.create('Project');
   await harness.projectState(project.id, 'ready');
@@ -293,7 +293,7 @@ test('keeps a prompt working directory its own, and answers one Thread at a time
   await service.dispose();
 });
 
-test('answers the Git summary of a Thread working directory', async () => {
+void test('answers the Git summary of a Thread working directory', async () => {
   const { harness, service } = serviceAt(
     fakeSandbox({
       repositories: [
@@ -334,7 +334,7 @@ test('answers the Git summary of a Thread working directory', async () => {
   await service.dispose();
 });
 
-test('answers that a working directory holding no repository is not one', async () => {
+void test('answers that a working directory holding no repository is not one', async () => {
   const { harness, service } = serviceAt(
     fakeSandbox({ entries: [{ path: 'plain/file.txt', content: 'x' }] }),
   );
@@ -349,7 +349,7 @@ test('answers that a working directory holding no repository is not one', async 
   await service.dispose();
 });
 
-test('probes the sandbox on every read, and publishes a hint only when it changes', async () => {
+void test('probes the sandbox on every read, and publishes a hint only when it changes', async () => {
   const live = liveSandbox(fakeSandbox({ entries: [{ path: 'alpha' }] }));
   const settled = deferred();
   const { harness, service, updated } = serviceAt(live.handle, async () => {

@@ -31,11 +31,11 @@ export type FindOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type IgnorePattern = {
+interface IgnorePattern {
   readonly base: string;
   readonly pattern: string;
   readonly negated: boolean;
-};
+}
 
 type PathKind = 'directory' | 'file' | 'missing' | 'other';
 
@@ -90,12 +90,12 @@ const execute = async (
   return collect(searchPath.path, visible, glob, input.limit ?? DEFAULT_LIMIT);
 };
 
-const collect = async (
+const collect = (
   searchPath: string,
   files: readonly string[],
   glob: RegExp,
   limit: number,
-): Promise<FindOutput> => {
+): FindOutput => {
   const results: string[] = [];
   let totalBytes = 0;
   let totalMatched = 0;

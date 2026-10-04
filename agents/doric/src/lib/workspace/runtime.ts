@@ -22,11 +22,11 @@ export class ThreadPersistenceError extends Error {
   }
 }
 
-export type PromptJob = {
+export interface PromptJob {
   readonly id: string;
   readonly prompt: string;
   readonly source: InputSource;
-};
+}
 export type ThreadExecution = (options: {
   readonly thread: Thread;
   readonly job: PromptJob;
@@ -37,7 +37,7 @@ export type ThreadExecution = (options: {
   readonly publisher: WorkspacePublisher;
   readonly host: Host;
 }) => Promise<string>;
-export type ThreadRuntime = {
+export interface ThreadRuntime {
   /**
    * The Thread's durable record, alive here so that what one prompt's tool does
    * is what the next tool of the same prompt sees — its working directory, for
@@ -61,8 +61,8 @@ export type ThreadRuntime = {
   };
   task?: Promise<void>;
   ending?: Promise<void>;
-};
-export type ProjectRuntime = {
+}
+export interface ProjectRuntime {
   project: Project;
   readonly controller: AbortController;
   readonly threads: Map<string, ThreadRuntime>;
@@ -79,8 +79,8 @@ export type ProjectRuntime = {
   resumed?: boolean;
   acquisition?: Promise<void>;
   ending?: Promise<void>;
-};
-export type RuntimeContext = {
+}
+export interface RuntimeContext {
   readonly threads: ThreadStore;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;
@@ -95,7 +95,7 @@ export type RuntimeContext = {
     id: string,
     operation: () => Promise<Value>,
   ) => Promise<Value>;
-};
+}
 
 /** Includes the root, then discovers descendants in stable sibling order. */
 export const subtreeIds = (

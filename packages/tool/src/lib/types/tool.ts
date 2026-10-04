@@ -23,23 +23,23 @@ export type ToolMetadata = {
   readonly [Key in keyof ToolMetadataValue]: ToolMetadataValue[Key];
 };
 
-export type ToolCallRequest = {
+export interface ToolCallRequest {
   readonly id: string;
   readonly name: string;
   readonly arguments: string;
   readonly index?: number;
-};
+}
 
-export type ToolCall = {
+export interface ToolCall {
   readonly id: string;
   readonly name: string;
   readonly payload: JsonValue;
   readonly index?: number;
-};
+}
 
-export type ToolTurn = {
+export interface ToolTurn {
   readonly toolCalls?: readonly ToolCallRequest[];
-};
+}
 
 /** One configuration value a tool reads: a literal string, keyed by its field. */
 export type ToolConfig = Readonly<Record<string, string>>;
@@ -53,7 +53,7 @@ export type ConfigFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
  * the field fixes how it is drawn (`kind`), what it is called, and whether it must
  * be present. A `secret` value names a stored credential rather than a raw secret.
  */
-export type ConfigField = {
+export interface ConfigField {
   readonly key: string;
   readonly label: string;
   readonly kind: ConfigFieldKind;
@@ -69,23 +69,23 @@ export type ConfigField = {
    * keep it out of the way and show the necessary fields alone.
    */
   readonly advanced?: boolean;
-};
+}
 
 export type ToolHandler<Input extends ToolInput, Output extends ToolOutput> = (
   payload: z.output<Input>,
 ) => Promise<z.output<Output>>;
 
-export type Tool<
+export interface Tool<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
-> = {
+> {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly execute: ToolHandler<Input, Output>;
-};
+}
 
 export type ToolFactoryHandler<
   Input extends ToolInput,
@@ -97,10 +97,10 @@ export type ToolFactoryHandler<
   config: ToolConfig,
 ) => z.input<Output> | Promise<z.input<Output>>;
 
-export type DefineToolOptions<
+export interface DefineToolOptions<
   Input extends ToolInput,
   Output extends ToolOutput,
-> = {
+> {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
@@ -113,12 +113,12 @@ export type DefineToolOptions<
    * arrive at `execute` as its fourth argument.
    */
   readonly settings?: readonly ConfigField[];
-};
+}
 
-export type ToolFactory<
+export interface ToolFactory<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
-> = {
+> {
   (sandbox: Sandbox, host: Host, config?: ToolConfig): Tool<Input, Output>;
   readonly name: string;
   readonly description?: string;
@@ -126,9 +126,9 @@ export type ToolFactory<
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
-};
+}
 
-export type ToolStorage = {
+export interface ToolStorage {
   definitions(): readonly ToolDefinition[];
 
   calls(turn: ToolTurn): readonly ToolCall[];
@@ -138,7 +138,7 @@ export type ToolStorage = {
   get(name: string): Tool | undefined;
 
   execute(call: ToolCall | ToolCallRequest): Promise<unknown>;
-};
+}
 
 export type ToolErrorCode =
   | 'duplicate_tool'
@@ -149,16 +149,16 @@ export type ToolErrorCode =
   | 'invalid_schema'
   | 'unknown_tool';
 
-export type ToolIssue = {
+export interface ToolIssue {
   readonly path: string;
   readonly message: string;
-};
+}
 
-export type ToolError = {
+export interface ToolError {
   readonly code: ToolErrorCode;
   readonly message: string;
   readonly toolName?: string;
   readonly callId?: string;
   readonly diagnostic?: string;
   readonly issues?: readonly ToolIssue[];
-};
+}

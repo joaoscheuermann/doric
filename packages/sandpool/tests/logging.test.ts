@@ -13,7 +13,7 @@ type LogRecord = Record<string, unknown> & {
   readonly msg: string;
 };
 
-test('validates the logger contract synchronously', () => {
+void test('validates the logger contract synchronously', () => {
   const create = async () => session('unused');
   const valid = pino({ enabled: false });
 
@@ -54,7 +54,7 @@ test('validates the logger contract synchronously', () => {
   );
 });
 
-test('logs lifecycle events as safe structured debug records', async () => {
+void test('logs lifecycle events as safe structured debug records', async () => {
   const { logger, records } = capture();
 
   const pool = createSandpool({
@@ -113,7 +113,7 @@ test('logs lifecycle events as safe structured debug records', async () => {
   assert.doesNotMatch(JSON.stringify(records), /workspace|secret/u);
 });
 
-test('logs cancellations, failures, and retries without causes', async () => {
+void test('logs cancellations, failures, and retries without causes', async () => {
   const { logger, records } = capture();
   const creationFailure = new Error('secret creation cause');
   const disposalFailure = new Error('secret disposal cause');
@@ -196,7 +196,7 @@ test('logs cancellations, failures, and retries without causes', async () => {
   );
 });
 
-test('logs exhausted creation attempts without the factory cause', async () => {
+void test('logs exhausted creation attempts without the factory cause', async () => {
   const { logger, records } = capture();
 
   const pool = createSandpool({
@@ -226,7 +226,7 @@ test('logs exhausted creation attempts without the factory cause', async () => {
   assert.doesNotMatch(JSON.stringify(records), /secret permanent failure/u);
 });
 
-test('logs release and pool disposal only once when calls are repeated', async () => {
+void test('logs release and pool disposal only once when calls are repeated', async () => {
   const { logger, records } = capture();
 
   const pool = createSandpool({

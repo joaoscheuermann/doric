@@ -7,7 +7,7 @@ import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { InputSource } from '../src/lib/workspace/types.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
-test(
+void test(
   'publishes deletion for the entire subtree only after the store accepts it',
   { timeout: 3000 },
   async () => {
@@ -71,7 +71,7 @@ test(
   },
 );
 
-test(
+void test(
   'exposes SSH only for the active Project lease, not pending disposal',
   { timeout: 5000 },
   async () => {
@@ -132,7 +132,7 @@ test(
   },
 );
 
-test(
+void test(
   'waits for both independently active Threads before releasing the Project',
   { timeout: 5000 },
   async () => {
@@ -178,7 +178,7 @@ test(
 );
 
 for (const outcome of ['failed', 'cancelled'] as const) {
-  test(
+  void test(
     `delivers a correlated ${outcome} child result to its parent`,
     { timeout: 5000 },
     async () => {

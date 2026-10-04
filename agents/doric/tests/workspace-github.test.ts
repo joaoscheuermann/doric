@@ -183,7 +183,7 @@ const assertTokenIsEnvOnly = (
   );
 };
 
-test('applies the stored identity and token to a leased sandbox', async () => {
+void test('applies the stored identity and token to a leased sandbox', async () => {
   const { stored, choices } = configured();
   const [git, api] = stored;
   const hostUnderTest = host(stored, choices);
@@ -248,7 +248,7 @@ test('applies the stored identity and token to a leased sandbox', async () => {
   assertTokenIsEnvOnly(hostUnderTest.environment, api?.secret ?? '', 2);
 });
 
-test('writes the credential files only when a token is stored', async () => {
+void test('writes the credential files only when a token is stored', async () => {
   // The identity alone stores no secret, so neither secret file is written and
   // the sandbox's GitHub CLI stays unauthenticated rather than holding an empty
   // one.
@@ -272,7 +272,7 @@ test('writes the credential files only when a token is stored', async () => {
   );
 });
 
-test('authenticates a token with no stored identity as the token user', async () => {
+void test('authenticates a token with no stored identity as the token user', async () => {
   const hostUnderTest = host([token()], { token: tokenId });
   await hostUnderTest.open();
 
@@ -291,7 +291,7 @@ test('authenticates a token with no stored identity as the token user', async ()
   assert.equal(gh?.env?.[1], 'DORIC_GH_USERNAME=oauth2');
 });
 
-test('issues no Git command when no credential is configured', async () => {
+void test('issues no Git command when no credential is configured', async () => {
   const hostUnderTest = host();
   const { thread } = await hostUnderTest.open();
 
@@ -303,7 +303,7 @@ test('issues no Git command when no credential is configured', async () => {
   assert.deepEqual(credentialCommands(hostUnderTest.environment), []);
 });
 
-test('resolves the kind when the configuration names no credential', async () => {
+void test('resolves the kind when the configuration names no credential', async () => {
   const { stored } = configured();
   const hostUnderTest = host(stored);
   await hostUnderTest.open();
@@ -312,7 +312,7 @@ test('resolves the kind when the configuration names no credential', async () =>
   assertTokenIsEnvOnly(hostUnderTest.environment, token().secret, 2);
 });
 
-test('refuses to guess between two credentials of the same kind', async () => {
+void test('refuses to guess between two credentials of the same kind', async () => {
   // Two stored API_TOKEN credentials with no configured choice: taking one would
   // be a guess about which secret authenticates GitHub, so the token half stays
   // off and the warning names the kind. The Git identity is unambiguous, so it is
@@ -342,7 +342,7 @@ test('refuses to guess between two credentials of the same kind', async () => {
   );
 });
 
-test("keeps a provider's key out of GitHub authentication", async () => {
+void test("keeps a provider's key out of GitHub authentication", async () => {
   // The only stored API_TOKEN is the one a provider uses, and the configuration
   // names no GitHub credential. A provider key and a GitHub token are the same
   // kind, so a fallback that ignored the provider's claim would write that key
@@ -380,7 +380,7 @@ test("keeps a provider's key out of GitHub authentication", async () => {
   );
 });
 
-test('re-applies a rotated token and never an unchanged pair', async () => {
+void test('re-applies a rotated token and never an unchanged pair', async () => {
   const { stored, choices } = configured();
   const hostUnderTest = host(stored, choices);
   const { thread } = await hostUnderTest.open();
@@ -440,7 +440,7 @@ test('re-applies a rotated token and never an unchanged pair', async () => {
   assert.equal(writes().length, APPLY_COMMANDS * 2);
 });
 
-test('applies newly saved credentials to a Project that captured none', async () => {
+void test('applies newly saved credentials to a Project that captured none', async () => {
   const hostUnderTest = host();
   const { thread } = await hostUnderTest.open();
   assert.deepEqual(credentialCommands(hostUnderTest.environment), []);
@@ -458,7 +458,7 @@ test('applies newly saved credentials to a Project that captured none', async ()
   assertTokenIsEnvOnly(hostUnderTest.environment, token().secret, 2);
 });
 
-test('applies the current credentials before a rewound prompt is enqueued', async () => {
+void test('applies the current credentials before a rewound prompt is enqueued', async () => {
   const hostUnderTest = host();
   const { thread } = await hostUnderTest.open();
   const promptId = await hostUnderTest.run(thread.id, 'first');
@@ -478,7 +478,7 @@ test('applies the current credentials before a rewound prompt is enqueued', asyn
   assertTokenIsEnvOnly(hostUnderTest.environment, token().secret, 2);
 });
 
-test('keeps a prompt usable when the credential write fails, logging no secret', async () => {
+void test('keeps a prompt usable when the credential write fails, logging no secret', async () => {
   const { choices } = configured();
   const hostUnderTest = host(
     [identity(), token('ghp_original_token')],

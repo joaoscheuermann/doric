@@ -13,11 +13,11 @@ const defaultInvalidSubmissionLimit = 2;
 const validationIssueLimit = 10;
 const terminalOutputSchema = { not: {} } as const;
 
-export type StructuredOutputTool = {
+export interface StructuredOutputTool {
   readonly name: string;
   readonly definition: ToolDefinition;
   readonly schema: StructuredOutputSchema;
-};
+}
 
 export type StructuredOutputSubmission<Output> =
   | { readonly type: 'continue' }
@@ -31,22 +31,22 @@ export type StructuredOutputSubmission<Output> =
 export type StructuredOutputPath = readonly (string | number)[];
 
 /** Ephemeral candidate retained only while repairing concrete leaf paths. */
-export type StructuredOutputBaseline = {
+export interface StructuredOutputBaseline {
   readonly value: unknown;
   readonly paths: readonly StructuredOutputPath[];
-};
+}
 
-export type StructuredOutputRepair = {
+export interface StructuredOutputRepair {
   readonly invalidSubmissions: number;
   readonly correction: string;
-};
+}
 
-type ValidationIssue = {
+interface ValidationIssue {
   readonly code: string;
   readonly expected?: unknown;
   readonly path: readonly PropertyKey[];
   readonly message: string;
-};
+}
 
 /**
  * Creates a collision-free strict tool for terminal structured output through
@@ -346,11 +346,11 @@ const composeCandidate = (
       : value;
   }, baseline.value);
 
-type Located = {
+interface Located {
   readonly found: boolean;
   readonly parentFound: boolean;
   readonly value?: unknown;
-};
+}
 
 const locate = (value: unknown, path: StructuredOutputPath): Located => {
   let current = value;
@@ -390,7 +390,7 @@ const replaceAt = (
         return value;
       }
 
-      return value.map((item, index) =>
+      return value.map((item: unknown, index) =>
         index === key ? replacement.value : item,
       );
     }
@@ -405,7 +405,7 @@ const replaceAt = (
   const next = replaceAt(child, rest, replacement);
 
   return Array.isArray(value)
-    ? value.map((item, index) => (index === key ? next : item))
+    ? value.map((item: unknown, index) => (index === key ? next : item))
     : Object.fromEntries(
         Object.entries(value).map(([name, item]) => [
           name,

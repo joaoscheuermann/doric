@@ -9,7 +9,7 @@ import { createSandpool } from 'sandpool';
 import factory from '../tools/write.js';
 import { fakeHost } from './fake-sandbox.js';
 
-test('binds a core tool to a lease and rejects operations after release', async () => {
+void test('binds a core tool to a lease and rejects operations after release', async () => {
   const files = new Map<string, string>();
   let disposed = false;
 

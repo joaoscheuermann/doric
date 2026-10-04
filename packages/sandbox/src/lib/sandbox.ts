@@ -12,12 +12,12 @@ import type {
   SandboxSession,
 } from './types/sandbox.js';
 
-type State = {
+interface State {
   readonly runtime: SandboxRuntime;
   readonly root: string;
   repoPath: string | undefined;
   disposed: boolean;
-};
+}
 
 /** Validates policy and returns the effective provider-facing network policy. */
 export const normalizeSandboxNetwork = (

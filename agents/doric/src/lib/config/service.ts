@@ -34,12 +34,12 @@ export class ConfigToolError extends Error {
   }
 }
 
-export type ConfigService = {
+export interface ConfigService {
   current(): Generation;
   replace(config: ConfigInput): Promise<DoricConfig>;
-};
+}
 
-type ConfigServiceOptions = {
+interface ConfigServiceOptions {
   readonly store: ConfigStore;
   readonly credentials: CredentialService;
   readonly bundles: readonly Bundle[];
@@ -51,7 +51,7 @@ type ConfigServiceOptions = {
    * endpoint; the default is the host's own reader.
    */
   readonly readModels?: (configuration: ConfigInput) => Promise<ConfigInput>;
-};
+}
 
 /** Initializes and serializes atomic configuration-generation replacements. */
 export const createConfigService = async ({

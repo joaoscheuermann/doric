@@ -12,24 +12,24 @@ import type { ToolFactory } from 'tool';
 import type { CredentialService } from '../credentials/service.js';
 import { type DoricConfig, providerCredentials } from './schema.js';
 
-export type Catalog = {
+export interface Catalog {
   readonly skills: readonly Skill[];
   readonly tools: readonly ToolFactory[];
-};
+}
 
-export type Generation = {
+export interface Generation {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
   readonly catalog: Catalog;
-};
+}
 
-type GenerationOptions = {
+interface GenerationOptions {
   readonly snapshot: DoricConfig;
   readonly credentials: CredentialService;
   readonly bundles: readonly Bundle[];
   readonly logger: Logger;
-};
+}
 
 /**
  * Builds the providers and catalog of one configuration. Each provider is built
@@ -58,7 +58,7 @@ export const createGeneration = async ({
     ]),
   );
 
-  return {
+  return Promise.resolve({
     snapshot,
     providers,
     // Every secret the host holds is redacted, so no persisted history, event,
@@ -71,7 +71,7 @@ export const createGeneration = async ({
         tools.map(({ factory }) => factory),
       ),
     },
-  };
+  });
 };
 
 export const providerFor = (

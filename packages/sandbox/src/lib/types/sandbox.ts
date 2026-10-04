@@ -1,10 +1,10 @@
-export type SandboxResources = {
+export interface SandboxResources {
   readonly cpuCount: number;
   readonly memoryMiB: number;
   readonly diskMiB: number;
-};
+}
 
-export type SandboxNetworkPolicy = {
+export interface SandboxNetworkPolicy {
   readonly mode: 'disabled' | 'egress';
   readonly ssh?:
     | boolean
@@ -19,7 +19,7 @@ export type SandboxNetworkPolicy = {
     readonly protocol: 'tcp' | 'udp';
     readonly ports: readonly number[];
   }[];
-};
+}
 
 export type NormalizedSandboxNetworkPolicy = Omit<
   SandboxNetworkPolicy,
@@ -35,16 +35,16 @@ export type NormalizedSandboxNetworkPolicy = Omit<
       };
 };
 
-export type SandboxSshAccess = {
+export interface SandboxSshAccess {
   readonly host: string;
   readonly port: number;
   readonly username: 'root';
   readonly privateKey: string;
   readonly knownHosts: string;
   readonly hostKeyFingerprint: string;
-};
+}
 
-export type SandboxExecInput = {
+export interface SandboxExecInput {
   readonly cmd: readonly string[];
   readonly cwd?: string;
   readonly env?: readonly string[];
@@ -52,17 +52,17 @@ export type SandboxExecInput = {
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly tty?: boolean;
-};
+}
 
-export type SandboxExecResult = {
+export interface SandboxExecResult {
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   readonly stdoutBytes: Uint8Array;
   readonly stderrBytes: Uint8Array;
-};
+}
 
-export type SandboxProvisionInput = {
+export interface SandboxProvisionInput {
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
   readonly name?: string;
@@ -72,7 +72,7 @@ export type SandboxProvisionInput = {
   readonly resources: SandboxResources;
   readonly network: NormalizedSandboxNetworkPolicy;
   readonly timeoutMs?: number;
-};
+}
 
 export interface SandboxRuntime {
   readonly id: string;
@@ -103,18 +103,21 @@ export type GitAuth =
       readonly password: string;
     };
 
-export type CloneRepoInput = {
+export interface CloneRepoInput {
   readonly url: string;
   readonly directory?: string;
   readonly branch?: string;
   readonly commit?: string;
   readonly auth?: GitAuth;
   readonly timeoutMs?: number;
-};
+}
 
-export type ClonedRepo = { readonly path: string; readonly commit: string };
+export interface ClonedRepo {
+  readonly path: string;
+  readonly commit: string;
+}
 
-export type CreateSandboxOptions = {
+export interface CreateSandboxOptions {
   readonly provider: SandboxProvider;
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
@@ -125,13 +128,13 @@ export type CreateSandboxOptions = {
   readonly resources: SandboxResources;
   readonly network?: SandboxNetworkPolicy;
   readonly timeoutMs?: number;
-};
+}
 
-export type SandboxDiffInput = {
+export interface SandboxDiffInput {
   readonly cwd?: string;
   /** Workspace-relative paths that scope the diff; the whole tree when omitted. */
   readonly paths?: readonly string[];
-};
+}
 
 export interface Sandbox {
   readonly id: string;

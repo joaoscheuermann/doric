@@ -118,7 +118,7 @@ export const provisionDocker = async (
   try {
     host =
       input.network.mode === 'disabled'
-        ? { access: undefined, dispose: async () => undefined }
+        ? { access: undefined, dispose: () => Promise.resolve() }
         : await configureDockerHost({
             client,
             container,
@@ -157,8 +157,8 @@ export const provisionDocker = async (
       return extractFirstFile(await client.getArchive(container, { path }))
         .data;
     },
-    async ssh() {
-      return host.access;
+    ssh() {
+      return Promise.resolve(host.access);
     },
     async dispose() {
       if (disposed) {

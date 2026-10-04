@@ -8,10 +8,10 @@ import type {
   ModuleImports,
 } from './types/interface.js';
 
-type ResolveInput = {
+interface ResolveInput {
   readonly root: string;
   readonly source: string;
-};
+}
 
 /** Resolves and groups extracted module sources into deterministic imports. */
 export const resolveImports = async (

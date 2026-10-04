@@ -1,19 +1,19 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { basename } from 'node:path';
 
-export type CommandInput = {
+export interface CommandInput {
   readonly file: string;
   readonly args?: readonly string[];
   readonly cwd?: string;
   readonly stdin?: Uint8Array;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
-};
+}
 
-export type CommandResult = {
+export interface CommandResult {
   readonly stdout: Uint8Array;
   readonly stderr: Uint8Array;
-};
+}
 
 /** Runs one host command without a shell and without exposing its payload in errors. */
 export const run = (input: CommandInput): Promise<CommandResult> =>

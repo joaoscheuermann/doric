@@ -12,7 +12,7 @@ import type {
 
 import { run, text } from './command.js';
 
-export type SshKeys = {
+export interface SshKeys {
   readonly managementPrivate: string;
   readonly managementPublic: string;
   readonly userPrivate: string;
@@ -20,15 +20,15 @@ export type SshKeys = {
   readonly hostPrivate: Uint8Array;
   readonly hostPublic: string;
   readonly fingerprint: string;
-};
+}
 
-export type GuestConnection = {
+export interface GuestConnection {
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
 
   getFile(path: string): Promise<Uint8Array>;
-};
+}
 
 export const generateSshKeys = async (
   directory: string,

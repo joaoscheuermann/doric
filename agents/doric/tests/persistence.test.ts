@@ -701,7 +701,7 @@ integrationTest(
   },
 );
 
-test('ships the baseline followed by every incremental migration', async () => {
+void test('ships the baseline followed by every incremental migration', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
     '20260825000000_initial',
     '20260826000000_add_project_thread_names',
@@ -810,7 +810,7 @@ test('ships the baseline followed by every incremental migration', async () => {
   assert.match(cwd, /ADD COLUMN "cwd_repo" TEXT;/u);
 });
 
-test(
+void test(
   'upgrades existing related Project and Thread rows with names and data intact',
   { skip: connectionString === undefined },
   async () => {
@@ -947,7 +947,7 @@ for (const failure of [
   'migration read',
   'migration query',
 ] as const) {
-  test(`releases acquired database resources after ${failure} failure even if one close fails`, async () => {
+  void test(`releases acquired database resources after ${failure} failure even if one close fails`, async () => {
     const open = new Set<string>();
     const schemas = new Set<string>();
     let clients = 0;
@@ -990,7 +990,7 @@ for (const failure of [
   });
 }
 
-test(
+void test(
   'carries configured GitHub data and every provider into the credential store',
   { skip: connectionString === undefined },
   async () => {
@@ -1095,7 +1095,7 @@ test(
   },
 );
 
-test(
+void test(
   'leaves an unconfigured GitHub block unconfigured',
   { skip: connectionString === undefined },
   async () => {
@@ -1361,7 +1361,7 @@ integrationTest(
   },
 );
 
-test(
+void test(
   'converts a configured provider of the old shape without losing its data',
   { skip: connectionString === undefined },
   async () => {
@@ -1507,7 +1507,7 @@ test(
 type Stores = Awaited<ReturnType<typeof fixture>>;
 
 function integrationTest(name: string, run: (stores: Stores) => Promise<void>) {
-  test(name, { skip: connectionString === undefined }, async () => {
+  void test(name, { skip: connectionString === undefined }, async () => {
     const stores = await fixture();
     try {
       await run(stores);
