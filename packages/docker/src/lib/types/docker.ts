@@ -140,6 +140,10 @@ export interface ArchiveReadInput {
 }
 
 export interface DockerClient extends SandboxProvider {
+  start?(
+    container: ContainerRef | string,
+    input: SandboxProcessInput,
+  ): Promise<SandboxProcess>;
   ping(options?: DockerRequestOptions): Promise<void>;
 
   version(options?: DockerRequestOptions): Promise<DockerVersion>;
@@ -203,4 +207,8 @@ export interface DockerClient extends SandboxProvider {
   removeVolume(name: string, options?: RemoveVolumeOptions): Promise<void>;
 }
 
-import type { SandboxProvider } from 'sandbox';
+import type {
+  SandboxProcess,
+  SandboxProcessInput,
+  SandboxProvider,
+} from 'sandbox';

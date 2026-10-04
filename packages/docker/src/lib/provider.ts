@@ -140,6 +140,11 @@ export const provisionDocker = async (
 
   return {
     id: container.id,
+    start: (input) => {
+      if (client.start === undefined)
+        throw new Error('Docker client does not support live processes');
+      return client.start(container, input);
+    },
     exec: (execInput) =>
       client.exec(container, {
         ...execInput,

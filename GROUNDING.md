@@ -125,15 +125,15 @@ tree holds, each
 repository's root as a sticky header over that repository's own changed or
 untracked files — one row and one status badge each — and the repository's own
 diff. The tabs sit in the
-panel's header, in place of a title, and the panel's footer carries the surface's
-only action, an explicit refresh. Selecting a file opens it in a division of its
-own — resizable, between the conversation and the sandbox panel — whose header
-names the file and carries the one control it has, closing it, at the right
-corner, whose footer states the chain the file was reached through, a chain too
+panel's header, in place of a title, and its footer carries refresh.
+Selecting a file opens a resizable division between the
+conversation and sandbox panel. This division keeps multiple tabs per Thread,
+mixing files and agent terminals; opening the same item selects its existing
+tab, and closing the last tab removes the division. A file tab's footer states
+the chain the file was reached through, a chain too
 deep for that row collapsing its middle behind one trigger, and whose text is
 rendered read-only by the Monaco editor
-bundled with the editor worker alone. The division is mounted only while a file
-is open, so closing it takes no width. Because the whole tree arrives in one
+bundled with the editor worker alone. Because the whole tree arrives in one
 read, expanding a directory reads nothing and is pure view state; only a file's
 content is read on demand, and the diff only when the Changes tab is shown. The
 sandbox belongs to the Project and may not be usable at all: a queued,
@@ -142,6 +142,48 @@ when the lease is pending — instead of erroring. There is no filesystem watche
 the panel rereads on its own refresh, when the selected Project or Thread changes, and when
 the selected Thread's event stream reports a finished `write`, `edit` or
 `terminal` call, which is the signal that the agent changed the sandbox.
+
+The host owns process-local terminal sessions belonging to a Thread and its
+Project sandbox. The `terminal` tool and manual shells use this registry;
+internal filesystem and Git probes do not appear as terminals. Each session has
+an ID, origin, command, working directory, start time, timeout, state, and live
+process controls. Sandbox providers expose streamed execution, stdin, PTY
+resizing, and termination of the execution's process session. Plain commands
+retain separate stdout and stderr; PTY commands combine them. Manual shells use
+PTYs and shell integration reports the current command without inferring it
+from keyboard input.
+
+The left sidebar lists terminals below their owning Thread. Agent rows show
+`command · elapsed (timeout)`; manual rows show the current command or shell
+name when idle. Agent terminals open as tabs beside files. The shell icon in
+the left of the conversation footer, separated from its working directory by a
+divider, creates a manual shell in the selected Thread's
+working directory and opens a vertically resizable section below its
+conversation. This section shows tabs for the manual terminals opened in that
+Thread and preserves their emulators while switching tabs. Closing a tab or
+hiding a section leaves the process running;
+an explicit stop or discard terminates it. Finished agent commands disappear
+from both the sidebar and open tabs, with no retained terminal session. Manual
+sessions remain until discarded, including an inactive view when their shell
+exits. Thread/subtree and Project termination close their owned sessions; host
+shutdown closes them too. Sessions are not restored after a host restart.
+
+Live output and a bounded in-memory transcript travel through the Electron
+main/preload boundary, never direct renderer HTTP or Socket.IO. Project terminal
+snapshots and lifecycle updates keep sidebar rows current; output cursors
+reconcile transcript reads with live output on opening or reconnecting. Buffers
+are discarded with the session, and truncation of an active session's transcript
+is explicit. Terminal data is not written to operational logs.
+
+The terminal tool waits in foreground by default. Explicit background execution
+returns its terminal ID immediately and, after the process settles, enqueues one
+correlated terminal result into the owning Thread's existing FIFO input queue.
+A busy Thread processes it after its current work, an idle Thread takes it up,
+and a terminated Thread is never reopened. Foreground execution returns its
+ordinary tool result without an extra queued notification. Prompt interruption
+cancels its foreground execution; explicit background commands remain owned by
+the Thread. Manual shells never enqueue agent continuations. The durable
+conversation retains completed tool/background results, not terminal sessions.
 
 A settings window opened from the content footer — its own `BrowserWindow`
 loading a page that mounts the settings surface alone, with no conversation,
@@ -299,7 +341,10 @@ internals, and the host implements it in the composition root. A `Host` is
 prompt-scoped; it closes over the calling prompt's Project and Thread, so
 `host.threads.*` reaches only that prompt's direct children and stops when the
 prompt ends, and `host.workspace.*` reports and moves only that prompt's own
-Thread's working directory. Today's namespaces are `threads` and `workspace`;
+Thread's working directory. Today's namespaces are `threads`, `workspace`, and
+`terminals`; the latter starts tracked foreground or background commands in the
+calling Thread's sandbox without exposing other Threads' sessions. Background
+process ownership survives completion of its originating prompt;
 future namespaces
 (`config`, `vms`, `providers`) are added only for a concrete need, never as a
 state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch.

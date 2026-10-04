@@ -21,6 +21,12 @@ import {
   type ProjectEventService,
 } from './workspace/project-events';
 import {
+  createTerminalEventService,
+  type TerminalEventService,
+} from './workspace/terminal-events';
+import { registerTerminalHandlers } from './workspace/terminal-ipc';
+import { terminalApi } from './workspace/terminals';
+import {
   createThreadHistoryStore,
   type ThreadHistoryStore,
 } from './workspace/thread-history';
@@ -43,6 +49,7 @@ const flushBeforeClose: { current: (() => void) | undefined } = {
 let connection: ConnectionMonitor | null = null;
 let threadEvents: ThreadEventService | null = null;
 let projectEvents: ProjectEventService | null = null;
+let terminalEvents: TerminalEventService | null = null;
 let threadHistory: ThreadHistoryStore | null = null;
 
 const rendererUrl = (): string =>
@@ -297,11 +304,17 @@ void app.whenReady().then(() => {
     threadHistory,
   );
   projectEvents = createProjectEventService(manager);
+  terminalEvents = createTerminalEventService({
+    manager: createConnectionManager,
+    snapshot: terminalApi.snapshot,
+  });
+  registerTerminalHandlers(rendererUrls(), terminalEvents);
   app.once('will-quit', () => {
     threadEvents?.close();
     threadEvents = null;
     threadHistory = null;
     projectEvents?.close();
+    terminalEvents?.close();
     projectEvents = null;
     connection?.close();
     connection = null;

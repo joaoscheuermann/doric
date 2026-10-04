@@ -1,3 +1,4 @@
+import type { TerminalControl } from './terminals.js';
 import type { ThreadControl } from './threads.js';
 import type { WorkspaceControl } from './workspace.js';
 
@@ -7,6 +8,7 @@ export interface Host {
   readonly threads: ThreadControl;
   /** The working directory of the prompt's own Thread. */
   readonly workspace: WorkspaceControl;
+  readonly terminals?: TerminalControl;
   // Future namespaces are added per concrete need, never as a dumping ground:
   // readonly config: ConfigControl;
   // readonly vms: VmControl;

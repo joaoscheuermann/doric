@@ -10,6 +10,7 @@ import type {
   ToolCatalogEntry,
 } from './config';
 import type { ConnectionApi } from './connection';
+import type { TerminalsApi } from './terminals';
 import type { ThreadGit } from './thread-git';
 
 /**
@@ -152,6 +153,7 @@ export type Entity =
   | { readonly kind: 'thread'; readonly value: Thread };
 
 export type WorkspaceApi = {
+  readonly terminals: TerminalsApi;
   readonly connection: ConnectionApi;
   /**
    * The settings surface is its own window; `open` shows it, or focuses the one

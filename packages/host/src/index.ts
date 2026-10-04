@@ -1,4 +1,9 @@
 export type { Host } from './lib/host.js';
+export type {
+  TerminalControl,
+  TerminalInput,
+  TerminalResult,
+} from './lib/terminals.js';
 export type { CwdChange, WorkspaceControl } from './lib/workspace.js';
 export type {
   InterruptResult,

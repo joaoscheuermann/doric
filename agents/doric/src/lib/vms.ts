@@ -42,6 +42,9 @@ const tracked = (
 ): SandboxRuntime => ({
   id: runtime.id,
   exec: (input) => runtime.exec(input),
+  ...(runtime.start === undefined
+    ? {}
+    : { start: runtime.start.bind(runtime) }),
   putFile: (path, bytes) => runtime.putFile(path, bytes),
   getFile: (path) => runtime.getFile(path),
   ssh: () => runtime.ssh(),

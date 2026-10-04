@@ -34,7 +34,9 @@ const input = (job: PromptJob): string => {
       ? 'User request'
       : source.kind === 'parent'
         ? `Parent instruction from thread ${source.threadId}, prompt ${source.promptId}`
-        : `Child result from thread ${source.threadId}, prompt ${source.promptId}`;
+        : source.kind === 'terminal'
+          ? `Background terminal ${source.terminalId}, originating prompt ${source.promptId}`
+          : `Child result from thread ${source.threadId}, prompt ${source.promptId}`;
   return `# ${label}
 
 ${job.prompt}`;

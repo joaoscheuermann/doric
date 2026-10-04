@@ -162,6 +162,7 @@ const runtime = (
 
   return {
     id: resources.id,
+    start: (input) => connection.start(input),
     exec: (input) => connection.exec(input),
     putFile: (path, bytes) => connection.putFile(path, bytes),
     getFile: (path) => connection.getFile(path),

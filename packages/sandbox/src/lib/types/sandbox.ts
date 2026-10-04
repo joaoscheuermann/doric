@@ -76,6 +76,7 @@ export interface SandboxProvisionInput {
 
 export interface SandboxRuntime {
   readonly id: string;
+  start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
@@ -139,6 +140,7 @@ export interface SandboxDiffInput {
 export interface Sandbox {
   readonly id: string;
   readonly root: string;
+  start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
 
   cloneRepo(input: CloneRepoInput): Promise<ClonedRepo>;
@@ -158,4 +160,25 @@ export interface Sandbox {
 
 export interface SandboxSession extends Sandbox {
   dispose(): Promise<void>;
+}
+
+export interface SandboxProcessOutput {
+  readonly stream: 'stdout' | 'stderr';
+  readonly data: string;
+}
+
+/** Starts a live process. TTY combines stdout and stderr into stdout. */
+export interface SandboxProcessInput extends SandboxExecInput {
+  readonly cols?: number;
+  readonly rows?: number;
+  readonly onOutput?: (output: SandboxProcessOutput) => void;
+}
+
+export interface SandboxProcess {
+  /** Final output contains at most the last MiB of each stream. */
+  readonly result: Promise<SandboxExecResult>;
+  write(data: string): Promise<void>;
+  resize(cols: number, rows: number): Promise<void>;
+  /** Terminates the remote process tree, not just its transport. */
+  terminate(): Promise<void>;
 }

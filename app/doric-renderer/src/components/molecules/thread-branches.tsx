@@ -2,6 +2,7 @@ import { DraftName } from '@/components/molecules/draft-name';
 import { EditableName } from '@/components/molecules/editable-name';
 import { ItemContextMenu } from '@/components/molecules/item-context-menu';
 import { RowAddAction } from '@/components/molecules/row-add-action';
+import { TerminalRows } from '@/components/molecules/terminal-rows';
 import {
   indentation,
   rowInteraction,
@@ -14,7 +15,8 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import type { ThreadIconKind } from '@/domain/sidebar';
-import { isExpanded, type ThreadLevel } from '@/domain/thread-tree';
+import { type Terminal, threadTerminals } from '@/domain/terminals';
+import { type ThreadLevel } from '@/domain/thread-tree';
 import type { Thread } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
 import {
@@ -37,6 +39,9 @@ export type ThreadBranchesActions = {
 };
 
 type ThreadBranchesProps = {
+  readonly terminals?: readonly Terminal[];
+  readonly onOpenTerminal?: (terminal: Terminal) => void;
+  readonly onStopTerminal?: (id: string) => void;
   readonly actions: ThreadBranchesActions;
   readonly collapsed: ReadonlySet<string>;
   readonly depth: number;
@@ -75,20 +80,25 @@ export function ThreadBranches({
   onExpand,
   onToggle,
   selectedThreadId,
+  terminals = [],
+  onOpenTerminal,
+  onStopTerminal,
 }: ThreadBranchesProps) {
   return (
     <>
       {level.nodes.map((node) => {
         const { thread } = node;
         const selected = selectedThreadId === thread.id;
-        const expanded = isExpanded(node, collapsed);
+        const sessions = threadTerminals(terminals, thread.id);
+        const expandable = node.expandable || sessions.length > 0;
+        const expanded = expandable && !collapsed.has(thread.id);
         const Icon = iconByKind[icon(thread)];
         const addChild = () => {
           onExpand(thread.id);
           actions.beginChild(thread);
         };
         const activate = () => {
-          if (selected && node.expandable) onToggle(thread.id);
+          if (selected && expandable) onToggle(thread.id);
           else actions.select(thread);
         };
 
@@ -125,7 +135,7 @@ export function ThreadBranches({
                     }}
                   >
                     <Icon />
-                    {node.expandable && (
+                    {expandable && (
                       <ChevronRightIcon
                         aria-hidden
                         className={cn(
@@ -152,7 +162,16 @@ export function ThreadBranches({
             </ItemContextMenu>
             {expanded && (
               <SidebarMenuSub className={treeClassName}>
+                <TerminalRows
+                  terminals={sessions}
+                  depth={depth + 1}
+                  onOpen={onOpenTerminal}
+                  onStop={onStopTerminal}
+                />
                 <ThreadBranches
+                  terminals={terminals}
+                  onOpenTerminal={onOpenTerminal}
+                  onStopTerminal={onStopTerminal}
                   actions={actions}
                   collapsed={collapsed}
                   depth={depth + 1}

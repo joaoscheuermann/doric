@@ -6,6 +6,11 @@ import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
 import type { ProjectChangeSet } from './files.js';
 import type { PromptFailure, PromptProgress } from './prompts.js';
+import type {
+  Terminal,
+  TerminalOutput,
+  TerminalSnapshot,
+} from './terminals.js';
 
 export type ProjectState =
   | 'queued'
@@ -116,6 +121,11 @@ export interface Thread {
 }
 export type InputSource =
   | { readonly kind: 'user' }
+  | {
+      readonly kind: 'terminal';
+      readonly terminalId: string;
+      readonly promptId: string;
+    }
   | {
       readonly kind: 'parent';
       readonly threadId: string;
@@ -354,6 +364,13 @@ export interface ThreadStore {
   reconcile(): Promise<number>;
 }
 export interface WorkspacePublisher {
+  terminalUpdated?(value: Terminal): void;
+  terminalOutput?(value: TerminalOutput): void;
+  terminalRemoved?(value: {
+    readonly projectId: string;
+    readonly threadId: string;
+    readonly terminalId: string;
+  }): void;
   event(value: ThreadEvent): void;
   threadUpdated(value: Thread): void;
   threadDeleted(projectId: string, threadId: string): void;
@@ -361,6 +378,18 @@ export interface WorkspacePublisher {
   projectDeleted(id: string): void;
 }
 export interface WorkspaceService {
+  readonly terminals: {
+    list(projectId: string): readonly Terminal[];
+    create(
+      threadId: string,
+      cols?: number,
+      rows?: number,
+    ): Promise<Terminal | undefined>;
+    snapshot(id: string, after?: number): TerminalSnapshot | undefined;
+    input(id: string, data: string): Promise<boolean>;
+    resize(id: string, cols: number, rows: number): Promise<boolean>;
+    stop(id: string): Promise<boolean>;
+  };
   readonly projects: {
     create(name: string): Promise<Project>;
     find(id: string): Promise<Project | undefined>;

@@ -1,6 +1,6 @@
 import { DeleteDialog } from '@/components/molecules/delete-dialog';
 import { Conversation } from '@/components/organisms/conversation';
-import { FileViewer } from '@/components/organisms/file-viewer';
+import { ManualTerminalTabs } from '@/components/organisms/manual-terminal-tabs';
 import { ProjectFilesSidebar } from '@/components/organisms/project-files-sidebar';
 import {
   ProjectSidebar,
@@ -15,6 +15,8 @@ import {
   WorkspaceHeader,
   WorkspaceSidebarHeader,
 } from '@/components/organisms/workspace-header';
+import { WorkspaceTabs } from '@/components/organisms/workspace-tabs';
+import { ConversationTerminals } from '@/components/templates/conversation-terminals';
 import { ThreadPane } from '@/components/templates/thread-pane';
 import { WorkspaceLayout } from '@/components/templates/workspace-layout';
 import {
@@ -26,10 +28,14 @@ import {
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { Terminal } from '@/domain/terminals';
 import { threadPath } from '@/domain/thread-tree';
 import { useComposer } from '@/hooks/use-composer';
 import { useProjectFiles } from '@/hooks/use-project-files';
+import { useTerminals } from '@/hooks/use-terminals';
 import { useWorkspace } from '@/hooks/use-workspace';
+import { useWorkspaceTabs } from '@/hooks/use-workspace-tabs';
+import { workspaceTabsStore } from '@/stores/workspace-tabs';
 import { type CSSProperties, useCallback, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
@@ -39,6 +45,13 @@ const panelWidth = {
 
 export function App() {
   const workspace = useWorkspace();
+  const terminals = useTerminals(workspace.projects);
+  const tabOwner =
+    workspace.selectedThreadId ??
+    (workspace.selectedProjectId
+      ? `project:${workspace.selectedProjectId}`
+      : undefined);
+  const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
   // The sandbox panel starts open, and stays where the user leaves it; the
   // count of agent writes below is what tells it to reread what it shows. It is
@@ -108,8 +121,39 @@ export function App() {
     cwd: selectedThread?.cwd,
     revision: filesRevision,
   });
-  const openFilePath = files.selectedPath;
-  const closeFile = files.actions.closeFile;
+  const tabActions = workspaceTabsStore.getState();
+  const filesWithTabs = {
+    ...files,
+    actions: {
+      ...files.actions,
+      openFile: (path: string) => {
+        if (!tabOwner || !selectedProject) return;
+        tabActions.open(tabOwner, {
+          kind: 'file',
+          id: `file:${path}`,
+          path,
+          projectId: selectedProject.id,
+        });
+      },
+    },
+  };
+  const openTerminal = (terminal: Terminal) => {
+    const thread = workspace.threadsByProject[terminal.projectId]?.find(
+      (item) => item.id === terminal.threadId,
+    );
+    if (thread) actions.selectThread(thread);
+    if (terminal.origin === 'user')
+      tabActions.manual(terminal.threadId, terminal.id);
+    else
+      tabActions.open(terminal.threadId, {
+        kind: 'terminal',
+        id: `terminal:${terminal.id}`,
+        terminalId: terminal.id,
+      });
+  };
+  const manual = terminals.items.find(
+    (terminal) => terminal.id === tabs.manualId,
+  );
 
   return (
     <TooltipProvider>
@@ -120,23 +164,28 @@ export function App() {
         <WorkspaceLayout
           files={
             <ProjectFilesSidebar
-              files={files}
+              files={filesWithTabs}
               onToggle={toggleFiles}
               project={selectedProject}
             />
           }
           filesOpen={filesOpen}
           fileViewer={
-            openFilePath === undefined ? undefined : (
-              <FileViewer
-                file={files.file}
-                onClose={closeFile}
-                path={openFilePath}
+            tabs.items.length === 0 || !tabOwner ? undefined : (
+              <WorkspaceTabs
+                state={tabs}
+                threadId={tabOwner}
+                terminals={terminals.items}
               />
             )
           }
           footer={
             <WorkspaceFooter
+              onNewTerminal={
+                selectedThread
+                  ? () => void terminals.create(selectedThread.id)
+                  : undefined
+              }
               canSend={canSend}
               disabled={selectedThread === undefined}
               onSend={send}
@@ -156,7 +205,15 @@ export function App() {
             />
           }
           onFilesOpenChange={setFilesOpen}
-          sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
+          sidebar={
+            <ProjectSidebar
+              actions={sidebarActions}
+              model={model}
+              terminals={terminals.items}
+              onOpenTerminal={openTerminal}
+              onStopTerminal={terminals.stop}
+            />
+          }
           sidebarFooter={
             <WorkspaceSidebarFooter
               onOpenSettings={() => void window.doric.settings.open()}
@@ -165,26 +222,38 @@ export function App() {
           sidebarHeader={<WorkspaceSidebarHeader />}
         >
           <SidebarInset className="min-h-0">
-            <ThreadPane>
-              {selectedThread ? (
-                <Conversation
-                  key={selectedThread.id}
-                  onSandboxWrite={noteSandboxWrite}
-                  promptSignal={promptSignal}
-                  sendRequest={sendRequest}
-                  thread={selectedThread}
-                />
-              ) : (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>No thread selected</EmptyTitle>
-                    <EmptyDescription>
-                      Select a thread to open its conversation.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </ThreadPane>
+            <ConversationTerminals
+              terminal={
+                manual && (
+                  <ManualTerminalTabs
+                    state={tabs}
+                    threadId={manual.threadId}
+                    terminals={terminals.items}
+                  />
+                )
+              }
+            >
+              <ThreadPane>
+                {selectedThread ? (
+                  <Conversation
+                    key={selectedThread.id}
+                    onSandboxWrite={noteSandboxWrite}
+                    promptSignal={promptSignal}
+                    sendRequest={sendRequest}
+                    thread={selectedThread}
+                  />
+                ) : (
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyTitle>No thread selected</EmptyTitle>
+                      <EmptyDescription>
+                        Select a thread to open its conversation.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </ThreadPane>
+            </ConversationTerminals>
           </SidebarInset>
         </WorkspaceLayout>
         <DeleteDialog

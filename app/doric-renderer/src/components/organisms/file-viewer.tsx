@@ -84,7 +84,11 @@ export function FileViewer({ file, onClose, path }: FileViewerProps) {
  * byte size belong to the header and footer around this, so this is only the
  * text of the file or the sentence that says why it is not here.
  */
-function FileBody({ file }: { readonly file: ReadState<ProjectFileContent> }) {
+export function FileBody({
+  file,
+}: {
+  readonly file: ReadState<ProjectFileContent>;
+}) {
   if (file.status === 'ready') return <FileContent file={file.value} />;
   if (file.status === 'idle' || file.status === 'loading') {
     return (

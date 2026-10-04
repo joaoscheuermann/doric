@@ -37,6 +37,7 @@ import {
   type ThreadExecution,
   type ThreadRuntime,
 } from './runtime.js';
+import { createTerminalRegistry } from './terminals.js';
 import {
   isTerminal,
   type Project,
@@ -100,7 +101,11 @@ export const createWorkspaceService = ({
 }: Options): WorkspaceService => {
   const runtimes = new Map<string, ProjectRuntime>();
   const exclusive = createMutationQueue();
+  const terminals = createTerminalRegistry(publisher, () =>
+    config.current().redactions(),
+  );
   const runner = createThreadRunner({
+    terminals,
     threads,
     publisher,
     logger,
@@ -614,6 +619,45 @@ export const createWorkspaceService = ({
       return value;
     });
   return {
+    terminals: {
+      list: terminals.list,
+      snapshot: terminals.snapshot,
+      input: terminals.input,
+      resize: terminals.resize,
+      stop: terminals.stop,
+      create: async (threadId, cols, rows) => {
+        const record = await threads.record(threadId);
+        if (record === undefined || isTerminal(record.state)) return undefined;
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return undefined;
+        return exclusive(record.projectId, async () => {
+          const thread = project.threads.get(threadId);
+          const sandbox = project.lease?.sandbox;
+          if (
+            project.closing ||
+            thread === undefined ||
+            thread.closing ||
+            sandbox === undefined
+          )
+            return undefined;
+          const started = await terminals.start({
+            sandbox,
+            projectId: record.projectId,
+            threadId,
+            origin: 'user',
+            input: {
+              command: 'bash',
+              cwd: thread.thread.cwd,
+              timeoutMs: 0,
+              pty: true,
+            },
+            ...(cols === undefined ? {} : { cols }),
+            ...(rows === undefined ? {} : { rows }),
+          });
+          return started.terminal;
+        });
+      },
+    },
     projects: {
       create: (name) =>
         exclusive('creation', async () => {

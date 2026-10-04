@@ -497,6 +497,13 @@ const guardedSession = (record: SessionRecord): PooledSandbox => {
   return {
     id: record.session.id,
     root: record.session.root,
+    start: async (input) => {
+      active();
+      if (record.session.start === undefined) {
+        throw new Error('Sandbox provider does not support live processes');
+      }
+      return record.session.start(input);
+    },
     exec: async (input) => {
       active();
 

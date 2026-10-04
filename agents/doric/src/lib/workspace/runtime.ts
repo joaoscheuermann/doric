@@ -6,6 +6,7 @@ import type { SandboxLease } from 'sandpool';
 
 import type { Generation } from '../config/generation.js';
 import type { GitCredentials } from './git.js';
+import type { TerminalRegistry } from './terminals.js';
 import type {
   InputSource,
   Project,
@@ -81,6 +82,7 @@ export interface ProjectRuntime {
   ending?: Promise<void>;
 }
 export interface RuntimeContext {
+  readonly terminals: TerminalRegistry;
   readonly threads: ThreadStore;
   readonly publisher: WorkspacePublisher;
   readonly logger: Logger;

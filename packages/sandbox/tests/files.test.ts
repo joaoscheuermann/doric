@@ -14,6 +14,49 @@ import {
 import { createLocalSandbox } from './fake-sandbox.js';
 
 void describe('workspace listing', () => {
+  void test('keeps ignored dependency files out of the listing transport while preserving reopened directories', async (context) => {
+    const root = await workspace('listing-prune');
+    context.after(() => rm(root, { recursive: true, force: true }));
+    await write(
+      root,
+      '.gitignore',
+      'node_modules/\ncache[1]/\nvendor/\n!vendor/\n',
+    );
+    await write(root, 'node_modules/large-package/unused.js', 'unused');
+    await write(root, 'cache[1]/unused.js', 'unused');
+    await write(root, 'cache1/visible.js', 'visible');
+    await write(root, 'vendor/.gitignore', '*.log\n!keep.log\n');
+    await write(root, 'vendor/keep.log', 'keep');
+    await write(root, 'vendor/drop.log', 'drop');
+    await write(root, '.agents/skill.md', 'skill');
+    const sandbox = createLocalSandbox(root);
+    const received: string[] = [];
+    const result = await listSandboxTree({
+      ...sandbox,
+      exec: async (input) => {
+        const output = await sandbox.exec(input);
+        received.push(output.stdout);
+        return output;
+      },
+    });
+    assert.equal(result.status, 'listed');
+    assert.equal(received.join('\n').includes('unused.js'), false);
+    assert.deepEqual(
+      result.status === 'listed'
+        ? result.entries.map((entry) => entry.name)
+        : [],
+      ['.agents', 'cache1', 'vendor'],
+    );
+    const vendor =
+      result.status === 'listed'
+        ? result.entries.find((entry) => entry.name === 'vendor')
+        : undefined;
+    assert.deepEqual(
+      vendor?.children?.map((entry) => entry.name),
+      ['keep.log'],
+    );
+  });
+
   void test('lists one level with names, relative paths, sizes and ordering', async () => {
     const root = await workspace('listing');
 

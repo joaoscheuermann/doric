@@ -7,10 +7,13 @@ import type {
   NormalizedSandboxNetworkPolicy,
   SandboxExecInput,
   SandboxExecResult,
+  SandboxProcess,
+  SandboxProcessInput,
   SandboxSshAccess,
 } from 'sandbox';
 
 import { run, text } from './command.js';
+import { startGuestProcess } from './process.js';
 
 export interface SshKeys {
   readonly managementPrivate: string;
@@ -23,6 +26,7 @@ export interface SshKeys {
 }
 
 export interface GuestConnection {
+  start(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
@@ -122,6 +126,8 @@ export const createGuestConnection = (input: {
   readonly env: readonly string[];
   readonly user: string;
 }): GuestConnection => ({
+  start: (request) =>
+    startGuestProcess(input, request, (request) => execute(input, request)),
   exec: (request) => execute(input, request),
   putFile: async (path, bytes) => {
     const result = await invoke(

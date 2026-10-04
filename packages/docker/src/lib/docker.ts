@@ -25,6 +25,7 @@ import {
   volumeCreateBody,
   withDefaultTimeout,
 } from './mapping.js';
+import { startDockerProcess } from './process.js';
 import { provisionDocker } from './provider.js';
 import type {
   CreateDockerClientOptions,
@@ -63,6 +64,19 @@ export const createDockerClient = (
   ): Promise<Value> => parseJson((await send(input, expectedStatus)).body);
 
   const client: DockerClient = {
+    start: (container, input) =>
+      startDockerProcess(
+        client,
+        options.connection ?? defaultConnection(),
+        async (request, status) => {
+          const response = await send(request, status);
+          return response.body.length === 0
+            ? {}
+            : parseJson<Record<string, unknown>>(response.body);
+        },
+        container,
+        input,
+      ),
     provision: (input) =>
       provisionDocker(client, input, {
         connection: options.connection ?? defaultConnection(),

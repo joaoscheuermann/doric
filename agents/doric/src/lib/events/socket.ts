@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 
+import type { Terminal } from '../workspace/terminals.js';
 import type {
   ProjectStore,
   ThreadEvent,
@@ -30,6 +31,7 @@ export const createWorkspaceSocket = (
   io: Server,
   projects: ProjectStore,
   threads: ThreadStore,
+  terminals: (projectId: string) => readonly Terminal[] = () => [],
 ): WorkspacePublisher => {
   const threadSubscriptions: Subscribers = new Map();
   const projectSubscriptions: Subscribers = new Map();
@@ -110,6 +112,11 @@ export const createWorkspaceSocket = (
         projectId,
         project: record ?? null,
         threads: tree,
+        terminals: terminals(projectId),
+      });
+      socket.emit('terminal:snapshot', {
+        projectId,
+        terminals: terminals(projectId),
       });
       subscription.ready = true;
       flushNotices(socket, subscription);
@@ -118,6 +125,21 @@ export const createWorkspaceSocket = (
     }
   }
   return {
+    terminalUpdated(value) {
+      notify(projectSubscriptions, value.projectId, 'terminal:updated', value);
+    },
+    terminalOutput(value) {
+      // Reconnect reads the bounded terminal snapshot instead of buffering a
+      // second, unbounded copy of stdout while the durable tree is loading.
+      projectSubscriptions
+        .get(value.projectId)
+        ?.forEach((subscription, socket) => {
+          if (subscription.ready) socket.emit('terminal:output', value);
+        });
+    },
+    terminalRemoved(value) {
+      notify(projectSubscriptions, value.projectId, 'terminal:removed', value);
+    },
     event(value) {
       threadSubscriptions
         .get(value.threadId)

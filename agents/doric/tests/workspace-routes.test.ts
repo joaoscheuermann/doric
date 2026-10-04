@@ -660,6 +660,14 @@ const serve = async (
   } = {},
 ) => {
   const service: WorkspaceService = {
+    terminals: {
+      list: () => [],
+      create: async () => undefined,
+      snapshot: () => undefined,
+      input: async () => false,
+      resize: async () => false,
+      stop: async () => false,
+    },
     projects: {
       create: async (name) => ({ ...project, name }),
       find: async (id) => (id === projectId ? project : undefined),

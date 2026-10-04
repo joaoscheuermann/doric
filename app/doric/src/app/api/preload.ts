@@ -11,6 +11,7 @@ import {
   projectUpdateChannel,
 } from '../../workspace/project-events';
 import type { ThreadHistory } from '../../workspace/thread-history';
+import { terminals } from './terminals';
 
 type Project = {
   readonly id: string;
@@ -341,6 +342,7 @@ ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
 });
 
 contextBridge.exposeInMainWorld('doric', {
+  terminals,
   connection: {
     status: connection.status,
     subscribe: connection.subscribe,

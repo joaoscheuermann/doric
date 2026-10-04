@@ -27,19 +27,23 @@ const HIDDEN_EXCEPTIONS = new Set(['.agents']);
 const SIZE_BATCH = 256;
 
 /**
- * The listing scan: `$1` is `deep` or `shallow`, `$2` the listed directory. One
+ * The listing scan: `$1` is `deep` or `shallow`, `$2` the listed directory, and
+ * remaining arguments are literal `find` predicates for invisible directories. One
  * `find` pass prints every entry the two old passes printed, and a shell loop
  * tags each line `D`irectory or `F`ile, so one round trip reports the root kind
  * (`K`) and every entry with its type. A failed scan prints no entry lines,
  * which is the empty listing the two-pass version produced.
  */
-const ENTRIES_SCRIPT = String.raw`if [ -d "$2" ]; then
+const ENTRIES_SCRIPT = String.raw`mode=$1
+root=$2
+shift 2
+if [ -d "$root" ]; then
   printf 'K directory\n'
-  if [ "$1" = deep ]; then
-    out=$(find "$2" -name .git -prune -o -type d -print -o -type f -print)
+  if [ "$mode" = deep ]; then
+    out=$(find "$root" \( -name .git "$@" \) -prune -o -type d -print -o -type f -print)
     status=$?
   else
-    out=$(find "$2" -maxdepth 1 -name .git -prune -o -type d -print -o -type f -print)
+    out=$(find "$root" -maxdepth 1 -name .git -prune -o -type d -print -o -type f -print)
     status=$?
   fi
   if [ "$status" = 0 ] && [ -n "$out" ]; then
@@ -51,9 +55,9 @@ const ENTRIES_SCRIPT = String.raw`if [ -d "$2" ]; then
       fi
     done
   fi
-elif [ -f "$2" ]; then
+elif [ -f "$root" ]; then
   printf 'K file\n'
-elif [ -e "$2" ]; then
+elif [ -e "$root" ]; then
   printf 'K other\n'
 else
   printf 'K missing\n'
@@ -67,8 +71,8 @@ fi
  * ancestor's rules, `N <file>` a subtree file's, and each content line follows
  * prefixed with `+` so rules and framing can never collide. Each file is read
  * by the shell itself, so a workspace with many rule files costs no extra
- * process. A deep listing also scans the subtree for `.gitignore` files, the
- * workspace's own among them.
+ * process. A deep listing also reports directory paths as `D` records and scans
+ * for `.gitignore` files, without transferring the files inside ignored trees.
  */
 const IGNORES_SCRIPT = String.raw`mode=$1
 root=$2
@@ -83,6 +87,7 @@ if [ -d "$root" ]; then
     fi
   done
   if [ "$mode" = deep ]; then
+    find "$root" -name .git -prune -o -type d -print | sed 's/^/D /'
     out=$(find "$root" -name .git -prune -o -type f -name .gitignore -print)
     status=$?
     if [ "$status" = 0 ] && [ -n "$out" ]; then
@@ -165,9 +170,9 @@ export const listSandboxTree = async (
 };
 
 /**
- * The visible entries of one listing. The scan and the ignore rules are one
- * round trip each and run together; the root kind they report gates the
- * outcome, then the visibility rules filter what the scan saw.
+ * Discover directories and ignore rules first, then prune invisible directories
+ * from the expensive typed file scan. Final filtering keeps the same rules for
+ * files and for directories beyond the bounded prune argument budget.
  */
 const listVisible = async (
   sandbox: Sandbox,
@@ -187,10 +192,18 @@ const listVisible = async (
   }
 
   const { root, excludes } = gates;
-  const [scan, ignores] = await Promise.all([
-    entryDump(sandbox, root.path, deep),
-    ignoreDump(sandbox, root.path, ancestorDirs(sandbox.root, root.path), deep),
-  ]);
+  const { ignores, directories } = await ignoreDump(
+    sandbox,
+    root.path,
+    ancestorDirs(sandbox.root, root.path),
+    deep,
+  );
+  const scan = await entryDump(
+    sandbox,
+    root.path,
+    deep,
+    prunedDirectories(root.path, directories, ignores),
+  );
 
   if (scan.kind === 'missing') {
     return { status: 'missing' };
@@ -419,6 +432,7 @@ const entryDump = async (
   sandbox: Sandbox,
   root: string,
   deep: boolean,
+  pruned: readonly string[],
 ): Promise<Scan> => {
   const result = await sandbox.exec({
     cwd: sandbox.root,
@@ -429,6 +443,11 @@ const entryDump = async (
       'entries',
       deep ? 'deep' : 'shallow',
       root,
+      ...pruned.flatMap((directory) => [
+        '-o',
+        '-path',
+        directory.replace(/[\\*?[\]]/g, '\\$&'),
+      ]),
     ],
   });
 
@@ -510,7 +529,10 @@ const ignoreDump = async (
   root: string,
   dirs: readonly string[],
   deep: boolean,
-): Promise<readonly IgnorePattern[]> => {
+): Promise<{
+  readonly ignores: readonly IgnorePattern[];
+  readonly directories: readonly string[];
+}> => {
   const result = await sandbox.exec({
     cwd: sandbox.root,
     cmd: [
@@ -524,7 +546,38 @@ const ignoreDump = async (
     ],
   });
 
-  return parseIgnoreDump(result.stdout);
+  return {
+    ignores: parseIgnoreDump(result.stdout),
+    directories: lines(result.stdout)
+      .filter((line) => line.startsWith('D '))
+      .map((line) => normalize(line.slice(2))),
+  };
+};
+
+/** Only outermost invisible directories need prune arguments. Keep argv bounded;
+ * omitted paths still receive the ordinary visibility filter after the scan. */
+const prunedDirectories = (
+  root: string,
+  directories: readonly string[],
+  ignores: readonly IgnorePattern[],
+): readonly string[] => {
+  const ignored = ignoredWithin(root, ignores);
+  const pruned: string[] = [];
+  const skipped = new Set<string>();
+  let budget = 32768;
+  for (const directory of [...directories].sort()) {
+    if (
+      directory === root ||
+      ancestors(root, directory).some((parent) => skipped.has(parent))
+    )
+      continue;
+    if (!isHidden(root, directory) && !ignored(directory, true)) continue;
+    skipped.add(directory);
+    if (directory.length > budget) continue;
+    pruned.push(directory);
+    budget -= directory.length;
+  }
+  return pruned;
 };
 
 /** Reads the framed ignore stream back into the patterns each rule holds. */

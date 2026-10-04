@@ -66,6 +66,13 @@ export const createSandbox = async (
 const session = (state: State): SandboxSession => ({
   id: state.runtime.id,
   root: state.root,
+  async start(input) {
+    active(state);
+    if (state.runtime.start === undefined) {
+      throw new Error('Sandbox provider does not support live processes');
+    }
+    return state.runtime.start({ ...input, ...runtimeExec(state, input) });
+  },
   exec(input) {
     active(state);
 

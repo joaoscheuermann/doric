@@ -174,7 +174,9 @@ async function main() {
   const interrupted = { interruptedThreads, interruptedProjects };
   startup.info(interrupted, 'Project and thread reconciliation complete');
   registerStatusSocket(io);
-  const publisher = createWorkspaceSocket(io, projects, threads);
+  const publisher = createWorkspaceSocket(io, projects, threads, (id) =>
+    service.terminals.list(id),
+  );
   const service = createWorkspaceService({
     projects,
     threads,

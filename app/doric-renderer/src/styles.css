@@ -500,6 +500,20 @@
   border-radius: 9999px;
 }
 
+/* Match ScrollArea's 10px lane, 1px padding and transparent left border.
+ * The scope outranks xterm's injected hover/active background shorthand so it
+ * cannot reset the clip and paint over the thumb's transparent inset. */
+[data-slot='terminal-view']
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-left-width: 2px;
+  border-radius: 9999px;
+}
+
 /*
  * The chrome bars, and the reason they are one class instead of one height
  * copied into ten places: every bar — the workspace's header and footer, the

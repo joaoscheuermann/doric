@@ -33,6 +33,7 @@ import {
   withProjectToggled,
 } from '@/domain/project-tree';
 import { threadIconKind } from '@/domain/sidebar';
+import type { Terminal } from '@/domain/terminals';
 import { threadLevel } from '@/domain/thread-tree';
 import type {
   Draft,
@@ -74,11 +75,20 @@ export type SidebarActions = {
 };
 
 type ProjectSidebarProps = {
+  readonly terminals?: readonly Terminal[];
+  readonly onOpenTerminal?: (terminal: Terminal) => void;
+  readonly onStopTerminal?: (id: string) => void;
   readonly actions: SidebarActions;
   readonly model: SidebarModel;
 };
 
-export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
+export function ProjectSidebar({
+  actions,
+  model,
+  terminals,
+  onOpenTerminal,
+  onStopTerminal,
+}: ProjectSidebarProps) {
   // Threads start open and close one row at a time; Projects start closed and
   // open one row at a time. Neither state follows the selection, so opening an
   // item never closes another.
@@ -250,6 +260,9 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                             </SidebarMenuSubItem>
                           )}
                         <ThreadBranches
+                          terminals={terminals}
+                          onOpenTerminal={onOpenTerminal}
+                          onStopTerminal={onStopTerminal}
                           actions={threadActions}
                           collapsed={collapsedThreads}
                           depth={1}

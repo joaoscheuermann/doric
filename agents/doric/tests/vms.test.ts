@@ -63,6 +63,58 @@ void test('tracks provisioned VMs until disposal completes', async () => {
   await second.dispose();
 });
 
+void test('preserves live terminal control through the VM registry', async () => {
+  const received: string[] = [];
+  const provider: SandboxProvider = {
+    provision: async () => ({
+      ...runtime('vm-terminal'),
+      start: async (command) => {
+        command.onOutput?.({ stream: 'stdout', data: 'ready' });
+        return {
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: 'ready',
+            stderr: '',
+            stdoutBytes: Buffer.from('ready'),
+            stderrBytes: new Uint8Array(),
+          }),
+          write: async (data) => {
+            received.push(data);
+          },
+          resize: async () => undefined,
+          terminate: async () => {
+            received.push('terminated');
+          },
+        };
+      },
+    }),
+  };
+  const registry = createVmRegistry('docker', provider);
+  const tracked = await registry.provider.provision(input);
+  if (tracked.start === undefined)
+    assert.fail('Live process capability was lost');
+  const output: string[] = [];
+  const process = await tracked.start({
+    cmd: ['bash'],
+    onOutput: ({ data }) => output.push(data),
+  });
+  await process.write('hello\r');
+  await process.terminate();
+  assert.deepEqual(output, ['ready']);
+  assert.deepEqual(received, ['hello\r', 'terminated']);
+  assert.equal((await process.result).stdout, 'ready');
+});
+
+void test('keeps live execution absent for a provider without that capability', async () => {
+  const registry = createVmRegistry('docker', {
+    provision: async () => runtime('legacy'),
+  });
+  assert.equal(
+    typeof (await registry.provider.provision(input)).start,
+    'undefined',
+  );
+});
+
 void test('keeps a VM registered when disposal fails', async () => {
   let reject!: (cause: Error) => void;
   const disposal = new Promise<void>((_resolve, fail) => {

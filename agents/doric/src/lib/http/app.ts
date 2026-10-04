@@ -5,6 +5,7 @@ import { createConfigRouter } from '../../routes/config.js';
 import { createCredentialsRouter } from '../../routes/credentials.js';
 import { createProjectsRouter } from '../../routes/projects.js';
 import { createProvidersRouter } from '../../routes/providers.js';
+import { createTerminalsRouter } from '../../routes/terminals.js';
 import { createThreadsRouter } from '../../routes/threads.js';
 import { createToolsRouter } from '../../routes/tools.js';
 import {
@@ -28,6 +29,7 @@ export const registerHttpRoutes = (
   },
 ): void => {
   app.use(express.json());
+  app.use(createTerminalsRouter(dependencies.service));
   app.use('/vms', createVmsRouter(dependencies.vms));
   app.use('/config', createConfigRouter(dependencies.config));
   app.use('/credentials', createCredentialsRouter(dependencies.credentials));

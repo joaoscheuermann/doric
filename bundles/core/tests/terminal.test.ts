@@ -19,6 +19,54 @@ type FakeSandbox = SandboxSession & {
 };
 
 void describe('terminal tool', () => {
+  void test('returns a terminal reference immediately for a tracked background command', async () => {
+    const sandbox = fakeSandbox(new Error('Untracked execution is forbidden'));
+    const host = {
+      ...fakeHost(),
+      terminals: {
+        run: async (input: {
+          command: string;
+          background?: boolean;
+          pty?: boolean;
+        }) => {
+          assert.equal(input.command, 'npm run dev');
+          assert.equal(input.background, true);
+          assert.equal(input.pty, true);
+          return { terminalId: 'terminal-1', background: true as const };
+        },
+      },
+    };
+    const result = await createTool()(sandbox, host).execute({
+      command: 'npm run dev',
+      background: true,
+      pty: true,
+    });
+    assert.deepEqual(result, { terminal_id: 'terminal-1', background: true });
+  });
+
+  void test('compacts the result of a tracked foreground command', async () => {
+    const sandbox = fakeSandbox(new Error('Untracked execution is forbidden'));
+    const host = {
+      ...fakeHost(),
+      terminals: {
+        run: async () => ({
+          terminalId: 'terminal-1',
+          stdout: 'hello\n',
+          stderr: '',
+          exitCode: 0,
+          durationMs: 42,
+          reason: 'exited' as const,
+        }),
+      },
+    };
+    const result = await createTool()(sandbox, host).execute({
+      command: 'echo hello',
+    });
+    assert.ok('schema' in result);
+    assert.deepEqual(result.stdout.head, ['hello']);
+    assert.equal(result.duration_ms, 42);
+  });
+
   void test('executes a command from the requested sandbox working directory', async () => {
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
@@ -36,6 +84,7 @@ void describe('terminal tool', () => {
       },
     ]);
 
+    assert.ok('schema' in result);
     assert.equal(result.schema, 'terminal.compact.v1');
 
     assert.equal(result.working_directory, '/workspace/repo/src');
@@ -88,6 +137,7 @@ void describe('terminal tool', () => {
       ['/workspace/repo/src', '/workspace/repo/src/lib', '/workspace/other'],
     );
 
+    assert.ok('schema' in byDefault);
     assert.equal(byDefault.working_directory, '/workspace/repo/src');
   });
 
@@ -104,6 +154,7 @@ void describe('terminal tool', () => {
       timeout_ms: 10,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.exit_code, -1);
 
     assert.equal(result.success, false);
@@ -119,6 +170,7 @@ void describe('terminal tool', () => {
       timeout_ms: 5000,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.exit_code, -1);
 
     assert.equal(result.success, false);
@@ -139,6 +191,7 @@ void describe('terminal tool', () => {
       timeout_ms: 5000,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.success, false);
 
     assert.equal(result.diagnostics[0]?.kind, 'typescript_error');
@@ -159,6 +212,7 @@ void describe('terminal tool', () => {
       ).execute({
         command: 'echo hello',
       });
+      assert.ok('schema' in result);
       const rawOutputRef = result.raw_output_ref;
 
       assert.ok(result.trace_id);

@@ -184,6 +184,7 @@ void test('snapshots the complete project tree and buffers its updates', async (
   assert.deepEqual(await deleted, { projectId });
   assert.deepEqual(order, [
     'project:snapshot',
+    'terminal:snapshot',
     'thread:updated',
     'project:deleted',
   ]);

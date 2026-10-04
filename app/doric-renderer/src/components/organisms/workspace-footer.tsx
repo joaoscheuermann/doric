@@ -25,10 +25,12 @@ import {
   GithubIcon,
   MessageSquareIcon,
   SettingsIcon,
+  TerminalIcon,
 } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 
 type WorkspaceFooterProps = {
+  readonly onNewTerminal?: () => void;
   /** Whether a prompt is running on the selected Thread. */
   readonly running: boolean;
   /** Whether the prompt holds anything to send. */
@@ -53,6 +55,7 @@ type WorkspaceFooterProps = {
 export function WorkspaceFooter({
   canSend,
   disabled,
+  onNewTerminal,
   onSend,
   onStop,
   running,
@@ -61,9 +64,21 @@ export function WorkspaceFooter({
   return (
     <footer
       data-slot="workspace-footer"
-      className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t px-2 text-xs"
+      className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-xs"
     >
-      <WorkspaceCwd thread={thread} />
+      <div className="mr-auto flex min-w-0 items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New terminal"
+          disabled={!onNewTerminal}
+          onClick={onNewTerminal}
+        >
+          <TerminalIcon />
+        </Button>
+        {thread && <ToolbarDivider />}
+        <WorkspaceCwd thread={thread} />
+      </div>
       <ExecutionPicker />
       <ToolbarDivider />
       <ComposerButton

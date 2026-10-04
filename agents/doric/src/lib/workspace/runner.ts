@@ -205,6 +205,56 @@ export const createThreadRunner = (context: RuntimeContext) => {
           host: {
             threads: coordinate(project, thread, active.job),
             workspace: workspace(project, thread, active.job),
+            terminals: {
+              run: async (input) => {
+                active.controller.signal.throwIfAborted();
+                if (project.closing || thread.closing)
+                  throw new Error('Thread is inactive.');
+                const started = await context.terminals.start({
+                  sandbox: project.lease!.sandbox,
+                  projectId: project.project.id,
+                  threadId: thread.thread.id,
+                  origin: 'agent',
+                  input,
+                  ...(input.background
+                    ? {}
+                    : { signal: active.controller.signal }),
+                });
+                if (!input.background) return started.result;
+                void started.result
+                  .then((result) =>
+                    exclusive(project.project.id, async () => {
+                      if (project.closing || thread.closing) return;
+                      const text = `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
+                      await enqueue(
+                        project,
+                        thread,
+                        String(
+                          eventJson(text, context.generation().redactions()),
+                        ),
+                        {
+                          kind: 'terminal',
+                          terminalId: result.terminalId,
+                          promptId: active.job.id,
+                        },
+                      );
+                    }),
+                  )
+                  .catch(async () => {
+                    context.logger.error(
+                      { threadId: thread.thread.id },
+                      'Terminal result delivery failed',
+                    );
+                    await exclusive(project.project.id, () =>
+                      close(project, [thread], 'terminal_result_failed'),
+                    );
+                  });
+                return {
+                  terminalId: started.terminal.id,
+                  background: true as const,
+                };
+              },
+            },
           },
         });
         active.controller.signal.throwIfAborted();
@@ -368,6 +418,14 @@ export const createThreadRunner = (context: RuntimeContext) => {
       thread.closing = true;
       thread.active?.controller.abort();
     }
+    await context.terminals
+      .close(targets.map(({ thread }) => thread.id))
+      .catch(() => {
+        context.logger.error(
+          { projectId: project.project.id },
+          'Terminal cleanup failed',
+        );
+      });
     for (const thread of targets) {
       thread.thread = { ...thread.thread, state: 'cancelling' };
       await state(thread, 'cancelling').catch(() => {
@@ -448,6 +506,12 @@ export const createThreadRunner = (context: RuntimeContext) => {
         .then(async () => {
           // The aborted run settles here, writing its own pause before the
           // Thread is written back as ready.
+          await context.terminals.close([thread.thread.id]).catch(() => {
+            context.logger.error(
+              { threadId: thread.thread.id },
+              'Terminal cleanup failed',
+            );
+          });
           await task;
           await exclusive(project.project.id, () => state(thread, 'ready'));
         })
