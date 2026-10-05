@@ -114,6 +114,7 @@ export function WorkspaceCwd({
                     variant="ghost"
                     className="h-auto w-full justify-start gap-2 px-2 py-2"
                     aria-label="Select branch"
+                    disabled={thread.state === 'running'}
                   >
                     <GitBranchIcon data-icon="inline-start" />
                     <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
@@ -156,11 +157,7 @@ export function WorkspaceCwd({
               onClick={onShowChanges}
             >
               {totals ? (
-                totals.added === 0 && totals.removed === 0 ? (
-                  <span className="text-muted-foreground">+0 −0</span>
-                ) : (
-                  <ChangeCounts {...totals} />
-                )
+                <ChangeCounts {...totals} />
               ) : (
                 <span className="text-muted-foreground">…</span>
               )}

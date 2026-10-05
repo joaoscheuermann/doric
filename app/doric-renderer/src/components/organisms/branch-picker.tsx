@@ -42,11 +42,6 @@ export function BranchPicker({
         </div>
       ) : (
         <>
-          {query.data?.blocked && (
-            <p className="px-2 text-xs text-muted-foreground">
-              {query.data.blocked}
-            </p>
-          )}
           <Command className="p-0">
             <div className="flex items-center gap-2 border-b px-2.5 py-1.5">
               <SearchIcon
@@ -73,6 +68,7 @@ export function BranchPicker({
                       value={branch.name}
                       disabled={
                         mutation.isPending ||
+                        thread.state === 'running' ||
                         !!query.data?.blocked ||
                         (!branch.current && !!branch.worktree)
                       }

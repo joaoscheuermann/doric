@@ -115,6 +115,9 @@ versus linked worktrees, with a copy-path action and no manual CWD editing.
 The branch row opens a second lateral popover, keeping the summary open. It lists
 existing local branches with search, commit summaries and worktree occupancy in a
 shadcn Command and ScrollArea. Selection and Escape close only the branch popover.
+While the selected Thread is running, its branch trigger and any already-open
+branch choices are disabled. The picker does not render a blocking-message banner;
+the host still rejects unsafe switches.
 Conversation streaming preserves focus and selection in external controls; transcript
 updates do not restore the editor's DOM selection while a popover or another input
 owns focus.
