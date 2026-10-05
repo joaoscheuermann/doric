@@ -55,6 +55,7 @@ import {
   type LexicalEditor,
   type LexicalNode,
   RootNode,
+  SKIP_DOM_SELECTION_TAG,
 } from 'lexical';
 import { useEffect, useRef } from 'react';
 
@@ -315,6 +316,8 @@ export function InsertThreadTurnNodes({
         atBottom: scroll?.atBottom ?? true,
       });
       let plan: SyncPlan = { steps: [], removals: [], pending: false };
+      const element = editor.getRootElement();
+      const ownsFocus = element?.contains(element.ownerDocument.activeElement);
 
       editor.update(
         () => {
@@ -402,6 +405,9 @@ export function InsertThreadTurnNodes({
           if (decision === 'open') prompt.select();
         },
         {
+          // Preserve focus and search text in popovers during background streaming.
+          // Reapplying Lexical's saved selection would dismiss them via focus-outside.
+          tag: opening || ownsFocus ? undefined : SKIP_DOM_SELECTION_TAG,
           // The commit that lands after this update re-applies the caret's
           // selection and the browser scrolls it into view — back to the input
           // the reader just left — and a settled prompt can re-append the tail.

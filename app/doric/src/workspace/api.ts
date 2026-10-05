@@ -151,6 +151,16 @@ export type ProjectDiffResult =
  * directory holds, or lies in, no repository; every other field describes the
  * one it does lie in.
  */
+export type GitBranches = {
+  readonly branches: readonly {
+    readonly name: string;
+    readonly current: boolean;
+    readonly commit: string;
+    readonly subject: string;
+    readonly worktree: string;
+  }[];
+  readonly blocked?: string;
+};
 export type ThreadGit =
   | { readonly repo: false }
   | {
@@ -1105,6 +1115,25 @@ const wholeCount = (value: unknown): boolean =>
  * One Git summary, read the way the host answers it: the two shapes are exact,
  * so a field this window cannot draw never reaches a view.
  */
+const branchesFrom = (value: unknown): GitBranches => {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.branches) ||
+    (value.blocked !== undefined && typeof value.blocked !== 'string') ||
+    !value.branches.every(
+      (branch: unknown) =>
+        isRecord(branch) &&
+        typeof branch.name === 'string' &&
+        typeof branch.current === 'boolean' &&
+        typeof branch.commit === 'string' &&
+        typeof branch.subject === 'string' &&
+        typeof branch.worktree === 'string',
+    )
+  )
+    return invalidResponse();
+  return value as GitBranches;
+};
+
 const threadGitFrom = (value: unknown): ThreadGit => {
   if (!isRecord(value)) return invalidResponse();
   if (value.repo === false) return { repo: false };
@@ -1504,6 +1533,15 @@ export const workspaceApi = {
     /** The Git summary of the Thread's working directory, probed on the host. */
     git: async (threadId: string) =>
       threadGitFrom(await request<unknown>(`/threads/${id(threadId)}/git`)),
+    branches: async (threadId: string) =>
+      branchesFrom(await request<unknown>(`/threads/${id(threadId)}/branches`)),
+    switchBranch: async (threadId: string, branch: string, cwd: string) =>
+      branchesFrom(
+        await request<unknown>(`/threads/${id(threadId)}/branches`, {
+          method: 'POST',
+          body: body({ branch, cwd }),
+        }),
+      ),
     prompt: async (threadId: string, prompt: string) =>
       promptReceiptFrom(
         await request<unknown>(`/threads/${id(threadId)}/prompt`, {

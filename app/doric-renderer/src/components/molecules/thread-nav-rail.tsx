@@ -12,11 +12,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import { READER_NAME } from '@/domain/conversation-authors';
 import type { Turn } from '@/domain/projector';
 import { useThreadNav } from '@/hooks/use-thread-nav';
 import { cn } from '@/utility/utils';
 import type { RefObject } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { ReaderAvatar } from './reader-avatar';
 
 /** How long a hover's popover stays open once the pointer has left its handle. */
 const CLOSE_DELAY = 10;
@@ -28,6 +32,7 @@ function RailHandle({
   id,
   label,
   open,
+  showAuthor = true,
   text,
   onClick,
 }: {
@@ -41,6 +46,8 @@ function RailHandle({
   readonly label: string;
   /** The handle's popover is open. */
   readonly open: boolean;
+  /** Whether the preview includes the prompt's author footer. */
+  readonly showAuthor?: boolean;
   /** The popover's content; a handle with no words shows no popover. */
   readonly text: string;
   readonly onClick: () => void;
@@ -86,13 +93,24 @@ function RailHandle({
       <PopoverContent
         align="center"
         side="left"
-        className="w-64 duration-0"
+        className="w-96 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 font-conversation text-foreground ring-0 duration-0"
         onCloseAutoFocus={(event) => event.preventDefault()}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <span className="line-clamp-3 whitespace-pre-wrap wrap-break-word">
-          {text}
-        </span>
+        <div className="p-4">
+          <span className="line-clamp-3 whitespace-pre-wrap wrap-break-word">
+            {text}
+          </span>
+        </div>
+        {showAuthor && (
+          <>
+            <Separator />
+            <footer className="flex items-center gap-1.5 bg-sidebar px-4 py-3 text-xs text-muted-foreground">
+              <ReaderAvatar name={READER_NAME} />
+              <span className="truncate">{READER_NAME}</span>
+            </footer>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -151,6 +169,7 @@ export function ThreadNavRail({
         id="prompt-input"
         label="Prompt input"
         open={open === 'prompt-input'}
+        showAuthor={false}
         text="Prompt input"
         onClick={nav.jumpToInput}
       />

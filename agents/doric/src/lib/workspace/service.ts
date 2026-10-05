@@ -14,6 +14,7 @@ import { providerCredentials } from '../config/schema.js';
 import type { ConfigService } from '../config/service.js';
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
+import { readBranches, switchBranch } from './branches.js';
 import { randomProjectColor } from './colors.js';
 import { workingDirectoriesInside } from './cwd.js';
 import { readProjectChanges, readProjectFileDiff } from './file-changes.js';
@@ -23,6 +24,7 @@ import {
   type GitCredentials,
   sameGitCredentials,
 } from './git.js';
+import { threadGit } from './git-status.js';
 import {
   hostOwesRun,
   type PromptProgress,
@@ -818,6 +820,69 @@ export const createWorkspaceService = ({
         if (project === undefined || thread === undefined)
           return { status: 'inactive' };
         return runner.setCwd(project, thread, cwd);
+      },
+      branches: async (id, branch, cwd) => {
+        const record = await threads.record(id);
+        if (!record) return { status: 'missing' };
+        return exclusive(record.projectId, async () => {
+          const project = runtimes.get(record.projectId);
+          const thread = project?.threads.get(id);
+          const sandbox = project?.lease?.sandbox;
+          if (
+            !project ||
+            project.closing ||
+            !thread ||
+            thread.closing ||
+            !sandbox
+          )
+            return { status: 'inactive' as const };
+          // Holding the project mutation queue prevents a new prompt from racing the switch.
+          if (
+            branch !== undefined &&
+            cwd !== undefined &&
+            cwd !== thread.thread.cwd
+          )
+            return {
+              status: 'refused' as const,
+              message:
+                'The working directory changed. Reopen the branch picker and try again.',
+            };
+          const git = await threadGit(sandbox, thread.thread.cwd);
+          const paths = [
+            ...[...project.threads.values()]
+              .filter(
+                (item) => item.active !== undefined || item.jobs.length > 0,
+              )
+              .map((item) => item.thread.cwd),
+            ...terminals
+              .list(record.projectId)
+              .filter(
+                (item) =>
+                  item.state !== 'exited' &&
+                  (item.origin === 'agent' || item.command !== 'bash'),
+              )
+              .map((item) => item.cwd),
+          ];
+          const active = await Promise.all(
+            [...new Set(paths)].map((cwd) => threadGit(sandbox, cwd)),
+          );
+          const busy =
+            git.repo &&
+            active.some((item) => item.repo && item.root === git.root);
+          const blocked = busy
+            ? 'Wait for active prompts and terminal commands in this worktree to finish before switching branches.'
+            : undefined;
+          if (branch !== undefined) {
+            if (blocked)
+              return { status: 'refused' as const, message: blocked };
+            return switchBranch(sandbox, thread.thread.cwd, branch);
+          }
+          const value = await readBranches(sandbox, thread.thread.cwd);
+          return {
+            status: 'ready' as const,
+            value: { ...value, blocked: blocked ?? value.blocked },
+          };
+        });
       },
       git: async (id) => {
         const record = await threads.record(id);

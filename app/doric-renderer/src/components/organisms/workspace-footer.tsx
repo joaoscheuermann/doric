@@ -1,13 +1,18 @@
 import { ComposerButton } from '@/components/molecules/composer-button';
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
 import { ExecutionPicker } from '@/components/organisms/execution-picker';
+import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import { Button } from '@/components/ui/button';
 import { connectionLabel } from '@/domain/connection';
+import type { Thread } from '@/domain/workspace';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
-import { SettingsIcon, TerminalIcon } from 'lucide-react';
+import type { ProjectFiles } from '@/hooks/use-project-files';
+import { SettingsIcon } from 'lucide-react';
 
 type WorkspaceFooterProps = {
-  readonly onNewTerminal?: () => void;
+  readonly thread?: Thread;
+  readonly files: ProjectFiles;
+  readonly onShowChanges: () => void;
   /** Whether a prompt is running on the selected Thread. */
   readonly running: boolean;
   /** Whether the prompt holds anything to send. */
@@ -18,11 +23,13 @@ type WorkspaceFooterProps = {
   readonly onStop: () => void;
 };
 
-/** The conversation footer: terminal creation, execution settings, and send/stop. */
+/** The conversation footer: working context, changes, execution settings and send/stop. */
 export function WorkspaceFooter({
   canSend,
   disabled,
-  onNewTerminal,
+  thread,
+  files,
+  onShowChanges,
   onSend,
   onStop,
   running,
@@ -32,16 +39,13 @@ export function WorkspaceFooter({
       data-slot="workspace-footer"
       className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-xs"
     >
-      <div className="mr-auto flex min-w-0 items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="New terminal"
-          disabled={!onNewTerminal}
-          onClick={onNewTerminal}
-        >
-          <TerminalIcon />
-        </Button>
+      <div className="mr-auto flex min-w-0 flex-1 items-center gap-1">
+        <WorkspaceCwd
+          key={thread?.id}
+          thread={thread}
+          changes={files.changes}
+          onShowChanges={onShowChanges}
+        />
       </div>
       <ExecutionPicker />
       <ToolbarDivider />

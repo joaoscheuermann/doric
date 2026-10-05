@@ -105,9 +105,26 @@ and disappears when the sidebar closes; it draws no grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to, whether it thinks, and how hard — beside the
-settings trigger. The right-hand panel footer names the selected Thread's working
-directory with the host's Git line beside that path: the branch, its ahead/behind
-counts, whether the worktree is dirty, and any Git operation in progress. The header
+settings trigger. The conversation footer combines the selected Thread's working
+directory and branch in one popover trigger, without a Git icon. An adjacent
+added/removed line-count button opens the right panel's Changes tab for the current
+directory; counts share its lightweight status query even while the panel is closed.
+The footer shows the full CWD, a middle dot and the branch, truncating the path
+when needed. Its compact popover identifies the current worktree root and main
+versus linked worktrees, with a copy-path action and no manual CWD editing.
+The branch row opens a second lateral popover, keeping the summary open. It lists
+existing local branches with search, commit summaries and worktree occupancy in a
+shadcn Command and ScrollArea. Selection and Escape close only the branch popover.
+Conversation streaming preserves focus and selection in external controls; transcript
+updates do not restore the editor's DOM selection while a popover or another input
+owns focus.
+The host lists and switches branches through semantic Thread REST and IPC operations.
+Switching never forces checkout, stashes, creates a branch or fetches remotes; occupied
+branches, conflicts and in-progress Git operations are refused. Active prompts or
+terminal commands in the same worktree block switching under the Project mutation
+queue. A successful switch revalidates Git summaries, files and comparisons together;
+failures use toasts. The popover retains ahead/behind, dirty and operation details.
+The header
 names the selected Thread as a breadcrumb of its
 Project and the chain of Threads above it, and every part but the last selects
 what it names.
@@ -133,8 +150,7 @@ without sending file contents or patches to the renderer.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-panel's header, in place of a title, and its footer carries the editable working
-directory and Git status, without a manual refresh button.
+panel's header, in place of a title. The panel has no footer or manual refresh button.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
@@ -210,7 +226,7 @@ from keyboard input.
 The left sidebar lists terminals below their owning Thread. Agent rows show
 `command · elapsed (timeout)`; manual rows show the current command or shell
 name when idle. Agent terminals open as tabs beside files. The shell icon in
-the left of the conversation footer creates a manual shell in the selected Thread's
+right of the conversation header creates a manual shell in the selected Thread's
 working directory and opens a vertically resizable section below its
 conversation. This section shows tabs for the manual terminals opened in that
 Thread and preserves their emulators while switching tabs. Closing a tab or

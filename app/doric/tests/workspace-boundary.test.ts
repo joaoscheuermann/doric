@@ -43,6 +43,46 @@ describe('workspace IPC origin', () => {
   });
 });
 
+test('validates branch metadata and sends the selected directory with a branch switch', async () => {
+  const original = globalThis.fetch;
+  const branches = {
+    branches: [
+      {
+        name: 'main',
+        current: true,
+        commit: 'abc123',
+        subject: 'Initial',
+        worktree: '/workspace',
+      },
+    ],
+  };
+  const requests: RequestInit[] = [];
+  globalThis.fetch = async (_input, init) => {
+    requests.push(init ?? {});
+    return Response.json(branches);
+  };
+  try {
+    assert.deepEqual(
+      await workspaceApi.threads.branches('thread-id'),
+      branches,
+    );
+    await workspaceApi.threads.switchBranch('thread-id', 'main', '/workspace');
+    assert.deepEqual(JSON.parse(String(requests[1].body)), {
+      branch: 'main',
+      cwd: '/workspace',
+    });
+    assert.equal(requests[1].method, 'POST');
+    globalThis.fetch = async () =>
+      Response.json({ branches: [{ name: 'main' }] });
+    await assert.rejects(
+      workspaceApi.threads.branches('thread-id'),
+      WorkspaceError,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 describe('workspace IPC validation', () => {
   test('accepts a trimmed name containing 80 Unicode code points', () => {
     assert.equal(name(`  ${'😀'.repeat(80)}  `), '😀'.repeat(80));

@@ -246,6 +246,61 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
     }
     response.json(result.git);
   });
+  router
+    .route('/:id/branches')
+    .get(async (request, response) => {
+      response.set('Cache-Control', 'no-store');
+      const result = await service.threads.branches(request.params.id);
+      if (result.status === 'missing') {
+        missing(response, 'thread');
+        return;
+      }
+      if (result.status !== 'ready') {
+        conflict(response, 'thread', 'inactive');
+        return;
+      }
+      response.json(result.value);
+    })
+    .post(async (request, response) => {
+      const input = z
+        .object({
+          branch: z
+            .string()
+            .min(1)
+            .max(1024)
+            .refine((value) => !value.includes('\0') && !value.startsWith('-')),
+          cwd: cwdInput,
+        })
+        .strict()
+        .safeParse(request.body);
+      if (!input.success) {
+        sendError(
+          response,
+          422,
+          'invalid_branch',
+          'An existing local branch name is required.',
+        );
+        return;
+      }
+      const result = await service.threads.branches(
+        request.params.id,
+        input.data.branch,
+        input.data.cwd,
+      );
+      if (result.status === 'missing') {
+        missing(response, 'thread');
+        return;
+      }
+      if (result.status === 'refused') {
+        sendError(response, 409, 'branch_refused', result.message);
+        return;
+      }
+      if (result.status !== 'ready') {
+        conflict(response, 'thread', 'inactive');
+        return;
+      }
+      response.json(result.value);
+    });
   router.post('/:id/interrupt', async (request, response) => {
     const input = interruptInput.safeParse(request.body);
     if (!input.success) {

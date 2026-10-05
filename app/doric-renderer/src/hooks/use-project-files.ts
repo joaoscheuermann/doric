@@ -22,6 +22,7 @@ import { useStore } from 'zustand/react';
 export type { ReadState };
 
 export type ProjectFilesOptions = {
+  readonly treeEnabled?: boolean;
   /** The selected Project; the surface is empty without one. */
   readonly projectId?: string;
   /**
@@ -83,6 +84,7 @@ export type ProjectFiles = {
 export const useProjectFiles = ({
   projectId,
   cwd,
+  treeEnabled = true,
 }: ProjectFilesOptions): ProjectFiles => {
   const queryClient = useQueryClient();
   const root = cwd === undefined ? ROOT_PATH : workspacePath(cwd);
@@ -101,7 +103,7 @@ export const useProjectFiles = ({
   const tree = useQuery({
     queryKey: queryKeys.files.tree(projectId, cwd),
     queryFn: () => window.doric.projects.tree(projectId as string, root),
-    enabled: projectId !== undefined,
+    enabled: projectId !== undefined && treeEnabled,
     ...sandboxReadRetry,
     refetchInterval: (query) =>
       query.state.status === 'error'

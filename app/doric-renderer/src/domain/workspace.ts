@@ -249,6 +249,12 @@ export type WorkspaceApi = {
      * its popover state about it.
      */
     git(id: string): Promise<ThreadGit>;
+    branches(id: string): Promise<import('./thread-git').GitBranches>;
+    switchBranch(
+      id: string,
+      branch: string,
+      cwd: string,
+    ): Promise<import('./thread-git').GitBranches>;
     /**
      * Moves a Thread's working directory, returning the Thread as the host
      * stored it. A path the host refuses is a rejection carrying the reason.

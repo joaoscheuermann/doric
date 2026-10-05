@@ -444,6 +444,11 @@ export interface WorkspaceService {
     setCwd(id: string, cwd: string): Promise<CwdResult>;
     /** The Git summary of the Thread's working directory, probed on demand. */
     git(id: string): Promise<ThreadGitResult>;
+    branches(
+      id: string,
+      branch?: string,
+      cwd?: string,
+    ): Promise<import('./branches.js').BranchResult>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
     /**
      * Takes up one prompt an interruption left unfinished, bringing the

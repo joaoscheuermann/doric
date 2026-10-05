@@ -4,9 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
 import type { Project, Thread } from '@/domain/workspace';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react';
+import {
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  TerminalIcon,
+} from 'lucide-react';
 
 type WorkspaceHeaderProps = {
+  readonly onNewTerminal?: () => void;
   /** Whether the Project's sandbox panel is open. */
   readonly filesOpen?: boolean;
   readonly onSelectProject: (project: Project) => void;
@@ -63,6 +68,7 @@ export function WorkspaceHeader({
   onToggleFiles,
   path,
   project,
+  onNewTerminal,
 }: WorkspaceHeaderProps) {
   const { open } = useSidebar();
 
@@ -85,6 +91,17 @@ export function WorkspaceHeader({
           project={project}
         />
       </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="mr-2 shrink-0 [app-region:no-drag]"
+        aria-label="New terminal"
+        title="Open terminal"
+        disabled={!onNewTerminal}
+        onClick={onNewTerminal}
+      >
+        <TerminalIcon />
+      </Button>
       {!filesOpen && onToggleFiles !== undefined && (
         <div className="flex h-full shrink-0 items-center pr-2">
           <FilesToggle onToggle={onToggleFiles} />

@@ -10,6 +10,16 @@ export type GitOperation =
   | 'revert'
   | 'bisect';
 
+export type GitBranches = {
+  readonly branches: readonly {
+    readonly name: string;
+    readonly current: boolean;
+    readonly commit: string;
+    readonly subject: string;
+    readonly worktree: string;
+  }[];
+  readonly blocked?: string;
+};
 export type ThreadGit =
   | { readonly repo: false }
   | {
@@ -102,6 +112,12 @@ export const gitLine = (git: ThreadGit): string => {
     .filter((segment): segment is string => segment !== undefined)
     .join(' · ');
 };
+
+/** Status beneath the branch picker, without repeating the branch name. */
+export const gitStatusLine = (git: Repository): string =>
+  [tracking(git), dirty(git), conflict(git), operation(git)]
+    .filter((value): value is string => value !== undefined)
+    .join(' · ') || 'Working tree clean';
 
 /**
  * The glyph a git line leads with: the repository's, whenever the summary says

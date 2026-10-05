@@ -58,6 +58,7 @@ export function App() {
   const { actions } = workspace;
   // The sandbox panel starts open and keeps the reader's choice.
   const [filesOpen, setFilesOpen] = useState(true);
+  const [filesView, setFilesView] = useState<'files' | 'changes'>('files');
   // What the conversation's composer offers the footer, and how the two talk.
   const { promptSignal, sendRequest, canSend, send } = useComposer();
   const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
@@ -107,7 +108,10 @@ export function App() {
     thread: selectedThread,
     threads: workspace.threadsByProject[selectedProject?.id ?? ''] ?? [],
     terminals: terminals.items,
-    visible: filesOpen || tabs.items.some((tab) => tab.kind !== 'terminal'),
+    visible:
+      filesOpen ||
+      selectedThread !== undefined ||
+      tabs.items.some((tab) => tab.kind !== 'terminal'),
   });
   const selectedThreadPath =
     selectedThread === undefined
@@ -116,10 +120,10 @@ export function App() {
           workspace.threadsByProject[selectedThread.projectId] ?? [],
           selectedThread.id,
         );
-  // The sandbox and the file viewer show the same read: a closed panel reads
-  // nothing, and the file viewer is drawn from the one file this holds.
+  // Git totals remain visible in the footer; only the tree pauses with the panel.
   const files = useProjectFiles({
-    projectId: filesOpen ? selectedProject?.id : undefined,
+    projectId: selectedProject?.id,
+    treeEnabled: filesOpen,
     cwd: selectedThread?.cwd,
   });
   const tabActions = workspaceTabsStore.getState();
@@ -186,7 +190,8 @@ export function App() {
               }
               onToggle={toggleFiles}
               project={selectedProject}
-              thread={selectedThread}
+              view={filesView}
+              onViewChange={setFilesView}
             />
           }
           filesOpen={filesOpen}
@@ -201,11 +206,12 @@ export function App() {
           }
           footer={
             <WorkspaceFooter
-              onNewTerminal={
-                selectedThread
-                  ? () => void terminals.create(selectedThread.id)
-                  : undefined
-              }
+              thread={selectedThread}
+              files={files}
+              onShowChanges={() => {
+                setFilesView('changes');
+                setFilesOpen(true);
+              }}
               canSend={canSend}
               disabled={selectedThread === undefined}
               onSend={send}
@@ -215,6 +221,11 @@ export function App() {
           }
           header={
             <WorkspaceHeader
+              onNewTerminal={
+                selectedThread
+                  ? () => void terminals.create(selectedThread.id)
+                  : undefined
+              }
               filesOpen={filesOpen}
               onSelectProject={actions.selectProject}
               onSelectThread={actions.selectThread}

@@ -97,6 +97,43 @@ const sandboxWithAlpha = (git: FakeGitProbe = {}) =>
     repositories: [{ path: 'alpha', git: { status: clean, ...git } }],
   });
 
+void test('refuses branch switching while a prompt is running in the same worktree', async () => {
+  const running = deferred<string>();
+  const { harness, service } = serviceAt(
+    sandboxWithAlpha(),
+    () => running.promise,
+  );
+  try {
+    const project = await service.projects.create('Project');
+    await harness.projectState(project.id, 'ready');
+    const thread = await createThread(service, project.id);
+    await service.threads.setCwd(thread.id, '/workspace/alpha');
+    await service.threads.prompt(thread.id, 'Work');
+    await harness.threadState(thread.id, 'running');
+    const result = await service.threads.branches(thread.id, 'feature');
+    assert.equal(result.status, 'refused');
+  } finally {
+    running.resolve('done');
+    await service.dispose();
+  }
+});
+
+void test('refuses a stale branch selection after the working directory changes', async () => {
+  const { harness, service } = serviceAt(sandboxWithAlpha());
+  try {
+    const project = await service.projects.create('Project');
+    await harness.projectState(project.id, 'ready');
+    const thread = await createThread(service, project.id);
+    await service.threads.setCwd(thread.id, '/workspace/alpha');
+    assert.equal(
+      (await service.threads.branches(thread.id, 'main', '/workspace')).status,
+      'refused',
+    );
+  } finally {
+    await service.dispose();
+  }
+});
+
 void test('refuses a directory that reads as inside the root but resolves outside it', async () => {
   // A symbolic link in the workspace pointing out of it: its lexical path is
   // inside the root, its physical one is not, and only the sandbox can see that.

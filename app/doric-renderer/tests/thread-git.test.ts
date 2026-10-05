@@ -9,6 +9,7 @@ import {
   gitBadgeKind,
   gitDetails,
   gitLine,
+  gitStatusLine,
   type Repository,
   type ThreadGit,
 } from '../src/domain/thread-git';
@@ -35,6 +36,11 @@ const repository = (overrides: RepositoryOverrides = {}): ThreadGit => ({
 });
 
 describe('git line', () => {
+  test('summarizes a clean worktree without repeating its branch', () => {
+    const git = repository();
+    assert.ok(git.repo);
+    assert.equal(gitStatusLine(git), 'Working tree clean');
+  });
   test('names a clean branch by its name alone', () => {
     assert.equal(gitLine(repository()), 'main');
   });

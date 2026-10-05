@@ -8,7 +8,6 @@ import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { TreeSkeleton } from '@/components/molecules/tree-skeleton';
-import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import {
   Empty,
   EmptyDescription,
@@ -32,7 +31,7 @@ import {
   changedRepositories,
 } from '@/domain/change-tree';
 import { emptyDirectoryNotice, sandboxNotice } from '@/domain/files';
-import type { Project, ProjectChange, Thread } from '@/domain/workspace';
+import type { Project, ProjectChange } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import { moveItem } from '@/utility/move-item';
 import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
@@ -48,13 +47,14 @@ type ProjectFilesSidebarProps = {
   readonly onToggle: () => void;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
-  readonly thread?: Thread;
+  readonly view: PanelView;
+  readonly onViewChange: (view: PanelView) => void;
   readonly onOpenChange: (repository: string, change: ProjectChange) => void;
   readonly selectedChangePath?: string;
 };
 
 /** The two things the panel can show. */
-type PanelView = 'files' | 'changes';
+export type PanelView = 'files' | 'changes';
 
 /**
  * The sandbox, as a right-hand panel beside the conversation, rooted at the
@@ -74,11 +74,11 @@ export function ProjectFilesSidebar({
   files,
   onToggle,
   project,
-  thread,
+  view,
+  onViewChange,
   onOpenChange,
   selectedChangePath,
 }: ProjectFilesSidebarProps) {
-  const [view, setView] = useState<PanelView>('files');
   const [order, setOrder] = useState<readonly string[]>(['files', 'changes']);
 
   return (
@@ -89,7 +89,7 @@ export function ProjectFilesSidebar({
             className="min-w-0 [app-region:no-drag]"
             value={view}
             onValueChange={(next) =>
-              setView(next === 'changes' ? 'changes' : 'files')
+              onViewChange(next === 'changes' ? 'changes' : 'files')
             }
           >
             <TabStrip
@@ -143,7 +143,6 @@ export function ProjectFilesSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <FilesFooter thread={thread} />
     </Sidebar>
   );
 }
@@ -210,18 +209,6 @@ function SandboxGate({
   }
 
   return children;
-}
-
-/** The selected Thread's working directory and Git status. */
-function FilesFooter({ thread }: { readonly thread?: Thread }) {
-  return (
-    <footer
-      data-slot="project-files-footer"
-      className="flex chrome-bar shrink-0 items-center gap-2 border-t px-3"
-    >
-      <WorkspaceCwd thread={thread} />
-    </footer>
-  );
 }
 
 /**

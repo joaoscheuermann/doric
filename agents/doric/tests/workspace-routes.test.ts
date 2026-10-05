@@ -484,6 +484,40 @@ void test('serves a Thread Git summary and reports a missing or inactive Thread'
   assert.equal((await host.request(`/threads/${promptId}/git`)).status, 409);
 });
 
+void test('lists branches and reports switch refusals without accepting command options', async (t) => {
+  const host = await serve({
+    threads: {
+      branches: async (_id, branch) =>
+        branch === undefined
+          ? { status: 'ready', value: { branches: [] } }
+          : { status: 'refused', message: 'Worktree is busy.' },
+    },
+  });
+  t.after(host.close);
+  assert.equal(
+    (await host.request(`/threads/${threadId}/branches`)).status,
+    200,
+  );
+  const refused = await host.request(`/threads/${threadId}/branches`, 'POST', {
+    branch: 'main',
+    cwd: '/workspace',
+  });
+  assert.equal(refused.status, 409);
+  const body = (await refused.json()) as { error: { code: string } };
+  assert.equal(body.error.code, 'branch_refused');
+  for (const branch of ['', '--discard-changes', 'bad\0name']) {
+    assert.equal(
+      (
+        await host.request(`/threads/${threadId}/branches`, 'POST', {
+          branch,
+          cwd: '/workspace',
+        })
+      ).status,
+      422,
+    );
+  }
+});
+
 void test('rejects invalid project and thread IDs before handling resource operations', async (t) => {
   const host = await serve();
   t.after(host.close);
@@ -731,6 +765,7 @@ const serve = async (
           ? { status: 'ready', git: { repo: false } }
           : { status: 'missing' },
       prompt: async () => ({ status: 'accepted', promptId }),
+      branches: async () => ({ status: 'ready', value: { branches: [] } }),
       resume: async (id, target) =>
         id === threadId && target === promptId
           ? { status: 'resumed', thread }

@@ -45,6 +45,16 @@ type GitOperation = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
  * directory holds, or lies in, no repository; every other field describes the
  * one it does lie in.
  */
+export type GitBranches = {
+  readonly branches: readonly {
+    readonly name: string;
+    readonly current: boolean;
+    readonly commit: string;
+    readonly subject: string;
+    readonly worktree: string;
+  }[];
+  readonly blocked?: string;
+};
 type ThreadGit =
   | { readonly repo: false }
   | {
@@ -485,6 +495,9 @@ contextBridge.exposeInMainWorld('doric', {
       invoke<Thread>('doric:threads:set-cwd', id, cwd),
     /** The Git summary of the Thread's working directory, probed on the host. */
     git: (id: string) => invoke<ThreadGit>('doric:threads:git', id),
+    branches: (id: string) => invoke<GitBranches>('doric:threads:branches', id),
+    switchBranch: (id: string, branch: string, cwd: string) =>
+      invoke<GitBranches>('doric:threads:switch-branch', id, branch, cwd),
     prompt: (id: string, prompt: string) =>
       invoke<{ readonly promptId: string }>('doric:threads:prompt', id, prompt),
     /**

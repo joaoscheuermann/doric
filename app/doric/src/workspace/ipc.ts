@@ -233,6 +233,30 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:branches',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.threads.branches(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:switch-branch',
+    safe(allowedUrls, (value: unknown, branch: unknown, cwd: unknown) => {
+      if (
+        typeof branch !== 'string' ||
+        !branch ||
+        branch.length > 1024 ||
+        branch.includes('\0') ||
+        branch.startsWith('-')
+      )
+        throw new WorkspaceError('Invalid branch name.');
+      return workspaceApi.threads.switchBranch(
+        identifier(value),
+        branch,
+        workingDirectory(cwd),
+      );
+    }),
+  );
+  ipcMain.handle(
     'doric:threads:prompt',
     safe(allowedUrls, (value: unknown, nextPrompt: unknown) =>
       workspaceApi.threads.prompt(identifier(value), prompt(nextPrompt)),
