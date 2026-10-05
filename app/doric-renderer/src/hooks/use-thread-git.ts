@@ -3,7 +3,7 @@
  * refreshes it with the file reads; the cwd key isolates directory changes.
  */
 
-import { sandboxReadRetry } from '@/domain/sandbox-reads';
+import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import type { ThreadGit } from '@/domain/thread-git';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
@@ -30,6 +30,13 @@ export const useThreadGit = (thread: Thread | undefined): ThreadGitState => {
     queryFn: () => window.doric.threads.git(id as string),
     enabled: id !== undefined,
     meta: { projectId: thread?.projectId },
+    refetchInterval: (query) =>
+      pendingReadInterval(
+        query.state.data?.repo === false &&
+          query.state.data.status !== undefined
+          ? { status: query.state.data.status }
+          : undefined,
+      ),
     ...sandboxReadRetry,
   });
 

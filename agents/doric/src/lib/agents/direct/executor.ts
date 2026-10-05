@@ -174,7 +174,12 @@ export const runDirectPrompt: ThreadExecution = async ({
         const stored = await store.appendEvent(
           thread.id,
           job.id,
-          eventJson(value, generation.redactions()),
+          eventJson(
+            value.type === 'response.started'
+              ? { ...value, providerId: execution.providerId }
+              : value,
+            generation.redactions(),
+          ),
         );
         publisher.event(stored);
       } catch (cause) {

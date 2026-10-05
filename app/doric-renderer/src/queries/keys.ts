@@ -26,6 +26,7 @@ export const queryKeys = {
   threads: (projectId: string) => ['threads', projectId],
   /** One Thread record, read to validate a restored selection. */
   thread: (threadId: string) => ['thread', threadId],
+  threadUsage: (threadId: string | undefined) => ['thread', threadId, 'usage'],
   /** One Thread's git summary, read for the footer's line and popover. */
   threadGit: (threadId: string | undefined, cwd?: string) =>
     cwd === undefined

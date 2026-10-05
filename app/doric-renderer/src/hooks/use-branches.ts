@@ -1,3 +1,4 @@
+import { pendingReadInterval } from '@/domain/sandbox-reads';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { refreshProject } from '@/queries/project-refresh';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +13,12 @@ export function useBranches(thread: Thread) {
     queryFn: () => window.doric.threads.branches(thread.id),
     meta: { projectId: thread.projectId },
     retry: false,
+    refetchInterval: (query) =>
+      pendingReadInterval(
+        query.state.data?.status === undefined
+          ? undefined
+          : { status: query.state.data.status },
+      ),
   });
   const mutation = useMutation({
     mutationFn: (branch: string) =>

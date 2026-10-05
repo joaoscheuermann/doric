@@ -51,6 +51,31 @@ reusable agent loop remains in `packages/agent`.
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
 main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
+The conversation footer shows OpenRouter unified context usage without a text
+prefix or progress bar and an approximate dollar total. Vertical dividers separate
+the execution picker, context text and cost. Context uses the selected Thread's last
+reported input count and the capacity advertised by that call's model catalog;
+an absent capacity or measurement stays unknown. Unified response-start events
+carry the optional catalog capacity. Costs sum reported account charges across
+the selected Thread and all existing descendants, including unopened Threads.
+Clicking the total shows each Thread's own charges and token counts. Missing
+costs make the aggregate explicitly partial; zero-cost calls remain free, and
+cached/reasoning tokens are details, never added again to input/output totals.
+The host's `GET /threads/:id/usage` reads this aggregate through semantic Electron
+IPC. The visible footer refreshes it every three seconds and on window focus.
+Thread JSONB usage snapshots are updated atomically with response events, replacing
+repeated usage snapshots within a call. These cumulative charges survive rewind;
+context is reconstructed from the surviving events. Old Threads lazily derive
+their totals from retained events until the next response event materializes them.
+When old measurements lack capacity, the usage read fills it from the current
+unified catalog for the measured model, marking that source in the tooltip.
+New measurements retain the configured provider id; legacy measurements resolve
+only when exactly one unified provider lists that model. Recorded capacities
+remain authoritative. The unified provider shares its model catalog between
+model listing, validation and execution: 15-minute freshness, one concurrent
+refresh, a 5-second request timeout, stale fallback and 30-second failure backoff.
+Deleting a Thread deletes its accounting along with it. Costs not returned by an
+interrupted provider call remain unknown; the host makes no generation audit call.
 The main process alone communicates with Doric HTTP and Socket.IO at
 `127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
 operations, one event subscription per watched Thread, one selected-Project tree
@@ -166,9 +191,9 @@ without sending file contents or patches to the renderer.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-panel's header, in place of a title. The panel's footer shares the conversation
-footer's height and working-directory, branch and changes controls for the selected
-Thread. The panel has no manual refresh button.
+panel's header, in place of a title. The panel's footer is empty and shares the
+conversation footer's height. Working-directory, branch and changes controls
+appear only in the conversation footer. The panel has no manual refresh button.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
@@ -337,8 +362,8 @@ within each Thread remains serial. Threads share their Project's sandbox;
 each Thread's working directory starts at the sandbox's workspace root
 `/workspace` and is inherited by a child Thread at creation. The agent moves it
 with the `cwd` tool, and a reader moves the same Thread's with
-`PATCH /threads/:id` or the field the right-hand panel footer opens; both reach one
-rule, which refuses any path that resolves outside the workspace root. The
+`PATCH /threads/:id`; both reach one rule, which refuses any path that resolves
+outside the workspace root. The
 existing sandbox-pool capacity governs Projects, not Threads.
 
 The migration replaces the Session-facing APIs and clients without legacy
@@ -1134,16 +1159,19 @@ and each FIFO input transitions `ready -> running -> ready`. Project and Thread
 termination use `cancelling -> cancelled`; acquisition or reconciliation
 failures use `failed`. A host stop is not a termination: it releases the lease and
 writes the Project back as `queued` with its non-terminal Threads `ready`, pausing
-the prompt that was running so the next boot takes it up again, so the next prompt
-reacquires a sandbox for that Project — the same durable workspace on the Docker
-provider — and runs. A reader's own stop pauses the same way, and only the reader
+the prompt that was running so the next boot takes it up again. Every boot
+reconstructs all nonterminal Projects and schedules their sandbox acquisition —
+the same durable workspace identity on Docker. Projects with owed prompts queue
+first, followed by idle Projects in creation/id descending order. Acquisition
+runs in the background within the pool's capacity; listener readiness never waits
+for a lease. Repeated recovery and concurrent prompts share one Project runtime
+and acquisition. Completed prompts are not rerun. A reader's own stop pauses the same way, and only the reader
 takes that prompt up again; terminating a Project or Thread is the terminal act,
 not stopping one. Reading a Project that holds no lease still answers
-`pending`/`unavailable` and never acquires — except for a Project that holds an
-unfinished prompt whose interruption came from the host: the boot resumes it
-itself, because work the reader asked for and that the host interrupted is work
-the host owes them, and only such a Project pays for a sandbox before anyone
-asks. Termination needs no live runtime: a
+`pending`/`unavailable` and never acquires. Thread Git and branch reads also return
+these as successful read states, so the app shows environment preparation and
+polls pending reads without operation-error toasts. Mutations still require a
+live lease. Terminal Projects remain terminal. Termination needs no live runtime: a
 Thread whose Project holds no lease still takes itself and its subtree through
 `cancelling -> cancelled` durably, so a reader can terminate and delete a resumed
 Thread without prompting it first. A fresh Agent per prompt
@@ -1190,9 +1218,16 @@ a reader-paused prompt up again offered on that row. These use separator markers
 with 12-pixel text, no pause/play icons and space above and below. The resume
 action is a compact RotateCcw-icon button with an accessible name. The transcript caret skips
 them in both directions; the resume button retains normal click and Tab access.
-Consecutive pause and resume events for the same prompt share one marker naming
-the resumed attempt, with the previous pause reason in its tooltip. Their durable
-events remain intact. A newer user prompt accepted in the same Thread supersedes
+Recovery (`prompt.resumed`) alone does not render a resume marker: the projector
+waits for the next `agent.started` for that prompt and only shows a marker when
+an earlier execution of the same prompt had started. A recovered input that had
+never executed begins normally, without a resume marker. A recovered pause loses
+its manual resume action while queued. When no visible turn intervenes, its next
+execution replaces the pause marker with the resumed attempt and preserves the
+pause reason in the tooltip; otherwise the resume marker appears at the actual
+start. Live batches and replay apply the same rule, and rewind reconstructs this
+state from surviving events. Durable events and the host's attempt budget remain
+unchanged. A newer user prompt accepted in the same Thread supersedes
 older paused prompts: their resume action disappears, the host rejects manual
 resume, and boot recovery never schedules them again. Delegated inputs do not
 supersede a pause.

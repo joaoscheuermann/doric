@@ -11,6 +11,7 @@ export type GitOperation =
   | 'bisect';
 
 export type GitBranches = {
+  readonly status?: 'pending' | 'unavailable';
   readonly branches: readonly {
     readonly name: string;
     readonly current: boolean;
@@ -21,7 +22,7 @@ export type GitBranches = {
   readonly blocked?: string;
 };
 export type ThreadGit =
-  | { readonly repo: false }
+  | { readonly repo: false; readonly status?: 'pending' | 'unavailable' }
   | {
       readonly repo: true;
       /** The sandbox-absolute root of the repository the cwd sits in. */

@@ -396,6 +396,25 @@ describe('Thread HTTP boundary', () => {
     );
   });
 
+  test('keeps sandbox preparation and unavailability as data across the Git boundary', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      for (const status of ['pending', 'unavailable']) {
+        globalThis.fetch = async () => Response.json({ status });
+        assert.deepEqual(await workspaceApi.threads.git('thread-id'), {
+          repo: false,
+          status,
+        });
+        const branches = await workspaceApi.threads.branches('thread-id');
+        assert.equal(branches.status, status);
+        assert.deepEqual(branches.branches, []);
+        assert.ok(branches.blocked);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('rejects a malformed Git summary and a Thread without a working directory', async () => {
     const originalFetch = globalThis.fetch;
     const responses = [

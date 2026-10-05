@@ -49,8 +49,7 @@ const model = (value: Record<string, unknown>): Model => {
         : numberField(topProvider, 'context_length')) ??
       (architecture === undefined
         ? undefined
-        : numberField(architecture, 'context_length')) ??
-      4096,
+        : numberField(architecture, 'context_length')),
     provider: 'openrouter',
     raw: value,
   };

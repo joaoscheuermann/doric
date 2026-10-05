@@ -22,6 +22,44 @@ const modelCatalog = (id: string, supportedParameters: readonly string[]) =>
     ],
   });
 
+void test('reports advertised context capacity alongside unified streaming usage', async () => {
+  const transport = fakeTransport({
+    responses: [
+      response({
+        data: [
+          {
+            id: 'test/model',
+            context_length: 200000,
+            supported_parameters: [],
+          },
+        ],
+      }),
+    ],
+    streams: [
+      [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 48000, completion_tokens: 2, cost: 0.75 } })}\n\ndata: [DONE]\n\n`,
+      ],
+    ],
+  });
+  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const events = await collect(
+    provider.stream({
+      model: 'test/model',
+      messages: [{ role: 'user', content: 'Hello' }],
+    }),
+  );
+  const start = events.find((event) => event.type === 'response.started');
+  assert.equal(start?.contextWindow, 200000);
+  const finish = events.find((event) => event.type === 'response.finished');
+  assert.equal(finish?.finish.usage?.cost?.amount, 0.75);
+  assert.equal(finish?.finish.usage?.inputTokens, 48000);
+  assert.equal((await provider.models())[0]?.contextWindow, 200000);
+  assert.equal(
+    (await provider.validateModel('test/model')).contextWindow,
+    200000,
+  );
+});
+
 void test('selects native structured output from live OpenRouter capabilities', async () => {
   const transport = fakeTransport({
     responses: [

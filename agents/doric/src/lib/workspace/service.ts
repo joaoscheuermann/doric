@@ -57,6 +57,7 @@ import {
   type WorkspacePublisher,
   type WorkspaceService,
 } from './types.js';
+import { withContextCapacity } from './usage-context.js';
 
 export type { ThreadExecution } from './runtime.js';
 
@@ -395,7 +396,7 @@ export const createWorkspaceService = ({
     return runtime;
   };
   /**
-   * Brings a durable, non-terminal Project back on demand: it loads the Project
+   * Brings a durable, non-terminal Project back at boot or on demand: it loads the Project
    * and its Threads and starts the acquisition, so a prompt reaching a Project
    * the host has not resumed yet reacquires its sandbox first. It runs under the
    * creation lock, so a shutting-down host can never add a runtime after it set
@@ -409,7 +410,12 @@ export const createWorkspaceService = ({
       const existing = runtimes.get(id);
       if (existing !== undefined) return existing;
       const record = await projects.record(id);
-      if (record === undefined || isTerminal(record.state)) return undefined;
+      if (
+        record === undefined ||
+        isTerminal(record.state) ||
+        record.state === 'cancelling'
+      )
+        return undefined;
       const runtime = await runtimeFromStored(id);
       if (runtime === undefined) return undefined;
       runtime.resumed = true;
@@ -782,6 +788,12 @@ export const createWorkspaceService = ({
       fileDiff,
     },
     threads: {
+      usage: async (id) => {
+        const usage = await threads.usage(id);
+        return usage === undefined
+          ? undefined
+          : withContextCapacity(usage, config.current());
+      },
       create: (projectId, name, parentThreadId) =>
         exclusive(projectId, async () => {
           const runtime = runtimes.get(projectId);
@@ -828,14 +840,9 @@ export const createWorkspaceService = ({
           const project = runtimes.get(record.projectId);
           const thread = project?.threads.get(id);
           const sandbox = project?.lease?.sandbox;
-          if (
-            !project ||
-            project.closing ||
-            !thread ||
-            thread.closing ||
-            !sandbox
-          )
+          if (!project || project.closing || !thread || thread.closing)
             return { status: 'inactive' as const };
+          if (!sandbox) return { status: 'pending' as const };
           // Holding the project mutation queue prevents a new prompt from racing the switch.
           if (
             branch !== undefined &&
@@ -894,10 +901,10 @@ export const createWorkspaceService = ({
           project === undefined ||
           project.closing ||
           thread === undefined ||
-          thread.closing ||
-          sandbox === undefined
+          thread.closing
         )
           return { status: 'inactive' };
+        if (sandbox === undefined) return { status: 'pending' };
         return {
           status: 'ready',
           git: await runner.git(project, thread, sandbox),
@@ -906,7 +913,7 @@ export const createWorkspaceService = ({
       prompt: async (id, prompt) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
-        // New input is what brings a Project the host has not resumed yet back:
+        // New input also brings a Project back if boot has not reached it yet:
         // acquire its sandbox first, then enqueue the prompt as usual. A lease
         // that cannot be acquired ends the Project, so the prompt is answered as
         // inactive exactly as a prompt to a failed Project is.
@@ -1025,10 +1032,9 @@ export const createWorkspaceService = ({
     /**
      * Takes up the prompts the host owes a run before anyone asks for one: work
      * the reader asked for and a host interruption left unfinished, and work a
-     * crash left accepted but never started. Only such a Project pays for a
-     * sandbox before a reader asks for one; a Project with nothing pending is
-     * left `queued` and acquires nothing. Each Project comes back on demand and
-     * its prompts are re-enqueued in the order the log accepted them, opening the
+     * crash left accepted but never started. These Projects acquire before the
+     * idle Projects in recoverProjects. Their prompts are re-enqueued in the
+     * order the log accepted them, opening the
      * next attempt of each one — until a prompt has been taken up as often as the
      * budget allows, which is closed as a failure instead, so a host that keeps
      * dying on the same prompt stops circling it.
@@ -1065,6 +1071,17 @@ export const createWorkspaceService = ({
         }
       }
       return resumed;
+    },
+    recoverProjects: async () => {
+      let cursor: string | undefined;
+      do {
+        const page = await projects.list(100, cursor);
+        for (const project of page.items) {
+          if (!isTerminal(project.state) && project.state !== 'cancelling')
+            await resumeProject(project.id);
+        }
+        cursor = page.nextCursor;
+      } while (cursor !== undefined && !disposed);
     },
     sshForVm: async (id) => {
       const runtime = [...runtimes.values()].find(

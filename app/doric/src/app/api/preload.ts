@@ -11,6 +11,7 @@ import {
   projectUpdateChannel,
 } from '../../workspace/project-events';
 import type { ThreadHistory } from '../../workspace/thread-history';
+import type { ThreadUsage } from '../../workspace/usage';
 import { terminals } from './terminals';
 
 type Project = {
@@ -46,6 +47,7 @@ type GitOperation = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect';
  * one it does lie in.
  */
 export type GitBranches = {
+  readonly status?: 'pending' | 'unavailable';
   readonly branches: readonly {
     readonly name: string;
     readonly current: boolean;
@@ -56,7 +58,7 @@ export type GitBranches = {
   readonly blocked?: string;
 };
 type ThreadGit =
-  | { readonly repo: false }
+  | { readonly repo: false; readonly status?: 'pending' | 'unavailable' }
   | {
       readonly repo: true;
       readonly root: string;
@@ -479,6 +481,7 @@ contextBridge.exposeInMainWorld('doric', {
     },
   },
   threads: {
+    usage: (id: string) => invoke<ThreadUsage>('doric:threads:usage', id),
     list: (projectId: string) =>
       invoke<readonly Thread[]>('doric:threads:list', projectId),
     get: (id: string) => invoke<Thread | undefined>('doric:threads:get', id),

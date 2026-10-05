@@ -457,7 +457,7 @@ void test('fetches and validates OpenRouter models with context fallback', async
     [
       ['a', 8192],
       ['b', 4096],
-      ['c', 4096],
+      ['c', undefined],
     ],
   );
 

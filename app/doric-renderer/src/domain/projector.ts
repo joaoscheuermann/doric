@@ -1,12 +1,12 @@
 import type { ThreadEvent } from '@/domain/workspace';
 
 import { type DelegatedInput, delegatedInput } from './delegated';
+import { type PromptExecution, readExecution } from './projector-execution';
 import {
   type LifecycleEvent,
   pauseReason,
   type PromptFailure,
   promptFailure,
-  resumeAttempt,
   statesFailure,
 } from './prompt-lifecycle';
 
@@ -146,6 +146,7 @@ export type Projection = {
    */
   readonly drafts: readonly Draft[];
   readonly status: ReadonlyMap<string, PromptStatus>;
+  readonly executions: ReadonlyMap<string, PromptExecution>;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -375,6 +376,7 @@ const statedByRun = (
 const readEvent = (
   turns: Draft[],
   status: Map<string, PromptStatus>,
+  executions: Map<string, PromptExecution>,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -383,6 +385,7 @@ const readEvent = (
   const last = turns.at(-1);
   const open =
     last !== undefined && last.promptId === promptId ? last : undefined;
+  const recovery = readExecution(executions, item, event);
 
   if (event?.type === 'prompt.accepted') {
     const text = typeof event.text === 'string' ? event.text : '';
@@ -502,19 +505,19 @@ const readEvent = (
         },
       });
     }
-  } else if (event?.type === 'prompt.resumed') {
-    const attempt = resumeAttempt(event.attempt);
-    if (attempt !== undefined) {
+  } else if (event?.type === 'agent.started') {
+    if (recovery !== undefined) {
+      const { attempt, event: recovered } = recovery;
       if (open?.type === 'lifecycle' && open.lifecycle.kind === 'pause') {
         const { reason, at } = open.lifecycle;
         open.lifecycle = { kind: 'resume', attempt, pause: { reason, at } };
-        open.events.push(item);
+        open.events.push(recovered, item);
         return;
       }
       turns.push({
         type: 'lifecycle',
         promptId,
-        events: [item],
+        events: [recovered, item],
         lifecycle: { kind: 'resume', attempt },
       });
     }
@@ -538,6 +541,7 @@ const readEvent = (
 const settle = (
   turns: Draft[],
   status: ReadonlyMap<string, PromptStatus>,
+  executions: ReadonlyMap<string, PromptExecution>,
 ): void => {
   for (const turn of turns) {
     if (turn.type !== 'agent') continue;
@@ -563,6 +567,8 @@ const settle = (
     const standing =
       !newerUserPrompt &&
       !takenUp.has(turn.promptId) &&
+      (executions.get(turn.promptId)?.recoveredThrough ?? -1) <
+        (turn.events[0]?.sequence ?? 0) &&
       !status.has(turn.promptId);
     if (lifecycle.standing !== standing)
       // A new event object, never a write into the one a returned projection
@@ -602,9 +608,10 @@ const settle = (
 const project = (events: readonly ThreadEvent[]): Projection => {
   const drafts: Draft[] = [];
   const status = new Map<string, PromptStatus>();
-  for (const item of events) readEvent(drafts, status, item);
-  settle(drafts, status);
-  return { events, drafts, status, turns: grouped(drafts, status) };
+  const executions = new Map<string, PromptExecution>();
+  for (const item of events) readEvent(drafts, status, executions, item);
+  settle(drafts, status, executions);
+  return { events, drafts, status, executions, turns: grouped(drafts, status) };
 };
 
 /**
@@ -623,12 +630,14 @@ const readInto = (
     (draft): Draft => ({ ...draft, events: [...draft.events] }),
   );
   const status = new Map(current.status);
-  for (const item of incoming) readEvent(drafts, status, item);
-  settle(drafts, status);
+  const executions = new Map(current.executions);
+  for (const item of incoming) readEvent(drafts, status, executions, item);
+  settle(drafts, status, executions);
   return {
     events: [...current.events, ...incoming],
     drafts,
     status,
+    executions,
     turns: grouped(drafts, status),
   };
 };
@@ -731,6 +740,7 @@ export const emptyProjection: Projection = {
   turns: [],
   drafts: [],
   status: new Map(),
+  executions: new Map(),
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */

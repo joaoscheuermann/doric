@@ -53,6 +53,15 @@ const cwdRefusal: Readonly<
 export const createThreadsRouter = (service: WorkspaceService): Router => {
   const router = Router();
   router.use('/:id', validateId('thread'));
+  router.get('/:id/usage', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const usage = await service.threads.usage(request.params.id);
+    if (usage === undefined) {
+      missing(response, 'thread');
+      return;
+    }
+    response.json(usage);
+  });
   router.patch('/:id', async (request, response) => {
     const input = threadInput.safeParse(request.body ?? {});
     if (!input.success) {
@@ -241,7 +250,9 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
       return;
     }
     if (result.status !== 'ready') {
-      conflict(response, 'thread', 'inactive');
+      response.json({
+        status: result.status === 'pending' ? 'pending' : 'unavailable',
+      });
       return;
     }
     response.json(result.git);
@@ -256,7 +267,9 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
         return;
       }
       if (result.status !== 'ready') {
-        conflict(response, 'thread', 'inactive');
+        response.json({
+          status: result.status === 'pending' ? 'pending' : 'unavailable',
+        });
         return;
       }
       response.json(result.value);

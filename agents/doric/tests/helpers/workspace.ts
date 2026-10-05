@@ -226,6 +226,7 @@ export const workspace = () => {
     reconcile: async () => 0,
   };
   const threads: ThreadStore = {
+    usage: async () => undefined,
     create: async (projectId, name, parentThreadId, inherit) => {
       const thread = {
         id: randomUUID(),

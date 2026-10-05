@@ -28,6 +28,12 @@ import type {
   ThreadEvent,
   ThreadStore,
 } from './types.js';
+import {
+  readThreadUsage,
+  readUsageState,
+  rewindUsage,
+  writeUsage,
+} from './usage-store.js';
 
 /** What a record read selects; `messages` and `checkpoints` stay out of it. */
 const recordColumns = {
@@ -53,6 +59,7 @@ const recordColumns = {
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({
+  usage: (id) => readThreadUsage(database, id),
   async create(projectId, name, parentThreadId, inherit) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId}::uuid FOR UPDATE`;
@@ -252,9 +259,11 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         SELECT MAX("sequence") AS sequence FROM "thread_event"
         WHERE "thread_id" = ${id}::uuid AND "sequence" < ${from}`;
       const afterSequence = survivor?.sequence ?? 0;
+      const previousUsage = await readUsageState(tx, id, current.usage);
       await tx.threadEvent.deleteMany({
         where: { threadId: id, sequence: { gte: from } },
       });
+      await rewindUsage(tx, id, previousUsage);
       const updated = await tx.thread.update({
         where: { id },
         data: {
@@ -396,7 +405,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
 });
 
 const thread = (
-  stored: Omit<StoredThread, 'messages' | 'checkpoints'>,
+  stored: Omit<StoredThread, 'messages' | 'checkpoints' | 'usage'>,
 ): Thread => ({
   id: stored.id,
   projectId: stored.projectId,
@@ -474,7 +483,7 @@ const writeEvent = async (
   const current = await tx.thread.update({
     where: { id },
     data: { lastSequence: { increment: 1 } },
-    select: { projectId: true, lastSequence: true },
+    select: { projectId: true, lastSequence: true, usage: true },
   });
   const type =
     typeof value === 'object' &&
@@ -483,6 +492,7 @@ const writeEvent = async (
     typeof value.type === 'string'
       ? value.type
       : 'unknown';
+  await writeUsage(tx, id, type, value, current.usage);
   return event(
     await tx.threadEvent.create({
       data: {

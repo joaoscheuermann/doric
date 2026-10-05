@@ -34,7 +34,11 @@ export function BranchPicker({
         refreshing={query.isFetching}
         onRetry={() => void query.refetch()}
       />
-      {query.isPending ? (
+      {query.data?.status ? (
+        <p role="status" className="p-2 text-sm text-muted-foreground">
+          {query.data.blocked}
+        </p>
+      ) : query.isPending ? (
         <div className="flex flex-col gap-2 p-2">
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-12 w-full" />

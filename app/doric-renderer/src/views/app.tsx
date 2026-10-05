@@ -190,7 +190,6 @@ export function App() {
               }
               onToggle={toggleFiles}
               project={selectedProject}
-              thread={selectedThread}
               view={filesView}
               onViewChange={setFilesView}
             />

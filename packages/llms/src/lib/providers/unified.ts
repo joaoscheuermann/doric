@@ -95,7 +95,18 @@ export const createUnifiedProvider = (
       request: ProviderRequest<Output>,
     ): AsyncIterable<ProviderStreamEvent<Output>> {
       if (request.schema === undefined) {
-        yield* core.stream(request);
+        for await (const event of core.stream(request)) {
+          if (event.type === 'response.started') {
+            const { contextWindow } = await resolveSupport(
+              request.model,
+              request.signal,
+            );
+            yield {
+              ...event,
+              ...(contextWindow === undefined ? {} : { contextWindow }),
+            };
+          } else yield event;
+        }
         return;
       }
 
@@ -113,8 +124,19 @@ export const createUnifiedProvider = (
 
     embedding: (request) => core.embedding(request),
     rerank: (request) => core.rerank(request),
-    models: (signal) => core.models(signal),
-    validateModel: (model, signal) => core.validateModel(model, signal),
+    models: resolveSupport.models,
+    async validateModel(model, signal) {
+      const found = (await resolveSupport.models(signal)).find(
+        (item) => item.id === model,
+      );
+      if (found === undefined)
+        throw new ProviderErrorObject({
+          provider: unifiedMetadata.id,
+          code: 'missing_model',
+          message: `OpenRouter model is not available: ${model}`,
+        });
+      return found;
+    },
   };
 
   return withProviderLogging(provider, deps.logger);

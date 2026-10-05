@@ -239,6 +239,12 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:usage',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.threads.usage(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:switch-branch',
     safe(allowedUrls, (value: unknown, branch: unknown, cwd: unknown) => {
       if (

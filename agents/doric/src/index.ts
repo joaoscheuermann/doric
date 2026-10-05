@@ -200,6 +200,8 @@ async function main() {
   // prompts queue in the order the log accepted them.
   const resumedPrompts = await service.resumeInterrupted();
   startup.info({ resumedPrompts }, 'Interrupted prompts resumed');
+  await service.recoverProjects();
+  startup.info('Project sandbox recovery scheduled');
 
   registerHttpRoutes(app, {
     config,

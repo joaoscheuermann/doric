@@ -16,7 +16,7 @@ export interface Branches {
 }
 export type BranchResult =
   | { readonly status: 'ready'; readonly value: Branches }
-  | { readonly status: 'missing' | 'inactive' }
+  | { readonly status: 'missing' | 'inactive' | 'pending' }
   | { readonly status: 'refused'; readonly message: string };
 
 /** Local branches only; remote fetching and branch creation are separate actions. */

@@ -4,6 +4,7 @@ import { arrayField, asRecord } from '../../utils/json.js';
 export interface OpenRouterModelSupport {
   readonly known: boolean;
   readonly parameters: ReadonlySet<string>;
+  readonly contextWindow?: number;
 }
 
 const emptySupport: OpenRouterModelSupport = {
@@ -19,19 +20,28 @@ const missingModelSupport: OpenRouterModelSupport = {
 export const createOpenRouterCatalog = (
   load: (signal?: AbortSignal) => Promise<readonly Model[]>,
   ttlMs = 15 * 60 * 1000,
+  retryMs = 30_000,
 ) => {
-  let cached: ReadonlyMap<string, OpenRouterModelSupport> | undefined;
+  let cached: readonly Model[] | undefined;
   let expiresAt = 0;
-  let pending: Promise<ReadonlyMap<string, OpenRouterModelSupport>> | undefined;
+  let retryAt = 0;
+  let lastError: unknown;
+  let pending: Promise<readonly Model[]> | undefined;
 
   const refresh = () => {
     // Shared work belongs to the catalog, not to any individual caller.
-    pending ??= load()
-      .then(toSupportMap)
-      .then((support) => {
-        cached = support;
+    pending ??= load(AbortSignal.timeout(5000))
+      .then((models) => {
+        cached = models;
         expiresAt = Date.now() + ttlMs;
-        return support;
+        retryAt = 0;
+        return models;
+      })
+      .catch((error: unknown) => {
+        retryAt = Date.now() + retryMs;
+        lastError = error;
+        if (cached !== undefined) return cached;
+        throw error;
       })
       .finally(() => {
         pending = undefined;
@@ -40,32 +50,38 @@ export const createOpenRouterCatalog = (
     return pending;
   };
 
-  return async (
+  const models = async (signal?: AbortSignal): Promise<readonly Model[]> => {
+    signal?.throwIfAborted();
+    if (Date.now() < Math.max(expiresAt, retryAt)) {
+      if (cached !== undefined) return cached;
+      throw lastError;
+    }
+    return waitForRefresh(refresh(), signal);
+  };
+
+  const resolve = async (
     model: string,
     signal?: AbortSignal,
   ): Promise<OpenRouterModelSupport> => {
     signal?.throwIfAborted();
 
-    if (cached !== undefined && Date.now() < expiresAt) {
-      return cached.get(model) ?? missingModelSupport;
-    }
-
     try {
-      const support = await waitForRefresh(refresh(), signal);
+      const support = toSupportMap(await models(signal));
       return support.get(model) ?? missingModelSupport;
     } catch {
       signal?.throwIfAborted();
       return cached === undefined
         ? emptySupport
-        : (cached.get(model) ?? missingModelSupport);
+        : (toSupportMap(cached).get(model) ?? missingModelSupport);
     }
   };
+  return Object.assign(resolve, { models });
 };
 
-const waitForRefresh = async (
-  refresh: Promise<ReadonlyMap<string, OpenRouterModelSupport>>,
+const waitForRefresh = async <T>(
+  refresh: Promise<T>,
   signal?: AbortSignal,
-): Promise<ReadonlyMap<string, OpenRouterModelSupport>> => {
+): Promise<T> => {
   if (signal === undefined) return refresh;
 
   let onAbort!: () => void;
@@ -96,6 +112,9 @@ const toSupportMap = (
         ),
       );
 
-      return [model.id, { known: true, parameters }] as const;
+      return [
+        model.id,
+        { known: true, parameters, contextWindow: model.contextWindow },
+      ] as const;
     }),
   );

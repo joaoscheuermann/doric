@@ -204,7 +204,7 @@ export type CwdRefusal = Exclude<CwdChange, { readonly status: 'set' }>;
 /** The Git summary of a Thread's working directory, or why there is none. */
 export type ThreadGitResult =
   | { readonly status: 'ready'; readonly git: ThreadGit }
-  | { readonly status: 'missing' | 'inactive' };
+  | { readonly status: 'missing' | 'inactive' | 'pending' };
 /** The lease-dependent outcomes every Project subresource can report. */
 export type ProjectLeaseState =
   | 'missing'
@@ -296,6 +296,7 @@ export interface ProjectStore {
   reconcile(): Promise<number>;
 }
 export interface ThreadStore {
+  usage(id: string): Promise<import('./usage.js').ThreadUsage | undefined>;
   /**
    * A new Thread. A child inherits its parent's working directory, and that
    * directory's hint, as a snapshot: both read the same sandbox at the same
@@ -427,6 +428,7 @@ export interface WorkspaceService {
     ): Promise<ProjectFileDiff>;
   };
   readonly threads: {
+    usage(id: string): Promise<import('./usage.js').ThreadUsage | undefined>;
     create(
       projectId: string,
       name: string,
@@ -476,6 +478,8 @@ export interface WorkspaceService {
    * never started. Answers how many prompts it re-enqueued.
    */
   resumeInterrupted(): Promise<number>;
+  /** Reattach every nonterminal Project without waiting for pool capacity. */
+  recoverProjects(): Promise<void>;
   sshForVm(
     id: string,
   ): Promise<

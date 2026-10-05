@@ -45,6 +45,12 @@ export function WorkspaceCwd({
       ? changedLineTotals(changes.value.repositories)
       : undefined;
   const root = git?.repo ? git.root : thread.cwd;
+  const environment =
+    git?.repo === false && git.status !== undefined
+      ? git.status === 'pending'
+        ? 'Preparing environment…'
+        : 'Environment unavailable'
+      : undefined;
   return (
     <>
       <ReadFeedback error={error} refreshing={refreshing} onRetry={refresh} />
@@ -61,6 +67,14 @@ export function WorkspaceCwd({
                 <span className="truncate" data-slot="workspace-cwd">
                   {thread.cwd}
                 </span>
+                {environment && (
+                  <span
+                    role="status"
+                    className="truncate text-muted-foreground"
+                  >
+                    · {environment}
+                  </span>
+                )}
                 {git?.repo && (
                   <>
                     <span className="text-muted-foreground">·</span>
@@ -84,6 +98,11 @@ export function WorkspaceCwd({
           className="w-80 max-w-[calc(100vw-1rem)] gap-1 p-1"
         >
           <div className="flex flex-col gap-1 px-2 py-2">
+            {environment && (
+              <span className="text-xs text-muted-foreground">
+                {environment}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {git?.repo ? 'Current worktree' : 'Working directory'}
             </span>

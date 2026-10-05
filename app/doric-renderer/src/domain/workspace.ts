@@ -12,6 +12,7 @@ import type {
 import type { ConnectionApi } from './connection';
 import type { TerminalsApi } from './terminals';
 import type { ThreadGit } from './thread-git';
+import type { ThreadUsage } from './usage';
 
 /**
  * The colors a Project can be marked with. The vocabulary is the host's; this
@@ -241,6 +242,7 @@ export type WorkspaceApi = {
     ): () => void;
   };
   readonly threads: {
+    usage(id: string): Promise<ThreadUsage>;
     list(projectId: string): Promise<readonly Thread[]>;
     get(id: string): Promise<Thread | undefined>;
     /**

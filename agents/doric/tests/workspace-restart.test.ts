@@ -140,14 +140,15 @@ const snapshot = {
 /**
  * A host booting over the durable records a previous one left: the real stores
  * and the real service, with the sandbox pool and the execution itself standing
- * in as the case needs them. Creating it acquires nothing: only a prompt that
- * needs a Project brings one back.
+ * in as the case needs them. Boot recovery schedules acquisition separately
+ * from resuming the prompts the host owes.
  */
 const restart = async (
   options: {
     readonly execute?: ThreadExecution;
     /** A provider the real Direct executor reads, for a resumed run of its own. */
     readonly providers?: ReadonlyMap<string, unknown>;
+    readonly sandboxReady?: Promise<void>;
   } = {},
 ) => {
   assert.ok(connectionString);
@@ -179,6 +180,7 @@ const restart = async (
     pool: {
       acquire: async (value: { readonly identity?: string }) => {
         acquisitions.push(value);
+        await options.sandboxReady;
         return { sandbox: fakeSandbox(), release: async () => undefined };
       },
     } as never,
@@ -233,7 +235,82 @@ const until = async (
 };
 
 void test(
-  'the boot takes up every prompt the host interrupted and leaves the rest',
+  'boot restores idle Projects without rerunning prompts or reviving terminal Projects',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const ready = deferred();
+    const host = await restart({ sandboxReady: ready.promise });
+    try {
+      const { project } = await host.projects.create('Idle', snapshot, 'blue');
+      const owner = await host.threads.create(project.id, 'Idle thread');
+      const paused = await host.threads.create(project.id, 'Manually paused');
+      const finished = randomUUID();
+      await host.threads.appendEvent(owner.thread.id, finished, {
+        type: 'prompt.accepted',
+        text: 'done',
+        source: { kind: 'user' },
+      });
+      await host.threads.appendEvent(owner.thread.id, finished, completed);
+      const stopped = randomUUID();
+      await host.threads.appendEvent(paused.thread.id, stopped, {
+        type: 'prompt.accepted',
+        text: 'pause',
+        source: { kind: 'user' },
+      });
+      await host.threads.appendEvent(paused.thread.id, stopped, {
+        type: 'prompt.paused',
+        reason: 'reader_stopped',
+      });
+      for (const state of ['failed', 'cancelled', 'cancelling'] as const) {
+        const closed = await host.projects.create(state, snapshot, 'green');
+        await host.projects.setState(closed.project.id, state);
+      }
+      await host.threads.reconcile();
+      await host.projects.reconcile();
+      assert.equal(await host.service.resumeInterrupted(), 0);
+      await host.service.recoverProjects();
+      await host.service.recoverProjects();
+      assert.deepEqual(
+        host.acquisitions.map((value) => value.identity),
+        [project.id],
+      );
+      assert.equal(
+        (await host.service.threads.git(owner.thread.id)).status,
+        'pending',
+      );
+      assert.equal(
+        (await host.service.threads.branches(owner.thread.id)).status,
+        'pending',
+      );
+      assert.deepEqual(host.ran, []);
+      ready.resolve();
+      await until(
+        async () => (await host.projects.record(project.id))?.state === 'ready',
+      );
+      assert.equal(
+        (await host.service.threads.git(owner.thread.id)).status,
+        'ready',
+      );
+      assert.equal(
+        (await host.service.threads.branches(owner.thread.id)).status,
+        'ready',
+      );
+      assert.deepEqual(host.ran, []);
+      assert.equal(
+        (await host.threads.unfinishedPrompts()).find(
+          (prompt) => prompt.promptId === stopped,
+        )?.paused,
+        'reader_stopped',
+      );
+    } finally {
+      ready.resolve();
+      await host.close();
+    }
+  },
+);
+
+void test(
+  'boot prioritizes owed prompts before idle Projects and leaves paused work alone',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {
     const host = await restart();
@@ -328,6 +405,7 @@ void test(
       await host.threads.reconcile();
       await host.projects.reconcile();
       const resumed = await host.service.resumeInterrupted();
+      await host.service.recoverProjects();
       await until(
         async () =>
           (await host.threads.record(owner.thread.id))?.result?.promptId ===
@@ -384,12 +462,14 @@ void test(
         await eventsOf(host.threads, other.thread.id, finished),
         closed,
       );
-      // Only the Project that owed work came back, and it came back as itself.
+      // Owed work gets capacity first; idle Projects also return as themselves.
       assert.deepEqual(
         host.acquisitions.map(({ identity }) => identity),
-        [project.id],
+        [project.id, idle.id],
       );
-      assert.equal((await host.projects.record(idle.id))?.state, 'queued');
+      await until(
+        async () => (await host.projects.record(idle.id))?.state === 'ready',
+      );
     } finally {
       await host.close();
     }

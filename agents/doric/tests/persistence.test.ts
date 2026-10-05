@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { Prisma } from '../src/generated/prisma/client.js';
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { createConfigStore } from '../src/lib/config/store.js';
 import { createCredentialService } from '../src/lib/credentials/service.js';
@@ -20,6 +21,71 @@ const gitCredentialId = '00000000-0000-4000-8000-000000000003';
 const githubCredentialId = '00000000-0000-4000-8000-000000000004';
 /** 32 zero bytes, base64. A fixed test key, never a deployed one. */
 const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+
+integrationTest(
+  'sums descendant charges once and keeps costs through rewind and reconnection',
+  async ({ configs, projects, threads, database, second }) => {
+    const project = await projects.create(
+      'Usage',
+      await configs.load(),
+      'blue',
+    );
+    const root = await threads.create(project.project.id, 'Parent');
+    const child = await threads.create(
+      project.project.id,
+      'Child',
+      root.thread.id,
+    );
+    const grandchild = await threads.create(
+      project.project.id,
+      'Grandchild',
+      child.thread.id,
+    );
+    const unrelated = await threads.create(project.project.id, 'Other');
+    for (const [record, amount] of [
+      [root, 0.25],
+      [child, 0.5],
+      [grandchild, 0],
+      [unrelated, 9],
+    ] as const) {
+      const id = record.thread.id;
+      await threads.saveCheckpoint(id, promptId);
+      await threads.appendEvent(id, promptId, {
+        type: 'response.started',
+        provider: 'unified',
+        model: 'm',
+        contextWindow: 200000,
+      });
+      const usage = {
+        inputTokens: 48000,
+        outputTokens: 200,
+        cost: { amount, unit: 'credits' },
+      };
+      await threads.appendEvent(id, promptId, { type: 'usage', usage });
+      await threads.appendEvent(id, promptId, {
+        type: 'response.finished',
+        finish: { usage },
+      });
+    }
+    const before = await threads.usage(root.thread.id);
+    assert.equal(before?.total.cost, 0.75);
+    assert.equal(before?.total.calls, 3);
+    assert.equal(before?.threads.length, 3);
+    assert.equal(before?.context?.inputTokens, 48000);
+    await threads.rewind(root.thread.id, promptId);
+    const restarted = createThreadStore(second);
+    const after = await restarted.usage(root.thread.id);
+    assert.equal(after?.total.cost, 0.75);
+    assert.equal(after?.context, undefined);
+    assert.equal((await restarted.usage(child.thread.id))?.total.cost, 0.5);
+    // A pre-feature Thread has only durable usage events and no materialized totals.
+    await database.thread.update({
+      where: { id: child.thread.id },
+      data: { usage: Prisma.DbNull },
+    });
+    assert.equal((await restarted.usage(root.thread.id))?.total.cost, 0.75);
+  },
+);
 
 integrationTest(
   'creates projects without threads and captures immutable configuration',
@@ -717,6 +783,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20260930030000_thread_result',
     '20260930040000_tool_output_limit',
     '20260930050000_thread_cwd',
+    '20261005000000_thread_usage',
     'migration_lock.toml',
   ]);
   assert.deepEqual(

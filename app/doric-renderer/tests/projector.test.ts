@@ -564,12 +564,137 @@ describe('thread event projection', () => {
 });
 
 describe('the prompt lifecycle in a log', () => {
+  test('waits for an interrupted prompt to start again and never labels queued first execution as resumed', () => {
+    const log = [
+      event(1, 'running', { type: 'prompt.accepted', text: 'first result' }),
+      event(2, 'running', { type: 'agent.started' }),
+      event(3, 'running', { type: 'text.delta', delta: 'before' }),
+      event(4, 'queued', { type: 'prompt.accepted', text: 'second result' }),
+      event(5, 'running', { type: 'prompt.paused', reason: 'host_stopped' }),
+      event(6, 'running', { type: 'prompt.resumed', attempt: 1 }),
+      event(7, 'queued', { type: 'prompt.resumed', attempt: 1 }),
+      event(8, 'running', { type: 'agent.started' }),
+      event(9, 'running', { type: 'text.delta', delta: 'continued' }),
+      event(10, 'running', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'continued',
+      }),
+      event(11, 'queued', { type: 'agent.started' }),
+      event(12, 'queued', { type: 'text.delta', delta: 'first execution' }),
+    ];
+    const recovered = projectEvents(emptyProjection, log.slice(0, 7));
+    assert.equal(
+      recovered.turns.filter((turn) => lifecycleOf(turn)?.kind === 'resume')
+        .length,
+      0,
+    );
+    assert.equal(
+      standingOf(recovered.turns.at(-1)),
+      false,
+      'a recovered prompt cannot be manually resumed twice',
+    );
+    const whole = projectEvents(emptyProjection, log);
+    const markers = whole.turns.filter(
+      (turn) => lifecycleOf(turn)?.kind === 'resume',
+    );
+    assert.equal(markers.length, 1);
+    assert.equal(markers[0]?.promptId, 'running');
+    assert.equal(textOf(whole.turns.at(-1)), 'first execution');
+    for (let split = 1; split < log.length; split += 1) {
+      const first = projectEvents(emptyProjection, log.slice(0, split));
+      const held = structuredClone(first);
+      const live = projectEvents(first, log.slice(split));
+      assert.deepEqual(live.turns, whole.turns);
+      assert.deepEqual(
+        projectEvents(live, log).turns,
+        whole.turns,
+        'replayed events do not duplicate markers',
+      );
+      assert.deepEqual(first, held);
+    }
+  });
+
+  test('places a delayed restart marker at actual execution, after intervening work', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'agent.started' }),
+      event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 2 }),
+      event(4, 'two', { type: 'text.delta', delta: 'intervening work' }),
+      event(5, 'one', { type: 'agent.started' }),
+      event(6, 'one', { type: 'text.delta', delta: 'continued' }),
+    ]);
+    assert.deepEqual(types(projection.turns), [
+      'lifecycle',
+      'agent',
+      'lifecycle',
+      'agent',
+    ]);
+    assert.equal(lifecycleOf(projection.turns[2])?.kind, 'resume');
+    assert.equal(standingOf(projection.turns[0]), false);
+  });
+
+  test('does not carry a recovered execution across a rewind', () => {
+    const before = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.accepted', text: 'work' }),
+      event(2, 'one', { type: 'agent.started' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+    ]);
+    const after = projectEvents(before, [
+      event(4, 'one', { type: 'history.truncated', afterSequence: 1 }),
+      event(5, 'one', { type: 'agent.started' }),
+    ]);
+    assert.equal(
+      after.turns.filter((turn) => turn.type === 'lifecycle').length,
+      0,
+    );
+  });
+
+  test('uses the latest recovered attempt once and preserves a later manual pause', () => {
+    const restarted = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'agent.started' }),
+      event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+      event(4, 'one', { type: 'prompt.resumed', attempt: 2 }),
+      event(5, 'one', { type: 'agent.started' }),
+    ]);
+    assert.deepEqual(restarted.turns.map(lifecycleOf), [
+      {
+        kind: 'resume',
+        attempt: 2,
+        pause: { reason: 'host_stopped', at: '2026-01-01T00:00:02.000Z' },
+      },
+    ]);
+    const paused = projectEvents(restarted, [
+      event(6, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+    ]);
+    assert.equal(standingOf(paused.turns.at(-1)), true);
+    const queued = projectEvents(paused, [
+      event(7, 'one', { type: 'prompt.resumed', attempt: 3 }),
+    ]);
+    assert.equal(standingOf(queued.turns.at(-1)), false);
+    const cancelled = projectEvents(queued, [
+      event(8, 'one', {
+        type: 'prompt.finished',
+        status: 'cancelled',
+        text: '',
+      }),
+    ]);
+    assert.equal(
+      cancelled.turns.filter((turn) => lifecycleOf(turn)?.kind === 'resume')
+        .length,
+      1,
+    );
+  });
+
   test('places a resumed final answer after its marker without replacing earlier output', () => {
     const projection = projectEvents(emptyProjection, [
+      event(0, 'one', { type: 'agent.started' }),
       event(1, 'one', { type: 'text.delta', delta: 'Earlier output' }),
       event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
       event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
-      event(4, 'one', {
+      event(4, 'one', { type: 'agent.started' }),
+      event(5, 'one', {
         type: 'prompt.finished',
         status: 'completed',
         text: 'Final answer',
@@ -596,10 +721,12 @@ describe('the prompt lifecycle in a log', () => {
 
   test('combines adjacent pause and resume into one marker preserving the pause reason', () => {
     const projection = projectEvents(emptyProjection, [
+      event(0, 'one', { type: 'agent.started' }),
       event(1, 'one', { type: 'text.delta', delta: 'before' }),
       event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
       event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
-      event(4, 'one', { type: 'text.delta', delta: 'after' }),
+      event(4, 'one', { type: 'agent.started' }),
+      event(5, 'one', { type: 'text.delta', delta: 'after' }),
     ]);
 
     assert.deepEqual(types(projection.turns), ['agent', 'lifecycle', 'agent']);
@@ -647,7 +774,8 @@ describe('the prompt lifecycle in a log', () => {
     ]);
 
     assert.equal(standingOf(first.turns[0]), true);
-    assert.equal(lifecycleOf(after.turns[0])?.kind, 'resume');
+    assert.equal(lifecycleOf(after.turns[0])?.kind, 'pause');
+    assert.equal(standingOf(after.turns[0]), false);
   });
 
   test('removes resume after a newer user prompt, including replay and later completion', () => {
@@ -678,9 +806,11 @@ describe('the prompt lifecycle in a log', () => {
 
   test('keeps separate markers when another prompt intervenes', () => {
     const projection = projectEvents(emptyProjection, [
+      event(0, 'one', { type: 'agent.started' }),
       event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
       event(2, 'two', { type: 'prompt.accepted', text: 'new work' }),
       event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+      event(4, 'one', { type: 'agent.started' }),
     ]);
     assert.deepEqual(types(projection.turns), [
       'lifecycle',
@@ -927,12 +1057,8 @@ describe('a projection is never altered after it was returned', () => {
     ]);
 
     assert.deepEqual(first, held);
-    assert.deepEqual(emptyProjection, {
-      events: [],
-      turns: [],
-      drafts: [],
-      status: new Map(),
-    });
+    assert.deepEqual(emptyProjection.events, []);
+    assert.deepEqual(emptyProjection.turns, []);
   });
 
   test('leaves the projections before a rewind unchanged when it rebuilds the log', () => {

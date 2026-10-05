@@ -1,6 +1,7 @@
 import { ComposerButton } from '@/components/molecules/composer-button';
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
 import { ExecutionPicker } from '@/components/organisms/execution-picker';
+import { ThreadUsage } from '@/components/organisms/thread-usage';
 import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import { Button } from '@/components/ui/button';
 import { connectionLabel } from '@/domain/connection';
@@ -48,6 +49,7 @@ export function WorkspaceFooter({
         />
       </div>
       <ExecutionPicker />
+      <ThreadUsage thread={thread} />
       <ToolbarDivider />
       <ComposerButton
         canSend={canSend}

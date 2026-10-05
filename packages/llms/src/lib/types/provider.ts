@@ -160,6 +160,8 @@ export type ProviderStreamEvent<Output = JsonValue> =
       readonly type: 'response.started';
       readonly provider: ProviderId;
       readonly model: string;
+      /** Advertised context capacity, when the provider's catalog knows it. */
+      readonly contextWindow?: number;
     }
   | {
       readonly type: 'text.delta';

@@ -2,8 +2,10 @@
  * The prompt lifecycle as the conversation states it.
  *
  * An interruption leaves two events in a Thread's log — a `prompt.paused` that
- * says why the prompt was left unfinished, and the `prompt.resumed` that took it
- * up again — and a prompt the host gives up on is closed as a failure carrying a
+ * says why the prompt was left unfinished, and the `prompt.resumed` that queued
+ * its recovery. The projector only displays a resume after an `agent.started`
+ * confirms a previously started prompt is executing again. A prompt the host
+ * gives up on is closed as a failure carrying a
  * code. The vocabulary is the host's; this module only says how each one reads:
  * the icon and the line of the row it wears, whether that row offers the reader
  * the action to take the prompt up again, and whether a failure code is the one

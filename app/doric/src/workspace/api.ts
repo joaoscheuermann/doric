@@ -1,4 +1,5 @@
 import { workspaceUrl } from './config';
+import type { ThreadUsage } from './usage';
 
 const pageLimit = 100;
 
@@ -152,6 +153,7 @@ export type ProjectDiffResult =
  * one it does lie in.
  */
 export type GitBranches = {
+  readonly status?: 'pending' | 'unavailable';
   readonly branches: readonly {
     readonly name: string;
     readonly current: boolean;
@@ -162,7 +164,7 @@ export type GitBranches = {
   readonly blocked?: string;
 };
 export type ThreadGit =
-  | { readonly repo: false }
+  | { readonly repo: false; readonly status?: 'pending' | 'unavailable' }
   | {
       readonly repo: true;
       readonly root: string;
@@ -1117,6 +1119,18 @@ const wholeCount = (value: unknown): boolean =>
  */
 const branchesFrom = (value: unknown): GitBranches => {
   if (
+    isRecord(value) &&
+    (value.status === 'pending' || value.status === 'unavailable')
+  )
+    return {
+      status: value.status,
+      branches: [],
+      blocked:
+        value.status === 'pending'
+          ? 'Preparing environment…'
+          : 'Environment unavailable.',
+    };
+  if (
     !isRecord(value) ||
     !Array.isArray(value.branches) ||
     (value.blocked !== undefined && typeof value.blocked !== 'string') ||
@@ -1136,6 +1150,8 @@ const branchesFrom = (value: unknown): GitBranches => {
 
 const threadGitFrom = (value: unknown): ThreadGit => {
   if (!isRecord(value)) return invalidResponse();
+  if (value.status === 'pending' || value.status === 'unavailable')
+    return { repo: false, status: value.status };
   if (value.repo === false) return { repo: false };
   if (
     value.repo !== true ||
@@ -1501,6 +1517,8 @@ export const workspaceApi = {
       deleteWhenTerminal(`/projects/${id(projectId)}`),
   },
   threads: {
+    usage: (threadId: string) =>
+      request<ThreadUsage>(`/threads/${id(threadId)}/usage`),
     list: (projectId: string) =>
       allPages<Thread>(`/projects/${id(projectId)}/threads`),
     get: async (threadId: string) => {

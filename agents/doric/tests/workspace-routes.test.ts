@@ -34,6 +34,32 @@ const thread: Thread = {
   createdAt: '',
   updatedAt: '',
 };
+void test('serves usage without caching and returns missing for an unknown Thread', async (t) => {
+  const total = {
+    calls: 2,
+    unpricedCalls: 0,
+    cost: 0.75,
+    inputTokens: 48000,
+    outputTokens: 20,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
+  };
+  const host = await serve({
+    threads: {
+      usage: async (id) =>
+        id === threadId ? { total, threads: [] } : undefined,
+    },
+  });
+  t.after(host.close);
+  const response = await host.request(`/threads/${threadId}/usage`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(
+    ((await response.json()) as { total: { cost: number } }).total.cost,
+    0.75,
+  );
+  assert.equal((await host.request(`/threads/${projectId}/usage`)).status, 404);
+});
 
 // These are HTTP adapter tests: service outcomes are controlled below.
 // Workspace lifecycle and persistence are exercised in their own suites.
@@ -481,7 +507,33 @@ void test('serves a Thread Git summary and reports a missing or inactive Thread'
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await response.json(), { repo: false });
-  assert.equal((await host.request(`/threads/${promptId}/git`)).status, 409);
+  const unavailable = await host.request(`/threads/${promptId}/git`);
+  assert.equal(unavailable.status, 200);
+  assert.deepEqual(await unavailable.json(), { status: 'unavailable' });
+});
+
+void test('serves pending Git and branch reads while refusing mutations without a lease', async (t) => {
+  const host = await serve({
+    threads: {
+      git: async () => ({ status: 'pending' }),
+      branches: async () => ({ status: 'pending' }),
+    },
+  });
+  t.after(host.close);
+  for (const resource of ['git', 'branches']) {
+    const response = await host.request(`/threads/${threadId}/${resource}`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { status: 'pending' });
+  }
+  assert.equal(
+    (
+      await host.request(`/threads/${threadId}/branches`, 'POST', {
+        branch: 'main',
+        cwd: '/workspace',
+      })
+    ).status,
+    409,
+  );
 });
 
 void test('lists branches and reports switch refusals without accepting command options', async (t) => {
@@ -752,6 +804,7 @@ const serve = async (
           ...(parentThreadId ? { parentThreadId } : {}),
         },
       }),
+      usage: async () => undefined,
       find: async (id) => (id === threadId ? thread : undefined),
       list: async () => ({ items: [] }),
       rename: async (id, name) =>
@@ -783,6 +836,7 @@ const serve = async (
     },
     sshForVm: async () => undefined,
     resumeInterrupted: async () => 0,
+    recoverProjects: async () => undefined,
     dispose: async () => undefined,
   };
   const app = express();

@@ -149,6 +149,8 @@ model Thread {
   cwdRepo        String?       @map("cwd_repo")
   messages       Json          @default("[]") @db.JsonB
   checkpoints    Json          @default("{}") @db.JsonB
+  /// Cumulative unified charges, independent of rewound conversation history.
+  usage          Json?         @db.JsonB
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")

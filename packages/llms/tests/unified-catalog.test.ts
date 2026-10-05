@@ -98,13 +98,18 @@ void test('uses the cache until TTL and preserves stale support after refresh fa
   now = 110;
   assert.equal((await catalog('model')).parameters.has('tools'), true);
   assert.equal(loads, 2);
+  assert.deepEqual(await catalog.models(), models);
+  assert.equal(loads, 2, 'failed refreshes are backed off for all callers');
+  now += 30_000;
   assert.deepEqual(await catalog('model'), {
     known: true,
     parameters: new Set(),
   });
 });
 
-void test('returns unknown support on initial failure and retries on the next lookup', async () => {
+void test('backs off an initial failure then recovers after the retry interval', async (t) => {
+  let now = 100;
+  t.mock.method(Date, 'now', () => now);
   let offline = true;
   const catalog = createOpenRouterCatalog(async () => {
     if (offline) throw new Error('offline');
@@ -113,6 +118,9 @@ void test('returns unknown support on initial failure and retries on the next lo
 
   assert.equal((await catalog('model')).known, false);
   offline = false;
+  assert.equal((await catalog('model')).known, false);
+  await assert.rejects(catalog.models(), /offline/);
+  now += 30_000;
   assert.equal((await catalog('model')).parameters.has('tools'), true);
   assert.deepEqual(await catalog('missing'), {
     known: true,
