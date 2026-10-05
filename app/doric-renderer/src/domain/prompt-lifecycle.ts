@@ -29,7 +29,11 @@ export type LifecycleEvent =
        */
       readonly standing: boolean;
     }
-  | { readonly kind: 'resume'; readonly attempt: number };
+  | {
+      readonly kind: 'resume';
+      readonly attempt: number;
+      readonly pause?: { readonly reason: PauseReason; readonly at: string };
+    };
 
 /** The icon a lifecycle row wears. */
 export type LifecycleIcon = 'pause' | 'play';
@@ -38,6 +42,7 @@ export type LifecycleIcon = 'pause' | 'play';
 export type LifecycleMarker = {
   readonly icon: LifecycleIcon;
   readonly label: string;
+  readonly tooltip?: string;
   /** Whether the row offers the reader the Retomar action. */
   readonly action: boolean;
 };
@@ -105,7 +110,10 @@ export const lifecycleMarker = (event: LifecycleEvent): LifecycleMarker => {
     return {
       action: false,
       icon: 'play',
-      label: `Retomada · tentativa ${event.attempt}`,
+      label: `Execução retomada · tentativa ${event.attempt}`,
+      ...(event.pause
+        ? { tooltip: reasonText(event.pause.reason, clock(event.pause.at)) }
+        : {}),
     };
   return {
     action: event.standing,

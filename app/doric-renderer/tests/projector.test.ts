@@ -575,14 +575,9 @@ describe('the prompt lifecycle in a log', () => {
         text: 'Final answer',
       }),
     ]);
-    assert.deepEqual(types(projection.turns), [
-      'agent',
-      'lifecycle',
-      'lifecycle',
-      'agent',
-    ]);
+    assert.deepEqual(types(projection.turns), ['agent', 'lifecycle', 'agent']);
     assert.equal(textOf(projection.turns[0]), 'Earlier output');
-    assert.equal(textOf(projection.turns[3]), 'Final answer');
+    assert.equal(textOf(projection.turns[2]), 'Final answer');
   });
   test('opens a pause block at the point the run was interrupted', () => {
     const projection = projectEvents(emptyProjection, [
@@ -599,7 +594,7 @@ describe('the prompt lifecycle in a log', () => {
     });
   });
 
-  test('opens a resume block before the run it took up again', () => {
+  test('combines adjacent pause and resume into one marker preserving the pause reason', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'text.delta', delta: 'before' }),
       event(2, 'one', { type: 'prompt.paused', reason: 'host_stopped' }),
@@ -607,25 +602,14 @@ describe('the prompt lifecycle in a log', () => {
       event(4, 'one', { type: 'text.delta', delta: 'after' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), [
-      'agent',
-      'lifecycle',
-      'lifecycle',
-      'agent',
-    ]);
+    assert.deepEqual(types(projection.turns), ['agent', 'lifecycle', 'agent']);
     assert.deepEqual(lifecycleOf(projection.turns[1]), {
-      at: '2026-01-01T00:00:02.000Z',
-      kind: 'pause',
-      reason: 'host_stopped',
-      // The resume took it up, so the pause no longer offers the reader action.
-      standing: false,
-    });
-    assert.deepEqual(lifecycleOf(projection.turns[2]), {
       attempt: 1,
       kind: 'resume',
+      pause: { at: '2026-01-01T00:00:02.000Z', reason: 'host_stopped' },
     });
     assert.equal(textOf(projection.turns[0]), 'before');
-    assert.equal(textOf(projection.turns[3]), 'after');
+    assert.equal(textOf(projection.turns[2]), 'after');
   });
 
   test('keeps a pause standing until the prompt is taken up or finished', () => {
@@ -663,7 +647,64 @@ describe('the prompt lifecycle in a log', () => {
     ]);
 
     assert.equal(standingOf(first.turns[0]), true);
-    assert.equal(standingOf(after.turns[0]), false);
+    assert.equal(lifecycleOf(after.turns[0])?.kind, 'resume');
+  });
+
+  test('removes resume after a newer user prompt, including replay and later completion', () => {
+    const paused = [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+    ];
+    const newer = [
+      event(2, 'two', {
+        type: 'prompt.accepted',
+        text: 'new work',
+        source: { kind: 'user' },
+      }),
+      event(3, 'two', {
+        type: 'prompt.finished',
+        text: 'done',
+        status: 'completed',
+      }),
+    ];
+    const first = projectEvents(emptyProjection, paused);
+    const live = projectEvents(first, newer);
+    assert.equal(standingOf(first.turns[0]), true);
+    assert.equal(standingOf(live.turns[0]), false);
+    assert.deepEqual(
+      live.turns,
+      projectEvents(emptyProjection, [...paused, ...newer]).turns,
+    );
+  });
+
+  test('keeps separate markers when another prompt intervenes', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+      event(2, 'two', { type: 'prompt.accepted', text: 'new work' }),
+      event(3, 'one', { type: 'prompt.resumed', attempt: 1 }),
+    ]);
+    assert.deepEqual(types(projection.turns), [
+      'lifecycle',
+      'user',
+      'lifecycle',
+    ]);
+  });
+
+  test('does not supersede a pause when delegated input arrives', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'prompt.paused', reason: 'reader_stopped' }),
+      event(2, 'two', {
+        type: 'prompt.accepted',
+        text: 'child result',
+        source: {
+          kind: 'result',
+          threadId: 'child',
+          promptId: 'child-prompt',
+          requestPromptId: 'one',
+          status: 'completed',
+        },
+      }),
+    ]);
+    assert.equal(standingOf(projection.turns[0]), true);
   });
 
   test('opens a failure block carrying the code and message of the run', () => {

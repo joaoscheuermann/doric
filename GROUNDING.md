@@ -1184,9 +1184,19 @@ discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
 The conversation states the two lifecycle events as markers between the blocks
-they sit between: a pause reads as a quiet row — its icon, and the reason it
+they sit between: a pause reads as a quiet row — the reason it
 paused — and a resume as a quiet row naming its attempt, with the option to take
-a reader-paused prompt up again offered on that row. A prompt closed because its
+a reader-paused prompt up again offered on that row. These use separator markers
+with 12-pixel text, no pause/play icons and space above and below. The resume
+action is a compact RotateCcw-icon button with an accessible name. The transcript caret skips
+them in both directions; the resume button retains normal click and Tab access.
+Consecutive pause and resume events for the same prompt share one marker naming
+the resumed attempt, with the previous pause reason in its tooltip. Their durable
+events remain intact. A newer user prompt accepted in the same Thread supersedes
+older paused prompts: their resume action disappears, the host rejects manual
+resume, and boot recovery never schedules them again. Delegated inputs do not
+supersede a pause.
+A prompt closed because its
 attempts ran out is the one that is not quiet: it reads as a warning, alert icon
 and all, in the theme's own warning tone, because it needs the reader's decision.
 Arbitrary Agent event values are converted to JSON without dropping reasoning,

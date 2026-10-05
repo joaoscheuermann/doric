@@ -113,6 +113,15 @@ const unfinished = (
         readonly text?: string;
         readonly source?: PromptProgress['source'];
       } | null;
+      if (accepted?.source === undefined || accepted.source.kind === 'user') {
+        for (const previous of progress.values()) {
+          if (
+            previous.threadId === stored.threadId &&
+            previous.paused !== undefined
+          )
+            previous.superseded = true;
+        }
+      }
       progress.set(key, {
         projectId,
         threadId: stored.threadId,

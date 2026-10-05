@@ -26,6 +26,8 @@ export interface PromptProgress {
    * `prompt.resumed` followed. Absent while a resume is the prompt's last word.
    */
   readonly paused?: PauseReason;
+  /** A newer user input was accepted while this prompt was paused. */
+  readonly superseded?: boolean;
   /** How many times the host already took this prompt up again. */
   readonly attempts: number;
 }
@@ -63,8 +65,8 @@ export const delegatedResult = (
  * to take up again: work the host interrupted is work the host owes them, and a
  * prompt that never ran is work nobody has done yet.
  */
-export const hostOwesRun = ({ paused }: PromptProgress): boolean =>
-  paused !== 'reader_stopped';
+export const hostOwesRun = ({ paused, superseded }: PromptProgress): boolean =>
+  !superseded && paused !== 'reader_stopped';
 
 /**
  * How many times the host takes the same prompt up again before it gives up.

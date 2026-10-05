@@ -22,6 +22,51 @@ import {
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 
 void test(
+  'durably rejects a paused prompt superseded by new user input',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const host = await restart();
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread } = await host.threads.create(project.id, 'Thread');
+      const old = randomUUID();
+      const newer = randomUUID();
+      await host.threads.appendEvent(thread.id, old, {
+        type: 'prompt.accepted',
+        text: 'old work',
+        source: { kind: 'user' },
+      });
+      await host.threads.appendEvent(thread.id, old, {
+        type: 'prompt.paused',
+        reason: 'host_stopped',
+      });
+      await host.threads.appendEvent(thread.id, newer, {
+        type: 'prompt.accepted',
+        text: 'new work',
+        source: { kind: 'user' },
+      });
+      await host.threads.appendEvent(thread.id, newer, {
+        type: 'prompt.finished',
+        text: 'done',
+        status: 'completed',
+        source: { kind: 'user' },
+      });
+      assert.deepEqual(await host.service.threads.resume(thread.id, old), {
+        status: 'unknown_prompt',
+      });
+      assert.equal(await host.service.resumeInterrupted(), 0);
+      assert.equal(host.ran.length, 0);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+void test(
   'delivers an exhausted delegated prompt to its parent exactly once',
   { skip: connectionString === undefined, timeout: 10_000 },
   async () => {

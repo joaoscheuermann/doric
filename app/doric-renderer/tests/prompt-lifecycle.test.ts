@@ -50,7 +50,7 @@ describe('how a prompt lifecycle event reads', () => {
   test('names the attempt a resume opened', () => {
     const marker = lifecycleMarker({ attempt: 2, kind: 'resume' });
 
-    assert.equal(marker.label, 'Retomada · tentativa 2');
+    assert.equal(marker.label, 'Execução retomada · tentativa 2');
     assert.equal(marker.icon, 'play');
     assert.equal(marker.action, false);
   });
@@ -89,6 +89,16 @@ describe('how a prompt lifecycle event reads', () => {
 });
 
 describe('reading a prompt lifecycle event off the log', () => {
+  test('keeps the pause reason in the combined resume marker tooltip', () => {
+    const marker = lifecycleMarker({
+      kind: 'resume',
+      attempt: 2,
+      pause: { reason: 'reader_stopped', at: '2026-01-01T00:00:00.000Z' },
+    });
+    assert.equal(marker.label, 'Execução retomada · tentativa 2');
+    assert.equal(marker.tooltip, 'Execução pausada · você parou a execução');
+    assert.equal(marker.action, false);
+  });
   test('accepts only the pause reasons this vocabulary knows', () => {
     assert.equal(pauseReason('host_stopped'), 'host_stopped');
     assert.equal(pauseReason('host_restarted'), 'host_restarted');

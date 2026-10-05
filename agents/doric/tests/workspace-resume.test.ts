@@ -8,6 +8,63 @@ import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { Thread, ThreadEvent } from '../src/lib/workspace/types.js';
 import { deferred, fakeSandbox, workspace } from './helpers/workspace.js';
 
+void test('refuses a superseded pause through the service and after restart', async () => {
+  const harness = workspace();
+  const { project } = await harness.projects.create(
+    'Project',
+    {
+      configuration: defaultConfig,
+      revision: 1,
+      updatedAt: new Date(0).toISOString(),
+    },
+    'blue',
+  );
+  const { thread } = await harness.threads.create(project.id, 'Thread');
+  await harness.threads.appendEvent(thread.id, 'old', {
+    type: 'prompt.accepted',
+    text: 'old work',
+    source: { kind: 'user' },
+  });
+  await harness.threads.appendEvent(thread.id, 'old', {
+    type: 'prompt.paused',
+    reason: 'host_stopped',
+  });
+  await harness.threads.appendEvent(thread.id, 'new', {
+    type: 'prompt.accepted',
+    text: 'new work',
+    source: { kind: 'user' },
+  });
+  await harness.threads.appendEvent(thread.id, 'new', {
+    type: 'prompt.finished',
+    text: 'done',
+    status: 'completed',
+    source: { kind: 'user' },
+  });
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: {
+      acquire: async () => ({
+        sandbox: fakeSandbox(),
+        release: async () => undefined,
+      }),
+    } as never,
+  });
+  try {
+    assert.deepEqual(await service.threads.resume(thread.id, 'old'), {
+      status: 'unknown_prompt',
+    });
+    assert.equal(await service.resumeInterrupted(), 0);
+    assert.equal(
+      (await harness.threads.eventsAfter(thread.id, 0)).some(
+        (event) => event.type === 'prompt.resumed',
+      ),
+      false,
+    );
+  } finally {
+    await service.dispose();
+  }
+});
+
 void test(
   'queues boot resumptions without waiting for sandbox capacity',
   { timeout: 3000 },

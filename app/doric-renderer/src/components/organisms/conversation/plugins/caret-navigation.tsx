@@ -29,7 +29,6 @@ import { $isActivityTurnNode } from '@/components/organisms/conversation/nodes/a
 import { $isDelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
 import { $isThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { $isToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
-import { $isTurnAuthorNode } from '@/components/organisms/conversation/nodes/turn-author-node';
 import {
   caretKind,
   type Direction,
@@ -310,12 +309,16 @@ const $handleEnter = (event: KeyboardEvent | null): boolean => {
 const $handleFurnitureClick = (event: MouseEvent): boolean => {
   const target = getComposedEventTarget(event);
   if (!isDOMNode(target)) return false;
-  const author = $getNearestNodeFromDOMNode(target);
-  if (!$isTurnAuthorNode(author)) return false;
+  const block = $getNearestNodeFromDOMNode(target);
+  if (block === null || caretKind(block.getType()) !== 'furniture')
+    return false;
+  // Native controls keep their focus and activation, independent of the caret.
+  const element = target instanceof Element ? target : target.parentElement;
+  if (element?.closest('button, a, input, select, textarea')) return false;
   event.preventDefault();
   const children = $getRoot().getChildren();
   const types = $blockTypes();
-  const index = children.findIndex((child) => child.is(author));
+  const index = children.findIndex((child) => child.is(block));
   if (index === -1) return true;
   const previous = nextStop(types, index, 'previous');
   const stop = previous ?? nextStop(types, index, 'next');

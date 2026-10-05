@@ -570,6 +570,15 @@ const unfinishedPrompts = async (
         readonly text?: string;
         readonly source?: InputSource;
       } | null;
+      if (accepted?.source === undefined || accepted.source.kind === 'user') {
+        for (const previous of pending.values()) {
+          if (
+            previous.threadId === row.threadId &&
+            previous.paused !== undefined
+          )
+            previous.superseded = true;
+        }
+      }
       pending.set(key, {
         projectId,
         threadId: row.threadId,

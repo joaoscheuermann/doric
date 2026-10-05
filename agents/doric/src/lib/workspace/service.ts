@@ -931,7 +931,7 @@ export const createWorkspaceService = ({
         if (isTerminal(record.state)) return { status: 'inactive' };
         if (
           !(await threads.unfinishedPrompts(id)).some(
-            (prompt) => prompt.promptId === promptId,
+            (prompt) => prompt.promptId === promptId && !prompt.superseded,
           )
         )
           return { status: 'unknown_prompt' };
@@ -943,7 +943,7 @@ export const createWorkspaceService = ({
         return exclusive(record.projectId, async () => {
           // Acquisition and credential refresh can outlive the run we read.
           const progress = (await threads.unfinishedPrompts(id)).find(
-            (prompt) => prompt.promptId === promptId,
+            (prompt) => prompt.promptId === promptId && !prompt.superseded,
           );
           if (progress === undefined)
             return { status: 'unknown_prompt' as const };

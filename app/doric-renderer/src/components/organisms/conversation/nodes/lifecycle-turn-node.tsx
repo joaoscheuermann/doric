@@ -1,11 +1,10 @@
 /**
  * A prompt's pause or resume as a block of the transcript: a quiet row between
  * the blocks the event sits between, drawn from the lifecycle rules so the row
- * never invents its own wording. It is a widget the caret stops on as a whole,
+ * never invents its own wording. The caret skips this informational block,
  * and its Retomar button is the only thing in it that acts.
  */
 import { PromptMarker } from '@/components/molecules/prompt-marker';
-import { WidgetFocus } from '@/components/molecules/widget-focus';
 import { LIFECYCLE_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { LifecycleTurn } from '@/domain/projector';
 import type { LifecycleEvent } from '@/domain/prompt-lifecycle';
@@ -71,10 +70,7 @@ export class LifecycleTurnNode extends DecoratorNode<JSX.Element> {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    // `mt-6`: the gap the conversation's blocks stand apart by, which the author
-    // line's bottom margin gives every other case. A row can follow a block that
-    // carries no such line, so the gap is stated here.
-    dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
+    dom.className = `my-4 select-none ${CONVERSATION_FONT_CLASS}`;
     return dom;
   }
 
@@ -91,16 +87,16 @@ export class LifecycleTurnNode extends DecoratorNode<JSX.Element> {
     return false;
   }
 
+  override isKeyboardSelectable(): boolean {
+    return false;
+  }
+
   override decorate(): JSX.Element {
     return (
-      <WidgetFocus nodeKey={this.__key}>
-        {() => (
-          <PromptMarker
-            event={this.__event}
-            onResume={() => this.__onResume(this.__promptId)}
-          />
-        )}
-      </WidgetFocus>
+      <PromptMarker
+        event={this.__event}
+        onResume={() => this.__onResume(this.__promptId)}
+      />
     );
   }
 

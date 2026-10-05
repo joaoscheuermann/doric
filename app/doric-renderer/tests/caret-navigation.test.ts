@@ -11,6 +11,7 @@ import {
 import {
   ACTIVITY_TURN_BLOCK,
   AGENT_TURN_BLOCK,
+  LIFECYCLE_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
@@ -19,6 +20,29 @@ import {
 } from '../src/domain/conversation-nodes';
 
 describe('how the caret treats a block', () => {
+  test('skips consecutive pause and resume markers in both directions', () => {
+    const blocks = [
+      AGENT_TURN_BLOCK,
+      LIFECYCLE_TURN_BLOCK,
+      LIFECYCLE_TURN_BLOCK,
+      TURN_AUTHOR_BLOCK,
+      USER_PROMPT_BLOCK,
+    ];
+    assert.equal(nextStop(blocks, 0, 'next'), 4);
+    assert.equal(nextStop(blocks, 4, 'previous'), 0);
+    assert.equal(enterAction([LIFECYCLE_TURN_BLOCK], false), 'nothing');
+  });
+
+  test('stays at the content edge when only lifecycle markers remain', () => {
+    assert.equal(
+      nextStop([AGENT_TURN_BLOCK, LIFECYCLE_TURN_BLOCK], 0, 'next'),
+      undefined,
+    );
+    assert.equal(
+      nextStop([LIFECYCLE_TURN_BLOCK, AGENT_TURN_BLOCK], 1, 'previous'),
+      undefined,
+    );
+  });
   test('focuses delegated instructions and results as widgets and toggles with Enter', () => {
     const result = 'delegated-turn-node';
     assert.equal(caretKind(result), 'widget');

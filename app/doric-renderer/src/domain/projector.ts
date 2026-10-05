@@ -505,6 +505,12 @@ const readEvent = (
   } else if (event?.type === 'prompt.resumed') {
     const attempt = resumeAttempt(event.attempt);
     if (attempt !== undefined) {
+      if (open?.type === 'lifecycle' && open.lifecycle.kind === 'pause') {
+        const { reason, at } = open.lifecycle;
+        open.lifecycle = { kind: 'resume', attempt, pause: { reason, at } };
+        open.events.push(item);
+        return;
+      }
       turns.push({
         type: 'lifecycle',
         promptId,
@@ -543,15 +549,21 @@ const settle = (
   // of the same prompt, or a terminal status, is what takes the reader's action
   // away. Read backwards so each pause learns whether anything after it did.
   const takenUp = new Set<string>();
+  let newerUserPrompt = false;
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
+    if (turn?.type === 'user' && turn.delegated === undefined)
+      newerUserPrompt = true;
     if (turn === undefined || turn.type !== 'lifecycle') continue;
     const lifecycle = turn.lifecycle;
     if (lifecycle.kind === 'resume') {
       takenUp.add(turn.promptId);
       continue;
     }
-    const standing = !takenUp.has(turn.promptId) && !status.has(turn.promptId);
+    const standing =
+      !newerUserPrompt &&
+      !takenUp.has(turn.promptId) &&
+      !status.has(turn.promptId);
     if (lifecycle.standing !== standing)
       // A new event object, never a write into the one a returned projection
       // already holds: the two readings share the turn they did not change.
