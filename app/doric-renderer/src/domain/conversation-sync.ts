@@ -59,7 +59,9 @@ const authorFor = (
   if (turn.type === 'user')
     // A prompt the host has not accepted yet is drawn dimmed and nameless; the
     // name arrives with the accepted turn the log holds.
-    return turn.accepted ? { role: 'user', name: READER_NAME, at } : null;
+    return turn.accepted && turn.delegated === undefined
+      ? { role: 'user', name: READER_NAME, at }
+      : null;
   if (isChrome(turn)) return null;
   let next = index + 1;
   while (next < turns.length && isChrome(turns[next])) next += 1;

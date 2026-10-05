@@ -19,6 +19,16 @@ import {
 } from '../src/domain/conversation-nodes';
 
 describe('how the caret treats a block', () => {
+  test('focuses delegated instructions and results as widgets and toggles with Enter', () => {
+    const result = 'delegated-turn-node';
+    assert.equal(caretKind(result), 'widget');
+    assert.equal(enterAction([result], false), 'toggle');
+    assert.equal(enterAction([result], true), 'default');
+    assert.equal(
+      nextStop([result, TURN_AUTHOR_BLOCK, USER_PROMPT_BLOCK], 0, 'next'),
+      2,
+    );
+  });
   test('never enters an author line', () => {
     assert.equal(caretKind(TURN_AUTHOR_BLOCK), 'furniture');
   });

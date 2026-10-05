@@ -91,7 +91,20 @@ submit button and that log rendered verbatim as JSON, with no styling.
 `threads.prompt` carries a new prompt and `threads.rewind` replaces a past one.
 PostgreSQL Thread events remain the sole conversation-history source. Because that
 rendering is being rebuilt, nothing here promises a shape yet for prose, reasoning,
-tool calls, delegated input or comments. The packaged CSP permits fonts from `self`
+tool calls or comments. Delegated inputs render as read-only Markdown blocks:
+parent instructions and child results name their sending Thread, link to it
+when it is in the loaded tree, and fall back to its short ID otherwise. Results
+retain the recorded terminal status; an empty body has an explicit placeholder.
+These blocks never wear the human reader's author line, and replay uses the same
+durable inputs as live rendering. Parent instructions and child results share a
+settled collapsible widget: parent instructions start open and child results start
+closed, with an 18-pixel agent icon,
+`Instruction from: "<Thread title>"` or `Result from: "<Thread title>"`, and a
+chevron. The prefix never wraps, and long titles truncate with an ellipsis.
+The title navigates independently of the toggle. Opening reveals the recorded
+status and read-only Markdown. Mouse and keyboard share the node's open state,
+which survives transcript updates.
+The packaged CSP permits fonts from `self`
 only, and the faces vendored under `src/assets/fonts` are the only ones the
 renderer wears: Noto Sans for the app's own surfaces, and IBM Plex Mono for the
 conversation body alone. The sidebar

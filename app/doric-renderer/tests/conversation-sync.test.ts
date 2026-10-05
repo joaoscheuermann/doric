@@ -140,6 +140,41 @@ const fill = (turns: readonly Turn[], creates: number): string[] => {
 };
 
 describe('bringing the blocks in step with the turns', () => {
+  for (const kind of ['parent', 'result'] as const) {
+    test(`keeps ${kind} input in order without attributing it to the reader`, () => {
+      const input: UserTurn = {
+        ...user('delegated', 3),
+        text: '',
+        delegated: {
+          kind,
+          threadId: 'sender',
+          text: 'Message from another thread',
+        },
+      };
+      const turns = [
+        user('one', 1),
+        agent('one', 2),
+        input,
+        agent('delegated', 4),
+      ];
+      const plan = syncPlan([], turns, 10);
+      assert.equal(plan.steps[2]?.author, null);
+      assert.equal(plan.steps[1]?.author?.role, 'agent');
+      assert.equal(plan.steps[3]?.author?.role, 'agent');
+      assert.deepEqual(
+        fill(turns, 1),
+        plan.steps.map((step) => step.key),
+      );
+      const replay = syncPlan(
+        plan.steps.map((step) => step.key),
+        turns,
+        10,
+      );
+      assert.ok(replay.steps.every((step) => step.kind === 'update'));
+      assert.equal(replay.steps[2]?.author, null);
+    });
+  }
+
   test('creates the newest turns first when the transcript arrives whole', () => {
     const first = user('one', 1);
     const run = agent('one', 2);

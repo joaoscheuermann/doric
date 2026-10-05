@@ -15,7 +15,12 @@ import { type ReactNode } from 'react';
 
 type CollapsibleBlockProps = {
   /** The header line, which shimmers while the work is in progress. */
-  readonly label: string;
+  readonly label: ReactNode;
+  /** An independent header action, placed between sibling toggle buttons. */
+  readonly action?: {
+    readonly content: ReactNode;
+    readonly toggleLabel: string;
+  };
   /**
    * What makes the block open on its own: open while its work is in progress
    * and it has something to show, and folded away once the work settles. A
@@ -50,6 +55,7 @@ type CollapsibleBlockProps = {
  * inside a summary sets its own between them.
  */
 export function CollapsibleBlock({
+  action,
   children,
   chosen,
   focused,
@@ -59,21 +65,41 @@ export function CollapsibleBlock({
 }: CollapsibleBlockProps) {
   const open = blockOpen(chosen, openness);
   const toggle = (): void => onChosenChange(blockToggled(chosen, openness));
+  const headerClass = cn(
+    'flex w-full items-center gap-1 text-sm transition-colors hover:text-foreground',
+    focused ? 'text-foreground' : 'text-muted-foreground',
+  );
+  const chevron = (
+    <ChevronRightIcon
+      aria-hidden="true"
+      className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+    />
+  );
 
   return (
     <Collapsible open={open} onOpenChange={toggle}>
-      <CollapsibleTrigger
-        className={cn(
-          'flex w-full items-center gap-1 text-sm transition-colors hover:text-foreground',
-          focused ? 'text-foreground' : 'text-muted-foreground',
-        )}
-      >
-        <span className={cn(openness.active && 'shimmer')}>{label}</span>
-        <ChevronRightIcon
-          aria-hidden="true"
-          className={cn('size-3.5 transition-transform', open && 'rotate-90')}
-        />
-      </CollapsibleTrigger>
+      {action === undefined ? (
+        <CollapsibleTrigger className={headerClass}>
+          <span className={cn(openness.active && 'shimmer')}>{label}</span>
+          {chevron}
+        </CollapsibleTrigger>
+      ) : (
+        <div className={headerClass}>
+          <CollapsibleTrigger
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap"
+            aria-label={action.toggleLabel}
+          >
+            {label}
+          </CollapsibleTrigger>
+          {action.content}
+          <CollapsibleTrigger
+            className="flex min-w-3.5 self-stretch flex-1 items-center"
+            aria-label={action.toggleLabel}
+          >
+            {chevron}
+          </CollapsibleTrigger>
+        </div>
+      )}
       <CollapsibleContent className="mt-1.5 ml-1.5 border-l border-border pl-3 text-sm text-muted-foreground">
         {children}
       </CollapsibleContent>

@@ -1,6 +1,7 @@
 import { ThreadNavRail } from '@/components/molecules/thread-nav-rail';
 import { ActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
+import { DelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
 import { FailureTurnNode } from '@/components/organisms/conversation/nodes/failure-turn-node';
 import { LifecycleTurnNode } from '@/components/organisms/conversation/nodes/lifecycle-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
@@ -224,6 +225,7 @@ const conversationExtension = defineExtension({
   theme: exampleTheme,
   nodes: [
     UserTurnNode,
+    DelegatedTurnNode,
     AgentTurnNode,
     ThinkingTurnNode,
     ToolTurnNode,

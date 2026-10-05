@@ -13,6 +13,7 @@ export const AGENT_TURN_BLOCK = 'agent-turn-node';
 export const THINKING_TURN_BLOCK = 'thinking-turn-node';
 export const TOOL_TURN_BLOCK = 'tool-turn-node';
 export const USER_TURN_BLOCK = 'user-turn-node';
+export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
 
 /** The author line that trails the agent's and the reader's turns. */
 export const TURN_AUTHOR_BLOCK = 'turn-author-node';
@@ -38,6 +39,7 @@ const UNDELETABLE = new Set([
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   USER_TURN_BLOCK,
+  DELEGATED_TURN_BLOCK,
   USER_PROMPT_BLOCK,
   ACTIVITY_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
@@ -45,11 +47,11 @@ const UNDELETABLE = new Set([
 ]);
 
 /**
- * Only the agent's turn needs this rule: the thinking, tool, lifecycle and
+ * Agent answers and delegated inputs need this rule: the thinking, tool, lifecycle and
  * failure turns render as decorators, which the editor already refuses to let
  * anyone type into.
  */
-const READ_ONLY = new Set([AGENT_TURN_BLOCK]);
+const READ_ONLY = new Set([AGENT_TURN_BLOCK, DELEGATED_TURN_BLOCK]);
 
 /** Whether a block of this type survives every deletion, empty or not. */
 export const isUndeletableBlock = (nodeType: string): boolean =>

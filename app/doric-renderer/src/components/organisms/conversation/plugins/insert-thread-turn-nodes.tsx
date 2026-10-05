@@ -9,6 +9,11 @@ import {
   type AgentTurnNode,
 } from '@/components/organisms/conversation/nodes/agent-turn-node';
 import {
+  $createDelegatedTurnNode,
+  $isDelegatedTurnNode,
+  type DelegatedTurnNode,
+} from '@/components/organisms/conversation/nodes/delegated-turn-node';
+import {
   $createFailureTurnNode,
   $isFailureTurnNode,
   type FailureTurnNode,
@@ -59,9 +64,10 @@ import {
 } from 'lexical';
 import { useEffect, useRef } from 'react';
 
-/** Any of the seven turn blocks, once it is in the editor. */
+/** Any of the turn blocks, once it is in the editor. */
 type TurnBlock =
   | UserTurnNode
+  | DelegatedTurnNode
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
@@ -83,6 +89,7 @@ type TurnUnit = {
 
 const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isUserTurnNode(node) ||
+  $isDelegatedTurnNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
@@ -98,6 +105,12 @@ const $createBlock = (
 ): TurnBlock => {
   switch (turn.type) {
     case 'user':
+      if (turn.delegated !== undefined)
+        return $createDelegatedTurnNode({
+          turnKey: key,
+          promptId: turn.promptId,
+          input: turn.delegated,
+        });
       return $createUserTurnNode(
         key,
         turn.promptId,
@@ -175,7 +188,11 @@ const $syncAuthor = (
 
 /** Hands the block the chat's newest version of its turn. */
 const $applyTurn = (block: TurnBlock, turn: Turn): void => {
-  if (turn.type === 'user' && $isUserTurnNode(block)) block.setTurn(turn);
+  if (
+    turn.type === 'user' &&
+    ($isUserTurnNode(block) || $isDelegatedTurnNode(block))
+  )
+    block.setTurn(turn);
   else if (turn.type === 'agent' && $isAgentTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'thinking' && $isThinkingTurnNode(block))

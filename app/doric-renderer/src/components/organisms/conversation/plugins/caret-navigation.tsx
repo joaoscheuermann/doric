@@ -26,6 +26,7 @@
  * question about visual lines, which only the browser can answer.
  */
 import { $isActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
+import { $isDelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
 import { $isThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { $isToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import { $isTurnAuthorNode } from '@/components/organisms/conversation/nodes/turn-author-node';
@@ -279,7 +280,12 @@ const $toggleFocused = (): void => {
     else node.toggleItem(cursor);
     return;
   }
-  if ($isThinkingTurnNode(node) || $isToolTurnNode(node)) node.toggle();
+  if (
+    $isThinkingTurnNode(node) ||
+    $isToolTurnNode(node) ||
+    $isDelegatedTurnNode(node)
+  )
+    node.toggle();
 };
 
 /** What Enter does where the caret is: toggle a widget, or nothing on furniture. */

@@ -11,6 +11,7 @@
  */
 import {
   ACTIVITY_TURN_BLOCK,
+  DELEGATED_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
   THINKING_TURN_BLOCK,
@@ -32,6 +33,7 @@ export const caretKind = (nodeType: string): CaretKind => {
   if (nodeType === TURN_AUTHOR_BLOCK) return 'furniture';
   if (
     nodeType === THINKING_TURN_BLOCK ||
+    nodeType === DELEGATED_TURN_BLOCK ||
     nodeType === TOOL_TURN_BLOCK ||
     nodeType === ACTIVITY_TURN_BLOCK ||
     nodeType === LIFECYCLE_TURN_BLOCK ||
