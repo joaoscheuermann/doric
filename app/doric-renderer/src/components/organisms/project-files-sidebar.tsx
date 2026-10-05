@@ -8,6 +8,7 @@ import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { TreeSkeleton } from '@/components/molecules/tree-skeleton';
+import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import {
   Empty,
   EmptyDescription,
@@ -31,7 +32,7 @@ import {
   changedRepositories,
 } from '@/domain/change-tree';
 import { emptyDirectoryNotice, sandboxNotice } from '@/domain/files';
-import type { Project, ProjectChange } from '@/domain/workspace';
+import type { Project, ProjectChange, Thread } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import { moveItem } from '@/utility/move-item';
 import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
@@ -47,6 +48,7 @@ type ProjectFilesSidebarProps = {
   readonly onToggle: () => void;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
+  readonly thread?: Thread;
   readonly view: PanelView;
   readonly onViewChange: (view: PanelView) => void;
   readonly onOpenChange: (repository: string, change: ProjectChange) => void;
@@ -74,6 +76,7 @@ export function ProjectFilesSidebar({
   files,
   onToggle,
   project,
+  thread,
   view,
   onViewChange,
   onOpenChange,
@@ -143,6 +146,17 @@ export function ProjectFilesSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <footer
+        data-slot="project-files-footer"
+        className="flex chrome-bar shrink-0 items-center gap-1 border-t bg-sidebar px-2 text-xs"
+      >
+        <WorkspaceCwd
+          key={thread?.id}
+          thread={thread}
+          changes={files.changes}
+          onShowChanges={() => onViewChange('changes')}
+        />
+      </footer>
     </Sidebar>
   );
 }

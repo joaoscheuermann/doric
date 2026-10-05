@@ -166,7 +166,9 @@ without sending file contents or patches to the renderer.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-panel's header, in place of a title. The panel has no footer or manual refresh button.
+panel's header, in place of a title. The panel's footer shares the conversation
+footer's height and working-directory, branch and changes controls for the selected
+Thread. The panel has no manual refresh button.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
