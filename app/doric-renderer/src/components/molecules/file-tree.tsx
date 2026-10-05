@@ -4,13 +4,16 @@ import {
   treeClassName,
   TreeGuides,
 } from '@/components/molecules/tree-guides';
+import { Badge } from '@/components/ui/badge';
 import {
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
-import { emptyDirectoryNotice } from '@/domain/files';
+import { changeClassName, type ChangeDecoration } from '@/domain/change-tree';
+import { changeLetter, emptyDirectoryNotice } from '@/domain/files';
 import type { ProjectTreeNode } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
@@ -26,6 +29,7 @@ type FileTreeProps = {
   readonly entries: readonly ProjectTreeNode[];
   readonly expanded: ReadonlySet<string>;
   readonly selectedPath?: string;
+  readonly decorations?: ReadonlyMap<string, ChangeDecoration>;
 };
 
 /**
@@ -43,6 +47,7 @@ export function FileTree({
   entries,
   expanded,
   selectedPath,
+  decorations,
 }: FileTreeProps) {
   return (
     <>
@@ -55,6 +60,7 @@ export function FileTree({
           else actions.open(entry.path);
         };
         const children = directory ? (entry.children ?? []) : [];
+        const decoration = decorations?.get(entry.path);
 
         return (
           <SidebarMenuItem
@@ -78,6 +84,17 @@ export function FileTree({
                   role="treeitem"
                   tabIndex={0}
                   aria-expanded={directory ? open : undefined}
+                  aria-selected={selected}
+                  aria-label={
+                    decoration === undefined
+                      ? entry.name
+                      : `${entry.name}, ${decoration.description}`
+                  }
+                  title={
+                    decoration === undefined
+                      ? entry.path
+                      : `${entry.path}\n${decoration.description}`
+                  }
                   onClick={activate}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -106,9 +123,42 @@ export function FileTree({
                     />
                   )}
                   {directory ? <FolderIcon /> : <FileIcon />}
-                  <span>{entry.name}</span>
+                  <span
+                    className={cn(
+                      'truncate',
+                      decoration?.status !== undefined &&
+                        changeClassName(decoration.status),
+                      decoration?.status !== undefined
+                        ? 'font-normal'
+                        : 'font-light',
+                      !directory &&
+                        decoration?.status === 'deleted' &&
+                        'line-through',
+                    )}
+                  >
+                    {entry.name}
+                  </span>
                 </div>
               </SidebarMenuButton>
+              {decoration !== undefined && (
+                <SidebarMenuBadge>
+                  <Badge variant="ghost" className="px-1" aria-hidden>
+                    <span
+                      className={
+                        decoration.status === undefined
+                          ? undefined
+                          : changeClassName(decoration.status)
+                      }
+                    >
+                      {directory
+                        ? decoration.count
+                        : decoration.status === undefined
+                          ? ''
+                          : changeLetter(decoration.status)}
+                    </span>
+                  </Badge>
+                </SidebarMenuBadge>
+              )}
             </div>
             {open && (
               <SidebarMenuSub role="group" className={treeClassName}>
@@ -127,6 +177,7 @@ export function FileTree({
                     entries={children}
                     expanded={expanded}
                     selectedPath={selectedPath}
+                    decorations={decorations}
                   />
                 )}
               </SidebarMenuSub>

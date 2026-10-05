@@ -696,6 +696,8 @@ const serve = async (
         };
       },
       files: async () => ({ status: 'ready', path: '', entries: [] }),
+      changes: async () => ({ status: 'ready', repositories: [] }),
+      fileDiff: async () => ({ status: 'not_found' }),
       file: async (_id, path) => ({
         status: 'ready',
         path,

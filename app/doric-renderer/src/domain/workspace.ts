@@ -229,6 +229,12 @@ export type WorkspaceApi = {
     tree(projectId: string, path?: string): Promise<ProjectTreeResult>;
     /** The sandbox's diff against git, or the diff of one path inside it. */
     diff(projectId: string, path?: string): Promise<ProjectDiffResult>;
+    changes(projectId: string, path?: string): Promise<ProjectChangesResult>;
+    fileDiff(
+      projectId: string,
+      repository: string,
+      path: string,
+    ): Promise<ProjectFileDiffResult>;
     watch(
       projectId: string,
       listener: (update: ProjectUpdate) => void,
@@ -332,11 +338,17 @@ export type ProjectChangeStatus =
   | 'modified'
   | 'deleted'
   | 'renamed'
-  | 'untracked';
+  | 'untracked'
+  | 'conflicted';
 
 export type ProjectChange = {
   readonly path: string;
   readonly status: ProjectChangeStatus;
+  readonly originalPath?: string;
+  readonly staged?: boolean;
+  readonly unstaged?: boolean;
+  readonly indexStatus?: string;
+  readonly worktreeStatus?: string;
 };
 
 export type ProjectChangeSet = {
@@ -375,6 +387,36 @@ export type ProjectFileResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+export type ProjectFileChange = ProjectChange & {
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly indexStatus: string;
+  readonly worktreeStatus: string;
+};
+export type ProjectChanges = {
+  readonly path?: string;
+  readonly repositories: readonly {
+    readonly path: string;
+    readonly changes: readonly ProjectFileChange[];
+    readonly added: number;
+    readonly removed: number;
+  }[];
+};
+export type ProjectChangesResult =
+  | { readonly status: 'ready'; readonly changes: ProjectChanges }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+export type ProjectFileDiff = ProjectFileChange & {
+  readonly repository: string;
+  readonly original: string;
+  readonly modified: string;
+  readonly binary: boolean;
+  readonly truncated: boolean;
+};
+export type ProjectFileDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectFileDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
 export type ProjectDiffResult =
   | { readonly status: 'ready'; readonly diff: ProjectDiff }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }

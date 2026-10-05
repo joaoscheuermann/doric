@@ -407,6 +407,82 @@ const withAnswer = async <Value>(
 };
 
 describe('Project filesystem HTTP boundary', () => {
+  test('preserves Git metadata and individual comparison text across the host boundary', async () => {
+    const change = {
+      path: 'new\nname.ts',
+      originalPath: 'old name.ts',
+      status: 'renamed',
+      staged: true,
+      unstaged: false,
+      indexStatus: 'R',
+      worktreeStatus: ' ',
+    };
+    const changes = await withAnswer(
+      Response.json({
+        repositories: [
+          { path: 'repo', changes: [change], added: 12, removed: 7 },
+        ],
+      }),
+      () => workspaceApi.projects.changes('project-id'),
+    );
+    assert.equal(changes.status, 'ready');
+    if (changes.status !== 'ready') throw new Error('Expected changes');
+    assert.deepEqual(changes.changes.repositories[0]?.changes[0], change);
+    assert.equal(changes.changes.repositories[0]?.added, 12);
+    assert.equal(changes.changes.repositories[0]?.removed, 7);
+    const value = {
+      ...change,
+      repository: 'repo',
+      original: 'before\n',
+      modified: 'after\n',
+      binary: false,
+      truncated: false,
+    };
+    const diff = await withAnswer(Response.json(value), () =>
+      workspaceApi.projects.fileDiff('project-id', 'repo', change.path),
+    );
+    assert.equal(diff.status, 'ready');
+    if (diff.status !== 'ready') throw new Error('Expected diff');
+    assert.deepEqual(diff.diff, value);
+  });
+  test('rejects malformed change metadata instead of exposing it to the renderer', async () => {
+    await assert.rejects(
+      withAnswer(
+        Response.json({
+          repositories: [
+            {
+              path: '',
+              added: 1,
+              removed: 0,
+              changes: [{ path: 'a.ts', status: 'modified', staged: 'yes' }],
+            },
+          ],
+        }),
+        () => workspaceApi.projects.changes('project-id'),
+      ),
+    );
+  });
+  test('encodes repository and special file names in a comparison request', async () => {
+    const originalFetch = globalThis.fetch;
+    let url = '';
+    globalThis.fetch = async (input) => {
+      url = String(input);
+      return Response.json({ status: 'pending' }, { status: 202 });
+    };
+    try {
+      await workspaceApi.projects.fileDiff(
+        'project-id',
+        'my repo',
+        'a?b\nc.ts',
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, '/projects/project-id/files/diff');
+    assert.equal(parsed.searchParams.get('repository'), 'my repo');
+    assert.equal(parsed.searchParams.get('path'), 'a?b\nc.ts');
+  });
   test('reads a directory, a file and a diff through the new routes', async () => {
     const originalFetch = globalThis.fetch;
     const requests: Array<{ url: string; init?: RequestInit }> = [];

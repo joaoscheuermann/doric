@@ -33,6 +33,19 @@ export const queryKeys = {
       : ['thread', threadId, 'git', cwd],
   /** Everything read from one Project's sandbox. */
   files: {
+    changes: (projectId: string | undefined, cwd: string | undefined) => [
+      'files',
+      projectId,
+      'changes',
+      cwd,
+    ],
+    fileDiff: (projectId: string, repository: string, path: string) => [
+      'files',
+      projectId,
+      'file-diff',
+      repository,
+      path,
+    ],
     /** The prefix that invalidates the tree, the open file and the diff. */
     ofProject: (projectId: string | undefined) => ['files', projectId],
     /**

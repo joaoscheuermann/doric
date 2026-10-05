@@ -106,6 +106,10 @@ const colours = (mode: Mode, palette: CSSStyleDeclaration): editor.IColors => {
     // modes, and dark enough under the foreground to read a selection on.
     'editor.selectionBackground': token('--accent'),
     'editorError.foreground': token('--destructive'),
+    'diffEditor.insertedTextBackground': token('--git-added')?.concat('33'),
+    'diffEditor.removedTextBackground': token('--git-deleted')?.concat('33'),
+    'diffEditor.insertedLineBackground': token('--git-added')?.concat('18'),
+    'diffEditor.removedLineBackground': token('--git-deleted')?.concat('18'),
     // The one widget a read-only panel can still open, the find box, is a
     // raised surface like any other in the app.
     'editorWidget.background': token('--card'),

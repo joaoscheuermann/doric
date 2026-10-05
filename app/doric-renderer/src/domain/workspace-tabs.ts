@@ -1,4 +1,13 @@
+import { moveItem } from '../utility/move-item';
+
 export type WorkspaceTab =
+  | {
+      readonly id: string;
+      readonly kind: 'diff';
+      readonly projectId: string;
+      readonly repository: string;
+      readonly path: string;
+    }
   | {
       readonly id: string;
       readonly kind: 'file';
@@ -19,6 +28,32 @@ export type WorkspaceTabs = {
 };
 
 export const emptyTabs: WorkspaceTabs = { items: [] };
+
+export const moveTab = (
+  state: WorkspaceTabs,
+  from: string,
+  to: string,
+): WorkspaceTabs => ({
+  ...state,
+  items: moveItem(
+    state.items,
+    state.items.findIndex((tab) => tab.id === from),
+    state.items.findIndex((tab) => tab.id === to),
+  ),
+});
+
+export const moveManualTab = (
+  state: WorkspaceTabs,
+  from: string,
+  to: string,
+): WorkspaceTabs => ({
+  ...state,
+  manualIds: moveItem(
+    state.manualIds ?? [],
+    state.manualIds?.indexOf(from) ?? -1,
+    state.manualIds?.indexOf(to) ?? -1,
+  ),
+});
 
 export const openManual = (
   state: WorkspaceTabs,

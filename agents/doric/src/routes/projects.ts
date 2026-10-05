@@ -367,6 +367,72 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
       'The Project path is invalid.',
     );
   });
+  router.get('/:id/changes', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const input = pathQuery.safeParse(request.query);
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_project_path',
+        'The Project path is invalid.',
+      );
+      return;
+    }
+    const result = await service.projects.changes(
+      request.params.id,
+      input.data.path,
+    );
+    if (leaseResponse(response, result.status)) return;
+    if (result.status === 'ready') {
+      response.json({
+        ...(result.path === undefined ? {} : { path: result.path }),
+        repositories: result.repositories,
+      });
+      return;
+    }
+    sendError(
+      response,
+      result.status === 'not_found' ? 404 : 422,
+      result.status === 'not_found'
+        ? 'project_path_not_found'
+        : 'invalid_project_path',
+      'The Project path cannot be read.',
+    );
+  });
+  router.get('/:id/files/diff', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const input = z
+      .object({ repository: pathInput, path: pathInput.min(1) })
+      .safeParse(request.query);
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_project_path',
+        'The Project path is invalid.',
+      );
+      return;
+    }
+    const result = await service.projects.fileDiff(
+      request.params.id,
+      input.data.repository,
+      input.data.path,
+    );
+    if (leaseResponse(response, result.status)) return;
+    if (result.status === 'ready') {
+      response.json(result.diff);
+      return;
+    }
+    sendError(
+      response,
+      result.status === 'not_found' ? 404 : 422,
+      result.status === 'not_found'
+        ? 'project_path_not_found'
+        : 'invalid_project_path',
+      'The changed file cannot be read.',
+    );
+  });
   router.post('/:id/terminate', async (request, response) => {
     const project = await service.projects.terminate(request.params.id);
     if (project === undefined) {

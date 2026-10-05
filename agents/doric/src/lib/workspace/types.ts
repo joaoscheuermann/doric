@@ -4,6 +4,7 @@ import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 
 import type { DoricConfig } from '../config/schema.js';
 import type { ProjectColor } from './colors.js';
+import type { FileDiff, RepositoryChanges } from './file-changes.js';
 import type { ProjectChangeSet } from './files.js';
 import type { PromptFailure, PromptProgress } from './prompts.js';
 import type {
@@ -259,6 +260,17 @@ export type ProjectDiff =
     }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+export type ProjectChanges =
+  | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
+  | {
+      readonly status: 'ready';
+      readonly path?: string;
+      readonly repositories: readonly RepositoryChanges[];
+    };
+export type ProjectFileDiff =
+  | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
+  | { readonly status: 'ready'; readonly diff: FileDiff };
+
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
   create(
@@ -407,6 +419,12 @@ export interface WorkspaceService {
     /** The whole sandbox tree in one read; `/files` stays the single level. */
     tree(id: string, path?: string): Promise<ProjectTree>;
     diff(id: string, path?: string): Promise<ProjectDiff>;
+    changes(id: string, path?: string): Promise<ProjectChanges>;
+    fileDiff(
+      id: string,
+      repository: string,
+      path: string,
+    ): Promise<ProjectFileDiff>;
   };
   readonly threads: {
     create(

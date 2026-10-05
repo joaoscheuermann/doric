@@ -71,6 +71,9 @@ module.exports = {
   output: {
     path: join(__dirname, '../../dist/app/doric-renderer'),
     clean: true,
+    // Nx defaults to module scripts while Webpack emits classic worker chunks.
+    // Keep their public-path runtime on self.location, not import.meta.url.
+    scriptType: 'text/javascript',
   },
   resolve: {
     alias: {

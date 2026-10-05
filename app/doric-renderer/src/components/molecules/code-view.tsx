@@ -1,3 +1,4 @@
+import 'monaco-editor/features/codicon/register.js';
 import 'monaco-editor/languages/definitions/css/register.js';
 import 'monaco-editor/languages/definitions/html/register.js';
 import 'monaco-editor/languages/definitions/javascript/register.js';

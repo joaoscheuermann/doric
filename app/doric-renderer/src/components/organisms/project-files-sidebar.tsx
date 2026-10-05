@@ -1,10 +1,13 @@
-import { DiffView } from '@/components/molecules/diff-view';
+import { ChangeCounts } from '@/components/molecules/change-counts';
+import { ChangesTree } from '@/components/molecules/changes-tree';
 import {
   FileTree,
   type FileTreeActions,
 } from '@/components/molecules/file-tree';
 import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
+import { TabStrip } from '@/components/molecules/tab-strip';
+import { TreeSkeleton } from '@/components/molecules/tree-skeleton';
 import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import {
   Empty,
@@ -21,28 +24,19 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
 } from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs } from '@/components/ui/tabs';
 import {
-  changeLetter,
-  classifyDiff,
-  emptyDirectoryNotice,
-  sandboxNotice,
-} from '@/domain/files';
-import type { Project, Thread } from '@/domain/workspace';
+  changeDecorations,
+  changedLineTotals,
+  changedRepositories,
+} from '@/domain/change-tree';
+import { emptyDirectoryNotice, sandboxNotice } from '@/domain/files';
+import type { Project, ProjectChange, Thread } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
-import {
-  AlertCircleIcon,
-  FileDiffIcon,
-  FilesIcon,
-  FolderIcon,
-} from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { moveItem } from '@/utility/move-item';
+import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 
 type ProjectFilesSidebarProps = {
   /**
@@ -55,6 +49,8 @@ type ProjectFilesSidebarProps = {
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
   readonly thread?: Thread;
+  readonly onOpenChange: (repository: string, change: ProjectChange) => void;
+  readonly selectedChangePath?: string;
 };
 
 /** The two things the panel can show. */
@@ -66,14 +62,12 @@ type PanelView = 'files' | 'changes';
  * to the Project as a whole: the tree starts where the Thread works and the
  * changes view looks at the repository that directory sits in. It reads nothing
  * it does not show, and never writes: the whole tree arrives in one read, the
- * changes view lists that repository's diff, and a file is not shown here —
+ * changes view lists repositories and their changed paths, and a file is not shown here —
  * selecting one opens the file viewer panel that sits beside this one, so the
  * tree it was opened from stays where it is.
  *
  * The two views are icon-only tabs in the header in place of a title, because
- * they name what the panel is showing and select it among a set. They wear the
- * line variant: a track and a raised thumb read as a chip borrowed from another
- * surface, while an underline is the panel's own edge carrying the choice. The
+ * they name what the panel is showing and select it among a set. The
  * panel's own toggle closes it, and stays the last control at the corner.
  */
 export function ProjectFilesSidebar({
@@ -81,34 +75,44 @@ export function ProjectFilesSidebar({
   onToggle,
   project,
   thread,
+  onOpenChange,
+  selectedChangePath,
 }: ProjectFilesSidebarProps) {
   const [view, setView] = useState<PanelView>('files');
+  const [order, setOrder] = useState<readonly string[]>(['files', 'changes']);
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden">
       <PanelHeader>
-        <span role="status" className="truncate text-xs text-muted-foreground">
-          {files.refreshing ? 'Updating…' : ''}
-        </span>
-        <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
-          {/* No colours of their own: the line variant is transparent, and this
-              theme's `foreground` is the sidebar's own, so the vendored text
-              and underline already sit in the panel's palette. */}
+        <div className="ml-auto flex min-w-0 items-center gap-1 pr-2">
           <Tabs
-            className="shrink-0 [app-region:no-drag]"
+            className="min-w-0 [app-region:no-drag]"
             value={view}
             onValueChange={(next) =>
               setView(next === 'changes' ? 'changes' : 'files')
             }
           >
-            <TabsList variant="line">
-              <TabsTrigger aria-label="Files" value="files">
-                <FilesIcon />
-              </TabsTrigger>
-              <TabsTrigger aria-label="Changes" value="changes">
-                <FileDiffIcon />
-              </TabsTrigger>
-            </TabsList>
+            <TabStrip
+              label="Project views"
+              selected={view}
+              onMove={(from, to) =>
+                setOrder((current) =>
+                  moveItem(current, current.indexOf(from), current.indexOf(to)),
+                )
+              }
+              items={order.map((id) => ({
+                id,
+                label: id === 'files' ? 'Files' : 'Changes',
+                icon: id === 'files' ? <FilesIcon /> : <FileDiffIcon />,
+                iconOnly: true,
+                badge:
+                  id === 'changes' && files.changes.status === 'ready' ? (
+                    <ChangeCounts
+                      {...changedLineTotals(files.changes.value.repositories)}
+                    />
+                  ) : undefined,
+              }))}
+            />
           </Tabs>
           <FilesToggle onToggle={onToggle} open />
         </div>
@@ -117,18 +121,23 @@ export function ProjectFilesSidebar({
         <SidebarGroup className="h-full min-h-0 p-0">
           <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
             <ReadFeedback
-              error={
-                files.treeError ??
-                (view === 'changes' ? files.changesError : undefined)
-              }
+              error={files.treeError ?? files.changesError}
               refreshing={files.refreshing}
               onRetry={files.actions.refresh}
             />
-            <SandboxGate files={files} project={project}>
+            <SandboxGate
+              files={files}
+              project={project}
+              changes={view === 'changes'}
+            >
               {view === 'files' ? (
                 <FilesView files={files} />
               ) : (
-                <ChangesView files={files} />
+                <ChangesView
+                  files={files}
+                  onOpenChange={onOpenChange}
+                  selectedPath={selectedChangePath}
+                />
               )}
             </SandboxGate>
           </SidebarGroupContent>
@@ -166,10 +175,12 @@ function SandboxGate({
   children,
   files,
   project,
+  changes,
 }: {
   readonly children: ReactNode;
   readonly files: ProjectFiles;
   readonly project?: Project;
+  readonly changes: boolean;
 }) {
   const { tree } = files;
 
@@ -185,15 +196,9 @@ function SandboxGate({
     // A Project with no sandbox read yet is answered above, so this is a read
     // on its way — and the error, when there is one, is what failed it.
     if (files.treeError !== undefined) {
-      return (
-        <PanelState
-          description="The sandbox could not be read. Try again using the action above."
-          icon={<AlertCircleIcon />}
-          title="Unable to read the sandbox"
-        />
-      );
+      return null;
     }
-    return <MenuSkeleton />;
+    return <TreeSkeleton changes={changes} />;
   }
   if (tree.status !== 'ready') {
     return (
@@ -245,53 +250,41 @@ function FilesView({ files }: { readonly files: ProjectFiles }) {
           entries={entries}
           expanded={files.expanded}
           selectedPath={selectedPath}
+          decorations={changeDecorations(
+            files.changes.status === 'ready'
+              ? files.changes.value.repositories
+              : [],
+          )}
         />
       </SidebarMenu>
     </ScrollArea>
   );
 }
 
-/** The changed files, grouped by repository, each under its own sticky header. */
-function ChangesView({ files }: { readonly files: ProjectFiles }) {
+/** Changed paths grouped by repository; selecting a row opens its comparison. */
+function ChangesView({
+  files,
+  onOpenChange,
+  selectedPath,
+}: {
+  readonly files: ProjectFiles;
+  readonly onOpenChange: (repository: string, change: ProjectChange) => void;
+  readonly selectedPath?: string;
+}) {
   const { actions, changes } = files;
-  const { hideChanges, loadChanges } = actions;
-
-  // The diff is read when the changes view is first shown, never before: the
-  // hook is told to read it by the surface that asks for it.
-  useEffect(() => {
-    loadChanges();
-    return hideChanges;
-  }, [hideChanges, loadChanges]);
-
-  const repositories = useMemo(
-    () =>
-      changes.status === 'ready'
-        ? changes.value.repositories.map((repository) => ({
-            path: repository.path,
-            changes: repository.changes,
-            files: classifyDiff(repository.diff),
-          }))
-        : [],
-    [changes],
-  );
+  const repositories =
+    changes.status === 'ready' ? changes.value.repositories : [];
 
   if (changes.status === 'idle') {
+    if (files.changesError !== undefined) return null;
     return (
       <PanelState
-        description={
-          files.changesError === undefined
-            ? 'The changes have not been read yet.'
-            : 'The changes could not be read. Try again using the action above.'
-        }
-        title={
-          files.changesError === undefined
-            ? 'No changes read'
-            : 'Unable to read changes'
-        }
+        description="The changes have not been read yet."
+        title="No changes read"
       />
     );
   }
-  if (changes.status === 'loading') return <ContentSkeleton />;
+  if (changes.status === 'loading') return <TreeSkeleton changes />;
   if (changes.status !== 'ready') {
     return (
       <PanelState
@@ -309,9 +302,7 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
     );
   }
 
-  const changed = repositories.filter(
-    (repository) => repository.changes.length > 0,
-  );
+  const changed = changedRepositories(repositories);
   if (changed.length === 0) {
     return (
       <PanelState
@@ -322,36 +313,22 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
   }
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className="flex min-w-0 flex-col">
-        {changed.map((repository) => (
-          <section key={repository.path} className="flex flex-col">
-            <h3 className="sticky top-0 z-10 border-y bg-sidebar px-3 py-1.5 font-mono text-xs">
-              {repository.path === '' ? '.' : repository.path}
-            </h3>
-            <SidebarMenu className="w-full gap-0 py-1">
-              {repository.changes.map((change) => (
-                <SidebarMenuItem key={change.path} className="w-full">
-                  <SidebarMenuButton
-                    asChild
-                    size="sm"
-                    className="h-7 w-full rounded-none px-3 pr-8"
-                  >
-                    <div>
-                      <span className="truncate font-mono">{change.path}</span>
-                    </div>
-                  </SidebarMenuButton>
-                  <SidebarMenuBadge>
-                    {changeLetter(change.status)}
-                  </SidebarMenuBadge>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-            <DiffView files={repository.files} />
-          </section>
-        ))}
-      </div>
-    </ScrollArea>
+    <>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="flex min-w-0 flex-col">
+          {changed.map((repository) => (
+            <ChangesTree
+              key={repository.path}
+              repository={repository}
+              collapsed={files.changesCollapsed}
+              selectedPath={selectedPath}
+              onToggle={actions.toggleChangesDirectory}
+              onOpen={onOpenChange}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+    </>
   );
 }
 
@@ -373,29 +350,5 @@ function PanelState({
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
     </Empty>
-  );
-}
-
-/** Rows in the shape of the tree, while the first listing is on its way. */
-function MenuSkeleton() {
-  return (
-    <SidebarMenu className="w-full gap-0 py-1">
-      {Array.from({ length: 6 }, (_, index) => (
-        <SidebarMenuItem key={index}>
-          <SidebarMenuSkeleton showIcon />
-        </SidebarMenuItem>
-      ))}
-    </SidebarMenu>
-  );
-}
-
-/** Lines, while a file or a diff is on its way. */
-function ContentSkeleton() {
-  return (
-    <div className="flex flex-col gap-2 p-3">
-      {Array.from({ length: 8 }, (_, index) => (
-        <Skeleton key={index} className="h-3 w-full" />
-      ))}
-    </div>
   );
 }

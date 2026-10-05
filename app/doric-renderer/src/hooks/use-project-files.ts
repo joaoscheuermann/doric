@@ -1,6 +1,5 @@
 import { workspacePath } from '@/domain/cwd';
 import {
-  diffReadState,
   fileReadState,
   type ReadState,
   ROOT_PATH,
@@ -9,7 +8,7 @@ import {
 import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import {
   messageFrom,
-  type ProjectDiff,
+  type ProjectChanges,
   type ProjectFileContent,
   type ProjectTreeNode,
 } from '@/domain/workspace';
@@ -35,9 +34,7 @@ export type ProjectFilesOptions = {
 
 export type ProjectFilesActions = {
   readonly closeFile: () => void;
-  /** Reads the workspace diff; the changes view is what asks for it. */
-  readonly loadChanges: () => void;
-  readonly hideChanges: () => void;
+  readonly toggleChangesDirectory: (path: string) => void;
   readonly openFile: (path: string) => void;
   readonly refresh: () => void;
   readonly toggleDirectory: (path: string) => void;
@@ -50,8 +47,9 @@ export type ProjectFilesActions = {
  */
 export type ProjectFiles = {
   readonly actions: ProjectFilesActions;
-  /** The cwd repository's diff, behind the changes view, once it is asked for. */
-  readonly changes: ReadState<ProjectDiff>;
+  /** Lightweight Git status shared by the file and change trees. */
+  readonly changes: ReadState<ProjectChanges>;
+  readonly changesCollapsed: ReadonlySet<string>;
   /** Errors belong to their reads and disappear after successful recovery. */
   readonly error?: string;
   readonly treeError?: string;
@@ -89,15 +87,14 @@ export const useProjectFiles = ({
   const queryClient = useQueryClient();
   const root = cwd === undefined ? ROOT_PATH : workspacePath(cwd);
   const scope = JSON.stringify([projectId, root]);
-  const { expanded, selectedPath, changesRequested } = useStore(
+  const { expanded, selectedPath, changesCollapsed } = useStore(
     filesStore,
     (state) => state.views[scope] ?? emptyFilesView,
   );
   const {
     closeFile: closeStoredFile,
     openFile: openStoredFile,
-    requestChanges,
-    hideChanges: hideStoredChanges,
+    toggleChangesDirectory: toggleStoredChangesDirectory,
     toggleDirectory: toggleStoredDirectory,
   } = filesStore.getState();
 
@@ -123,13 +120,13 @@ export const useProjectFiles = ({
         : pendingReadInterval(query.state.data),
   });
   const changes = useQuery({
-    queryKey: queryKeys.files.diff(projectId, cwd),
+    queryKey: queryKeys.files.changes(projectId, cwd),
     queryFn: () =>
-      window.doric.projects.diff(
+      window.doric.projects.changes(
         projectId as string,
         root === ROOT_PATH ? undefined : root,
       ),
-    enabled: projectId !== undefined && changesRequested,
+    enabled: projectId !== undefined,
     ...sandboxReadRetry,
     refetchInterval: (query) =>
       query.state.status === 'error'
@@ -142,10 +139,7 @@ export const useProjectFiles = ({
     selectedPath !== undefined && file.isError
       ? messageFrom(file.error)
       : undefined;
-  const changesError =
-    changesRequested && changes.isError
-      ? messageFrom(changes.error)
-      : undefined;
+  const changesError = changes.isError ? messageFrom(changes.error) : undefined;
 
   /**
    * A directory is only shown or hidden: the whole tree is already held, so
@@ -173,51 +167,37 @@ export const useProjectFiles = ({
     closeStoredFile(scope);
   }, [closeStoredFile, scope]);
 
-  const loadRequestedChanges = useCallback((): void => {
-    if (projectId === undefined) return;
-    requestChanges(scope);
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.files.diff(projectId, cwd),
-    });
-  }, [cwd, projectId, queryClient, requestChanges, scope]);
+  const toggleChangesDirectory = useCallback(
+    (path: string) => toggleStoredChangesDirectory(scope, path),
+    [scope, toggleStoredChangesDirectory],
+  );
 
   const refresh = useCallback((): void => {
     if (projectId !== undefined) void refreshProject(queryClient, projectId);
   }, [projectId, queryClient]);
 
-  const hideChanges = useCallback((): void => {
-    hideStoredChanges(scope);
-  }, [hideStoredChanges, scope]);
-
   const actions = useMemo(
     () => ({
       closeFile,
-      loadChanges: loadRequestedChanges,
-      hideChanges,
+      toggleChangesDirectory,
       openFile,
       refresh,
       toggleDirectory,
     }),
-    [
-      closeFile,
-      loadRequestedChanges,
-      hideChanges,
-      openFile,
-      refresh,
-      toggleDirectory,
-    ],
+    [closeFile, toggleChangesDirectory, openFile, refresh, toggleDirectory],
   );
 
   return {
     actions,
     changes:
-      projectId === undefined || !changesRequested
+      projectId === undefined
         ? { status: 'idle' }
-        : diffReadState(
-            changes.data,
-            changes.isPending || changes.isFetching,
-            changes.isError,
-          ),
+        : changes.data?.status === 'ready'
+          ? { status: 'ready', value: changes.data.changes }
+          : (changes.data ?? {
+              status: changes.isPending ? 'loading' : 'idle',
+            }),
+    changesCollapsed,
     error: treeError ?? changesError ?? fileError,
     treeError,
     changesError,

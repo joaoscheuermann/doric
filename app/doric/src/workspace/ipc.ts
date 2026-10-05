@@ -136,6 +136,22 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:projects:changes',
+    safe(allowedUrls, (value: unknown, path: unknown) =>
+      workspaceApi.projects.changes(identifier(value), relativePath(path)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:projects:file-diff',
+    safe(allowedUrls, (value: unknown, repository: unknown, path: unknown) =>
+      workspaceApi.projects.fileDiff(
+        identifier(value),
+        relativePath(repository),
+        relativePath(path),
+      ),
+    ),
+  );
+  ipcMain.handle(
     'doric:projects:create',
     safe(allowedUrls, (value: unknown) =>
       workspaceApi.projects.create(name(value)),

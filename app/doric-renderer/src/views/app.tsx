@@ -28,8 +28,10 @@ import {
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { joinPath } from '@/domain/files';
 import type { Terminal } from '@/domain/terminals';
 import { threadPath } from '@/domain/thread-tree';
+import type { ProjectChange } from '@/domain/workspace';
 import { useComposer } from '@/hooks/use-composer';
 import { useProjectFiles } from '@/hooks/use-project-files';
 import { useProjectRefresh } from '@/hooks/use-project-refresh';
@@ -105,7 +107,7 @@ export function App() {
     thread: selectedThread,
     threads: workspace.threadsByProject[selectedProject?.id ?? ''] ?? [],
     terminals: terminals.items,
-    visible: filesOpen || tabs.items.some((tab) => tab.kind === 'file'),
+    visible: filesOpen || tabs.items.some((tab) => tab.kind !== 'terminal'),
   });
   const selectedThreadPath =
     selectedThread === undefined
@@ -121,8 +123,20 @@ export function App() {
     cwd: selectedThread?.cwd,
   });
   const tabActions = workspaceTabsStore.getState();
+  const selectedTab = tabs.items.find((tab) => tab.id === tabs.selected);
+  const openChange = (repository: string, change: ProjectChange) => {
+    if (!tabOwner || !selectedProject) return;
+    tabActions.open(tabOwner, {
+      kind: 'diff',
+      id: JSON.stringify(['diff', selectedProject.id, repository, change.path]),
+      projectId: selectedProject.id,
+      repository,
+      path: change.path,
+    });
+  };
   const filesWithTabs = {
     ...files,
+    selectedPath: selectedTab?.kind === 'file' ? selectedTab.path : undefined,
     actions: {
       ...files.actions,
       openFile: (path: string) => {
@@ -164,6 +178,12 @@ export function App() {
           files={
             <ProjectFilesSidebar
               files={filesWithTabs}
+              onOpenChange={openChange}
+              selectedChangePath={
+                selectedTab?.kind === 'diff'
+                  ? joinPath(selectedTab.repository, selectedTab.path)
+                  : undefined
+              }
               onToggle={toggleFiles}
               project={selectedProject}
               thread={selectedThread}

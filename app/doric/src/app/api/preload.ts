@@ -246,11 +246,17 @@ type ProjectChangeStatus =
   | 'modified'
   | 'deleted'
   | 'renamed'
-  | 'untracked';
+  | 'untracked'
+  | 'conflicted';
 
 type ProjectChange = {
   readonly path: string;
   readonly status: ProjectChangeStatus;
+  readonly originalPath?: string;
+  readonly staged?: boolean;
+  readonly unstaged?: boolean;
+  readonly indexStatus?: string;
+  readonly worktreeStatus?: string;
 };
 
 type ProjectChangeSet = {
@@ -292,6 +298,34 @@ type ProjectFileResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+type ProjectFileChange = ProjectChange & {
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly indexStatus: string;
+  readonly worktreeStatus: string;
+};
+type ProjectChanges = {
+  readonly path?: string;
+  readonly repositories: readonly {
+    readonly path: string;
+    readonly changes: readonly ProjectFileChange[];
+  }[];
+};
+type ProjectChangesResult =
+  | { readonly status: 'ready'; readonly changes: ProjectChanges }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+type ProjectFileDiff = ProjectFileChange & {
+  readonly repository: string;
+  readonly original: string;
+  readonly modified: string;
+  readonly binary: boolean;
+  readonly truncated: boolean;
+};
+type ProjectFileDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectFileDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
 type ProjectDiffResult =
   | { readonly status: 'ready'; readonly diff: ProjectDiff }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
@@ -389,6 +423,15 @@ contextBridge.exposeInMainWorld('doric', {
       invoke<ProjectTreeResult>('doric:projects:tree', projectId, path),
     diff: (projectId: string, path?: string) =>
       invoke<ProjectDiffResult>('doric:projects:diff', projectId, path),
+    changes: (projectId: string, path?: string) =>
+      invoke<ProjectChangesResult>('doric:projects:changes', projectId, path),
+    fileDiff: (projectId: string, repository: string, path: string) =>
+      invoke<ProjectFileDiffResult>(
+        'doric:projects:file-diff',
+        projectId,
+        repository,
+        path,
+      ),
     create: (name: string) => invoke<Project>('doric:projects:create', name),
     rename: (id: string, name: string) =>
       invoke<Project>('doric:projects:rename', id, name),

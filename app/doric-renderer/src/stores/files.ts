@@ -5,12 +5,12 @@ import { createStore } from 'zustand/vanilla';
 export type FilesView = {
   readonly expanded: ReadonlySet<string>;
   readonly selectedPath?: string;
-  readonly changesRequested: boolean;
+  readonly changesCollapsed: ReadonlySet<string>;
 };
 
 export const emptyFilesView: FilesView = {
   expanded: new Set<string>(),
-  changesRequested: false,
+  changesCollapsed: new Set<string>(),
 };
 
 type FilesState = {
@@ -18,8 +18,7 @@ type FilesState = {
   readonly toggleDirectory: (scope: string, path: string) => void;
   readonly openFile: (scope: string, path: string) => void;
   readonly closeFile: (scope: string) => void;
-  readonly requestChanges: (scope: string) => void;
-  readonly hideChanges: (scope: string) => void;
+  readonly toggleChangesDirectory: (scope: string, path: string) => void;
 };
 
 export const filesStore = createStore<FilesState>()((set) => {
@@ -44,9 +43,10 @@ export const filesStore = createStore<FilesState>()((set) => {
       update(scope, (view) => ({ ...view, selectedPath: path })),
     closeFile: (scope) =>
       update(scope, (view) => ({ ...view, selectedPath: undefined })),
-    requestChanges: (scope) =>
-      update(scope, (view) => ({ ...view, changesRequested: true })),
-    hideChanges: (scope) =>
-      update(scope, (view) => ({ ...view, changesRequested: false })),
+    toggleChangesDirectory: (scope, path) =>
+      update(scope, (view) => ({
+        ...view,
+        changesCollapsed: toggleExpanded(view.changesCollapsed, path),
+      })),
   };
 });

@@ -5,6 +5,8 @@ import {
   closeManual,
   closeTab,
   emptyTabs,
+  moveManualTab,
+  moveTab,
   openManual,
   openTab,
   removeTerminal,
@@ -22,6 +24,44 @@ const terminal: WorkspaceTab = {
   id: 'terminal:one',
   terminalId: 'one',
 };
+
+test('reorders tabs in either direction without changing selection or their content', () => {
+  const third: WorkspaceTab = { ...file, id: 'file:b', path: 'b.ts' };
+  const state = openTab(openTab(openTab(emptyTabs, file), terminal), third);
+  const moved = moveTab(state, file.id, third.id);
+  assert.deepEqual(moved.items, [terminal, third, file]);
+  assert.equal(moved.selected, third.id);
+  assert.deepEqual(moveTab(moved, file.id, terminal.id).items, state.items);
+  assert.deepEqual(state.items, [file, terminal, third]);
+  assert.deepEqual(moveTab(state, 'closed', file.id), state);
+  assert.deepEqual(moveTab(state, file.id, 'closed'), state);
+  assert.deepEqual(moveTab(state, file.id, file.id), state);
+});
+
+test('manual reordering preserves the active shell and the independent file tabs', () => {
+  const state = openManual(openManual(openTab(emptyTabs, file), 'one'), 'two');
+  const moved = moveManualTab(state, 'two', 'one');
+  assert.deepEqual(moved.manualIds, ['two', 'one']);
+  assert.equal(moved.manualId, 'two');
+  assert.deepEqual(moved.items, [file]);
+  assert.deepEqual(closeManual(moved, 'one').manualIds, ['two']);
+  assert.deepEqual(moveManualTab(moved, 'missing', 'one'), moved);
+});
+
+test('opens a comparison alongside its file and reselects it without duplication', () => {
+  const diff: WorkspaceTab = {
+    kind: 'diff',
+    id: 'diff:a',
+    projectId: 'project',
+    repository: '',
+    path: 'a.ts',
+  };
+  const state = openTab(openTab(openTab(emptyTabs, file), diff), terminal);
+  const selected = openTab(state, diff);
+  assert.equal(selected.selected, diff.id);
+  assert.deepEqual(selected.items, [file, diff, terminal]);
+  assert.deepEqual(closeTab(selected, diff.id).items, [file, terminal]);
+});
 
 test('manual shells open together and reopening one selects it without duplicating tabs', () => {
   const state = openManual(openManual(emptyTabs, 'one'), 'two');

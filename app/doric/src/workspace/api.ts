@@ -63,11 +63,17 @@ export type ProjectChangeStatus =
   | 'modified'
   | 'deleted'
   | 'renamed'
-  | 'untracked';
+  | 'untracked'
+  | 'conflicted';
 
 export type ProjectChange = {
   readonly path: string;
   readonly status: ProjectChangeStatus;
+  readonly originalPath?: string;
+  readonly staged?: boolean;
+  readonly unstaged?: boolean;
+  readonly indexStatus?: string;
+  readonly worktreeStatus?: string;
 };
 
 export type ProjectChangeSet = {
@@ -105,6 +111,36 @@ export type ProjectFileResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+export type ProjectFileChange = ProjectChange & {
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly indexStatus: string;
+  readonly worktreeStatus: string;
+};
+export type ProjectChanges = {
+  readonly path?: string;
+  readonly repositories: readonly {
+    readonly path: string;
+    readonly changes: readonly ProjectFileChange[];
+    readonly added: number;
+    readonly removed: number;
+  }[];
+};
+export type ProjectChangesResult =
+  | { readonly status: 'ready'; readonly changes: ProjectChanges }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+export type ProjectFileDiff = ProjectFileChange & {
+  readonly repository: string;
+  readonly original: string;
+  readonly modified: string;
+  readonly binary: boolean;
+  readonly truncated: boolean;
+};
+export type ProjectFileDiffResult =
+  | { readonly status: 'ready'; readonly diff: ProjectFileDiff }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
 export type ProjectDiffResult =
   | { readonly status: 'ready'; readonly diff: ProjectDiff }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
@@ -967,6 +1003,7 @@ const projectAnswer = (
 };
 
 const changeStatuses: readonly ProjectChangeStatus[] = [
+  'conflicted',
   'added',
   'modified',
   'deleted',
@@ -1137,6 +1174,91 @@ const fileResultFrom = (answer: ProjectAnswer): ProjectFileResult => {
 const diffResultFrom = (answer: ProjectAnswer): ProjectDiffResult => {
   if (answer.kind !== 'ready') return outcomeFrom(answer);
   return { status: 'ready', diff: diffFrom(answer.body) };
+};
+
+const fileChangeFrom = (value: unknown): ProjectFileChange => {
+  const change = changeFrom(value);
+  if (
+    !isRecord(value) ||
+    typeof value.staged !== 'boolean' ||
+    typeof value.unstaged !== 'boolean' ||
+    typeof value.indexStatus !== 'string' ||
+    typeof value.worktreeStatus !== 'string' ||
+    (value.originalPath !== undefined && typeof value.originalPath !== 'string')
+  )
+    return invalidResponse();
+  return {
+    ...change,
+    staged: value.staged,
+    unstaged: value.unstaged,
+    indexStatus: value.indexStatus,
+    worktreeStatus: value.worktreeStatus,
+    ...(value.originalPath === undefined
+      ? {}
+      : { originalPath: value.originalPath }),
+  };
+};
+const changesResultFrom = (answer: ProjectAnswer): ProjectChangesResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  const value = answer.body;
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.repositories) ||
+    (value.path !== undefined && typeof value.path !== 'string')
+  )
+    return invalidResponse();
+  const repositories = value.repositories.map((repository: unknown) => {
+    if (
+      !isRecord(repository) ||
+      typeof repository.path !== 'string' ||
+      !Array.isArray(repository.changes) ||
+      typeof repository.added !== 'number' ||
+      !Number.isSafeInteger(repository.added) ||
+      repository.added < 0 ||
+      typeof repository.removed !== 'number' ||
+      !Number.isSafeInteger(repository.removed) ||
+      repository.removed < 0
+    )
+      return invalidResponse();
+    return {
+      path: repository.path,
+      changes: repository.changes.map(fileChangeFrom),
+      added: repository.added,
+      removed: repository.removed,
+    };
+  });
+  return {
+    status: 'ready',
+    changes: {
+      ...(value.path === undefined ? {} : { path: value.path }),
+      repositories,
+    },
+  };
+};
+const fileDiffResultFrom = (answer: ProjectAnswer): ProjectFileDiffResult => {
+  if (answer.kind !== 'ready') return outcomeFrom(answer);
+  const value = answer.body;
+  const change = fileChangeFrom(value);
+  if (
+    !isRecord(value) ||
+    typeof value.repository !== 'string' ||
+    typeof value.original !== 'string' ||
+    typeof value.modified !== 'string' ||
+    typeof value.binary !== 'boolean' ||
+    typeof value.truncated !== 'boolean'
+  )
+    return invalidResponse();
+  return {
+    status: 'ready',
+    diff: {
+      ...change,
+      repository: value.repository,
+      original: value.original,
+      modified: value.modified,
+      binary: value.binary,
+      truncated: value.truncated,
+    },
+  };
 };
 
 /** A workspace-relative path as a query string; the root needs none. */
@@ -1311,6 +1433,23 @@ export const workspaceApi = {
     ): Promise<ProjectDiffResult> =>
       diffResultFrom(
         await answerAt(`/projects/${id(projectId)}/diff${pathQuery(path)}`),
+      ),
+    changes: async (
+      projectId: string,
+      path?: string,
+    ): Promise<ProjectChangesResult> =>
+      changesResultFrom(
+        await answerAt(`/projects/${id(projectId)}/changes${pathQuery(path)}`),
+      ),
+    fileDiff: async (
+      projectId: string,
+      repository: string,
+      path: string,
+    ): Promise<ProjectFileDiffResult> =>
+      fileDiffResultFrom(
+        await answerAt(
+          `/projects/${id(projectId)}/files/diff?repository=${encodeURIComponent(repository)}&path=${encodeURIComponent(path)}`,
+        ),
       ),
     create: (name: string) =>
       request<Project>('/projects', { method: 'POST', body: body({ name }) }),

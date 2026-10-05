@@ -279,6 +279,7 @@ export const sandboxNotice = (
 };
 
 const changeLetters: Record<ProjectChangeStatus, string> = {
+  conflicted: '!',
   added: 'A',
   deleted: 'D',
   modified: 'M',

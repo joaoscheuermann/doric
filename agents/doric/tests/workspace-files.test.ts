@@ -601,3 +601,66 @@ void test('maps diff path failures to 404 and 422', async (t) => {
     422,
   );
 });
+
+void test('serves lightweight changes and an individual diff with exact special paths', async (t) => {
+  const change = {
+    path: 'new\nfile.ts',
+    originalPath: 'old file.ts',
+    status: 'renamed' as const,
+    staged: true,
+    unstaged: false,
+    indexStatus: 'R',
+    worktreeStatus: ' ',
+  };
+  const diff = {
+    ...change,
+    repository: 'repo',
+    original: 'old',
+    modified: 'new',
+    binary: false,
+    truncated: false,
+  };
+  const host = await serve({
+    changes: async () => ({
+      status: 'ready',
+      repositories: [{ path: 'repo', changes: [change], added: 1, removed: 1 }],
+    }),
+    fileDiff: async (_id, repository, path) => {
+      assert.equal(repository, 'repo');
+      assert.equal(path, change.path);
+      return { status: 'ready', diff };
+    },
+  });
+  t.after(host.close);
+  const changes = await host.request(`/projects/${projectId}/changes`);
+  assert.equal(changes.status, 200);
+  assert.equal(changes.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await changes.json(), {
+    repositories: [{ path: 'repo', changes: [change], added: 1, removed: 1 }],
+  });
+  const comparison = await host.request(
+    `/projects/${projectId}/files/diff?repository=repo&path=${encodeURIComponent(change.path)}`,
+  );
+  assert.equal(comparison.status, 200);
+  assert.deepEqual(await comparison.json(), diff);
+});
+
+void test('rejects unsafe individual comparison paths before reading the sandbox', async (t) => {
+  const harness = await withService();
+  t.after(harness.dispose);
+  for (const [repository, path] of [
+    ['../outside', 'a.ts'],
+    ['', '../outside'],
+    ['', 'a\0b'],
+  ]) {
+    assert.deepEqual(
+      await harness.service.projects.fileDiff(
+        harness.projectId,
+        repository ?? '',
+        path ?? '',
+      ),
+      { status: 'invalid_path' },
+    );
+  }
+  assert.deepEqual(harness.environment.execs, []);
+});

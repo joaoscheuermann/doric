@@ -28,6 +28,14 @@ test('refreshes sandbox and Git for the owning project without a cached thread l
     return observer;
   };
   const tree = watch(['files', 'selected', 'tree'], 'selected');
+  const changes = watch(
+    ['files', 'selected', 'changes', '/workspace'],
+    'selected',
+  );
+  const comparison = watch(
+    ['files', 'selected', 'file-diff', '', 'src/app.ts'],
+    'selected',
+  );
   const git = watch(['thread', 'new-thread', 'git', '/workspace'], 'selected');
   const other = watch(
     ['thread', 'foreign-thread', 'git', '/workspace'],
@@ -37,6 +45,8 @@ test('refreshes sandbox and Git for the owning project without a cached thread l
   context.mock.timers.tick(250);
   await pending;
   assert.equal(tree.getCurrentResult().data, 'new');
+  assert.equal(changes.getCurrentResult().data, 'new');
+  assert.equal(comparison.getCurrentResult().data, 'new');
   assert.equal(git.getCurrentResult().data, 'new');
   assert.equal(other.getCurrentResult().data, 'old');
   queries.clear();

@@ -120,27 +120,60 @@ Project's one sandbox, but roots its tree at the selected Thread's working
 directory rather than at the workspace root, so selecting another Thread
 re-roots what it shows while the sandbox it reads stays the Project's, and it
 only reads: a Files tab shows that working directory's whole directory tree,
-read in one request, and a Changes tab shows every Git repository the workspace
-tree holds, each
-repository's root as a sticky header over that repository's own changed or
-untracked files — one row and one status badge each — and the repository's own
-diff. The tabs sit in the
+read in one request, with semantic Git colors and status letters on changed files
+and descendant-change counts on folders. Ancestor folders inherit their descendants'
+Git color; mixed statuses use modified yellow, while conflicts take priority.
+A Changes tab shows changed files as
+a directory tree grouped by repository, with individual folder expansion and no
+search or collapse-all toolbar. Its tab shows total added and removed lines;
+each repository header shows that repository's totals in green and red.
+Counts compare HEAD with working content (or empty with new files), include
+untracked files and omit binary line counts. Git numstat supplies these totals
+without sending file contents or patches to the renderer.
+Both trees share a lightweight Git status read, separate from file comparisons.
+Status preserves staged and unstaged changes, conflicts, and rename origins;
+NUL-delimited Git output preserves special characters in file names. The tabs sit in the
 panel's header, in place of a title, and its footer carries the editable working
 directory and Git status, without a manual refresh button.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
-mixing files and agent terminals; opening the same item selects its existing
+mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
 tab, and closing the last tab removes the division. A file tab's footer states
-the chain the file was reached through, a chain too
-deep for that row collapsing its middle behind one trigger, and whose text is
+the chain the file was reached through. All tab bars use shadcn Tabs with the line variant
+inside a horizontal ScrollArea. Tabs can be reordered within their own bar by
+dragging or Alt+Shift+Left/Right; workspace and manual-terminal order belongs to
+the Thread. Reordering preserves mounted editors and terminal sessions. A selected
+closable tab shows its close button in the normal layout; an inactive tab reserves
+the same space and reveals its close button on hover with an opacity-only fade.
+Hover covers the full tab, including its padding and underline; inactive tabs
+show a faint underline on hover while the selected underline stays solid.
+Reduced-motion preferences disable these transitions.
+Tab sorting uses dnd-kit with a six-pixel pointer activation threshold, horizontal
+movement, animated insertion previews and automatic scrolling at the bar's edges.
+Tab and close-button widths remain fixed during a drag. Dropping commits the order;
+Escape cancels it. Space starts keyboard sorting, arrows move and Space or Enter
+confirms. Each tab bar owns its sorting context.
+Long file-footer paths collapse their middle behind one trigger. File text is
 rendered read-only by the Monaco editor
 bundled with the editor worker alone. Because the whole tree arrives in one
 read, expanding a directory reads nothing and is pure view state; only a file's
-content is read on demand, and the diff only when the Changes tab is shown. The
+content or comparison is read on demand. Selecting a changed file opens a read-only
+Monaco comparison of HEAD and the working file, unified by default with a single
+line-number gutter, with an optional
+side-by-side layout, change navigation, line counts, and an action to open the
+working file. Monaco's icon font is bundled locally with the editor for its
+change indicators. Comparisons use one compact toolbar with the tree's status
+letters and colors, line counts and an always-visible open-file icon.
+Comparison metadata and partial-read notices live in tooltips.
+The comparison footer shows the file path with the same geometry as file tabs,
+alongside icon controls for unified/split layout and previous/next change.
+New files compare against empty content, deleted files against an
+empty working side, and renames use the original HEAD path. Binary and truncated
+reads explain their limitations. The
 sandbox belongs to the Project and may not be usable at all: a queued,
 failed or terminated Project explains itself — with the host's own retry hint
 when the lease is pending — instead of erroring. One renderer coordinator
-revalidates a Project's tree, requested diff, open files, and cached Thread Git
+revalidates a Project's tree, lightweight Git status, open comparisons and files, and cached Thread Git
 summaries together. It observes completed `write`, `edit`, `git`, and `terminal`
 calls from every watched conversation, including background Threads, and follows
 the selected Project's Thread lifecycle and terminal command/lifecycle changes.
@@ -154,10 +187,15 @@ a read retain a follow-up read. Inactive queries are marked stale without being
 read, and periodic checks do not restart exhausted failures or lease/path states.
 Pending leases retry according to the host's hint, with a one-second minimum and
 a three-second fallback. Rejected reads retry at most three times with increasing
-delays. Failures offer retry beside the affected content and clear after success.
+delays. Read failures appear as deduplicated Sonner toasts with a retry action
+and clear after success, without inserting error cards into the tree or editor.
+The panel header carries no updating label. Initial reads use skeleton rows
+matching the tree's indentation, icons and row heights; the Changes skeleton
+also reserves its repository header and line totals.
 Background refresh preserves cached content and the reader's position instead
 of replacing it with a loading placeholder; directory expansion is retained per
-Project and working directory. The Changes tab requests diffs only while shown.
+Project and working directory, together with the change tree's collapsed folders
+without a search filter. Browsing either tree requests no full-workspace patch.
 
 The host owns process-local terminal sessions belonging to a Thread and its
 Project sandbox. The `terminal` tool and manual shells use this registry;

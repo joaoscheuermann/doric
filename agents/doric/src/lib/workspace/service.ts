@@ -16,6 +16,7 @@ import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
 import { randomProjectColor } from './colors.js';
 import { workingDirectoriesInside } from './cwd.js';
+import { readProjectChanges, readProjectFileDiff } from './file-changes.js';
 import { projectChanges, readProjectFile } from './files.js';
 import {
   applyGitCredentials,
@@ -41,8 +42,10 @@ import { createTerminalRegistry } from './terminals.js';
 import {
   isTerminal,
   type Project,
+  type ProjectChanges,
   type ProjectDiff,
   type ProjectFile,
+  type ProjectFileDiff,
   type ProjectFiles,
   type ProjectSsh,
   type ProjectStore,
@@ -605,6 +608,51 @@ export const createWorkspaceService = ({
     if (outcome.status !== 'ready') return { status: outcome.status };
     return outcome.value;
   };
+  const changes = async (
+    id: string,
+    path?: string,
+  ): Promise<ProjectChanges> => {
+    const outcome = await withLease(id, async (sandbox) => {
+      if (path !== undefined) {
+        const kind = await workspacePathKind(sandbox, path);
+        if (kind === 'escaped') return { status: 'invalid_path' as const };
+        if (kind === 'missing') return { status: 'not_found' as const };
+      }
+      return {
+        status: 'ready' as const,
+        ...(path === undefined ? {} : { path }),
+        repositories: await readProjectChanges(sandbox, path),
+      };
+    });
+    return outcome.status === 'ready'
+      ? outcome.value
+      : { status: outcome.status };
+  };
+  const fileDiff = async (
+    id: string,
+    repository: string,
+    path: string,
+  ): Promise<ProjectFileDiff> => {
+    if (
+      [repository, path].some(
+        (value) =>
+          value.includes('\0') ||
+          value.startsWith('/') ||
+          value.split('/').includes('..'),
+      ) ||
+      path === ''
+    )
+      return { status: 'invalid_path' };
+    const outcome = await withLease(id, async (sandbox) => {
+      const diff = await readProjectFileDiff(sandbox, repository, path);
+      return diff === undefined
+        ? { status: 'not_found' as const }
+        : { status: 'ready' as const, diff };
+    });
+    return outcome.status === 'ready'
+      ? outcome.value
+      : { status: outcome.status };
+  };
   const changeProject = (
     id: string,
     change: () => Promise<Project | undefined>,
@@ -728,6 +776,8 @@ export const createWorkspaceService = ({
       file,
       tree,
       diff,
+      changes,
+      fileDiff,
     },
     threads: {
       create: (projectId, name, parentThreadId) =>
