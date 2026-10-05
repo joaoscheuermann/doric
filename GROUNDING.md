@@ -105,9 +105,9 @@ and disappears when the sidebar closes; it draws no grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to, whether it thinks, and how hard — beside the
-settings trigger, and names the selected Thread's working directory with the
-host's Git line for it beside that path: the branch, its ahead/behind counts,
-whether the worktree is dirty, and any Git operation in progress. The header
+settings trigger. The right-hand panel footer names the selected Thread's working
+directory with the host's Git line beside that path: the branch, its ahead/behind
+counts, whether the worktree is dirty, and any Git operation in progress. The header
 names the selected Thread as a breadcrumb of its
 Project and the chain of Threads above it, and every part but the last selects
 what it names.
@@ -125,7 +125,8 @@ tree holds, each
 repository's root as a sticky header over that repository's own changed or
 untracked files — one row and one status badge each — and the repository's own
 diff. The tabs sit in the
-panel's header, in place of a title, and its footer carries refresh.
+panel's header, in place of a title, and its footer carries the editable working
+directory and Git status, without a manual refresh button.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files and agent terminals; opening the same item selects its existing
@@ -138,10 +139,25 @@ read, expanding a directory reads nothing and is pure view state; only a file's
 content is read on demand, and the diff only when the Changes tab is shown. The
 sandbox belongs to the Project and may not be usable at all: a queued,
 failed or terminated Project explains itself — with the host's own retry hint
-when the lease is pending — instead of erroring. There is no filesystem watcher;
-the panel rereads on its own refresh, when the selected Project or Thread changes, and when
-the selected Thread's event stream reports a finished `write`, `edit` or
-`terminal` call, which is the signal that the agent changed the sandbox.
+when the lease is pending — instead of erroring. One renderer coordinator
+revalidates a Project's tree, requested diff, open files, and cached Thread Git
+summaries together. It observes completed `write`, `edit`, `git`, and `terminal`
+calls from every watched conversation, including background Threads, and follows
+the selected Project's Thread lifecycle and terminal command/lifecycle changes.
+Selection, working-directory and Project-state changes, reopening the panel,
+returning to the window, and reconnecting to the host also revalidate it.
+There is no filesystem watcher: a fifteen-second check while a sandbox surface
+is visible covers external changes and Threads whose conversations are not
+watched. The file tabs continue to refresh when the right panel is closed.
+Refresh signals within 250 milliseconds share a read; changes arriving during
+a read retain a follow-up read. Inactive queries are marked stale without being
+read, and periodic checks do not restart exhausted failures or lease/path states.
+Pending leases retry according to the host's hint, with a one-second minimum and
+a three-second fallback. Rejected reads retry at most three times with increasing
+delays. Failures offer retry beside the affected content and clear after success.
+Background refresh preserves cached content and the reader's position instead
+of replacing it with a loading placeholder; directory expansion is retained per
+Project and working directory. The Changes tab requests diffs only while shown.
 
 The host owns process-local terminal sessions belonging to a Thread and its
 Project sandbox. The `terminal` tool and manual shells use this registry;
@@ -156,8 +172,7 @@ from keyboard input.
 The left sidebar lists terminals below their owning Thread. Agent rows show
 `command · elapsed (timeout)`; manual rows show the current command or shell
 name when idle. Agent terminals open as tabs beside files. The shell icon in
-the left of the conversation footer, separated from its working directory by a
-divider, creates a manual shell in the selected Thread's
+the left of the conversation footer creates a manual shell in the selected Thread's
 working directory and opens a vertically resizable section below its
 conversation. This section shows tabs for the manual terminals opened in that
 Thread and preserves their emulators while switching tabs. Closing a tab or
@@ -250,7 +265,7 @@ within each Thread remains serial. Threads share their Project's sandbox;
 each Thread's working directory starts at the sandbox's workspace root
 `/workspace` and is inherited by a child Thread at creation. The agent moves it
 with the `cwd` tool, and a reader moves the same Thread's with
-`PATCH /threads/:id` or the field the conversation footer opens; both reach one
+`PATCH /threads/:id` or the field the right-hand panel footer opens; both reach one
 rule, which refuses any path that resolves outside the workspace root. The
 existing sandbox-pool capacity governs Projects, not Threads.
 

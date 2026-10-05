@@ -27,7 +27,10 @@ export const queryKeys = {
   /** One Thread record, read to validate a restored selection. */
   thread: (threadId: string) => ['thread', threadId],
   /** One Thread's git summary, read for the footer's line and popover. */
-  threadGit: (threadId: string | undefined) => ['thread', threadId, 'git'],
+  threadGit: (threadId: string | undefined, cwd?: string) =>
+    cwd === undefined
+      ? ['thread', threadId, 'git']
+      : ['thread', threadId, 'git', cwd],
   /** Everything read from one Project's sandbox. */
   files: {
     /** The prefix that invalidates the tree, the open file and the diff. */

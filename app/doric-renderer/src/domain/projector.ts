@@ -722,7 +722,7 @@ export const emptyProjection: Projection = {
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */
-const sandboxTools = ['write', 'edit', 'terminal'];
+const sandboxTools = ['write', 'edit', 'terminal', 'git'];
 
 /**
  * How many times the log records the agent finishing a write to the sandbox.

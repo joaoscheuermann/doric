@@ -1,9 +1,12 @@
+import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { FileBody } from '@/components/organisms/file-viewer';
 import { TerminalView } from '@/components/organisms/terminal-view';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { baseName, fileReadState } from '@/domain/files';
+import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import type { Terminal } from '@/domain/terminals';
+import { messageFrom } from '@/domain/workspace';
 import type { WorkspaceTabs as TabsState } from '@/domain/workspace-tabs';
 import { queryKeys } from '@/queries/keys';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
@@ -110,17 +113,34 @@ function TabFile({
   readonly path: string;
 }) {
   const query = useQuery({
+    ...sandboxReadRetry,
     queryKey: queryKeys.files.file(projectId, path),
     queryFn: () => window.doric.projects.file(projectId, path),
+    refetchInterval: (query) =>
+      query.state.status === 'error'
+        ? false
+        : pendingReadInterval(query.state.data),
   });
   return (
     <>
+      <ReadFeedback
+        error={query.isError ? messageFrom(query.error) : undefined}
+        refreshing={query.isFetching}
+        onRetry={() => void query.refetch()}
+      />
       <FileBody
         file={fileReadState(query.data, query.isPending, query.isError)}
+        failed={query.isError}
       />
       <footer className="flex chrome-bar shrink-0 items-center border-t px-3">
         <span className="truncate font-mono text-xs" title={path}>
           {path}
+        </span>
+        <span
+          role="status"
+          className="ml-auto shrink-0 text-xs text-muted-foreground"
+        >
+          {query.isFetching ? 'Updating…' : ''}
         </span>
       </footer>
     </>

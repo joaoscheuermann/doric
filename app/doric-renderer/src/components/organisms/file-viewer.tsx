@@ -86,10 +86,22 @@ export function FileViewer({ file, onClose, path }: FileViewerProps) {
  */
 export function FileBody({
   file,
+  failed = false,
 }: {
   readonly file: ReadState<ProjectFileContent>;
+  readonly failed?: boolean;
 }) {
   if (file.status === 'ready') return <FileContent file={file.value} />;
+  if (failed) {
+    return (
+      <Empty className="p-4">
+        <EmptyHeader>
+          <EmptyTitle>This file could not be read</EmptyTitle>
+          <EmptyDescription>Try again using the action above.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
   if (file.status === 'idle' || file.status === 'loading') {
     return (
       <div className="flex flex-col gap-2 p-3">

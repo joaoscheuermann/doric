@@ -318,20 +318,19 @@ export const treeReadState = (
 };
 
 /**
- * What the open file shows. Every read of a file starts from loading, and a
- * failed one leaves nothing open: the surface closes the file instead of
- * showing a broken one.
+ * What the open file shows. Background reads and failures keep the last text
+ * available; only the first read needs a loading placeholder.
  */
 export const fileReadState = (
   result: ProjectFileResult | undefined,
   loading: boolean,
   failed: boolean,
 ): ReadState<ProjectFileContent> => {
+  if (result?.status === 'ready')
+    return { status: 'ready', value: result.file };
   if (loading) return { status: 'loading' };
   if (failed || result === undefined) return { status: 'idle' };
-  return result.status === 'ready'
-    ? { status: 'ready', value: result.file }
-    : result;
+  return result;
 };
 
 /**
@@ -343,9 +342,9 @@ export const diffReadState = (
   loading: boolean,
   failed: boolean,
 ): ReadState<ProjectDiff> => {
-  if (loading) return { status: 'loading' };
   if (result?.status === 'ready')
     return { status: 'ready', value: result.diff };
+  if (loading) return { status: 'loading' };
   if (result !== undefined && !failed) return result;
   return { status: 'idle' };
 };

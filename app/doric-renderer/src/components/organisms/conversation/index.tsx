@@ -252,10 +252,6 @@ const conversationExtension = defineExtension({
  * The conversation surface: one Lexical editor holding the Thread's projected
  * turns and the reader's prompt. `useThreadChat` owns the subscription, the
  * projection and the sending; this surface renders them in a centred column.
- *
- * `onSandboxWrite` is additive: this surface takes it and ignores it, and the
- * caller may use it when the log grows a write to the sandbox the Project's
- * Threads share.
  */
 /**
  * The conversation's own send and stop, which the shell's control drives.
@@ -271,7 +267,6 @@ export function Conversation({
   sendRequest,
 }: {
   readonly thread: Thread;
-  readonly onSandboxWrite?: () => void;
   /** Where the editor writes whether the prompt holds words. */
   readonly promptSignal?: PromptSignal;
   /** The shell's send requests, counted; each new count sends the prompt once. */

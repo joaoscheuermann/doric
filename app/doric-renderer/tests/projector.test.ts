@@ -739,8 +739,9 @@ describe('sandbox writes in the log', () => {
         finished(3, 'terminal'),
         finished(4, 'grep'),
         finished(5, 'tree'),
+        finished(6, 'git'),
       ]),
-      3,
+      4,
     );
   });
 

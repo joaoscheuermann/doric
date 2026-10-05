@@ -6,6 +6,7 @@ import {
   ROOT_PATH,
   treeReadState,
 } from '@/domain/files';
+import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import {
   messageFrom,
   type ProjectDiff,
@@ -13,9 +14,10 @@ import {
   type ProjectTreeNode,
 } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { filesStore } from '@/stores/files';
+import { refreshProject } from '@/queries/project-refresh';
+import { emptyFilesView, filesStore } from '@/stores/files';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useStore } from 'zustand/react';
 
 export type { ReadState };
@@ -29,14 +31,13 @@ export type ProjectFilesOptions = {
    * without one the panel draws the Project's workspace root.
    */
   readonly cwd?: string;
-  /** Bumped by the conversation whenever the agent writes to the sandbox. */
-  readonly revision: number;
 };
 
 export type ProjectFilesActions = {
   readonly closeFile: () => void;
   /** Reads the workspace diff; the changes view is what asks for it. */
   readonly loadChanges: () => void;
+  readonly hideChanges: () => void;
   readonly openFile: (path: string) => void;
   readonly refresh: () => void;
   readonly toggleDirectory: (path: string) => void;
@@ -51,8 +52,12 @@ export type ProjectFiles = {
   readonly actions: ProjectFilesActions;
   /** The cwd repository's diff, behind the changes view, once it is asked for. */
   readonly changes: ReadState<ProjectDiff>;
-  /** The last rejected read; the panel shows it and Refresh tries again. */
+  /** Errors belong to their reads and disappear after successful recovery. */
   readonly error?: string;
+  readonly treeError?: string;
+  readonly changesError?: string;
+  readonly fileError?: string;
+  readonly refreshing: boolean;
   /**
    * The directories the user has opened. This is view state, not read state: the
    * whole tree is already held, so expanding a directory only decides what the
@@ -73,52 +78,49 @@ export type ProjectFiles = {
  * The sandbox surface of one Project, rooted at the selected Thread's working
  * directory. The sandbox belongs to the Project, but what a Thread sees of it
  * starts at its own cwd, so this hook reads the Project it is given and the root
- * the cwd names, and forgets everything the previous root answered.
- *
- * Two things drive it: the Project or the cwd, which starts the surface over and
- * reads the whole tree of the new root in one request, and `revision` growing,
- * which invalidates what is on screen because the agent has just written to the
- * sandbox. There is no watcher: the surface reads on demand and never writes,
- * and one file's content is read only when it is opened.
+ * the cwd names. Query keys isolate roots while their expansion state survives
+ * switching away. The project refresh coordinator owns invalidation signals;
+ * queries own only recovery from pending leases and failed reads.
  */
 export const useProjectFiles = ({
   projectId,
   cwd,
-  revision,
 }: ProjectFilesOptions): ProjectFiles => {
   const queryClient = useQueryClient();
-  const expanded = useStore(filesStore, (state) => state.expanded);
-  const selectedPath = useStore(filesStore, (state) => state.selectedPath);
-  const changesRequested = useStore(
+  const root = cwd === undefined ? ROOT_PATH : workspacePath(cwd);
+  const scope = JSON.stringify([projectId, root]);
+  const { expanded, selectedPath, changesRequested } = useStore(
     filesStore,
-    (state) => state.changesRequested,
+    (state) => state.views[scope] ?? emptyFilesView,
   );
-  const [error, setError] = useState<string>();
   const {
     closeFile: closeStoredFile,
-    dropChanges,
     openFile: openStoredFile,
     requestChanges,
-    reset,
+    hideChanges: hideStoredChanges,
     toggleDirectory: toggleStoredDirectory,
   } = filesStore.getState();
-
-  // The sandbox speaks workspace-relative paths; the Thread's cwd is
-  // sandbox-absolute, and the root of the mount is the empty path.
-  const root = cwd === undefined ? ROOT_PATH : workspacePath(cwd);
 
   const tree = useQuery({
     queryKey: queryKeys.files.tree(projectId, cwd),
     queryFn: () => window.doric.projects.tree(projectId as string, root),
     enabled: projectId !== undefined,
-    gcTime: 0,
+    ...sandboxReadRetry,
+    refetchInterval: (query) =>
+      query.state.status === 'error'
+        ? false
+        : pendingReadInterval(query.state.data),
   });
   const file = useQuery({
     queryKey: queryKeys.files.file(projectId, selectedPath),
     queryFn: () =>
       window.doric.projects.file(projectId as string, selectedPath as string),
     enabled: projectId !== undefined && selectedPath !== undefined,
-    gcTime: 0,
+    ...sandboxReadRetry,
+    refetchInterval: (query) =>
+      query.state.status === 'error'
+        ? false
+        : pendingReadInterval(query.state.data),
   });
   const changes = useQuery({
     queryKey: queryKeys.files.diff(projectId, cwd),
@@ -128,112 +130,82 @@ export const useProjectFiles = ({
         root === ROOT_PATH ? undefined : root,
       ),
     enabled: projectId !== undefined && changesRequested,
-    gcTime: 0,
+    ...sandboxReadRetry,
+    refetchInterval: (query) =>
+      query.state.status === 'error'
+        ? false
+        : pendingReadInterval(query.state.data),
   });
 
-  // A new Project is a new sandbox and a new cwd is a new root within it, so
-  // nothing of the old surface stays open and no answer the previous root still
-  // owes can land on the new one.
-  const previousRoot = useRef({ projectId, root });
-  useEffect(() => {
-    if (
-      previousRoot.current.projectId === projectId &&
-      previousRoot.current.root === root
-    ) {
-      return;
-    }
-    previousRoot.current = { projectId, root };
-    reset();
-    setError(undefined);
-  }, [projectId, reset, root]);
-
-  // The agent wrote to the sandbox, so what the surface shows may be stale.
-  const seenRevision = useRef(revision);
-  useEffect(() => {
-    if (revision === seenRevision.current) return;
-    seenRevision.current = revision;
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.files.ofProject(projectId),
-    });
-  }, [projectId, queryClient, revision]);
-
-  // The last rejected read is the one the panel explains; Refresh and a new
-  // Project are what clear it.
-  useEffect(() => {
-    if (tree.isError) setError(messageFrom(tree.error));
-  }, [tree.error, tree.errorUpdatedAt, tree.isError]);
-  useEffect(() => {
-    if (file.isError) {
-      // The panel explains the failure, and the tree stays where it was.
-      closeStoredFile();
-      setError(messageFrom(file.error));
-    }
-  }, [closeStoredFile, file.error, file.errorUpdatedAt, file.isError]);
-  useEffect(() => {
-    if (changes.isError) {
-      setError(messageFrom(changes.error));
-      // A diff that answered nothing leaves the changes view unasked.
-      if (changes.data === undefined) dropChanges();
-    }
-  }, [
-    changes.data,
-    changes.error,
-    changes.errorUpdatedAt,
-    changes.isError,
-    dropChanges,
-  ]);
+  const treeError = tree.isError ? messageFrom(tree.error) : undefined;
+  const fileError =
+    selectedPath !== undefined && file.isError
+      ? messageFrom(file.error)
+      : undefined;
+  const changesError =
+    changesRequested && changes.isError
+      ? messageFrom(changes.error)
+      : undefined;
 
   /**
    * A directory is only shown or hidden: the whole tree is already held, so
    * expanding one reads nothing.
    */
   const toggleDirectory = useCallback(
-    (path: string): void => toggleStoredDirectory(path),
-    [toggleStoredDirectory],
+    (path: string): void => toggleStoredDirectory(scope, path),
+    [scope, toggleStoredDirectory],
   );
 
   const openFile = useCallback(
     (path: string): void => {
       if (projectId === undefined) return;
-      openStoredFile(path);
+      openStoredFile(scope, path);
       // Opening the file already open still reads it again.
       void queryClient.invalidateQueries({
         queryKey: queryKeys.files.file(projectId, path),
       });
     },
-    [openStoredFile, projectId, queryClient],
+    [openStoredFile, projectId, queryClient, scope],
   );
 
   const closeFile = useCallback((): void => {
-    // Closing states that the file is no longer shown, so a read still on its
-    // way for it is discarded instead of landing on a closed surface.
-    closeStoredFile();
-  }, [closeStoredFile]);
+    // A late result may fill the cache, but never reopens the closed surface.
+    closeStoredFile(scope);
+  }, [closeStoredFile, scope]);
 
   const loadRequestedChanges = useCallback((): void => {
     if (projectId === undefined) return;
-    requestChanges();
+    requestChanges(scope);
     void queryClient.invalidateQueries({
       queryKey: queryKeys.files.diff(projectId, cwd),
     });
-  }, [cwd, projectId, queryClient, requestChanges]);
+  }, [cwd, projectId, queryClient, requestChanges, scope]);
 
   const refresh = useCallback((): void => {
-    setError(undefined);
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.files.ofProject(projectId),
-    });
+    if (projectId !== undefined) void refreshProject(queryClient, projectId);
   }, [projectId, queryClient]);
+
+  const hideChanges = useCallback((): void => {
+    hideStoredChanges(scope);
+  }, [hideStoredChanges, scope]);
 
   const actions = useMemo(
     () => ({
       closeFile,
       loadChanges: loadRequestedChanges,
+      hideChanges,
       openFile,
       refresh,
       toggleDirectory,
     }),
-    [closeFile, loadRequestedChanges, openFile, refresh, toggleDirectory],
+    [
+      closeFile,
+      loadRequestedChanges,
+      hideChanges,
+      openFile,
+      refresh,
+      toggleDirectory,
+    ],
   );
 
   return {
@@ -246,7 +218,11 @@ export const useProjectFiles = ({
             changes.isPending || changes.isFetching,
             changes.isError,
           ),
-    error,
+    error: treeError ?? changesError ?? fileError,
+    treeError,
+    changesError,
+    fileError,
+    refreshing: tree.isFetching || file.isFetching || changes.isFetching,
     expanded,
     file:
       projectId === undefined || selectedPath === undefined

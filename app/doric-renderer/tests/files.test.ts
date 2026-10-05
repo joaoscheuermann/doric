@@ -463,6 +463,10 @@ describe('what a sandbox read shows', () => {
 
   test('keeps what is on screen when a reread of it fails', () => {
     assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, false, true),
+      { status: 'ready', value: fileContent },
+    );
+    assert.deepEqual(
       treeReadState({ status: 'ready', path: '', entries: [treeNode] }, true),
       {
         status: 'ready',
@@ -482,11 +486,18 @@ describe('what a sandbox read shows', () => {
     assert.deepEqual(treeReadState(lease, true), { status: 'loading' });
   });
 
-  test('shows a file read as loading while it is going', () => {
+  test('keeps cached file and diff content visible during background reads', () => {
     assert.deepEqual(
       fileReadState({ status: 'ready', file: fileContent }, true, false),
-      { status: 'loading' },
+      { status: 'ready', value: fileContent },
     );
+    assert.deepEqual(diffReadState({ status: 'ready', diff }, true, false), {
+      status: 'ready',
+      value: diff,
+    });
+  });
+
+  test('shows loading placeholders only while awaiting first content', () => {
     assert.deepEqual(fileReadState(undefined, true, false), {
       status: 'loading',
     });
@@ -495,12 +506,7 @@ describe('what a sandbox read shows', () => {
     });
   });
 
-  test('leaves nothing open when a file read failed', () => {
-    // The surface closes the file rather than showing a broken one.
-    assert.deepEqual(
-      fileReadState({ status: 'ready', file: fileContent }, false, true),
-      { status: 'idle' },
-    );
+  test('has no file content when the first read failed', () => {
     assert.deepEqual(fileReadState(undefined, false, true), { status: 'idle' });
     assert.deepEqual(fileReadState(undefined, false, false), {
       status: 'idle',

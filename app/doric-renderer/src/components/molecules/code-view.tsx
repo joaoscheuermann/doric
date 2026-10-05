@@ -108,10 +108,15 @@ export function CodeView({ language, value }: CodeViewProps) {
   }, []);
 
   useEffect(() => {
-    const model = view.current?.getModel();
+    const current = view.current;
+    const model = current?.getModel();
     if (model === null || model === undefined) return;
     editor.setModelLanguage(model, language);
-    if (model.getValue() !== value) model.setValue(value);
+    if (model.getValue() !== value) {
+      const position = current?.saveViewState();
+      model.setValue(value);
+      if (position) current?.restoreViewState(position);
+    }
   }, [language, value]);
 
   return (

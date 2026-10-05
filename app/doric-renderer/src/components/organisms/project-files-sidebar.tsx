@@ -4,8 +4,8 @@ import {
   type FileTreeActions,
 } from '@/components/molecules/file-tree';
 import { FilesToggle } from '@/components/molecules/files-toggle';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { ReadFeedback } from '@/components/molecules/read-feedback';
+import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import {
   Empty,
   EmptyDescription,
@@ -34,14 +34,13 @@ import {
   emptyDirectoryNotice,
   sandboxNotice,
 } from '@/domain/files';
-import type { Project } from '@/domain/workspace';
+import type { Project, Thread } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import {
   AlertCircleIcon,
   FileDiffIcon,
   FilesIcon,
   FolderIcon,
-  RefreshCwIcon,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
@@ -55,6 +54,7 @@ type ProjectFilesSidebarProps = {
   readonly onToggle: () => void;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
+  readonly thread?: Thread;
 };
 
 /** The two things the panel can show. */
@@ -80,12 +80,16 @@ export function ProjectFilesSidebar({
   files,
   onToggle,
   project,
+  thread,
 }: ProjectFilesSidebarProps) {
   const [view, setView] = useState<PanelView>('files');
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden">
       <PanelHeader>
+        <span role="status" className="truncate text-xs text-muted-foreground">
+          {files.refreshing ? 'Updating…' : ''}
+        </span>
         <div className="ml-auto flex shrink-0 items-center gap-1 pr-2">
           {/* No colours of their own: the line variant is transparent, and this
               theme's `foreground` is the sidebar's own, so the vendored text
@@ -112,6 +116,14 @@ export function ProjectFilesSidebar({
       <SidebarContent className="overflow-hidden p-0">
         <SidebarGroup className="h-full min-h-0 p-0">
           <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
+            <ReadFeedback
+              error={
+                files.treeError ??
+                (view === 'changes' ? files.changesError : undefined)
+              }
+              refreshing={files.refreshing}
+              onRetry={files.actions.refresh}
+            />
             <SandboxGate files={files} project={project}>
               {view === 'files' ? (
                 <FilesView files={files} />
@@ -122,7 +134,7 @@ export function ProjectFilesSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <FilesFooter files={files} />
+      <FilesFooter thread={thread} />
     </Sidebar>
   );
 }
@@ -144,11 +156,6 @@ function PanelHeader({ children }: { readonly children: ReactNode }) {
   );
 }
 
-/**
- * What the panel shows when the sandbox itself cannot be read. Both views share
- * one answer, because a queued, failed or terminated Project has no files and no
- * changes: the surface explains the Project instead of failing a view at a time.
- */
 /**
  * What the panel shows when the sandbox itself cannot be read. Both views share
  * one answer, because a queued, failed or terminated Project has no files and no
@@ -177,10 +184,10 @@ function SandboxGate({
   if (tree.status === 'idle' || tree.status === 'loading') {
     // A Project with no sandbox read yet is answered above, so this is a read
     // on its way — and the error, when there is one, is what failed it.
-    if (files.error !== undefined) {
+    if (files.treeError !== undefined) {
       return (
         <PanelState
-          description={files.error}
+          description="The sandbox could not be read. Try again using the action above."
           icon={<AlertCircleIcon />}
           title="Unable to read the sandbox"
         />
@@ -197,41 +204,17 @@ function SandboxGate({
     );
   }
 
-  return (
-    <>
-      {files.error !== undefined && (
-        <Alert variant="destructive" className="mx-2 my-1 w-auto shrink-0">
-          <AlertCircleIcon />
-          <AlertTitle>Unable to read</AlertTitle>
-          <AlertDescription>{files.error}</AlertDescription>
-        </Alert>
-      )}
-      {children}
-    </>
-  );
+  return children;
 }
 
-/**
- * The panel's footer: the one action the surface has, since a read-only view has
- * nothing to submit. The open file's own chain is the file viewer's footer, which
- * is the surface that shows the file.
- */
-function FilesFooter({ files }: { readonly files: ProjectFiles }) {
+/** The selected Thread's working directory and Git status. */
+function FilesFooter({ thread }: { readonly thread?: Thread }) {
   return (
     <footer
       data-slot="project-files-footer"
       className="flex chrome-bar shrink-0 items-center gap-2 border-t px-3"
     >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Refresh files"
-        disabled={files.tree.status !== 'ready'}
-        className="ml-auto shrink-0"
-        onClick={files.actions.refresh}
-      >
-        <RefreshCwIcon />
-      </Button>
+      <WorkspaceCwd thread={thread} />
     </footer>
   );
 }
@@ -271,13 +254,14 @@ function FilesView({ files }: { readonly files: ProjectFiles }) {
 /** The changed files, grouped by repository, each under its own sticky header. */
 function ChangesView({ files }: { readonly files: ProjectFiles }) {
   const { actions, changes } = files;
-  const { loadChanges } = actions;
+  const { hideChanges, loadChanges } = actions;
 
   // The diff is read when the changes view is first shown, never before: the
   // hook is told to read it by the surface that asks for it.
   useEffect(() => {
     loadChanges();
-  }, [loadChanges]);
+    return hideChanges;
+  }, [hideChanges, loadChanges]);
 
   const repositories = useMemo(
     () =>
@@ -294,8 +278,16 @@ function ChangesView({ files }: { readonly files: ProjectFiles }) {
   if (changes.status === 'idle') {
     return (
       <PanelState
-        description="The changes have not been read yet."
-        title="No changes read"
+        description={
+          files.changesError === undefined
+            ? 'The changes have not been read yet.'
+            : 'The changes could not be read. Try again using the action above.'
+        }
+        title={
+          files.changesError === undefined
+            ? 'No changes read'
+            : 'Unable to read changes'
+        }
       />
     );
   }

@@ -32,6 +32,7 @@ import type { Terminal } from '@/domain/terminals';
 import { threadPath } from '@/domain/thread-tree';
 import { useComposer } from '@/hooks/use-composer';
 import { useProjectFiles } from '@/hooks/use-project-files';
+import { useProjectRefresh } from '@/hooks/use-project-refresh';
 import { useTerminals } from '@/hooks/use-terminals';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { useWorkspaceTabs } from '@/hooks/use-workspace-tabs';
@@ -53,19 +54,11 @@ export function App() {
       : undefined);
   const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
-  // The sandbox panel starts open, and stays where the user leaves it; the
-  // count of agent writes below is what tells it to reread what it shows. It is
-  // rooted at the selected Thread's working directory, so it follows the Thread
-  // as well as the Project.
+  // The sandbox panel starts open and keeps the reader's choice.
   const [filesOpen, setFilesOpen] = useState(true);
-  const [filesRevision, setFilesRevision] = useState(0);
   // What the conversation's composer offers the footer, and how the two talk.
   const { promptSignal, sendRequest, canSend, send } = useComposer();
   const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
-  const noteSandboxWrite = useCallback(
-    () => setFilesRevision((revision) => revision + 1),
-    [],
-  );
   const model: SidebarModel = {
     draft: workspace.draft,
     editing: workspace.editing,
@@ -107,6 +100,13 @@ export function App() {
   const selectedProject = workspace.projects.find(
     (project) => project.id === workspace.selectedProjectId,
   );
+  useProjectRefresh({
+    project: selectedProject,
+    thread: selectedThread,
+    threads: workspace.threadsByProject[selectedProject?.id ?? ''] ?? [],
+    terminals: terminals.items,
+    visible: filesOpen || tabs.items.some((tab) => tab.kind === 'file'),
+  });
   const selectedThreadPath =
     selectedThread === undefined
       ? []
@@ -119,7 +119,6 @@ export function App() {
   const files = useProjectFiles({
     projectId: filesOpen ? selectedProject?.id : undefined,
     cwd: selectedThread?.cwd,
-    revision: filesRevision,
   });
   const tabActions = workspaceTabsStore.getState();
   const filesWithTabs = {
@@ -167,6 +166,7 @@ export function App() {
               files={filesWithTabs}
               onToggle={toggleFiles}
               project={selectedProject}
+              thread={selectedThread}
             />
           }
           filesOpen={filesOpen}
@@ -191,7 +191,6 @@ export function App() {
               onSend={send}
               onStop={stop}
               running={running}
-              thread={selectedThread}
             />
           }
           header={
@@ -237,7 +236,6 @@ export function App() {
                 {selectedThread ? (
                   <Conversation
                     key={selectedThread.id}
-                    onSandboxWrite={noteSandboxWrite}
                     promptSignal={promptSignal}
                     sendRequest={sendRequest}
                     thread={selectedThread}
