@@ -13,6 +13,8 @@ export type ScrollPlan =
   | 'open'
   /** The pass pins the tail: the transcript fills in above it and the reader follows the bottom. */
   | 'pin'
+  /** A rail jump owns the scroll until its smooth movement ends. */
+  | 'navigate'
   /** The pass holds the reader's scroll exactly as it found it. */
   | 'hold';
 
@@ -24,6 +26,8 @@ export type ScrollPass = {
   readonly filling: boolean;
   /** Whether the reader sits at the conversation's tail. */
   readonly atBottom: boolean;
+  /** Whether a trail handle is currently moving the viewport. */
+  readonly navigating: boolean;
 };
 
 /**
@@ -33,6 +37,7 @@ export type ScrollPass = {
  */
 export const scrollPlan = (pass: ScrollPass): ScrollPlan => {
   if (pass.opening) return 'open';
+  if (pass.navigating) return 'navigate';
   if (pass.filling && pass.atBottom) return 'pin';
   return 'hold';
 };

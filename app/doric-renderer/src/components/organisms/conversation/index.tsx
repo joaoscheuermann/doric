@@ -304,6 +304,7 @@ export function Conversation({
   );
   // The scroll area whose viewport holds the transcript, for the nav rail beside it.
   const scrollRoot = useRef<HTMLDivElement>(null);
+  const navigating = useRef(false);
   // What the editor draws: the log's turns, and the two things the surface is
   // waiting for — the reader's words before the host accepts them, and the
   // agent's first step while it has produced nothing.
@@ -344,6 +345,7 @@ export function Conversation({
               threadId={thread.id}
               turns={turns}
               onResume={chat.resume}
+              navigating={navigating}
             />
             <SendPrompt
               canStop={running}
@@ -365,7 +367,11 @@ export function Conversation({
         {/* Inside the scroll view, pinned to it: the rail is absolutely
           positioned against the scroll area's root, so the transcript scrolls
           beneath it and the rail holds the viewport's right edge. */}
-        <ThreadNavRail scrollRoot={scrollRoot} turns={turns} />
+        <ThreadNavRail
+          scrollRoot={scrollRoot}
+          turns={turns}
+          navigating={navigating}
+        />
       </ScrollArea>
     </div>
   );

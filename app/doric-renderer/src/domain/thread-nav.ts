@@ -1,42 +1,64 @@
-import type { Turn, UserTurn } from './projector';
+import type { Turn } from './projector';
 
 /**
- * The thread navigation rail's vocabulary: the prompts the reader wrote become
- * handles stacked down a thin rail inside the conversation's scroll view. The
+ * The thread navigation rail's vocabulary: prompts, queued receipts and child
+ * results become handles inside the conversation's scroll view. The
  * rules that choose the handles and name the one the reader is looking at are
  * pure functions of their arguments; the surface around them only measures the
  * DOM and hands the numbers over.
  */
 
-/** One handle on the rail: a prompt of the reader's, and its hover's content. */
-export type PromptMarker = {
-  /** The prompt this handle jumps to — the id its block carries in the DOM. */
+/** One handle on the rail and the block it jumps to. */
+type MarkerBase = {
+  /** The id carried by the corresponding transcript block. */
   readonly promptId: string;
-  /** The prompt's words, all a hover's popover shows. */
+  /** The words its hover's popover shows. */
   readonly text: string;
 };
 
-/** Whether a turn is a prompt the reader wrote that the log holds. */
-const isMarkerTurn = (turn: Turn): turn is UserTurn =>
-  turn.type === 'user' && turn.accepted && turn.delegated === undefined;
+export type ThreadMarker = MarkerBase &
+  (
+    | { readonly kind: 'prompt' | 'queued' }
+    | { readonly kind: 'result'; readonly threadId: string }
+  );
 
 /**
- * The markers a rail holds: one per prompt the reader wrote, in the order the
- * transcript holds them. A prompt the host has not accepted yet is not yet a
- * turn of the conversation, and a delegated input is not the reader's own —
- * neither takes a marker.
+ * One marker per visible destination, in transcript order. A grouped queued
+ * receipt is one block and gets one marker; its later execution is a separate
+ * prompt block. Parent instructions and unaccepted drafts have no marker.
  */
-export const promptMarkers = (
+export const threadMarkers = (
   turns: readonly Turn[],
-): readonly PromptMarker[] =>
-  turns.filter(isMarkerTurn).map((turn) => ({
-    promptId: turn.promptId,
-    text: turn.text.trim(),
-  }));
+): readonly ThreadMarker[] =>
+  turns.flatMap((turn): readonly ThreadMarker[] => {
+    if (turn.type === 'queued')
+      return turn.items.length === 0
+        ? []
+        : [
+            {
+              kind: 'queued',
+              promptId: turn.promptId,
+              text: turn.items.map((item) => item.text.trim()).join('\n\n'),
+            },
+          ];
+    if (turn.type !== 'user' || !turn.accepted) return [];
+    if (turn.delegated?.kind === 'result')
+      return [
+        {
+          kind: 'result',
+          promptId: turn.promptId,
+          threadId: turn.delegated.threadId,
+          text: turn.delegated.text.trim(),
+        },
+      ];
+    return turn.delegated === undefined
+      ? [{ kind: 'prompt', promptId: turn.promptId, text: turn.text.trim() }]
+      : [];
+  });
 
 /**
- * The marker a scroll position speaks for: the prompt at or nearest above the
- * viewport's top, and the first measured prompt while the reader is above every
+ * The marker a scroll position speaks for: the block at or nearest above the
+ * viewport's top, and the first measured block while the reader is above every
  * marker. The tops ascend through the transcript, so the last measured marker
  * at or above the top is the nearest one. `-1` when there is nothing to
  * highlight.
@@ -54,4 +76,14 @@ export const activeMarkerIndex = (
     if (top <= viewportTop) active = index;
   }
   return active === -1 ? first : active;
+};
+
+/** Distance from the hovered handle, capped at the rail's resting level. */
+export const markerEmphasis = (
+  index: number,
+  hovered: number,
+): 0 | 1 | 2 | 3 => {
+  if (hovered < 0) return 3;
+  const distance = Math.abs(index - hovered);
+  return distance >= 3 ? 3 : distance === 2 ? 2 : distance === 1 ? 1 : 0;
 };

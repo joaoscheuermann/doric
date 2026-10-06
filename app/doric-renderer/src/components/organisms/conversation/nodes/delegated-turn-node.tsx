@@ -134,6 +134,8 @@ export class DelegatedTurnNode extends DecoratorNode<JSX.Element> {
     const dom = document.createElement('div');
     dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
     dom.dataset.promptId = this.__promptId;
+    if (this.__input.kind === 'result')
+      dom.dataset.resultPromptId = this.__promptId;
     return dom;
   }
   override updateDOM(): boolean {

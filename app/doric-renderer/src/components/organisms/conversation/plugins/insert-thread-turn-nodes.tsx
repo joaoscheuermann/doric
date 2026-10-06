@@ -74,7 +74,7 @@ import {
   RootNode,
   SKIP_DOM_SELECTION_TAG,
 } from 'lexical';
-import { useEffect, useRef } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 
 /** Any of the turn blocks, once it is in the editor. */
 type TurnBlock =
@@ -341,11 +341,13 @@ export function InsertThreadTurnNodes({
   threadId,
   turns,
   onResume,
+  navigating,
 }: {
   readonly threadId: string;
   readonly turns: readonly Turn[];
   /** What a marker's Retomar action asks the surface for. */
   readonly onResume: ResumePrompt;
+  readonly navigating: RefObject<boolean>;
 }) {
   const [editor] = useLexicalComposerContext();
   const seated = useRef<LexicalEditor | null>(null);
@@ -365,6 +367,7 @@ export function InsertThreadTurnNodes({
         opening,
         filling: filling.current,
         atBottom: scroll?.atBottom ?? true,
+        navigating: navigating.current,
       });
       let plan: SyncPlan = { steps: [], removals: [], pending: false };
       const element = editor.getRootElement();
@@ -458,7 +461,10 @@ export function InsertThreadTurnNodes({
         {
           // Preserve focus and search text in popovers during background streaming.
           // Reapplying Lexical's saved selection would dismiss them via focus-outside.
-          tag: opening || ownsFocus ? undefined : SKIP_DOM_SELECTION_TAG,
+          tag:
+            opening || (ownsFocus && !navigating.current)
+              ? undefined
+              : SKIP_DOM_SELECTION_TAG,
           // The commit that lands after this update re-applies the caret's
           // selection and the browser scrolls it into view — back to the input
           // the reader just left — and a settled prompt can re-append the tail.
@@ -489,7 +495,7 @@ export function InsertThreadTurnNodes({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [editor, onResume, threadId, turns]);
+  }, [editor, navigating, onResume, threadId, turns]);
 
   /**
    * The prompt cannot be deleted. The sync above runs when the chat changes; this

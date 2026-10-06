@@ -171,6 +171,18 @@ the host still rejects unsafe switches.
 Conversation streaming preserves focus and selection in external controls; transcript
 updates do not restore the editor's DOM selection while a popover or another input
 owns focus.
+The Conversation Trail uses base widths of 10 pixels for accepted user prompts and
+grouped queued receipts, and 12 pixels for subthread results. Queued
+handles use a subtle primary tint distinct from ordinary prompts. Each handle
+follows transcript order and scrolls to its own block; parent instructions and
+unsent drafts have no handle. Trail previews identify user prompts with the
+reader's avatar and subthread results with the agent's bot icon and name. A
+result preview also names its child Thread and links to it when that Thread is
+still in the loaded tree, with an open-tab icon; otherwise it shows the short ID.
+Hovering a handle makes it 17 pixels wide regardless of type, while its two
+nearest neighbors step up in width and brightness. The cascade changes only the
+handles and ends when the pointer leaves the handle. The visible block's
+primary-color highlight remains independent.
 The host lists and switches branches through semantic Thread REST and IPC operations.
 Switching never forces checkout, stashes, creates a branch or fetches remotes; occupied
 branches, conflicts and in-progress Git operations are refused. Active prompts or

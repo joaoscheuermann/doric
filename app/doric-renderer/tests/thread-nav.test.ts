@@ -4,11 +4,16 @@ import { describe, test } from 'node:test';
 import type { DelegatedInput } from '../src/domain/delegated';
 import type {
   AgentTurn,
+  QueuedTurn,
   ThinkingTurn,
   Turn,
   UserTurn,
 } from '../src/domain/projector';
-import { activeMarkerIndex, promptMarkers } from '../src/domain/thread-nav';
+import {
+  activeMarkerIndex,
+  markerEmphasis,
+  threadMarkers,
+} from '../src/domain/thread-nav';
 import type { ThreadEvent } from '../src/domain/workspace';
 
 const event = (sequence: number): ThreadEvent => ({
@@ -56,6 +61,20 @@ const delegated = (promptId: string, sequence: number): UserTurn => ({
   delegated: delegatedInput,
 });
 
+const queued = (promptId: string, sequence: number): QueuedTurn => ({
+  type: 'queued',
+  promptId,
+  events: [event(sequence)],
+  items: [
+    { promptId, text: 'First queued prompt', source: { kind: 'user' } },
+    {
+      promptId: `${promptId}-next`,
+      text: 'Second queued prompt',
+      source: { kind: 'user' },
+    },
+  ],
+});
+
 const agent = (promptId: string, sequence: number): AgentTurn => ({
   type: 'agent',
   promptId,
@@ -72,7 +91,7 @@ const thinking = (promptId: string, sequence: number): ThinkingTurn => ({
   streaming: false,
 });
 
-describe('promptMarkers', () => {
+describe('threadMarkers', () => {
   test('stands one marker per prompt the reader wrote, in transcript order', () => {
     const turns: readonly Turn[] = [
       user('a', 1),
@@ -83,7 +102,7 @@ describe('promptMarkers', () => {
     ];
 
     assert.deepEqual(
-      promptMarkers(turns).map((marker) => marker.promptId),
+      threadMarkers(turns).map((marker) => marker.promptId),
       ['a', 'b', 'c'],
     );
   });
@@ -92,26 +111,59 @@ describe('promptMarkers', () => {
     const turns: readonly Turn[] = [user('a', 1), agent('a', 2), sent('words')];
 
     assert.deepEqual(
-      promptMarkers(turns).map((marker) => marker.promptId),
+      threadMarkers(turns).map((marker) => marker.promptId),
       ['a'],
     );
   });
 
-  test('takes no marker for a delegated input', () => {
+  test('adds a result handle at the delegated turn but skips a parent instruction', () => {
     const turns: readonly Turn[] = [
       user('a', 1),
       delegated('d', 2),
-      user('b', 3),
+      {
+        ...delegated('parent', 3),
+        delegated: { kind: 'parent', threadId: 'parent', text: 'task' },
+      },
+      user('b', 4),
     ];
 
     assert.deepEqual(
-      promptMarkers(turns).map((marker) => marker.promptId),
-      ['a', 'b'],
+      threadMarkers(turns).map((marker) => [marker.kind, marker.promptId]),
+      [
+        ['prompt', 'a'],
+        ['result', 'd'],
+        ['prompt', 'b'],
+      ],
+    );
+    assert.equal(threadMarkers(turns)[1]?.text, 'done');
+    const result = threadMarkers(turns).find(
+      (marker) => marker.kind === 'result',
+    );
+    assert.equal(result?.threadId, 'child');
+  });
+
+  test('adds one queued handle for a grouped receipt before its later prompt', () => {
+    const markers = threadMarkers([
+      queued('a', 1),
+      user('a', 2),
+      agent('a', 3),
+    ]);
+
+    assert.deepEqual(
+      markers.map((marker) => [marker.kind, marker.promptId]),
+      [
+        ['queued', 'a'],
+        ['prompt', 'a'],
+      ],
+    );
+    assert.equal(
+      markers[0]?.text,
+      'First queued prompt\n\nSecond queued prompt',
     );
   });
 
   test('carries the prompt words as the handle content', () => {
-    const markers = promptMarkers([user('a', 1, 'First line\nsecond line')]);
+    const markers = threadMarkers([user('a', 1, 'First line\nsecond line')]);
 
     assert.deepEqual(
       markers.map((marker) => marker.text),
@@ -120,7 +172,7 @@ describe('promptMarkers', () => {
   });
 
   test('trims the words a handle carries', () => {
-    const markers = promptMarkers([user('a', 1, '  question  ')]);
+    const markers = threadMarkers([user('a', 1, '  question  ')]);
 
     assert.deepEqual(
       markers.map((marker) => marker.text),
@@ -154,5 +206,18 @@ describe('activeMarkerIndex', () => {
   test('highlights nothing when no marker is drawn', () => {
     assert.equal(activeMarkerIndex([], 300), -1);
     assert.equal(activeMarkerIndex([null, null], 300), -1);
+  });
+});
+
+describe('markerEmphasis', () => {
+  test('steps down symmetrically from the hovered handle to distant handles', () => {
+    assert.deepEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => markerEmphasis(index, 5)),
+      [3, 3, 2, 1, 0, 1, 2, 3, 3],
+    );
+  });
+
+  test('leaves every handle at its resting emphasis when none is hovered', () => {
+    assert.equal(markerEmphasis(0, -1), 3);
   });
 });
