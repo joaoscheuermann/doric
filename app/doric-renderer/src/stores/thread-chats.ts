@@ -126,8 +126,8 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
   /**
    * Shows the native notification one live event of a Thread deserves. It is a
    * courtesy of the chat and never a failure of the stream: a Thread the surface
-   * no longer holds has no name to wear, and a main process that drops the
-   * notification changes nothing about the log.
+   * no longer holds has no name to wear, and a notice it cannot show changes
+   * nothing about the log or the conversation drawn from it.
    */
   const announce = (id: string, event: ThreadEvent): void => {
     const thread = get().chats.chats.get(id)?.thread;
@@ -138,7 +138,13 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
     // it; every other Thread's completion is still announced.
     const shown = selectionStore.getState().selectedThreadId;
     if (watchingCompletion(id, shown, document.hasFocus())) return;
-    void window.doric.notifications.show(notification).catch(() => undefined);
+    try {
+      void window.doric.notifications.show(notification).catch(() => undefined);
+    } catch {
+      // A window whose preload predates this operation has no bridge to call, and
+      // a notice is never worth the conversation a throw here would cost: the
+      // event is still the stream's to project.
+    }
   };
 
   /**
