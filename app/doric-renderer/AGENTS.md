@@ -112,6 +112,11 @@ the packaged CSP allows fonts from `self` only. Rules that Tailwind's optimizer
 mis-parses, such as a Custom Highlight pseudo-element, belong in the shell
 (`src/index.html`).
 
+All footer text, including nested controls, must use `font-weight: 400`, never 500. Use a semantic `footer` element or a `data-slot` ending in `-footer` so
+the shared rule in `src/styles.css` applies. Do not override or weaken that rule
+or add per-control font weights inside footers. Portaled menus and popovers are
+separate surfaces; their triggers remain covered by the footer rule.
+
 ## Tests
 
 The test target compiles a fixed root list from `tsconfig.spec.json` and runs it

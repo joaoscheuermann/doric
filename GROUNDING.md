@@ -51,6 +51,8 @@ reusable agent loop remains in `packages/agent`.
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
 main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
+All app footers use font weight 400, including their nested text and controls,
+enforced by one shared stylesheet rule.
 The conversation footer shows OpenRouter unified context usage without a text
 prefix or progress bar and an approximate dollar total. Vertical dividers separate
 the execution picker, context text and cost. Context uses the selected Thread's last

@@ -542,6 +542,13 @@
   height: 2.25rem;
 }
 
+/* All footer text has one weight, including nested controls. Keep this invariant
+   stronger than component utilities and inline weights introduced by callers. */
+:is(footer, [data-slot$='-footer']),
+:is(footer, [data-slot$='-footer']) * {
+  font-weight: 400 !important;
+}
+
 /*
  * The markdown a turn carries, styled by the node it was read into.
  *

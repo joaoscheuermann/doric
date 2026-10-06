@@ -183,9 +183,9 @@ export function SettingsSurface({
       <Separator orientation="vertical" className="hidden md:block" />
       <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        <div className="flex chrome-bar shrink-0 items-center border-t px-4">
+        <footer className="flex chrome-bar shrink-0 items-center border-t px-4">
           {footer}
-        </div>
+        </footer>
       </main>
     </div>
   );
