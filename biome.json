@@ -19,7 +19,8 @@
       "!!**/cases",
       "!!scripts/**/evidence",
       "!!doric.config.json",
-      "!!package-lock.json"
+      "!!package-lock.json",
+      "!!app/doric-renderer/src/components/ui"
     ]
   },
   "formatter": {

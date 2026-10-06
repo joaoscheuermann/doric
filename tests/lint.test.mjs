@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -150,4 +151,86 @@ test('ignores generated source', () => {
 
   assert.equal(result.status, 0);
   assert.deepEqual(result.diagnostics, []);
+});
+
+const workspacePackageNames = () => {
+  const names = new Set();
+
+  for (const parent of ['packages', 'agents', 'tools', 'bundles']) {
+    for (const entry of readdirSync(join(root, parent), {
+      withFileTypes: true,
+    })) {
+      if (!entry.isDirectory()) continue;
+
+      try {
+        const manifest = JSON.parse(
+          readFileSync(join(root, parent, entry.name, 'package.json'), 'utf8'),
+        );
+
+        if (typeof manifest.name === 'string') names.add(manifest.name);
+      } catch {
+        // A directory without a readable manifest is not a workspace package.
+      }
+    }
+  }
+
+  return [...names];
+};
+
+const sourceFiles = (directory) => {
+  const files = [];
+
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('dist')) {
+      continue;
+    }
+
+    const path = join(directory, entry.name);
+
+    if (entry.isDirectory()) files.push(...sourceFiles(path));
+    else if (entry.isFile() && /\.[cm]?[jt]sx?$/u.test(entry.name)) {
+      files.push(path);
+    }
+  }
+
+  return files;
+};
+
+const importedModules = (source) => {
+  const specifiers = [];
+
+  for (const match of source.matchAll(
+    /(?:from|require\()\s*['"]([^'"]+)['"]/gu,
+  )) {
+    specifiers.push(match[1]);
+  }
+
+  for (const match of source.matchAll(/^\s*import\s*['"]([^'"]+)['"]/gmu)) {
+    specifiers.push(match[1]);
+  }
+
+  return specifiers;
+};
+
+test('keeps cross-package imports on public entrypoints', () => {
+  const names = workspacePackageNames();
+  const offenders = [];
+
+  for (const parent of ['packages', 'agents', 'app', 'tools', 'bundles']) {
+    for (const file of sourceFiles(join(root, parent))) {
+      for (const specifier of importedModules(readFileSync(file, 'utf8'))) {
+        if (names.some((name) => specifier.startsWith(`${name}/src/`))) {
+          offenders.push(
+            `${file.slice(root.length + 1)} imports "${specifier}"`,
+          );
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `Import a workspace package through its public entrypoint, not its source path:\n${offenders.join('\n')}`,
+  );
 });
