@@ -21,6 +21,7 @@
     "src/domain/conversation-nodes.ts",
     "src/domain/cwd.ts",
     "src/domain/markdown.ts",
+    "src/domain/notifications.ts",
     "src/domain/pending-turns.ts",
     "src/domain/prompt-lifecycle.ts",
     "src/domain/thread-git.ts",

@@ -24,7 +24,7 @@ describe('how a prompt lifecycle event reads', () => {
     assert.equal(stopped.icon, 'pause');
     assert.match(
       stopped.label,
-      /^Execução pausada · o host parou às \d{2}:\d{2}$/,
+      /^Execution paused · the host stopped at \d{2}:\d{2}$/,
     );
 
     assert.equal(
@@ -34,7 +34,7 @@ describe('how a prompt lifecycle event reads', () => {
         reason: 'host_restarted',
         standing: true,
       }).label,
-      'Execução pausada · o host foi reiniciado inesperadamente',
+      'Execution paused · the host restarted unexpectedly',
     );
     assert.equal(
       lifecycleMarker({
@@ -43,14 +43,14 @@ describe('how a prompt lifecycle event reads', () => {
         reason: 'reader_stopped',
         standing: true,
       }).label,
-      'Execução pausada · você parou a execução',
+      'Execution paused · you stopped the execution',
     );
   });
 
   test('names the attempt a resume opened', () => {
     const marker = lifecycleMarker({ attempt: 2, kind: 'resume' });
 
-    assert.equal(marker.label, 'Execução retomada · tentativa 2');
+    assert.equal(marker.label, 'Execution resumed · attempt 2');
     assert.equal(marker.icon, 'play');
     assert.equal(marker.action, false);
   });
@@ -84,7 +84,7 @@ describe('how a prompt lifecycle event reads', () => {
       standing: true,
     });
 
-    assert.equal(marker.label, 'Execução pausada · o host parou');
+    assert.equal(marker.label, 'Execution paused · the host stopped');
   });
 });
 
@@ -95,8 +95,11 @@ describe('reading a prompt lifecycle event off the log', () => {
       attempt: 2,
       pause: { reason: 'reader_stopped', at: '2026-01-01T00:00:00.000Z' },
     });
-    assert.equal(marker.label, 'Execução retomada · tentativa 2');
-    assert.equal(marker.tooltip, 'Execução pausada · você parou a execução');
+    assert.equal(marker.label, 'Execution resumed · attempt 2');
+    assert.equal(
+      marker.tooltip,
+      'Execution paused · you stopped the execution',
+    );
     assert.equal(marker.action, false);
   });
   test('accepts only the pause reasons this vocabulary knows', () => {

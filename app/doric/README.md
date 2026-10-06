@@ -42,6 +42,16 @@ an empty or over-long value, or one holding NUL. What the path may resolve to �
 inside the sandbox, an existing directory — stays the host's rule, and the host is
 what reports a refusal.
 
+The `notifications` namespace is the one write this boundary carries into the
+operating system. `notifications.show` draws a native notification for a prompt
+that just finished: the renderer's Thread chat store decides that a completion
+happened, that it is not one the reader is already reading in a focused window,
+and what it reads as — the Thread's name, the outcome, and a bounded preview of
+the answer — and the main process bounds both lines again before they reach the
+OS, answers only a renderer at one of the two expected URLs, and drops the notice
+in silence on a platform that supports none. A completion is durable in the
+Thread's log either way, so a missing notice never hides what happened.
+
 At startup a frameless, square, dark splash window shows the centered `Doric`
 name while the main process waits for the local Direct API to answer. The splash
 stays visible for at least five seconds, and the dark workspace window replaces

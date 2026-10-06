@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-06
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -91,13 +91,21 @@ interrupted provider call remain unknown; the host makes no generation audit cal
 The main process alone communicates with Doric HTTP and Socket.IO at
 `127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
 operations, one event subscription per watched Thread, one selected-Project tree
-subscription, one Thread history snapshot read, and connection status through a
-preload IPC boundary. The status and Project namespaces share one process-long
-Socket.IO Manager and Engine.IO connection, while each watched Thread is given a
-Manager and connection of its own, so that Thread's subscription lives and dies
-with its watch. The renderer keeps the Threads it has read for each Project, so
-every open Project row renders its own subtree while live updates continue to
-follow the selected Project alone.
+subscription, one Thread history snapshot read, connection status, and one
+native-notification write through a preload IPC boundary. The status and Project
+namespaces share one process-long Socket.IO Manager and Engine.IO connection,
+while each watched Thread is given a Manager and connection of its own, so that
+Thread's subscription lives and dies with its watch. The renderer keeps the
+Threads it has read for each Project, so every open Project row renders its own
+subtree while live updates continue to follow the selected Project alone. A
+prompt that finishes is announced to the operating system: the renderer's Thread
+chat store reads the terminal event — `prompt.finished`, the one a client
+acknowledges prompt completion by — into the Thread's name and the outcome
+beside a bounded preview of the answer, unless the reader is already looking at
+that Thread in a focused window, and the main process draws that as a native
+notification, bounded again on both of its lines and dropped in silence where
+the platform supports none, so a missing notice never hides a completion the
+Thread's own log still states.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, and renderer default
 to dark before React starts. The compact, resizable shadcn sidebar lists named

@@ -158,6 +158,18 @@ export type WorkspaceApi = {
   readonly terminals: TerminalsApi;
   readonly connection: ConnectionApi;
   /**
+   * Native desktop notifications. The renderer says what happened — a prompt
+   * finished, and which Thread it belonged to — while the OS surface is the main
+   * process's: this window draws none, and a platform that cannot show one is
+   * answered by silence rather than by an error.
+   */
+  readonly notifications: {
+    show(notification: {
+      readonly title: string;
+      readonly body: string;
+    }): Promise<void>;
+  };
+  /**
    * The settings surface is its own window; `open` shows it, or focuses the one
    * already open rather than duplicating it.
    */

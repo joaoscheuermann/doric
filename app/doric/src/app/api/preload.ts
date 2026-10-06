@@ -394,6 +394,19 @@ contextBridge.exposeInMainWorld('doric', {
     status: connection.status,
     subscribe: connection.subscribe,
   },
+  /**
+   * The OS notification surface, which belongs to the main process. This window
+   * says that a prompt finished and what its two lines read; a platform that
+   * cannot show a notification is answered with nothing, so no error is drawn
+   * here for something the Thread's own log already states.
+   */
+  notifications: {
+    show: (notification: { readonly title: string; readonly body: string }) =>
+      ipcRenderer.invoke(
+        'doric:notifications:show',
+        notification,
+      ) as Promise<void>,
+  },
   config: {
     get: () => invoke<DoricConfiguration>('doric:config:get'),
     update: (configuration: ConfigurationInput) =>

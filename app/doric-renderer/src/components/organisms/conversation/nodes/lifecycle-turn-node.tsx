@@ -2,7 +2,7 @@
  * A prompt's pause or resume as a block of the transcript: a quiet row between
  * the blocks the event sits between, drawn from the lifecycle rules so the row
  * never invents its own wording. The caret skips this informational block,
- * and its Retomar button is the only thing in it that acts.
+ * and its Resume button is the only thing in it that acts.
  */
 import { PromptMarker } from '@/components/molecules/prompt-marker';
 import { LIFECYCLE_TURN_BLOCK } from '@/domain/conversation-nodes';
@@ -25,7 +25,7 @@ export type SerializedLifecycleTurnNode = Spread<
 >;
 
 /**
- * What a marker's Retomar action asks for. The surface hands the node the one
+ * What a marker's Resume action asks for. The surface hands the node the one
  * bound to its Thread, so the row never names the Thread itself.
  */
 export type ResumePrompt = (promptId: string) => void;
@@ -37,7 +37,7 @@ export class LifecycleTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;
   __promptId: string;
   __event: LifecycleEvent;
-  /** The surface's Retomar action; carried through clones, never serialized. */
+  /** The surface's Resume action; carried through clones, never serialized. */
   __onResume: ResumePrompt;
 
   constructor(

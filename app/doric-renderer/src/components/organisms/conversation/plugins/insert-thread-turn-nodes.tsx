@@ -345,7 +345,7 @@ export function InsertThreadTurnNodes({
 }: {
   readonly threadId: string;
   readonly turns: readonly Turn[];
-  /** What a marker's Retomar action asks the surface for. */
+  /** What a marker's Resume action asks the surface for. */
   readonly onResume: ResumePrompt;
   readonly navigating: RefObject<boolean>;
 }) {

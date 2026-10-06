@@ -32,16 +32,22 @@ The renderer has no direct network access to Doric. It uses the semantic
   between, and `agent.failed` becomes a `FailureTurn` carrying the run's own
   `{ name, code, message }` rather than leaving the host's generic failed text to
   state it. `domain/prompt-lifecycle.ts` says how each one reads — its icon and its
-  line (`Execução pausada · o host parou às 14:31`,
-  `Execução pausada · o host foi reiniciado inesperadamente`,
-  `Execução pausada · você parou a execução`, `Retomada · tentativa 1`) — whether a
-  pause still offers the Retomar action, and whether a failure code is the one that
-  reads as a warning. The lifecycle row is the shadcn `Marker`, drawn by
+  line (`Execution paused · the host stopped at 14:31`,
+  `Execution paused · the host restarted unexpectedly`,
+  `Execution paused · you stopped the execution`, `Execution resumed · attempt 1`)
+  — whether a pause still offers the Resume action, and whether a failure code is
+  the one that reads as a warning. The lifecycle row is the shadcn `Marker`, drawn by
   `PromptMarker` through `LifecycleTurnNode`; the failure is `FailureNotice`
   through `FailureTurnNode`, whose `resume_exhausted` code fills a `TriangleAlert`
-  in the palette's `--warning` tone. Retomar calls
+  in the palette's `--warning` tone. Resume calls
   `window.doric.threads.resume(id, promptId)` through the Thread chat store, which
   draws the Thread the host answers with.
+- A prompt that finishes is announced to the OS. The Thread chat store reads its
+  live `prompt.finished` — never a replayed one — into `domain/notifications.ts`,
+  which names the Thread, the outcome and a bounded preview of the answer, and
+  `window.doric.notifications.show` draws it. The notice stays silent for the
+  Thread the window already shows while that window is focused, and a completion
+  the log holds is never lost to a notice that was dropped.
 - `projects.watch(projectId, listener)` mirrors the selected Project's tree, so a
   Thread created by an agent appears in the sidebar without a reload.
 - The sandbox is a right-hand panel (`ProjectFilesSidebar`) with a Files tree

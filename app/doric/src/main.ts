@@ -9,6 +9,7 @@ import {
   type ConnectionMonitor,
   createConnectionService,
 } from './connection/status';
+import { registerNotificationHandler } from './notifications';
 import { remainingSplashMs, splashUrl } from './startup/splash';
 import { workspaceReady } from './workspace/api';
 import {
@@ -323,6 +324,7 @@ void app.whenReady().then(() => {
   installContentSecurityPolicy();
   registerSettingsHandler(allowedUrls);
   registerSettingsFlushHandler(allowedUrls);
+  registerNotificationHandler(allowedUrls);
   registerWorkspaceHandlers(
     allowedUrls,
     threadEvents,

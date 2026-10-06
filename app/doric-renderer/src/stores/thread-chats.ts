@@ -1,3 +1,4 @@
+import { promptCompletion, watchingCompletion } from '@/domain/notifications';
 import { queueChanged } from '@/domain/queue';
 import {
   applyThreadEvents,
@@ -19,6 +20,8 @@ import {
   type ThreadUpdate,
 } from '@/domain/workspace';
 import { createStore } from 'zustand/vanilla';
+
+import { selectionStore } from './selection';
 
 const queueListeners = new Map<string, Set<() => void>>();
 /** Observe queue invalidations through the existing Thread watch. */
@@ -121,6 +124,24 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
   };
 
   /**
+   * Shows the native notification one live event of a Thread deserves. It is a
+   * courtesy of the chat and never a failure of the stream: a Thread the surface
+   * no longer holds has no name to wear, and a main process that drops the
+   * notification changes nothing about the log.
+   */
+  const announce = (id: string, event: ThreadEvent): void => {
+    const thread = get().chats.chats.get(id)?.thread;
+    if (thread === undefined) return;
+    const notification = promptCompletion(event, thread.name);
+    if (notification === undefined) return;
+    // A reader looking at this Thread is reading it, not waiting to be told about
+    // it; every other Thread's completion is still announced.
+    const shown = selectionStore.getState().selectedThreadId;
+    if (watchingCompletion(id, shown, document.hasFocus())) return;
+    void window.doric.notifications.show(notification).catch(() => undefined);
+  };
+
+  /**
    * A stream's events are held until one flush carries them, while every other
    * update lands at once. The flush's wait is what keeps a burst from re-reading
    * the whole projection per event.
@@ -148,6 +169,9 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
     if (queueChanged(update))
       for (const listener of queueListeners.get(id) ?? []) listener();
     if (update.kind === 'event') {
+      // Only a live event is announced: a snapshot replays history the reader has
+      // already seen, and replaying it would notify a completion again.
+      announce(id, update.event);
       queued.set(id, [...(queued.get(id) ?? []), update.event]);
       schedule(id);
       return;

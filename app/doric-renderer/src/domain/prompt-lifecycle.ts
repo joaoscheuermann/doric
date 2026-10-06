@@ -45,7 +45,7 @@ export type LifecycleMarker = {
   readonly icon: LifecycleIcon;
   readonly label: string;
   readonly tooltip?: string;
-  /** Whether the row offers the reader the Retomar action. */
+  /** Whether the row offers the reader the Resume action. */
   readonly action: boolean;
 };
 
@@ -91,12 +91,12 @@ const reasonText = (reason: PauseReason, at: string): string => {
   switch (reason) {
     case 'host_stopped':
       return at === ''
-        ? 'Execução pausada · o host parou'
-        : `Execução pausada · o host parou às ${at}`;
+        ? 'Execution paused · the host stopped'
+        : `Execution paused · the host stopped at ${at}`;
     case 'host_restarted':
-      return 'Execução pausada · o host foi reiniciado inesperadamente';
+      return 'Execution paused · the host restarted unexpectedly';
     case 'reader_stopped':
-      return 'Execução pausada · você parou a execução';
+      return 'Execution paused · you stopped the execution';
   }
 };
 
@@ -112,7 +112,7 @@ export const lifecycleMarker = (event: LifecycleEvent): LifecycleMarker => {
     return {
       action: false,
       icon: 'play',
-      label: `Execução retomada · tentativa ${event.attempt}`,
+      label: `Execution resumed · attempt ${event.attempt}`,
       ...(event.pause
         ? { tooltip: reasonText(event.pause.reason, clock(event.pause.at)) }
         : {}),

@@ -39,8 +39,8 @@ export function PromptMarker({
           size="icon-xs"
           type="button"
           variant="ghost"
-          aria-label="Retomar"
-          title="Retomar"
+          aria-label="Resume"
+          title="Resume"
         >
           <RotateCcwIcon aria-hidden="true" />
         </Button>
