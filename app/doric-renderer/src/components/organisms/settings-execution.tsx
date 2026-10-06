@@ -41,7 +41,9 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
   const models = provider?.models ?? [];
   // The model's own efforts, and nothing else: a model that lists none offers no
   // choice at all, because what it accepts is the catalog's to say.
-  const reasonings = modelEfforts(draft, providerId, model);
+  const reasonings = modelEfforts(draft, providerId, model).filter(
+    (effort) => effort !== 'none',
+  );
   const efforts = reasonings.map((value) => ({
     label: effortLabel(value),
     value,

@@ -55,9 +55,11 @@ export function EffortPicker({
         align="start"
         side="top"
         sideOffset={6}
-        className="w-44 gap-0 p-1"
+        aria-label="Reasoning effort"
+        className="w-32 max-w-[calc(100vw-2rem)] gap-0 border border-border bg-background p-1 text-xs font-normal text-foreground ring-0"
       >
         <ChoiceList
+          compact
           choices={choices}
           value={value}
           onSelect={(next) => {

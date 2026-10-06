@@ -1355,9 +1355,9 @@ export const modelDefaultEffort = (
 
 /**
  * The effort thinking turns on at for the model the profile names: the one its
- * own catalog names, when the model lists it, and otherwise its first effort
- * other than `none`, so the level is one the model itself accepts. A model that
- * lists no effort names none, and a request sends no reasoning block for it.
+ * own catalog names when it is active, and otherwise its first effort other than
+ * `none`. A model that offers only `none` keeps that value; one that lists no
+ * effort carries no reasoning block.
  */
 export const modelThinkingEffort = (
   configuration: Configuration,
@@ -1367,38 +1367,24 @@ export const modelThinkingEffort = (
   const efforts = modelEfforts(configuration, providerId, model);
   if (efforts.length === 0) return undefined;
 
-  return (
-    modelDefaultEffort(configuration, providerId, model) ??
-    efforts.find((effort) => effort !== 'none') ??
-    efforts[0]
-  );
+  const preferred = modelDefaultEffort(configuration, providerId, model);
+  return preferred !== 'none' && preferred !== undefined
+    ? preferred
+    : (efforts.find((effort) => effort !== 'none') ?? efforts[0]);
 };
 
-/**
- * Whether the model's catalog pins reasoning on, so no request may turn it off.
- * A model the catalog says nothing about leaves reasoning optional.
- */
-export const modelMandatory = (
+/** The UI never leaves a thinking-capable model at a stored off effort. */
+export const enableExecutionReasoning = (
   configuration: Configuration,
-  providerId: string,
-  model: string,
-): boolean => modelEntry(configuration, providerId, model)?.mandatory === true;
+): Configuration => {
+  const { effort, providerId, model } = configuration.models.execution;
+  if (effort !== undefined && effort !== 'none') return configuration;
 
-/**
- * Whether thinking can be turned both on and off for the model the profile names:
- * it lists an effort to think at, and its catalog does not pin reasoning on. A
- * model with neither has no state to change, so the control is disabled rather
- * than inert.
- */
-export const modelThinks = (
-  configuration: Configuration,
-  providerId: string,
-  model: string,
-): boolean =>
-  !modelMandatory(configuration, providerId, model) &&
-  modelEfforts(configuration, providerId, model).some(
-    (effort) => effort !== 'none',
-  );
+  const enabled = modelThinkingEffort(configuration, providerId, model);
+  return enabled === undefined || enabled === 'none'
+    ? configuration
+    : setExecutionEffort(configuration, enabled);
+};
 
 /**
  * The execution profile one model runs: the effort it starts at, and no effort at
@@ -1420,9 +1406,9 @@ const modelProfile = (
 /**
  * Sets one part of the execution profile. Naming another model — or another
  * provider — resolves the effort to the one the new model starts at, so a switch
- * never leaves the profile naming an effort that model does not list, nor none at
- * all for a model that lists them. Patching anything else leaves the choice as it
- * stands, and a model that lists no effort keeps the profile carrying none.
+ * never leaves the profile naming an effort that model does not list, and uses an
+ * active effort whenever the new model offers one. Patching anything else leaves
+ * the choice as it stands; a model that lists no effort carries none.
  */
 export const updateModel = (
   configuration: Configuration,

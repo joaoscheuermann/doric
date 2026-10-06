@@ -21,6 +21,7 @@ import {
   effortLabel,
   emptyCredentialDraft,
   emptyProviderDraft,
+  enableExecutionReasoning,
   isReasoningEffort,
   isSameConfiguration,
   isUsableChoice,
@@ -30,9 +31,7 @@ import {
   modelDefaultEffort,
   modelEfforts,
   modelGroups,
-  modelMandatory,
   modelThinkingEffort,
-  modelThinks,
   providerAddress,
   type ProviderConfiguration,
   type ProviderDraft,
@@ -1027,20 +1026,6 @@ describe('the models the execution picker offers', () => {
     assert.deepEqual(searchModelGroups(groups, 'nope'), []);
   });
 
-  test('reads a thinking model from its listed efforts, and none from a model that cannot', () => {
-    assert.equal(modelThinks(configuration(), 'openai', 'gpt-5'), true);
-    assert.equal(modelThinks(configuration(), 'openai', 'gpt-5-mini'), false);
-
-    const onlyNone = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [{ name: 'gpt-5', reasonings: ['none'] }],
-      },
-    ]);
-
-    assert.equal(modelThinks(onlyNone, 'openai', 'gpt-5'), false);
-  });
-
   test("names the effort a model's own catalog calls its default, and none otherwise", () => {
     const named = withProviders(configuration(), [
       {
@@ -1074,21 +1059,6 @@ describe('the models the execution picker offers', () => {
     );
   });
 
-  test('leaves thinking unavailable for a model whose catalog pins reasoning on', () => {
-    const pinned = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [
-          { name: 'gpt-5', reasonings: ['high', 'medium'], mandatory: true },
-        ],
-      },
-    ]);
-
-    assert.equal(modelMandatory(pinned, 'openai', 'gpt-5'), true);
-    assert.equal(modelThinks(pinned, 'openai', 'gpt-5'), false);
-    assert.equal(modelMandatory(configuration(), 'openai', 'gpt-5'), false);
-  });
-
   test('starts a model at the effort its catalog names, and otherwise at its first other than none', () => {
     const named = withProviders(configuration(), [
       {
@@ -1114,6 +1084,28 @@ describe('the models the execution picker offers', () => {
 
     assert.equal(modelThinkingEffort(unnamed, 'openai', 'gpt-5'), 'low');
 
+    const defaultOff = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [
+          {
+            name: 'gpt-5',
+            reasonings: ['none', 'low'],
+            defaultEffort: 'none',
+          },
+        ],
+      },
+    ]);
+    assert.equal(modelThinkingEffort(defaultOff, 'openai', 'gpt-5'), 'low');
+
+    const onlyOff = withProviders(configuration(), [
+      {
+        ...provider('openai'),
+        models: [{ name: 'gpt-5', reasonings: ['none'] }],
+      },
+    ]);
+    assert.equal(modelThinkingEffort(onlyOff, 'openai', 'gpt-5'), 'none');
+
     // A default the model does not list is no default at all.
     const unlisted = withProviders(configuration(), [
       {
@@ -1128,6 +1120,27 @@ describe('the models the execution picker offers', () => {
     assert.equal(
       modelThinkingEffort(configuration(), 'openai', 'gpt-5-mini'),
       undefined,
+    );
+  });
+
+  test('enables reasoning from a stored off choice only when the model offers it', () => {
+    const off = withExecution(configuration(), {
+      providerId: 'openai',
+      model: 'gpt-5',
+      effort: 'none',
+    });
+    assert.equal(
+      enableExecutionReasoning(off).models.execution.effort,
+      'medium',
+    );
+
+    const unavailable = withExecution(off, {
+      providerId: 'openai',
+      model: 'gpt-5-mini',
+    });
+    assert.deepEqual(
+      enableExecutionReasoning(unavailable).models.execution,
+      unavailable.models.execution,
     );
   });
 

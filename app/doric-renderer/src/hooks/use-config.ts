@@ -4,6 +4,7 @@ import {
   configurationInput,
   configurationIssue,
   type DoricConfiguration,
+  enableExecutionReasoning,
   isSameConfiguration,
   type ProviderKind,
 } from '@/domain/config';
@@ -115,7 +116,7 @@ export const useConfig = (
   useEffect(() => {
     if (!open || load.data === undefined) return;
     setSaved(load.data);
-    setDraft(load.data.configuration);
+    setDraft(enableExecutionReasoning(load.data.configuration));
   }, [load.data, open]);
 
   const save = useCallback(async (): Promise<void> => {

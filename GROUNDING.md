@@ -154,7 +154,7 @@ full-height resize handle owns the sidebar boundary across header and content
 and disappears when the sidebar closes; it draws no grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
-— the model a prompt is sent to, whether it thinks, and how hard — beside the
+— the model a prompt is sent to and its reasoning effort — beside the
 settings trigger. The conversation footer combines the selected Thread's working
 directory and branch in one popover trigger, without a Git icon. An adjacent
 added/removed line-count button opens the right panel's Changes tab for the current
@@ -339,11 +339,17 @@ its effort are chosen among what the selected provider's model lists, which is
 the catalog's answer for a kind that reads one. A model that lists no effort —
 and a kind that names no models URL keeps the efforts an operator typed — leaves
 the execution effort absent, and the agent then sends no reasoning block at all. A
-model that lists efforts starts at the one its catalog names as that model's
-default, so switching models never leaves a thinking model with no effort at all,
-and a model whose catalog pins reasoning on has no state the thinking control
-could turn off. A
-credential is named and has one of a closed set of kinds that fixes its fields:
+model that lists efforts starts at its catalog default when that effort is not
+`none`, or its first available effort other than `none` otherwise. The renderer
+keeps reasoning enabled whenever the model offers it, including when it loads an
+older configuration saved with `none`; the host still accepts an off effort.
+The execution model popover keeps one Reasoning effort selector visible for every
+selected model. A model without reasoning shows that button disabled and marked
+unavailable. The model list and selector share the compact bordered popover
+styling used for conversation costs, with the selector in a shaded footer. Its
+effort menu and the footer's effort menu use compact rows, a subtle highlight
+for the selected level, and the same bordered surface.
+A credential is named and has one of a closed set of kinds that fixes its fields:
 `API_TOKEN` is authentication, which a provider key and the GitHub token both
 are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
 alone, the username and email the agent's git commands commit with, which is why

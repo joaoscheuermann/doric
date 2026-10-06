@@ -11,17 +11,14 @@ import { type ModelGroup, searchModelGroups } from '@/domain/config';
 import { ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { useState } from 'react';
 
-/** The reasoning control the popover ends with, when the model can think. */
+/** Reasoning stays visible even when the selected model cannot use it. */
 type Reasoning = {
-  /** The row's name in words, so a placeholder label never speaks as a dash. */
-  readonly ariaLabel: string;
   readonly choices: readonly {
     readonly label: string;
     /** A mark the row wears beside its label, such as the model's own default. */
     readonly note?: string;
     readonly value: string;
   }[];
-  /** What the row reads on the right: the effort in force, or a placeholder. */
   readonly label: string;
   readonly onSelect: (value: string) => void;
   readonly value?: string;
@@ -35,7 +32,7 @@ type ModelPickerProps = {
   readonly label: string;
   readonly onSelect: (value: string) => void;
   /** The model's reasoning, offered from the same popover as the model is. */
-  readonly reasoning?: Reasoning;
+  readonly reasoning: Reasoning;
   /** The composite key of the selected model, for the check the list draws. */
   readonly value: string;
 };
@@ -43,9 +40,10 @@ type ModelPickerProps = {
 /**
  * The model a prompt runs on, worn as a ghost button: opening it shows a search
  * field over the models each provider lists, grouped under the provider's label
- * and divided from one another by a rule, and the model's reasoning as the row
- * the popover ends with. The search narrows the list and never sets a value, so
- * selecting is the only commitment.
+ * and divided from one another by a rule. The shaded footer always shows the
+ * reasoning effort selector, including its unavailable state.
+ * Search narrows the list and never sets a value, so selecting is the only
+ * commitment.
  *
  * It is a popover rather than a combobox because the list is a menu of choices —
  * a model, and the effort it thinks at — not a field to type a model into.
@@ -84,7 +82,7 @@ export function ModelPicker({
         align="start"
         side="top"
         sideOffset={6}
-        className="w-80 gap-0 p-0"
+        className="w-64 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 text-xs font-normal text-foreground ring-0"
       >
         <div className="flex items-center gap-2 border-b px-2.5 py-1.5">
           <SearchIcon
@@ -126,41 +124,42 @@ export function ModelPicker({
             ))
           )}
         </div>
-        {reasoning !== undefined && (
-          <div className="border-t p-1">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label={reasoning.ariaLabel}
-                  className="w-full justify-between gap-2 font-normal"
-                >
-                  Reasoning
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    {reasoning.label}
-                    <ChevronRightIcon aria-hidden="true" />
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                side="right"
-                sideOffset={4}
-                className="w-40 gap-0 p-1"
+        <div className="border-t border-border bg-sidebar px-2 py-1.5">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Reasoning effort, ${reasoning.label}`}
+                disabled={reasoning.choices.length === 0}
+                className="w-full justify-between gap-2 font-normal"
               >
-                <ChoiceList
-                  choices={reasoning.choices}
-                  value={reasoning.value}
-                  onSelect={(next) => {
-                    reasoning.onSelect(next);
-                    setOpen(false);
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        )}
+                Reasoning
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  {reasoning.label}
+                  <ChevronRightIcon aria-hidden="true" />
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              side="right"
+              sideOffset={4}
+              aria-label="Reasoning effort"
+              className="w-32 max-w-[calc(100vw-2rem)] gap-0 border border-border bg-background p-1 text-xs font-normal text-foreground ring-0"
+            >
+              <ChoiceList
+                compact
+                choices={reasoning.choices}
+                value={reasoning.value}
+                onSelect={(next) => {
+                  reasoning.onSelect(next);
+                  setOpen(false);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
       </PopoverContent>
     </Popover>
   );
