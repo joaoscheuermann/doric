@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +15,9 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const biome = join(root, 'node_modules', '.bin', 'biome');
 
 const run = ({ source, directory, extension, command = 'lint', args = [] }) => {
+  // Some fixture directories are generated (e.g. the Prisma client output) and
+  // do not exist in a fresh checkout, so the test creates what it needs.
+  mkdirSync(join(root, directory), { recursive: true });
   const fixture = mkdtempSync(join(root, directory, 'biome-fixture-'));
   const file = join(fixture, `example.${extension}`);
 
