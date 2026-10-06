@@ -180,7 +180,6 @@ void test('preserves a thrown handler value as the engine error cause', async ()
   const definition = createStateMachine<Context, State>()({
     start: () => {
       // Deliberately exercise a handler that throws a non-Error value.
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw thrown;
     },
   });

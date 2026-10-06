@@ -133,7 +133,6 @@ export const createTools = (
 
       if (options.failure !== undefined) {
         // Exercise propagation of arbitrary failures from external tool handlers.
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw options.failure;
       }
 

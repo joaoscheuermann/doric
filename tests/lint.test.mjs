@@ -1,143 +1,144 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { ESLint } from 'eslint';
-import { format } from 'prettier';
+const root = fileURLToPath(new URL('..', import.meta.url));
+const biome = join(root, 'node_modules', '.bin', 'biome');
 
-const lint = new ESLint({
-  overrideConfig: {
-    languageOptions: {
-      parserOptions: {
-        // lintText replaces on-disk source with in-memory snippets, even in CI.
-        disallowAutomaticSingleRunInference: true,
-      },
-    },
-  },
-});
-const typedFile = 'packages/session/src/lib/session.ts';
+const run = ({ source, directory, extension, command = 'lint', args = [] }) => {
+  const fixture = mkdtempSync(join(root, directory, 'biome-fixture-'));
+  const file = join(fixture, `example.${extension}`);
 
-test('reports undefined names in JavaScript tooling', async () => {
-  const [result] = await lint.lintText('missingFunction();', {
-    filePath: 'lint-example.mjs',
-  });
-
-  assert.ok(result.messages.some(({ ruleId }) => ruleId === 'no-undef'));
-});
-
-test('reports unhandled promises in package TypeScript', async () => {
-  const [result] = await lint.lintText(
-    'export function start() { Promise.resolve(1); }',
-    { filePath: typedFile },
-  );
-
-  assert.ok(
-    result.messages.some(
-      ({ ruleId }) => ruleId === '@typescript-eslint/no-floating-promises',
-    ),
-  );
-});
-
-test('enforces the official TypeScript array style', async () => {
-  const [result] = await lint.lintText(
-    'export const values: Array<string> = [];',
-    { filePath: typedFile },
-  );
-
-  assert.ok(
-    result.messages.some(
-      ({ ruleId }) => ruleId === '@typescript-eslint/array-type',
-    ),
-  );
-});
-
-test('allows immediate async test doubles but requires async work in production', async () => {
-  const source = 'export const fixture = async () => 1;';
-  const [fixture] = await lint.lintText(source, {
-    filePath: 'packages/agent/tests/fakes.ts',
-  });
-  const [production] = await lint.lintText(source, { filePath: typedFile });
-  assert.equal(fixture.errorCount, 0, JSON.stringify(fixture.messages));
-  assert.ok(
-    production.messages.some(
-      ({ ruleId }) => ruleId === '@typescript-eslint/require-await',
-    ),
-  );
-});
-
-test('still reports unhandled promises inside tests', async () => {
-  const [result] = await lint.lintText(
-    'export function exercise() { Promise.resolve(1); }',
-    { filePath: 'packages/agent/tests/fakes.ts' },
-  );
-  assert.ok(
-    result.messages.some(
-      ({ ruleId }) => ruleId === '@typescript-eslint/no-floating-promises',
-    ),
-  );
-});
-
-test('allows deliberately unused parameters but catches accidental unused values', async () => {
-  const [result] = await lint.lintText(
-    'export function fixture(_unused: string) { const forgotten = 1; return 2; }',
-    { filePath: typedFile },
-  );
-  const unused = result.messages.filter(
-    ({ ruleId }) => ruleId === '@typescript-eslint/no-unused-vars',
-  );
-  assert.equal(unused.length, 1);
-  assert.match(unused[0].message, /forgotten/);
-});
-
-test('reports unhandled promises in bundle entrypoints', async () => {
-  for (const filePath of [
-    'bundles/core/index.mts',
-    'bundles/git/index.mts',
-    'bundles/threads/index.mts',
-  ]) {
-    const [result] = await lint.lintText(
-      'export function start() { Promise.resolve(1); }',
-      { filePath },
+  try {
+    writeFileSync(file, source);
+    const result = spawnSync(
+      biome,
+      [command, file, ...args, '--reporter=json'],
+      { cwd: root, encoding: 'utf8' },
     );
+    if (result.error) throw result.error;
 
-    assert.ok(
-      result.messages.some(
-        ({ ruleId }) => ruleId === '@typescript-eslint/no-floating-promises',
+    return {
+      status: result.status,
+      diagnostics: JSON.parse(result.stdout).diagnostics.map(
+        ({ category }) => category,
       ),
-      filePath,
-    );
+      output: readFileSync(file, 'utf8'),
+    };
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
   }
-});
+};
 
-test('accepts Prettier output without additional blank-line rules', async () => {
-  const source = await format('const value=1; console.log(value);', {
-    parser: 'babel',
+test('reports undeclared names in JavaScript tooling', () => {
+  const result = run({
+    source: 'missingFunction();\n',
+    directory: 'tests',
+    extension: 'mjs',
   });
-  const [result] = await lint.lintText(source, {
-    filePath: 'lint-example.mjs',
-  });
 
-  assert.equal(result.errorCount, 0, JSON.stringify(result.messages));
-});
-
-test('reports unsorted imports', async () => {
-  const [result] = await lint.lintText(
-    "import path from 'node:path';\nimport fs from 'node:fs';\nconsole.log(path, fs);",
-    { filePath: 'lint-example.mjs' },
-  );
-
+  assert.equal(result.status, 1);
   assert.ok(
-    result.messages.some(
-      ({ ruleId }) => ruleId === 'simple-import-sort/imports',
-    ),
+    result.diagnostics.includes('lint/correctness/noUndeclaredVariables'),
   );
 });
 
-test('ignores generated code and installed dependencies', async () => {
-  for (const path of [
-    'packages/session/dist/index.js',
-    'agents/doric/src/generated/prisma/client.ts',
-    'node_modules/example/index.js',
+test('reports unhandled promises in production and test TypeScript', () => {
+  for (const directory of [
+    'packages/session/src/lib',
+    'packages/agent/tests',
   ]) {
-    assert.equal(await lint.isPathIgnored(path), true, path);
+    const result = run({
+      source: 'export function start() { Promise.resolve(1); }\n',
+      directory,
+      extension: 'ts',
+    });
+
+    assert.equal(result.status, 1, directory);
+    assert.ok(result.diagnostics.includes('lint/nursery/noFloatingPromises'));
   }
+});
+
+test('enforces shorthand array types', () => {
+  const result = run({
+    source: 'export const values: Array<string> = [];\n',
+    directory: 'packages/session/src/lib',
+    extension: 'ts',
+  });
+
+  assert.ok(result.diagnostics.includes('lint/style/useConsistentArrayType'));
+});
+
+test('requires await in production async functions while allowing test doubles', () => {
+  const source = 'export async function fixture() { return 1; }\n';
+  const production = run({
+    source,
+    directory: 'packages/session/src/lib',
+    extension: 'ts',
+  });
+  const fixture = run({
+    source,
+    directory: 'packages/agent/tests',
+    extension: 'ts',
+  });
+
+  assert.ok(production.diagnostics.includes('lint/suspicious/useAwait'));
+  assert.equal(fixture.status, 0);
+});
+
+test('allows unused underscore parameters but reports forgotten values', () => {
+  const result = run({
+    source:
+      'export function fixture(_unused: string) { const forgotten = 1; return 2; }\n',
+    directory: 'packages/session/src/lib',
+    extension: 'ts',
+  });
+
+  assert.equal(
+    result.diagnostics.filter(
+      (category) => category === 'lint/correctness/noUnusedVariables',
+    ).length,
+    1,
+  );
+});
+
+test('reports unsorted imports', () => {
+  const result = run({
+    source:
+      "import path from 'node:path';\nimport fs from 'node:fs';\nconsole.log(path, fs);\n",
+    directory: 'tests',
+    extension: 'mjs',
+    command: 'check',
+    args: ['--formatter-enabled=false'],
+  });
+
+  assert.ok(result.diagnostics.includes('assist/source/organizeImports'));
+});
+
+test('formats JavaScript with single quotes and semicolons', () => {
+  const result = run({
+    source: 'const value = "text"\nconsole.log(value)\n',
+    directory: 'tests',
+    extension: 'mjs',
+    command: 'format',
+    args: ['--write'],
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.output, "const value = 'text';\nconsole.log(value);\n");
+});
+
+test('ignores generated source', () => {
+  const result = run({
+    source: 'missingFunction();\n',
+    directory: 'agents/doric/src/generated',
+    extension: 'ts',
+    args: ['--no-errors-on-unmatched'],
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.diagnostics, []);
 });

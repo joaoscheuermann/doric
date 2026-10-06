@@ -928,34 +928,33 @@ void test('ships the baseline followed by every incremental migration', async ()
   assert.match(cwd, /ADD COLUMN "cwd_repo" TEXT;/u);
 });
 
-void test(
-  'upgrades existing related Project and Thread rows with names and data intact',
-  { skip: connectionString === undefined },
-  async () => {
-    assert.ok(connectionString);
-    const baseline = await readFile(
-      `${migrationDirectory}/20260825000000_initial/migration.sql`,
-      'utf8',
-    );
-    const naming = await readFile(
-      `${migrationDirectory}/20260826000000_add_project_thread_names/migration.sql`,
-      'utf8',
-    );
-    const resources = await persistenceFixture(connectionString, {
-      migration: async () => baseline,
-    });
-    const projectId = randomUUID();
-    const rootId = randomUUID();
-    const childId = randomUUID();
-    try {
-      await resources.database.$executeRaw`
+void test('upgrades existing related Project and Thread rows with names and data intact', {
+  skip: connectionString === undefined,
+}, async () => {
+  assert.ok(connectionString);
+  const baseline = await readFile(
+    `${migrationDirectory}/20260825000000_initial/migration.sql`,
+    'utf8',
+  );
+  const naming = await readFile(
+    `${migrationDirectory}/20260826000000_add_project_thread_names/migration.sql`,
+    'utf8',
+  );
+  const resources = await persistenceFixture(connectionString, {
+    migration: async () => baseline,
+  });
+  const projectId = randomUUID();
+  const rootId = randomUUID();
+  const childId = randomUUID();
+  try {
+    await resources.database.$executeRaw`
         INSERT INTO project (
           id, state, config_revision, config_snapshot, updated_at, started_at
         ) VALUES (
           ${projectId}::uuid, 'READY', 7, '{"revision":7}'::jsonb,
           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )`;
-      await resources.database.$executeRaw`
+    await resources.database.$executeRaw`
         INSERT INTO thread (
           id, project_id, state, messages, updated_at
         ) VALUES (
@@ -963,7 +962,7 @@ void test(
           '[{"role":"user","content":"root history"}]'::jsonb,
           CURRENT_TIMESTAMP
         )`;
-      await resources.database.$executeRaw`
+    await resources.database.$executeRaw`
         INSERT INTO thread (
           id, project_id, parent_thread_id, state, messages, active_prompt_id,
           last_sequence, updated_at, started_at
@@ -972,7 +971,7 @@ void test(
           '[{"role":"user","content":"child history"}]'::jsonb,
           ${promptId}::uuid, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )`;
-      await resources.database.$executeRaw`
+    await resources.database.$executeRaw`
         INSERT INTO thread_event (
           project_id, thread_id, prompt_id, sequence, type, event
         ) VALUES (
@@ -980,83 +979,82 @@ void test(
           'prompt.accepted', '{"type":"prompt.accepted"}'::jsonb
         )`;
 
-      await resources.migrate(naming);
+    await resources.migrate(naming);
 
-      const projects = await resources.database.$queryRaw<
-        {
-          id: string;
-          name: string;
-          state: string;
-          config_revision: number;
-          config_snapshot: unknown;
-        }[]
-      >`SELECT id, name, state, config_revision, config_snapshot FROM project`;
-      assert.deepEqual(projects, [
-        {
-          id: projectId,
-          name: `Project ${projectId}`,
-          state: 'READY',
-          config_revision: 7,
-          config_snapshot: { revision: 7 },
-        },
-      ]);
-      const threads = await resources.database.$queryRaw<
-        {
-          id: string;
-          project_id: string;
-          parent_thread_id: string | null;
-          name: string;
-          state: string;
-          messages: unknown;
-          active_prompt_id: string | null;
-          last_sequence: number;
-        }[]
-      >`SELECT id, project_id, parent_thread_id, name, state, messages,
+    const projects = await resources.database.$queryRaw<
+      {
+        id: string;
+        name: string;
+        state: string;
+        config_revision: number;
+        config_snapshot: unknown;
+      }[]
+    >`SELECT id, name, state, config_revision, config_snapshot FROM project`;
+    assert.deepEqual(projects, [
+      {
+        id: projectId,
+        name: `Project ${projectId}`,
+        state: 'READY',
+        config_revision: 7,
+        config_snapshot: { revision: 7 },
+      },
+    ]);
+    const threads = await resources.database.$queryRaw<
+      {
+        id: string;
+        project_id: string;
+        parent_thread_id: string | null;
+        name: string;
+        state: string;
+        messages: unknown;
+        active_prompt_id: string | null;
+        last_sequence: number;
+      }[]
+    >`SELECT id, project_id, parent_thread_id, name, state, messages,
           active_prompt_id, last_sequence
         FROM thread ORDER BY parent_thread_id NULLS FIRST`;
-      assert.deepEqual(threads, [
-        {
-          id: rootId,
-          project_id: projectId,
-          parent_thread_id: null,
-          name: `Thread ${rootId}`,
-          state: 'READY',
-          messages: [{ role: 'user', content: 'root history' }],
-          active_prompt_id: null,
-          last_sequence: 0,
-        },
-        {
-          id: childId,
-          project_id: projectId,
-          parent_thread_id: rootId,
-          name: `Thread ${childId}`,
-          state: 'RUNNING',
-          messages: [{ role: 'user', content: 'child history' }],
-          active_prompt_id: promptId,
-          last_sequence: 1,
-        },
-      ]);
-      assert.equal(await resources.database.threadEvent.count(), 1);
-      const columns = await resources.database.$queryRaw<
-        { table_name: string; is_nullable: string }[]
-      >`SELECT table_name, is_nullable FROM information_schema.columns
+    assert.deepEqual(threads, [
+      {
+        id: rootId,
+        project_id: projectId,
+        parent_thread_id: null,
+        name: `Thread ${rootId}`,
+        state: 'READY',
+        messages: [{ role: 'user', content: 'root history' }],
+        active_prompt_id: null,
+        last_sequence: 0,
+      },
+      {
+        id: childId,
+        project_id: projectId,
+        parent_thread_id: rootId,
+        name: `Thread ${childId}`,
+        state: 'RUNNING',
+        messages: [{ role: 'user', content: 'child history' }],
+        active_prompt_id: promptId,
+        last_sequence: 1,
+      },
+    ]);
+    assert.equal(await resources.database.threadEvent.count(), 1);
+    const columns = await resources.database.$queryRaw<
+      { table_name: string; is_nullable: string }[]
+    >`SELECT table_name, is_nullable FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND column_name = 'name'
           AND table_name IN ('project', 'thread')
         ORDER BY table_name`;
-      assert.deepEqual(columns, [
-        { table_name: 'project', is_nullable: 'NO' },
-        { table_name: 'thread', is_nullable: 'NO' },
-      ]);
-      await assert.rejects(
-        resources.database.$executeRaw`
+    assert.deepEqual(columns, [
+      { table_name: 'project', is_nullable: 'NO' },
+      { table_name: 'thread', is_nullable: 'NO' },
+    ]);
+    await assert.rejects(
+      resources.database.$executeRaw`
           UPDATE project SET name = NULL WHERE id = ${projectId}::uuid`,
-      );
-    } finally {
-      await resources.close();
-    }
-  },
-);
+    );
+  } finally {
+    await resources.close();
+  }
+});
 
 for (const failure of [
   'admin connect',
@@ -1108,153 +1106,149 @@ for (const failure of [
   });
 }
 
-void test(
-  'carries configured GitHub data and every provider into the credential store',
-  { skip: connectionString === undefined },
-  async () => {
-    assert.ok(connectionString);
-    const baseline = await readFile(
-      `${migrationDirectory}/20260825000000_initial/migration.sql`,
-      'utf8',
-    );
-    const github = await readFile(
-      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
-      'utf8',
-    );
-    const store = await readFile(
-      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
-      'utf8',
-    );
-    const resources = await persistenceFixture(connectionString, {
-      migration: async () => `${baseline}\n${github}`,
-    });
-    try {
-      await resources.database.$executeRaw`
+void test('carries configured GitHub data and every provider into the credential store', {
+  skip: connectionString === undefined,
+}, async () => {
+  assert.ok(connectionString);
+  const baseline = await readFile(
+    `${migrationDirectory}/20260825000000_initial/migration.sql`,
+    'utf8',
+  );
+  const github = await readFile(
+    `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+    'utf8',
+  );
+  const store = await readFile(
+    `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+    'utf8',
+  );
+  const resources = await persistenceFixture(connectionString, {
+    migration: async () => `${baseline}\n${github}`,
+  });
+  try {
+    await resources.database.$executeRaw`
         UPDATE doric_configuration SET
           github_username = 'octocat',
           github_email = 'octocat@example.com',
           github_token = 'ghp_legacy_plaintext'
         WHERE id = 1`;
 
-      await resources.migrate(store);
+    await resources.migrate(store);
 
-      // The identity is carried value for value, the token keeps its row but not
-      // its plaintext, and the provider keeps its own row under the old name.
-      const credentials = await resources.database.$queryRaw<
-        {
-          kind: string;
-          name: string;
-          username: string | null;
-          email: string | null;
-          secret: string | null;
-        }[]
-      >`SELECT kind, name, username, email, secret FROM credential
+    // The identity is carried value for value, the token keeps its row but not
+    // its plaintext, and the provider keeps its own row under the old name.
+    const credentials = await resources.database.$queryRaw<
+      {
+        kind: string;
+        name: string;
+        username: string | null;
+        email: string | null;
+        secret: string | null;
+      }[]
+    >`SELECT kind, name, username, email, secret FROM credential
         ORDER BY kind, name`;
-      assert.deepEqual(credentials, [
-        {
-          kind: 'API_TOKEN',
-          name: 'OPENROUTER_API_KEY',
-          username: null,
-          email: null,
-          secret: '',
-        },
-        {
-          kind: 'API_TOKEN',
-          name: 'github',
-          username: null,
-          email: null,
-          secret: '',
-        },
-        {
-          kind: 'GIT',
-          name: 'github',
-          username: 'octocat',
-          email: 'octocat@example.com',
-          secret: null,
-        },
-      ]);
-      assert.equal(
-        JSON.stringify(credentials).includes('ghp_legacy_plaintext'),
-        false,
-      );
+    assert.deepEqual(credentials, [
+      {
+        kind: 'API_TOKEN',
+        name: 'OPENROUTER_API_KEY',
+        username: null,
+        email: null,
+        secret: '',
+      },
+      {
+        kind: 'API_TOKEN',
+        name: 'github',
+        username: null,
+        email: null,
+        secret: '',
+      },
+      {
+        kind: 'GIT',
+        name: 'github',
+        username: 'octocat',
+        email: 'octocat@example.com',
+        secret: null,
+      },
+    ]);
+    assert.equal(
+      JSON.stringify(credentials).includes('ghp_legacy_plaintext'),
+      false,
+    );
 
-      const providers = await resources.database.$queryRaw<
-        { id: string; credential_id: string }[]
-      >`SELECT id, credential_id FROM provider_configuration`;
-      assert.deepEqual(providers, [
-        {
-          id: 'openrouter',
-          credential_id: '00000000-0000-4000-8000-000000000002',
-        },
-      ]);
+    const providers = await resources.database.$queryRaw<
+      { id: string; credential_id: string }[]
+    >`SELECT id, credential_id FROM provider_configuration`;
+    assert.deepEqual(providers, [
+      {
+        id: 'openrouter',
+        credential_id: '00000000-0000-4000-8000-000000000002',
+      },
+    ]);
 
-      const configuration = await resources.database.$queryRaw<
-        { git_credential_id: string; github_credential_id: string }[]
-      >`SELECT git_credential_id, github_credential_id FROM doric_configuration`;
-      assert.deepEqual(configuration, [
-        {
-          git_credential_id: '00000000-0000-4000-8000-000000000003',
-          github_credential_id: '00000000-0000-4000-8000-000000000004',
-        },
-      ]);
+    const configuration = await resources.database.$queryRaw<
+      { git_credential_id: string; github_credential_id: string }[]
+    >`SELECT git_credential_id, github_credential_id FROM doric_configuration`;
+    assert.deepEqual(configuration, [
+      {
+        git_credential_id: '00000000-0000-4000-8000-000000000003',
+        github_credential_id: '00000000-0000-4000-8000-000000000004',
+      },
+    ]);
 
-      // The legacy columns are gone, and a referenced credential cannot go.
-      await assert.rejects(
-        resources.database
-          .$queryRaw`SELECT api_key_env FROM provider_configuration`,
-      );
-      await assert.rejects(
-        resources.database.$executeRaw`DELETE FROM credential
+    // The legacy columns are gone, and a referenced credential cannot go.
+    await assert.rejects(
+      resources.database
+        .$queryRaw`SELECT api_key_env FROM provider_configuration`,
+    );
+    await assert.rejects(
+      resources.database.$executeRaw`DELETE FROM credential
           WHERE id = '00000000-0000-4000-8000-000000000002'::uuid`,
-      );
-    } finally {
-      await resources.close();
-    }
-  },
-);
+    );
+  } finally {
+    await resources.close();
+  }
+});
 
-void test(
-  'leaves an unconfigured GitHub block unconfigured',
-  { skip: connectionString === undefined },
-  async () => {
-    assert.ok(connectionString);
-    const baseline = await readFile(
-      `${migrationDirectory}/20260825000000_initial/migration.sql`,
-      'utf8',
-    );
-    const github = await readFile(
-      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
-      'utf8',
-    );
-    const store = await readFile(
-      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
-      'utf8',
-    );
-    const resources = await persistenceFixture(connectionString, {
-      migration: async () => `${baseline}\n${github}`,
+void test('leaves an unconfigured GitHub block unconfigured', {
+  skip: connectionString === undefined,
+}, async () => {
+  assert.ok(connectionString);
+  const baseline = await readFile(
+    `${migrationDirectory}/20260825000000_initial/migration.sql`,
+    'utf8',
+  );
+  const github = await readFile(
+    `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+    'utf8',
+  );
+  const store = await readFile(
+    `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+    'utf8',
+  );
+  const resources = await persistenceFixture(connectionString, {
+    migration: async () => `${baseline}\n${github}`,
+  });
+  try {
+    await resources.migrate(store);
+
+    const credentials = await resources.database.credential.findMany({
+      orderBy: { name: 'asc' },
     });
-    try {
-      await resources.migrate(store);
-
-      const credentials = await resources.database.credential.findMany({
-        orderBy: { name: 'asc' },
+    assert.deepEqual(
+      credentials.map(({ kind, name, secret }) => ({ kind, name, secret })),
+      [{ kind: 'API_TOKEN', name: 'OPENROUTER_API_KEY', secret: '' }],
+    );
+    const configuration =
+      await resources.database.doricConfiguration.findUniqueOrThrow({
+        where: { id: 1 },
+        select: { gitCredentialId: true, githubCredentialId: true },
       });
-      assert.deepEqual(
-        credentials.map(({ kind, name, secret }) => ({ kind, name, secret })),
-        [{ kind: 'API_TOKEN', name: 'OPENROUTER_API_KEY', secret: '' }],
-      );
-      const configuration =
-        await resources.database.doricConfiguration.findUniqueOrThrow({
-          where: { id: 1 },
-          select: { gitCredentialId: true, githubCredentialId: true },
-        });
-      assert.equal(configuration.gitCredentialId, null);
-      assert.equal(configuration.githubCredentialId, null);
-    } finally {
-      await resources.close();
-    }
-  },
-);
+    assert.equal(configuration.gitCredentialId, null);
+    assert.equal(configuration.githubCredentialId, null);
+  } finally {
+    await resources.close();
+  }
+});
 
 integrationTest(
   'installs a clean Project and Thread baseline without legacy tables or data',
@@ -1479,148 +1473,145 @@ integrationTest(
   },
 );
 
-void test(
-  'converts a configured provider of the old shape without losing its data',
-  { skip: connectionString === undefined },
-  async () => {
-    assert.ok(connectionString);
-    const baseline = await readFile(
-      `${migrationDirectory}/20260825000000_initial/migration.sql`,
-      'utf8',
-    );
-    const github = await readFile(
-      `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
-      'utf8',
-    );
-    const store = await readFile(
-      `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
-      'utf8',
-    );
-    const kinds = await readFile(
-      `${migrationDirectory}/20260926000000_add_provider_kinds/migration.sql`,
-      'utf8',
-    );
-    const models = await readFile(
-      `${migrationDirectory}/20260927000000_provider_models_and_identity/migration.sql`,
-      'utf8',
-    );
-    const resources = await persistenceFixture(connectionString, {
-      migration: async () => `${baseline}\n${github}\n${store}`,
-    });
-    try {
-      // A host an operator has already used: a Git identity, a GitHub token, and
-      // an execution model of their own.
-      await resources.database.$executeRaw`
+void test('converts a configured provider of the old shape without losing its data', {
+  skip: connectionString === undefined,
+}, async () => {
+  assert.ok(connectionString);
+  const baseline = await readFile(
+    `${migrationDirectory}/20260825000000_initial/migration.sql`,
+    'utf8',
+  );
+  const github = await readFile(
+    `${migrationDirectory}/20260924000000_add_github_credentials/migration.sql`,
+    'utf8',
+  );
+  const store = await readFile(
+    `${migrationDirectory}/20260925000000_add_credential_store/migration.sql`,
+    'utf8',
+  );
+  const kinds = await readFile(
+    `${migrationDirectory}/20260926000000_add_provider_kinds/migration.sql`,
+    'utf8',
+  );
+  const models = await readFile(
+    `${migrationDirectory}/20260927000000_provider_models_and_identity/migration.sql`,
+    'utf8',
+  );
+  const resources = await persistenceFixture(connectionString, {
+    migration: async () => `${baseline}\n${github}\n${store}`,
+  });
+  try {
+    // A host an operator has already used: a Git identity, a GitHub token, and
+    // an execution model of their own.
+    await resources.database.$executeRaw`
         INSERT INTO credential (id, kind, name, updated_at) VALUES
           ('00000000-0000-4000-8000-000000000003', 'GIT', 'github', CURRENT_TIMESTAMP),
           ('00000000-0000-4000-8000-000000000004', 'API_TOKEN', 'github', CURRENT_TIMESTAMP)`;
-      await resources.database.$executeRaw`
+    await resources.database.$executeRaw`
         UPDATE doric_configuration SET
           git_credential_id = '00000000-0000-4000-8000-000000000003',
           github_credential_id = '00000000-0000-4000-8000-000000000004',
           max_turns = 100
         WHERE id = 1`;
-      await resources.database.$executeRaw`
+    await resources.database.$executeRaw`
         UPDATE model_configuration SET model = 'stealth/space-bunny-alpha', effort = 'medium'
         WHERE configuration_id = 1 AND role = 'EXECUTION'`;
 
-      // The provider-kind migration maps the old row; an operator has since named
-      // two models that share one effort menu, which the next migration back-fills
-      // onto each model.
-      await resources.migrate(kinds);
-      await resources.database.$executeRaw`
+    // The provider-kind migration maps the old row; an operator has since named
+    // two models that share one effort menu, which the next migration back-fills
+    // onto each model.
+    await resources.migrate(kinds);
+    await resources.database.$executeRaw`
         UPDATE provider_configuration
         SET model_ids = ARRAY['stealth/space-bunny-alpha', 'other-model'],
             reasoning_efforts = ARRAY['low', 'high']
         WHERE configuration_id = 1 AND id = 'openrouter'`;
-      await resources.migrate(models);
+    await resources.migrate(models);
 
-      const providers = await resources.database.$queryRaw<
-        {
-          id: string;
-          kind: string;
-          field_values: Record<string, string>;
-          credential_id: string | null;
-          models: { name: string; reasonings?: string[] }[];
-        }[]
-      >`SELECT id, kind, field_values, credential_id, models
+    const providers = await resources.database.$queryRaw<
+      {
+        id: string;
+        kind: string;
+        field_values: Record<string, string>;
+        credential_id: string | null;
+        models: { name: string; reasonings?: string[] }[];
+      }[]
+    >`SELECT id, kind, field_values, credential_id, models
         FROM provider_configuration`;
-      assert.deepEqual(providers, [
-        {
-          id: 'openrouter',
-          kind: 'openai-compatible',
-          field_values: {
-            endpoint: 'https://openrouter.ai/api/v1',
-          },
-          credential_id: '00000000-0000-4000-8000-000000000002',
-          models: [
-            { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
-            { name: 'other-model', reasonings: ['low', 'high'] },
-          ],
+    assert.deepEqual(providers, [
+      {
+        id: 'openrouter',
+        kind: 'openai-compatible',
+        field_values: {
+          endpoint: 'https://openrouter.ai/api/v1',
         },
-      ]);
+        credential_id: '00000000-0000-4000-8000-000000000002',
+        models: [
+          { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
+          { name: 'other-model', reasonings: ['low', 'high'] },
+        ],
+      },
+    ]);
 
-      // The current store reads today's schema. Finish the remaining migrations
-      // before using it to verify that the converted data is still readable.
-      for (const migration of (await readdir(migrationDirectory)).sort()) {
-        if (
-          migration <= '20260927000000_provider_models_and_identity' ||
-          migration === 'migration_lock.toml'
-        )
-          continue;
-        await resources.migrate(
-          await readFile(
-            `${migrationDirectory}/${migration}/migration.sql`,
-            'utf8',
-          ),
-        );
-      }
-      const configuration =
-        await resources.database.doricConfiguration.findUniqueOrThrow({
-          where: { id: 1 },
-        });
-      assert.equal(configuration.gitCredentialId, gitCredentialId);
-      assert.equal(configuration.githubCredentialId, githubCredentialId);
-      assert.equal(configuration.maxTurns, 100);
-      assert.equal(
-        (await resources.database.modelConfiguration.findFirstOrThrow()).model,
-        'stealth/space-bunny-alpha',
+    // The current store reads today's schema. Finish the remaining migrations
+    // before using it to verify that the converted data is still readable.
+    for (const migration of (await readdir(migrationDirectory)).sort()) {
+      if (
+        migration <= '20260927000000_provider_models_and_identity' ||
+        migration === 'migration_lock.toml'
+      )
+        continue;
+      await resources.migrate(
+        await readFile(
+          `${migrationDirectory}/${migration}/migration.sql`,
+          'utf8',
+        ),
       );
-      await assert.rejects(
-        resources.database
-          .$queryRaw`SELECT base_url FROM provider_configuration`,
-      );
-
-      // What `GET /config` answers afterwards: the mapped provider, and the
-      // execution model, choices, and turn limit the operator had.
-      const loaded = await createConfigStore(resources.database).load();
-      assert.deepEqual(loaded.configuration.providers, [
-        {
-          id: 'openrouter',
-          kind: 'openai-compatible',
-          configuration: {
-            endpoint: 'https://openrouter.ai/api/v1',
-            token: '00000000-0000-4000-8000-000000000002',
-          },
-          models: [
-            { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
-            { name: 'other-model', reasonings: ['low', 'high'] },
-          ],
-        },
-      ]);
-      assert.deepEqual(loaded.configuration.models.execution, {
-        providerId: 'openrouter',
-        model: 'stealth/space-bunny-alpha',
-        effort: 'medium',
-      });
-      assert.equal(loaded.configuration.execution.maxTurns, 100);
-      assert.equal(loaded.configuration.gitCredentialId, gitCredentialId);
-      assert.equal(loaded.configuration.githubCredentialId, githubCredentialId);
-    } finally {
-      await resources.close();
     }
-  },
-);
+    const configuration =
+      await resources.database.doricConfiguration.findUniqueOrThrow({
+        where: { id: 1 },
+      });
+    assert.equal(configuration.gitCredentialId, gitCredentialId);
+    assert.equal(configuration.githubCredentialId, githubCredentialId);
+    assert.equal(configuration.maxTurns, 100);
+    assert.equal(
+      (await resources.database.modelConfiguration.findFirstOrThrow()).model,
+      'stealth/space-bunny-alpha',
+    );
+    await assert.rejects(
+      resources.database.$queryRaw`SELECT base_url FROM provider_configuration`,
+    );
+
+    // What `GET /config` answers afterwards: the mapped provider, and the
+    // execution model, choices, and turn limit the operator had.
+    const loaded = await createConfigStore(resources.database).load();
+    assert.deepEqual(loaded.configuration.providers, [
+      {
+        id: 'openrouter',
+        kind: 'openai-compatible',
+        configuration: {
+          endpoint: 'https://openrouter.ai/api/v1',
+          token: '00000000-0000-4000-8000-000000000002',
+        },
+        models: [
+          { name: 'stealth/space-bunny-alpha', reasonings: ['low', 'high'] },
+          { name: 'other-model', reasonings: ['low', 'high'] },
+        ],
+      },
+    ]);
+    assert.deepEqual(loaded.configuration.models.execution, {
+      providerId: 'openrouter',
+      model: 'stealth/space-bunny-alpha',
+      effort: 'medium',
+    });
+    assert.equal(loaded.configuration.execution.maxTurns, 100);
+    assert.equal(loaded.configuration.gitCredentialId, gitCredentialId);
+    assert.equal(loaded.configuration.githubCredentialId, githubCredentialId);
+  } finally {
+    await resources.close();
+  }
+});
 
 type Stores = Awaited<ReturnType<typeof fixture>>;
 

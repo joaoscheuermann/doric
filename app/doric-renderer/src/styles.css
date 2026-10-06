@@ -387,12 +387,12 @@
   summary,
   select:not(:disabled),
   input:is(
-      [type='button'],
-      [type='submit'],
-      [type='reset'],
-      [type='checkbox'],
-      [type='radio']
-    ):not(:disabled),
+    [type='button'],
+    [type='submit'],
+    [type='reset'],
+    [type='checkbox'],
+    [type='radio']
+  ):not(:disabled),
   label:has(input:is([type='checkbox'], [type='radio'])),
   [role='button']:not([aria-disabled='true']),
   [role='checkbox']:not([aria-disabled='true']),

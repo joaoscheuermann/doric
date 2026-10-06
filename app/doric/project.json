@@ -47,7 +47,7 @@
       }
     },
     "lint": {
-      "command": "eslint app/doric"
+      "command": "biome check app/doric --formatter-enabled=false"
     },
     "test": {
       "executor": "nx:run-commands",

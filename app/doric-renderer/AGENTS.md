@@ -144,7 +144,8 @@ Run these from the repository root and report what they printed:
 ```
 npx tsc -p app/doric-renderer/tsconfig.app.json --noEmit
 npx tsc -p app/doric-renderer/tsconfig.spec.json
-npx eslint app/doric-renderer
+npx biome check app/doric-renderer --formatter-enabled=false
+npx biome format app/doric-renderer
 npx prettier --check app/doric-renderer
 NX_SOCKET_DIR=/tmp/nx-tmp npx nx test doric-renderer
 NX_SOCKET_DIR=/tmp/nx-tmp npx nx build doric-renderer

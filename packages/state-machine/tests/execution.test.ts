@@ -18,7 +18,6 @@ void test('preserves an asynchronous rejection and the active state and context'
     start: async () => {
       await Promise.resolve();
       // The contract preserves rejection identity even for non-Error values.
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw cause;
     },
   });

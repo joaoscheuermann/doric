@@ -34,24 +34,23 @@ const persist = (state: PersistedSelectionState): void => {
   );
 };
 
-export const selectionStore = createStore<PersistedSelectionState>()((
-  set,
-  get,
-) => {
-  const commit = (next: Partial<PersistedSelectionState>): void => {
-    set(next);
-    persist(get());
-  };
-  return {
-    changed: false,
-    changeSelectedThreadId: (action) =>
-      commit({
-        selectedThreadId:
-          typeof action === 'function'
-            ? action(get().selectedThreadId)
-            : action,
-        changed: true,
-      }),
-    settleLoad: (load) => commit({ load }),
-  };
-});
+export const selectionStore = createStore<PersistedSelectionState>()(
+  (set, get) => {
+    const commit = (next: Partial<PersistedSelectionState>): void => {
+      set(next);
+      persist(get());
+    };
+    return {
+      changed: false,
+      changeSelectedThreadId: (action) =>
+        commit({
+          selectedThreadId:
+            typeof action === 'function'
+              ? action(get().selectedThreadId)
+              : action,
+          changed: true,
+        }),
+      settleLoad: (load) => commit({ load }),
+    };
+  },
+);

@@ -138,37 +138,33 @@ void test('honors timeout and abort controls around the injected transport', asy
   );
 });
 
-void test(
-  'uses DOCKER_HOST as the default Unix socket path when set',
-  {
-    skip: process.platform === 'win32',
-  },
-  async () => {
-    const previous = process.env.DOCKER_HOST;
-    const socketPath = `/tmp/doric-missing-${randomUUID()}.sock`;
+void test('uses DOCKER_HOST as the default Unix socket path when set', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const previous = process.env.DOCKER_HOST;
+  const socketPath = `/tmp/doric-missing-${randomUUID()}.sock`;
 
-    process.env.DOCKER_HOST = `unix://${socketPath}`;
+  process.env.DOCKER_HOST = `unix://${socketPath}`;
 
-    try {
-      await assert.rejects(
-        createDockerClient().ping(),
-        (error: unknown) =>
-          typeof error === 'object' &&
-          error !== null &&
-          'code' in error &&
-          'address' in error &&
-          error.code === 'ENOENT' &&
-          error.address === socketPath,
-      );
-    } finally {
-      if (previous === undefined) {
-        delete process.env.DOCKER_HOST;
-      } else {
-        process.env.DOCKER_HOST = previous;
-      }
+  try {
+    await assert.rejects(
+      createDockerClient().ping(),
+      (error: unknown) =>
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        'address' in error &&
+        error.code === 'ENOENT' &&
+        error.address === socketPath,
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DOCKER_HOST;
+    } else {
+      process.env.DOCKER_HOST = previous;
     }
-  },
-);
+  }
+});
 
 void test('creates starts and inspects execs while demuxing non TTY output', async () => {
   const requests: DockerTransportRequest[] = [];

@@ -117,7 +117,6 @@ export const eventJson = (
       return marker(
         current.constructor?.name ?? 'Object',
         // The marker deliberately describes opaque instances by their string form.
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         redact(String(current)),
       );
     }

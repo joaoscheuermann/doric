@@ -717,8 +717,10 @@ diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
-effective egress requires IP-literal DNS. Doric explicitly provisions its agent
-sandboxes from the image named by `DORIC_SANDBOX_IMAGE`, which defaults to the
+effective egress requires IP-literal DNS. Doric provisions Docker sandboxes
+with one CPU, 2048 MiB of memory, and a 4096 MiB writable layer; Firecracker
+keeps its 512 MiB memory limit. Both use the image named by
+`DORIC_SANDBOX_IMAGE`, which defaults to the
 multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
 selected Git skills can reach public remotes. That default ships Git; the
 sandbox image Doric builds from `agents/doric/.sandbox.Dockerfile` ships Git and

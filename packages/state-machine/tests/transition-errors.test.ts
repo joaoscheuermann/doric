@@ -52,7 +52,6 @@ void test('preserves the source state and cause when copying a transition throws
       return transition('done', {
         get count(): number {
           // Copy failures preserve arbitrary thrown values as their cause.
-          // eslint-disable-next-line @typescript-eslint/only-throw-error
           throw cause;
         },
       });

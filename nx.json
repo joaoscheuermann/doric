@@ -14,12 +14,6 @@
   },
   "plugins": [
     {
-      "plugin": "@nx/eslint/plugin",
-      "options": {
-        "targetName": "lint"
-      }
-    },
-    {
       "plugin": "@nx/js/typescript",
       "options": {
         "typecheck": {
@@ -53,7 +47,7 @@
       "application": {
         "babel": true,
         "style": "css",
-        "linter": "eslint",
+        "linter": "none",
         "bundler": "webpack"
       },
       "component": {
@@ -61,7 +55,7 @@
       },
       "library": {
         "style": "css",
-        "linter": "eslint"
+        "linter": "none"
       }
     }
   },

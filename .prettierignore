@@ -25,3 +25,18 @@ models/**/artifact*/
 **/cases/
 scripts/**/evidence/
 package-lock.json
+
+# Biome formats and lints these languages.
+**/*.js
+**/*.jsx
+**/*.mjs
+**/*.cjs
+**/*.ts
+**/*.tsx
+**/*.mts
+**/*.cts
+**/*.json
+**/*.jsonc
+**/*.css
+**/*.graphql
+**/*.gql

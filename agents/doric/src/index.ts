@@ -2,16 +2,15 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import express from 'express';
-import pino from 'pino';
-import pretty from 'pino-pretty';
-import { Server as SocketServer } from 'socket.io';
-
 import { loadBundles } from 'bundle';
 import { createDockerClient, discardWorkspace } from 'docker';
+import express from 'express';
 import { createFirecrackerClient } from 'firecracker';
+import pino from 'pino';
+import pretty from 'pino-pretty';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
+import { Server as SocketServer } from 'socket.io';
 
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
@@ -81,7 +80,7 @@ async function main() {
   const sandboxImage = process.env.DORIC_SANDBOX_IMAGE ?? 'node:22-bookworm';
   const sandboxResources = {
     cpuCount: 1,
-    memoryMiB: 512,
+    memoryMiB: sandboxProviderName === 'docker' ? 2048 : 512,
     diskMiB: 4096,
   } as const;
   const poolLimits = {

@@ -19,10 +19,7 @@ const barrier = () => {
 };
 
 const setup = (
-  hooks: {
-    provider?: () => Promise<void>;
-    tool?: () => Promise<void>;
-  } = {},
+  hooks: { provider?: () => Promise<void>; tool?: () => Promise<void> } = {},
 ) => {
   const executions: string[] = [];
   const messages = createMessageStorage();

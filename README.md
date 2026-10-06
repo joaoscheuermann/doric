@@ -137,18 +137,15 @@ and their prerequisites.
 
 ### Lint and formatting
 
-Use the official ESLint `recommended` preset for JavaScript and
-typescript-eslint `recommendedTypeChecked` plus `stylisticTypeChecked` for
-workspace `.ts`, `.mts`, and `.cts` files under `src`, `tests`, and `tools`,
-plus workspace `index` entrypoints. These files must be included in a workspace
-tsconfig. Other TypeScript files use the untyped `recommended` preset.
-These [upstream presets](https://typescript-eslint.io/users/configs/) own code
-quality and TypeScript idioms; Prettier owns formatting, with
-`eslint-config-prettier` applied last to prevent conflicting rules.
+Biome owns linting and formatting for JavaScript, TypeScript, JSON, CSS, and
+GraphQL. Its recommended rules are supplemented by checks for unhandled
+promises, consistent array types, and `await` in production async functions.
+Biome also organizes imports, grouping Node modules, packages, aliases, and
+paths. Keep running TypeScript typechecks separately; Biome does not replace
+them.
 
-Import sorting is the only additional lint policy: side effects, Node built-ins,
-external dependencies, workspace packages, then relative imports. There are no
-local spacing rules or custom complexity, nesting, or parameter-count limits.
+Prettier remains for Markdown, YAML, HTML, SVG, and other file types Biome does
+not format. Its ignore file leaves Biome-owned files to Biome.
 
 ```console
 npm run lint
@@ -156,8 +153,9 @@ npm run format:check
 npm run lint:test
 ```
 
-For scoped fixes, run `npx eslint --fix <files>` and
-`npx prettier --write <files>`. Avoid formatting unrelated files.
-CI tests the lint configuration as a blocking check. Whole-workspace lint and
-formatting remain non-blocking adoption reports while existing debt is addressed;
-passing the configuration tests does not mean the workspace is lint-clean.
+For scoped fixes, run `npx biome check --write <files>` for code and
+`npx prettier --write <files>` for the other supported file types. Avoid
+formatting unrelated files. CI tests the tool configuration as a blocking
+check. Whole-workspace lint and formatting remain non-blocking adoption reports
+while existing debt is addressed; passing the configuration tests does not mean
+the workspace is lint-clean.

@@ -87,7 +87,6 @@ const waitForRefresh = async <T>(
   let onAbort!: () => void;
   const aborted = new Promise<never>((_, reject) => {
     // AbortSignal permits any reason; preserve the caller's cancellation identity.
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
     onAbort = () => reject(signal.reason);
     signal.addEventListener('abort', onAbort, { once: true });
     if (signal.aborted) onAbort();

@@ -405,7 +405,6 @@ void test('parses valid supported source larger than the default Tree-sitter buf
 void test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) => {
   const root = await tempRoot(context);
   // Called below with the parser as its explicit receiver.
-  // eslint-disable-next-line @typescript-eslint/unbound-method
   const original = Parser.prototype.parse;
   const observed: number[] = [];
 
