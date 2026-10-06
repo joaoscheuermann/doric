@@ -4,9 +4,9 @@ import test from 'node:test';
 import {
   type Credential,
   CredentialCreateSchema,
+  CredentialUpdateSchema,
   credentialFields,
   credentialFieldsSatisfied,
-  CredentialUpdateSchema,
   publicCredential,
 } from '../src/lib/credentials/kind.js';
 import {

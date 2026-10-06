@@ -1,6 +1,5 @@
+import { type ProviderField, type ProviderKindId, providerKind } from 'llms';
 import { z } from 'zod';
-
-import { type ProviderField, providerKind, type ProviderKindId } from 'llms';
 
 const effort = z.enum([
   'none',

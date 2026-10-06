@@ -5,5 +5,3 @@ declare global {
     readonly doric: WorkspaceApi;
   }
 }
-
-export {};

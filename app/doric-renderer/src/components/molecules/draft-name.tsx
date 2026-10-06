@@ -1,7 +1,8 @@
+import { MessageSquareIcon } from 'lucide-react';
+
 import { EditableName } from '@/components/molecules/editable-name';
 import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import { indentation, TreeGuides } from '@/components/molecules/tree-guides';
-import { MessageSquareIcon } from 'lucide-react';
 
 type DraftNameProps = {
   readonly depth?: number;

@@ -1,3 +1,15 @@
+import {
+  $getNodeByKey,
+  DecoratorNode,
+  type LexicalEditor,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
+} from 'lexical';
+import { BotIcon } from 'lucide-react';
+import type { JSX } from 'react';
+
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
 import { WidgetFocus } from '@/components/molecules/widget-focus';
 import { ReadonlyMarkdown } from '@/components/organisms/conversation/readonly-markdown';
@@ -12,17 +24,6 @@ import type { DelegatedInput } from '@/domain/delegated';
 import type { UserTurn } from '@/domain/projector';
 import { useDelegatedSource } from '@/hooks/use-delegated-source';
 import { cn } from '@/utility/utils';
-import {
-  $getNodeByKey,
-  DecoratorNode,
-  type LexicalEditor,
-  type LexicalNode,
-  type NodeKey,
-  type SerializedLexicalNode,
-  type Spread,
-} from 'lexical';
-import { BotIcon } from 'lucide-react';
-import type { JSX } from 'react';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

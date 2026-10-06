@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
+
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { FileDiffViewer } from '@/components/organisms/file-diff-viewer';
@@ -11,8 +14,6 @@ import { messageFrom } from '@/domain/workspace';
 import type { WorkspaceTabs as TabsState } from '@/domain/workspace-tabs';
 import { queryKeys } from '@/queries/keys';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
-import { useQuery } from '@tanstack/react-query';
-import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
 
 export function WorkspaceTabs({
   state,

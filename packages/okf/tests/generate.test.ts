@@ -3,7 +3,7 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { test, type TestContext } from 'node:test';
+import { type TestContext, test } from 'node:test';
 
 import { parseDocument } from 'yaml';
 

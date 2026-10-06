@@ -1,3 +1,6 @@
+import { MessageSquareIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
+
 import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import {
   Breadcrumb,
@@ -8,8 +11,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import type { Project, Thread } from '@/domain/workspace';
-import { MessageSquareIcon } from 'lucide-react';
-import { Fragment, type ReactNode } from 'react';
 
 type ThreadBreadcrumbProps = {
   readonly onSelectProject: (project: Project) => void;

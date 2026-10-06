@@ -1,9 +1,8 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const description =
   "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. A relative path resolves against the current working directory.";

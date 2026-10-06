@@ -1,5 +1,6 @@
-import { Button } from '@/components/ui/button';
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
 
 type FilesToggleProps = {
   /** Closes the panel when it is open, and opens it when it is closed. */

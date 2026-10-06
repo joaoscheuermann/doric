@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import type { ProviderMessage } from 'llms';
 
 import type {
-  Thread as StoredThread,
   ThreadEvent as StoredEvent,
+  Thread as StoredThread,
 } from '../../generated/prisma/client.js';
 import type { Database } from '../database.js';
 import type { PauseReason, PromptFailure, PromptProgress } from './prompts.js';

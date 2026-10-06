@@ -4,8 +4,8 @@ import { describe, test } from 'node:test';
 import {
   messageFromErrorEnvelope,
   retryWhileActive,
-  workspaceApi,
   WorkspaceError,
+  workspaceApi,
 } from '../src/workspace/api';
 import {
   name,

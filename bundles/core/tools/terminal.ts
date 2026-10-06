@@ -2,11 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { z } from 'zod';
-
 import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
 import { defineTool, type ToolFactory } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;

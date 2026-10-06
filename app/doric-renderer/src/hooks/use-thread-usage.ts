@@ -1,6 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
+
 import type { Thread } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { useQuery } from '@tanstack/react-query';
 
 /** One host aggregate also covers descendants without opening their logs. */
 export const useThreadUsage = (thread: Thread | undefined) =>

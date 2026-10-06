@@ -1,5 +1,6 @@
-import { SidebarMenuAction } from '@/components/ui/sidebar';
 import { PlusIcon } from 'lucide-react';
+
+import { SidebarMenuAction } from '@/components/ui/sidebar';
 
 type RowAddActionProps = {
   readonly label: string;

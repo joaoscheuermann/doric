@@ -1,6 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
+
 import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import { queryKeys } from '@/queries/keys';
-import { useQuery } from '@tanstack/react-query';
 
 /** A file's comparison is fetched only after opening its diff tab. */
 export const useFileDiff = (

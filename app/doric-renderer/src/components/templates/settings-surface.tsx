@@ -1,3 +1,6 @@
+import type { LucideIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,8 +21,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import type { LucideIcon } from 'lucide-react';
-import { Fragment, type ReactNode } from 'react';
 
 /** One section the shell offers, named by the caller that owns the sections. */
 export type SettingsNavItem = {

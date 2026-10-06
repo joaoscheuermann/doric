@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import hostPath from 'node:path';
-import { posix as path } from 'node:path';
+import hostPath, { posix as path } from 'node:path';
 import { describe, test } from 'node:test';
 
 import type { SandboxSession } from 'sandbox';

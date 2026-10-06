@@ -1,7 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
+
 import type { ProviderKind } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { useQuery } from '@tanstack/react-query';
 
 /**
  * The provider catalog the host declares, and how its read is going. The catalo

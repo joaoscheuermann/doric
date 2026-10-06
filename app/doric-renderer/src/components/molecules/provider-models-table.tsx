@@ -1,3 +1,32 @@
+import {
+  type Column,
+  type ColumnFiltersState,
+  type ColumnVisibilityState,
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createColumnHelper,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  filterFn_includesString,
+  rowPaginationFeature,
+  rowSortingFeature,
+  type SortingState,
+  sortFn_alphanumeric,
+  tableFeatures,
+  useTable,
+} from '@tanstack/react-table';
+import {
+  ArrowUpDownIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  TriangleAlertIcon,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -25,40 +54,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  catalogFeatures,
   type CatalogModel,
+  catalogFeatures,
   effortLabel,
   isReasoningEffort,
   type ProviderModel,
 } from '@/domain/config';
-import {
-  type Column,
-  columnFilteringFeature,
-  type ColumnFiltersState,
-  columnVisibilityFeature,
-  type ColumnVisibilityState,
-  createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_includesString,
-  rowPaginationFeature,
-  rowSortingFeature,
-  sortFn_alphanumeric,
-  type SortingState,
-  tableFeatures,
-  useTable,
-} from '@tanstack/react-table';
-import {
-  ArrowUpDownIcon,
-  CheckIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronsLeftIcon,
-  ChevronsRightIcon,
-  TriangleAlertIcon,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
 
 /**
  * One model a table draws: what the endpoint said about it, and whether the

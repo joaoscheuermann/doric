@@ -1,7 +1,7 @@
 import {
   type ProviderFinished,
-  structuredJsonSchema,
   type StructuredOutputSchema,
+  structuredJsonSchema,
 } from 'llms';
 import type { ToolDefinition } from 'tool';
 
@@ -361,7 +361,7 @@ const locate = (value: unknown, path: StructuredOutputPath): Located => {
     }
 
     const key = path[index];
-    const found = Object.prototype.hasOwnProperty.call(current, key);
+    const found = Object.hasOwn(current, key);
 
     if (!found) {
       return { found: false, parentFound: index === path.length - 1 };

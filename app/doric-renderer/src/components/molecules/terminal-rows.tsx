@@ -1,3 +1,6 @@
+import { SquareIcon, TerminalIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
 import { indentation, TreeGuides } from '@/components/molecules/tree-guides';
 import { Button } from '@/components/ui/button';
 import {
@@ -5,8 +8,6 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { type Terminal, terminalLabel } from '@/domain/terminals';
-import { SquareIcon, TerminalIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
 
 export function TerminalRows({
   terminals,

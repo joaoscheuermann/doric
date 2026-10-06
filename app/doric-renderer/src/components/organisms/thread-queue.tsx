@@ -1,24 +1,3 @@
-import { PromptAuthor } from '@/components/molecules/prompt-author';
-import { EDIT_QUEUE_PROMPT_COMMAND } from '@/components/organisms/conversation/commands';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
-import {
-  queueAuthor,
-  queueDetail,
-  type QueueItem,
-  queueItems,
-  visibleQueueItems,
-} from '@/domain/queue';
-import { useQueueCaret } from '@/hooks/use-queue-caret';
-import { useThreadQueue } from '@/hooks/use-thread-queue';
-import { queueEditStore } from '@/stores/queue-edit';
-import { threadChatsStore } from '@/stores/thread-chats';
-import { cn } from '@/utility/utils';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import type { NodeKey } from 'lexical';
 import {
@@ -29,6 +8,28 @@ import {
   useRef,
 } from 'react';
 import { useStore } from 'zustand/react';
+
+import { PromptAuthor } from '@/components/molecules/prompt-author';
+import { EDIT_QUEUE_PROMPT_COMMAND } from '@/components/organisms/conversation/commands';
+import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import {
+  type QueueItem,
+  queueAuthor,
+  queueDetail,
+  queueItems,
+  visibleQueueItems,
+} from '@/domain/queue';
+import { useQueueCaret } from '@/hooks/use-queue-caret';
+import { useThreadQueue } from '@/hooks/use-thread-queue';
+import { queueEditStore } from '@/stores/queue-edit';
+import { threadChatsStore } from '@/stores/thread-chats';
+import { cn } from '@/utility/utils';
 
 function Details({
   item,

@@ -1,6 +1,7 @@
-import type { QueueItem } from '@/domain/queue';
 import type { SerializedElementNode } from 'lexical';
 import { createStore } from 'zustand/vanilla';
+
+import type { QueueItem } from '@/domain/queue';
 
 export interface QueueEdit {
   readonly item: QueueItem;

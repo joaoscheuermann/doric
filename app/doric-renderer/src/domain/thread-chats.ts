@@ -1,5 +1,5 @@
 import type { PendingSend } from './pending-turns';
-import { emptyProjection, projectEvents, type Projection } from './projector';
+import { emptyProjection, type Projection, projectEvents } from './projector';
 import { acceptedHumanInputs } from './projector-input';
 import type {
   Thread,

@@ -1,5 +1,3 @@
-import type { Logger } from 'pino';
-
 import {
   type CatalogModel,
   createFetchTransport,
@@ -8,12 +6,13 @@ import {
   providerKind,
   requestJson,
 } from 'llms';
+import type { Logger } from 'pino';
 
 import type { CredentialService } from '../credentials/service.js';
 import {
   type ConfigInput,
-  providerCredentials,
   type ProviderValuesRef,
+  providerCredentials,
 } from './schema.js';
 
 /** One provider the configuration carries. */

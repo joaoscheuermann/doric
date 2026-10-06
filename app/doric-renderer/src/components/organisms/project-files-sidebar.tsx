@@ -1,3 +1,6 @@
+import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import { ChangesTree } from '@/components/molecules/changes-tree';
 import {
@@ -34,8 +37,6 @@ import { emptyDirectoryNotice, sandboxNotice } from '@/domain/files';
 import type { Project, ProjectChange } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import { moveItem } from '@/utility/move-item';
-import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
 
 type ProjectFilesSidebarProps = {
   /**

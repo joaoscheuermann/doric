@@ -1,7 +1,6 @@
-import { z } from 'zod';
-
 import type { ThreadEventView } from 'host';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 /** How much of one event a digest line carries. */
 const summaryLimit = 400;

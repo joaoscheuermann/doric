@@ -1,11 +1,12 @@
+import { type ReactNode, useLayoutEffect } from 'react';
+import { usePanelRef } from 'react-resizable-panels';
+
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { useSidebar } from '@/components/ui/sidebar';
-import { type ReactNode, useLayoutEffect } from 'react';
-import { usePanelRef } from 'react-resizable-panels';
 
 type WorkspaceLayoutProps = {
   readonly children: ReactNode;

@@ -17,10 +17,10 @@ import {
   fail,
   report,
   requestDelete,
+  type Sidebar,
   selectProject,
   selectThread,
   settleDelete,
-  type Sidebar,
   startRename,
   threadIconKind,
 } from '../src/domain/sidebar';

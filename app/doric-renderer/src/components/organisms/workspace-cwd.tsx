@@ -1,3 +1,12 @@
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  GitBranchIcon,
+} from 'lucide-react';
+import { useState } from 'react';
+import { toast } from 'sonner';
+
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { BranchPicker } from '@/components/organisms/branch-picker';
@@ -18,14 +27,6 @@ import { gitLine, gitStatusLine } from '@/domain/thread-git';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import { useThreadGit } from '@/hooks/use-thread-git';
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  GitBranchIcon,
-} from 'lucide-react';
-import { useState } from 'react';
-import { toast } from 'sonner';
 
 /** The conversation's worktree context and directory-scoped changes shortcut. */
 export function WorkspaceCwd({

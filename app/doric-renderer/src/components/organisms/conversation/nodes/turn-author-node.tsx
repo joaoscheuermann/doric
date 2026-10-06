@@ -9,10 +9,7 @@
  * as an agent run grows. The reader's prompt wears one the same way, below it
  * and without a time, because it is the turn the reader is writing.
  */
-import { ReaderAvatar } from '@/components/molecules/reader-avatar';
-import type { AuthorRole } from '@/domain/conversation-authors';
-import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
-import { relativeTime } from '@/utility/relative-time';
+
 import {
   DecoratorNode,
   type LexicalNode,
@@ -21,7 +18,12 @@ import {
   type Spread,
 } from 'lexical';
 import { BotIcon } from 'lucide-react';
-import { JSX } from 'react/jsx-runtime';
+import type { JSX } from 'react/jsx-runtime';
+
+import { ReaderAvatar } from '@/components/molecules/reader-avatar';
+import type { AuthorRole } from '@/domain/conversation-authors';
+import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
+import { relativeTime } from '@/utility/relative-time';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

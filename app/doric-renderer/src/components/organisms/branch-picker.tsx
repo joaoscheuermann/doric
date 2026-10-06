@@ -1,3 +1,11 @@
+import { Command as CommandPrimitive } from 'cmdk';
+import {
+  CheckIcon,
+  GitBranchIcon,
+  LoaderCircleIcon,
+  SearchIcon,
+} from 'lucide-react';
+
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import {
   Command,
@@ -11,13 +19,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { useBranches } from '@/hooks/use-branches';
-import { Command as CommandPrimitive } from 'cmdk';
-import {
-  CheckIcon,
-  GitBranchIcon,
-  LoaderCircleIcon,
-  SearchIcon,
-} from 'lucide-react';
 
 export function BranchPicker({
   thread,

@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 
-import { workspaceApi, WorkspaceError } from './api';
+import { WorkspaceError, workspaceApi } from './api';
 import type { ThreadEventService } from './events';
 import type { ProjectEventService } from './project-events';
 import type { ThreadHistoryStore } from './thread-history';

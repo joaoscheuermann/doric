@@ -2,10 +2,9 @@ import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import type { ToolFactory } from 'tool';
 import { parse } from 'yaml';
 import { z } from 'zod';
-
-import type { ToolFactory } from 'tool';
 
 import { SkillSchema } from './schemas/skill.js';
 import type { Bundle, BundleManifest, Skill } from './types/bundle.js';

@@ -1,12 +1,13 @@
-import {
-  type Credential,
-  type CredentialCreate,
-  type CredentialUpdate,
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
+
+import type {
+  Credential,
+  CredentialCreate,
+  CredentialUpdate,
 } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
 
 /**
  * What one credential write answered, so a section can report the host's refusa

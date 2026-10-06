@@ -1,5 +1,5 @@
 import type { Project, ProjectUpdate, Thread } from './workspace';
-import { threadsForProject, threadSubtreeIds, upsert } from './workspace';
+import { threadSubtreeIds, threadsForProject, upsert } from './workspace';
 
 /**
  * The Project the user selected and the Thread selected inside it. A selected

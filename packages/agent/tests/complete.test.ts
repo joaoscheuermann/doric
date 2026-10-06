@@ -6,8 +6,8 @@ import { createMessageStorage } from 'messages';
 
 import {
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
 } from './fakes.js';
 

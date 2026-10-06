@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { createMessageStorage } from 'messages';
 import { z } from 'zod';
 
-import { createMessageStorage } from 'messages';
-
-import { type AgentStructuredAttemptEvent } from '../src/index.js';
+import type { AgentStructuredAttemptEvent } from '../src/index.js';
 import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';

@@ -1,3 +1,10 @@
+import {
+  ChevronRightIcon,
+  GitBranchIcon,
+  GithubIcon,
+  MessageSquareIcon,
+} from 'lucide-react';
+
 import { DraftName } from '@/components/molecules/draft-name';
 import { EditableName } from '@/components/molecules/editable-name';
 import { ItemContextMenu } from '@/components/molecules/item-context-menu';
@@ -6,8 +13,8 @@ import { TerminalRows } from '@/components/molecules/terminal-rows';
 import {
   indentation,
   rowInteraction,
-  treeClassName,
   TreeGuides,
+  treeClassName,
 } from '@/components/molecules/tree-guides';
 import {
   SidebarMenuSub,
@@ -16,15 +23,9 @@ import {
 } from '@/components/ui/sidebar';
 import type { ThreadIconKind } from '@/domain/sidebar';
 import { type Terminal, threadTerminals } from '@/domain/terminals';
-import { type ThreadLevel } from '@/domain/thread-tree';
+import type { ThreadLevel } from '@/domain/thread-tree';
 import type { Thread } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import {
-  ChevronRightIcon,
-  GitBranchIcon,
-  GithubIcon,
-  MessageSquareIcon,
-} from 'lucide-react';
 
 export type ThreadBranchesActions = {
   readonly beginChild: (thread: Thread) => void;

@@ -1,3 +1,5 @@
+import { ChevronDownIcon } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -6,7 +8,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ChevronDownIcon } from 'lucide-react';
 
 /** One value a picker offers, under the name the trigger and the menu show it. */
 export type Choice = { readonly label: string; readonly value: string };

@@ -1,3 +1,5 @@
+import { AlertCircleIcon, FileIcon, XIcon } from 'lucide-react';
+
 import { FileBreadcrumb } from '@/components/molecules/file-breadcrumb';
 import { FileContent } from '@/components/molecules/file-content';
 import { Button } from '@/components/ui/button';
@@ -13,7 +15,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { baseName, sandboxNotice } from '@/domain/files';
 import type { ProjectFileContent } from '@/domain/workspace';
 import type { ReadState } from '@/hooks/use-project-files';
-import { AlertCircleIcon, FileIcon, XIcon } from 'lucide-react';
 
 type FileViewerProps = {
   /** The content of the selected file, or why there is none. */

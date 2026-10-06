@@ -3,8 +3,8 @@ import { describe, test } from 'node:test';
 
 import {
   bindConnectionStatus,
-  connectionStatusChannel,
   type ConnectionTarget,
+  connectionStatusChannel,
   createConnectionState,
 } from '../src/connection/ipc';
 import {

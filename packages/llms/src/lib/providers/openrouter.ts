@@ -39,8 +39,8 @@ import { requestJson, withProviderErrors } from './http.js';
 import { withProviderLogging } from './logging.js';
 import { authorization } from './openrouter/auth.js';
 import {
-  openRouterBody,
   type OpenRouterBodyOptions,
+  openRouterBody,
 } from './openrouter/body.js';
 import {
   openRouterDecisionBody,

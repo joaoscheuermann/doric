@@ -1,3 +1,5 @@
+import { type CSSProperties, useCallback, useState } from 'react';
+
 import { DeleteDialog } from '@/components/molecules/delete-dialog';
 import { Conversation } from '@/components/organisms/conversation';
 import { ManualTerminalTabs } from '@/components/organisms/manual-terminal-tabs';
@@ -40,7 +42,6 @@ import { useThreadStop } from '@/hooks/use-thread-stop';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { useWorkspaceTabs } from '@/hooks/use-workspace-tabs';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
-import { type CSSProperties, useCallback, useState } from 'react';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {

@@ -1,14 +1,15 @@
+import {
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  TerminalIcon,
+} from 'lucide-react';
+
 import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ThreadBreadcrumb } from '@/components/molecules/thread-breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
 import type { Project, Thread } from '@/domain/workspace';
-import {
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  TerminalIcon,
-} from 'lucide-react';
 
 type WorkspaceHeaderProps = {
   readonly onNewTerminal?: () => void;

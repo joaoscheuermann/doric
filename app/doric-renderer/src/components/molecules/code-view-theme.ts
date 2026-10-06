@@ -1,5 +1,6 @@
-import { oklchToHex } from '@/utility/oklch';
 import { editor } from 'monaco-editor/editor/editor.api.js';
+
+import { oklchToHex } from '@/utility/oklch';
 
 /**
  * The theme the code view is painted with: the app's own palette for everything

@@ -1,6 +1,7 @@
+import { useStore } from 'zustand';
+
 import { threadLabel } from '@/domain/delegated';
 import { workspaceStore } from '@/stores/workspace';
-import { useStore } from 'zustand';
 
 /** Resolve a sender from the already loaded tree without opening a subscription. */
 export function useDelegatedSource(threadId: string) {

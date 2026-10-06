@@ -1,3 +1,6 @@
+import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
+import { useState } from 'react';
+
 import { ProviderModelsTable } from '@/components/molecules/provider-models-table';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,8 +18,6 @@ import {
   removeModel,
 } from '@/domain/config';
 import { useProviderCatalog } from '@/hooks/use-provider-catalog';
-import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
-import { useState } from 'react';
 
 /**
  * The models one provider offers, chosen from the catalog its endpoint serves.

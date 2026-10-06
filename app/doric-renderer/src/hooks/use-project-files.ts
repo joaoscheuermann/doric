@@ -1,3 +1,7 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
+import { useStore } from 'zustand/react';
+
 import { workspacePath } from '@/domain/cwd';
 import {
   fileReadState,
@@ -15,9 +19,6 @@ import {
 import { queryKeys } from '@/queries/keys';
 import { refreshProject } from '@/queries/project-refresh';
 import { emptyFilesView, filesStore } from '@/stores/files';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
-import { useStore } from 'zustand/react';
 
 export type { ReadState };
 

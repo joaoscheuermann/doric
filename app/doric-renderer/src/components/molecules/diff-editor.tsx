@@ -1,10 +1,11 @@
 // Reuse the code view's language registration and same-origin editor worker.
 import '@/components/molecules/code-view';
 
-import { defineCodeViewTheme } from '@/components/molecules/code-view-theme';
-import { changedLineCounts } from '@/domain/file-diff';
 import { editor } from 'monaco-editor/editor/editor.api.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+
+import { defineCodeViewTheme } from '@/components/molecules/code-view-theme';
+import { changedLineCounts } from '@/domain/file-diff';
 
 export type DiffControls = {
   readonly counts:

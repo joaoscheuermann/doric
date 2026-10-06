@@ -7,7 +7,6 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 
 import pino from 'pino';
-
 import { createSandbox, type SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 

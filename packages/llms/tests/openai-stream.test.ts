@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import { type ProviderStreamEvent } from '../src/index.js';
+import type { ProviderStreamEvent } from '../src/index.js';
 import { collect, createOpenAiProvider, fakeTransport } from './fakes.js';
 
 void test('streams OpenAI requests without an authorization header when credentials are omitted', async () => {

@@ -1,6 +1,5 @@
 import { lstat, readdir, readFile, stat } from 'node:fs/promises';
-import hostPath from 'node:path';
-import { posix as sandboxPath } from 'node:path';
+import hostPath, { posix as sandboxPath } from 'node:path';
 
 import type { Host } from 'host';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';

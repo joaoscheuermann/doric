@@ -1,11 +1,12 @@
+import type { Dispatch, SetStateAction } from 'react';
+import { createStore } from 'zustand/vanilla';
+
 import {
   type SelectionLoad,
   selectionStorageKey,
   serializeSelection,
   shouldWriteSelection,
 } from '@/domain/selection';
-import type { Dispatch, SetStateAction } from 'react';
-import { createStore } from 'zustand/vanilla';
 
 /**
  * The selected Thread and its local persistence. A saved selection is

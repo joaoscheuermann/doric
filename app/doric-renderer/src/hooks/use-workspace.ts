@@ -1,16 +1,17 @@
-import { isDescribed, threadsOf } from '@/domain/project-tree';
-import {
-  type Draft,
-  type Entity,
-  type Project,
-  type ProjectColor,
-  type Thread,
-} from '@/domain/workspace';
-import { queryKeys } from '@/queries/keys';
-import { workspaceStore } from '@/stores/workspace';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand/react';
+
+import { isDescribed, threadsOf } from '@/domain/project-tree';
+import type {
+  Draft,
+  Entity,
+  Project,
+  ProjectColor,
+  Thread,
+} from '@/domain/workspace';
+import { queryKeys } from '@/queries/keys';
+import { workspaceStore } from '@/stores/workspace';
 
 import { usePersistedSelection } from './use-persisted-selection';
 import { useProjectEvents } from './use-project-events';

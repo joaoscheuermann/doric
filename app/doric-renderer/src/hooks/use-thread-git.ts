@@ -3,13 +3,14 @@
  * refreshes it with the file reads; the cwd key isolates directory changes.
  */
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+
 import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import type { ThreadGit } from '@/domain/thread-git';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
 import { refreshProject } from '@/queries/project-refresh';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
 
 export type ThreadGitState = {
   /** The host's summary, absent until the first read lands. */

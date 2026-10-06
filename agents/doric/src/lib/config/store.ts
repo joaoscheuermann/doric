@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type ProviderField, providerKind, type ProviderKindId } from 'llms';
+import { type ProviderField, type ProviderKindId, providerKind } from 'llms';
 
 import { ModelRole, type Prisma } from '../../generated/prisma/client.js';
 import type { Database } from '../database.js';

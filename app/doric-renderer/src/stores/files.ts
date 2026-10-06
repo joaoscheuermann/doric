@@ -1,5 +1,6 @@
-import { toggleExpanded } from '@/domain/files';
 import { createStore } from 'zustand/vanilla';
+
+import { toggleExpanded } from '@/domain/files';
 
 /** View state is retained per Project/root, independently of query lifetimes. */
 export type FilesView = {

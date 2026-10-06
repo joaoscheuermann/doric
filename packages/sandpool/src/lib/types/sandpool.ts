@@ -1,5 +1,4 @@
 import type { Logger } from 'pino';
-
 import type { Sandbox, SandboxSession } from 'sandbox';
 
 export type SandpoolLifecycle = 'active' | 'disposing' | 'disposed';

@@ -4,7 +4,6 @@ export type {
   TerminalInput,
   TerminalResult,
 } from './lib/terminals.js';
-export type { CwdChange, WorkspaceControl } from './lib/workspace.js';
 export type {
   InterruptResult,
   PromptResult,
@@ -17,3 +16,4 @@ export type {
   ThreadSummary,
   ThreadView,
 } from './lib/threads.js';
+export type { CwdChange, WorkspaceControl } from './lib/workspace.js';

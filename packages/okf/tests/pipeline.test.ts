@@ -10,8 +10,8 @@ import {
 } from '../src/lib/interface.js';
 import {
   RECIPE_VERSIONS,
-  recipeHash,
   type RecipeVersions,
+  recipeHash,
   YAML_DEPENDENCY_VERSION,
 } from '../src/lib/recipe.js';
 import { renderEvidence } from '../src/lib/summarize.js';

@@ -1,3 +1,14 @@
+import {
+  $getNodeByKey,
+  DecoratorNode,
+  type LexicalEditor,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
+} from 'lexical';
+import type { JSX } from 'react/jsx-runtime';
+
 import { ThinkingItem } from '@/components/molecules/thinking-item';
 import { WidgetFocus } from '@/components/molecules/widget-focus';
 import {
@@ -8,16 +19,6 @@ import {
 import { THINKING_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ThinkingTurn } from '@/domain/projector';
 import { reasoningText } from '@/utility/reasoning-text';
-import {
-  $getNodeByKey,
-  DecoratorNode,
-  type LexicalEditor,
-  type LexicalNode,
-  type NodeKey,
-  type SerializedLexicalNode,
-  type Spread,
-} from 'lexical';
-import { JSX } from 'react/jsx-runtime';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

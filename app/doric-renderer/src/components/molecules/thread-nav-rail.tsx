@@ -7,6 +7,11 @@
  * A last handle throws the scroll to the prompt input. A click is the one way
  * the rail ever moves the reader's scroll.
  */
+
+import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
+import type { RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -25,9 +30,6 @@ import { markerEmphasis } from '@/domain/thread-nav';
 import { useDelegatedSource } from '@/hooks/use-delegated-source';
 import { useThreadNav } from '@/hooks/use-thread-nav';
 import { cn } from '@/utility/utils';
-import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
-import type { RefObject } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ReaderAvatar } from './reader-avatar';
 

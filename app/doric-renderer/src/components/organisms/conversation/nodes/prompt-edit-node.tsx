@@ -1,6 +1,3 @@
-import { PromptAuthor } from '@/components/molecules/prompt-author';
-import { PROMPT_EDIT_BLOCK } from '@/domain/conversation-nodes';
-import { queueEditStore } from '@/stores/queue-edit';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -10,6 +7,10 @@ import {
 } from 'lexical';
 import type { JSX } from 'react';
 import { useStore } from 'zustand/react';
+
+import { PromptAuthor } from '@/components/molecules/prompt-author';
+import { PROMPT_EDIT_BLOCK } from '@/domain/conversation-nodes';
+import { queueEditStore } from '@/stores/queue-edit';
 
 function Heading({ threadId }: { readonly threadId: string }) {
   const edit = useStore(queueEditStore, (state) => state.edits[threadId]);

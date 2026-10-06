@@ -8,7 +8,6 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 
 import pino from 'pino';
-
 import {
   createSandbox,
   type SandboxExecResult,
@@ -19,8 +18,8 @@ import { createSandpool } from 'sandpool';
 
 import {
   createDockerClient,
-  discardWorkspace,
   type DockerClient,
+  discardWorkspace,
 } from '../src/index.js';
 
 const timeoutMs = 20_000;

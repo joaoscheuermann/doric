@@ -3,7 +3,6 @@ import { Writable } from 'node:stream';
 import test from 'node:test';
 
 import pino, { type Logger } from 'pino';
-
 import type { SandboxSession } from 'sandbox';
 
 import { createSandpool } from '../src/index.js';

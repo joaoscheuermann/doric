@@ -7,13 +7,15 @@
  * in `@/domain/prompt-lifecycle`; this only puts them beside each other, so a
  * row reads the same wherever it is drawn.
  */
+
+import { RotateCcwIcon } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import {
   type LifecycleEvent,
   lifecycleMarker,
 } from '@/domain/prompt-lifecycle';
-import { RotateCcwIcon } from 'lucide-react';
 
 export function PromptMarker({
   event,

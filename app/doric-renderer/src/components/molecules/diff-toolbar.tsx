@@ -1,3 +1,5 @@
+import { FileIcon, TriangleAlertIcon } from 'lucide-react';
+
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import type { DiffControls } from '@/components/molecules/diff-editor';
 import { Button } from '@/components/ui/button';
@@ -10,7 +12,6 @@ import { changeClassName, changeDescription } from '@/domain/change-tree';
 import { baseName, changeLetter, parentPath } from '@/domain/files';
 import type { ProjectChange } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import { FileIcon, TriangleAlertIcon } from 'lucide-react';
 
 /** File identity and opening remain visible at every panel width. */
 export function DiffToolbar({

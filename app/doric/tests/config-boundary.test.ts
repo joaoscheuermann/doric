@@ -3,8 +3,8 @@ import { describe, test } from 'node:test';
 
 import {
   type Configuration,
-  workspaceApi,
   WorkspaceError,
+  workspaceApi,
 } from '../src/workspace/api';
 import { configuration, providerValues } from '../src/workspace/validation';
 

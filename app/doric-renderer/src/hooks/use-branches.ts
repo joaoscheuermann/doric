@@ -1,8 +1,9 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+
 import { pendingReadInterval } from '@/domain/sandbox-reads';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { refreshProject } from '@/queries/project-refresh';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
 /** Branch reads are scoped to the directory and live only while the picker is open. */
 export function useBranches(thread: Thread) {

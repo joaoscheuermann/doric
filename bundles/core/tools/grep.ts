@@ -1,9 +1,8 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_LIMIT = 100;
 const MAX_OUTPUT_BYTES = 50 * 1024;

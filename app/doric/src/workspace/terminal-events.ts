@@ -2,10 +2,10 @@ import type { Manager, Socket } from 'socket.io-client';
 
 import {
   record,
-  terminalFrom,
   type TerminalOutputUpdate,
   type TerminalSnapshot,
   type TerminalUpdate,
+  terminalFrom,
 } from './terminals';
 
 export const terminalUpdateChannel = 'doric:terminals:update';

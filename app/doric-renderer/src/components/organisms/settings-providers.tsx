@@ -1,3 +1,32 @@
+import {
+  type Column,
+  type ColumnFiltersState,
+  columnFilteringFeature,
+  createColumnHelper,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  filterFn_includesString,
+  rowPaginationFeature,
+  rowSortingFeature,
+  type SortingState,
+  sortFn_alphanumeric,
+  tableFeatures,
+  useTable,
+} from '@tanstack/react-table';
+import {
+  AlertCircleIcon,
+  ArrowUpDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+
 import { RowActions } from '@/components/molecules/row-actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -23,41 +52,13 @@ import {
   type Configuration,
   type Credential,
   credentialsOfKind,
-  providerAddress,
   type ProviderKind,
-  providerLabel,
   type ProviderRow,
+  providerAddress,
+  providerLabel,
   providerRows,
   removeProvider,
 } from '@/domain/config';
-import {
-  type Column,
-  columnFilteringFeature,
-  type ColumnFiltersState,
-  createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_includesString,
-  rowPaginationFeature,
-  rowSortingFeature,
-  sortFn_alphanumeric,
-  type SortingState,
-  tableFeatures,
-  useTable,
-} from '@tanstack/react-table';
-import {
-  AlertCircleIcon,
-  ArrowUpDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronsLeftIcon,
-  ChevronsRightIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
 
 /**
  * The behaviour the table opts into. TanStack Table v9 is feature-based: a

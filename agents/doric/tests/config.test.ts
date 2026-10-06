@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { pino } from 'pino';
-
 import { type ProviderKind, providerKinds } from 'llms';
+import { pino } from 'pino';
 
 import {
   createGeneration,
@@ -13,8 +12,8 @@ import {
 import {
   type ConfigInput,
   ConfigInputSchema,
-  defaultConfig,
   type DoricConfig,
+  defaultConfig,
   providerCredentials,
 } from '../src/lib/config/schema.js';
 import {

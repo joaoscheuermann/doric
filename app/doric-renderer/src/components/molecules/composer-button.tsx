@@ -1,10 +1,11 @@
+import { ArrowUpIcon, CheckIcon, PauseIcon, PlayIcon } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ArrowUpIcon, CheckIcon, PauseIcon, PlayIcon } from 'lucide-react';
 
 /** One control sends a draft, resumes queued work, or pauses dispatch. */
 export function ComposerButton({

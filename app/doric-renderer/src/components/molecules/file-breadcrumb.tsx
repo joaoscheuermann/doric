@@ -1,3 +1,5 @@
+import { Fragment } from 'react';
+
 import {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -14,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { collapsedPath } from '@/domain/files';
-import { Fragment } from 'react';
 
 type FileBreadcrumbProps = {
   /** Returns to the tree the file was opened from. */

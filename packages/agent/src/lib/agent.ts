@@ -30,8 +30,8 @@ import {
   nextStructuredOutputRepair,
   parseStructuredOutputTool,
   type StructuredOutputBaseline,
-  structuredOutputInstruction,
   type StructuredOutputTool,
+  structuredOutputInstruction,
 } from './utils/structured-output.js';
 
 /** Creates an embeddable agent runtime from injected provider, tool, and message boundaries. */

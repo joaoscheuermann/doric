@@ -4,9 +4,9 @@ import { describe, test } from 'node:test';
 import {
   lineSource,
   type MarkdownBlock,
-  markdownBlocks,
   type MarkdownLine,
   type MarkdownRun,
+  markdownBlocks,
 } from '../src/domain/markdown';
 
 /** Every line a block holds, whichever shape it is. */

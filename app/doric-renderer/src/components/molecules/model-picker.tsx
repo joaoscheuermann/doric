@@ -1,3 +1,6 @@
+import { ChevronRightIcon, SearchIcon } from 'lucide-react';
+import { useState } from 'react';
+
 import { ChoiceList } from '@/components/molecules/choice-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,8 +11,6 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { type ModelGroup, searchModelGroups } from '@/domain/config';
-import { ChevronRightIcon, SearchIcon } from 'lucide-react';
-import { useState } from 'react';
 
 /** Reasoning stays visible even when the selected model cannot use it. */
 type Reasoning = {

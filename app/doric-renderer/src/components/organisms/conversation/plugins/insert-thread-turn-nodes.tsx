@@ -1,3 +1,13 @@
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import {
+  $getRoot,
+  type LexicalEditor,
+  type LexicalNode,
+  RootNode,
+  SKIP_DOM_SELECTION_TAG,
+} from 'lexical';
+import { type RefObject, useEffect, useRef } from 'react';
+
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -65,16 +75,7 @@ import {
 import { type AuthorDraft, READER_NAME } from '@/domain/conversation-authors';
 import { scrollPlan } from '@/domain/conversation-scroll';
 import { type SyncPlan, syncPlan } from '@/domain/conversation-sync';
-import { type Turn } from '@/domain/projector';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import {
-  $getRoot,
-  type LexicalEditor,
-  type LexicalNode,
-  RootNode,
-  SKIP_DOM_SELECTION_TAG,
-} from 'lexical';
-import { type RefObject, useEffect, useRef } from 'react';
+import type { Turn } from '@/domain/projector';
 
 /** Any of the turn blocks, once it is in the editor. */
 type TurnBlock =

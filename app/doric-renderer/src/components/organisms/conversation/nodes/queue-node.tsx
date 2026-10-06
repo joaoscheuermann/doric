@@ -1,5 +1,3 @@
-import { ThreadQueue } from '@/components/organisms/thread-queue';
-import { QUEUE_BLOCK } from '@/domain/conversation-nodes';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -8,6 +6,9 @@ import {
   type Spread,
 } from 'lexical';
 import type { JSX } from 'react';
+
+import { ThreadQueue } from '@/components/organisms/thread-queue';
+import { QUEUE_BLOCK } from '@/domain/conversation-nodes';
 
 type SerializedQueueNode = Spread<{ threadId: string }, SerializedLexicalNode>;
 

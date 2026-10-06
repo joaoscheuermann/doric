@@ -1,6 +1,5 @@
-import type { Logger } from 'pino';
-
 import type { Bundle } from 'bundle';
+import type { Logger } from 'pino';
 
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';

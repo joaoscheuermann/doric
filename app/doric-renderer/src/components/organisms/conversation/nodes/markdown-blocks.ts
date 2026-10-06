@@ -14,15 +14,7 @@
  * like any other text and a cell reads as the source wrote it. The pipes it was
  * written with travel as `marker` runs, which no cell draws.
  */
-import {
-  lineSource,
-  type MarkdownAlign,
-  type MarkdownBlock,
-  markdownBlocks,
-  type MarkdownCell,
-  type MarkdownLine,
-  type MarkdownRun,
-} from '@/domain/markdown';
+
 import { $createCodeNode } from '@lexical/code';
 import { $createListItemNode, $createListNode } from '@lexical/list';
 import {
@@ -47,6 +39,16 @@ import {
   type LexicalNode,
   type TextFormatType,
 } from 'lexical';
+
+import {
+  lineSource,
+  type MarkdownAlign,
+  type MarkdownBlock,
+  type MarkdownCell,
+  type MarkdownLine,
+  type MarkdownRun,
+  markdownBlocks,
+} from '@/domain/markdown';
 
 /** The format a run wears; `text` wears none, which is what plain text is. */
 const runFormats: Readonly<

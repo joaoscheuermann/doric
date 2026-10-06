@@ -1,3 +1,6 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import {
   type Configuration,
   type ConfigurationInput,
@@ -10,8 +13,6 @@ import {
 } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** How long typing settles before a valid change sends itself to the host. */
 const saveDelayMs = 500;

@@ -1,6 +1,3 @@
-import { USER_TURN_BLOCK } from '@/domain/conversation-nodes';
-import type { DelegatedInput } from '@/domain/delegated';
-import type { UserTurn } from '@/domain/projector';
 import {
   ElementNode,
   type LexicalNode,
@@ -8,6 +5,10 @@ import {
   type SerializedElementNode,
   type Spread,
 } from 'lexical';
+
+import { USER_TURN_BLOCK } from '@/domain/conversation-nodes';
+import type { DelegatedInput } from '@/domain/delegated';
+import type { UserTurn } from '@/domain/projector';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 import { $appendMarkdown } from './markdown-blocks';

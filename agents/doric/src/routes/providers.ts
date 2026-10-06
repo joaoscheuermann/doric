@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import type { Logger } from 'pino';
-
 import { type HttpTransport, providerKinds } from 'llms';
+import type { Logger } from 'pino';
 
 import { readCatalogEntries } from '../lib/config/models.js';
 import { ProviderValuesSchema } from '../lib/config/schema.js';

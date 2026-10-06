@@ -1,3 +1,5 @@
+import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
+
 import { ProviderModelsEditor } from '@/components/molecules/provider-models-editor';
 import { ProviderModelPicker } from '@/components/organisms/provider-model-picker';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -38,10 +40,9 @@ import {
   kindOf,
   type ProviderDraft,
   type ProviderField,
-  providerIssue,
   type ProviderKind,
+  providerIssue,
 } from '@/domain/config';
-import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
 
 /**
  * One field a kind declares, drawn the way the field says it must be: `enum`

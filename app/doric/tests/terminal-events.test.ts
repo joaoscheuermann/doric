@@ -5,8 +5,8 @@ import type { Socket } from 'socket.io-client';
 
 import {
   createTerminalEventService,
-  terminalOutputChannel,
   type TerminalTarget,
+  terminalOutputChannel,
 } from '../src/workspace/terminal-events';
 import type {
   TerminalOutputUpdate,

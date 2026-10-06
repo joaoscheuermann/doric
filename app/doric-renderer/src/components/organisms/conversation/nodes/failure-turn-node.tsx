@@ -6,11 +6,7 @@
  * business, decided in `@/domain/prompt-lifecycle`; this only draws it where the
  * log put it.
  */
-import { FailureNotice } from '@/components/molecules/failure-notice';
-import { WidgetFocus } from '@/components/molecules/widget-focus';
-import { FAILURE_TURN_BLOCK } from '@/domain/conversation-nodes';
-import type { FailureTurn } from '@/domain/projector';
-import type { PromptFailure } from '@/domain/prompt-lifecycle';
+
 import {
   DecoratorNode,
   type LexicalNode,
@@ -18,7 +14,13 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
-import { JSX } from 'react/jsx-runtime';
+import type { JSX } from 'react/jsx-runtime';
+
+import { FailureNotice } from '@/components/molecules/failure-notice';
+import { WidgetFocus } from '@/components/molecules/widget-focus';
+import { FAILURE_TURN_BLOCK } from '@/domain/conversation-nodes';
+import type { FailureTurn } from '@/domain/projector';
+import type { PromptFailure } from '@/domain/prompt-lifecycle';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

@@ -4,9 +4,9 @@ import test from 'node:test';
 import {
   contextLabel,
   costLabel,
+  type UsageTotals,
   usageBreakdown,
   usageLabels,
-  type UsageTotals,
 } from '../src/domain/usage.js';
 
 const total: UsageTotals = {

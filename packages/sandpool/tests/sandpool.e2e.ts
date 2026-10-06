@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import pino from 'pino';
-
 import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 

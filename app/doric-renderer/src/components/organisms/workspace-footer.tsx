@@ -1,3 +1,6 @@
+import { PauseIcon, SettingsIcon } from 'lucide-react';
+import { useStore } from 'zustand/react';
+
 import { ComposerButton } from '@/components/molecules/composer-button';
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
 import { ExecutionPicker } from '@/components/organisms/execution-picker';
@@ -11,8 +14,6 @@ import { useConnectionStatus } from '@/hooks/use-connection-status';
 import type { ProjectFiles } from '@/hooks/use-project-files';
 import { useThreadQueue } from '@/hooks/use-thread-queue';
 import { queueEditStore } from '@/stores/queue-edit';
-import { PauseIcon, SettingsIcon } from 'lucide-react';
-import { useStore } from 'zustand/react';
 
 type WorkspaceFooterProps = {
   readonly thread?: Thread;

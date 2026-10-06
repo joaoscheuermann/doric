@@ -1,5 +1,3 @@
-import { $isQueueNode } from '@/components/organisms/conversation/nodes/queue-node';
-import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection';
 import {
@@ -22,6 +20,9 @@ import {
   SKIP_DOM_SELECTION_TAG,
 } from 'lexical';
 import { type KeyboardEvent, useEffect } from 'react';
+
+import { $isQueueNode } from '@/components/organisms/conversation/nodes/queue-node';
+import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
 
 /** Queue rows are read-only caret stops; only an explicit delete removes an input. */
 export function useQueueCaret(

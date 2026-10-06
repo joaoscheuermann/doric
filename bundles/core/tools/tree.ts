@@ -1,9 +1,8 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import { listSandboxTree, type SandboxTreeNode } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const description =
   'Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents. A relative path resolves against the current working directory.';

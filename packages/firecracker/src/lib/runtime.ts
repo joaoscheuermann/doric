@@ -23,8 +23,8 @@ import { createVmNetwork, type VmNetwork } from './network.js';
 import {
   createGuestConnection,
   exposeUserSsh,
-  generateSshKeys,
   type GuestConnection,
+  generateSshKeys,
   waitForGuest,
   writeKnownHosts,
 } from './ssh.js';

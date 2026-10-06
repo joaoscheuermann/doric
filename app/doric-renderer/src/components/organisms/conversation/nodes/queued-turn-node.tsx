@@ -1,8 +1,3 @@
-import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
-import { PromptAuthor } from '@/components/molecules/prompt-author';
-import { type Chosen, settledOpenness } from '@/domain/collapsible';
-import { QUEUED_TURN_BLOCK } from '@/domain/conversation-nodes';
-import type { QueuedTurn } from '@/domain/projector';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -14,6 +9,12 @@ import {
   type Spread,
 } from 'lexical';
 import type { JSX } from 'react';
+
+import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
+import { PromptAuthor } from '@/components/molecules/prompt-author';
+import { type Chosen, settledOpenness } from '@/domain/collapsible';
+import { QUEUED_TURN_BLOCK } from '@/domain/conversation-nodes';
+import type { QueuedTurn } from '@/domain/projector';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

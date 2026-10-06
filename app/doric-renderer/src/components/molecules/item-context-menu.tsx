@@ -1,3 +1,6 @@
+import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import type { ReactNode } from 'react';
+
 import { ProjectColorMenu } from '@/components/molecules/project-color-menu';
 import {
   ContextMenu,
@@ -8,8 +11,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import type { ProjectColor } from '@/domain/workspace';
-import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
-import type { ReactNode } from 'react';
 
 type ItemContextMenuProps = {
   readonly addLabel: string;

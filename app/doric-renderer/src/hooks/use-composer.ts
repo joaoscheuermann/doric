@@ -1,7 +1,8 @@
-import { composerStore } from '@/stores/composer';
-import type { PromptSignal } from '@/utility/prompt-signal';
 import { useSyncExternalStore } from 'react';
 import { useStore } from 'zustand/react';
+
+import { composerStore } from '@/stores/composer';
+import type { PromptSignal } from '@/utility/prompt-signal';
 
 /**
  * What the conversation's composer offers the footer, and how the two talk.

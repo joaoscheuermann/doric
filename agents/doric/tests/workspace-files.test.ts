@@ -10,8 +10,8 @@ import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { WorkspaceService } from '../src/lib/workspace/types.js';
 import {
   credentialResolver,
-  fakeSandbox,
   type FakeSandboxOptions,
+  fakeSandbox,
   pool,
   workspace,
 } from './helpers/workspace.js';

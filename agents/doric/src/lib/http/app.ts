@@ -9,8 +9,8 @@ import { createTerminalsRouter } from '../../routes/terminals.js';
 import { createThreadsRouter } from '../../routes/threads.js';
 import { createToolsRouter } from '../../routes/tools.js';
 import {
-  createVmsRouter,
   type CreateVmsRouterOptions,
+  createVmsRouter,
 } from '../../routes/vms.js';
 import type { ConfigService } from '../config/service.js';
 import type { CredentialService } from '../credentials/service.js';

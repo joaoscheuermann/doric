@@ -1,3 +1,5 @@
+import { createStore } from 'zustand/vanilla';
+
 import {
   applyUpdate as applyTreeUpdate,
   emptyTree,
@@ -28,14 +30,13 @@ import {
   fail,
   report,
   requestDelete,
+  type Sidebar,
   selectProject as selectProjectSidebar,
   selectThread as selectThreadSidebar,
   settleDelete,
-  type Sidebar,
   startRename,
 } from '@/domain/sidebar';
 import type { Draft, Entity, Project, Thread } from '@/domain/workspace';
-import { createStore } from 'zustand/vanilla';
 
 /**
  * The workspace sidebar's copy of the host's Project tree and its transient

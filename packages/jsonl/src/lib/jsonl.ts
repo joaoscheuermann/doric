@@ -5,7 +5,6 @@ import type { JsonlFile, JsonlValue } from './types/jsonl.js';
 import { parseLine, serializeLine } from './utils/line.js';
 
 export { JsonlParseError } from './classes/parse-error.js';
-
 export type {
   JsonlArray,
   JsonlFile,

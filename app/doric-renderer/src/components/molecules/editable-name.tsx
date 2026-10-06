@@ -1,7 +1,8 @@
-import { limitName, messageFrom, nameError } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
 import { useEffect, useId, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+import { limitName, messageFrom, nameError } from '@/domain/workspace';
+import { cn } from '@/utility/utils';
 
 type EditableNameProps = {
   readonly className?: string;

@@ -1,3 +1,34 @@
+import { ClipboardDOMImportExtension } from '@lexical/clipboard';
+import { CodeNode } from '@lexical/code';
+import { EditorStateExtension, HMRExtension } from '@lexical/extension';
+import { HistoryExtension } from '@lexical/history';
+import {
+  DOMImportExtension,
+  DOMRenderExtension,
+  defineImportRule,
+  domOverride,
+  sel,
+} from '@lexical/html';
+import { LinkNode } from '@lexical/link';
+import { ListItemNode, ListNode } from '@lexical/list';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
+import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
+import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
+import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
+import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import {
+  $getRoot,
+  $isTextNode,
+  configExtension,
+  defineExtension,
+  type EditorThemeClasses,
+  isHTMLElement,
+  ParagraphNode,
+  TextNode,
+} from 'lexical';
+import { useEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
+
 import { ThreadNavRail } from '@/components/molecules/thread-nav-rail';
 import { ActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-turn-node';
@@ -36,36 +67,6 @@ import { useThreadChat } from '@/hooks/use-thread-chat';
 import { useThreadQueue } from '@/hooks/use-thread-queue';
 import { useThreadStop } from '@/hooks/use-thread-stop';
 import type { PromptSignal } from '@/utility/prompt-signal';
-import { ClipboardDOMImportExtension } from '@lexical/clipboard';
-import { CodeNode } from '@lexical/code';
-import { EditorStateExtension, HMRExtension } from '@lexical/extension';
-import { HistoryExtension } from '@lexical/history';
-import {
-  defineImportRule,
-  DOMImportExtension,
-  domOverride,
-  DOMRenderExtension,
-  sel,
-} from '@lexical/html';
-import { LinkNode } from '@lexical/link';
-import { ListItemNode, ListNode } from '@lexical/list';
-import { ContentEditable } from '@lexical/react/LexicalContentEditable';
-import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
-import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
-import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
-import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
-import {
-  $getRoot,
-  $isTextNode,
-  configExtension,
-  defineExtension,
-  type EditorThemeClasses,
-  isHTMLElement,
-  ParagraphNode,
-  TextNode,
-} from 'lexical';
-import { useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
 const exampleTheme: EditorThemeClasses = {

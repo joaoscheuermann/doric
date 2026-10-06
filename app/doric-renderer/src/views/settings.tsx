@@ -1,3 +1,14 @@
+import {
+  AlertCircleIcon,
+  GitBranchIcon,
+  KeyRoundIcon,
+  ServerIcon,
+  WrenchIcon,
+  ZapIcon,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+
 import { SettingsCredentials } from '@/components/organisms/settings-credentials';
 import { SettingsExecution } from '@/components/organisms/settings-execution';
 import { SettingsProviderScreen } from '@/components/organisms/settings-provider';
@@ -17,8 +28,8 @@ import {
   emptyProviderDraft,
   kindOf,
   type ProviderDraft,
-  providerDraftOf,
   type ProviderKind,
+  providerDraftOf,
   providerLabel,
   updatedAtLabel,
 } from '@/domain/config';
@@ -26,16 +37,6 @@ import { filterSettingsSections } from '@/domain/settings-search';
 import { type Config, useConfig } from '@/hooks/use-config';
 import { type Credentials, useCredentials } from '@/hooks/use-credentials';
 import { useProviderKinds } from '@/hooks/use-provider-kinds';
-import {
-  AlertCircleIcon,
-  GitBranchIcon,
-  KeyRoundIcon,
-  ServerIcon,
-  WrenchIcon,
-  ZapIcon,
-} from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
 
 /**
  * The sections this window offers, in the order the nav lists them. Each one

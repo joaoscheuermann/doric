@@ -1,3 +1,11 @@
+import {
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
+  type LucideIcon,
+} from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import {
   Collapsible,
@@ -13,17 +21,10 @@ import {
 import {
   costLabel,
   type ThreadUsage,
+  type UsageTotals,
   usageBreakdown,
   usageLabels,
-  type UsageTotals,
 } from '@/domain/usage';
-import {
-  ArrowDownLeftIcon,
-  ArrowUpRightIcon,
-  ChevronsDownUpIcon,
-  ChevronsUpDownIcon,
-  type LucideIcon,
-} from 'lucide-react';
 
 function Cost({ total }: { readonly total: UsageTotals }) {
   const partial = total.unpricedCalls > 0;

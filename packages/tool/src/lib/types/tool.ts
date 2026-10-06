@@ -1,7 +1,6 @@
-import type { z } from 'zod';
-
 import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
+import type { z } from 'zod';
 
 import type { ToolDefinitionSchema } from '../schemas/definition.js';
 import type { ToolMetadataSchema } from '../schemas/metadata.js';

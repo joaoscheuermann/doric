@@ -1,6 +1,3 @@
-import { SAVE_QUEUE_EDIT_COMMAND } from '@/components/organisms/conversation/commands';
-import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
-import { type PromptSignal } from '@/utility/prompt-signal';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createTextNode,
@@ -9,6 +6,10 @@ import {
   KEY_ESCAPE_COMMAND,
 } from 'lexical';
 import { useCallback, useEffect, useRef } from 'react';
+
+import { SAVE_QUEUE_EDIT_COMMAND } from '@/components/organisms/conversation/commands';
+import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
+import type { PromptSignal } from '@/utility/prompt-signal';
 
 /**
  * Puts the reader's words back into the prompt, when a send was refused — but

@@ -1,9 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { type Dispatch, type SetStateAction, useEffect } from 'react';
+
 import { parseSelection, selectionStorageKey } from '@/domain/selection';
 import type { Thread } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
 import { selectionStore } from '@/stores/selection';
-import { useQueryClient } from '@tanstack/react-query';
-import { type Dispatch, type SetStateAction, useEffect } from 'react';
 
 export type SelectionOptions = {
   readonly isCurrent: () => boolean;

@@ -1,6 +1,5 @@
-import { z } from 'zod';
-
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const description =
   "Report this thread's working directory, or move it to a given path. A relative path resolves against the current directory, the way cd does. A move takes effect only when the path is a directory inside the workspace root, and every other tool resolves its relative paths against this directory. Move here as soon as the work moves into a repository or a subdirectory - after a clone, for instance - so the other tools run in it.";

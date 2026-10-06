@@ -1,3 +1,5 @@
+import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import { FileTree } from '@/components/molecules/file-tree';
 import {
@@ -13,13 +15,12 @@ import {
   SidebarMenuSub,
 } from '@/components/ui/sidebar';
 import {
-  changeDirectoryKey,
   type ChangeRepository,
+  changeDirectoryKey,
   changesTreeView,
 } from '@/domain/change-tree';
 import type { ProjectChange } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {

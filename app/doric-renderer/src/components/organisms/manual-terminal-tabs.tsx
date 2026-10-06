@@ -1,3 +1,5 @@
+import { TerminalIcon, XIcon } from 'lucide-react';
+
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { TerminalView } from '@/components/organisms/terminal-view';
 import { Button } from '@/components/ui/button';
@@ -5,7 +7,6 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import type { Terminal } from '@/domain/terminals';
 import type { WorkspaceTabs } from '@/domain/workspace-tabs';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
-import { TerminalIcon, XIcon } from 'lucide-react';
 
 /** The manual shells opened in one Thread, each retaining its own emulator. */
 export function ManualTerminalTabs({

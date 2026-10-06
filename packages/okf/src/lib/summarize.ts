@@ -1,6 +1,6 @@
 import { stringify } from 'yaml';
 
-import { completeText, type CompletionConfig } from './agent.js';
+import { type CompletionConfig, completeText } from './agent.js';
 import { SUMMARY_MAX_OUTPUT_TOKENS } from './constants.js';
 import type { ModuleInterface } from './types/interface.js';
 

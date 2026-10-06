@@ -1,11 +1,12 @@
+import { useCallback, useEffect, useMemo } from 'react';
+import { useStore } from 'zustand/react';
+
 import type { PendingSend } from '@/domain/pending-turns';
 import { emptyProjection, sandboxWrites, type Turn } from '@/domain/projector';
 import { queueItems } from '@/domain/queue';
 import type { Thread, ThreadEvent } from '@/domain/workspace';
 import { useThreadQueue } from '@/hooks/use-thread-queue';
 import { threadChatsStore } from '@/stores/thread-chats';
-import { useCallback, useEffect, useMemo } from 'react';
-import { useStore } from 'zustand/react';
 
 /** What a conversation surface needs from one Thread's chat. */
 export type ThreadChat = {

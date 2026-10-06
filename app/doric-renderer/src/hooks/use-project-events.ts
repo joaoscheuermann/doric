@@ -1,6 +1,7 @@
+import { useEffect, useRef } from 'react';
+
 import type { TreeUpdate } from '@/domain/project-tree';
 import type { ProjectUpdate } from '@/domain/workspace';
-import { useEffect, useRef } from 'react';
 
 export type ProjectEventsOptions = {
   /** The Project whose live Threads the caller follows. */

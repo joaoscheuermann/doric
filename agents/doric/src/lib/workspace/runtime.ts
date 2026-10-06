@@ -1,6 +1,5 @@
-import type { Logger } from 'pino';
-
 import type { Host } from 'host';
+import type { Logger } from 'pino';
 import type { Sandbox } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
 

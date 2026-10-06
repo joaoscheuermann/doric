@@ -1,3 +1,15 @@
+import {
+  $getNodeByKey,
+  DecoratorNode,
+  type LexicalEditor,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
+} from 'lexical';
+import type { MouseEvent } from 'react';
+import type { JSX } from 'react/jsx-runtime';
+
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
 import { ThinkingItem } from '@/components/molecules/thinking-item';
 import { ToolItem } from '@/components/molecules/tool-item';
@@ -15,17 +27,6 @@ import { ACTIVITY_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { ActivityItem, ActivityTurn } from '@/domain/projector';
 import { activitySummary } from '@/utility/activity-summary';
 import { reasoningText } from '@/utility/reasoning-text';
-import {
-  $getNodeByKey,
-  DecoratorNode,
-  type LexicalEditor,
-  type LexicalNode,
-  type NodeKey,
-  type SerializedLexicalNode,
-  type Spread,
-} from 'lexical';
-import { type MouseEvent } from 'react';
-import { JSX } from 'react/jsx-runtime';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

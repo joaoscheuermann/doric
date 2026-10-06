@@ -1,5 +1,6 @@
-import type { ConnectionStatus } from '@/domain/connection';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+
+import type { ConnectionStatus } from '@/domain/connection';
 
 export type ConnectionState = {
   readonly status: ConnectionStatus;

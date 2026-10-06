@@ -2,15 +2,14 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import express from 'express';
-import pino from 'pino';
-import { Server } from 'socket.io';
-import { io } from 'socket.io-client';
-
 import { loadBundles } from 'bundle';
 import { createDockerClient } from 'docker';
+import express from 'express';
+import pino from 'pino';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
+import { Server } from 'socket.io';
+import { io } from 'socket.io-client';
 
 import { createGeneration } from '../src/lib/config/generation.js';
 import { createConfigService } from '../src/lib/config/service.js';

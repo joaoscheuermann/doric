@@ -1,3 +1,6 @@
+import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
+import { useState } from 'react';
+
 import { DraftName } from '@/components/molecules/draft-name';
 import { EditableName } from '@/components/molecules/editable-name';
 import { ItemContextMenu } from '@/components/molecules/item-context-menu';
@@ -43,8 +46,6 @@ import type {
   Thread,
 } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
-import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
-import { useState } from 'react';
 
 export type SidebarModel = {
   readonly draft?: Draft;

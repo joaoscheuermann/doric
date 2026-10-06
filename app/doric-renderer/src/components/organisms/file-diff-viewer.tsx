@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 import {
   type DiffControls,
   DiffEditor,
@@ -17,7 +19,6 @@ import { messageFrom } from '@/domain/workspace';
 import type { WorkspaceTab } from '@/domain/workspace-tabs';
 import { useFileDiff } from '@/hooks/use-file-diff';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
-import { useRef } from 'react';
 
 /** One comparison on demand; background refresh leaves its editor mounted. */
 export function FileDiffViewer({

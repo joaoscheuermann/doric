@@ -16,11 +16,13 @@
  * owns; what that kind looks like is drawn here, because a text node wears a
  * style and not a class.
  */
-import { $isUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
-import { type MarkdownBlock, markdownBlocks } from '@/domain/markdown';
+
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { $isTextNode, type LexicalNode, TextNode } from 'lexical';
 import { useEffect } from 'react';
+
+import { $isUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
+import { type MarkdownBlock, markdownBlocks } from '@/domain/markdown';
 
 import { $blockOf } from './blocks';
 

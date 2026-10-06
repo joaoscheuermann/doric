@@ -1,4 +1,3 @@
-import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
 import {
   $getRoot,
   ElementNode,
@@ -7,6 +6,8 @@ import {
   type SerializedElementNode,
   type Spread,
 } from 'lexical';
+
+import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

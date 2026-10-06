@@ -25,20 +25,7 @@
  * DOM measurement stays here: whether an up or down would leave its block is a
  * question about visual lines, which only the browser can answer.
  */
-import { $isActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
-import { $isDelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
-import { $isQueueNode } from '@/components/organisms/conversation/nodes/queue-node';
-import { $isThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
-import { $isToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
-import {
-  caretKind,
-  type Direction,
-  enterAction,
-  entryItem,
-  nextItem,
-  nextStop,
-} from '@/domain/caret-navigation';
-import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
+
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createNodeSelection,
@@ -68,6 +55,21 @@ import {
   mergeRegister,
 } from 'lexical';
 import { useEffect } from 'react';
+
+import { $isActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
+import { $isDelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
+import { $isQueueNode } from '@/components/organisms/conversation/nodes/queue-node';
+import { $isThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
+import { $isToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
+import {
+  caretKind,
+  type Direction,
+  enterAction,
+  entryItem,
+  nextItem,
+  nextStop,
+} from '@/domain/caret-navigation';
+import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
 
 import { $atBlockEnd, $atBlockStart, $blockOf } from './blocks';
 

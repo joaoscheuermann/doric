@@ -1,3 +1,35 @@
+import {
+  type Column,
+  type ColumnFiltersState,
+  type ColumnVisibilityState,
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createColumnHelper,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  filterFn_includesString,
+  rowPaginationFeature,
+  rowSortingFeature,
+  type SortingState,
+  sortFn_alphanumeric,
+  tableFeatures,
+  useTable,
+} from '@tanstack/react-table';
+import {
+  AlertCircleIcon,
+  ArrowUpDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
+
 import { RowActions } from '@/components/molecules/row-actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -41,12 +73,12 @@ import {
 } from '@/components/ui/table';
 import {
   type Credential,
-  credentialCreate,
   type CredentialDraft,
+  type CredentialKind,
+  credentialCreate,
   credentialDraftOf,
   credentialFields,
   credentialIssue,
-  type CredentialKind,
   credentialKindDescription,
   credentialKindLabel,
   credentialKinds,
@@ -54,37 +86,6 @@ import {
   emptyCredentialDraft,
 } from '@/domain/config';
 import { useCredentials } from '@/hooks/use-credentials';
-import {
-  type Column,
-  columnFilteringFeature,
-  type ColumnFiltersState,
-  columnVisibilityFeature,
-  type ColumnVisibilityState,
-  createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_includesString,
-  rowPaginationFeature,
-  rowSortingFeature,
-  sortFn_alphanumeric,
-  type SortingState,
-  tableFeatures,
-  useTable,
-} from '@tanstack/react-table';
-import {
-  AlertCircleIcon,
-  ArrowUpDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronsLeftIcon,
-  ChevronsRightIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
 
 /**
  * The fields one kind asks for. The set comes from `credentialFields`, so the

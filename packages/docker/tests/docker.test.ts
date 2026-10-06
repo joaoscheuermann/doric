@@ -8,7 +8,6 @@ import test from 'node:test';
 
 import {
   createDockerClient,
-  discardWorkspace,
   type DockerClient,
   DockerHttpError,
   DockerRequestAbortedError,
@@ -16,6 +15,7 @@ import {
   type DockerResponse,
   type DockerTransport,
   type DockerTransportRequest,
+  discardWorkspace,
 } from '../src/index.js';
 import {
   configureDockerHost,

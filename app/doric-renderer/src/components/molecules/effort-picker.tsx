@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { ChoiceList } from '@/components/molecules/choice-list';
 import { Button } from '@/components/ui/button';
 import {
@@ -5,7 +7,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { useState } from 'react';
 
 type EffortPickerProps = {
   readonly ariaLabel: string;

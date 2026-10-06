@@ -1,5 +1,4 @@
 import type { Logger } from 'pino';
-
 import type { Sandbox } from 'sandbox';
 
 /** The identity the agent's Git commands commit with; never a secret. */

@@ -194,8 +194,7 @@ const ownHandler = <
 ):
   | StateMachineHandler<Context, State, Handlers, Finished, Failed>
   | undefined =>
-  Object.prototype.hasOwnProperty.call(handlers, handler) &&
-  typeof handlers[handler] === 'function'
+  Object.hasOwn(handlers, handler) && typeof handlers[handler] === 'function'
     ? handlers[handler]
     : undefined;
 

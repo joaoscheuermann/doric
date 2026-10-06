@@ -12,13 +12,13 @@ import type {
   UsageMetadata,
 } from '../types/provider.js';
 import { withProviderLogging } from './logging.js';
+import { createOpenRouterModelsLoader } from './openrouter/models.js';
 import {
   createOpenRouterProviderCore,
+  type OpenRouterProviderDeps,
   openRouterCapabilities,
   openRouterMetadata,
-  type OpenRouterProviderDeps,
 } from './openrouter.js';
-import { createOpenRouterModelsLoader } from './openrouter/models.js';
 import { parseStructuredOutput } from './structured.js';
 import { createOpenRouterCatalog } from './unified/catalog.js';
 import { createUnifiedRequestPreparer } from './unified/prepare.js';

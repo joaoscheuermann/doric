@@ -1,3 +1,5 @@
+import { createStore } from 'zustand/vanilla';
+
 import { promptCompletion, watchingCompletion } from '@/domain/notifications';
 import { queueChanged } from '@/domain/queue';
 import {
@@ -19,7 +21,6 @@ import {
   type ThreadEvent,
   type ThreadUpdate,
 } from '@/domain/workspace';
-import { createStore } from 'zustand/vanilla';
 
 import { selectionStore } from './selection';
 

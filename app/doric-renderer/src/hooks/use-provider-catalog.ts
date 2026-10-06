@@ -1,8 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
+import { useId, useRef, useState } from 'react';
+
 import type { CatalogModel, ProviderValuesRef } from '@/domain/config';
 import { messageFrom } from '@/domain/workspace';
 import { queryKeys } from '@/queries/keys';
-import { useQuery } from '@tanstack/react-query';
-import { useId, useRef, useState } from 'react';
 
 /**
  * One provider draft's model catalog, as the host read it: the models the

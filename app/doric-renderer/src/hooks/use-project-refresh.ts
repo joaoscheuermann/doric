@@ -1,3 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+
 import {
   changedSandboxProjects,
   projectActivity,
@@ -7,8 +10,6 @@ import type { Project, Thread } from '@/domain/workspace';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
 import { refreshProject } from '@/queries/project-refresh';
 import { threadChatsStore } from '@/stores/thread-chats';
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
 
 /** One Project refresh policy, independent of the selected conversation's rendering. */
 export function useProjectRefresh({

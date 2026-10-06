@@ -1,11 +1,12 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
+
 import { latestQueue, type ThreadQueue } from '@/domain/queue';
 import { messageFrom } from '@/domain/workspace';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
 import { queryKeys } from '@/queries/keys';
 import { subscribeThreadQueue } from '@/stores/thread-chats';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { toast } from 'sonner';
 
 export const useThreadQueue = (id: string | undefined) => {
   const client = useQueryClient();

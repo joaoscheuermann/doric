@@ -11,9 +11,10 @@ import 'monaco-editor/languages/definitions/typescript/register.js';
 import 'monaco-editor/languages/definitions/xml/register.js';
 import 'monaco-editor/languages/definitions/yaml/register.js';
 
-import { defineCodeViewTheme } from '@/components/molecules/code-view-theme';
 import { editor } from 'monaco-editor/editor/editor.api.js';
 import { useEffect, useRef } from 'react';
+
+import { defineCodeViewTheme } from '@/components/molecules/code-view-theme';
 
 /**
  * The editor worker, and only it. The view is read-only, so it never asks for a

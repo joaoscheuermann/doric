@@ -1,3 +1,5 @@
+import { PlusIcon, TrashIcon } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -12,7 +14,6 @@ import {
   reasoningEfforts,
   removeModel,
 } from '@/domain/config';
-import { PlusIcon, TrashIcon } from 'lucide-react';
 
 /**
  * The models a provider offers, one card per model: its name, and — when the

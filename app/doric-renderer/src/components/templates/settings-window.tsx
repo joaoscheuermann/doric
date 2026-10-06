@@ -1,3 +1,6 @@
+import { ArrowLeftIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
+
 import {
   SettingsBreadcrumb,
   type SettingsCrumb,
@@ -8,8 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { cn } from '@/utility/utils';
-import { ArrowLeftIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
 
 type SettingsWindowProps = {
   readonly activeId: string;

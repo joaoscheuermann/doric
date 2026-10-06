@@ -11,8 +11,7 @@
  * Only the prompt is answered for. Every other block is read-only or a widget,
  * and a line break belongs to none of them.
  */
-import { $isUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
-import { $blockOf } from '@/components/organisms/conversation/plugins/blocks';
+
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $getSelection,
@@ -22,6 +21,9 @@ import {
   INSERT_PARAGRAPH_COMMAND,
 } from 'lexical';
 import { useEffect } from 'react';
+
+import { $isUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
+import { $blockOf } from '@/components/organisms/conversation/plugins/blocks';
 
 /** Whether the caret sits in the prompt. */
 const $inPrompt = (): boolean => {

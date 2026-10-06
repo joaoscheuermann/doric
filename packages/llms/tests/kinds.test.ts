@@ -8,10 +8,10 @@ import {
   ProviderErrorObject,
   type ProviderField,
   type ProviderKind,
-  providerKind,
   type ProviderKindId,
-  providerKinds,
   type ProviderValues,
+  providerKind,
+  providerKinds,
 } from '../src/index.js';
 import {
   type FakeTransport,

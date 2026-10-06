@@ -5,11 +5,11 @@ import { connectionLabel } from '../src/domain/connection';
 import {
   limitName,
   nameError,
-  projectColors,
   projectColorSwatch,
+  projectColors,
   type Thread,
-  threadsForProject,
   threadSubtreeIds,
+  threadsForProject,
   upsert,
   withoutThreadSubtree,
 } from '../src/domain/workspace';

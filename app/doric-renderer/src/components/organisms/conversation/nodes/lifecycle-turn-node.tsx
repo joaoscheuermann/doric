@@ -4,10 +4,7 @@
  * never invents its own wording. The caret skips this informational block,
  * and its Resume button is the only thing in it that acts.
  */
-import { PromptMarker } from '@/components/molecules/prompt-marker';
-import { LIFECYCLE_TURN_BLOCK } from '@/domain/conversation-nodes';
-import type { LifecycleTurn } from '@/domain/projector';
-import type { LifecycleEvent } from '@/domain/prompt-lifecycle';
+
 import {
   DecoratorNode,
   type LexicalNode,
@@ -15,7 +12,12 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
-import { JSX } from 'react/jsx-runtime';
+import type { JSX } from 'react/jsx-runtime';
+
+import { PromptMarker } from '@/components/molecules/prompt-marker';
+import { LIFECYCLE_TURN_BLOCK } from '@/domain/conversation-nodes';
+import type { LifecycleTurn } from '@/domain/projector';
+import type { LifecycleEvent } from '@/domain/prompt-lifecycle';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { jsonl, JsonlParseError } from '../src/index.js';
+import { JsonlParseError, jsonl } from '../src/index.js';
 
 void test('writes one JSON line when append receives a record', async () => {
   await withTempJsonl(async (path) => {

@@ -11,7 +11,6 @@ import type { ConfigParseErrorCode } from './types/error.js';
 import { at, isRecord } from './utils/object.js';
 
 export { ConfigParseError } from './classes/parse-error.js';
-
 export type {
   AgentConfig,
   GithubConfig,
@@ -20,7 +19,6 @@ export type {
   ReasoningEffort,
   TaskConfig,
 } from './types/config.js';
-
 export type { ConfigParseErrorCode, ConfigParseIssue } from './types/error.js';
 
 const MESSAGE_METADATA_PATH = 'message.metadata';

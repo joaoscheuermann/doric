@@ -3,9 +3,8 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import express from 'express';
-import { pino } from 'pino';
-
 import { providerKinds } from 'llms';
+import { pino } from 'pino';
 
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { ConfigCredentialError } from '../src/lib/config/service.js';

@@ -1,11 +1,12 @@
+import type { RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import type { Turn } from '@/domain/projector';
 import {
   activeMarkerIndex,
   type ThreadMarker,
   threadMarkers,
 } from '@/domain/thread-nav';
-import type { RefObject } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /** The scroll area's viewport, the element that actually scrolls. */
 const VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]';

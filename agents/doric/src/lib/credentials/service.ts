@@ -1,10 +1,10 @@
 import {
   type Credential,
   type CredentialCreate,
-  credentialFieldsMessage,
-  credentialFieldsSatisfied,
   type CredentialKind,
   type CredentialUpdate,
+  credentialFieldsMessage,
+  credentialFieldsSatisfied,
 } from './kind.js';
 import { credentialById, credentialByKind } from './resolve.js';
 import {

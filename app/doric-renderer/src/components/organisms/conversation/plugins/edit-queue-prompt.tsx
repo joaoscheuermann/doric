@@ -1,12 +1,3 @@
-import {
-  EDIT_QUEUE_PROMPT_COMMAND,
-  SAVE_QUEUE_EDIT_COMMAND,
-} from '@/components/organisms/conversation/commands';
-import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
-import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
-import { messageFrom } from '@/domain/workspace';
-import { queryKeys } from '@/queries/keys';
-import { queueEditStore } from '@/stores/queue-edit';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,6 +11,16 @@ import {
 } from 'lexical';
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+
+import {
+  EDIT_QUEUE_PROMPT_COMMAND,
+  SAVE_QUEUE_EDIT_COMMAND,
+} from '@/components/organisms/conversation/commands';
+import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
+import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
+import { messageFrom } from '@/domain/workspace';
+import { queryKeys } from '@/queries/keys';
+import { queueEditStore } from '@/stores/queue-edit';
 
 /** Reuses the composer without letting saving, streaming or switching Threads consume its draft. */
 export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {

@@ -1,8 +1,3 @@
-import { ToolItem } from '@/components/molecules/tool-item';
-import { WidgetFocus } from '@/components/molecules/widget-focus';
-import { blockToggled, type Chosen, toolOpenness } from '@/domain/collapsible';
-import { TOOL_TURN_BLOCK } from '@/domain/conversation-nodes';
-import type { ToolTurn } from '@/domain/projector';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -12,7 +7,13 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
-import { JSX } from 'react/jsx-runtime';
+import type { JSX } from 'react/jsx-runtime';
+
+import { ToolItem } from '@/components/molecules/tool-item';
+import { WidgetFocus } from '@/components/molecules/widget-focus';
+import { blockToggled, type Chosen, toolOpenness } from '@/domain/collapsible';
+import { TOOL_TURN_BLOCK } from '@/domain/conversation-nodes';
+import type { ToolTurn } from '@/domain/projector';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

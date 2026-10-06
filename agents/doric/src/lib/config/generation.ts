@@ -1,5 +1,3 @@
-import type { Logger } from 'pino';
-
 import type { Bundle, Skill } from 'bundle';
 import {
   createFetchTransport,
@@ -7,6 +5,7 @@ import {
   type LlmProvider,
   type SecretSource,
 } from 'llms';
+import type { Logger } from 'pino';
 import type { ToolFactory } from 'tool';
 
 import type { CredentialService } from '../credentials/service.js';

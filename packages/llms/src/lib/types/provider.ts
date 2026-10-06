@@ -1,11 +1,10 @@
-import type { z } from 'zod';
-
 import type {
   JsonObject,
   JsonValue,
   ToolCallRequest,
   ToolDefinition,
 } from 'tool';
+import type { z } from 'zod';
 
 export type { JsonArray, JsonObject, JsonPrimitive, JsonValue } from 'tool';
 

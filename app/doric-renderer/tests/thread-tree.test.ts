@@ -5,8 +5,8 @@ import {
   canExpand,
   childThreads,
   isExpanded,
-  threadLevel,
   type ThreadNode,
+  threadLevel,
   threadPath,
 } from '../src/domain/thread-tree';
 import type { Thread } from '../src/domain/workspace';

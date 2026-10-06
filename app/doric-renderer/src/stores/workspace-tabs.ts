@@ -1,3 +1,5 @@
+import { createStore } from 'zustand/vanilla';
+
 import {
   closeManual,
   closeTab,
@@ -10,7 +12,6 @@ import {
   type WorkspaceTab,
   type WorkspaceTabs,
 } from '@/domain/workspace-tabs';
-import { createStore } from 'zustand/vanilla';
 
 type TabsState = {
   readonly threads: Readonly<Record<string, WorkspaceTabs>>;

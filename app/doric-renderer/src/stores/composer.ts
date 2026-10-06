@@ -1,5 +1,6 @@
-import { createPromptSignal, type PromptSignal } from '@/utility/prompt-signal';
 import { createStore } from 'zustand/vanilla';
+
+import { createPromptSignal, type PromptSignal } from '@/utility/prompt-signal';
 
 /**
  * What the composer offers the footer, and how the two talk. The prompt's

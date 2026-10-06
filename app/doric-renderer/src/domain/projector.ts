@@ -1,12 +1,12 @@
 import type { ThreadEvent } from '@/domain/workspace';
 
-import { type DelegatedInput } from './delegated';
+import type { DelegatedInput } from './delegated';
 import { type PromptExecution, readExecution } from './projector-execution';
 import { type PromptInput, readInput } from './projector-input';
 import {
   type LifecycleEvent,
-  pauseReason,
   type PromptFailure,
+  pauseReason,
   promptFailure,
   statesFailure,
 } from './prompt-lifecycle';

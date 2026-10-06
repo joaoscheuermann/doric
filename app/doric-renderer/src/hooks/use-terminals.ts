@@ -1,9 +1,10 @@
-import type { Terminal } from '@/domain/terminals';
-import { messageFrom, type Project, upsert } from '@/domain/workspace';
-import { workspaceTabsStore } from '@/stores/workspace-tabs';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
+
+import type { Terminal } from '@/domain/terminals';
+import { messageFrom, type Project, upsert } from '@/domain/workspace';
+import { workspaceTabsStore } from '@/stores/workspace-tabs';
 
 const key = (projectId: string) => ['terminals', projectId] as const;
 
