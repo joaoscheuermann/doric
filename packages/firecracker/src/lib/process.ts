@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import {
   captureProcessOutput,
   processTerminationScript,
+  quote,
   type SandboxExecInput,
   type SandboxExecResult,
   type SandboxProcess,
@@ -166,5 +167,3 @@ export const startGuestProcess = async (
     terminate,
   };
 };
-
-const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;

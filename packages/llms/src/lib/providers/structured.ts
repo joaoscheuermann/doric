@@ -1,3 +1,4 @@
+import { asJsonObject } from 'tool';
 import { z } from 'zod';
 
 import { ProviderErrorObject } from '../classes/provider-error.js';
@@ -233,33 +234,3 @@ const issueDiagnostic = (issue: z.core.$ZodIssue): string => {
 
   return path === '' ? issue.message : `${path}: ${issue.message}`;
 };
-
-const isJsonValue = (value: unknown): value is JsonValue => {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return Number.isFinite(value) || typeof value !== 'number';
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.values(value).every(isJsonValue)
-  );
-};
-
-const asJsonObject = (value: unknown): JsonObject | undefined =>
-  value !== null &&
-  typeof value === 'object' &&
-  !Array.isArray(value) &&
-  isJsonValue(value)
-    ? (value as JsonObject)
-    : undefined;

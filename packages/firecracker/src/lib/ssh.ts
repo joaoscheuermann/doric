@@ -3,13 +3,14 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 
-import type {
-  NormalizedSandboxNetworkPolicy,
-  SandboxExecInput,
-  SandboxExecResult,
-  SandboxProcess,
-  SandboxProcessInput,
-  SandboxSshAccess,
+import {
+  type NormalizedSandboxNetworkPolicy,
+  quote,
+  type SandboxExecInput,
+  type SandboxExecResult,
+  type SandboxProcess,
+  type SandboxProcessInput,
+  type SandboxSshAccess,
 } from 'sandbox';
 
 import { run, text } from './command.js';
@@ -431,5 +432,3 @@ const mergeEnv = (
 
 const root = (user: string): boolean =>
   user === '' || user === 'root' || user === '0' || user === '0:0';
-
-const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;

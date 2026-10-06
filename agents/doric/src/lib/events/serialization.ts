@@ -1,3 +1,5 @@
+import { redactSecrets } from '../credentials/redact.js';
+
 const marker = (name: string, detail?: string): string =>
   detail === undefined ? `[${name}]` : `[${name}: ${detail}]`;
 
@@ -19,11 +21,7 @@ export const eventJson = (
 ): unknown => {
   const seen = new WeakMap<object, string>();
 
-  const redact = (text: string): string =>
-    credentials.reduce(
-      (result, credential) => result.split(credential).join('[REDACTED]'),
-      text,
-    );
+  const redact = (text: string): string => redactSecrets(text, credentials);
 
   const visit = (current: unknown, path: string): unknown => {
     if (current === null || typeof current === 'boolean') {

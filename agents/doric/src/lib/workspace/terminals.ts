@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { TerminalInput, TerminalResult } from 'host';
 import type { Sandbox, SandboxProcess } from 'sandbox';
 
+import { redactSecrets } from '../credentials/redact.js';
 import type { WorkspacePublisher } from './types.js';
 
 export interface Terminal {
@@ -57,9 +58,7 @@ export const createTerminalRegistry = (
   redactions: () => readonly string[] = () => [],
 ) => {
   const redact = (text: string) =>
-    redactions()
-      .filter(Boolean)
-      .reduce((value, secret) => value.replaceAll(secret, '[REDACTED]'), text);
+    redactSecrets(text, redactions().filter(Boolean));
   const sessions = new Map<string, Session>();
   const remove = (session: Session) => {
     if (!sessions.delete(session.terminal.id)) return;

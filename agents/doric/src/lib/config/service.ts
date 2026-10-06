@@ -4,6 +4,7 @@ import type { Bundle } from 'bundle';
 
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
+import { createMutationQueue } from '../workspace/runtime.js';
 import { createGeneration, type Generation } from './generation.js';
 import { readModelProperties } from './models.js';
 import type { ConfigInput, DoricConfig } from './schema.js';
@@ -72,12 +73,14 @@ export const createConfigService = async ({
     bundles,
     logger,
   });
-  let tail = Promise.resolve();
+  const mutations = createMutationQueue();
 
   return {
     current: () => active,
-    replace(config) {
-      const replacement = tail.then(async () => {
+    // One fixed key serializes every replacement; the queue releases in a
+    // finally, so a rejected replacement does not block later requests.
+    replace: (config) =>
+      mutations('replace', async () => {
         requireCredentials(config, credentials);
         const filled = await models(config);
         try {
@@ -98,14 +101,7 @@ export const createConfigService = async ({
         const snapshot = await store.replace(filled);
         active = { ...candidate, snapshot };
         return snapshot;
-      });
-      // A rejected replacement must not block later requests.
-      tail = replacement.then(
-        () => undefined,
-        () => undefined,
-      );
-      return replacement;
-    },
+      }),
   };
 };
 

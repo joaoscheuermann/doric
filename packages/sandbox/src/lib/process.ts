@@ -64,4 +64,6 @@ if [ -r ${quote(pidFile)} ]; then
   rm -f ${quote(pidFile)}
 fi`;
 
-const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+/** Single-quotes a value so it survives shell word splitting and expansion. */
+export const quote = (value: string): string =>
+  `'${value.replaceAll("'", "'\\''")}'`;
