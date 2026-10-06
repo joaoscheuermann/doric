@@ -25,6 +25,14 @@ void test('preserves reasoning replay and tool IO while redacting credentials', 
   });
 });
 
+void test('ignores an empty credential instead of redacting between every character', () => {
+  const event = { text: 'private token-value reasoning' };
+
+  assert.deepEqual(eventJson(event, ['token-value', '']), {
+    text: 'private [REDACTED] reasoning',
+  });
+});
+
 void test('omits undefined object properties while marking array entries', () => {
   assert.deepEqual(eventJson({ absent: undefined, values: [undefined] }, []), {
     values: ['[Undefined]'],

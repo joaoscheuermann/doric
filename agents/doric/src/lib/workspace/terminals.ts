@@ -57,8 +57,7 @@ export const createTerminalRegistry = (
   publisher: WorkspacePublisher,
   redactions: () => readonly string[] = () => [],
 ) => {
-  const redact = (text: string) =>
-    redactSecrets(text, redactions().filter(Boolean));
+  const redact = (text: string) => redactSecrets(text, redactions());
   const sessions = new Map<string, Session>();
   const remove = (session: Session) => {
     if (!sessions.delete(session.terminal.id)) return;
