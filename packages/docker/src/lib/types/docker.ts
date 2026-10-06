@@ -97,6 +97,16 @@ export interface ContainerInspect {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+export interface DockerStats {
+  /**
+   * Busy share of the container's own CPU quota, 0..100, so a container using
+   * every core it was given reads 100 rather than a fraction of the host.
+   */
+  readonly cpuPercent?: number;
+  readonly memoryUsedBytes?: number;
+  readonly memoryLimitBytes?: number;
+}
+
 export type RemoveContainerOptions = DockerRequestOptions & {
   readonly force?: boolean;
   readonly volumes?: boolean;
@@ -172,6 +182,16 @@ export interface DockerClient extends SandboxProvider {
     container: ContainerRef | string,
     options?: DockerRequestOptions,
   ): Promise<ContainerInspect>;
+
+  /**
+   * Reads one point-in-time resource sample from the daemon. `cpuCount` is the
+   * container's CPU quota in cores, used to express `cpuPercent` against the
+   * container rather than the host.
+   */
+  stats(
+    container: ContainerRef | string,
+    input?: { readonly cpuCount?: number } & DockerRequestOptions,
+  ): Promise<DockerStats>;
 
   removeContainer(
     container: ContainerRef | string,

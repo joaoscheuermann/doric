@@ -337,6 +337,13 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,
+    readHostResources: () => ({
+      at: '',
+      cpuCount: 0,
+      memoryTotalBytes: 0,
+      memoryUsedBytes: 0,
+      uptimeSeconds: 0,
+    }),
     vms: { list: () => [], find: () => undefined, ssh: async () => undefined },
   });
   const server = createServer(app);

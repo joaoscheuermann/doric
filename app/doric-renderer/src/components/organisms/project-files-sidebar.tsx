@@ -11,6 +11,7 @@ import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { TreeSkeleton } from '@/components/molecules/tree-skeleton';
+import { ResourceMonitor } from '@/components/organisms/resource-monitor';
 import {
   Empty,
   EmptyDescription,
@@ -145,10 +146,11 @@ export function ProjectFilesSidebar({
         </SidebarGroup>
       </SidebarContent>
       <footer
-        aria-hidden="true"
         data-slot="project-files-footer"
-        className="chrome-bar shrink-0 border-t bg-sidebar"
-      />
+        className="flex chrome-bar shrink-0 items-center gap-1 border-t bg-sidebar px-2 text-xs"
+      >
+        <ResourceMonitor projectId={project?.id} />
+      </footer>
     </Sidebar>
   );
 }

@@ -1,5 +1,6 @@
 import { workspaceUrl } from './config';
 import type { QueuedPrompt, ThreadQueue } from './queue';
+import type { ContainerResources, HostResources } from './resources';
 import type { ThreadUsage } from './usage';
 
 const pageLimit = 100;
@@ -147,6 +148,10 @@ export type ProjectDiffResult =
   | { readonly status: 'ready'; readonly diff: ProjectDiff }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
+
+export type ProjectResourcesResult =
+  | { readonly status: 'ready'; readonly container: ContainerResources }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number };
 
 /**
  * The Git summary of one Thread's working directory. `repo: false` says the
@@ -1307,6 +1312,35 @@ const fileDiffResultFrom = (answer: ProjectAnswer): ProjectFileDiffResult => {
   };
 };
 
+const containerResourcesFrom = (value: unknown): ContainerResources => {
+  if (
+    !isRecord(value) ||
+    (value.status !== 'ready' && value.status !== 'unavailable') ||
+    typeof value.at !== 'string' ||
+    (value.cpuPercent !== undefined && typeof value.cpuPercent !== 'number') ||
+    (value.cpuCount !== undefined && typeof value.cpuCount !== 'number') ||
+    (value.memoryUsedBytes !== undefined &&
+      typeof value.memoryUsedBytes !== 'number') ||
+    (value.memoryLimitBytes !== undefined &&
+      typeof value.memoryLimitBytes !== 'number')
+  )
+    return invalidResponse();
+  return value as ContainerResources;
+};
+
+const resourcesResultFrom = (answer: ProjectAnswer): ProjectResourcesResult => {
+  if (answer.kind === 'ready') {
+    return { status: 'ready', container: containerResourcesFrom(answer.body) };
+  }
+  if (answer.kind === 'lease') {
+    return answer.state === 'pending'
+      ? { status: 'pending', retryAfterSeconds: answer.retryAfterSeconds }
+      : { status: answer.state };
+  }
+  // The resources route answers no path outcome; an unexpected one is no lease.
+  return { status: 'unavailable' };
+};
+
 /** A workspace-relative path as a query string; the root needs none. */
 const pathQuery = (value?: string): string =>
   value === undefined || value === ''
@@ -1386,6 +1420,18 @@ export const workspaceApi = {
           method: 'PUT',
           body: body(configuration),
         }),
+      ),
+  },
+  /**
+   * The machine the host runs on, and one selected Project's sandbox. The host
+   * reading holds no lease; the Project reading shares the lease states every
+   * other Project subresource reports.
+   */
+  resources: {
+    host: (): Promise<HostResources> => request<HostResources>('/resources'),
+    project: async (projectId: string): Promise<ProjectResourcesResult> =>
+      resourcesResultFrom(
+        await answerAt(`/projects/${id(projectId)}/resources`),
       ),
   },
   /**

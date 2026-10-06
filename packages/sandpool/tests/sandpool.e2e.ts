@@ -59,6 +59,7 @@ const session = (id: string, disposed: string[]): SandboxSession => ({
   getFile: async () => new Uint8Array(),
   diff: async () => '',
   ssh: async () => undefined,
+  stats: async () => undefined,
   dispose: async () => {
     disposed.push(id);
   },

@@ -22,6 +22,7 @@ import { registerStatusSocket } from './lib/events/status.js';
 import { registerHttpRoutes } from './lib/http/app.js';
 import { createVmRegistry } from './lib/vms.js';
 import { createProjectStore } from './lib/workspace/projects.js';
+import { readHostResources } from './lib/workspace/resources.js';
 import { createWorkspaceService } from './lib/workspace/service.js';
 import { createThreadStore } from './lib/workspace/threads.js';
 
@@ -207,6 +208,7 @@ async function main() {
     credentials,
     logger,
     service,
+    readHostResources,
     vms: {
       list: () => vms.list(),
       find: (id) => vms.find(id),

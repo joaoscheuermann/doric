@@ -230,9 +230,19 @@ without sending file contents or patches to the renderer.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-panel's header, in place of a title. The panel's footer is empty and shares the
-conversation footer's height. Working-directory, branch and changes controls
-appear only in the conversation footer. The panel has no manual refresh button.
+panel's header, in place of a title. The panel's footer carries the hardware
+monitor and shares the conversation footer's height. The monitor reports the
+selected Project's sandbox — the container's own CPU against the cores it was
+given and its memory against its cgroup limit — beside the machine Doric runs
+on, which the host process reads from its own kernel. It polls every three
+seconds and has no manual refresh button. A reading a failed poll could not
+replace stays on screen as the last one taken, so the surface never blanks or
+flickers, and no failure it sees becomes a toast. Only the value that crossed a
+threshold wears the theme's warning tone: memory at 85 percent of its limit, or
+CPU sustained at 90 percent. The sandbox half answers the lease states every
+Project subresource answers — still being acquired, unavailable in this provider,
+or unknown — while the machine half depends on no lease. Working-directory,
+branch and changes controls appear only in the conversation footer.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
@@ -724,7 +734,12 @@ explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
 effective egress requires IP-literal DNS. Doric provisions Docker sandboxes
 with one CPU, 2048 MiB of memory, and a 4096 MiB writable layer; Firecracker
-keeps its 512 MiB memory limit. Both use the image named by
+keeps its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
+Docker from the daemon's own container statistics, Firecracker from its guest's
+`/proc` — each normalized to the sandbox's own cores and memory limit, so an
+observer sees what a sandbox is consuming without acquiring, restarting or
+interrupting anything, and a provider that cannot measure leaves the reading
+unknown instead of failing one. Both use the image named by
 `DORIC_SANDBOX_IMAGE`, which defaults to the
 multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
 selected Git skills can reach public remotes. That default ships Git; the
@@ -795,7 +810,11 @@ the IDs and selected provider names of runtimes successfully provisioned by
 this Doric process and not yet successfully disposed. `GET /vms/:id/ssh`
 returns the selected provider, owning live Project ID, and complete
 `SandboxSshAccess` only while that VM is leased to an active Project;
-idle, releasing, and disposed VMs never expose access. The registry wraps the
+idle, releasing, and disposed VMs never expose access. `GET /resources` reports
+the machine the host process itself runs on, and `GET /projects/:id/resources`
+reports the Project sandbox's own CPU and memory. The Project read answers the
+same lease states as its other subresources and never acquires one, so observing
+a sandbox cannot bring a Project up. The registry wraps the
 provider at the composition boundary and the workspace service owns the
 process-local lease association. `POST /projects` accepts only a display name,
 not a prompt, and includes a stable Project SSH subresource link while

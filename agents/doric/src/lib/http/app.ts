@@ -5,6 +5,7 @@ import { createConfigRouter } from '../../routes/config.js';
 import { createCredentialsRouter } from '../../routes/credentials.js';
 import { createProjectsRouter } from '../../routes/projects.js';
 import { createProvidersRouter } from '../../routes/providers.js';
+import { createResourcesRouter } from '../../routes/resources.js';
 import { createTerminalsRouter } from '../../routes/terminals.js';
 import { createThreadsRouter } from '../../routes/threads.js';
 import { createToolsRouter } from '../../routes/tools.js';
@@ -14,6 +15,7 @@ import {
 } from '../../routes/vms.js';
 import type { ConfigService } from '../config/service.js';
 import type { CredentialService } from '../credentials/service.js';
+import type { HostResources } from '../workspace/resources.js';
 import type { WorkspaceService } from '../workspace/types.js';
 import { handleHttpError } from './errors.js';
 
@@ -26,6 +28,8 @@ export const registerHttpRoutes = (
     readonly logger: Logger;
     readonly service: WorkspaceService;
     readonly vms: CreateVmsRouterOptions;
+    /** The machine reading the host exposes; injected so routes stay testable. */
+    readonly readHostResources: () => HostResources;
   },
 ): void => {
   app.use(express.json());
@@ -33,6 +37,7 @@ export const registerHttpRoutes = (
   app.use('/vms', createVmsRouter(dependencies.vms));
   app.use('/config', createConfigRouter(dependencies.config));
   app.use('/credentials', createCredentialsRouter(dependencies.credentials));
+  app.use('/resources', createResourcesRouter(dependencies.readHostResources));
   app.use(
     '/providers',
     createProvidersRouter({

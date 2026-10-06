@@ -24,6 +24,7 @@
     "src/domain/notifications.ts",
     "src/domain/pending-turns.ts",
     "src/domain/prompt-lifecycle.ts",
+    "src/domain/resources.ts",
     "src/domain/thread-git.ts",
     "src/domain/usage.ts",
     "src/domain/workspace.ts",

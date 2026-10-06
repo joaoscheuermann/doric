@@ -11,6 +11,7 @@ import type {
 } from './config';
 import type { ConnectionApi } from './connection';
 import type { QueuedPrompt, ThreadQueue } from './queue';
+import type { HostResources, ProjectResourcesResult } from './resources';
 import type { TerminalsApi } from './terminals';
 import type { ThreadGit } from './thread-git';
 import type { ThreadUsage } from './usage';
@@ -221,6 +222,15 @@ export type WorkspaceApi = {
   readonly providers: {
     kinds(): Promise<readonly ProviderKind[]>;
     models(values: ProviderValuesRef): Promise<readonly CatalogModel[]>;
+  };
+  /**
+   * Resource reads for the monitor: the host the Doric process runs on, and the
+   * selected Project's sandbox container. Both are polled snapshots, not streams;
+   * a Project without a live lease answers with its lease state instead.
+   */
+  readonly resources: {
+    host(): Promise<HostResources>;
+    project(projectId: string): Promise<ProjectResourcesResult>;
   };
   readonly projects: {
     list(): Promise<readonly Project[]>;

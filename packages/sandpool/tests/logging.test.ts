@@ -297,6 +297,7 @@ const session = (
     getFile: unsupported,
     diff: async () => '',
     ssh: async () => undefined,
+    stats: unsupported,
     dispose,
   };
 };
