@@ -17,6 +17,11 @@ export function TreeSkeleton({
 }: {
   readonly changes?: boolean;
 }) {
+  // The Changes view nests its paths under a repository row, so every row sits
+  // one level deeper than the same row in Files.
+  const levels = changes
+    ? rows.map((row) => ({ ...row, depth: row.depth + 1 }))
+    : rows;
   return (
     <div
       role="status"
@@ -26,15 +31,17 @@ export function TreeSkeleton({
     >
       <div aria-hidden className="py-1">
         {changes && (
-          <div className="flex h-8 items-center gap-2 px-2">
-            <Skeleton className="size-3" />
-            <Skeleton className="size-4" />
+          <div
+            className="relative flex h-7 items-center gap-2 pr-8"
+            style={{ paddingLeft: indentation(0) }}
+          >
+            <Skeleton className="size-3 shrink-0" />
+            <Skeleton className="size-4 shrink-0" />
             <Skeleton className="h-3 w-28" />
-            <Skeleton className="ml-auto h-3 w-8" />
-            <Skeleton className="h-3 w-8" />
+            <Skeleton className="absolute right-1 h-3 w-12" />
           </div>
         )}
-        {rows.map((row, index) => (
+        {levels.map((row, index) => (
           <div
             key={index}
             className="relative flex h-7 items-center gap-2 pr-8"

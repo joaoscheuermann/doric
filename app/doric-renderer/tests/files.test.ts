@@ -4,11 +4,7 @@ import { describe, test } from 'node:test';
 import {
   baseName,
   changeLetter,
-  classifyDiff,
   collapsedPath,
-  type DiffFile,
-  diffReadState,
-  diffStat,
   emptyDirectoryNotice,
   fileLanguage,
   fileReadState,
@@ -23,50 +19,9 @@ import {
   truncationNotice,
 } from '../src/domain/files';
 import type {
-  ProjectDiff,
   ProjectFileContent,
   ProjectTreeNode,
 } from '../src/domain/workspace';
-
-const kinds = (file: DiffFile | undefined): readonly string[] =>
-  (file?.lines ?? []).map(({ kind }) => kind);
-
-const texts = (file: DiffFile | undefined): readonly string[] =>
-  (file?.lines ?? []).map(({ text }) => text);
-
-/** A diff that patches two files, adds one, and renames another. */
-const multiFileDiff = [
-  'diff --git a/src/app.ts b/src/app.ts',
-  'index 1111111..2222222 100644',
-  '--- a/src/app.ts',
-  '+++ b/src/app.ts',
-  '@@ -1,4 +1,5 @@',
-  " import { a } from 'a';",
-  '-const one = 1;',
-  '+const one = 2;',
-  '+const two = 2;',
-  ' export default one;',
-  'diff --git a/docs/new.md b/docs/new.md',
-  'new file mode 100644',
-  'index 0000000..3333333',
-  '--- /dev/null',
-  '+++ b/docs/new.md',
-  '@@ -0,0 +1,2 @@',
-  '+# New',
-  '+Body',
-  'diff --git a/src/old-name.ts b/src/new-name.ts',
-  'similarity index 88%',
-  'rename from src/old-name.ts',
-  'rename to src/new-name.ts',
-  'index 4444444..5555555 100644',
-  '--- a/src/old-name.ts',
-  '+++ b/src/new-name.ts',
-  '@@ -6,3 +6,3 @@',
-  ' const final = 3;',
-  '-const last = 4;',
-  '+const last = 5;',
-  '\\ No newline at end of file',
-].join('\n');
 
 describe('sandbox paths', () => {
   test('joins and parents a path at the workspace root', () => {
@@ -128,126 +83,6 @@ describe('sandbox paths', () => {
         path: 'src/domain/hooks/files.ts',
       },
     ]);
-  });
-});
-
-describe('diff classification', () => {
-  test('splits a multi-file diff on its headers, in order', () => {
-    const files = classifyDiff(multiFileDiff);
-
-    assert.deepEqual(
-      files.map(({ path }) => path),
-      ['src/app.ts', 'docs/new.md', 'src/new-name.ts'],
-    );
-  });
-
-  test('reads hunk lines as adds, removes and context without their marker', () => {
-    const [file] = classifyDiff(multiFileDiff);
-
-    assert.deepEqual(kinds(file), [
-      'meta',
-      'meta',
-      'meta',
-      'meta',
-      'context',
-      'remove',
-      'add',
-      'add',
-      'context',
-    ]);
-    assert.deepEqual(texts(file)?.slice(4), [
-      "import { a } from 'a';",
-      'const one = 1;',
-      'const one = 2;',
-      'const two = 2;',
-      'export default one;',
-    ]);
-  });
-
-  test('keeps a hunk header, a mode line and the no-newline marker as meta', () => {
-    const files = classifyDiff(multiFileDiff);
-    const newFile = files[1];
-    const renamed = files[2];
-
-    assert.equal(newFile?.lines[0]?.text, 'new file mode 100644');
-    assert.ok(newFile?.lines.some(({ text }) => text === '@@ -0,0 +1,2 @@'));
-    assert.deepEqual(renamed?.lines.at(-1), {
-      kind: 'meta',
-      text: '\\ No newline at end of file',
-    });
-    assert.deepEqual(kinds(renamed), [
-      'meta',
-      'meta',
-      'meta',
-      'meta',
-      'meta',
-      'meta',
-      'meta',
-      'context',
-      'remove',
-      'add',
-      'meta',
-    ]);
-  });
-
-  test('names a rename by the path the file view can open', () => {
-    const renamed = classifyDiff(multiFileDiff)[2];
-
-    assert.equal(renamed?.path, 'src/new-name.ts');
-  });
-
-  test('reads a quoted header, as git writes a path it cannot print plainly', () => {
-    const files = classifyDiff(
-      [
-        'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"',
-        'index 6666666..7777777 100644',
-        '@@ -1 +1 @@',
-        '-old',
-        '+new',
-      ].join('\n'),
-    );
-
-    assert.deepEqual(
-      files.map(({ path }) => path),
-      ['caf\\303\\251.txt'],
-    );
-    assert.deepEqual(kinds(files[0]), ['meta', 'meta', 'remove', 'add']);
-  });
-
-  test('drops the text that belongs to no file', () => {
-    const files = classifyDiff(
-      [
-        'warning: something',
-        'diff --git a/one b/one',
-        '@@ -1 +1 @@',
-        '-a',
-        '+b',
-      ].join('\n'),
-    );
-
-    assert.equal(files.length, 1);
-    assert.deepEqual(kinds(files[0]), ['meta', 'remove', 'add']);
-  });
-
-  test('reads a diff that carries no trailing newline', () => {
-    const files = classifyDiff('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b');
-
-    assert.deepEqual(kinds(files[0]), ['meta', 'remove', 'add']);
-  });
-
-  test('reports no file for an empty diff', () => {
-    assert.deepEqual(classifyDiff(''), []);
-  });
-
-  test('counts added and removed lines across every file', () => {
-    const files = classifyDiff(multiFileDiff);
-
-    assert.deepEqual(diffStat(files), { added: 5, removed: 2 });
-    assert.deepEqual(
-      diffStat(classifyDiff('diff --git a/one b/one\n@@ -1 +1 @@\n-a\n+b')),
-      { added: 1, removed: 1 },
-    );
-    assert.deepEqual(diffStat([]), { added: 0, removed: 0 });
   });
 });
 
@@ -421,12 +256,10 @@ const fileContent: ProjectFileContent = {
   binary: false,
 };
 
-const diff: ProjectDiff = { repositories: [] };
-
 const lease = { status: 'pending', retryAfterSeconds: 5 } as const;
 
 describe('what a sandbox read shows', () => {
-  test('shows the tree, the file and the diff each read answered with', () => {
+  test('shows the tree and the file each read answered with', () => {
     assert.deepEqual(
       treeReadState({ status: 'ready', path: '', entries: [treeNode] }, false),
       {
@@ -438,17 +271,10 @@ describe('what a sandbox read shows', () => {
       fileReadState({ status: 'ready', file: fileContent }, false, false),
       { status: 'ready', value: fileContent },
     );
-    assert.deepEqual(diffReadState({ status: 'ready', diff }, false, false), {
-      status: 'ready',
-      value: diff,
-    });
   });
 
   test('explains a lease instead of failing, and reuses its retry hint', () => {
-    for (const state of [
-      treeReadState(lease, false),
-      diffReadState(lease, false, false),
-    ]) {
+    for (const state of [treeReadState(lease, false)]) {
       assert.equal(state.status, 'pending');
       assert.equal(
         state.status === 'pending' ? state.retryAfterSeconds : undefined,
@@ -473,10 +299,6 @@ describe('what a sandbox read shows', () => {
         value: [treeNode],
       },
     );
-    assert.deepEqual(diffReadState({ status: 'ready', diff }, false, true), {
-      status: 'ready',
-      value: diff,
-    });
   });
 
   test('keeps waiting on a tree whose read failed without answering', () => {
@@ -486,22 +308,15 @@ describe('what a sandbox read shows', () => {
     assert.deepEqual(treeReadState(lease, true), { status: 'loading' });
   });
 
-  test('keeps cached file and diff content visible during background reads', () => {
+  test('keeps cached file content visible during background reads', () => {
     assert.deepEqual(
       fileReadState({ status: 'ready', file: fileContent }, true, false),
       { status: 'ready', value: fileContent },
     );
-    assert.deepEqual(diffReadState({ status: 'ready', diff }, true, false), {
-      status: 'ready',
-      value: diff,
-    });
   });
 
   test('shows loading placeholders only while awaiting first content', () => {
     assert.deepEqual(fileReadState(undefined, true, false), {
-      status: 'loading',
-    });
-    assert.deepEqual(diffReadState(undefined, true, false), {
       status: 'loading',
     });
   });
@@ -509,14 +324,6 @@ describe('what a sandbox read shows', () => {
   test('has no file content when the first read failed', () => {
     assert.deepEqual(fileReadState(undefined, false, true), { status: 'idle' });
     assert.deepEqual(fileReadState(undefined, false, false), {
-      status: 'idle',
-    });
-  });
-
-  test('leaves the changes unshown when a failed diff read answered nothing', () => {
-    assert.deepEqual(diffReadState(undefined, false, true), { status: 'idle' });
-    assert.deepEqual(diffReadState(lease, false, true), { status: 'idle' });
-    assert.deepEqual(diffReadState(undefined, false, false), {
       status: 'idle',
     });
   });

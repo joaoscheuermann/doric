@@ -215,8 +215,10 @@ and descendant-change counts on folders. Ancestor folders inherit their descenda
 Git color; mixed statuses use modified yellow, while conflicts take priority.
 A Changes tab shows changed files as
 a directory tree grouped by repository, with individual folder expansion and no
-search or collapse-all toolbar. Its tab shows total added and removed lines;
-each repository header shows that repository's totals in green and red.
+search or collapse-all toolbar. Its tab shows total added and removed lines, and
+each repository is the same tree row Files draws — a row that expands like a
+directory, carrying its branch icon and its totals in green and red as that
+row's own badge, with its changed paths nested under it as the same file rows.
 Counts compare HEAD with working content (or empty with new files), include
 untracked files and omit binary line counts. Git numstat supplies these totals
 without sending file contents or patches to the renderer.
@@ -282,7 +284,8 @@ delays. Read failures appear as deduplicated Sonner toasts with a retry action
 and clear after success, without inserting error cards into the tree or editor.
 The panel header carries no updating label. Initial reads use skeleton rows
 matching the tree's indentation, icons and row heights; the Changes skeleton
-also reserves its repository header and line totals.
+reserves a repository row of the same geometry, with its totals, and nests the
+rows it shows one level deeper beneath it.
 Background refresh preserves cached content and the reader's position instead
 of replacing it with a loading placeholder; directory expansion is retained per
 Project and working directory, together with the change tree's collapsed folders

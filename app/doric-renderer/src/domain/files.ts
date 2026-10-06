@@ -1,7 +1,5 @@
 import type {
   ProjectChangeStatus,
-  ProjectDiff,
-  ProjectDiffResult,
   ProjectFileContent,
   ProjectFileResult,
   ProjectLeaseState,
@@ -98,100 +96,6 @@ export const toggleExpanded = (
   if (next.has(path)) next.delete(path);
   else next.add(path);
   return next;
-};
-
-export type DiffLineKind = 'add' | 'remove' | 'context' | 'meta';
-
-export type DiffLine = {
-  readonly kind: DiffLineKind;
-  /** The line without its `+`/`-`/space marker, which `kind` already carries. */
-  readonly text: string;
-};
-
-export type DiffFile = {
-  /** The `b/` post-image, because that is the path the file view can open. */
-  readonly path: string;
-  readonly lines: readonly DiffLine[];
-};
-
-const HEADER_PREFIX = 'diff --git ';
-
-const NO_NEWLINE = '\\ No newline at end of file';
-
-/** The post-image path a `diff --git` header names, or nothing when it is one. */
-const headerPath = (line: string): string | undefined => {
-  if (!line.startsWith(HEADER_PREFIX)) return undefined;
-  const rest = line.slice(HEADER_PREFIX.length);
-  // A path the host quoted, as git does for anything it cannot print plainly.
-  const quoted = /^"(.*)" "(.*)"$/.exec(rest);
-  if (quoted !== null) {
-    const post = quoted[2] ?? '';
-    return post.startsWith('b/') ? post.slice(2) : post;
-  }
-  const plain = /^a\/(.*) b\/(.*)$/.exec(rest);
-  return plain?.[2];
-};
-
-const lineKind = (line: string, inHunk: boolean): DiffLineKind => {
-  if (line.startsWith('@@') || line === NO_NEWLINE || !inHunk) return 'meta';
-  const marker = line.charAt(0);
-  if (marker === '+') return 'add';
-  if (marker === '-') return 'remove';
-  if (marker === ' ' || line === '') return 'context';
-  return 'meta';
-};
-
-/**
- * Splits a unified diff into the files it patches. The `diff --git` line that
- * starts a file is what splits them, so it is not a line of any file, and the
- * path a file is known by is its `b/` post-image, which is what the file view
- * can open. A hunk header, a `\ No newline` marker and anything else that is
- * not a line of a hunk stay `meta` lines; text before the first header belongs
- * to no file and is dropped.
- */
-export const classifyDiff = (diff: string): readonly DiffFile[] => {
-  const text = diff.endsWith('\n') ? diff.slice(0, -1) : diff;
-  const files: DiffFile[] = [];
-  let path: string | undefined;
-  let lines: DiffLine[] = [];
-  let inHunk = false;
-
-  const close = (): void => {
-    if (path !== undefined) files.push({ path, lines });
-  };
-
-  for (const line of text.split('\n')) {
-    const header = headerPath(line);
-    if (header !== undefined || line.startsWith(HEADER_PREFIX)) {
-      close();
-      path = header;
-      lines = [];
-      inHunk = false;
-      continue;
-    }
-    if (path === undefined) continue;
-    if (line.startsWith('@@')) inHunk = true;
-    const kind = lineKind(line, inHunk);
-    lines.push({ kind, text: kind === 'meta' ? line : line.slice(1) });
-  }
-  close();
-
-  return files;
-};
-
-export type DiffStat = { readonly added: number; readonly removed: number };
-
-/** The added and removed line counts across every file a diff patches. */
-export const diffStat = (files: readonly DiffFile[]): DiffStat => {
-  let added = 0;
-  let removed = 0;
-  for (const file of files) {
-    for (const line of file.lines) {
-      if (line.kind === 'add') added += 1;
-      else if (line.kind === 'remove') removed += 1;
-    }
-  }
-  return { added, removed };
 };
 
 /**
@@ -332,20 +236,4 @@ export const fileReadState = (
   if (loading) return { status: 'loading' };
   if (failed || result === undefined) return { status: 'idle' };
   return result;
-};
-
-/**
- * What the changes view shows. A reread that fails keeps a diff already on
- * screen — worth more than a placeholder — and falls back to `idle` otherwise.
- */
-export const diffReadState = (
-  result: ProjectDiffResult | undefined,
-  loading: boolean,
-  failed: boolean,
-): ReadState<ProjectDiff> => {
-  if (result?.status === 'ready')
-    return { status: 'ready', value: result.diff };
-  if (loading) return { status: 'loading' };
-  if (result !== undefined && !failed) return result;
-  return { status: 'idle' };
 };

@@ -1,9 +1,16 @@
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import { FileTree } from '@/components/molecules/file-tree';
 import {
-  SidebarMenu,
+  indentation,
+  rowInteraction,
+  treeClassName,
+} from '@/components/molecules/tree-guides';
+import { Badge } from '@/components/ui/badge';
+import {
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
 } from '@/components/ui/sidebar';
 import {
   changeDirectoryKey,
@@ -25,7 +32,13 @@ type ChangesTreeProps = {
   readonly onOpen: (repository: string, change: ProjectChange) => void;
 };
 
-/** One repository and its changed paths, using the same rows as Files. */
+/**
+ * One repository and its changed paths, drawn as the same tree row Files uses:
+ * the repository is a row at depth 0 that expands like a directory, and its
+ * changed paths are the same `FileTree` rows nested under it. The branch icon
+ * and the repository's line totals are that row's own content, not a second
+ * header shape.
+ */
 export function ChangesTree({
   repository,
   collapsed,
@@ -36,43 +49,61 @@ export function ChangesTree({
   const { entries, key, open, expanded, decorations, changes } =
     changesTreeView(repository, '', collapsed);
   if (entries.length === 0) return null;
+  const label = repository.path || 'workspace';
   return (
-    <section
-      className="flex min-w-0 flex-col"
-      aria-label={`Changes in ${repository.path || 'workspace'}`}
-    >
-      <SidebarMenu className="gap-0">
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            size="sm"
-            className="h-8 rounded-none px-2"
+    <SidebarMenuItem role="presentation" className="w-full">
+      <div className="group/tree-row relative w-full">
+        <SidebarMenuButton
+          asChild
+          size="sm"
+          className={cn('h-7 w-full rounded-none pr-8', rowInteraction(false))}
+          style={{ paddingLeft: indentation(0) }}
+        >
+          <div
+            role="treeitem"
+            tabIndex={0}
             aria-expanded={open}
-            onClick={() => onToggle(key)}
+            aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
             title={repository.path || 'Workspace repository'}
+            onClick={() => onToggle(key)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onToggle(key);
+              } else if (event.key === 'ArrowRight' && !open) {
+                event.preventDefault();
+                onToggle(key);
+              } else if (event.key === 'ArrowLeft' && open) {
+                event.preventDefault();
+                onToggle(key);
+              }
+            }}
           >
             <ChevronRightIcon
-              className={cn('transition-transform', open && 'rotate-90')}
+              aria-hidden
+              className={cn(
+                'transition-transform duration-[50ms] ease-out',
+                open ? 'rotate-90' : 'rotate-0',
+              )}
             />
             <GitBranchIcon />
-            <span className="truncate">{repository.path || 'workspace'}</span>
-            <span className="ml-auto">
-              <ChangeCounts
-                added={repository.added}
-                removed={repository.removed}
-              />
-            </span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+            <span className="truncate font-light">{label}</span>
+          </div>
+        </SidebarMenuButton>
+        <SidebarMenuBadge>
+          <Badge variant="ghost" className="px-1" aria-hidden>
+            <ChangeCounts
+              added={repository.added}
+              removed={repository.removed}
+            />
+          </Badge>
+        </SidebarMenuBadge>
+      </div>
       {open && (
-        <SidebarMenu
-          role="tree"
-          aria-label={`Changed files in ${repository.path || 'workspace'}`}
-          className="gap-0 pb-2"
-        >
+        <SidebarMenuSub role="group" className={treeClassName}>
           <FileTree
             entries={entries}
-            depth={0}
+            depth={1}
             expanded={expanded}
             decorations={decorations}
             selectedPath={selectedPath}
@@ -85,8 +116,8 @@ export function ChangesTree({
               },
             }}
           />
-        </SidebarMenu>
+        </SidebarMenuSub>
       )}
-    </section>
+    </SidebarMenuItem>
   );
 }

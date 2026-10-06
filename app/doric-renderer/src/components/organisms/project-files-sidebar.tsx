@@ -305,22 +305,20 @@ function ChangesView({
   }
 
   return (
-    <>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex min-w-0 flex-col">
-          {changed.map((repository) => (
-            <ChangesTree
-              key={repository.path}
-              repository={repository}
-              collapsed={files.changesCollapsed}
-              selectedPath={selectedPath}
-              onToggle={actions.toggleChangesDirectory}
-              onOpen={onOpenChange}
-            />
-          ))}
-        </div>
-      </ScrollArea>
-    </>
+    <ScrollArea className="min-h-0 flex-1">
+      <SidebarMenu role="tree" className="w-full gap-0 py-1">
+        {changed.map((repository) => (
+          <ChangesTree
+            key={repository.path}
+            repository={repository}
+            collapsed={files.changesCollapsed}
+            selectedPath={selectedPath}
+            onToggle={actions.toggleChangesDirectory}
+            onOpen={onOpenChange}
+          />
+        ))}
+      </SidebarMenu>
+    </ScrollArea>
   );
 }
 
