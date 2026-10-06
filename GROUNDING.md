@@ -60,7 +60,17 @@ reported input count and the capacity advertised by that call's model catalog;
 an absent capacity or measurement stays unknown. Unified response-start events
 carry the optional catalog capacity. Costs sum reported account charges across
 the selected Thread and all existing descendants, including unopened Threads.
-Clicking the total shows each Thread's own charges and token counts. Missing
+Clicking the total shows the current Thread's own charges and a collapsed
+Sub Threads subtotal for all descendants, each with calls and compact input/output
+token counts. Expanding Sub Threads shows a subtly shaded, non-scrolling list of
+descendant titles, their own charges and the same calls/input/output metrics.
+Long titles truncate with an ellipsis. The list's background meets the popover's
+edges without container margin or padding; each row aligns its content with the
+summary above.
+The toggle uses ChevronsUpDown to open and ChevronsDownUp to close.
+The popover follows the conversation trail's bordered surface and shaded footer,
+with the total below a divider. Partial costs carry an asterisk with an explanation;
+cached/reasoning details and accounting descriptions stay off this compact surface. Missing
 costs make the aggregate explicitly partial; zero-cost calls remain free, and
 cached/reasoning tokens are details, never added again to input/output totals.
 The host's `GET /threads/:id/usage` reads this aggregate through semantic Electron

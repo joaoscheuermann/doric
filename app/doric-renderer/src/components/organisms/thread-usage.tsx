@@ -1,11 +1,9 @@
+import { CostBreakdown } from '@/components/molecules/cost-breakdown';
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
@@ -58,73 +56,23 @@ export function ThreadUsage({ thread }: { readonly thread?: Thread }) {
         <PopoverContent
           align="end"
           side="top"
-          className="w-96 max-w-[calc(100vw-2rem)]"
+          aria-label="Conversation cost"
+          className="w-60 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 pt-2.5 text-xs font-normal text-foreground ring-0"
         >
-          <PopoverHeader>
-            <PopoverTitle>Conversation cost</PopoverTitle>
-            <PopoverDescription>
-              OpenRouter unified · this thread and all descendants
-            </PopoverDescription>
-          </PopoverHeader>
           {query.isError && (
-            <p role="status">
-              Could not refresh usage. Displayed values may be outdated.
+            <p
+              role="status"
+              className="px-3 pb-2 text-xs text-muted-foreground"
+            >
+              Could not refresh costs.
             </p>
           )}
-          {total === undefined || total.calls === 0 ? (
-            <p>No reported usage yet.</p>
+          {usage === undefined || usage.total.calls === 0 ? (
+            <p className="px-3 pb-2.5 text-xs text-muted-foreground">
+              No reported usage yet.
+            </p>
           ) : (
-            <>
-              <div className="flex justify-between gap-2">
-                <span>Total</span>
-                <strong>{costLabel(total)}</strong>
-              </div>
-              <div className="max-h-64 overflow-y-auto">
-                <ul className="flex flex-col gap-2">
-                  {usage?.threads
-                    .filter((entry) => entry.calls > 0)
-                    .map((entry) => (
-                      <li
-                        key={entry.threadId}
-                        className="flex flex-col gap-0.5"
-                      >
-                        <div className="flex justify-between gap-3">
-                          <span className="truncate" title={entry.name}>
-                            {entry.name}
-                            {entry.threadId === thread.id
-                              ? ' (this thread)'
-                              : ''}
-                          </span>
-                          <span className="shrink-0">
-                            {costLabel(entry)}
-                            {entry.unpricedCalls > 0 ? ' *' : ''}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {entry.calls} calls ·{' '}
-                          {entry.inputTokens.toLocaleString('en')} input ·{' '}
-                          {entry.outputTokens.toLocaleString('en')} output
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {entry.cachedInputTokens.toLocaleString('en')} cached
-                          · {entry.reasoningTokens.toLocaleString('en')}{' '}
-                          reasoning tokens
-                        </p>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Sum of reported account charges in USD. Updates after each call;
-                rewinding keeps previous charges.
-              </p>
-              {partial && (
-                <p role="status" className="text-xs text-muted-foreground">
-                  * Partial: {total.unpricedCalls} calls have no reported cost
-                  yet, including calls still running or interrupted.
-                </p>
-              )}
-            </>
+            <CostBreakdown usage={usage} threadId={thread.id} />
           )}
         </PopoverContent>
       </Popover>

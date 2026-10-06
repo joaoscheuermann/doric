@@ -28,6 +28,43 @@ const tokens = new Intl.NumberFormat('en', {
   notation: 'compact',
   maximumFractionDigits: 1,
 });
+
+/** The selected Thread's own charges, and every descendant's own charges once. */
+export const usageBreakdown = (usage: ThreadUsage, threadId: string) => {
+  const empty: UsageTotals = {
+    calls: 0,
+    unpricedCalls: 0,
+    cost: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
+  };
+  const current = usage.threads.find((entry) => entry.threadId === threadId);
+  const subthreads = usage.threads.filter(
+    (entry) => entry.threadId !== threadId,
+  );
+  const subtotal = subthreads.reduce<UsageTotals>(
+    (sum, entry) => ({
+      calls: sum.calls + entry.calls,
+      unpricedCalls: sum.unpricedCalls + entry.unpricedCalls,
+      cost: sum.cost + entry.cost,
+      inputTokens: sum.inputTokens + entry.inputTokens,
+      outputTokens: sum.outputTokens + entry.outputTokens,
+      cachedInputTokens: sum.cachedInputTokens + entry.cachedInputTokens,
+      reasoningTokens: sum.reasoningTokens + entry.reasoningTokens,
+    }),
+    empty,
+  );
+  return { current: current ?? empty, subthreads, subtotal };
+};
+
+export const usageLabels = (total: UsageTotals) => ({
+  calls: `${total.calls.toLocaleString('en')} ${total.calls === 1 ? 'call' : 'calls'}`,
+  input: tokens.format(total.inputTokens),
+  output: tokens.format(total.outputTokens),
+});
+
 export const contextLabel = (context: ThreadUsage['context']): string => {
   const input = context?.inputTokens;
   const window = context?.contextWindow;
