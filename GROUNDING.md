@@ -191,6 +191,11 @@ Hovering a handle makes it 17 pixels wide regardless of type, while its two
 nearest neighbors step up in width and brightness. The cascade changes only the
 handles and ends when the pointer leaves the handle. The visible block's
 primary-color highlight remains independent.
+Conversation scrolling rests on the prompt input: the surface opens with the caret
+in the prompt and the view on the input, the trail's prompt-input handle places the
+scroll on it, and a reader who is there follows the input as the transcript grows
+above it. A reader who scrolled up owns their scroll, and only a trail handle moves
+it.
 The host lists and switches branches through semantic Thread REST and IPC operations.
 Switching never forces checkout, stashes, creates a branch or fetches remotes; occupied
 branches, conflicts and in-progress Git operations are refused. Active prompts or

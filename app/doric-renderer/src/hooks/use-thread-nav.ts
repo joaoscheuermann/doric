@@ -1,6 +1,8 @@
 import type { RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { PROMPT_INPUT_ATTRIBUTE } from '@/domain/conversation-nodes';
+import { restOnBottom } from '@/domain/conversation-scroll';
 import type { Turn } from '@/domain/projector';
 import {
   activeMarkerIndex,
@@ -17,8 +19,8 @@ const VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]';
 const PROMPT_BLOCK_SELECTOR = '[data-prompt-id]';
 const QUEUED_BLOCK_SELECTOR = '[data-queued-prompt-id]';
 
-/** The attribute the prompt input's block carries — `UserPromptNode.createDOM` writes it. */
-const INPUT_BLOCK_SELECTOR = '[data-prompt-input]';
+/** The attribute the prompt input's block carries — `PROMPT_INPUT_ATTRIBUTE`. */
+const INPUT_BLOCK_SELECTOR = `[${PROMPT_INPUT_ATTRIBUTE}]`;
 
 /** What the rail draws: its handles, and the one the scroll speaks for. */
 export type ThreadNav = {
@@ -67,6 +69,16 @@ const blockTop = (viewport: HTMLElement, block: HTMLElement): number =>
   block.getBoundingClientRect().top -
   viewport.getBoundingClientRect().top +
   viewport.scrollTop;
+
+/** Where a block's bottom edge sits in the scroll content. */
+const blockBottom = (viewport: HTMLElement, block: HTMLElement): number =>
+  block.getBoundingClientRect().bottom -
+  viewport.getBoundingClientRect().top +
+  viewport.scrollTop;
+
+/** How far the viewport scrolls, whatever its content is at the moment. */
+const maxScroll = (viewport: HTMLElement): number =>
+  Math.max(0, viewport.scrollHeight - viewport.clientHeight);
 
 /**
  * The thread navigation rail's data: destinations become handles, stacked
@@ -154,10 +166,7 @@ export function useThreadNav({
     (viewport: HTMLElement, block: HTMLElement) => {
       const top = Math.max(
         0,
-        Math.min(
-          blockTop(viewport, block),
-          viewport.scrollHeight - viewport.clientHeight,
-        ),
+        Math.min(blockTop(viewport, block), maxScroll(viewport)),
       );
       if (Math.abs(viewport.scrollTop - top) <= 1) return;
       navigating.current = true;
@@ -179,13 +188,28 @@ export function useThreadNav({
     [jump, scrollRoot],
   );
 
+  /**
+   * Rests the view on the prompt input — the rail's last handle.
+   *
+   * The landing is placed rather than animated: the input's place moves down
+   * whenever the transcript grows above it, so a smooth movement would chase a
+   * destination that moved under it and stop short of the input. A placed
+   * landing leaves the reader on the tail, where the surface's next sync pass
+   * follows the input for them.
+   */
   const jumpToInput = useCallback(() => {
     const viewport = resolveViewport(scrollRoot.current);
     const block =
       viewport?.querySelector<HTMLElement>(INPUT_BLOCK_SELECTOR) ?? null;
     if (viewport === null || block === null) return;
-    jump(viewport, block);
-  }, [jump, scrollRoot]);
+    const top = restOnBottom(
+      blockBottom(viewport, block),
+      viewport.clientHeight,
+      maxScroll(viewport),
+    );
+    if (Math.abs(viewport.scrollTop - top) <= 1) return;
+    viewport.scrollTop = top;
+  }, [scrollRoot]);
 
   return {
     markers,

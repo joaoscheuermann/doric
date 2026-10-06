@@ -1,108 +1,63 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { scrollPlan } from '../src/domain/conversation-scroll';
+import {
+  restOnBottom,
+  restsOnTail,
+  scrollPlan,
+} from '../src/domain/conversation-scroll';
 
 describe('conversation scroll', () => {
   test('opens the surface on the input when the first sync runs', () => {
     assert.equal(
-      scrollPlan({
-        opening: true,
-        filling: false,
-        atBottom: true,
-        navigating: false,
-      }),
+      scrollPlan({ opening: true, navigating: false, atTail: false }),
       'open',
     );
     assert.equal(
-      scrollPlan({
-        opening: true,
-        filling: false,
-        atBottom: false,
-        navigating: false,
-      }),
+      scrollPlan({ opening: true, navigating: false, atTail: true }),
       'open',
     );
   });
 
-  test('opens the surface on the input even while a fill pass could pin the tail', () => {
+  test('follows the input for a reader resting on the tail as the transcript grows', () => {
     assert.equal(
-      scrollPlan({
-        opening: true,
-        filling: true,
-        atBottom: true,
-        navigating: false,
-      }),
-      'open',
+      scrollPlan({ opening: false, navigating: false, atTail: true }),
+      'follow',
     );
   });
 
-  test('keeps the tail in view while the transcript fills in for a reader at the bottom', () => {
+  test('holds a reader who left the tail exactly where the pass found them', () => {
     assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: true,
-        atBottom: true,
-        navigating: false,
-      }),
-      'pin',
-    );
-  });
-
-  test('leaves the reader where they are while the transcript fills in once they scroll up', () => {
-    assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: true,
-        atBottom: false,
-        navigating: false,
-      }),
-      'hold',
-    );
-  });
-
-  test('leaves a reader at the bottom where they are once the conversation is loaded', () => {
-    assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: false,
-        atBottom: true,
-        navigating: false,
-      }),
-      'hold',
-    );
-  });
-
-  test('leaves a reader who scrolled up where they are once the conversation is loaded', () => {
-    assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: false,
-        atBottom: false,
-        navigating: false,
-      }),
+      scrollPlan({ opening: false, navigating: false, atTail: false }),
       'hold',
     );
   });
 
   test('lets a trail jump reach its destination while turns continue streaming', () => {
     assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: false,
-        atBottom: false,
-        navigating: true,
-      }),
+      scrollPlan({ opening: false, navigating: true, atTail: false }),
       'navigate',
     );
     assert.equal(
-      scrollPlan({
-        opening: false,
-        filling: true,
-        atBottom: true,
-        navigating: true,
-      }),
+      scrollPlan({ opening: false, navigating: true, atTail: true }),
       'navigate',
     );
+  });
+
+  test('rests a block on the bottom edge of the viewport', () => {
+    assert.equal(restOnBottom(1200, 600, 900), 600);
+    assert.equal(restOnBottom(900, 600, 900), 300);
+  });
+
+  test('stops a block the surface cannot bring that low at the surface own end', () => {
+    assert.equal(restOnBottom(1500, 600, 900), 900);
+    assert.equal(restOnBottom(200, 600, 900), 0);
+  });
+
+  test('counts a reader at the input or below it as resting on the tail', () => {
+    assert.equal(restsOnTail(600, 600), true);
+    assert.equal(restsOnTail(900, 600), true);
+    assert.equal(restsOnTail(598, 600), true);
+    assert.equal(restsOnTail(500, 600), false);
   });
 });

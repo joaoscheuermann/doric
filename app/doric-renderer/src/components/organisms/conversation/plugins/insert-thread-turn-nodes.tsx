@@ -73,7 +73,12 @@ import {
   type UserTurnNode,
 } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { type AuthorDraft, READER_NAME } from '@/domain/conversation-authors';
-import { scrollPlan } from '@/domain/conversation-scroll';
+import { PROMPT_INPUT_ATTRIBUTE } from '@/domain/conversation-nodes';
+import {
+  restOnBottom,
+  restsOnTail,
+  scrollPlan,
+} from '@/domain/conversation-scroll';
 import { type SyncPlan, syncPlan } from '@/domain/conversation-sync';
 import type { Turn } from '@/domain/projector';
 
@@ -293,28 +298,67 @@ type ScrollReading = {
   readonly element: HTMLElement;
   /** The reader's place in it before the pass runs. */
   readonly scrollTop: number;
-  /** Whether that place is the conversation's tail. */
-  readonly atBottom: boolean;
+  /** How tall the surface's content was before the pass runs. */
+  readonly scrollHeight: number;
+  /** Where the prompt input rests in it — the conversation's tail. */
+  readonly tailTop: number;
+  /** Whether the reader's place is the tail. */
+  readonly atTail: boolean;
+};
+
+/** How far an element can scroll, whatever its content is at the moment. */
+const maxScroll = (element: HTMLElement): number =>
+  Math.max(0, element.scrollHeight - element.clientHeight);
+
+/** A block's bottom edge in the scroll content's coordinates. */
+const blockBottom = (element: HTMLElement, block: HTMLElement): number =>
+  block.getBoundingClientRect().bottom -
+  element.getBoundingClientRect().top +
+  element.scrollTop;
+
+/** The prompt input's block, the conversation's tail. */
+const inputBlock = (root: HTMLElement | null): HTMLElement | null =>
+  root?.querySelector<HTMLElement>(`[${PROMPT_INPUT_ATTRIBUTE}]`) ?? null;
+
+/**
+ * Where the conversation's tail rests in an element: the prompt input's bottom
+ * edge on the viewport's, and the surface's own bottom while no input is in the
+ * editor yet.
+ */
+const tailTop = (element: HTMLElement, root: HTMLElement | null): number => {
+  const input = inputBlock(root);
+  const furthest = maxScroll(element);
+  return input === null
+    ? furthest
+    : restOnBottom(blockBottom(element, input), element.clientHeight, furthest);
 };
 
 /**
- * The conversation's scroll and the reader's place in it: the first ancestor
- * of the editor that actually scrolls, and "at the bottom" leaves room for the
- * rounding a layout can leave behind. `null` when the surface has nothing to
- * scroll.
+ * Whether the browser scrolls this element, whatever it currently holds: the
+ * surface opens with a transcript that is still empty, so the element the
+ * conversation scrolls in is the one its own style makes scrollable rather than
+ * the one that happens to overflow as the opening pass runs.
+ */
+const scrolls = (element: HTMLElement): boolean =>
+  /auto|scroll|overlay/.test(getComputedStyle(element).overflowY);
+
+/**
+ * The conversation's scroll, the reader's place in it, and where the prompt
+ * input rests there: the nearest ancestor the browser scrolls. `null` when the
+ * surface has nothing to scroll in.
  */
 const readScroll = (editor: LexicalEditor): ScrollReading | null => {
   const root = editor.getRootElement();
   let element: HTMLElement | null = root?.parentElement ?? null;
-  while (element !== null && element.scrollHeight <= element.clientHeight) {
-    element = element.parentElement;
-  }
+  while (element !== null && !scrolls(element)) element = element.parentElement;
   if (element === null) return null;
+  const rest = tailTop(element, root);
   return {
     element,
     scrollTop: element.scrollTop,
-    atBottom:
-      element.scrollHeight - element.scrollTop - element.clientHeight <= 2,
+    scrollHeight: element.scrollHeight,
+    tailTop: rest,
+    atTail: restsOnTail(element.scrollTop, rest),
   };
 };
 
@@ -325,9 +369,9 @@ const readScroll = (editor: LexicalEditor): ScrollReading | null => {
  * sits, one it adds is placed where it belongs in the transcript, and one it
  * drops is removed. The first sync also opens the surface, leaving the caret in
  * the prompt and the view on the input. That is the only pass that touches
- * focus or the caret: every later one settles the reader's scroll back to the
- * place it found them — `domain/conversation-scroll` decides which pass may
- * pin the tail instead.
+ * focus or the caret: every later one keeps a reader who rests on the tail on
+ * the input, and settles every other reader's scroll back to the place it found
+ * them — `domain/conversation-scroll` decides which pass follows the tail.
  *
  * The first sync of a long transcript does not create every block at once. The
  * plan `domain/conversation-sync` makes bounds how many one pass takes — the
@@ -366,9 +410,8 @@ export function InsertThreadTurnNodes({
       const scroll = readScroll(editor);
       const decision = scrollPlan({
         opening,
-        filling: filling.current,
-        atBottom: scroll?.atBottom ?? true,
         navigating: navigating.current,
+        atTail: scroll?.atTail ?? true,
       });
       let plan: SyncPlan = { steps: [], removals: [], pending: false };
       const element = editor.getRootElement();
@@ -469,14 +512,21 @@ export function InsertThreadTurnNodes({
           // The commit that lands after this update re-applies the caret's
           // selection and the browser scrolls it into view — back to the input
           // the reader just left — and a settled prompt can re-append the tail.
-          // The reader's scroll is owned here instead, after all of that: a
-          // fill pass pins the tail the blocks grow above, and every other pass
-          // returns the reader to the place it found them. 'open' leaves the
-          // scroll to the opener, which scrolls to the input.
+          // The reader's scroll is owned here instead, after all of that: a pass
+          // follows the input for a reader resting on the tail, and every other
+          // pass returns the reader to the place it found them. 'open' leaves
+          // the scroll to the opener, which rests the view on the input.
           onUpdate: () => {
             if (scroll === null) return;
-            if (decision === 'pin')
-              scroll.element.scrollTop = scroll.element.scrollHeight;
+            // A reader resting on the tail follows the input: content that
+            // lands above it moves it down by exactly that much, so the view
+            // keeps the place the reader gave it. Every other pass settles the
+            // reader's scroll back to the place it found them. 'open' leaves
+            // the scroll to the opener, which rests the view on the input once
+            // focus and the caret have had their own say.
+            if (decision === 'follow')
+              scroll.element.scrollTop +=
+                scroll.element.scrollHeight - scroll.scrollHeight;
             else if (decision === 'hold')
               scroll.element.scrollTop = scroll.scrollTop;
           },
@@ -486,6 +536,14 @@ export function InsertThreadTurnNodes({
       if (opening) {
         seated.current = editor;
         editor.focus();
+        // Focus and the caret scroll the surface themselves, and a focus into a
+        // tall editing host lands at its top, so the opener places the view on
+        // the input last — once both have run — rather than trusting either.
+        if (scroll !== null)
+          scroll.element.scrollTop = tailTop(
+            scroll.element,
+            editor.getRootElement(),
+          );
       }
       filling.current = plan.pending;
       if (plan.pending) frame.current = requestAnimationFrame(run);

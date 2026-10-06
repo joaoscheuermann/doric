@@ -36,6 +36,13 @@ export const QUEUE_BLOCK = 'queue-node';
 export const QUEUED_TURN_BLOCK = 'queued-turn-node';
 export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';
 
+/**
+ * The attribute the prompt input's block carries in the DOM. The conversation's
+ * tail is the input, so the surface finds it by this: the trail's last handle
+ * throws the scroll to it, and the sync rests the view on it.
+ */
+export const PROMPT_INPUT_ATTRIBUTE = 'data-prompt-input';
+
 const UNDELETABLE = new Set([
   PROMPT_EDIT_BLOCK,
   QUEUE_BLOCK,

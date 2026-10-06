@@ -7,7 +7,10 @@ import {
   type Spread,
 } from 'lexical';
 
-import { USER_PROMPT_BLOCK } from '@/domain/conversation-nodes';
+import {
+  PROMPT_INPUT_ATTRIBUTE,
+  USER_PROMPT_BLOCK,
+} from '@/domain/conversation-nodes';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 
@@ -51,7 +54,7 @@ export class UserPromptNode extends ElementNode {
     dom.className = `outline-none ${CONVERSATION_FONT_CLASS}`;
     // The rail's last handle finds the input by this, the way a prompt's block
     // is found by the `data-prompt-id` its turn carries.
-    dom.dataset.promptInput = '';
+    dom.setAttribute(PROMPT_INPUT_ATTRIBUTE, '');
     this.$applyPlaceholder(dom);
     return dom;
   }
