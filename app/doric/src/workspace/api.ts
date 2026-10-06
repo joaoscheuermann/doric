@@ -1,4 +1,5 @@
 import { workspaceUrl } from './config';
+import type { QueuedPrompt, ThreadQueue } from './queue';
 import type { ThreadUsage } from './usage';
 
 const pageLimit = 100;
@@ -1519,6 +1520,30 @@ export const workspaceApi = {
   threads: {
     usage: (threadId: string) =>
       request<ThreadUsage>(`/threads/${id(threadId)}/usage`),
+    queue: (threadId: string) =>
+      request<ThreadQueue>(`/threads/${id(threadId)}/queue`),
+    queuedPrompt: (threadId: string, promptId: string) =>
+      request<QueuedPrompt>(`/threads/${id(threadId)}/queue/${id(promptId)}`),
+    editQueued: (
+      threadId: string,
+      promptId: string,
+      text: string,
+      revision: number,
+    ) =>
+      request<QueuedPrompt>(`/threads/${id(threadId)}/queue/${id(promptId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ text, revision }),
+      }),
+    removeQueued: (threadId: string, promptId: string) =>
+      request<void>(`/threads/${id(threadId)}/queue/${id(promptId)}`, {
+        method: 'DELETE',
+      }),
+    resumeQueue: async (threadId: string) =>
+      threadFrom(
+        await request<unknown>(`/threads/${id(threadId)}/queue/resume`, {
+          method: 'POST',
+        }),
+      ),
     list: (projectId: string) =>
       allPages<Thread>(`/projects/${id(projectId)}/threads`),
     get: async (threadId: string) => {
@@ -1586,7 +1611,7 @@ export const workspaceApi = {
           body: body({ promptId, prompt }),
         }),
       ),
-    /** Stops the prompt a Thread is running, leaving its queue alone. */
+    /** Pauses Thread dispatch before stopping its active prompt. */
     interrupt: async (threadId: string, promptId: string) => {
       await request<unknown>(`/threads/${id(threadId)}/interrupt`, {
         method: 'POST',

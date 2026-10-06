@@ -9,6 +9,7 @@ import type {
 import type { Database } from '../database.js';
 import type { PauseReason, PromptFailure, PromptProgress } from './prompts.js';
 import { delegatedResult } from './prompts.js';
+import { queueSnapshot } from './queue.js';
 import {
   before,
   checkLimit,
@@ -42,6 +43,7 @@ const recordColumns = {
   parentThreadId: true,
   name: true,
   state: true,
+  queuePaused: true,
   cwd: true,
   cwdRepo: true,
   activePromptId: true,
@@ -59,6 +61,34 @@ const recordColumns = {
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
 export const createThreadStore = (database: Database): ThreadStore => ({
+  appendEvents: (id, promptId, values) =>
+    database.$transaction(async (tx) => {
+      const events: ThreadEvent[] = [];
+      for (const value of values)
+        events.push(await writeEvent(tx, id, promptId, value));
+      return events;
+    }),
+  queue: (id) =>
+    database.$transaction(
+      async (tx) => {
+        const stored = await tx.thread.findUnique({
+          where: { id },
+          select: recordColumns,
+        });
+        if (stored === null) return undefined;
+        const progress = await unfinishedPrompts(tx, [stored]);
+        const related = await tx.thread.findMany({
+          where: { projectId: stored.projectId },
+          select: { id: true, name: true },
+        });
+        return queueSnapshot(
+          thread(stored),
+          progress,
+          new Map(related.map((row) => [row.id, row.name])),
+        );
+      },
+      { isolationLevel: 'RepeatableRead' },
+    ),
   usage: (id) => readThreadUsage(database, id),
   async create(projectId, name, parentThreadId, inherit) {
     return database.$transaction(async (tx) => {
@@ -414,6 +444,7 @@ const thread = (
     : { parentThreadId: stored.parentThreadId }),
   name: stored.name,
   state: states[stored.state],
+  queuePaused: stored.queuePaused,
   lastSequence: stored.lastSequence,
   cwd: stored.cwd,
   ...(stored.cwdRepo === null ? {} : { cwdRepo: stored.cwdRepo as CwdRepo }),
@@ -492,6 +523,12 @@ const writeEvent = async (
     typeof value.type === 'string'
       ? value.type
       : 'unknown';
+  if (type === 'queue.paused' || type === 'queue.resumed')
+    await tx.thread.update({
+      where: { id },
+      data: { queuePaused: type === 'queue.paused' },
+      select: { id: true },
+    });
   await writeUsage(tx, id, type, value, current.usage);
   return event(
     await tx.threadEvent.create({
@@ -524,6 +561,8 @@ const openThreads = (database: Database, id?: string) =>
 /** The event types that decide whether a prompt is unfinished, and how. */
 const progressTypes = [
   'prompt.accepted',
+  'prompt.edited',
+  'prompt.started',
   'prompt.finished',
   'prompt.paused',
   'prompt.resumed',
@@ -556,7 +595,7 @@ type Progress = {
  * run asks for the same thing and a delegated prompt stays correlated.
  */
 const unfinishedPrompts = async (
-  database: Database,
+  database: Pick<Database, 'threadEvent'>,
   threads: readonly { readonly id: string; readonly projectId: string }[],
 ): Promise<readonly PromptProgress[]> => {
   if (threads.length === 0) return [];
@@ -567,7 +606,14 @@ const unfinishedPrompts = async (
       type: { in: [...progressTypes] },
     },
     orderBy: [{ sequence: 'asc' }, { threadId: 'asc' }],
-    select: { threadId: true, promptId: true, type: true, event: true },
+    select: {
+      threadId: true,
+      promptId: true,
+      type: true,
+      event: true,
+      sequence: true,
+      createdAt: true,
+    },
   });
   const pending = new Map<string, Progress>();
   for (const row of rows) {
@@ -579,8 +625,12 @@ const unfinishedPrompts = async (
       const accepted = row.event as {
         readonly text?: string;
         readonly source?: InputSource;
+        readonly queued?: boolean;
       } | null;
-      if (accepted?.source === undefined || accepted.source.kind === 'user') {
+      if (
+        accepted?.queued !== true &&
+        (accepted?.source === undefined || accepted.source.kind === 'user')
+      ) {
         for (const previous of pending.values()) {
           if (
             previous.threadId === row.threadId &&
@@ -594,9 +644,12 @@ const unfinishedPrompts = async (
         threadId: row.threadId,
         promptId: row.promptId,
         text: accepted?.text ?? '',
+        revision: row.sequence,
         source: accepted?.source ?? { kind: 'user' },
         started: false,
         attempts: 0,
+        acceptedAt: row.createdAt.toISOString(),
+        queuedSequence: row.sequence,
       });
       continue;
     }
@@ -605,14 +658,27 @@ const unfinishedPrompts = async (
     // closed before it was accepted.
     if (progress === undefined) continue;
     if (row.type === 'prompt.finished') pending.delete(key);
-    else if (row.type === 'agent.started') progress.started = true;
-    else if (row.type === 'prompt.resumed') {
+    else if (row.type === 'agent.started' || row.type === 'prompt.started')
+      progress.started = true;
+    else if (row.type === 'prompt.edited') {
+      const text = (row.event as { text?: unknown } | null)?.text;
+      if (typeof text === 'string') {
+        progress.text = text;
+        progress.revision = row.sequence;
+      }
+    } else if (row.type === 'prompt.resumed') {
       progress.attempts += 1;
       progress.paused = undefined;
+      progress.queuedSequence = row.sequence;
+      progress.first =
+        (row.event as { first?: boolean } | null)?.first === true;
     } else {
       const reason = (row.event as { readonly reason?: unknown } | null)
         ?.reason;
-      if (isPauseReason(reason)) progress.paused = reason;
+      if (isPauseReason(reason)) {
+        progress.paused = reason;
+        progress.pausedSequence = row.sequence;
+      }
     }
   }
   return [...pending.values()];
@@ -670,8 +736,10 @@ const closePrompt = async (
       select: { id: true },
     });
     if (parent === null) return;
-    await writeEvent(tx, parent.id, randomUUID(), {
+    const resultId = randomUUID();
+    await writeEvent(tx, parent.id, resultId, {
       type: 'prompt.accepted',
+      queued: true,
       text: delegatedResult(
         prompt.threadId,
         prompt.promptId,
@@ -686,5 +754,6 @@ const closePrompt = async (
         requestPromptId: prompt.source.promptId,
       },
     });
+    await writeEvent(tx, parent.id, resultId, { type: 'prompt.queued' });
   });
 };

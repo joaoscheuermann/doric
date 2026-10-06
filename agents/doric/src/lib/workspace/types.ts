@@ -108,6 +108,7 @@ export interface Thread {
   readonly name: string;
   readonly state: ThreadState;
   readonly lastSequence: number;
+  readonly queuePaused?: boolean;
   /** The working directory of its own, absolute inside the Project's sandbox. */
   readonly cwd: string;
   /** The last observed repository hint of `cwd`; absent when it holds none. */
@@ -296,6 +297,7 @@ export interface ProjectStore {
   reconcile(): Promise<number>;
 }
 export interface ThreadStore {
+  queue(id: string): Promise<import('./queue.js').ThreadQueue | undefined>;
   usage(id: string): Promise<import('./usage.js').ThreadUsage | undefined>;
   /**
    * A new Thread. A child inherits its parent's working directory, and that
@@ -348,6 +350,12 @@ export interface ThreadStore {
     promptId: string,
     event: unknown,
   ): Promise<ThreadEvent>;
+  /** Commits related lifecycle events together, before any live publication. */
+  appendEvents(
+    id: string,
+    promptId: string,
+    events: readonly unknown[],
+  ): Promise<readonly ThreadEvent[]>;
   eventsAfter(id: string, sequence: number): Promise<readonly ThreadEvent[]>;
   /**
    * A bounded, forward page of events after an exclusive cursor, with the next
@@ -428,6 +436,22 @@ export interface WorkspaceService {
     ): Promise<ProjectFileDiff>;
   };
   readonly threads: {
+    queue(id: string): Promise<import('./queue.js').ThreadQueue | undefined>;
+    resumeQueue(id: string): Promise<ResumeResult>;
+    queuedPrompt(
+      id: string,
+      promptId: string,
+    ): Promise<import('./queue.js').QueuedPrompt | undefined>;
+    editQueued(
+      id: string,
+      promptId: string,
+      text: string,
+      revision: number,
+    ): Promise<import('./queue.js').EditQueueResult>;
+    removeQueued(
+      id: string,
+      promptId: string,
+    ): Promise<'removed' | 'missing' | 'inactive' | 'busy' | 'unknown_prompt'>;
     usage(id: string): Promise<import('./usage.js').ThreadUsage | undefined>;
     create(
       projectId: string,

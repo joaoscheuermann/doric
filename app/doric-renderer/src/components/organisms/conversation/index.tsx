@@ -4,6 +4,9 @@ import { AgentTurnNode } from '@/components/organisms/conversation/nodes/agent-t
 import { DelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
 import { FailureTurnNode } from '@/components/organisms/conversation/nodes/failure-turn-node';
 import { LifecycleTurnNode } from '@/components/organisms/conversation/nodes/lifecycle-turn-node';
+import { PromptEditNode } from '@/components/organisms/conversation/nodes/prompt-edit-node';
+import { QueueNode } from '@/components/organisms/conversation/nodes/queue-node';
+import { QueuedTurnNode } from '@/components/organisms/conversation/nodes/queued-turn-node';
 import { ThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { ToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import { TurnAuthorNode } from '@/components/organisms/conversation/nodes/turn-author-node';
@@ -13,6 +16,7 @@ import {
 } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { UserTurnNode } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { CaretNavigation } from '@/components/organisms/conversation/plugins/caret-navigation';
+import { EditQueuePrompt } from '@/components/organisms/conversation/plugins/edit-queue-prompt';
 import { InsertThreadTurnNodes } from '@/components/organisms/conversation/plugins/insert-thread-turn-nodes';
 import { MarkdownPromptPlugin } from '@/components/organisms/conversation/plugins/markdown-prompt';
 import { PromptLineBreaks } from '@/components/organisms/conversation/plugins/prompt-line-breaks';
@@ -26,8 +30,11 @@ import {
   isUndeletableBlock,
 } from '@/domain/conversation-nodes';
 import { withPendingTurns } from '@/domain/pending-turns';
+import { composerAction } from '@/domain/queue';
 import type { Thread } from '@/domain/workspace';
 import { useThreadChat } from '@/hooks/use-thread-chat';
+import { useThreadQueue } from '@/hooks/use-thread-queue';
+import { useThreadStop } from '@/hooks/use-thread-stop';
 import type { PromptSignal } from '@/utility/prompt-signal';
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
 import { CodeNode } from '@lexical/code';
@@ -57,7 +64,7 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 
 /** The theme the example names; its classes wait for a stylesheet of their own. */
@@ -232,6 +239,9 @@ const conversationExtension = defineExtension({
     TurnAuthorNode,
     ActivityTurnNode,
     LifecycleTurnNode,
+    QueueNode,
+    PromptEditNode,
+    QueuedTurnNode,
     FailureTurnNode,
     UserPromptNode,
     // The blocks the agent's markdown becomes; a heading, a quote, a list, a
@@ -275,6 +285,7 @@ export function Conversation({
   readonly sendRequest?: number;
 }) {
   const chat = useThreadChat(thread);
+  const queue = useThreadQueue(thread.id);
   useEffect(() => {
     if (chat.sendError !== undefined)
       toast.error(chat.sendError, { id: `thread-send-${thread.id}` });
@@ -305,14 +316,7 @@ export function Conversation({
   const activePromptId = chat.thread.activePromptId;
   const running =
     chat.thread.state === 'running' && activePromptId !== undefined;
-  const stop = useCallback((): void => {
-    if (activePromptId === undefined) return;
-    // A refusal is the run having settled first, which is the same outcome the
-    // reader asked for; there is nothing left to report.
-    void window.doric.threads
-      .interrupt(chat.thread.id, activePromptId)
-      .catch(() => undefined);
-  }, [activePromptId, chat.thread.id]);
+  const stop = useThreadStop(chat.thread);
 
   return (
     <div className="flex min-h-0 w-full flex-1">
@@ -336,14 +340,26 @@ export function Conversation({
             <TableBlocksPlugin />
             <MarkdownPromptPlugin />
             <PromptLineBreaks />
-            <InsertThreadTurnNodes turns={turns} onResume={chat.resume} />
+            <InsertThreadTurnNodes
+              threadId={thread.id}
+              turns={turns}
+              onResume={chat.resume}
+            />
             <SendPrompt
               canStop={running}
               promptSignal={promptSignal}
               send={chat.prompt}
               sendRequest={sendRequest}
               onStop={stop}
+              onResumeQueue={
+                !queue.resuming &&
+                !queue.isError &&
+                composerAction(running, queue.data) === 'resume'
+                  ? queue.resume
+                  : undefined
+              }
             />
+            <EditQueuePrompt threadId={thread.id} />
           </LexicalExtensionComposer>
         </div>
         {/* Inside the scroll view, pinned to it: the rail is absolutely

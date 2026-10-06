@@ -23,6 +23,49 @@ const githubCredentialId = '00000000-0000-4000-8000-000000000004';
 const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 integrationTest(
+  'stores acceptance and queue receipt atomically, including their sequence cursor',
+  async ({ configs, projects, threads, second }) => {
+    const project = await projects.create(
+      'Queue',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.project.id, 'Thread');
+    const accepted = {
+      type: 'prompt.accepted',
+      text: 'Waiting input',
+      source: { kind: 'user' },
+      queued: true,
+    };
+    await assert.rejects(
+      threads.appendEvents(thread.id, promptId, [
+        accepted,
+        { type: 'prompt.queued', invalid: 1n },
+      ]),
+    );
+    const restarted = createThreadStore(second);
+    assert.equal((await restarted.eventsAfter(thread.id, 0)).length, 0);
+    assert.equal((await restarted.find(thread.id))?.thread.lastSequence, 0);
+    await threads.appendEvents(thread.id, promptId, [
+      accepted,
+      { type: 'prompt.queued' },
+    ]);
+    const stored = await restarted.eventsAfter(thread.id, 0);
+    assert.deepEqual(
+      stored.map((event) => [event.type, event.sequence]),
+      [
+        ['prompt.accepted', 1],
+        ['prompt.queued', 2],
+      ],
+    );
+    assert.equal(
+      (await restarted.queue(thread.id))?.items[0]?.preview,
+      'Waiting input',
+    );
+  },
+);
+
+integrationTest(
   'sums descendant charges once and keeps costs through rewind and reconnection',
   async ({ configs, projects, threads, database, second }) => {
     const project = await projects.create(
@@ -753,17 +796,24 @@ integrationTest(
     );
     // Nothing was closed and nothing was written: the boot reads this prompt as
     // one it owes a run, with its input and origin intact.
-    assert.deepEqual(await threads.unfinishedPrompts(thread.id), [
-      {
-        projectId: project.id,
-        threadId: thread.id,
-        promptId: queuedPromptId,
-        text: 'queued',
-        source: { kind: 'user' },
-        started: false,
-        attempts: 0,
-      },
-    ]);
+    assert.deepEqual(
+      (await threads.unfinishedPrompts(thread.id)).map(
+        ({ acceptedAt: _acceptedAt, queuedSequence: _sequence, ...progress }) =>
+          progress,
+      ),
+      [
+        {
+          projectId: project.id,
+          threadId: thread.id,
+          promptId: queuedPromptId,
+          text: 'queued',
+          revision: 1,
+          source: { kind: 'user' },
+          started: false,
+          attempts: 0,
+        },
+      ],
+    );
   },
 );
 
@@ -784,6 +834,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20260930040000_tool_output_limit',
     '20260930050000_thread_cwd',
     '20261005000000_thread_usage',
+    '20261006000000_thread_queue_pause',
     'migration_lock.toml',
   ]);
   assert.deepEqual(

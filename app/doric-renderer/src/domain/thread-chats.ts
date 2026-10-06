@@ -1,5 +1,6 @@
 import type { PendingSend } from './pending-turns';
 import { emptyProjection, projectEvents, type Projection } from './projector';
+import { acceptedHumanInputs } from './projector-input';
 import type {
   Thread,
   ThreadEvent,
@@ -104,9 +105,7 @@ const bounded = (state: ThreadChats): ThreadChatsChange => {
 
 /** The reader's own prompts: a Thread's input is not one of them. */
 const ownPrompts = (projection: Projection): number =>
-  projection.turns.filter(
-    (turn) => turn.type === 'user' && turn.delegated === undefined,
-  ).length;
+  acceptedHumanInputs(projection.inputs);
 
 /**
  * Drops a pending send once the log holds one more prompt of the reader's own:

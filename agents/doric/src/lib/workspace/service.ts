@@ -31,6 +31,7 @@ import {
   resumeExhausted,
   resumeExhaustedError,
 } from './prompts.js';
+import { queuedPrompt } from './queue.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
@@ -788,6 +789,62 @@ export const createWorkspaceService = ({
       fileDiff,
     },
     threads: {
+      queue: async (id) => {
+        const record = await threads.record(id);
+        return record === undefined
+          ? undefined
+          : exclusive(record.projectId, () => threads.queue(id));
+      },
+      resumeQueue: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        if (isTerminal(record.state)) return { status: 'inactive' };
+        const project = await projectFor(record.projectId);
+        const thread = project?.threads.get(id);
+        if (project === undefined || thread === undefined)
+          return { status: 'inactive' };
+        await applyCurrentGit(project);
+        return exclusive(record.projectId, () =>
+          runner.resumeQueue(project, thread),
+        );
+      },
+      queuedPrompt: async (id, promptId) => {
+        const record = await threads.record(id);
+        if (
+          record === undefined ||
+          isTerminal(record.state) ||
+          record.state === 'cancelling'
+        )
+          return undefined;
+        return exclusive(record.projectId, async () => {
+          const prompt = (await threads.unfinishedPrompts(id)).find(
+            (entry) => entry.promptId === promptId && !entry.superseded,
+          );
+          return prompt === undefined ? undefined : queuedPrompt(prompt);
+        });
+      },
+      editQueued: async (id, promptId, text, revision) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        if (isTerminal(record.state)) return { status: 'inactive' };
+        const project = await projectFor(record.projectId);
+        const thread = project?.threads.get(id);
+        if (project === undefined || thread === undefined)
+          return { status: 'inactive' };
+        return exclusive(record.projectId, () =>
+          runner.editQueued(project, thread, promptId, text, revision),
+        );
+      },
+      removeQueued: async (id, promptId) => {
+        const record = await threads.record(id);
+        if (record === undefined) return 'missing';
+        const project = await projectFor(record.projectId);
+        const thread = project?.threads.get(id);
+        if (project === undefined || thread === undefined) return 'inactive';
+        return exclusive(record.projectId, () =>
+          runner.removeQueued(project, thread, promptId),
+        );
+      },
       usage: async (id) => {
         const usage = await threads.usage(id);
         return usage === undefined
@@ -954,6 +1011,8 @@ export const createWorkspaceService = ({
           );
           if (progress === undefined)
             return { status: 'unknown_prompt' as const };
+          if (thread.thread.queuePaused)
+            return runner.resumeQueue(project, thread, promptId);
           return runner.resume(
             project,
             thread,
@@ -987,7 +1046,7 @@ export const createWorkspaceService = ({
           ),
         };
       },
-      interrupt: async (id, promptId) => {
+      interrupt: async (id, _promptId) => {
         const record = await threads.record(id);
         if (record === undefined) return 'missing';
         return exclusive(record.projectId, async () => {
@@ -997,7 +1056,7 @@ export const createWorkspaceService = ({
               ? 'inactive'
               : // The reader's own stop pauses the run, so the reader can take it
                 // up again; a parent Thread's tool stops a child outright.
-                runner.interrupt(thread, promptId, 'reader_stopped'),
+                runner.pause(thread),
           );
         });
       },
@@ -1040,7 +1099,13 @@ export const createWorkspaceService = ({
      * dying on the same prompt stops circling it.
      */
     resumeInterrupted: async () => {
-      const owed = (await threads.unfinishedPrompts()).filter(hostOwesRun);
+      const paused = new Set<string>();
+      const unfinished = await threads.unfinishedPrompts();
+      for (const id of new Set(unfinished.map((prompt) => prompt.threadId)))
+        if ((await threads.record(id))?.queuePaused) paused.add(id);
+      const owed = unfinished.filter(
+        (prompt) => hostOwesRun(prompt) && !paused.has(prompt.threadId),
+      );
       for (const prompt of owed) {
         if (resumeExhausted(prompt))
           await threads.failPrompt(prompt, resumeExhaustedError);
@@ -1049,8 +1114,10 @@ export const createWorkspaceService = ({
       // same transaction. Include that new work in this boot's queue.
       const pending = new Map<string, PromptProgress[]>();
       for (const prompt of (await threads.unfinishedPrompts()).filter(
-        hostOwesRun,
+        (prompt) => hostOwesRun(prompt) && !paused.has(prompt.threadId),
       )) {
+        // Exhausting a child can deliver the first pending input to a paused parent.
+        if ((await threads.record(prompt.threadId))?.queuePaused) continue;
         const group = pending.get(prompt.projectId);
         if (group === undefined) pending.set(prompt.projectId, [prompt]);
         else group.push(prompt);

@@ -542,6 +542,31 @@
   height: 2.25rem;
 }
 
+/* The edit header, composer and author are Lexical siblings. Their adjoining
+   edges form one surface without introducing a second editing host. */
+.queue-edit-heading,
+[data-queue-editing] > [data-prompt-input],
+[data-queue-editing] > [data-prompt-input] + div {
+  margin-inline: -0.75rem;
+  padding-inline: 0.75rem;
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+.queue-edit-heading {
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding-block: 0.75rem;
+}
+
+[data-queue-editing] > [data-prompt-input] + div {
+  margin-top: 0;
+  padding-block: 0.5rem 0.75rem;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.queue-row[data-editing] {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
 /* All footer text has one weight, including nested controls. Keep this invariant
    stronger than component utilities and inline weights introduced by callers. */
 :is(footer, [data-slot$='-footer']),

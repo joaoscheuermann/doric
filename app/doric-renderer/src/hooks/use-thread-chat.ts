@@ -1,6 +1,8 @@
 import type { PendingSend } from '@/domain/pending-turns';
 import { emptyProjection, sandboxWrites, type Turn } from '@/domain/projector';
+import { queueItems } from '@/domain/queue';
 import type { Thread, ThreadEvent } from '@/domain/workspace';
+import { useThreadQueue } from '@/hooks/use-thread-queue';
 import { threadChatsStore } from '@/stores/thread-chats';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useStore } from 'zustand/react';
@@ -53,6 +55,7 @@ export type ThreadChat = {
  * live in `projector.ts`.
  */
 export const useThreadChat = (thread: Thread): ThreadChat => {
+  const queue = useThreadQueue(thread.id);
   const open = threadChatsStore.getState().open;
 
   // Opening is idempotent: a Thread already held is only shown, so this runs on
@@ -75,8 +78,17 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   );
 
   const prompt = useCallback(
-    (text: string) => threadChatsStore.getState().prompt(thread.id, text),
-    [thread.id],
+    async (text: string) => {
+      if (queue.data?.paused && queueItems(queue.data).length === 0) {
+        try {
+          await queue.resumeAsync();
+        } catch {
+          return false;
+        }
+      }
+      return threadChatsStore.getState().prompt(thread.id, text);
+    },
+    [thread.id, queue.data, queue.resumeAsync],
   );
   const rewind = useCallback(
     (promptId: string, text: string) =>

@@ -25,6 +25,18 @@ import {
   type ResumePrompt,
 } from '@/components/organisms/conversation/nodes/lifecycle-turn-node';
 import {
+  $isPromptEditNode,
+  PromptEditNode,
+} from '@/components/organisms/conversation/nodes/prompt-edit-node';
+import {
+  $isQueueNode,
+  QueueNode,
+} from '@/components/organisms/conversation/nodes/queue-node';
+import {
+  $isQueuedTurnNode,
+  QueuedTurnNode,
+} from '@/components/organisms/conversation/nodes/queued-turn-node';
+import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
@@ -66,6 +78,7 @@ import { useEffect, useRef } from 'react';
 
 /** Any of the turn blocks, once it is in the editor. */
 type TurnBlock =
+  | QueuedTurnNode
   | UserTurnNode
   | DelegatedTurnNode
   | AgentTurnNode
@@ -88,6 +101,7 @@ type TurnUnit = {
 // from `domain/conversation-authors`, the one place they are fixed.
 
 const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
+  $isQueuedTurnNode(node) ||
   $isUserTurnNode(node) ||
   $isDelegatedTurnNode(node) ||
   $isAgentTurnNode(node) ||
@@ -104,6 +118,8 @@ const $createBlock = (
   onResume: ResumePrompt,
 ): TurnBlock => {
   switch (turn.type) {
+    case 'queued':
+      return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
@@ -188,6 +204,10 @@ const $syncAuthor = (
 
 /** Hands the block the chat's newest version of its turn. */
 const $applyTurn = (block: TurnBlock, turn: Turn): void => {
+  if (turn.type === 'queued' && $isQueuedTurnNode(block)) {
+    block.setTurn(turn);
+    return;
+  }
   if (
     turn.type === 'user' &&
     ($isUserTurnNode(block) || $isDelegatedTurnNode(block))
@@ -212,7 +232,7 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
  * conversation's last two blocks whatever an update did to the root. Only one
  * prompt is ever in the editor.
  */
-const $settlePrompt = (): UserPromptNode => {
+const $settlePrompt = (threadId: string): UserPromptNode => {
   const root = $getRoot();
 
   let prompt = $getUserPromptNode();
@@ -243,6 +263,18 @@ const $settlePrompt = (): UserPromptNode => {
     root.append(author);
   }
 
+  const queues = root.getChildren().filter($isQueueNode);
+  const queue =
+    queues.find((node) => node.__threadId === threadId) ??
+    new QueueNode(threadId);
+  for (const node of queues) if (node !== queue) node.remove();
+  const headers = root.getChildren().filter($isPromptEditNode);
+  const header =
+    headers.find((node) => node.__threadId === threadId) ??
+    new PromptEditNode(threadId);
+  for (const node of headers) if (node !== header) node.remove();
+  if (prompt.getPreviousSibling() !== header) prompt.insertBefore(header);
+  if (header.getPreviousSibling() !== queue) header.insertBefore(queue);
   return prompt;
 };
 
@@ -306,9 +338,11 @@ const readScroll = (editor: LexicalEditor): ScrollReading | null => {
  * with its newest content when that pass comes.
  */
 export function InsertThreadTurnNodes({
+  threadId,
   turns,
   onResume,
 }: {
+  readonly threadId: string;
   readonly turns: readonly Turn[];
   /** What a marker's Retomar action asks the surface for. */
   readonly onResume: ResumePrompt;
@@ -368,7 +402,7 @@ export function InsertThreadTurnNodes({
           }
 
           plan = syncPlan([...existing.keys()], turns, FILL_BATCH);
-          const prompt = $settlePrompt();
+          const prompt = $settlePrompt(threadId);
 
           // The tail of every unit that stands as the pass runs — its author line
           // when it wears one — so a new block goes after the turn before it
@@ -455,7 +489,7 @@ export function InsertThreadTurnNodes({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [editor, onResume, turns]);
+  }, [editor, onResume, threadId, turns]);
 
   /**
    * The prompt cannot be deleted. The sync above runs when the chat changes; this
@@ -465,8 +499,11 @@ export function InsertThreadTurnNodes({
    * without one.
    */
   useEffect(
-    () => editor.registerNodeTransform(RootNode, $settlePrompt),
-    [editor],
+    () =>
+      editor.registerNodeTransform(RootNode, () => {
+        $settlePrompt(threadId);
+      }),
+    [editor, threadId],
   );
 
   return null;

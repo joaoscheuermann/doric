@@ -1,3 +1,4 @@
+import { queueChanged } from '@/domain/queue';
 import {
   applyThreadEvents,
   applyThreadUpdate,
@@ -18,6 +19,21 @@ import {
   type ThreadUpdate,
 } from '@/domain/workspace';
 import { createStore } from 'zustand/vanilla';
+
+const queueListeners = new Map<string, Set<() => void>>();
+/** Observe queue invalidations through the existing Thread watch. */
+export const subscribeThreadQueue = (
+  id: string,
+  listener: () => void,
+): (() => void) => {
+  const listeners = queueListeners.get(id) ?? new Set<() => void>();
+  listeners.add(listener);
+  queueListeners.set(id, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) queueListeners.delete(id);
+  };
+};
 
 /**
  * How long a stream's events wait before they reach the projection. A live run
@@ -129,6 +145,8 @@ export const threadChatsStore = createStore<ThreadChatsState>()((set, get) => {
   };
 
   function receive(id: string, update: ThreadUpdate): void {
+    if (queueChanged(update))
+      for (const listener of queueListeners.get(id) ?? []) listener();
     if (update.kind === 'event') {
       queued.set(id, [...(queued.get(id) ?? []), update.event]);
       schedule(id);

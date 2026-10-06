@@ -36,6 +36,7 @@ import { useComposer } from '@/hooks/use-composer';
 import { useProjectFiles } from '@/hooks/use-project-files';
 import { useProjectRefresh } from '@/hooks/use-project-refresh';
 import { useTerminals } from '@/hooks/use-terminals';
+import { useThreadStop } from '@/hooks/use-thread-stop';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { useWorkspaceTabs } from '@/hooks/use-workspace-tabs';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
@@ -92,14 +93,7 @@ export function App() {
   const activePromptId = selectedThread?.activePromptId;
   const running =
     selectedThread?.state === 'running' && activePromptId !== undefined;
-  // A refusal is the run having settled first, which is the same outcome the
-  // reader asked for; there is nothing left to report.
-  const stop = useCallback(() => {
-    if (selectedThread === undefined || activePromptId === undefined) return;
-    void window.doric.threads
-      .interrupt(selectedThread.id, activePromptId)
-      .catch(() => undefined);
-  }, [activePromptId, selectedThread]);
+  const stop = useThreadStop(selectedThread);
   const selectedProject = workspace.projects.find(
     (project) => project.id === workspace.selectedProjectId,
   );

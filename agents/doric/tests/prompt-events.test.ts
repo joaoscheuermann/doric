@@ -35,6 +35,7 @@ void test('persists accepted user prompt Markdown with its source', async () => 
     type: 'prompt.accepted',
     text: markdown,
     source: { kind: 'user' },
+    queued: false,
   });
   await service.dispose();
 });

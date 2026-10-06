@@ -22,6 +22,7 @@ import type {
   PauseReason,
   PromptProgress,
 } from '../../src/lib/workspace/prompts.js';
+import { queueSnapshot } from '../../src/lib/workspace/queue.js';
 import type {
   ProjectRecord,
   ProjectStore,
@@ -112,8 +113,12 @@ const unfinished = (
       const accepted = stored.event as {
         readonly text?: string;
         readonly source?: PromptProgress['source'];
+        readonly queued?: boolean;
       } | null;
-      if (accepted?.source === undefined || accepted.source.kind === 'user') {
+      if (
+        accepted?.queued !== true &&
+        (accepted?.source === undefined || accepted.source.kind === 'user')
+      ) {
         for (const previous of progress.values()) {
           if (
             previous.threadId === stored.threadId &&
@@ -127,25 +132,38 @@ const unfinished = (
         threadId: stored.threadId,
         promptId: stored.promptId,
         text: accepted?.text ?? '',
+        revision: stored.sequence,
         source: accepted?.source ?? { kind: 'user' },
         started: false,
         attempts: 0,
+        acceptedAt: stored.createdAt,
+        queuedSequence: stored.sequence,
       });
       continue;
     }
     const prompt = progress.get(key);
     if (prompt === undefined) continue;
     if (stored.type === 'prompt.finished') progress.delete(key);
-    else if (stored.type === 'agent.started') prompt.started = true;
-    else if (stored.type === 'prompt.resumed') {
+    else if (
+      stored.type === 'agent.started' ||
+      stored.type === 'prompt.started'
+    )
+      prompt.started = true;
+    else if (stored.type === 'prompt.edited') {
+      prompt.text = (stored.event as { text: string }).text;
+      prompt.revision = stored.sequence;
+    } else if (stored.type === 'prompt.resumed') {
       prompt.attempts += 1;
       prompt.paused = undefined;
+      prompt.queuedSequence = stored.sequence;
+      prompt.first = (stored.event as { first?: boolean }).first;
     } else if (
       (pauseReasons as readonly unknown[]).includes(
         (stored.event as { readonly reason?: unknown } | null)?.reason,
       )
     ) {
       prompt.paused = (stored.event as { readonly reason: PauseReason }).reason;
+      prompt.pausedSequence = stored.sequence;
     }
   }
   return [...progress.values()];
@@ -226,6 +244,20 @@ export const workspace = () => {
     reconcile: async () => 0,
   };
   const threads: ThreadStore = {
+    queue: async (id) => {
+      const record = threadRecords.get(id);
+      if (!record) return undefined;
+      return queueSnapshot(
+        record.thread,
+        unfinished([...threadRecords.values()], events, id),
+        new Map(
+          [...threadRecords.values()].map(({ thread }) => [
+            thread.id,
+            thread.name,
+          ]),
+        ),
+      );
+    },
     usage: async () => undefined,
     create: async (projectId, name, parentThreadId, inherit) => {
       const thread = {
@@ -364,6 +396,12 @@ export const workspace = () => {
       notify();
       return marker;
     },
+    appendEvents: async (id, promptId, values) => {
+      const stored: ThreadEvent[] = [];
+      for (const value of values)
+        stored.push(await threads.appendEvent(id, promptId, value));
+      return stored;
+    },
     appendEvent: async (id, promptId, event) => {
       const record = threadRecords.get(id);
       if (!record) throw new Error('Missing thread');
@@ -380,7 +418,13 @@ export const workspace = () => {
       events.push(stored);
       threadRecords.set(id, {
         ...record,
-        thread: { ...record.thread, lastSequence: sequence },
+        thread: {
+          ...record.thread,
+          lastSequence: sequence,
+          ...(stored.type === 'queue.paused' || stored.type === 'queue.resumed'
+            ? { queuePaused: stored.type === 'queue.paused' }
+            : {}),
+        },
       });
       notify();
       return stored;

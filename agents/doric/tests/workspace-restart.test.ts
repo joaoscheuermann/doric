@@ -20,6 +20,382 @@ import {
 } from './helpers/workspace.js';
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
+void test(
+  'recovery dispatches persisted edits and never makes started or machine inputs editable',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const texts: string[] = [];
+    const host = await restart({
+      execute: async ({ job }) => {
+        texts.push(job.prompt);
+        return 'done';
+      },
+    });
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread } = await host.threads.create(project.id, 'Thread');
+      await host.threads.appendEvent(thread.id, randomUUID(), {
+        type: 'queue.paused',
+      });
+      const promptId = randomUUID();
+      await host.threads.appendEvents(thread.id, promptId, [
+        {
+          type: 'prompt.accepted',
+          text: 'Original',
+          source: { kind: 'user' },
+          queued: true,
+        },
+        { type: 'prompt.queued' },
+        { type: 'prompt.edited', text: 'Persisted edit' },
+      ]);
+      const started = randomUUID();
+      await host.threads.appendEvents(thread.id, started, [
+        {
+          type: 'prompt.accepted',
+          text: 'Started',
+          source: { kind: 'user' },
+          queued: true,
+        },
+        { type: 'prompt.started' },
+        { type: 'prompt.paused', reason: 'reader_stopped' },
+      ]);
+      const machine = randomUUID();
+      await host.threads.appendEvent(thread.id, machine, {
+        type: 'prompt.accepted',
+        text: 'Result',
+        source: {
+          kind: 'result',
+          threadId: randomUUID(),
+          promptId: randomUUID(),
+        },
+        queued: true,
+      });
+      await host.service.resumeInterrupted();
+      const detail = await host.service.threads.queuedPrompt(
+        thread.id,
+        promptId,
+      );
+      assert.equal(detail?.text, 'Persisted edit');
+      assert.equal(detail?.editable, true);
+      assert.ok(detail);
+      assert.equal(
+        (await host.service.threads.queuedPrompt(thread.id, started))?.editable,
+        false,
+      );
+      assert.equal(
+        (
+          await host.service.threads.editQueued(
+            thread.id,
+            started,
+            'Too late',
+            0,
+          )
+        ).status,
+        'not_editable',
+      );
+      assert.equal(
+        (
+          await host.service.threads.editQueued(
+            thread.id,
+            machine,
+            'Not mine',
+            0,
+          )
+        ).status,
+        'not_editable',
+      );
+      const updated = await host.service.threads.editQueued(
+        thread.id,
+        promptId,
+        'Final edit',
+        detail.revision,
+      );
+      assert.equal(updated.status, 'updated');
+      assert.equal(
+        (await host.threads.unfinishedPrompts(thread.id)).find(
+          (item) => item.promptId === promptId,
+        )?.text,
+        'Final edit',
+      );
+      await host.service.threads.removeQueued(thread.id, started);
+      await host.service.threads.removeQueued(thread.id, machine);
+      await host.service.threads.resumeQueue(thread.id);
+      await until(() => texts.length === 1);
+      assert.deepEqual(texts, ['Final edit']);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+void test(
+  'removing a delegated queued input returns one cancellation result to its paused parent',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const host = await restart();
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread: parent } = await host.threads.create(
+        project.id,
+        'Parent',
+      );
+      const { thread: child } = await host.threads.create(
+        project.id,
+        'Child',
+        parent.id,
+      );
+      const promptId = randomUUID();
+      const requestPromptId = randomUUID();
+      for (const thread of [parent, child])
+        await host.threads.appendEvent(thread.id, randomUUID(), {
+          type: 'queue.paused',
+        });
+      await host.threads.appendEvent(child.id, promptId, {
+        type: 'prompt.accepted',
+        text: 'delegated',
+        queued: true,
+        source: {
+          kind: 'parent',
+          threadId: parent.id,
+          promptId: requestPromptId,
+        },
+      });
+      await host.service.resumeInterrupted();
+      assert.equal(
+        await host.service.threads.removeQueued(child.id, promptId),
+        'removed',
+      );
+      assert.equal(
+        await host.service.threads.removeQueued(child.id, promptId),
+        'removed',
+      );
+      const queue = await host.threads.queue(parent.id);
+      assert.equal(queue?.paused, true);
+      assert.equal(queue?.items.length, 1);
+      assert.deepEqual(queue?.items[0].source, {
+        kind: 'result',
+        threadId: child.id,
+        promptId,
+        requestPromptId,
+      });
+      const receipt = (await host.threads.eventsAfter(parent.id, 0)).find(
+        (event) => event.type === 'prompt.accepted',
+      );
+      assert.match((receipt?.event as { text: string }).text, /cancelled/);
+      assert.deepEqual(host.ran, []);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+void test(
+  'removed queued and paused prompts stay closed when replayed after recovery',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const host = await restart();
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread } = await host.threads.create(project.id, 'Thread');
+      const current = randomUUID();
+      const remove = randomUUID();
+      const keep = randomUUID();
+      await host.threads.appendEvent(thread.id, current, {
+        type: 'prompt.accepted',
+        text: 'current',
+        source: { kind: 'user' },
+        queued: false,
+      });
+      await host.threads.appendEvent(thread.id, current, {
+        type: 'prompt.paused',
+        reason: 'reader_stopped',
+      });
+      await host.threads.appendEvent(thread.id, current, {
+        type: 'queue.paused',
+      });
+      for (const [promptId, text] of [
+        [remove, 'remove'],
+        [keep, 'keep'],
+      ]) {
+        await host.threads.appendEvent(thread.id, promptId, {
+          type: 'prompt.accepted',
+          text,
+          source: { kind: 'user' },
+          queued: true,
+        });
+      }
+      await host.service.resumeInterrupted();
+      assert.equal(
+        await host.service.threads.removeQueued(thread.id, remove),
+        'removed',
+      );
+      assert.equal(
+        await host.service.threads.removeQueued(thread.id, current),
+        'removed',
+      );
+      await host.threads.reconcile();
+      assert.deepEqual(
+        (await host.threads.unfinishedPrompts(thread.id)).map(
+          (prompt) => prompt.promptId,
+        ),
+        [keep],
+      );
+      const queue = await host.threads.queue(thread.id);
+      assert.equal(queue?.current, undefined);
+      assert.equal(queue?.paused, true);
+      assert.deepEqual(
+        queue?.items.map((item) => item.promptId),
+        [keep],
+      );
+      assert.deepEqual(host.ran, []);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+void test(
+  'boot queues an exhausted child result without reopening its paused parent',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const host = await restart();
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread: parent } = await host.threads.create(
+        project.id,
+        'Parent',
+      );
+      const { thread: child } = await host.threads.create(
+        project.id,
+        'Child',
+        parent.id,
+      );
+      const promptId = randomUUID();
+      await host.threads.appendEvent(parent.id, randomUUID(), {
+        type: 'queue.paused',
+      });
+      await host.threads.appendEvent(child.id, promptId, {
+        type: 'prompt.accepted',
+        text: 'delegated work',
+        source: { kind: 'parent', threadId: parent.id, promptId: randomUUID() },
+      });
+      for (const attempt of [1, 2])
+        await host.threads.appendEvent(child.id, promptId, {
+          type: 'prompt.resumed',
+          attempt,
+        });
+      await host.threads.appendEvent(child.id, promptId, {
+        type: 'prompt.paused',
+        reason: 'host_restarted',
+      });
+      assert.equal(await host.service.resumeInterrupted(), 0);
+      const queue = await host.threads.queue(parent.id);
+      assert.equal(queue?.paused, true);
+      assert.equal(queue?.items.length, 1);
+      assert.equal(queue?.items[0]?.source.kind, 'result');
+      assert.equal(queue?.items[0]?.label, 'Subthread · Child');
+      assert.deepEqual(host.ran, []);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+void test(
+  'boot preserves the interrupted input before results and human prompts queued during its pause',
+  { skip: connectionString === undefined, timeout: 10_000 },
+  async () => {
+    const finished = deferred();
+    const host = await restart({
+      execute: async ({ job }) => {
+        if (job.prompt === 'second queued input') finished.resolve();
+        return 'done';
+      },
+    });
+    try {
+      const { project } = await host.projects.create(
+        'Project',
+        snapshot,
+        'blue',
+      );
+      const { thread } = await host.threads.create(project.id, 'Thread');
+      const interrupted = randomUUID();
+      const pending = randomUUID();
+      await host.threads.appendEvent(thread.id, interrupted, {
+        type: 'prompt.accepted',
+        text: 'interrupted work',
+        source: { kind: 'user' },
+      });
+      await host.threads.appendEvent(thread.id, interrupted, {
+        type: 'agent.started',
+      });
+      await host.threads.appendEvent(thread.id, pending, {
+        type: 'prompt.accepted',
+        text: 'pending result',
+        source: {
+          kind: 'terminal',
+          terminalId: randomUUID(),
+          promptId: interrupted,
+        },
+      });
+      await host.threads.appendEvent(thread.id, interrupted, {
+        type: 'queue.paused',
+      });
+      await host.threads.appendEvent(thread.id, interrupted, {
+        type: 'prompt.paused',
+        reason: 'reader_stopped',
+      });
+      const queued = [randomUUID(), randomUUID()];
+      for (const [index, id] of queued.entries()) {
+        await host.threads.appendEvents(thread.id, id, [
+          {
+            type: 'prompt.accepted',
+            text: index === 0 ? 'first queued input' : 'second queued input',
+            source: { kind: 'user' },
+            queued: true,
+          },
+          { type: 'prompt.queued' },
+        ]);
+      }
+      await host.threads.reconcile();
+      assert.equal(await host.service.resumeInterrupted(), 0);
+      await host.service.recoverProjects();
+      const queue = await host.service.threads.queue(thread.id);
+      assert.equal(queue?.paused, true);
+      assert.equal(queue?.resumable?.promptId, interrupted);
+      assert.deepEqual(
+        queue?.items.map((item) => item.promptId),
+        [pending, ...queued],
+      );
+      assert.deepEqual(host.ran, []);
+      assert.equal(
+        (await host.service.threads.resumeQueue(thread.id)).status,
+        'resumed',
+      );
+      await finished.promise;
+      assert.deepEqual(host.ran, [interrupted, pending, ...queued]);
+      assert.equal((await host.threads.queue(thread.id))?.paused, false);
+    } finally {
+      await host.close();
+    }
+  },
+);
 
 void test(
   'durably rejects a paused prompt superseded by new user input',
@@ -205,14 +581,14 @@ const restart = async (
   };
 };
 
-/** Every event of one prompt, in order. */
+/** Prompt events in order; queue notifications belong to Thread dispatch. */
 const eventsOf = async (
   threads: ReturnType<typeof createThreadStore>,
   threadId: string,
   promptId: string,
 ): Promise<readonly ThreadEvent[]> =>
   (await threads.eventsAfter(threadId, 0)).filter(
-    (event) => event.promptId === promptId,
+    (event) => event.promptId === promptId && !event.type.startsWith('queue.'),
   );
 
 /** The event a run that completes leaves, as this host writes it. */
@@ -433,6 +809,7 @@ void test(
           },
           { type: 'prompt.paused', reason: 'host_restarted' },
           { type: 'prompt.resumed', attempt: 1 },
+          { type: 'prompt.started' },
           completed,
         ],
       );
@@ -447,6 +824,7 @@ void test(
             source: { kind: 'user' },
           },
           { type: 'prompt.resumed', attempt: 1 },
+          { type: 'prompt.started' },
           completed,
         ],
       );
@@ -689,6 +1067,7 @@ void test(
           { type: 'prompt.resumed', attempt: 2 },
           { type: 'prompt.paused', reason: 'reader_stopped' },
           { type: 'prompt.resumed', attempt: 3 },
+          { type: 'prompt.started' },
           completed,
         ],
       );
@@ -769,6 +1148,7 @@ void test(
           },
           { type: 'prompt.paused', reason: 'reader_stopped' },
           { type: 'prompt.resumed', attempt: 1 },
+          { type: 'prompt.started' },
           completed,
         ],
       );

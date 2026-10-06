@@ -43,7 +43,7 @@ describe('the turns a surface waits for', () => {
   });
 
   test('stops drawing them once the log has accepted one more prompt', () => {
-    const turns = [prompt('hi'), prompt('next')];
+    const turns = [prompt('hi'), { ...prompt('next'), promptId: 'two' }];
     assert.equal(withPendingTurns(turns, { text: 'next', before: 1 }), turns);
   });
 

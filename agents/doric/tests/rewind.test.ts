@@ -73,7 +73,10 @@ const conversation = async () => {
     return promptId;
   };
   const events = async (id = thread.id) =>
-    (await service.threads.events(id, 0))!.events;
+    (await service.threads.events(id, 0))!.events.filter(
+      // Rewind assertions concern inputs, results and truncation boundaries.
+      ({ type }) => !type.startsWith('queue.') && type !== 'prompt.started',
+    );
   const record = async (id = thread.id) => (await harness.threads.find(id))!;
   return {
     service,
@@ -92,13 +95,11 @@ void test('rewinds an earlier prompt onto the history that preceded it', async (
   const { service, harness, thread, published, gate, run, events, record } =
     await conversation();
   const first = await run('first');
+  const firstEnd = (await record()).thread.lastSequence;
   const second = await run('second');
   await run('third');
   const before = await events();
-  assert.deepEqual(
-    before.map(({ sequence }) => sequence),
-    [1, 2, 3, 4, 5, 6],
-  );
+  const lastSequence = (await record()).thread.lastSequence;
   published.length = 0;
 
   const edited = gate('edited');
@@ -113,19 +114,17 @@ void test('rewinds an earlier prompt onto the history that preceded it', async (
   ]);
   const after = await events();
   // The edited turn and the later turn are gone; the earlier turn is intact.
-  assert.deepEqual(
-    after.map(({ sequence }) => sequence),
-    [1, 2, 7, 8],
-  );
+  assert.equal(after.length, 4);
+  assert.ok(after.slice(2).every(({ sequence }) => sequence > lastSequence));
   assert.deepEqual(after.slice(0, 2), before.slice(0, 2));
   const marker = after[2];
   assert.deepEqual(marker, {
     projectId: thread.projectId,
     threadId: thread.id,
     promptId: second,
-    sequence: 7,
+    sequence: lastSequence + 1,
     type: 'history.truncated',
-    event: { type: 'history.truncated', afterSequence: 2 },
+    event: { type: 'history.truncated', afterSequence: firstEnd },
     createdAt: '1970-01-01T00:00:00.000Z',
   });
   assert.equal(after[3]?.promptId, result.promptId);
@@ -133,6 +132,7 @@ void test('rewinds an earlier prompt onto the history that preceded it', async (
     type: 'prompt.accepted',
     text: 'edited',
     source: { kind: 'user' },
+    queued: false,
   });
   // The replacement turn continues from the new tail, not from a reused number.
   assert.equal(after[3]?.sequence, marker.sequence + 1);
@@ -163,8 +163,8 @@ void test('rewinds an earlier prompt onto the history that preceded it', async (
     [first]: 0,
     [result.promptId]: 2,
   });
-  assert.equal(settled.at(-1)?.sequence, 9);
-  assert.equal(history.thread.lastSequence, 9);
+  assert.ok(settled.at(-1)!.sequence > after[3].sequence);
+  assert.ok(history.thread.lastSequence >= settled.at(-1)!.sequence);
   await service.dispose();
 });
 
@@ -173,6 +173,7 @@ void test('truncates to empty history when the first turn is edited', async () =
     await conversation();
   const first = await run('first');
   await run('second');
+  const lastSequence = (await record()).thread.lastSequence;
 
   const edited = gate('edited');
   const result = await service.threads.rewind(thread.id, first, 'edited');
@@ -183,8 +184,8 @@ void test('truncates to empty history when the first turn is edited', async () =
   assert.deepEqual(
     after.map(({ sequence, type }) => [sequence, type]),
     [
-      [5, 'history.truncated'],
-      [6, 'prompt.accepted'],
+      [lastSequence + 1, 'history.truncated'],
+      [lastSequence + 2, 'prompt.accepted'],
     ],
   );
   assert.deepEqual(after[0]?.event, {

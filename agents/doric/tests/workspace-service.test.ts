@@ -259,14 +259,12 @@ void test(
 );
 
 void test(
-  'interrupts only the targeted prompt and leaves its queue and daughter running',
+  'pauses reader dispatch without interrupting the daughter Thread',
   { timeout: 3000 },
   async () => {
     const harness = workspace();
     const started = deferred();
     const childStarted = deferred();
-    const nextStarted = deferred();
-    const finishNext = deferred();
     const finishChild = deferred();
     const interrupted = deferred();
     const finishInterrupted = deferred();
@@ -289,8 +287,6 @@ void test(
           await finishChild.promise;
         } else {
           nextSignal = signal;
-          nextStarted.resolve();
-          await finishNext.promise;
         }
         return 'done';
       },
@@ -312,14 +308,20 @@ void test(
     await interrupted.promise;
     assert.equal(nextSignal, undefined);
     finishInterrupted.resolve();
-    await nextStarted.promise;
+    await harness.threadState(parent.id, 'ready');
     assert.equal(
       await service.threads.interrupt(parent.id, prompt.promptId),
-      'not_running',
+      'interrupted',
     );
-    assert.equal((nextSignal as AbortSignal | undefined)?.aborted, false);
+    assert.equal(nextSignal, undefined);
+    assert.equal((await service.threads.queue(parent.id))?.paused, true);
+    assert.deepEqual(
+      (await service.threads.queue(parent.id))?.items.map(
+        (item) => item.preview,
+      ),
+      ['next'],
+    );
     assert.equal(childSignal?.aborted, false);
-    finishNext.resolve();
     finishChild.resolve();
     await service.dispose();
   },

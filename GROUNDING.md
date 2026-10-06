@@ -787,7 +787,7 @@ patch, and delete surface,
 named Project and Thread creation, rename through `PATCH`, cursor listing,
 detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
 rewind through `POST /threads/:id/rewind`, ordered event
-replay with an optional exclusive `afterSequence`, targeted prompt interruption,
+replay with an optional exclusive `afterSequence`, reader-controlled Thread queue pause,
 idempotent termination, and terminal-only deletion. Each Thread turn records the
 provider-history length it started from, so rewind truncates that history
 exactly at a turn boundary, removes the edited turn and every later turn from
@@ -841,7 +841,8 @@ the Project becomes `queued` because it needs a sandbox again, the Thread become
 `ready`, and an interrupted prompt receives a durable pause marker before the
 boot queues it for automatic resumption. Accepted inputs that never started are
 queued too. Acquisition runs in the background, so a full sandbox pool does not
-block the HTTP listener. Reader-paused prompts wait for an explicit resume.
+block the HTTP listener. Reader-paused Threads retain their durable dispatch gate:
+neither pending inputs nor the interrupted prompt run until an explicit resume.
 A record a crash left `cancelling` is completed to `cancelled` instead, so a
 restart cannot revive work the reader terminated; events remain replayable.
 Physical Thread deletion requires its entire subtree to be terminal; Project
@@ -1199,11 +1200,29 @@ return the Thread to `ready`; history or event persistence failures fail the
 Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue
 even if cancellation-state persistence fails.
-Doric adds `history.truncated`, `prompt.accepted`, `prompt.paused`,
+Doric adds `history.truncated`, `prompt.accepted`, `prompt.queued`, `prompt.started`, `prompt.paused`,
 `prompt.resumed`, `prompt.finished`,
 `agent.failed`, and
 `agent.cancelled` events around the Agent stream. `prompt.accepted` carries the
 input text and its source after the standard configured-credential redaction.
+New acceptance events also carry a boolean `queued`. When input must wait for
+an active run, pending input, a paused queue or sandbox availability, acceptance
+and `prompt.queued` are persisted atomically. The dispatcher emits `prompt.started`
+before execution, after the previous prompt has settled, using the same prompt ID.
+The renderer keeps a compact `Queued <avatar> <username> "<prompt>"` receipt at
+submission time, then appends the full prompt at its first `prompt.started`.
+Queued receipts use the Thinking block's spacing, conversation font and collapsible
+surface. They start closed, expand the original input inline, and retain the
+reader's open/closed choice across transcript updates.
+Consecutive Queued receipts share one `Queued N prompts` collapsible block;
+its expanded list retains every input's author and text in submission order.
+Visible conversation turns separate groups. Adding another receipt preserves
+the block's identity and open state; execution still renders each full prompt
+separately at dispatch.
+Resuming never duplicates that full prompt. Legacy acceptance events without
+`queued` retain their existing display position. Acceptance acknowledges an
+optimistic send even before the input is dispatched. Live replay and reload
+produce the same chronological view.
 `prompt.paused` carries the reason an interruption left the prompt unfinished —
 `host_stopped` when the host stopped, `host_restarted` when a restart was only
 discovered at the next boot, `reader_stopped` when the reader stopped the run —
@@ -1223,6 +1242,74 @@ replacement input is accepted, and sequence numbers are never reused, so the
 discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
+The reader's Stop button and Escape close a durable per-Thread dispatch gate
+before aborting its active prompt. Repeated stops are idempotent, including when
+the display names a prompt that just finished. Pending inputs and results that
+arrive later remain accepted, and a backend restart preserves the gate. Sending
+human input while paused adds it to the queue without reopening dispatch or
+superseding the interrupted prompt, which remains resumable before the FIFO.
+Agent-facing targeted interruption
+keeps its separate child-prompt contract.
+`GET /threads/:id/queue` returns a non-cached, revisioned snapshot with `paused`,
+`stopping`, an optional resumable prompt, the current active or resumable prompt,
+and FIFO pending items. The active prompt is excluded from the pending items.
+Each item carries its prompt ID, source, display label, bounded
+preview and acceptance time; the accepted event retains full detail.
+`POST /threads/:id/queue/resume` refuses while stopping, otherwise resumes the
+latest eligible reader-paused prompt first and then the FIFO. Queue state and
+dispatch changes publish durable `queue.paused`, `queue.resumed` and
+`queue.updated` notifications through the existing Thread watch. The renderer
+reads snapshots through Electron IPC and ignores older revisions.
+`DELETE /threads/:id/queue/:promptId` removes a pending or reader-paused input
+under the same Project lock as dispatch. It refuses an input already executing.
+Removal records `prompt.finished` with `status: cancelled` and
+`reason: queue_removed`, so replay and boot cannot execute it, while its historical
+receipt remains. Repeated removal is idempotent. Delegated input removal returns
+a cancellation result to its parent through the existing result queue.
+`GET /threads/:id/queue/:promptId` returns full effective text, edit eligibility
+and the item's revision without caching. `PATCH` on that resource requires text
+and that revision. Under the dispatch lock, only a user input that has never
+started can be edited; paused, dispatched, completed and machine inputs cannot.
+A stale revision conflicts. An edit persists `prompt.edited` before replacing
+the in-memory input at the same FIFO position. Replay and recovery use its latest
+text; the historical Queued receipt retains the original text. Queue snapshots
+include each item's eligibility and revision, and edits invalidate the snapshot.
+
+The conversation has one non-editable queue block immediately above its editable
+prompt, anchored with that prompt rather than added to transcript history. It
+shows a compact `Queue` heading and `Current:` and `Next:` groups, using the
+conversation font and lightweight text. The section has no horizontal padding;
+rows retain the Button's horizontal padding, compensated by negative margins
+on both lists so their content aligns with the conversation. Inset focus rings
+stay visible inside the scroll viewport. Pending
+rows scroll within a bounded list; full details open in a popover. An empty queue
+is hidden, as is a queue containing only an executing prompt with no pending
+items. Current remains visible alongside pending items or while paused/stopping.
+Hidden rows are removed from caret navigation; footer execution controls retain
+the complete queue state. Queue updates preserve the draft and selection. Arrow keys traverse
+each row between transcript and draft; Enter edits eligible user input in the
+main composer and otherwise opens details. Clicking a row opens read-only
+details. Delete or
+Backspace removes the selected pending or paused input. The footer alone controls
+dispatch: Arrow Up sends when the queue is empty, Play resumes queued work without
+consuming the draft, and Pause stops an active run. While stopping or resuming,
+the control is disabled. Sending into an empty paused queue reopens dispatch
+before submission; sending while it still has items only appends input.
+Cmd/Ctrl+Enter with an empty input resumes waiting queue items through the same
+resume operation as the footer. It does nothing while running, stopping or
+resuming, when queue loading failed, or when no items remain. Editing retains
+priority: the shortcut saves the edited prompt and never resumes the queue.
+Human items
+share their avatar and username with historical Queued receipts; machine inputs
+retain their source identity. There is no divider between the queue and prompt.
+Editing preserves the prior composer draft. The composer and selected queue row
+use the caret-focus muted tone at 50% opacity, without an editing border. Its header reads
+`Editing: <avatar> <username> "<original prompt>…"`; Editing uses the conversation's muted foreground
+at weight 400. The footer checkmark and Cmd/Ctrl+Enter save; Escape restores the
+draft without pausing execution. No cancel button is shown. Pause remains
+available while running. Save conflicts retain the typed edit, and text entered
+while a save is pending is never discarded by the response.
+
 The conversation states the two lifecycle events as markers between the blocks
 they sit between: a pause reads as a quiet row — the reason it
 paused — and a resume as a quiet row naming its attempt, with the option to take
@@ -1239,10 +1326,11 @@ execution replaces the pause marker with the resumed attempt and preserves the
 pause reason in the tooltip; otherwise the resume marker appears at the actual
 start. Live batches and replay apply the same rule, and rewind reconstructs this
 state from surviving events. Durable events and the host's attempt budget remain
-unchanged. A newer user prompt accepted in the same Thread supersedes
+unchanged. A newer user prompt accepted outside the queue in the same Thread supersedes
 older paused prompts: their resume action disappears, the host rejects manual
 resume, and boot recovery never schedules them again. Delegated inputs do not
-supersede a pause.
+supersede a pause. Acceptance marked `queued: true` also preserves the current
+pause and its resume action, including when replaying history after a restart.
 A prompt closed because its
 attempts ran out is the one that is not quiet: it reads as a warning, alert icon
 and all, in the theme's own warning tone, because it needs the reader's decision.

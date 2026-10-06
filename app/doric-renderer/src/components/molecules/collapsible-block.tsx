@@ -72,7 +72,10 @@ export function CollapsibleBlock({
   const chevron = (
     <ChevronRightIcon
       aria-hidden="true"
-      className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+      className={cn(
+        'size-3.5 shrink-0 transition-transform',
+        open && 'rotate-90',
+      )}
     />
   );
 
@@ -80,7 +83,9 @@ export function CollapsibleBlock({
     <Collapsible open={open} onOpenChange={toggle}>
       {action === undefined ? (
         <CollapsibleTrigger className={headerClass}>
-          <span className={cn(openness.active && 'shimmer')}>{label}</span>
+          <span className={cn('min-w-0', openness.active && 'shimmer')}>
+            {label}
+          </span>
           {chevron}
         </CollapsibleTrigger>
       ) : (

@@ -34,6 +34,107 @@ const thread: Thread = {
   createdAt: '',
   updatedAt: '',
 };
+void test('queue editing returns full input and rejects invalid or stale writes', async (t) => {
+  const prompt = { promptId, text: 'Full input', editable: true, revision: 7 };
+  const host = await serve({
+    threads: {
+      queuedPrompt: async () => prompt,
+      editQueued: async (_id, _target, text, revision) =>
+        revision === 7
+          ? { status: 'updated', prompt: { ...prompt, text, revision: 8 } }
+          : { status: 'conflict' },
+    },
+  });
+  t.after(host.close);
+  const path = `/threads/${threadId}/queue/${promptId}`;
+  const read = await host.request(path);
+  assert.equal(read.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await read.json(), prompt);
+  const saved = await host.request(path, 'PATCH', {
+    text: 'Edited',
+    revision: 7,
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(await saved.json(), {
+    ...prompt,
+    text: 'Edited',
+    revision: 8,
+  });
+  assert.equal(
+    (await host.request(path, 'PATCH', { text: 'Stale', revision: 6 })).status,
+    409,
+  );
+  for (const body of [
+    { text: ' ', revision: 7 },
+    { text: 'Missing revision' },
+    { text: 'Bad revision', revision: -1 },
+  ])
+    assert.equal((await host.request(path, 'PATCH', body)).status, 422);
+});
+
+void test('reads the queue without caching and maps resume outcomes', async (t) => {
+  const queue = { revision: 12, paused: true, stopping: false, items: [] };
+  const host = await serve({
+    threads: {
+      queue: async (id) => (id === threadId ? queue : undefined),
+      resumeQueue: async (id) =>
+        id === threadId ? { status: 'resumed', thread } : { status: 'missing' },
+    },
+  });
+  t.after(host.close);
+  const response = await host.request(`/threads/${threadId}/queue`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), queue);
+  assert.equal((await host.request(`/threads/${projectId}/queue`)).status, 404);
+  assert.equal((await host.request('/threads/not-a-uuid/queue')).status, 400);
+  assert.equal(
+    (await host.request(`/threads/${threadId}/queue/resume`, 'POST')).status,
+    200,
+  );
+  assert.equal(
+    (await host.request(`/threads/${projectId}/queue/resume`, 'POST')).status,
+    404,
+  );
+  const stopping = await serve({
+    threads: { resumeQueue: async () => ({ status: 'busy' }) },
+  });
+  t.after(stopping.close);
+  assert.equal(
+    (await stopping.request(`/threads/${threadId}/queue/resume`, 'POST'))
+      .status,
+    409,
+  );
+});
+void test('queue deletion validates prompt identity and refuses an input already running', async (t) => {
+  const host = await serve({
+    threads: {
+      removeQueued: async (id, target) =>
+        id !== threadId ? 'missing' : target === promptId ? 'removed' : 'busy',
+    },
+  });
+  t.after(host.close);
+  assert.equal(
+    (await host.request(`/threads/${threadId}/queue/${promptId}`, 'DELETE'))
+      .status,
+    204,
+  );
+  assert.equal(
+    (await host.request(`/threads/${threadId}/queue/${projectId}`, 'DELETE'))
+      .status,
+    409,
+  );
+  assert.equal(
+    (await host.request(`/threads/${projectId}/queue/${promptId}`, 'DELETE'))
+      .status,
+    404,
+  );
+  assert.equal(
+    (await host.request(`/threads/${threadId}/queue/not-a-uuid`, 'DELETE'))
+      .status,
+    422,
+  );
+});
 void test('serves usage without caching and returns missing for an unknown Thread', async (t) => {
   const total = {
     calls: 2,
@@ -796,6 +897,11 @@ const serve = async (
       ...overrides.projects,
     },
     threads: {
+      queue: async () => undefined,
+      queuedPrompt: async () => undefined,
+      editQueued: async () => ({ status: 'unknown_prompt' }),
+      removeQueued: async () => 'removed',
+      resumeQueue: async () => ({ status: 'missing' }),
       create: async (_id, name, parentThreadId) => ({
         status: 'created',
         thread: {

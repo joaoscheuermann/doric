@@ -27,6 +27,7 @@
  */
 import { $isActivityTurnNode } from '@/components/organisms/conversation/nodes/activity-turn-node';
 import { $isDelegatedTurnNode } from '@/components/organisms/conversation/nodes/delegated-turn-node';
+import { $isQueueNode } from '@/components/organisms/conversation/nodes/queue-node';
 import { $isThinkingTurnNode } from '@/components/organisms/conversation/nodes/thinking-turn-node';
 import { $isToolTurnNode } from '@/components/organisms/conversation/nodes/tool-turn-node';
 import {
@@ -37,6 +38,7 @@ import {
   nextItem,
   nextStop,
 } from '@/domain/caret-navigation';
+import { TURN_AUTHOR_BLOCK } from '@/domain/conversation-nodes';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createNodeSelection,
@@ -80,6 +82,10 @@ const $landOn = (block: LexicalNode, direction: Direction): void => {
     if ($isActivityTurnNode(block)) {
       block.setItemFocus(entryItem(block.visibleSteps(), direction));
     }
+    if ($isQueueNode(block))
+      block.focusItem(
+        direction === 'previous' ? block.items().at(-1) : block.items()[0],
+      );
     const nodeSelection = $createNodeSelection();
     nodeSelection.add(block.getKey());
     $setSelection(nodeSelection);
@@ -158,7 +164,11 @@ const $lineLeavesBlock = (
 const $blockTypes = (): string[] =>
   $getRoot()
     .getChildren()
-    .map((child) => child.getType());
+    .map((child) =>
+      $isQueueNode(child) && child.items().length === 0
+        ? TURN_AUTHOR_BLOCK
+        : child.getType(),
+    );
 
 /**
  * One arrow press. Handled exactly when it would leave the caret's block for
@@ -179,6 +189,17 @@ const $handleArrow = (
 
   if ($isNodeSelection(selection)) {
     const nodes = selection.getNodes();
+    const queue =
+      nodes.length === 1 && $isQueueNode(nodes[0]) ? nodes[0] : undefined;
+    if (queue !== undefined) {
+      const index = queue.items().indexOf(queue.focused() ?? '');
+      const target = queue.items()[index + step];
+      if (target !== undefined) {
+        event.preventDefault();
+        queue.focusItem(target);
+        return true;
+      }
+    }
     // A focused activity summary carries its steps as stops of their own: one
     // press walks them, and only past the last step leaves the summary for the
     // next stop in that direction, past any furniture between.

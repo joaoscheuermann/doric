@@ -29,6 +29,12 @@ const promptInput = z
   })
   .strict();
 const interruptInput = z.object({ promptId: z.uuid() }).strict();
+const editInput = z
+  .object({
+    text: z.string().refine((text) => text.trim().length > 0),
+    revision: z.number().int().safe().nonnegative(),
+  })
+  .strict();
 const resumeInput = z.object({ promptId: z.uuid() }).strict();
 const rewindInput = z
   .object({
@@ -53,6 +59,106 @@ const cwdRefusal: Readonly<
 export const createThreadsRouter = (service: WorkspaceService): Router => {
   const router = Router();
   router.use('/:id', validateId('thread'));
+  router.get('/:id/queue', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const queue = await service.threads.queue(request.params.id);
+    if (queue === undefined) {
+      missing(response, 'thread');
+      return;
+    }
+    response.json(queue);
+  });
+  router.post('/:id/queue/resume', async (request, response) => {
+    const result = await service.threads.resumeQueue(request.params.id);
+    if (result.status === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result.status !== 'resumed') {
+      conflict(response, 'thread', result.status);
+      return;
+    }
+    response.json(result.thread);
+  });
+  router.delete('/:id/queue/:promptId', async (request, response) => {
+    if (!z.uuid().safeParse(request.params.promptId).success) {
+      sendError(response, 422, 'invalid_prompt', 'A promptId is required.');
+      return;
+    }
+    const result = await service.threads.removeQueued(
+      request.params.id,
+      request.params.promptId,
+    );
+    if (result === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result !== 'removed') {
+      conflict(response, 'thread', result);
+      return;
+    }
+    response.status(204).end();
+  });
+  router.get('/:id/queue/:promptId', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    if (!z.uuid().safeParse(request.params.promptId).success) {
+      sendError(response, 422, 'invalid_prompt', 'A promptId is required.');
+      return;
+    }
+    const prompt = await service.threads.queuedPrompt(
+      request.params.id,
+      request.params.promptId,
+    );
+    if (prompt === undefined) {
+      sendError(
+        response,
+        404,
+        'unknown_prompt',
+        'This prompt is no longer queued.',
+      );
+      return;
+    }
+    response.json(prompt);
+  });
+  router.patch('/:id/queue/:promptId', async (request, response) => {
+    const input = editInput.safeParse(request.body);
+    if (
+      !input.success ||
+      !z.uuid().safeParse(request.params.promptId).success
+    ) {
+      sendError(
+        response,
+        422,
+        'invalid_prompt',
+        'A prompt ID, non-empty text and its revision are required.',
+      );
+      return;
+    }
+    const result = await service.threads.editQueued(
+      request.params.id,
+      request.params.promptId,
+      input.data.text,
+      input.data.revision,
+    );
+    if (result.status === 'updated') {
+      response.json(result.prompt);
+      return;
+    }
+    const message =
+      result.status === 'conflict'
+        ? 'This prompt was edited elsewhere. Your changes have not been saved.'
+        : result.status === 'not_editable'
+          ? 'Only your prompts that have not started can be edited. Your changes have not been saved.'
+          : 'This prompt is no longer available for editing. Your changes have not been saved.';
+    sendError(
+      response,
+      result.status === 'missing' || result.status === 'unknown_prompt'
+        ? 404
+        : 409,
+      result.status,
+      message,
+    );
+  });
   router.get('/:id/usage', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     const usage = await service.threads.usage(request.params.id);

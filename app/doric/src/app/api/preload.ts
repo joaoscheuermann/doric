@@ -10,6 +10,7 @@ import {
   type ProjectUpdate,
   projectUpdateChannel,
 } from '../../workspace/project-events';
+import type { QueuedPrompt, ThreadQueue } from '../../workspace/queue';
 import type { ThreadHistory } from '../../workspace/thread-history';
 import type { ThreadUsage } from '../../workspace/usage';
 import { terminals } from './terminals';
@@ -481,6 +482,26 @@ contextBridge.exposeInMainWorld('doric', {
     },
   },
   threads: {
+    queue: (id: string) => invoke<ThreadQueue>('doric:threads:queue', id),
+    queuedPrompt: (id: string, promptId: string) =>
+      invoke<QueuedPrompt>('doric:threads:queue-prompt', id, promptId),
+    editQueued: (
+      id: string,
+      promptId: string,
+      text: string,
+      revision: number,
+    ) =>
+      invoke<QueuedPrompt>(
+        'doric:threads:queue-edit',
+        id,
+        promptId,
+        text,
+        revision,
+      ),
+    removeQueued: (id: string, promptId: string) =>
+      invoke<void>('doric:threads:queue-remove', id, promptId),
+    resumeQueue: (id: string) =>
+      invoke<Thread>('doric:threads:queue-resume', id),
     usage: (id: string) => invoke<ThreadUsage>('doric:threads:usage', id),
     list: (projectId: string) =>
       invoke<readonly Thread[]>('doric:threads:list', projectId),

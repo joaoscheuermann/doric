@@ -10,6 +10,12 @@ import { cwdRepoHint, threadGit } from './git-status.js';
 import { nameFromPrompt } from './names.js';
 import { delegatedResult } from './prompts.js';
 import {
+  type EditQueueResult,
+  queuedPrompt,
+  queuedPrompts,
+  resumablePrompt,
+} from './queue.js';
+import {
   type ProjectRuntime,
   type PromptJob,
   type RuntimeContext,
@@ -49,6 +55,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     promptId?: string,
     errorCode?: string,
   ) => {
+    const previous = thread.thread.activePromptId;
     const updated = await store.setState(
       thread.thread.id,
       value,
@@ -57,7 +64,16 @@ export const createThreadRunner = (context: RuntimeContext) => {
     );
     if (updated !== undefined) {
       thread.thread = updated;
-      publisher.threadUpdated(updated);
+      if (previous !== updated.activePromptId) {
+        const event = await store.appendEvent(
+          updated.id,
+          promptId ?? previous ?? randomUUID(),
+          { type: 'queue.updated' },
+        );
+        publisher.event(event);
+        thread.thread = { ...updated, lastSequence: event.sequence };
+      }
+      publisher.threadUpdated(thread.thread);
     }
   };
   // Caller holds the project's mutation lock.
@@ -73,11 +89,23 @@ export const createThreadRunner = (context: RuntimeContext) => {
     if (prompt.trim().length === 0)
       throw new TypeError('A non-empty prompt is required.');
     const job: PromptJob = { id: randomUUID(), prompt, source };
-    await publish(thread, job, {
-      type: 'prompt.accepted',
-      text: prompt,
-      source,
-    });
+    const queued =
+      thread.thread.queuePaused === true ||
+      thread.active !== undefined ||
+      thread.jobs.length > 0 ||
+      project.lease === undefined;
+    const values = [
+      { type: 'prompt.accepted', text: prompt, source, queued },
+      ...(queued ? [{ type: 'prompt.queued' }] : []),
+    ];
+    const accepted = await store.appendEvents(
+      thread.thread.id,
+      job.id,
+      values.map((event) =>
+        eventJson(event, context.generation().redactions()),
+      ),
+    );
+    for (const event of accepted) publisher.event(event);
     thread.jobs.push(job);
     start(project, thread);
     return { status: 'accepted' as const, promptId: job.id };
@@ -174,7 +202,12 @@ export const createThreadRunner = (context: RuntimeContext) => {
   const run = async (project: ProjectRuntime, thread: ThreadRuntime) => {
     while (true) {
       const active = await exclusive(project.project.id, async () => {
-        if (project.closing || thread.closing || project.lease === undefined)
+        if (
+          project.closing ||
+          thread.closing ||
+          thread.thread.queuePaused ||
+          project.lease === undefined
+        )
           return undefined;
         const job = thread.jobs.shift();
         if (job === undefined) return undefined;
@@ -187,6 +220,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         await state(thread, 'running', job.id);
         // The turn's rewind boundary is the history it is about to read.
         await store.saveCheckpoint(thread.thread.id, job.id);
+        await publish(thread, job, { type: 'prompt.started' });
         return active;
       });
       if (active === undefined) return;
@@ -292,6 +326,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
   const start = (project: ProjectRuntime, thread: ThreadRuntime) => {
     if (
       thread.task !== undefined ||
+      thread.thread.queuePaused ||
       thread.closing ||
       project.closing ||
       project.lease === undefined ||
@@ -381,6 +416,183 @@ export const createThreadRunner = (context: RuntimeContext) => {
     if (reason !== undefined) thread.pausing = reason;
     thread.active.controller.abort();
     return 'interrupted';
+  };
+  const queueState = async (thread: ThreadRuntime, paused: boolean) => {
+    const event = await store.appendEvent(
+      thread.thread.id,
+      thread.active?.job.id ?? randomUUID(),
+      {
+        type: paused ? 'queue.paused' : 'queue.resumed',
+      },
+    );
+    thread.thread = (await store.record(thread.thread.id)) ?? thread.thread;
+    publisher.event(event);
+    publisher.threadUpdated(thread.thread);
+  };
+  /** Caller holds the scheduler lock. Close the gate before asking work to stop. */
+  const pause = async (thread: ThreadRuntime): Promise<InterruptResult> => {
+    if (thread.closing || isTerminal(thread.thread.state)) return 'inactive';
+    if (thread.thread.queuePaused) return 'interrupted';
+    thread.thread = { ...thread.thread, queuePaused: true };
+    try {
+      await queueState(thread, true);
+    } finally {
+      if (thread.active !== undefined && !thread.active.finished) {
+        thread.pausing = 'reader_stopped';
+        thread.active.controller.abort();
+      }
+    }
+    return 'interrupted';
+  };
+  /** Rebuild the FIFO from durable inputs before reopening dispatch. */
+  const resumeQueue = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    promptId?: string,
+  ) => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state))
+      return { status: 'inactive' as const };
+    if (!thread.thread.queuePaused)
+      return { status: 'resumed' as const, thread: thread.thread };
+    if (thread.active !== undefined) return { status: 'busy' as const };
+    const progress = (await store.unfinishedPrompts(thread.thread.id)).filter(
+      (prompt) => !prompt.superseded,
+    );
+    const first =
+      promptId === undefined
+        ? resumablePrompt(progress)
+        : progress.find((prompt) => prompt.promptId === promptId);
+    if (promptId !== undefined && first === undefined)
+      return { status: 'unknown_prompt' as const };
+    const queued = queuedPrompts(progress).filter(
+      (prompt) => prompt.promptId !== first?.promptId,
+    );
+    const pending = first === undefined ? queued : [first, ...queued];
+    const jobs: PromptJob[] = [];
+    for (const prompt of pending) {
+      const job = {
+        id: prompt.promptId,
+        prompt: prompt.text,
+        source: prompt.source,
+      };
+      if (prompt.paused !== undefined)
+        await publish(thread, job, {
+          type: 'prompt.resumed',
+          attempt: prompt.attempts + 1,
+          first: prompt === first,
+        });
+      jobs.push(job);
+    }
+    thread.jobs.splice(0, thread.jobs.length, ...jobs);
+    await queueState(thread, false);
+    start(project, thread);
+    return { status: 'resumed' as const, thread: thread.thread };
+  };
+  /** Caller holds the dispatch lock; edits cannot race the start of execution. */
+  const editQueued = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    promptId: string,
+    text: string,
+    revision: number,
+  ): Promise<EditQueueResult> => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state))
+      return { status: 'inactive' };
+    if (thread.active?.job.id === promptId) return { status: 'not_editable' };
+    if (!text.trim() || !Number.isSafeInteger(revision) || revision < 0)
+      return { status: 'invalid_prompt' };
+    const progress = (await store.unfinishedPrompts(thread.thread.id)).find(
+      (entry) => entry.promptId === promptId && !entry.superseded,
+    );
+    if (progress === undefined) return { status: 'unknown_prompt' };
+    const current = queuedPrompt(progress);
+    if (!current.editable) return { status: 'not_editable' };
+    if (current.revision !== revision) return { status: 'conflict' };
+    if (current.text === text) return { status: 'updated', prompt: current };
+    const event = await store.appendEvent(
+      thread.thread.id,
+      promptId,
+      eventJson(
+        { type: 'prompt.edited', text },
+        context.generation().redactions(),
+      ),
+    );
+    const index = thread.jobs.findIndex((job) => job.id === promptId);
+    if (index !== -1)
+      thread.jobs[index] = { ...thread.jobs[index], prompt: text };
+    publisher.event(event);
+    return {
+      status: 'updated',
+      prompt: {
+        ...current,
+        revision: event.sequence,
+        text: (event.event as { text: string }).text,
+      },
+    };
+  };
+  /** Caller holds the dispatch lock; an input already running cannot be removed. */
+  const removeQueued = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    promptId: string,
+  ) => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state))
+      return 'inactive' as const;
+    if (thread.active?.job.id === promptId) return 'busy' as const;
+    const progress = await store.unfinishedPrompts(thread.thread.id);
+    const prompt = progress.find(
+      (entry) => entry.promptId === promptId && !entry.superseded,
+    );
+    if (prompt === undefined) {
+      const removed = (await store.eventsAfter(thread.thread.id, 0)).some(
+        (event) =>
+          event.promptId === promptId &&
+          event.type === 'prompt.finished' &&
+          (event.event as { reason?: string } | null)?.reason ===
+            'queue_removed',
+      );
+      return removed ? ('removed' as const) : ('unknown_prompt' as const);
+    }
+    const job = { id: promptId, prompt: prompt.text, source: prompt.source };
+    await publish(thread, job, {
+      type: 'prompt.finished',
+      status: 'cancelled',
+      text: '',
+      source: prompt.source,
+      reason: 'queue_removed',
+    });
+    const index = thread.jobs.findIndex((entry) => entry.id === promptId);
+    if (index !== -1) thread.jobs.splice(index, 1);
+    await store.setResult(thread.thread.id, {
+      promptId,
+      status: 'cancelled',
+      text: '',
+      at: new Date().toISOString(),
+    });
+    // This path already owns the project lock, so notify the parent directly.
+    if (prompt.source.kind === 'parent') {
+      const source = prompt.source;
+      const parent = project.threads.get(source.threadId);
+      if (parent !== undefined && !parent.closing)
+        await enqueue(
+          project,
+          parent,
+          delegatedResult(
+            thread.thread.id,
+            promptId,
+            source.promptId,
+            'cancelled',
+            'Removed from queue.',
+          ),
+          {
+            kind: 'result',
+            threadId: thread.thread.id,
+            promptId,
+            requestPromptId: source.promptId,
+          },
+        );
+    }
+    return 'removed' as const;
   };
   // Caller holds the project's mutation lock.
   const rewind = async (
@@ -496,7 +708,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     for (const thread of targets) {
       thread.closing = true;
       if (thread.active !== undefined && !thread.active.finished) {
-        thread.pausing = 'host_stopped';
+        thread.pausing ??= 'host_stopped';
         thread.active.controller.abort();
       }
     }
@@ -787,6 +999,10 @@ export const createThreadRunner = (context: RuntimeContext) => {
     resume,
     create,
     interrupt,
+    pause,
+    resumeQueue,
+    removeQueued,
+    editQueued,
     rewind,
     descendants,
     close,

@@ -1,0 +1,1 @@
+ALTER TABLE "thread" ADD COLUMN "queue_paused" BOOLEAN NOT NULL DEFAULT false;

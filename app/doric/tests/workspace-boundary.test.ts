@@ -26,6 +26,76 @@ const thread = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+test('the Electron adapter reads and edits full queued input with its revision', async () => {
+  const original = globalThis.fetch;
+  const requests: { url: string; method: string; body: unknown }[] = [];
+  const detail = {
+    promptId: 'prompt-id',
+    text: 'Full input',
+    revision: 9,
+    editable: true,
+  };
+  globalThis.fetch = async (input, init) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: init?.body,
+    });
+    return Response.json(detail);
+  };
+  try {
+    assert.deepEqual(
+      await workspaceApi.threads.queuedPrompt('thread-id', 'prompt-id'),
+      detail,
+    );
+    await workspaceApi.threads.editQueued(
+      'thread-id',
+      'prompt-id',
+      'Edited\ninput',
+      9,
+    );
+    assert.ok(
+      requests.every((request) =>
+        request.url.endsWith('/threads/thread-id/queue/prompt-id'),
+      ),
+    );
+    assert.equal(requests[0].method, 'GET');
+    assert.equal(requests[1].method, 'PATCH');
+    assert.deepEqual(JSON.parse(String(requests[1].body)), {
+      text: 'Edited\ninput',
+      revision: 9,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('the Electron adapter reads, resumes and removes items from the selected Thread queue', async () => {
+  const original = globalThis.fetch;
+  const requests: { url: string; method: string }[] = [];
+  const queue = { revision: 10, paused: true, stopping: false, items: [] };
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET' });
+    if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+    return Response.json(init?.method === 'POST' ? thread : queue);
+  };
+  try {
+    assert.deepEqual(await workspaceApi.threads.queue('thread-id'), queue);
+    assert.equal(
+      (await workspaceApi.threads.resumeQueue('thread-id')).id,
+      thread.id,
+    );
+    assert.ok(requests[0].url.endsWith('/threads/thread-id/queue'));
+    assert.ok(requests[1].url.endsWith('/threads/thread-id/queue/resume'));
+    assert.equal(requests[1].method, 'POST');
+    await workspaceApi.threads.removeQueued('thread-id', 'prompt-id');
+    assert.ok(requests[2].url.endsWith('/threads/thread-id/queue/prompt-id'));
+    assert.equal(requests[2].method, 'DELETE');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 describe('workspace IPC origin', () => {
   const allowedUrls = [
     'http://localhost:4200/',

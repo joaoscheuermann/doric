@@ -245,6 +245,50 @@ export const registerWorkspaceHandlers = (
     ),
   );
   ipcMain.handle(
+    'doric:threads:queue',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.threads.queue(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:queue-resume',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.threads.resumeQueue(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:queue-remove',
+    safe(allowedUrls, (value: unknown, prompt: unknown) =>
+      workspaceApi.threads.removeQueued(identifier(value), identifier(prompt)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:queue-prompt',
+    safe(allowedUrls, (value: unknown, target: unknown) =>
+      workspaceApi.threads.queuedPrompt(identifier(value), identifier(target)),
+    ),
+  );
+  ipcMain.handle(
+    'doric:threads:queue-edit',
+    safe(
+      allowedUrls,
+      (value: unknown, target: unknown, text: unknown, revision: unknown) => {
+        if (
+          typeof revision !== 'number' ||
+          !Number.isSafeInteger(revision) ||
+          revision < 0
+        )
+          throw new WorkspaceError('Invalid prompt revision.');
+        return workspaceApi.threads.editQueued(
+          identifier(value),
+          identifier(target),
+          prompt(text),
+          revision,
+        );
+      },
+    ),
+  );
+  ipcMain.handle(
     'doric:threads:switch-branch',
     safe(allowedUrls, (value: unknown, branch: unknown, cwd: unknown) => {
       if (

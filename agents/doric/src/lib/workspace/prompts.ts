@@ -18,6 +18,8 @@ export interface PromptProgress {
   readonly promptId: string;
   /** The input `prompt.accepted` recorded, after configured-credential redaction. */
   readonly text: string;
+  /** Sequence of the acceptance or most recent edit, independent of queue changes. */
+  readonly revision?: number;
   readonly source: InputSource;
   /** Whether a run of this prompt ever started. */
   readonly started: boolean;
@@ -26,10 +28,14 @@ export interface PromptProgress {
    * `prompt.resumed` followed. Absent while a resume is the prompt's last word.
    */
   readonly paused?: PauseReason;
-  /** A newer user input was accepted while this prompt was paused. */
+  /** A newer user input replaced this paused prompt; queued input never does. */
   readonly superseded?: boolean;
   /** How many times the host already took this prompt up again. */
   readonly attempts: number;
+  readonly acceptedAt?: string;
+  readonly queuedSequence?: number;
+  readonly pausedSequence?: number;
+  readonly first?: boolean;
 }
 
 /** The failure a prompt the host gives up on is closed with. */

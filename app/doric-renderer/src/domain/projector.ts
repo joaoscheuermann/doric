@@ -1,7 +1,8 @@
 import type { ThreadEvent } from '@/domain/workspace';
 
-import { type DelegatedInput, delegatedInput } from './delegated';
+import { type DelegatedInput } from './delegated';
 import { type PromptExecution, readExecution } from './projector-execution';
+import { type PromptInput, readInput } from './projector-input';
 import {
   type LifecycleEvent,
   pauseReason,
@@ -9,6 +10,7 @@ import {
   promptFailure,
   statesFailure,
 } from './prompt-lifecycle';
+import type { QueueItem } from './queue';
 
 export type PromptStatus =
   | 'queued'
@@ -44,6 +46,16 @@ export type UserTurn = TurnBase & {
    * rather than leaving the transcript silent.
    */
   readonly awaiting: boolean;
+};
+
+/** A durable receipt at submission time, separate from the execution's prompt. */
+export type QueuedTurn = TurnBase & {
+  readonly type: 'queued';
+  readonly items: readonly {
+    readonly promptId: string;
+    readonly text: string;
+    readonly source: QueueItem['source'];
+  }[];
 };
 
 /** A run of the agent's user-visible text: one answer, streaming and settled. */
@@ -125,6 +137,7 @@ export type FailureTurn = TurnBase & {
 /** One block of the conversation, in the order the log produced it. */
 export type Turn =
   | UserTurn
+  | QueuedTurn
   | AgentTurn
   | ThinkingTurn
   | ToolTurn
@@ -147,6 +160,7 @@ export type Projection = {
   readonly drafts: readonly Draft[];
   readonly status: ReadonlyMap<string, PromptStatus>;
   readonly executions: ReadonlyMap<string, PromptExecution>;
+  readonly inputs: ReadonlyMap<string, PromptInput>;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -170,6 +184,7 @@ const oneLineJson = (value: unknown): string => {
 
 /** A turn while it is still being built; frozen into a `Turn` at the end. */
 export type Draft =
+  | QueuedTurn
   | {
       type: 'user';
       promptId: string;
@@ -264,6 +279,21 @@ const grouped = (
   let index = 0;
   while (index < turns.length) {
     const turn = turns[index];
+    if (turn?.type === 'queued') {
+      const items = [...turn.items];
+      const events = [...turn.events];
+      let end = index + 1;
+      while (end < turns.length) {
+        const next = turns[end];
+        if (next?.type !== 'queued') break;
+        items.push(...next.items);
+        events.push(...next.events);
+        end += 1;
+      }
+      result.push({ ...turn, items, events });
+      index = end;
+      continue;
+    }
     if (turn === undefined || !isBurstDraft(turn)) {
       if (turn !== undefined) result.push(turn);
       index += 1;
@@ -328,6 +358,22 @@ const lastAgent = (
   return undefined;
 };
 
+/** A queue receipt splits a streamed answer without making its prefix new text. */
+const finishedTail = (
+  turns: readonly Draft[],
+  agent: Draft,
+  text: string,
+): string => {
+  let prefix = '';
+  for (let index = turns.indexOf(agent) - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn?.type === 'queued') continue;
+    if (turn?.type !== 'agent' || turn.promptId !== agent.promptId) break;
+    prefix = turn.text + prefix;
+  }
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
+};
+
 /** The failure block a job's `agent.failed` wrote, which states why it closed. */
 const lastFailure = (
   turns: readonly Draft[],
@@ -377,6 +423,7 @@ const readEvent = (
   turns: Draft[],
   status: Map<string, PromptStatus>,
   executions: Map<string, PromptExecution>,
+  inputs: Map<string, PromptInput>,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -386,20 +433,13 @@ const readEvent = (
   const open =
     last !== undefined && last.promptId === promptId ? last : undefined;
   const recovery = readExecution(executions, item, event);
+  const input = readInput(inputs, item, event);
+  if (input !== undefined) {
+    turns.push(input);
+    return;
+  }
 
-  if (event?.type === 'prompt.accepted') {
-    const text = typeof event.text === 'string' ? event.text : '';
-    const delegated = delegatedInput(event.source, text);
-    turns.push({
-      type: 'user',
-      promptId,
-      events: [item],
-      text: delegated === undefined ? text : '',
-      accepted: true,
-      awaiting: false,
-      ...(delegated === undefined ? {} : { delegated }),
-    });
-  } else if (event?.type === 'reasoning.delta') {
+  if (event?.type === 'reasoning.delta') {
     const delta = typeof event.delta === 'string' ? event.delta : '';
     // A delta that carries no text says nothing changed, so it neither opens a
     // turn nor ends the run it sits inside. A provider that emits one beside
@@ -472,7 +512,7 @@ const readEvent = (
     // unless it streamed nothing and the host still named a result.
     if (terminal === 'completed' || agent === undefined) {
       if (agent?.type === 'agent') {
-        agent.text = finished;
+        agent.text = finishedTail(turns, agent, finished);
         agent.events.push(item);
       } else if (
         finished.length > 0 &&
@@ -542,6 +582,7 @@ const settle = (
   turns: Draft[],
   status: ReadonlyMap<string, PromptStatus>,
   executions: ReadonlyMap<string, PromptExecution>,
+  inputs: ReadonlyMap<string, PromptInput>,
 ): void => {
   for (const turn of turns) {
     if (turn.type !== 'agent') continue;
@@ -553,11 +594,15 @@ const settle = (
   // of the same prompt, or a terminal status, is what takes the reader's action
   // away. Read backwards so each pause learns whether anything after it did.
   const takenUp = new Set<string>();
-  let newerUserPrompt = false;
+  const latestHumanInput = [...inputs.values()].reduce(
+    (latest, input) =>
+      input.source.kind === 'user' && !input.queued
+        ? Math.max(latest, input.accepted.sequence)
+        : latest,
+    0,
+  );
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
-    if (turn?.type === 'user' && turn.delegated === undefined)
-      newerUserPrompt = true;
     if (turn === undefined || turn.type !== 'lifecycle') continue;
     const lifecycle = turn.lifecycle;
     if (lifecycle.kind === 'resume') {
@@ -565,7 +610,7 @@ const settle = (
       continue;
     }
     const standing =
-      !newerUserPrompt &&
+      latestHumanInput <= (turn.events[0]?.sequence ?? 0) &&
       !takenUp.has(turn.promptId) &&
       (executions.get(turn.promptId)?.recoveredThrough ?? -1) <
         (turn.events[0]?.sequence ?? 0) &&
@@ -609,9 +654,18 @@ const project = (events: readonly ThreadEvent[]): Projection => {
   const drafts: Draft[] = [];
   const status = new Map<string, PromptStatus>();
   const executions = new Map<string, PromptExecution>();
-  for (const item of events) readEvent(drafts, status, executions, item);
-  settle(drafts, status, executions);
-  return { events, drafts, status, executions, turns: grouped(drafts, status) };
+  const inputs = new Map<string, PromptInput>();
+  for (const item of events)
+    readEvent(drafts, status, executions, inputs, item);
+  settle(drafts, status, executions, inputs);
+  return {
+    events,
+    drafts,
+    status,
+    executions,
+    inputs,
+    turns: grouped(drafts, status),
+  };
 };
 
 /**
@@ -631,13 +685,16 @@ const readInto = (
   );
   const status = new Map(current.status);
   const executions = new Map(current.executions);
-  for (const item of incoming) readEvent(drafts, status, executions, item);
-  settle(drafts, status, executions);
+  const inputs = new Map(current.inputs);
+  for (const item of incoming)
+    readEvent(drafts, status, executions, inputs, item);
+  settle(drafts, status, executions, inputs);
   return {
     events: [...current.events, ...incoming],
     drafts,
     status,
     executions,
+    inputs,
     turns: grouped(drafts, status),
   };
 };
@@ -741,6 +798,7 @@ export const emptyProjection: Projection = {
   drafts: [],
   status: new Map(),
   executions: new Map(),
+  inputs: new Map(),
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */

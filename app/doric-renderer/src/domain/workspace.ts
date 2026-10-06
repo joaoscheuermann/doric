@@ -10,6 +10,7 @@ import type {
   ToolCatalogEntry,
 } from './config';
 import type { ConnectionApi } from './connection';
+import type { QueuedPrompt, ThreadQueue } from './queue';
 import type { TerminalsApi } from './terminals';
 import type { ThreadGit } from './thread-git';
 import type { ThreadUsage } from './usage';
@@ -243,6 +244,16 @@ export type WorkspaceApi = {
   };
   readonly threads: {
     usage(id: string): Promise<ThreadUsage>;
+    queue(id: string): Promise<ThreadQueue>;
+    resumeQueue(id: string): Promise<Thread>;
+    queuedPrompt(id: string, promptId: string): Promise<QueuedPrompt>;
+    editQueued(
+      id: string,
+      promptId: string,
+      text: string,
+      revision: number,
+    ): Promise<QueuedPrompt>;
+    removeQueued(id: string, promptId: string): Promise<void>;
     list(projectId: string): Promise<readonly Thread[]>;
     get(id: string): Promise<Thread | undefined>;
     /**
@@ -274,7 +285,7 @@ export type WorkspaceApi = {
       promptId: string,
       prompt: string,
     ): Promise<{ readonly promptId: string }>;
-    /** Stops the prompt a Thread is running, leaving its queue alone. */
+    /** Pauses dispatch before stopping the active prompt; queued inputs remain. */
     interrupt(id: string, promptId: string): Promise<void>;
     /**
      * Takes up a prompt an interruption left unfinished, returning the Thread as

@@ -14,8 +14,15 @@ export type PendingSend = {
 };
 
 /** Whether a turn is a prompt the reader wrote, rather than a Thread's input. */
-const isOwnPrompt = (turn: Turn): boolean =>
-  turn.type === 'user' && turn.delegated === undefined;
+const ownPromptIds = (turn: Turn): readonly string[] => {
+  if (turn.type === 'user' && turn.delegated === undefined)
+    return [turn.promptId];
+  if (turn.type === 'queued')
+    return turn.items
+      .filter((item) => item.source.kind === 'user')
+      .map((item) => item.promptId);
+  return [];
+};
 
 /**
  * A prompt the reader has sent that the log does not hold yet. It carries no
@@ -68,7 +75,7 @@ export const withPendingTurns = (
     waiting.push(awaitingTurn(last.promptId));
   if (
     pending !== undefined &&
-    turns.filter(isOwnPrompt).length <= pending.before
+    new Set(turns.flatMap(ownPromptIds)).size <= pending.before
   )
     waiting.push(sentTurn(pending.text));
 

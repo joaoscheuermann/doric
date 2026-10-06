@@ -1,3 +1,4 @@
+import { SAVE_QUEUE_EDIT_COMMAND } from '@/components/organisms/conversation/commands';
 import { $getUserPromptNode } from '@/components/organisms/conversation/nodes/user-prompt-node';
 import { type PromptSignal } from '@/utility/prompt-signal';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -24,6 +25,8 @@ const $restore = (text: string): void => {
 type SendPromptProps = {
   /** Sends the words, and reports whether the host accepted them. */
   readonly send: (text: string) => Promise<boolean>;
+  /** Resumes waiting work when the input is empty and dispatch is available. */
+  readonly onResumeQueue?: () => void;
   /**
    * The shell's own send request, counted. It changes when the control outside
    * the editor is clicked, and the plugin answers each new count once.
@@ -57,6 +60,7 @@ type SendPromptProps = {
 export function SendPrompt({
   canStop = false,
   onStop,
+  onResumeQueue,
   promptSignal,
   send,
   sendRequest,
@@ -69,8 +73,8 @@ export function SendPrompt({
    */
   const answered = useRef(sendRequest);
   /** The send the shell's control calls, kept current without a render. */
-  const latest = useRef(send);
-  latest.current = send;
+  const latest = useRef({ send, onResumeQueue });
+  latest.current = { send, onResumeQueue };
 
   /**
    * Whether the prompt holds words, which the shell draws its control from. It
@@ -104,11 +108,15 @@ export function SendPrompt({
   }, [editor, promptSignal, $promptHasWords]);
 
   const sendNow = useCallback((): void => {
+    if (editor.dispatchCommand(SAVE_QUEUE_EDIT_COMMAND, undefined)) return;
     let text = '';
     editor.read(() => {
       text = $getUserPromptNode()?.getTextContent().trim() ?? '';
     });
-    if (text.length === 0) return;
+    if (text.length === 0) {
+      latest.current.onResumeQueue?.();
+      return;
+    }
 
     editor.update(() => {
       const prompt = $getUserPromptNode();
@@ -116,7 +124,7 @@ export function SendPrompt({
         return;
       prompt.clear();
     });
-    void latest.current(text).then((accepted) => {
+    void latest.current.send(text).then((accepted) => {
       if (!accepted) editor.update(() => $restore(text));
     });
   }, [editor]);
@@ -137,7 +145,7 @@ export function SendPrompt({
           // A modified Enter is a command, never a line: it is answered here
           // whether or not the prompt holds words to send.
           event.preventDefault();
-          sendNow();
+          if (!event.repeat) sendNow();
           return true;
         },
         COMMAND_PRIORITY_HIGH,

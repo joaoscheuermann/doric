@@ -151,6 +151,8 @@ model Thread {
   checkpoints    Json          @default("{}") @db.JsonB
   /// Cumulative unified charges, independent of rewound conversation history.
   usage          Json?         @db.JsonB
+  /// Reader-controlled dispatch gate; survives host restarts and history rewind.
+  queuePaused    Boolean       @default(false) @map("queue_paused")
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")

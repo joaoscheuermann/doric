@@ -425,6 +425,8 @@ const serve = async (overrides: Partial<ThreadStore> = {}) => {
     reconcile: unsupported,
   };
   const threads: ThreadStore = {
+    queue: unsupported,
+    appendEvents: unsupported,
     usage: unsupported,
     find: async () => ({ thread, messages: [], checkpoints: {} }),
     record: () => Promise.resolve(thread),

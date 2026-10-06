@@ -5,10 +5,14 @@ import { ThreadUsage } from '@/components/organisms/thread-usage';
 import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
 import { Button } from '@/components/ui/button';
 import { connectionLabel } from '@/domain/connection';
+import { composerAction } from '@/domain/queue';
 import type { Thread } from '@/domain/workspace';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
 import type { ProjectFiles } from '@/hooks/use-project-files';
-import { SettingsIcon } from 'lucide-react';
+import { useThreadQueue } from '@/hooks/use-thread-queue';
+import { queueEditStore } from '@/stores/queue-edit';
+import { PauseIcon, SettingsIcon } from 'lucide-react';
+import { useStore } from 'zustand/react';
 
 type WorkspaceFooterProps = {
   readonly thread?: Thread;
@@ -35,6 +39,11 @@ export function WorkspaceFooter({
   onStop,
   running,
 }: WorkspaceFooterProps) {
+  const queue = useThreadQueue(thread?.id);
+  const edit = useStore(queueEditStore, (state) =>
+    thread ? state.edits[thread.id] : undefined,
+  );
+  const action = edit ? 'save' : composerAction(running, queue.data);
   return (
     <footer
       data-slot="workspace-footer"
@@ -51,12 +60,29 @@ export function WorkspaceFooter({
       <ExecutionPicker />
       <ThreadUsage thread={thread} />
       <ToolbarDivider />
+      {edit && running && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Pause execution"
+          onClick={onStop}
+        >
+          <PauseIcon />
+        </Button>
+      )}
       <ComposerButton
-        canSend={canSend}
-        disabled={disabled}
+        canSend={edit ? Boolean(edit.text.trim()) : canSend}
+        disabled={
+          disabled ||
+          edit?.saving ||
+          queue.resuming ||
+          queue.data?.stopping ||
+          (action === 'resume' && queue.isError)
+        }
         onSend={onSend}
         onStop={onStop}
-        running={running}
+        action={action}
+        onResume={queue.resume}
       />
     </footer>
   );
