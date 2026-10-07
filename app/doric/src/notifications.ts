@@ -38,6 +38,14 @@ export const registerNotificationHandler = (
         : {};
     const title = line(request.title);
     if (title.length === 0 || !Notification.isSupported()) return;
-    new Notification({ title, body: line(request.body) }).show();
+    const notification = new Notification({ title, body: line(request.body) });
+    // A notice that never appears is worth one line. On macOS the UNNotification
+    // API refuses a binary that is not code-signed and reports it here instead of
+    // throwing, so an unsigned development build shows nothing at all without
+    // this listener. The completion stays in the Thread's log either way.
+    notification.on('failed', (_event, error: unknown) => {
+      console.error(`Doric: notification failed: ${String(error)}`);
+    });
+    notification.show();
   });
 };

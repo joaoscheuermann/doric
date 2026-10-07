@@ -50,7 +50,11 @@ and what it reads as — the Thread's name, the outcome, and a bounded preview o
 the answer — and the main process bounds both lines again before they reach the
 OS, answers only a renderer at one of the two expected URLs, and drops the notice
 in silence on a platform that supports none. A completion is durable in the
-Thread's log either way, so a missing notice never hides what happened.
+Thread's log either way, so a missing notice never hides what happened. On macOS
+the system delivers these only for a code-signed app: the UNNotification API
+refuses an unsigned binary with a `failed` event rather than a throw, which the
+main process now reports on the terminal so a development build is explained
+instead of merely silent.
 
 At startup a frameless, square, dark splash window shows the centered `Doric`
 name while the main process waits for the local Direct API to answer. The splash
