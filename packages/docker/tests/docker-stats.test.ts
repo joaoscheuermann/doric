@@ -93,7 +93,7 @@ void test('subtracts cache from used memory on cgroup v1', () => {
   assert.equal(stats.memoryUsedBytes, 75_000_000);
 });
 
-void test('reads one-shot stats through the container stats endpoint', async () => {
+void test('requests a sampled container reading so CPU usage is available', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -123,7 +123,7 @@ void test('reads one-shot stats through the container stats endpoint', async () 
 
   assert.equal(requests[0]?.method, 'GET');
   assert.equal(requests[0]?.path, '/containers/sandbox-1/stats');
-  assert.deepEqual(requests[0]?.query, { stream: false, 'one-shot': true });
+  assert.deepEqual(requests[0]?.query, { stream: false });
   assert.equal(stats.cpuPercent, 100);
   assert.equal(stats.memoryUsedBytes, 80_000_000);
   assert.equal(stats.memoryLimitBytes, 268_435_456);

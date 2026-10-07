@@ -174,7 +174,9 @@ export const createDockerClient = (
         {
           method: 'GET',
           path: `/containers/${encodeURIComponent(containerId(container))}/stats`,
-          query: { stream: false, 'one-shot': true },
+          // A single sample has no previous CPU counters, so the daemon cannot
+          // report the delta needed for CPU usage.
+          query: { stream: false },
           signal: input.signal,
           timeoutMs: input.timeoutMs,
         },
