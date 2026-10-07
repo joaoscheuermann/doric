@@ -11,6 +11,7 @@
  * and `hasSecret` is what stands in for the value.
  */
 
+/** The host's vocabulary, mirrored: this app imports no workspace package. */
 export const reasoningEfforts = [
   'none',
   'minimal',

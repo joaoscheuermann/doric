@@ -196,6 +196,7 @@ export type GitOperation =
   | 'revert'
   | 'bisect';
 
+/** The host's vocabulary, mirrored: this app imports no workspace package. */
 export const reasoningEfforts = [
   'none',
   'minimal',

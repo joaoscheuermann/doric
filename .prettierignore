@@ -40,3 +40,7 @@ package-lock.json
 **/*.css
 **/*.graphql
 **/*.gql
+
+# The shadcn vendor boundary is written by the CLI and edited only through it,
+# so no formatter should rewrite it. Biome excludes it in `biome.json` too.
+app/doric-renderer/src/components/ui/
