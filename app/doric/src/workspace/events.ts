@@ -1,6 +1,7 @@
 import type { Manager, Socket } from 'socket.io-client';
 
 import type { Project, Thread } from './api';
+import { type DestroyedTarget, teardownSocket } from './socket-teardown';
 import type { ThreadHistoryStore } from './thread-history';
 
 export type ThreadEvent = {
@@ -40,10 +41,7 @@ export type ThreadUpdate =
       readonly message: string;
     };
 
-export type ThreadEventTarget = {
-  once(event: 'destroyed', listener: () => void): void;
-  off(event: 'destroyed', listener: () => void): void;
-  isDestroyed(): boolean;
+export type ThreadEventTarget = DestroyedTarget & {
   send(channel: string, update: ThreadUpdate): void;
 };
 
@@ -150,8 +148,7 @@ export const createThreadEventService = (
   /** Drops one watch's socket listeners and its own connection. */
   const release = (watch: Watch): void => {
     watches.delete(watch.threadId);
-    watch.socket.removeAllListeners();
-    watch.socket.disconnect();
+    teardownSocket(watch.socket);
   };
 
   /** Ends one watch: its connection, then its window's listener when idle. */

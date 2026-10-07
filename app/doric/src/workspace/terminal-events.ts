@@ -1,5 +1,6 @@
 import type { Manager, Socket } from 'socket.io-client';
 
+import { type DestroyedTarget, teardownSocket } from './socket-teardown';
 import {
   record,
   type TerminalOutputUpdate,
@@ -11,10 +12,7 @@ import {
 export const terminalUpdateChannel = 'doric:terminals:update';
 export const terminalOutputChannel = 'doric:terminals:output';
 
-export type TerminalTarget = {
-  once(event: 'destroyed', listener: () => void): void;
-  off(event: 'destroyed', listener: () => void): void;
-  isDestroyed(): boolean;
+export type TerminalTarget = DestroyedTarget & {
   send(
     channel: string,
     id: string,
@@ -65,8 +63,7 @@ export const createTerminalEventService = (options: Options) => {
   };
   const dispose = (watch: Watch) => {
     watch.target.off('destroyed', watch.destroy);
-    watch.socket.removeAllListeners();
-    watch.socket.disconnect();
+    teardownSocket(watch.socket);
   };
 
   return {

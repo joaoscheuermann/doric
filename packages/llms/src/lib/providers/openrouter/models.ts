@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type { Model, ProviderId } from '../../types/provider.js';
 import {
   arrayField,
@@ -54,7 +56,3 @@ const model = (value: Record<string, unknown>): Model => {
     raw: value,
   };
 };
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

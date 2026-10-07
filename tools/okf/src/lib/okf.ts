@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { posix as path } from 'node:path';
 
 import type { Sandbox } from 'sandbox';
-import { defineTool } from 'tool';
+import { defineTool, isRecord } from 'tool';
 import * as YAML from 'yaml';
 import { z } from 'zod';
 
@@ -464,9 +464,6 @@ const compact = <Value extends Readonly<Record<string, unknown>>>(
   Object.fromEntries(
     Object.entries(value).filter((entry) => entry[1] !== undefined),
   ) as Value;
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const empty = (error: string): OkfSearchOutput => ({
   results: [],

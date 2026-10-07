@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import { isRecord } from 'tool';
 
 import { ProviderErrorObject } from '../classes/provider-error.js';
 import type { HttpTransport } from '../types/http.js';
@@ -475,7 +476,3 @@ const prune = (value: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(
     Object.entries(value).filter(([, child]) => child !== undefined),
   );
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

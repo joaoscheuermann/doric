@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 /** Unified usage snapshots. Costs are account charges, never upstream costs. */
 export interface UsageTotals {
   readonly calls: number;
@@ -77,9 +79,7 @@ export const usageTotals = (state: UsageState): UsageTotals =>
       });
 
 const record = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  isRecord(value) ? value : {};
 const count = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value

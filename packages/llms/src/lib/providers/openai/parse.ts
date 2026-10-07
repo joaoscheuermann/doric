@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type {
   ProviderFinished,
   ProviderReplayItem,
@@ -278,7 +280,3 @@ const contentText = (item: Record<string, unknown>): string =>
 
 const nonEmptyText = (value: string | undefined): string | undefined =>
   value === '' ? undefined : value;
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

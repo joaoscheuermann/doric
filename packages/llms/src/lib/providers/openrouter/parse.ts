@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type {
   ProviderFinished,
   ProviderReplayItem,
@@ -176,7 +178,3 @@ const replayItems = (
   arrayField(value, 'reasoning_details')
     .map(asRecord)
     .filter(isRecord) as readonly ProviderReplayItem[];
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

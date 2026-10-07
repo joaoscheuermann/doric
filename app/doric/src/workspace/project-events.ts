@@ -1,6 +1,7 @@
 import type { Manager, Socket } from 'socket.io-client';
 
 import type { Project, Thread } from './api';
+import { type DestroyedTarget, teardownSocket } from './socket-teardown';
 
 export type ProjectSnapshot = {
   readonly projectId: string;
@@ -20,10 +21,7 @@ export type ProjectUpdate =
   | { readonly kind: 'project-deleted'; readonly projectId: string }
   | { readonly kind: 'error'; readonly message: string };
 
-export type ProjectEventTarget = {
-  once(event: 'destroyed', listener: () => void): void;
-  off(event: 'destroyed', listener: () => void): void;
-  isDestroyed(): boolean;
+export type ProjectEventTarget = DestroyedTarget & {
   send(channel: string, update: ProjectUpdate): void;
 };
 
@@ -71,8 +69,7 @@ export const createProjectEventService = (
     const current = selected;
     selected = undefined;
     current.target.off('destroyed', current.destroyed);
-    current.socket.removeAllListeners();
-    current.socket.disconnect();
+    teardownSocket(current.socket);
   };
 
   const send = (current: Selected, update: ProjectUpdate): void => {

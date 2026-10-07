@@ -1,15 +1,12 @@
-import { type ProviderField, type ProviderKindId, providerKind } from 'llms';
+import {
+  type ProviderField,
+  type ProviderKindId,
+  providerKind,
+  reasoningEfforts,
+} from 'llms';
 import { z } from 'zod';
 
-const effort = z.enum([
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-]);
+const effort = z.enum(reasoningEfforts);
 const identifier = z.string().trim().min(1).max(128);
 const model = z.string().trim().min(1).max(512);
 const limit = z.number().int().safe().positive();

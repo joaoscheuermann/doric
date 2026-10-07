@@ -1,3 +1,4 @@
+import type { DestroyedTarget } from '../workspace/socket-teardown';
 import type {
   ConnectionListener,
   ConnectionMonitor,
@@ -31,11 +32,9 @@ export const createConnectionState = (): ConnectionState & {
   };
 };
 
-export type ConnectionTarget = {
+export type ConnectionTarget = DestroyedTarget & {
   on(event: 'did-finish-load', listener: () => void): void;
-  once(event: 'destroyed', listener: () => void): void;
   off(event: 'did-finish-load' | 'destroyed', listener: () => void): void;
-  isDestroyed(): boolean;
   send(channel: string, status: ConnectionStatus): void;
 };
 

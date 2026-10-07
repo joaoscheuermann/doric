@@ -1,4 +1,6 @@
-import type { ReasoningEffort } from '../types/provider.js';
+import { isRecord } from 'tool';
+
+import { isReasoningEffort, type ReasoningEffort } from '../types/provider.js';
 import {
   arrayField,
   asRecord,
@@ -92,21 +94,3 @@ const catalogDefaultEffort = (
     ? value
     : undefined;
 };
-
-/**
- * Only the efforts this library names are kept: a catalog value no request can
- * carry is not an effort a model accepts here, so it is dropped rather than
- * stored as an unspellable choice.
- */
-const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
-  value === 'none' ||
-  value === 'minimal' ||
-  value === 'low' ||
-  value === 'medium' ||
-  value === 'high' ||
-  value === 'xhigh' ||
-  value === 'max';
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

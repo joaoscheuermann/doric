@@ -69,14 +69,28 @@ export interface ProviderMessage {
 
 export type ProviderToolCall = ToolCallRequest;
 
-export type ReasoningEffort =
-  | 'none'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max';
+/**
+ * Every reasoning effort this library names, in the order a surface offers
+ * them. The type below is exactly these members, so the two cannot disagree.
+ */
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+
+export type ReasoningEffort = (typeof reasoningEfforts)[number];
+
+/**
+ * Whether a value is an effort this library names: a catalog value no request
+ * can carry is not an effort a model accepts here.
+ */
+export const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
+  reasoningEfforts.some((effort) => effort === value);
 
 export interface ReasoningRequest {
   readonly effort?: ReasoningEffort;
