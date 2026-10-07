@@ -497,6 +497,24 @@ captured per Project. The token travels only through the sandbox process
 environment, so it never appears in a tool argument, a tool result, an event, or
 a log line; a write that fails is a warning naming the Project and nothing else.
 
+## Storage protection
+
+The host checks available filesystem blocks before dispatch and every three
+seconds during execution. At **10% free or less**, or when the configured path
+cannot be measured, execution pauses and the queue shows an error. Free space
+above 10%, then resume the queue; recovery never starts automatically.
+
+Compose sets `DORIC_STORAGE_PATH=/var/lib/doric/postgresql` and mounts its
+PostgreSQL volume there read-only. Native runs default to the current directory;
+set this variable to a path on the actual database filesystem. A local path does
+not measure a remote PostgreSQL server. Remote deployments require a mount on
+that filesystem for proactive protection; PostgreSQL disk-full errors are still
+handled as pauses independently of the probe.
+
+If the disk is already completely full, the host retains any unsaved history and
+event in memory and refuses to resume until it can save them. Keep that host
+process alive while freeing space; a process crash cannot preserve unsaved data.
+
 ## Validation
 
 Run `npx nx run doric:test` for the host suite and `npx nx run agent:test`

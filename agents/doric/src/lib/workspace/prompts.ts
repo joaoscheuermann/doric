@@ -5,7 +5,11 @@ import type { InputSource } from './types.js';
  * reason; `host_restarted` is what a boot appends when it discovers the
  * restart a run never got to record.
  */
-export type PauseReason = 'host_stopped' | 'host_restarted' | 'reader_stopped';
+export type PauseReason =
+  | 'host_stopped'
+  | 'host_restarted'
+  | 'reader_stopped'
+  | 'storage_low';
 
 /**
  * What the durable log says about one prompt that has not finished. It is read
@@ -72,7 +76,7 @@ export const delegatedResult = (
  * prompt that never ran is work nobody has done yet.
  */
 export const hostOwesRun = ({ paused, superseded }: PromptProgress): boolean =>
-  !superseded && paused !== 'reader_stopped';
+  !superseded && paused !== 'reader_stopped' && paused !== 'storage_low';
 
 /**
  * How many times the host takes the same prompt up again before it gives up.

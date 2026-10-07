@@ -106,6 +106,7 @@ describe('reading a prompt lifecycle event off the log', () => {
     assert.equal(pauseReason('host_stopped'), 'host_stopped');
     assert.equal(pauseReason('host_restarted'), 'host_restarted');
     assert.equal(pauseReason('reader_stopped'), 'reader_stopped');
+    assert.equal(pauseReason('storage_low'), 'storage_low');
     assert.equal(pauseReason('something_else'), undefined);
     assert.equal(pauseReason(undefined), undefined);
   });
@@ -116,6 +117,26 @@ describe('reading a prompt lifecycle event off the log', () => {
     assert.equal(resumeAttempt(0), undefined);
     assert.equal(resumeAttempt(1.5), undefined);
     assert.equal(resumeAttempt('1'), undefined);
+  });
+
+  test('explains low storage and offers resumption while the pause stands', () => {
+    const marker = lifecycleMarker({
+      kind: 'pause',
+      reason: 'storage_low',
+      at: '',
+      standing: true,
+    });
+    assert.match(marker.label, /low storage.*10%.*resume/);
+    assert.equal(marker.action, true);
+    assert.equal(
+      lifecycleMarker({
+        kind: 'pause',
+        reason: 'storage_low',
+        at: '',
+        standing: false,
+      }).action,
+      false,
+    );
   });
 
   test('reads a failure out of the error the host redacted or shaped', () => {

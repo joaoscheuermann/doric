@@ -25,6 +25,7 @@ import type { ThreadIconKind } from '@/domain/sidebar';
 import { type Terminal, threadTerminals } from '@/domain/terminals';
 import type { ThreadLevel } from '@/domain/thread-tree';
 import type { Thread } from '@/domain/workspace';
+import { duration } from '@/utility/duration';
 import { cn } from '@/utility/utils';
 
 export type ThreadBranchesActions = {
@@ -90,6 +91,8 @@ export function ThreadBranches({
       {level.nodes.map((node) => {
         const { thread } = node;
         const selected = selectedThreadId === thread.id;
+        const running =
+          thread.state === 'running' && thread.activePromptId !== undefined;
         const sessions = threadTerminals(terminals, thread.id);
         const expandable = node.expandable || sessions.length > 0;
         const expanded = expandable && !collapsed.has(thread.id);
@@ -112,14 +115,22 @@ export function ThreadBranches({
               onCopyId={() => actions.copyId(thread.id)}
               onDelete={() => actions.delete(thread)}
             >
-              <div className="group/tree-row relative w-full">
+              <div
+                className="group/tree-row relative w-full"
+                title={
+                  !running && thread.lastExecutionMs !== undefined
+                    ? `Last execution: ${duration(thread.lastExecutionMs)}`
+                    : undefined
+                }
+              >
                 <TreeGuides depth={depth} />
                 <SidebarMenuSubButton
                   asChild
                   isActive={selected}
                   size="sm"
                   className={cn(
-                    'h-7 w-full translate-x-0 rounded-none pr-8',
+                    'h-7 w-full translate-x-0 rounded-none',
+                    running ? 'pr-16' : 'pr-8',
                     rowInteraction(selected),
                   )}
                   style={{ paddingLeft: indentation(depth) }}
@@ -146,6 +157,7 @@ export function ThreadBranches({
                       />
                     )}
                     <EditableName
+                      className={cn(running && 'shimmer')}
                       editing={editingThreadId === thread.id}
                       label="Thread name"
                       value={thread.name}
@@ -158,6 +170,7 @@ export function ThreadBranches({
                 <RowAddAction
                   label={`New child thread in ${thread.name}`}
                   onAdd={addChild}
+                  startedAt={running ? thread.executionStartedAt : undefined}
                 />
               </div>
             </ItemContextMenu>

@@ -41,6 +41,7 @@ import {
   type ThreadExecution,
   type ThreadRuntime,
 } from './runtime.js';
+import { storageQueueError } from './storage-pause.js';
 import { createTerminalRegistry } from './terminals.js';
 import {
   isTerminal,
@@ -82,6 +83,7 @@ interface Options {
    */
   readonly discardWorkspace: (identity: string) => Promise<void>;
   readonly execute?: ThreadExecution;
+  readonly checkStorage?: () => Promise<void>;
 }
 
 /**
@@ -106,6 +108,7 @@ export const createWorkspaceService = ({
   logger,
   discardWorkspace,
   execute = runDirectPrompt,
+  checkStorage,
 }: Options): WorkspaceService => {
   const runtimes = new Map<string, ProjectRuntime>();
   const exclusive = createMutationQueue();
@@ -118,6 +121,7 @@ export const createWorkspaceService = ({
     publisher,
     logger,
     execute,
+    checkStorage,
     generation: () => config.current(),
     exclusive,
   });
@@ -803,7 +807,23 @@ export const createWorkspaceService = ({
         const record = await threads.record(id);
         return record === undefined
           ? undefined
-          : exclusive(record.projectId, () => threads.queue(id));
+          : exclusive(record.projectId, async () => {
+              const queue = await threads.queue(id);
+              const runtime = runtimes.get(record.projectId)?.threads.get(id);
+              if (
+                queue === undefined ||
+                runtime === undefined ||
+                (runtime.thread.errorCode !== 'storage_low' &&
+                  runtime.storagePending === undefined)
+              )
+                return queue;
+              return {
+                ...queue,
+                paused: true,
+                stopping: runtime.active !== undefined,
+                error: storageQueueError,
+              };
+            });
       },
       resumeQueue: async (id) => {
         const record = await threads.record(id);
@@ -873,7 +893,20 @@ export const createWorkspaceService = ({
             };
           return runner.create(runtime, name, parentThreadId);
         }),
-      find: (id) => threads.record(id),
+      find: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return undefined;
+        const runtime = runtimes.get(record.projectId)?.threads.get(id);
+        return runtime?.storagePending === undefined
+          ? record
+          : {
+              ...record,
+              state: 'ready',
+              activePromptId: undefined,
+              queuePaused: true,
+              errorCode: 'storage_low',
+            };
+      },
       list: async (projectId, limit, cursor, parentThreadId) =>
         (await projects.record(projectId)) === undefined
           ? undefined
@@ -1021,7 +1054,7 @@ export const createWorkspaceService = ({
           );
           if (progress === undefined)
             return { status: 'unknown_prompt' as const };
-          if (thread.thread.queuePaused)
+          if (thread.thread.queuePaused || thread.storagePending !== undefined)
             return runner.resumeQueue(project, thread, promptId);
           return runner.resume(
             project,

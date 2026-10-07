@@ -117,6 +117,12 @@ selection never closes a row, so a Project's Threads stay on screen while anothe
 Project is opened or selected. Projects start closed; Threads start open over
 their children. The sidebar exposes context actions
 for create, color, lifecycle-aware delete, and copying Thread IDs.
+The tree uses font weight 300. A running Thread's name uses shadcn's shimmer,
+and its add-action position shows elapsed execution time until hover or keyboard
+focus reveals the add button. Once complete, the last execution's duration is
+available in the row's hover title. Thread reads derive timing from the latest
+durable `prompt.started` event and its matching materialized result; the initial
+running-state update uses its transition timestamp until that event exists.
 Creation starts as a focused local draft: an empty submission stays in place,
 while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
@@ -1265,8 +1271,21 @@ provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials and replacing the
 characters PostgreSQL refuses (U+0000 and unpaired surrogates, which binary tool
 output can carry) with U+FFFD rather than failing the Thread. Provider/tool failures
-return the Thread to `ready`; history or event persistence failures fail the
-Thread closed rather than executing queued inputs on stale history. Acquisition
+return the Thread to `ready`. Storage pressure pauses execution instead of closing
+the Thread: before dispatch and every three seconds during a run, the host checks
+the filesystem at `DORIC_STORAGE_PATH` (the current directory for native runs).
+At or below 10 percent available blocks, or if that check is unavailable, dispatch
+stays paused until an explicit resume passes a fresh check. Compose mounts the
+PostgreSQL volume read-only at that path so the measurement describes persistence,
+not a sandbox layer; native or remote-database deployments must provide a path
+on the actual database filesystem. PostgreSQL `53100` and OS `ENOSPC` errors use
+the same nonterminal `storage_low` pause, preserving pending inputs. If even the
+pause or checkpoint cannot be written, the live host keeps the gate closed and
+retains its pending history and event in memory; resume flushes them before
+dispatch. Those unsaved values cannot survive loss of the host process. Persisted
+storage pauses and their queue error survive restart, never auto-resume and appear
+as a queue alert and a transcript pause marker. Other history or event persistence
+failures still fail the Thread closed rather than executing queued inputs on stale history. Acquisition
 failure is terminal for the Project. Cancellation and lease cleanup continue
 even if cancellation-state persistence fails.
 Doric adds `history.truncated`, `prompt.accepted`, `prompt.queued`, `prompt.started`, `prompt.paused`,

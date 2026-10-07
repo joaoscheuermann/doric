@@ -13,7 +13,11 @@
  */
 
 /** Why an interruption left a prompt unfinished. */
-export type PauseReason = 'host_stopped' | 'host_restarted' | 'reader_stopped';
+export type PauseReason =
+  | 'host_stopped'
+  | 'host_restarted'
+  | 'reader_stopped'
+  | 'storage_low';
 
 /**
  * One lifecycle event of a prompt: a pause that left it unfinished, or a resume
@@ -67,6 +71,7 @@ export const RESUME_EXHAUSTED = 'resume_exhausted';
 export const pauseReason = (value: unknown): PauseReason | undefined =>
   value === 'host_stopped' ||
   value === 'host_restarted' ||
+  value === 'storage_low' ||
   value === 'reader_stopped'
     ? value
     : undefined;
@@ -97,6 +102,8 @@ const reasonText = (reason: PauseReason, at: string): string => {
       return 'Execution paused · the host restarted unexpectedly';
     case 'reader_stopped':
       return 'Execution paused · you stopped the execution';
+    case 'storage_low':
+      return 'Execution paused · low storage; free disk space above 10% and resume';
   }
 };
 

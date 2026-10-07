@@ -11,6 +11,7 @@ import { useStore } from 'zustand/react';
 
 import { PromptAuthor } from '@/components/molecules/prompt-author';
 import { EDIT_QUEUE_PROMPT_COMMAND } from '@/components/organisms/conversation/commands';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -182,7 +183,7 @@ export function ThreadQueue({
         </Button>
       </div>
     ) : null;
-  if (ids.length === 0) return null;
+  if (ids.length === 0 && queue.error === undefined) return null;
   const current = queue.current ?? queue.resumable;
   const row = (item: QueueItem) => (
     <Item
@@ -201,6 +202,12 @@ export function ThreadQueue({
       className="mb-5 flex flex-col gap-2 font-conversation text-sm font-light"
     >
       <h2 className="text-sm font-light text-foreground">Queue</h2>
+      {queue.error && (
+        <Alert variant="destructive">
+          <AlertTitle>Execution paused</AlertTitle>
+          <AlertDescription>{queue.error.message}</AlertDescription>
+        </Alert>
+      )}
       {query.isError && (
         <p role="status" className="text-xs text-muted-foreground">
           Could not refresh queue.

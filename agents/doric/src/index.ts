@@ -21,6 +21,7 @@ import { createWorkspaceSocket } from './lib/events/socket.js';
 import { registerStatusSocket } from './lib/events/status.js';
 import { registerHttpRoutes } from './lib/http/app.js';
 import { createVmRegistry } from './lib/vms.js';
+import { checkDisk } from './lib/workspace/disk.js';
 import { createProjectStore } from './lib/workspace/projects.js';
 import { readHostResources } from './lib/workspace/resources.js';
 import { createWorkspaceService } from './lib/workspace/service.js';
@@ -185,6 +186,7 @@ async function main() {
     pool,
     publisher,
     logger,
+    checkStorage: () => checkDisk(process.env.DORIC_STORAGE_PATH ?? '.'),
     // A durable workspace is the Docker provider's own storage. The Firecracker
     // profile keeps its guest disks per run, so it has no workspace volume to
     // remove yet.

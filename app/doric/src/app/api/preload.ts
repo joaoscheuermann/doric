@@ -36,6 +36,9 @@ type Thread = {
   readonly cwdRepo?: 'git' | 'github';
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
+  /** Start of the current execution, or duration of the last completed execution. */
+  readonly executionStartedAt?: string;
+  readonly lastExecutionMs?: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 };

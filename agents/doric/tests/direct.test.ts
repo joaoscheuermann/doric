@@ -10,6 +10,46 @@ import {
   runDirectPrompt,
 } from '../src/lib/agents/direct/executor.js';
 import { defaultConfig } from '../src/lib/config/schema.js';
+import { ThreadPersistenceError } from '../src/lib/workspace/runtime.js';
+
+void test('retains a completed tool result and its event when a full disk rejects persistence until recovery', async () => {
+  const harness = directHarness();
+  let full = false;
+  const append = harness.store.appendEvent;
+  const save = harness.store.saveMessages;
+  harness.store.appendEvent = async (...args) => {
+    if ((args[2] as { type?: string }).type === 'tool.finished') full = true;
+    if (full) throw { code: '53100' };
+    return append(...args);
+  };
+  harness.store.saveMessages = async (...args) => {
+    if (full) throw { code: '53100' };
+    await save(...args);
+  };
+  let failure: ThreadPersistenceError | undefined;
+  await assert.rejects(harness.run('use-tool'), (error: unknown) => {
+    if (!(error instanceof ThreadPersistenceError)) return false;
+    failure = error;
+    return true;
+  });
+  assert.equal(harness.executions(), 1);
+  assert.ok(failure?.retry);
+  full = false;
+  harness.store.appendEvent = append;
+  await failure.retry();
+  assert.ok(
+    harness.events.some(
+      ({ event }) => (event as { type?: string }).type === 'tool.finished',
+    ),
+  );
+  await harness.run('after');
+  assert.ok(
+    harness.requests
+      .at(-1)
+      ?.messages.some((message) => message.role === 'tool'),
+  );
+  assert.equal(harness.executions(), 1);
+});
 
 void test('includes the Direct instruction and every skill body once in bundle order', () => {
   const system = directSystemPrompt([
@@ -350,6 +390,7 @@ const directHarness = (
   };
   return {
     requests,
+    store,
     calls,
     events,
     boundSandboxes,

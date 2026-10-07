@@ -78,6 +78,7 @@ export const deferred = <T = void>() => {
 
 /** The reasons a durable pause event can carry. */
 const pauseReasons = [
+  'storage_low',
   'host_stopped',
   'host_restarted',
   'reader_stopped',
@@ -529,7 +530,11 @@ export const workspace = () => {
         }),
       } as never,
       credentials: credentialResolver(),
-      logger: { debug: () => undefined, error: () => undefined } as never,
+      logger: {
+        debug: () => undefined,
+        error: () => undefined,
+        warn: () => undefined,
+      } as never,
       discardWorkspace: async (identity: string) => {
         discarded.push(identity);
       },

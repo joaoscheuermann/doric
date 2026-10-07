@@ -2,6 +2,7 @@ import type { RequestHandler, Response } from 'express';
 import { z } from 'zod';
 
 import { sendError } from '../lib/http/errors.js';
+import { storageMessage } from '../lib/workspace/disk.js';
 import { isValidName, normalizeName } from '../lib/workspace/names.js';
 
 export const pageInput = z.object({
@@ -36,5 +37,7 @@ export const conflict = (response: Response, kind: Resource, reason: string) =>
     response,
     409,
     `${kind}_${reason}`,
-    `The ${kind} cannot perform this operation.`,
+    reason === 'storage_low'
+      ? storageMessage
+      : `The ${kind} cannot perform this operation.`,
   );

@@ -21,6 +21,7 @@ export interface QueuedPrompt {
   readonly editable: boolean;
 }
 export interface ThreadQueue {
+  readonly error?: { readonly code: string; readonly message: string };
   readonly revision: number;
   readonly paused: boolean;
   readonly stopping: boolean;

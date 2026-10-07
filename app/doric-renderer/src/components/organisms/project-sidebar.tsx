@@ -135,11 +135,11 @@ export function ProjectSidebar({
   };
 
   return (
-    <Sidebar collapsible="none" className="overflow-hidden">
+    <Sidebar collapsible="none" className="overflow-hidden font-light">
       <SidebarContent className="p-0">
         <SidebarGroup className="p-0">
           <div className="group/group-label relative">
-            <SidebarGroupLabel className="h-7 rounded-none px-3 text-xs">
+            <SidebarGroupLabel className="h-7 rounded-none px-3 text-xs font-light">
               Projects
             </SidebarGroupLabel>
             <SidebarGroupAction
@@ -213,7 +213,7 @@ export function ProjectSidebar({
                           isActive={selected}
                           size="sm"
                           className={cn(
-                            'h-7 w-full rounded-none px-3 pr-8',
+                            'h-7 w-full rounded-none px-3 pr-8 data-active:font-light',
                             rowInteraction(selected),
                           )}
                         >

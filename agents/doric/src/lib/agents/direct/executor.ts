@@ -120,6 +120,15 @@ export const runDirectPrompt: ThreadExecution = async ({
   const boundary = record.checkpoints[job.id];
   const resume = boundary !== undefined && record.messages.length > boundary;
   const messages = createMessageStorage(repaired(record.messages));
+  let pendingEvent: unknown;
+  const retry = async () => {
+    await save();
+    if (pendingEvent !== undefined) {
+      const stored = await store.appendEvent(thread.id, job.id, pendingEvent);
+      pendingEvent = undefined;
+      publisher.event(stored);
+    }
+  };
   /**
    * Writes the history the run has built so far. A resumed run reads it back and
    * continues from what it holds, so it is saved wherever it moved on rather
@@ -136,7 +145,7 @@ export const runDirectPrompt: ThreadExecution = async ({
         ) as readonly ProviderMessage[],
       );
     } catch (cause) {
-      throw new ThreadPersistenceError(cause);
+      throw new ThreadPersistenceError(cause, retry);
     }
   };
   const execution = generation.snapshot.configuration.models.execution;
@@ -170,20 +179,18 @@ export const runDirectPrompt: ThreadExecution = async ({
         generation.snapshot.configuration.execution.maxToolResultChars,
     })) {
       try {
-        if (addedMessages(value)) await save();
-        const stored = await store.appendEvent(
-          thread.id,
-          job.id,
-          eventJson(
-            value.type === 'response.started'
-              ? { ...value, providerId: execution.providerId }
-              : value,
-            generation.redactions(),
-          ),
+        pendingEvent = eventJson(
+          value.type === 'response.started'
+            ? { ...value, providerId: execution.providerId }
+            : value,
+          generation.redactions(),
         );
+        if (addedMessages(value)) await save();
+        const stored = await store.appendEvent(thread.id, job.id, pendingEvent);
+        pendingEvent = undefined;
         publisher.event(stored);
       } catch (cause) {
-        throw new ThreadPersistenceError(cause);
+        throw new ThreadPersistenceError(cause, retry);
       }
       signal.throwIfAborted();
       if (value.type === 'agent.finished') text = value.response.text;

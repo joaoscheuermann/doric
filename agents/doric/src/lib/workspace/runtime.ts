@@ -16,7 +16,10 @@ import type {
 
 /** A failed durable write must stop this conversation, not retry on stale history. */
 export class ThreadPersistenceError extends Error {
-  constructor(cause?: unknown) {
+  constructor(
+    cause?: unknown,
+    readonly retry?: () => Promise<void>,
+  ) {
     super('Thread persistence failed.', { cause });
     this.name = 'ThreadPersistenceError';
   }
@@ -61,6 +64,7 @@ export interface ThreadRuntime {
   };
   task?: Promise<void>;
   ending?: Promise<void>;
+  storagePending?: () => Promise<void>;
 }
 export interface ProjectRuntime {
   project: Project;
@@ -92,6 +96,7 @@ export interface RuntimeContext {
    */
   readonly generation: () => Generation;
   readonly execute: ThreadExecution;
+  readonly checkStorage?: () => Promise<void>;
   readonly exclusive: <Value>(
     id: string,
     operation: () => Promise<Value>,

@@ -57,6 +57,12 @@ const recordColumns = {
   updatedAt: true,
   startedAt: true,
   finishedAt: true,
+  events: {
+    where: { type: 'prompt.started' },
+    orderBy: { sequence: 'desc' },
+    take: 1,
+    select: { promptId: true, createdAt: true },
+  },
 } as const;
 
 /** Persists immutable conversation trees, provider history and ordered replay. */
@@ -136,7 +142,10 @@ export const createThreadStore = (database: Database): ThreadStore => ({
   },
 
   async find(id) {
-    const stored = await database.thread.findUnique({ where: { id } });
+    const stored = await database.thread.findUnique({
+      where: { id },
+      select: { ...recordColumns, messages: true, checkpoints: true },
+    });
     return stored === null
       ? undefined
       : {
@@ -413,7 +422,10 @@ export const createThreadStore = (database: Database): ThreadStore => ({
         });
     // A resumed record carries no stale error.
     await database.thread.updateMany({
-      where: { state: { notIn: [...terminal] }, errorCode: { not: null } },
+      where: {
+        state: { notIn: [...terminal] },
+        errorCode: { not: null, notIn: ['storage_low'] },
+      },
       data: { errorCode: null },
     });
     // Complete a termination the previous host began instead of resuming it:
@@ -435,7 +447,9 @@ export const createThreadStore = (database: Database): ThreadStore => ({
 });
 
 const thread = (
-  stored: Omit<StoredThread, 'messages' | 'checkpoints' | 'usage'>,
+  stored: Omit<StoredThread, 'messages' | 'checkpoints' | 'usage'> & {
+    readonly events: readonly Pick<StoredEvent, 'promptId' | 'createdAt'>[];
+  },
 ): Thread => ({
   id: stored.id,
   projectId: stored.projectId,
@@ -465,9 +479,29 @@ const thread = (
         },
       }),
   ...timestamps(stored),
+  ...(stored.state === 'RUNNING' && stored.activePromptId !== null
+    ? {
+        executionStartedAt: (stored.events[0]?.promptId ===
+        stored.activePromptId
+          ? stored.events[0].createdAt
+          : stored.updatedAt
+        ).toISOString(),
+      }
+    : {}),
+  ...(stored.resultAt !== null &&
+  stored.events[0]?.promptId === stored.resultPromptId
+    ? {
+        lastExecutionMs: Math.max(
+          0,
+          stored.resultAt.getTime() - stored.events[0].createdAt.getTime(),
+        ),
+      }
+    : {}),
 });
 
-const checkpoints = (stored: StoredThread): Readonly<Record<string, number>> =>
+const checkpoints = (
+  stored: Pick<StoredThread, 'checkpoints'>,
+): Readonly<Record<string, number>> =>
   stored.checkpoints as unknown as Readonly<Record<string, number>>;
 
 const prune = (
@@ -526,7 +560,13 @@ const writeEvent = async (
   if (type === 'queue.paused' || type === 'queue.resumed')
     await tx.thread.update({
       where: { id },
-      data: { queuePaused: type === 'queue.paused' },
+      data: {
+        queuePaused: type === 'queue.paused',
+        ...(type === 'queue.paused' &&
+        (value as { reason?: string }).reason === 'storage_low'
+          ? { errorCode: 'storage_low' }
+          : {}),
+      },
       select: { id: true },
     });
   await writeUsage(tx, id, type, value, current.usage);
@@ -570,6 +610,7 @@ const progressTypes = [
 ] as const;
 
 const pauseReasons = [
+  'storage_low',
   'host_stopped',
   'host_restarted',
   'reader_stopped',

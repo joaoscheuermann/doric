@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 
 import type {
   Sandbox,
@@ -8,6 +9,7 @@ import type {
   SandboxProcessInput,
 } from 'sandbox';
 
+import { StoragePressureError } from '../src/lib/workspace/disk.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import { createTerminalRegistry } from '../src/lib/workspace/terminals.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
@@ -243,6 +245,54 @@ void test('interrupting a prompt terminates its foreground command', async () =>
   await f.finished.promise;
   await service.dispose();
   assert.equal(service.terminals.list(project.id).length, 0);
+});
+
+void test('storage pressure interrupts the host-owned foreground terminal and preserves its prompt', {
+  timeout: 5000,
+}, async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const f = fixture();
+  const harness = workspace();
+  let low = false;
+  const service = createWorkspaceService({
+    ...harness.dependencies,
+    pool: pool(undefined, f.sandbox),
+    checkStorage: async () => {
+      if (low) throw new StoragePressureError();
+    },
+    execute: async ({ host }) => {
+      if (host.terminals === undefined)
+        throw new Error('Terminals unavailable');
+      await host.terminals.run({
+        command: 'sleep 100',
+        cwd: '/workspace',
+        timeoutMs: 0,
+      });
+      return 'finished';
+    },
+  });
+  try {
+    const project = await service.projects.create('Project');
+    const created = await service.threads.create(project.id, 'Thread');
+    if (created.status !== 'created') throw new Error('Thread unavailable');
+    const prompt = await service.threads.prompt(created.thread.id, 'Run');
+    if (prompt.status !== 'accepted') throw new Error('Prompt unavailable');
+    await f.running;
+    low = true;
+    t.mock.timers.tick(3000);
+    await f.finished.promise;
+    await setImmediate();
+    assert.equal(service.terminals.list(project.id).length, 0);
+    const queue = await service.threads.queue(created.thread.id);
+    assert.equal(queue?.paused, true);
+    assert.equal(queue?.resumable?.promptId, prompt.promptId);
+    assert.equal(
+      harness.events.some((event) => event.type === 'prompt.finished'),
+      false,
+    );
+  } finally {
+    await service.dispose();
+  }
 });
 
 void test('discarding a starting terminal waits for cleanup without reviving its row', async () => {

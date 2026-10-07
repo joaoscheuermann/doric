@@ -1,4 +1,5 @@
 import type { PromptProgress } from './prompts.js';
+import { storageQueueError } from './storage-pause.js';
 import type { InputSource, Thread } from './types.js';
 import { isTerminal } from './types.js';
 
@@ -43,6 +44,7 @@ export const queuedPrompt = (prompt: PromptProgress): QueuedPrompt => ({
 });
 
 export interface ThreadQueue {
+  readonly error?: { readonly code: string; readonly message: string };
   readonly revision: number;
   readonly paused: boolean;
   readonly stopping: boolean;
@@ -55,14 +57,19 @@ export interface ThreadQueue {
 export const resumablePrompt = (prompts: readonly PromptProgress[]) =>
   prompts
     .filter(
-      (prompt) => !prompt.superseded && prompt.paused === 'reader_stopped',
+      (prompt) =>
+        !prompt.superseded &&
+        (prompt.paused === 'reader_stopped' || prompt.paused === 'storage_low'),
     )
     .sort((a, b) => (b.pausedSequence ?? 0) - (a.pausedSequence ?? 0))[0];
 
 export const queuedPrompts = (prompts: readonly PromptProgress[]) =>
   prompts
     .filter(
-      (prompt) => !prompt.superseded && prompt.paused !== 'reader_stopped',
+      (prompt) =>
+        !prompt.superseded &&
+        prompt.paused !== 'reader_stopped' &&
+        prompt.paused !== 'storage_low',
     )
     .sort(
       (a, b) =>
@@ -113,6 +120,9 @@ export const queueSnapshot = (
       resumable);
   return {
     revision: thread.lastSequence,
+    ...(!inactive && thread.errorCode === 'storage_low'
+      ? { error: storageQueueError }
+      : {}),
     paused: !inactive && thread.queuePaused === true,
     stopping:
       !inactive &&

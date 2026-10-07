@@ -63,6 +63,9 @@ export type Thread = {
   readonly state: string;
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
+  /** Start of the current execution, or duration of the last completed execution. */
+  readonly executionStartedAt?: string;
+  readonly lastExecutionMs?: number;
   /** The Thread's working directory, absolute inside the sandbox. */
   readonly cwd: string;
   /**

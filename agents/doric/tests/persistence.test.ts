@@ -23,6 +23,42 @@ const githubCredentialId = '00000000-0000-4000-8000-000000000004';
 const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 integrationTest(
+  'keeps execution timing through rename and returns the completed duration after reopening',
+  async ({ configs, projects, threads, second }) => {
+    const { project } = await projects.create(
+      'Timer',
+      await configs.load(),
+      'blue',
+    );
+    const { thread } = await threads.create(project.id, 'Agent');
+    const running = await threads.setState(thread.id, 'running', promptId);
+    assert.ok(running?.executionStartedAt);
+    const start = await threads.appendEvent(thread.id, promptId, {
+      type: 'prompt.started',
+    });
+    assert.equal(
+      (await threads.rename(thread.id, 'Renamed'))?.executionStartedAt,
+      start.createdAt,
+    );
+    await threads.setResult(thread.id, {
+      promptId,
+      status: 'completed',
+      text: 'Done',
+      at: new Date(Date.parse(start.createdAt) + 65_000).toISOString(),
+    });
+    await threads.setState(thread.id, 'ready');
+    const reopened = createThreadStore(second);
+    const finished = await reopened.record(thread.id);
+    assert.equal(finished?.executionStartedAt, undefined);
+    assert.equal(finished?.lastExecutionMs, 65_000);
+    assert.equal(
+      (await reopened.listByProject(project.id))[0]?.lastExecutionMs,
+      65_000,
+    );
+  },
+);
+
+integrationTest(
   'stores acceptance and queue receipt atomically, including their sequence cursor',
   async ({ configs, projects, threads, second }) => {
     const project = await projects.create(

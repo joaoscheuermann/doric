@@ -6,6 +6,7 @@ import { type Sandbox, workspacePathKind } from 'sandbox';
 
 import { eventJson } from '../events/serialization.js';
 import { physicallyInside } from './cwd.js';
+import { guardStorage, storageFull } from './disk.js';
 import { cwdRepoHint, threadGit } from './git-status.js';
 import { nameFromPrompt } from './names.js';
 import { delegatedResult } from './prompts.js';
@@ -23,6 +24,7 @@ import {
   ThreadPersistenceError,
   type ThreadRuntime,
 } from './runtime.js';
+import { pauseForStorage } from './storage-pause.js';
 import {
   type CwdRefusal,
   type CwdRepo,
@@ -60,7 +62,10 @@ export const createThreadRunner = (context: RuntimeContext) => {
       thread.thread.id,
       value,
       promptId,
-      errorCode,
+      errorCode ??
+        (value === 'ready' && thread.thread.queuePaused
+          ? thread.thread.errorCode
+          : undefined),
     );
     if (updated !== undefined) {
       thread.thread = updated;
@@ -91,6 +96,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     const job: PromptJob = { id: randomUUID(), prompt, source };
     const queued =
       thread.thread.queuePaused === true ||
+      thread.storagePending !== undefined ||
       thread.active !== undefined ||
       thread.jobs.length > 0 ||
       project.lease === undefined;
@@ -206,9 +212,12 @@ export const createThreadRunner = (context: RuntimeContext) => {
           project.closing ||
           thread.closing ||
           thread.thread.queuePaused ||
+          thread.storagePending !== undefined ||
           project.lease === undefined
         )
           return undefined;
+        if (thread.jobs.length === 0) return undefined;
+        await context.checkStorage?.();
         const job = thread.jobs.shift();
         if (job === undefined) return undefined;
         const active = {
@@ -233,7 +242,13 @@ export const createThreadRunner = (context: RuntimeContext) => {
         if (lease === undefined)
           throw new Error('Project sandbox lease is unavailable.');
 
-        text = await context.execute({
+        const execute =
+          context.checkStorage === undefined
+            ? context.execute
+            : guardStorage(context.execute, context.checkStorage, () =>
+                active.controller.abort(),
+              );
+        text = await execute({
           thread: thread.thread,
           job: active.job,
           generation: context.generation(),
@@ -298,6 +313,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         });
         active.controller.signal.throwIfAborted();
       } catch (error) {
+        if (storageFull(error)) throw error;
         if (error instanceof ThreadPersistenceError) throw error;
         const reason = thread.pausing;
         if (reason !== undefined) {
@@ -332,6 +348,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     if (
       thread.task !== undefined ||
       thread.thread.queuePaused ||
+      thread.storagePending !== undefined ||
       thread.closing ||
       project.closing ||
       project.lease === undefined ||
@@ -340,6 +357,16 @@ export const createThreadRunner = (context: RuntimeContext) => {
       return;
     thread.task = run(project, thread)
       .catch(async (error) => {
+        if (
+          storageFull(error) &&
+          ((!thread.closing && !project.closing) ||
+            thread.pausing === 'host_stopped')
+        ) {
+          await exclusive(project.project.id, () =>
+            pauseForStorage(context, thread, error),
+          );
+          return;
+        }
         thread.active?.controller.abort();
         // Fail closed on a persistence fault; never run further jobs with stale history.
         context.logger.error(
@@ -457,9 +484,17 @@ export const createThreadRunner = (context: RuntimeContext) => {
   ) => {
     if (project.closing || thread.closing || isTerminal(thread.thread.state))
       return { status: 'inactive' as const };
-    if (!thread.thread.queuePaused)
+    if (!thread.thread.queuePaused && thread.storagePending === undefined)
       return { status: 'resumed' as const, thread: thread.thread };
     if (thread.active !== undefined) return { status: 'busy' as const };
+    try {
+      await context.checkStorage?.();
+      await thread.storagePending?.();
+    } catch (error) {
+      if (storageFull(error) || thread.storagePending !== undefined)
+        return { status: 'storage_low' as const };
+      throw error;
+    }
     const progress = (await store.unfinishedPrompts(thread.thread.id)).filter(
       (prompt) => !prompt.superseded,
     );
@@ -490,6 +525,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
     }
     thread.jobs.splice(0, thread.jobs.length, ...jobs);
     await queueState(thread, false);
+    await state(thread, 'ready');
     start(project, thread);
     return { status: 'resumed' as const, thread: thread.thread };
   };

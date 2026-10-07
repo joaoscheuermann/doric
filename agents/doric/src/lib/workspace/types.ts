@@ -115,6 +115,9 @@ export interface Thread {
   /** The last observed repository hint of `cwd`; absent when it holds none. */
   readonly cwdRepo?: CwdRepo;
   readonly activePromptId?: string;
+  /** Start of the current execution, or duration of the last completed execution. */
+  readonly executionStartedAt?: string;
+  readonly lastExecutionMs?: number;
   readonly errorCode?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -187,7 +190,12 @@ export type InterruptResult =
 export type ResumeResult =
   | { readonly status: 'resumed'; readonly thread: Thread }
   | {
-      readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
+      readonly status:
+        | 'missing'
+        | 'inactive'
+        | 'busy'
+        | 'unknown_prompt'
+        | 'storage_low';
     };
 /**
  * What moving a Thread's working directory did. A refusal is a value, because it
