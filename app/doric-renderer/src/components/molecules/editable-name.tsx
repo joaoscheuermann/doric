@@ -124,6 +124,8 @@ export function EditableName({
 
   return (
     <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the role and the handlers move together — this is a textbox exactly while it is editable */}
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-label is set only alongside the textbox role, which Biome cannot correlate across the two conditionals */}
       <span
         ref={element}
         role={editing ? 'textbox' : undefined}

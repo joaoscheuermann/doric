@@ -522,7 +522,7 @@ void test('accepts tool definitions from shared tool storage', () => {
       description: 'Lookup context',
       input: z.object({ query: z.string() }),
       output: z.string(),
-      execute: (_sandbox, host, { query }) => query,
+      execute: (_sandbox, _host, { query }) => query,
     })(undefined as never, undefined as never),
   ]);
 

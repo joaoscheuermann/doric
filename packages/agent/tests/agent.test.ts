@@ -101,7 +101,7 @@ void test('rejects an invalid tool-call batch before any handler executes', asyn
         name,
         input: z.object({ value: z.string() }),
         output: z.string(),
-        execute: (_sandbox, host, { value }) => {
+        execute: (_sandbox, _host, { value }) => {
           executions += 1;
           return value;
         },

@@ -161,7 +161,7 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
     return (
       <WidgetFocus nodeKey={this.__key}>
         {(focused) => (
-          <div onClick={() => this.takeStep(editor, null)}>
+          <div role="none" onClick={() => this.takeStep(editor, null)}>
             <CollapsibleBlock
               chosen={this.__chosen}
               focused={focused && this.__itemFocus === null}
@@ -179,7 +179,12 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
               <div className="flex flex-col gap-2">
                 {this.__items.map((item, index) => (
                   <div
+                    // The node holds one entry per step by position: the caret, the
+                    // open/closed choice and the focus marker are all read by index,
+                    // and a burst only ever appends to or rewrites this list.
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity the node keeps its steps under
                     key={index}
+                    role="none"
                     onClick={(event: MouseEvent) => {
                       event.stopPropagation();
                       this.takeStep(editor, index);

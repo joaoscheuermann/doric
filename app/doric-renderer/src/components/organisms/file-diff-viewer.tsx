@@ -20,6 +20,12 @@ import type { WorkspaceTab } from '@/domain/workspace-tabs';
 import { useFileDiff } from '@/hooks/use-file-diff';
 import { workspaceTabsStore } from '@/stores/workspace-tabs';
 
+/** The placeholder rows a read draws until its comparison arrives. */
+const DIFF_SKELETON_ROWS = Array.from(
+  { length: 12 },
+  (_, row) => `diff-skeleton-${row}`,
+);
+
 /** One comparison on demand; background refresh leaves its editor mounted. */
 export function FileDiffViewer({
   tab,
@@ -61,28 +67,26 @@ export function FileDiffViewer({
           onRetry={() => void query.refetch()}
         />
         {diff ? (
-          <>
-            {diff.binary ? (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyTitle>Binary file changed</EmptyTitle>
-                  <EmptyDescription>
-                    A text comparison is not available for this file.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <DiffEditor
-                original={diff.original}
-                modified={diff.modified}
-                language={fileLanguage(diff.path)}
-                toolbar={toolbar}
-                footer={(controls) => (
-                  <DiffFooter path={path} controls={controls} />
-                )}
-              />
-            )}
-          </>
+          diff.binary ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>Binary file changed</EmptyTitle>
+                <EmptyDescription>
+                  A text comparison is not available for this file.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <DiffEditor
+              original={diff.original}
+              modified={diff.modified}
+              language={fileLanguage(diff.path)}
+              toolbar={toolbar}
+              footer={(controls) => (
+                <DiffFooter path={path} controls={controls} />
+              )}
+            />
+          )
         ) : query.isError ? null : result ? (
           <Empty>
             <EmptyHeader>
@@ -103,8 +107,8 @@ export function FileDiffViewer({
           </Empty>
         ) : (
           <div className="flex flex-col gap-2 p-3">
-            {Array.from({ length: 12 }, (_, index) => (
-              <Skeleton key={index} className="h-3 w-full" />
+            {DIFF_SKELETON_ROWS.map((row) => (
+              <Skeleton key={row} className="h-3 w-full" />
             ))}
           </div>
         )}

@@ -35,8 +35,8 @@ export function DiffToolbar({
         {change && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span
-                tabIndex={0}
+              <button
+                type="button"
                 aria-label={changeDescription(change)}
                 className={cn(
                   'shrink-0 text-xs font-normal',
@@ -44,7 +44,7 @@ export function DiffToolbar({
                 )}
               >
                 {changeLetter(change.status)}
-              </span>
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               HEAD ↔ Working tree · {changeDescription(change)}
@@ -53,8 +53,8 @@ export function DiffToolbar({
         )}
         <Tooltip>
           <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
+            <button
+              type="button"
               className="flex min-w-0 flex-1 items-center font-mono text-xs font-normal"
               aria-label={path}
             >
@@ -69,7 +69,7 @@ export function DiffToolbar({
               >
                 {baseName(path)}
               </span>
-            </span>
+            </button>
           </TooltipTrigger>
           <TooltipContent>{path}</TooltipContent>
         </Tooltip>
@@ -78,11 +78,9 @@ export function DiffToolbar({
             {controls.counts ? (
               <ChangeCounts {...controls.counts} />
             ) : (
-              <span
-                className="text-xs text-muted-foreground"
-                aria-label="Comparing"
-              >
-                …
+              <span className="text-xs text-muted-foreground">
+                <span aria-hidden="true">…</span>
+                <span className="sr-only">Comparing</span>
               </span>
             )}
           </span>

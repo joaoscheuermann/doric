@@ -50,7 +50,7 @@ export default defineTool({
     })
     .strict(),
   output: z.string(),
-  execute: async (sandbox, host, input) => {
+  execute: async (_sandbox, host, input) => {
     const page = await host.threads.events(
       input.threadId,
       input.afterSequence ?? 0,

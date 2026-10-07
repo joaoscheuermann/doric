@@ -118,6 +118,7 @@ function SortableTab({
       title={item.title ?? item.label}
       className="group/tab h-full shrink-0 touch-none flex-none select-none after:pointer-events-none group-data-horizontal/tabs:after:bottom-0 data-[state=inactive]:hover:after:opacity-30 motion-reduce:transition-none! motion-reduce:after:transition-none"
     >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: this div is the TabsTrigger's own child, so Radix supplies role="tab" and the roving tabIndex at runtime; the handler only forwards the sortable listener's key event */}
       <div
         ref={sortable.setNodeRef}
         data-tab-id={item.id}

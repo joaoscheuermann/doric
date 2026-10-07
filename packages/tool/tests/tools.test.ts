@@ -93,7 +93,7 @@ void test('exposes metadata before binding and binds the supplied sandbox', asyn
     description: 'Search indexed context.',
     input: z.object({ query: z.string(), limit: z.number().int().min(1) }),
     output: z.string(),
-    execute: (received, host, { query, limit }) => {
+    execute: (received, _host, { query, limit }) => {
       assert.equal(received, sandbox);
 
       return `${query}:${limit}`;
@@ -141,7 +141,7 @@ void test('allows non-strict definitions when requested', () => {
     input: z.object({ value: z.string() }),
     output: z.string(),
     strict: false,
-    execute: (_sandbox, host, { value }) => value,
+    execute: (_sandbox, _host, { value }) => value,
   });
 
   assert.equal(tool.definition.strict, false);
@@ -238,7 +238,7 @@ void test('validates payloads before execution and supports async handlers', asy
       name: 'add',
       input: z.object({ left: z.number(), right: z.number() }),
       output: z.number(),
-      async execute(_sandbox, host, { left, right }) {
+      async execute(_sandbox, _host, { left, right }) {
         return left + right;
       },
     })(sandbox, host),
@@ -274,7 +274,7 @@ void test('validates calls without executing handlers', () => {
       name: 'lookup',
       input: z.object({ query: z.string() }),
       output: z.string(),
-      execute(_sandbox, host, { query }) {
+      execute(_sandbox, _host, { query }) {
         executions += 1;
 
         return query;

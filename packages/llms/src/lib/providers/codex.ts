@@ -99,7 +99,7 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       complete,
 
-      async embedding(
+      embedding(
         _request: ProviderEmbeddingRequest,
       ): Promise<ProviderEmbeddingFinished> {
         return Promise.reject(
@@ -111,9 +111,7 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
         );
       },
 
-      async rerank(
-        _request: ProviderRerankRequest,
-      ): Promise<ProviderRerankFinished> {
+      rerank(_request: ProviderRerankRequest): Promise<ProviderRerankFinished> {
         return Promise.reject(
           new ProviderErrorObject({
             provider: 'codex',

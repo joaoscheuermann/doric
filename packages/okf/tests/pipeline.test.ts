@@ -114,9 +114,9 @@ void test('hashes source metadata relationships prompt provider model and effort
 
   assert.equal(hash.length, 64);
 
-  variations.forEach((variation) =>
-    assert.notEqual(hashInput(variation), hash),
-  );
+  variations.forEach((variation) => {
+    assert.notEqual(hashInput(variation), hash);
+  });
 
   for (const key of Object.keys(RECIPE_VERSIONS) as (keyof RecipeVersions)[]) {
     assert.notEqual(

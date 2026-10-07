@@ -228,11 +228,16 @@ export const createThreadRunner = (context: RuntimeContext) => {
       let text = '';
       let paused = false;
       try {
+        const lease = project.lease;
+
+        if (lease === undefined)
+          throw new Error('Project sandbox lease is unavailable.');
+
         text = await context.execute({
           thread: thread.thread,
           job: active.job,
           generation: context.generation(),
-          sandbox: project.lease!.sandbox,
+          sandbox: lease.sandbox,
           signal: active.controller.signal,
           store,
           publisher,
@@ -245,7 +250,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
                 if (project.closing || thread.closing)
                   throw new Error('Thread is inactive.');
                 const started = await context.terminals.start({
-                  sandbox: project.lease!.sandbox,
+                  sandbox: lease.sandbox,
                   projectId: project.project.id,
                   threadId: thread.thread.id,
                   origin: 'agent',
@@ -788,13 +793,14 @@ export const createThreadRunner = (context: RuntimeContext) => {
    * under the project lock, so nothing observes the record between the probe and
    * the write.
    */
-  const setCwd = async (
+  const setCwd = (
     project: ProjectRuntime,
     thread: ThreadRuntime,
     path: string,
   ): Promise<CwdResult> => {
     const lease = project.lease;
-    if (project.closing || lease === undefined) return { status: 'inactive' };
+    if (project.closing || lease === undefined)
+      return Promise.resolve({ status: 'inactive' as const });
     const sandbox = lease.sandbox;
 
     return exclusive(project.project.id, async () => {
@@ -922,18 +928,18 @@ export const createThreadRunner = (context: RuntimeContext) => {
           );
           if (created.status !== 'created')
             throw new Error('Thread cannot be created.');
-          const accepted = await enqueue(
-            project,
-            project.threads.get(created.thread.id)!,
-            prompt,
-            source,
-          );
+          const thread = project.threads.get(created.thread.id);
+
+          if (thread === undefined)
+            throw new Error('Thread cannot be created.');
+
+          const accepted = await enqueue(project, thread, prompt, source);
           if (accepted.status !== 'accepted')
             throw new Error('Thread cannot accept a task.');
           return { threadId: created.thread.id, promptId: accepted.promptId };
         }),
       list: (limit, cursor) =>
-        exclusive(project.project.id, async () => {
+        exclusive(project.project.id, () => {
           allowed();
           return store.list(
             project.project.id,

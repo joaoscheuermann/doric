@@ -457,14 +457,12 @@ void test('redacts every stored secret from event values', async () => {
     logger: pino({ enabled: false }),
   });
 
-  assert.equal(
-    generation.redactions().includes(providerCredential.secret!),
-    true,
-  );
-  assert.equal(
-    unconfigured.redactions().includes(providerCredential.secret!),
-    false,
-  );
+  const secret = providerCredential.secret;
+
+  assert.ok(secret !== undefined);
+
+  assert.equal(generation.redactions().includes(secret), true);
+  assert.equal(unconfigured.redactions().includes(secret), false);
   assert.deepEqual(
     eventJson({ output: providerCredential.secret }, generation.redactions()),
     { output: '[REDACTED]' },

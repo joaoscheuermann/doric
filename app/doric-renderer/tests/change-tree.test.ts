@@ -10,22 +10,22 @@ import {
   changesTreeView,
 } from '../src/domain/change-tree';
 
-const repositories = [
-  {
-    path: 'project',
-    changes: [
-      { path: 'read me.md', status: 'untracked' as const },
-      {
-        path: 'src/new.ts',
-        originalPath: 'src/old.ts',
-        status: 'renamed' as const,
-        staged: true,
-        unstaged: true,
-      },
-      { path: 'src/removed.ts', status: 'deleted' as const },
-    ],
-  },
-];
+const repository = {
+  path: 'project',
+  changes: [
+    { path: 'read me.md', status: 'untracked' as const },
+    {
+      path: 'src/new.ts',
+      originalPath: 'src/old.ts',
+      status: 'renamed' as const,
+      staged: true,
+      unstaged: true,
+    },
+    { path: 'src/removed.ts', status: 'deleted' as const },
+  ],
+};
+
+const repositories = [repository];
 
 test('totals added and removed lines across repositories independently of file counts', () => {
   assert.deepEqual(
@@ -39,7 +39,7 @@ test('totals added and removed lines across repositories independently of file c
 });
 
 test('groups changed paths in directories before files and retains deleted files', () => {
-  const tree = changesTree(repositories[0]!);
+  const tree = changesTree(repository);
   assert.deepEqual(
     tree.map((entry) => entry.name),
     ['src', 'read me.md'],
@@ -64,12 +64,12 @@ test('decorates workspace paths and counts changes through repository ancestors'
 });
 
 test('searches rename origins without dropping the destination directory chain', () => {
-  const tree = changesTree(repositories[0]!, 'OLD.TS');
+  const tree = changesTree(repository, 'OLD.TS');
   assert.deepEqual(
     tree[0]?.children?.map((entry) => entry.name),
     ['new.ts'],
   );
-  assert.deepEqual(changesTree(repositories[0]!, 'absent'), []);
+  assert.deepEqual(changesTree(repository, 'absent'), []);
 });
 
 test('propagates a deeply nested modification through every ancestor', () => {
@@ -141,10 +141,10 @@ test('search reveals matches while preserving collapsed state when the search cl
     changeDirectoryKey('project', 'project'),
     changeDirectoryKey('project', 'project/src'),
   ]);
-  const search = changesTreeView(repositories[0]!, 'new', collapsed);
+  const search = changesTreeView(repository, 'new', collapsed);
   assert.equal(search.open, true);
   assert.equal(search.expanded.has('project/src'), true);
-  const cleared = changesTreeView(repositories[0]!, '', collapsed);
+  const cleared = changesTreeView(repository, '', collapsed);
   assert.equal(cleared.open, false);
   assert.equal(cleared.expanded.has('project/src'), false);
   assert.equal(cleared.changes.get('project/src/new.ts')?.status, 'renamed');

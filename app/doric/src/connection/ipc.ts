@@ -26,7 +26,7 @@ export const createConnectionState = (): ConnectionState & {
     update: (status) => {
       if (current === status) return;
       current = status;
-      listeners.forEach((listener) => listener(status));
+      listeners.forEach((listener) => void listener(status));
     },
   };
 };

@@ -134,9 +134,11 @@ void test('provisions each identified acquisition its own session', async () => 
     create: async (identity) => {
       created.push(identity);
 
+      if (identity === undefined) warm += 1;
+
       return fake(
         identity === undefined
-          ? `warm-${String((warm += 1))}`
+          ? `warm-${String(warm)}`
           : `${identity}-${String(created.length)}`,
       ).session;
     },
@@ -183,7 +185,11 @@ void test('serves an acquisition without an identity from an idle session', asyn
     minIdle: 1,
     maxSandboxes: 3,
     logger,
-    create: async () => fake(`warm-${String((created += 1))}`).session,
+    create: async () => {
+      created += 1;
+
+      return fake(`warm-${String(created)}`).session;
+    },
   });
 
   await pool.waitUntilHeated();

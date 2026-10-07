@@ -580,7 +580,7 @@ void test('retries without a disk quota when Docker does not support one', async
 
   assert.equal(creates.length, 2);
 
-  assert.deepEqual((creates[0]?.body as { HostConfig: unknown }).HostConfig, {
+  assert.deepEqual((creates[0].body as { HostConfig: unknown }).HostConfig, {
     AutoRemove: false,
     Binds: [],
     NetworkMode: 'none',
@@ -589,7 +589,7 @@ void test('retries without a disk quota when Docker does not support one', async
     StorageOpt: { size: '4096M' },
   });
 
-  assert.deepEqual((creates[1]?.body as { HostConfig: unknown }).HostConfig, {
+  assert.deepEqual((creates[1].body as { HostConfig: unknown }).HostConfig, {
     AutoRemove: false,
     Binds: [],
     NetworkMode: 'none',

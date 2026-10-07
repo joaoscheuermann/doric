@@ -7,7 +7,7 @@ import { queryKeys } from '@/queries/keys';
 export const useThreadUsage = (thread: Thread | undefined) =>
   useQuery({
     queryKey: queryKeys.threadUsage(thread?.id),
-    queryFn: () => window.doric.threads.usage(thread!.id),
+    queryFn: () => window.doric.threads.usage(thread?.id as string),
     enabled: thread !== undefined,
     refetchInterval: 3000,
     refetchOnWindowFocus: true,

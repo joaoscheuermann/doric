@@ -36,7 +36,7 @@ interface GenerationOptions {
  * passed as a source rather than a value, so the key is read from the credential
  * store on every call and a rotation reaches a prompt that is already running.
  */
-export const createGeneration = async ({
+export const createGeneration = ({
   snapshot,
   credentials,
   bundles,

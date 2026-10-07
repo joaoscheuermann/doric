@@ -235,7 +235,7 @@ export const createLmStudioProvider = (
         };
       },
 
-      async embedding(
+      embedding(
         _request: ProviderEmbeddingRequest,
       ): Promise<ProviderEmbeddingFinished> {
         return Promise.reject(
@@ -247,9 +247,7 @@ export const createLmStudioProvider = (
         );
       },
 
-      async rerank(
-        _request: ProviderRerankRequest,
-      ): Promise<ProviderRerankFinished> {
+      rerank(_request: ProviderRerankRequest): Promise<ProviderRerankFinished> {
         return Promise.reject(
           new ProviderErrorObject({
             provider: 'lmstudio',

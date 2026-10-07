@@ -55,6 +55,10 @@ type CodeViewProps = {
 export function CodeView({ language, value }: CodeViewProps) {
   const container = useRef<HTMLDivElement>(null);
   const view = useRef<editor.IStandaloneCodeEditor | undefined>(undefined);
+  // The editor is built once, with the language and text of its first render;
+  // the effect below applies every later read. Keeping that first pair in a ref
+  // is what lets the create effect stay free of the props it only reads once.
+  const initial = useRef({ language, value });
 
   useEffect(() => {
     const element = container.current;
@@ -69,7 +73,7 @@ export function CodeView({ language, value }: CodeViewProps) {
       // Our scroll views carry no strip beside them, so the overview ruler and
       // the border it draws would read as a second, wrong scrollbar.
       hideCursorInOverviewRuler: true,
-      language,
+      language: initial.current.language,
       minimap: { enabled: false },
       overviewRulerBorder: false,
       overviewRulerLanes: 0,
@@ -98,7 +102,7 @@ export function CodeView({ language, value }: CodeViewProps) {
       // nothing switches it afterwards, so the editor reads it once and the
       // theme defined for that mode is the one it uses.
       theme,
-      value,
+      value: initial.current.value,
       wordWrap: 'off',
     });
     view.current = created;

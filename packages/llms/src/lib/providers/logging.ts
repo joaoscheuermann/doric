@@ -54,15 +54,15 @@ export function withProviderLogging(
   assertLogger(log);
   log.debug('llm provider initialized');
 
-  async function complete<Schema extends StructuredOutputSchema>(
+  function complete<Schema extends StructuredOutputSchema>(
     request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {
       readonly schema: Schema;
     },
   ): Promise<ProviderStructuredFinished<StructuredOutputValue<Schema>>>;
-  async function complete<Output = JsonValue>(
+  function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>>;
-  async function complete<Output = JsonValue>(
+  function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
     return loggedPromise(

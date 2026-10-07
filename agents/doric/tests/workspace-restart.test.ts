@@ -162,7 +162,8 @@ void test('removing a delegated queued input returns one cancellation result to 
     const receipt = (await host.threads.eventsAfter(parent.id, 0)).find(
       (event) => event.type === 'prompt.accepted',
     );
-    assert.match((receipt?.event as { text: string }).text, /cancelled/);
+    assert.ok(receipt);
+    assert.match((receipt.event as { text: string }).text, /cancelled/);
     assert.deepEqual(host.ran, []);
   } finally {
     await host.close();
@@ -431,7 +432,7 @@ void test('delivers an exhausted delegated prompt to its parent exactly once', {
       ({ type }) => type === 'prompt.accepted',
     );
     assert.equal(accepted.length, 1);
-    assert.deepEqual((accepted[0]?.event as { source: unknown }).source, {
+    assert.deepEqual((accepted[0].event as { source: unknown }).source, {
       kind: 'result',
       threadId: child.id,
       promptId,

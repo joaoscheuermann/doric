@@ -85,6 +85,12 @@ export function ProviderModelsEditor({
       <div className="flex flex-col gap-2">
         {models.map((model, index) => (
           <div
+            // The draft's models carry no identity of their own: every handler in
+            // this editor names one by its position, the list is only ever appended
+            // to or rewritten in place, and two models may share a name while the
+            // draft is edited. Keying by the name instead would remount the card on
+            // every keystroke, so the input would lose focus as the name changed.
+            // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity the editor names models by
             key={index}
             className="flex flex-col gap-2 rounded-lg border p-2"
           >

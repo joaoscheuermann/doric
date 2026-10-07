@@ -261,7 +261,7 @@ export const exposeUserSsh = async (
   };
 };
 
-const execute = async (
+const execute = (
   connection: Parameters<typeof createGuestConnection>[0],
   input: SandboxExecInput,
 ): Promise<SandboxExecResult> => {

@@ -69,21 +69,6 @@ export const useConfig = (
   /** The draft a save must read, whatever render scheduled it. */
   const latest = useRef<Configuration | undefined>(undefined);
   latest.current = draft;
-  /**
-   * A counter bumped when the window regains focus. The configuration is the
-   * host's single copy, shared by the workspace window and the settings window,
-   * so a save in one leaves the other holding a stale draft — which its next save
-   * would write back over the other window's change. Rereading on focus is what
-   * keeps a window's draft from overwriting a change made in the other one.
-   */
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    const onFocus = () => setReload((value) => value + 1);
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, []);
-
   const queryClient = useQueryClient();
   const load = useQuery({
     queryKey: queryKeys.config,
@@ -109,7 +94,22 @@ export const useConfig = (
     }
     setError(undefined);
     void queryClient.refetchQueries({ queryKey: queryKeys.config });
-  }, [open, queryClient, reload]);
+  }, [open, queryClient]);
+
+  // The configuration is shared by the workspace window and the settings window,
+  // so a save in one leaves the other holding a stale draft — which its next save
+  // would write back over the other window's change. Rereading on focus is what
+  // keeps a window's draft from overwriting a change made in the other one.
+  useEffect(() => {
+    const onFocus = () => {
+      intent.current += 1;
+      if (!open) return;
+      setError(undefined);
+      void queryClient.refetchQueries({ queryKey: queryKeys.config });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [open, queryClient]);
 
   // Every answered load seeds both copies with what the host stores, which is
   // what keeps a window from writing its draft back over the other window's

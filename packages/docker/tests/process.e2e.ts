@@ -26,7 +26,10 @@ void test('timeout terminates the remote process and its descendants', {
 }, async () => {
   const session = await sandbox();
   try {
-    const process = await session.start!({
+    if (session.start === undefined)
+      throw new Error('Sandbox process provider is unavailable.');
+
+    const process = await session.start({
       cmd: ['sh', '-c', 'sleep 60 & echo $!; wait'],
       timeoutMs: 250,
     });
@@ -53,7 +56,10 @@ void test('streams separate output before exit and accepts process input', {
   try {
     const ready = deferred();
     let output = '';
-    const process = await session.start!({
+    if (session.start === undefined)
+      throw new Error('Sandbox process provider is unavailable.');
+
+    const process = await session.start({
       cmd: [
         'sh',
         '-c',
@@ -84,7 +90,10 @@ void test('resizes a real PTY and sends interrupt keys to its foreground process
     const sized = deferred();
     const running = deferred();
     let output = '';
-    const process = await session.start!({
+    if (session.start === undefined)
+      throw new Error('Sandbox process provider is unavailable.');
+
+    const process = await session.start({
       cmd: ['bash', '--noprofile', '--norc', '-i'],
       tty: true,
       cols: 80,
@@ -121,7 +130,11 @@ void test('termination kills command descendants without disposing the sandbox',
   try {
     const child = deferred<string>();
     let output = '';
-    const process = await session.start!({
+
+    if (session.start === undefined)
+      throw new Error('Sandbox process provider is unavailable.');
+
+    const process = await session.start({
       cmd: ['sh', '-c', 'sleep 60 & echo $!; wait'],
       onOutput: ({ data }) => {
         output += data;

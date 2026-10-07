@@ -96,16 +96,12 @@ void test('edits preserve FIFO and original receipts, reject stale versions and 
       (await service.threads.queuedPrompt(id, pending.promptId))?.promptId,
       pending.promptId,
     );
-    assert.equal(
-      (
-        harness.events.find(
-          (event) =>
-            event.promptId === pending.promptId &&
-            event.type === 'prompt.accepted',
-        )?.event as { text: string }
-      ).text,
-      original,
+    const accepted = harness.events.find(
+      (event) =>
+        event.promptId === pending.promptId && event.type === 'prompt.accepted',
     );
+    assert.ok(accepted);
+    assert.equal((accepted.event as { text: string }).text, original);
     release.resolve();
     await drained.promise;
     await harness.threadState(id, 'ready');
@@ -243,7 +239,10 @@ void test('Stop closes dispatch before abort, stays idempotent, and resumes the 
         signal.addEventListener('abort', () => aborted.resolve(), {
           once: true,
         });
-        await host.terminals!.run({
+        if (host.terminals === undefined)
+          throw new Error('Terminals are unavailable.');
+
+        await host.terminals.run({
           command: 'echo late',
           cwd: '/workspace',
           timeoutMs: 0,

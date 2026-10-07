@@ -47,6 +47,12 @@ import type {
 } from '@/domain/workspace';
 import { cn } from '@/utility/utils';
 
+/** The placeholder project rows the sidebar draws while the projects load. */
+const PROJECT_SKELETON_ROWS = Array.from(
+  { length: 3 },
+  (_, row) => `project-skeleton-${row}`,
+);
+
 export type SidebarModel = {
   readonly draft?: Draft;
   readonly editing?: Entity;
@@ -163,8 +169,8 @@ export function ProjectSidebar({
                 </SidebarMenuItem>
               )}
               {model.loadingProjects &&
-                Array.from({ length: 3 }, (_, index) => (
-                  <SidebarMenuItem key={index}>
+                PROJECT_SKELETON_ROWS.map((row) => (
+                  <SidebarMenuItem key={row}>
                     <SidebarMenuSkeleton showIcon />
                   </SidebarMenuItem>
                 ))}

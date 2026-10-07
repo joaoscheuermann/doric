@@ -171,7 +171,7 @@ export const createLocalCallbackServer = async (
 };
 
 /** Opens a URL in the platform browser through an explicit spawn boundary. */
-export const openBrowser = async (
+export const openBrowser = (
   url: string,
   options: BrowserOpenOptions = {},
 ): Promise<void> => {

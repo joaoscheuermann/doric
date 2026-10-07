@@ -50,7 +50,7 @@ export function useTerminals(projects: readonly Project[]) {
           );
         }),
       );
-    return () => stops.forEach((stop) => stop());
+    return () => stops.forEach((stop) => void stop());
   }, [client, ids]);
   return {
     items: queries.flatMap((query) => query.data ?? []),

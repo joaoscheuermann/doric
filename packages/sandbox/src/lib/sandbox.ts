@@ -66,7 +66,7 @@ export const createSandbox = async (
 const session = (state: State): SandboxSession => ({
   id: state.runtime.id,
   root: state.root,
-  async start(input) {
+  start(input) {
     active(state);
     if (state.runtime.start === undefined) {
       throw new Error('Sandbox provider does not support live processes');
@@ -137,7 +137,7 @@ const session = (state: State): SandboxSession => ({
   async getFile(path) {
     active(state);
 
-    return state.runtime.getFile(resolvePath(state.root, path));
+    return await state.runtime.getFile(resolvePath(state.root, path));
   },
   async diff(input: SandboxDiffInput = {}) {
     active(state);

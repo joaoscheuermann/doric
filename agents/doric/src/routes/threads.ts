@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
-import type { WorkspaceService } from '../lib/workspace/types.js';
+import type { Thread, WorkspaceService } from '../lib/workspace/types.js';
 import { conflict, missing, nameInput, validateId } from './workspace-input.js';
 
 /**
@@ -180,7 +180,7 @@ export const createThreadsRouter = (service: WorkspaceService): Router => {
       return;
     }
     const { name, cwd } = input.data;
-    let thread;
+    let thread: Thread | undefined;
     if (name !== undefined) {
       thread = await service.threads.rename(request.params.id, name);
       if (thread === undefined) {

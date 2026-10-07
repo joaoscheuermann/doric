@@ -13,7 +13,7 @@ export const useThreadQueue = (id: string | undefined) => {
   const connection = useConnectionStatus();
   const query = useQuery({
     queryKey: queryKeys.threadQueue(id),
-    queryFn: () => window.doric.threads.queue(id!),
+    queryFn: () => window.doric.threads.queue(id as string),
     enabled: id !== undefined,
     refetchOnWindowFocus: true,
     retry: 2,
@@ -42,14 +42,14 @@ export const useThreadQueue = (id: string | undefined) => {
     };
   }, [client, connection, id]);
   const resume = useMutation({
-    mutationFn: () => window.doric.threads.resumeQueue(id!),
+    mutationFn: () => window.doric.threads.resumeQueue(id as string),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: queryKeys.threadQueue(id) }),
     onError: (error) => toast.error(messageFrom(error)),
   });
   const remove = useMutation({
     mutationFn: (promptId: string) =>
-      window.doric.threads.removeQueued(id!, promptId),
+      window.doric.threads.removeQueued(id as string, promptId),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: queryKeys.threadQueue(id) }),
     onError: (error) => toast.error(messageFrom(error)),

@@ -363,7 +363,7 @@ export function Settings() {
       }
     >
       {/* A blur on any field sends the change waiting on the debounce. */}
-      <div onBlur={() => void flush()}>
+      <div role="none" onBlur={() => void flush()}>
         {/*
           The section's own icon leads its heading, the same one the nav draws
           beside the label, so the two name one section rather than two that

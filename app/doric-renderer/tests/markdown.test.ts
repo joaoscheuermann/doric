@@ -16,10 +16,7 @@ const linesOf = (block: MarkdownBlock): readonly MarkdownLine[] => {
       row.flat(),
     );
   if (block.kind === 'bullet' || block.kind === 'ordered')
-    return block.items.reduce<MarkdownLine[]>(
-      (all, item) => [...all, ...item],
-      [],
-    );
+    return block.items.flat();
   return block.lines;
 };
 

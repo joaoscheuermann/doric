@@ -94,10 +94,12 @@ describe('threadLevel', () => {
       'p',
     );
     assert.deepEqual(ids(level.nodes), ['a']);
-    assert.deepEqual(ids(level.nodes[0]!.children.nodes), ['b']);
-    assert.deepEqual(ids(level.nodes[0]!.children.nodes[0]!.children.nodes), [
-      'c',
-    ]);
+    const [root] = level.nodes;
+    assert.ok(root);
+    assert.deepEqual(ids(root.children.nodes), ['b']);
+    const [child] = root.children.nodes;
+    assert.ok(child);
+    assert.deepEqual(ids(child.children.nodes), ['c']);
   });
 
   test('excludes threads from another project', () => {
@@ -116,13 +118,17 @@ describe('threadLevel', () => {
       'p',
     );
     const [a, b] = level.nodes;
-    assert.equal(a!.expandable, true);
-    assert.equal(b!.expandable, true);
+    assert.ok(a);
+    assert.ok(b);
+    assert.equal(a.expandable, true);
+    assert.equal(b.expandable, true);
   });
 
   test('marks a childless leaf with no draft as not expandable', () => {
     const level = threadLevel([thread('a', 'p')], undefined, 'p');
-    assert.equal(level.nodes[0]!.expandable, false);
+    const [node] = level.nodes;
+    assert.ok(node);
+    assert.equal(node.expandable, false);
   });
 
   test('places a project-root thread draft at the root level', () => {
@@ -137,20 +143,26 @@ describe('threadLevel', () => {
       'p',
     );
     assert.equal(level.draft, false);
-    assert.equal(level.nodes[0]!.children.draft, true);
+    const [node] = level.nodes;
+    assert.ok(node);
+    assert.equal(node.children.draft, true);
   });
 
   test('ignores a project draft and drafts from other projects', () => {
     const level = threadLevel([thread('a', 'p')], { kind: 'project' }, 'p');
     assert.equal(level.draft, false);
-    assert.equal(level.nodes[0]!.children.draft, false);
+    const [node] = level.nodes;
+    assert.ok(node);
+    assert.equal(node.children.draft, false);
 
     const other = threadLevel(
       [thread('a', 'p')],
       { kind: 'thread', projectId: 'other', parentThreadId: 'a' },
       'p',
     );
-    assert.equal(other.nodes[0]!.children.draft, false);
+    const [otherNode] = other.nodes;
+    assert.ok(otherNode);
+    assert.equal(otherNode.children.draft, false);
   });
 });
 

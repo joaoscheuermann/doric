@@ -9,14 +9,15 @@ test('moves a navigation tab while retaining all remaining tabs in order', () =>
 });
 
 test('ignores a drop with no valid source or destination', () => {
-  for (const [from, to] of [
+  const drops: [number, number][] = [
     [-1, 0],
     [0, -1],
     [0, 2],
     [2, 0],
     [1, 1],
-  ]) {
-    assert.deepEqual(moveItem(['files', 'changes'], from!, to!), [
+  ];
+  for (const [from, to] of drops) {
+    assert.deepEqual(moveItem(['files', 'changes'], from, to), [
       'files',
       'changes',
     ]);

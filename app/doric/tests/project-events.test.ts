@@ -26,7 +26,7 @@ class FakeSocket {
   }
 
   emit(name: string, value: unknown): void {
-    this.listeners.get(name)?.forEach((listener) => listener(value));
+    this.listeners.get(name)?.forEach((listener) => void listener(value));
   }
 
   connect(): this {
@@ -84,7 +84,7 @@ class FakeTarget implements ProjectEventTarget {
 
   destroy(): void {
     this.destroyed = true;
-    this.listeners.forEach((listener) => listener());
+    this.listeners.forEach((listener) => void listener());
     this.listeners.clear();
   }
 }

@@ -81,7 +81,7 @@ export function SettingsBreadcrumb({
         {trail.map((crumb, index) => {
           const last = index === trail.length - 1;
           return (
-            <Fragment key={`${index}-${crumb.label}`}>
+            <Fragment key={crumb.label}>
               {index > 0 && <BreadcrumbSeparator className="shrink-0" />}
               <BreadcrumbItem className={last ? 'min-w-0' : 'shrink-0'}>
                 {last || crumb.onSelect === undefined ? (

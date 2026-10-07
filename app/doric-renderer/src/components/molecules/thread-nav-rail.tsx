@@ -127,7 +127,8 @@ function RailHandle({
       }}
     >
       <PopoverTrigger asChild>
-        <div
+        <button
+          type="button"
           aria-current={active ? 'location' : undefined}
           aria-label={label}
           className="group flex h-2.5 w-6 cursor-pointer justify-end p-1"
@@ -149,7 +150,7 @@ function RailHandle({
             hover(null);
           }}
         >
-          <div
+          <span
             className={cn(
               'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
               HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
@@ -161,8 +162,8 @@ function RailHandle({
                   ? 'bg-primary'
                   : HANDLE_COLORS.ordinary[emphasis],
             )}
-          ></div>
-        </div>
+          />
+        </button>
       </PopoverTrigger>
       {/* The popover never moves the focus on its own — both ends are cut
         deliberately. Radix focuses its content on open and refocuses the

@@ -1,7 +1,7 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
 const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
-const { readFileSync } = require('fs');
-const { join } = require('path');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
 /**
  * Nx writes one page for the `index` option, so the settings window's page is
@@ -110,8 +110,8 @@ module.exports = {
         },
       ],
       styles: ['./src/styles.css'],
-      outputHashing: process.env['NODE_ENV'] === 'production' ? 'all' : 'none',
-      optimization: process.env['NODE_ENV'] === 'production',
+      outputHashing: process.env.NODE_ENV === 'production' ? 'all' : 'none',
+      optimization: process.env.NODE_ENV === 'production',
     }),
     new NxReactWebpackPlugin({
       // Uncomment this line if you don't want to use SVGR

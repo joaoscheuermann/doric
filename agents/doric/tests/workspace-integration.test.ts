@@ -415,9 +415,17 @@ void test('delegates across isolated conversations sharing a real project sandbo
     'Independent root verified the shared file.',
   );
   assert.equal(pool.status().leased, 1);
-  const rootHistory = (await threads.find(root.id))!.messages;
-  const childHistory = (await threads.find(child.id))!.messages;
-  const siblingHistory = (await threads.find(sibling.id))!.messages;
+  const rootThread = await threads.find(root.id);
+  const childThread = await threads.find(child.id);
+  const siblingThread = await threads.find(sibling.id);
+
+  assert.ok(rootThread !== undefined);
+  assert.ok(childThread !== undefined);
+  assert.ok(siblingThread !== undefined);
+
+  const rootHistory = rootThread.messages;
+  const childHistory = childThread.messages;
+  const siblingHistory = siblingThread.messages;
   assert.ok(JSON.stringify(rootHistory).includes(parentPrompt));
   assert.ok(!JSON.stringify(rootHistory).includes(followup));
   assert.ok(JSON.stringify(childHistory).includes(followup));

@@ -30,6 +30,7 @@ import {
   nextStructuredOutputRepair,
   parseStructuredOutputTool,
   type StructuredOutputBaseline,
+  type StructuredOutputRepair,
   type StructuredOutputTool,
   structuredOutputInstruction,
 } from './utils/structured-output.js';
@@ -210,7 +211,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             if (submission.type === 'invalid') {
               storeAssistant(finish);
               pushIncompleteToolResults(finish, pushToolResult);
-              let repair;
+              let repair: StructuredOutputRepair;
               try {
                 repair = nextStructuredOutputRepair(
                   terminal,
@@ -355,7 +356,7 @@ export const createAgent = (options: AgentOptions): Agent => {
                 if (submission.type === 'invalid') {
                   storeAssistant(event.finish);
                   pushIncompleteToolResults(event.finish, pushToolResult);
-                  let repair;
+                  let repair: StructuredOutputRepair;
                   try {
                     repair = nextStructuredOutputRepair(
                       terminal,

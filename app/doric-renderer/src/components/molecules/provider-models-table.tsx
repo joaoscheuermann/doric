@@ -192,8 +192,8 @@ export function ProviderModelsTable({
                 aria-label="Offer every model on this page"
                 checked={page.length > 0 && all}
                 onCheckedChange={(value) =>
-                  page.forEach((row) =>
-                    onPick(row.original.model.id, value === true),
+                  page.forEach(
+                    (row) => void onPick(row.original.model.id, value === true),
                   )
                 }
               />

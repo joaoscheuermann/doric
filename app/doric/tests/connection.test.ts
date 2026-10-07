@@ -31,7 +31,7 @@ class FakeSocket implements ConnectionSocket {
 
   emit(event: SocketEvent): void {
     this.connected = event === 'connect';
-    this.listeners.get(event)?.forEach((listener) => listener());
+    this.listeners.get(event)?.forEach((listener) => void listener());
   }
 }
 
@@ -65,7 +65,7 @@ class FakeTarget implements ConnectionTarget {
 
   emit(event: 'did-finish-load' | 'destroyed'): void {
     if (event === 'destroyed') this.destroyed = true;
-    this.listeners.get(event)?.forEach((listener) => listener());
+    this.listeners.get(event)?.forEach((listener) => void listener());
     if (event === 'destroyed') this.listeners.delete(event);
   }
 

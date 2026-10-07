@@ -72,12 +72,23 @@ const conversation = async () => {
     await harness.threadState(thread.id, 'ready');
     return promptId;
   };
-  const events = async (id = thread.id) =>
-    (await service.threads.events(id, 0))!.events.filter(
+  const events = async (id = thread.id) => {
+    const page = await service.threads.events(id, 0);
+
+    assert.ok(page !== undefined);
+
+    return page.events.filter(
       // Rewind assertions concern inputs, results and truncation boundaries.
       ({ type }) => !type.startsWith('queue.') && type !== 'prompt.started',
     );
-  const record = async (id = thread.id) => (await harness.threads.find(id))!;
+  };
+  const record = async (id = thread.id) => {
+    const found = await harness.threads.find(id);
+
+    assert.ok(found !== undefined);
+
+    return found;
+  };
   return {
     service,
     harness,
@@ -163,8 +174,12 @@ void test('rewinds an earlier prompt onto the history that preceded it', async (
     [first]: 0,
     [result.promptId]: 2,
   });
-  assert.ok(settled.at(-1)!.sequence > after[3].sequence);
-  assert.ok(history.thread.lastSequence >= settled.at(-1)!.sequence);
+  const last = settled.at(-1);
+
+  assert.ok(last !== undefined);
+
+  assert.ok(last.sequence > after[3].sequence);
+  assert.ok(history.thread.lastSequence >= last.sequence);
   await service.dispose();
 });
 

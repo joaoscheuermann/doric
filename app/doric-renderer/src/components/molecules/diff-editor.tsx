@@ -41,11 +41,22 @@ export function DiffEditor({
   const counts =
     original === modified ? { added: 0, removed: 0 } : computedCounts;
 
+  // The diff editor is built once, with the text of its first render; the
+  // effect below applies every later read. Keeping that first triple in a ref
+  // is what lets the create effect stay free of the props it only reads once.
+  const initial = useRef({ language, original, modified });
+
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const originalModel = editor.createModel(original, language);
-    const modifiedModel = editor.createModel(modified, language);
+    const originalModel = editor.createModel(
+      initial.current.original,
+      initial.current.language,
+    );
+    const modifiedModel = editor.createModel(
+      initial.current.modified,
+      initial.current.language,
+    );
     const created = editor.createDiffEditor(element, {
       automaticLayout: true,
       readOnly: true,
@@ -141,7 +152,7 @@ export function DiffEditor({
         onLayout: setLayout,
         onNavigate: (direction) => view.current?.goToDiff(direction),
       })}
-      <div
+      <section
         ref={container}
         className="min-h-0 flex-1 font-mono"
         aria-label="File comparison"

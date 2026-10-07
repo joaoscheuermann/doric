@@ -294,14 +294,14 @@ const under = (root: string, path: string): boolean =>
   root === '' || path === root || path.startsWith(`${root}/`);
 
 /** Reports what a workspace-relative path is, without reading its content. */
-export const workspacePathKind = async (
+export const workspacePathKind = (
   sandbox: Sandbox,
   value = '',
 ): Promise<WorkspacePathKind | 'escaped'> => {
   const resolved = resolve(sandbox.root, value);
 
   if (typeof resolved === 'string') {
-    return 'escaped';
+    return Promise.resolve('escaped');
   }
 
   return pathKind(sandbox, sandbox.root, resolved.path);

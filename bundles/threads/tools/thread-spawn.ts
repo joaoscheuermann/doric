@@ -14,6 +14,6 @@ export default defineTool({
     })
     .strict(),
   output: z.string(),
-  execute: async (sandbox, host, input) =>
+  execute: async (_sandbox, host, input) =>
     JSON.stringify(await host.threads.spawn(input.prompt)),
 });

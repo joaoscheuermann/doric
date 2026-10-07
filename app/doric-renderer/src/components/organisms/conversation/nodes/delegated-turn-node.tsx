@@ -60,6 +60,7 @@ function DelegatedTurn({
         toggleLabel: `Toggle ${input.kind === 'parent' ? 'instruction' : 'result'} from ${source.label.value}`,
         content: (
           <span
+            role="none"
             className="inline-flex min-w-0 items-center"
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}

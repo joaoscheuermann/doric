@@ -501,47 +501,47 @@ const guardedSession = (record: SessionRecord): PooledSandbox => {
       if (record.session.start === undefined) {
         throw new Error('Sandbox provider does not support live processes');
       }
-      return record.session.start(input);
+      return await record.session.start(input);
     },
     exec: async (input) => {
       active();
 
-      return record.session.exec(input);
+      return await record.session.exec(input);
     },
     cloneRepo: async (input) => {
       active();
 
-      return record.session.cloneRepo(input);
+      return await record.session.cloneRepo(input);
     },
     readFile: async (path) => {
       active();
 
-      return record.session.readFile(path);
+      return await record.session.readFile(path);
     },
     writeFile: async (path, content) => {
       active();
 
-      return record.session.writeFile(path, content);
+      return await record.session.writeFile(path, content);
     },
     putFile: async (path, bytes) => {
       active();
 
-      return record.session.putFile(path, bytes);
+      return await record.session.putFile(path, bytes);
     },
     getFile: async (path) => {
       active();
 
-      return record.session.getFile(path);
+      return await record.session.getFile(path);
     },
     diff: async (input) => {
       active();
 
-      return record.session.diff(input);
+      return await record.session.diff(input);
     },
     ssh: async () => {
       active();
 
-      return record.session.ssh();
+      return await record.session.ssh();
     },
   };
 };

@@ -98,9 +98,7 @@ function Item({
               'queue-row w-full justify-start gap-2 rounded-none border-0 text-sm font-light focus-visible:ring-inset has-data-[icon=inline-start]:pl-2.5',
               focused && 'bg-muted',
             )}
-            aria-label={
-              queueAuthor(item.source, item.label) + ': ' + item.preview
-            }
+            aria-label={`${queueAuthor(item.source, item.label)}: ${item.preview}`}
             onFocus={onFocus}
             onKeyDown={onKeyDown}
           >
@@ -118,9 +116,7 @@ function Item({
         <PopoverContent
           side="top"
           align="start"
-          aria-label={
-            'Queued prompt from ' + queueAuthor(item.source, item.label)
-          }
+          aria-label={`Queued prompt from ${queueAuthor(item.source, item.label)}`}
           className="w-96 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 font-conversation text-foreground ring-0 duration-0"
           onKeyDown={(event) => event.stopPropagation()}
         >

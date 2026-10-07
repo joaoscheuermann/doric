@@ -26,13 +26,15 @@ export function TreeGuides({ depth }: { readonly depth: number }) {
   if (depth === 0) return null;
   return (
     <span aria-hidden className="pointer-events-none absolute inset-0 z-10">
-      {Array.from({ length: depth }, (_, level) => (
-        <span
-          key={level}
-          className="absolute inset-y-0 w-px bg-sidebar-border"
-          style={{ left: guidePosition(level) }}
-        />
-      ))}
+      {Array.from({ length: depth }, (_, level) => guidePosition(level)).map(
+        (left) => (
+          <span
+            key={left}
+            className="absolute inset-y-0 w-px bg-sidebar-border"
+            style={{ left }}
+          />
+        ),
+      )}
     </span>
   );
 }

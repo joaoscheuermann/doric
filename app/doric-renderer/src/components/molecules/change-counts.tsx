@@ -10,17 +10,21 @@ export function ChangeCounts({
 }) {
   const empty = added === 0 && removed === 0;
   return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums"
-      aria-label={`${added} lines added, ${removed} lines removed`}
-    >
-      <span className={cn(empty ? 'text-muted-foreground' : 'text-git-added')}>
+    <span className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums">
+      <span
+        aria-hidden="true"
+        className={cn(empty ? 'text-muted-foreground' : 'text-git-added')}
+      >
         +{added}
       </span>
       <span
+        aria-hidden="true"
         className={cn(empty ? 'text-muted-foreground' : 'text-git-deleted')}
       >
         −{removed}
+      </span>
+      <span className="sr-only">
+        {added} lines added, {removed} lines removed
       </span>
     </span>
   );

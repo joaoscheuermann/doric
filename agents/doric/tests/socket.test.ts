@@ -213,11 +213,9 @@ void test('resnapshots a disconnected client without leaking its buffered notifi
   host.publisher.threadUpdated({ ...thread, state: 'cancelled' });
   host.publisher.event(event(2));
   const disconnected = new Promise<void>((resolve) =>
-    host.io
-      .of('/threads')
-      .sockets.forEach((serverSocket) =>
-        serverSocket.once('disconnect', () => resolve()),
-      ),
+    host.io.of('/threads').sockets.forEach((serverSocket) => {
+      serverSocket.once('disconnect', () => resolve());
+    }),
   );
   socket.close();
   await disconnected;

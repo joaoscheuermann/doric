@@ -244,12 +244,21 @@ export function SettingsProviderScreen({
       ))}
 
       {kind !== undefined &&
-        kind.lists.includes('models') &&
-        (kindFillsModelEfforts(kind) ? (
-          <ProviderModelPicker draft={draft} kind={kind} onChange={onChange} />
-        ) : (
-          <ProviderModelsEditor draft={draft} kind={kind} onChange={onChange} />
-        ))}
+        (kind.lists.includes('models') ? (
+          kindFillsModelEfforts(kind) ? (
+            <ProviderModelPicker
+              draft={draft}
+              kind={kind}
+              onChange={onChange}
+            />
+          ) : (
+            <ProviderModelsEditor
+              draft={draft}
+              kind={kind}
+              onChange={onChange}
+            />
+          )
+        ) : null)}
 
       {advanced.length > 0 && (
         <Collapsible>

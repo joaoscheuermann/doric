@@ -470,6 +470,7 @@
    * the pane.
    */
   .conversation-scroll > [data-slot='scroll-area-viewport'] > div {
+    /* biome-ignore lint/complexity/noImportantStyles: Radix sets this wrapper's `display` inline, which only `!important` can override */
     display: flex !important;
     flex-direction: column;
     min-height: 100%;
@@ -571,6 +572,7 @@
    stronger than component utilities and inline weights introduced by callers. */
 :is(footer, [data-slot$='-footer']),
 :is(footer, [data-slot$='-footer']) * {
+  /* biome-ignore lint/complexity/noImportantStyles: the footer weight invariant must also override callers' inline font weights */
   font-weight: 400 !important;
 }
 

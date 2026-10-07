@@ -104,20 +104,24 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
 
   const byName = new Map(entries);
 
-  const validate = (call: ToolCall | ToolCallRequest): ToolCall => {
-    const parsed = normalizeCall(call);
-    const tool = byName.get(parsed.name);
+  const requireTool = (call: ToolCall): Tool => {
+    const tool = byName.get(call.name);
 
     if (tool === undefined) {
       throw new ToolErrorObject({
         code: 'unknown_tool',
-        toolName: parsed.name,
-        callId: parsed.id,
-        message: `Unknown tool requested: ${parsed.name}`,
+        toolName: call.name,
+        callId: call.id,
+        message: `Unknown tool requested: ${call.name}`,
       });
     }
 
-    validatePayload(tool, parsed);
+    return tool;
+  };
+
+  const validate = (call: ToolCall | ToolCallRequest): ToolCall => {
+    const parsed = normalizeCall(call);
+    validatePayload(requireTool(parsed), parsed);
 
     return parsed;
   };
@@ -129,7 +133,7 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
     get: (name: string) => byName.get(name),
     execute: async (call: ToolCall | ToolCallRequest): Promise<unknown> => {
       const parsed = validate(call);
-      const tool = byName.get(parsed.name)!;
+      const tool = requireTool(parsed);
       const payload = validatePayload(tool, parsed);
 
       try {

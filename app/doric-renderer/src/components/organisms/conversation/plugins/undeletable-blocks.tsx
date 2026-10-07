@@ -90,7 +90,7 @@ const $removeAcrossBlocks = (
   const first = blocks[0];
   const last = blocks[blocks.length - 1];
   const anchorBlock = $blockOf(selection.anchor.getNode());
-  const forward = anchorBlock !== null && anchorBlock.is(first);
+  const forward = anchorBlock?.is(first) ?? false;
   const start = forward ? selection.anchor : selection.focus;
   const end = forward ? selection.focus : selection.anchor;
 

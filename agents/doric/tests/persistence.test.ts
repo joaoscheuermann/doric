@@ -391,7 +391,10 @@ integrationTest(
       (await threads.eventsAfter(thread.id, 0)).map(({ sequence }) => sequence),
       [1, 4],
     );
-    const restored = (await threads.find(thread.id))!;
+    const restored = await threads.find(thread.id);
+
+    assert.ok(restored !== undefined);
+
     assert.equal(restored.thread.lastSequence, 4);
     assert.deepEqual(restored.messages, messages.slice(0, 2));
     assert.deepEqual(restored.checkpoints, { [ids[0]]: 0 });
@@ -672,14 +675,19 @@ integrationTest(
             type: 'partial',
             output: { text: 'retained evidence', nested: [null, 42] },
           });
-          threadCases.push({ before: (await threads.find(thread.id))!, event });
+          const before = await threads.find(thread.id);
+
+          assert.ok(before !== undefined);
+
+          threadCases.push({ before, event });
         }
       }
       await projects.setState(project.id, state, 'original');
-      projectCases.push({
-        before: (await projects.find(project.id))!,
-        threadCases,
-      });
+      const before = await projects.find(project.id);
+
+      assert.ok(before !== undefined);
+
+      projectCases.push({ before, threadCases });
     }
     // Reconcile completes the terminations the crash began (a CANCELLING record
     // becomes CANCELLED) and resumes the rest; only the resumed records are
@@ -687,7 +695,9 @@ integrationTest(
     assert.equal(await threads.reconcile(), 2);
     assert.equal(await projects.reconcile(), 1);
     for (const { before, threadCases } of projectCases) {
-      const after = (await projects.find(before.project.id))!;
+      const after = await projects.find(before.project.id);
+
+      assert.ok(after !== undefined);
       const terminal = ['failed', 'cancelled'].includes(before.project.state);
       const cancelling = before.project.state === 'cancelling';
       assert.equal(
@@ -700,7 +710,9 @@ integrationTest(
       assert.deepEqual(after.snapshot, snapshot);
       if (terminal) assert.deepEqual(after, before);
       for (const { before: record, event } of threadCases) {
-        const restored = (await threads.find(record.thread.id))!;
+        const restored = await threads.find(record.thread.id);
+
+        assert.ok(restored !== undefined);
         const terminalThread = ['failed', 'cancelled'].includes(
           record.thread.state,
         );
@@ -781,13 +793,17 @@ integrationTest(
       text: 'queued',
       source: { kind: 'user' },
     });
-    assert.equal(
-      (await threads.find(thread.id))!.thread.activePromptId,
-      undefined,
-    );
+    const before = await threads.find(thread.id);
+
+    assert.ok(before !== undefined);
+
+    assert.equal(before.thread.activePromptId, undefined);
 
     assert.equal(await threads.reconcile(), 0);
-    const restored = (await threads.find(thread.id))!;
+    const restored = await threads.find(thread.id);
+
+    assert.ok(restored !== undefined);
+
     assert.equal(restored.thread.state, 'ready');
     assert.equal(restored.thread.result, undefined);
     assert.deepEqual(

@@ -129,7 +129,7 @@ export const createOAuthClient = (
       return exchange(callback, verifier, authorizeOptions.signal);
     },
 
-    async refresh(refreshOptions = {}): Promise<OAuthTokenRecord> {
+    refresh(refreshOptions = {}): Promise<OAuthTokenRecord> {
       return refresh(refreshOptions.signal);
     },
 

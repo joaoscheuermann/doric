@@ -107,7 +107,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
     return stored === null ? undefined : project(stored);
   },
 
-  async setState(id, state, errorCode) {
+  setState(id, state, errorCode) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${id}::uuid FOR UPDATE`;
       const current = await tx.project.findUnique({
@@ -136,7 +136,7 @@ export const createProjectStore = (database: Database): ProjectStore => ({
     });
   },
 
-  async delete(id) {
+  delete(id) {
     return database.$transaction(async (tx) => {
       // Thread creation takes the same project lock, closing the check/delete gap.
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${id}::uuid FOR UPDATE`;

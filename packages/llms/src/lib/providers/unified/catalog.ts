@@ -56,7 +56,7 @@ export const createOpenRouterCatalog = (
       if (cached !== undefined) return cached;
       throw lastError;
     }
-    return waitForRefresh(refresh(), signal);
+    return await waitForRefresh(refresh(), signal);
   };
 
   const resolve = async (

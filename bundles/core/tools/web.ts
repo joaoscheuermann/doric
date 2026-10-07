@@ -88,13 +88,13 @@ export const createTool = (
     description,
     input,
     output,
-    execute: (sandbox, host, input): Promise<WebOutput> =>
+    execute: (_sandbox, _host, input): Promise<WebOutput> =>
       execute(input, options.fetch ?? fetch, requestTimeout(options)),
   });
 
 export default createTool();
 
-const execute = async (
+const execute = (
   input: Input,
   fetcher: FetchLike,
   timeoutMs: number,

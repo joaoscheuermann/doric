@@ -43,6 +43,11 @@ export function useProjectRefresh({
     [client],
   );
 
+  // The extra dependencies are refresh triggers: the effect must re-run when the
+  // selected Project's state, the selected Thread, the panel's visibility, or the
+  // Project's activity changes, even though the body reads only the client, the
+  // Project id, and the connection.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: extra entries are deliberate refresh triggers rather than values the body reads
   useEffect(() => {
     if (projectId && connection === 'connected')
       void refreshProject(client, projectId);

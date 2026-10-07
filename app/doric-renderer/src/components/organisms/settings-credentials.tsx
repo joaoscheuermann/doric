@@ -327,6 +327,7 @@ function CredentialTable({
             // own clicks to itself: without this, opening Delete would also open
             // the dialog behind it.
             <div
+              role="none"
               className="flex justify-end"
               onClick={(event) => event.stopPropagation()}
             >

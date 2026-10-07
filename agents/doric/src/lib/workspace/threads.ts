@@ -90,7 +90,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       { isolationLevel: 'RepeatableRead' },
     ),
   usage: (id) => readThreadUsage(database, id),
-  async create(projectId, name, parentThreadId, inherit) {
+  create(projectId, name, parentThreadId, inherit) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId}::uuid FOR UPDATE`;
       const owner = await tx.project.findUniqueOrThrow({
@@ -218,7 +218,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     return stored === null ? undefined : thread(stored);
   },
 
-  async setState(id, state, activePromptId, errorCode) {
+  setState(id, state, activePromptId, errorCode) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM thread WHERE id = ${id}::uuid FOR UPDATE`;
       const current = await tx.thread.findUnique({
@@ -270,7 +270,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
       WHERE "id" = ${id}::uuid`;
   },
 
-  async rewind(id, promptId) {
+  rewind(id, promptId) {
     return database.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM thread WHERE id = ${id}::uuid FOR UPDATE`;
       const current = await tx.thread.findUnique({ where: { id } });
@@ -372,7 +372,7 @@ export const createThreadStore = (database: Database): ThreadStore => ({
     await closePrompt(database, prompt, failure);
   },
 
-  async deleteSubtree(id) {
+  deleteSubtree(id) {
     return database.$transaction(async (tx) => {
       const current = await tx.thread.findUnique({
         where: { id },
@@ -495,7 +495,7 @@ const event = (stored: StoredEvent): ThreadEvent => ({
  * writers in another host process cannot collide. Shared by the store and the
  * boot reconcile, which records a pause from outside a run.
  */
-const appendEvent = async (
+const appendEvent = (
   database: Database,
   id: string,
   promptId: string,

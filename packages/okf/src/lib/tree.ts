@@ -69,7 +69,7 @@ export const renderTree = (entries: readonly TreeEntry[]): string => {
     add(tree, entry);
   }
 
-  return ['# Project', '', ...render(tree)].join('\n') + '\n';
+  return `${['# Project', '', ...render(tree)].join('\n')}\n`;
 };
 
 const add = (tree: Tree, entry: TreeEntry): void => {

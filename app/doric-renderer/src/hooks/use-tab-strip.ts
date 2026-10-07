@@ -34,6 +34,10 @@ export function useTabStrip(
   );
   const order = JSON.stringify(ids);
 
+  // `selected` and `order` are change triggers: the active tab is read from the
+  // DOM, so the scroll must still re-run when the selection or the tab order
+  // changes even though neither value is read in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: extra entries are deliberate change triggers rather than values the body reads
   useEffect(() => {
     if (sorting) return;
     const active = root.current?.querySelector<HTMLElement>(
@@ -52,9 +56,11 @@ export function useTabStrip(
       for (const tab of Array.from(
         root.current?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [],
       )) {
+        const tabId = tab.dataset.tabId;
+        if (tabId === undefined) continue;
         const close = tab.querySelector<HTMLElement>('[data-slot="tab-close"]');
         const style = close && getComputedStyle(close);
-        sizes.set(tab.dataset.tabId!, {
+        sizes.set(tabId, {
           width: tab.getBoundingClientRect().width,
           close:
             close && style

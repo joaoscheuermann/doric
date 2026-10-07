@@ -219,7 +219,10 @@ void test('interrupting a prompt terminates its foreground command', async () =>
     ...harness.dependencies,
     pool: pool(undefined, f.sandbox),
     execute: async ({ host }) => {
-      await host.terminals!.run({
+      if (host.terminals === undefined)
+        throw new Error('Terminals are unavailable.');
+
+      await host.terminals.run({
         command: 'sleep 100',
         cwd: '/workspace',
         timeoutMs: 0,
@@ -276,7 +279,10 @@ void test('a provider cleanup failure does not strand Thread or Project terminat
   const environment = {
     ...f.sandbox,
     start: async (input: SandboxProcessInput) => {
-      const process = await f.sandbox.start!(input);
+      if (f.sandbox.start === undefined)
+        throw new Error('Sandbox process provider is unavailable.');
+
+      const process = await f.sandbox.start(input);
       return {
         ...process,
         terminate: async () => {

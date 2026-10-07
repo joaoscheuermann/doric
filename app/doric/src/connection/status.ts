@@ -30,7 +30,7 @@ export const createConnectionMonitor = (
   const publish = (status: ConnectionStatus): void => {
     if (closed || current === status) return;
     current = status;
-    listeners.forEach((listener) => listener(status));
+    listeners.forEach((listener) => void listener(status));
   };
   const connected = (): void => publish('connected');
   const disconnected = (): void => publish('disconnected');

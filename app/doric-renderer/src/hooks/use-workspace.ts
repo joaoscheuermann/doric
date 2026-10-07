@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand/react';
 
 import { isDescribed, threadsOf } from '@/domain/project-tree';
@@ -95,31 +95,43 @@ export const useWorkspace = (): Workspace => {
   const loadSequences = useRef(new Map<string, number>());
   const mutationSequences = useRef(new Map<string, number>());
 
-  const loadThreads = async (projectId: string): Promise<void> => {
-    const requestIntent = intent.current;
-    const sequence = nextSequence(loadSequences.current, projectId);
-    store.beginThreadsLoad(projectId);
-    try {
-      const threads = await queryClient.fetchQuery({
-        queryKey: queryKeys.threads(projectId),
-        queryFn: () => window.doric.threads.list(projectId),
-      });
-      if (!isCurrentSequence(loadSequences.current, projectId, sequence))
-        return;
-      store.applyThreads(projectId, threads);
-    } catch (reason) {
-      if (
-        isCurrentSequence(loadSequences.current, projectId, sequence) &&
-        intent.current === requestIntent
-      ) {
-        store.fail(reason);
+  // Memoized so the mount effect that starts the first Threads load can list it
+  // as a dependency without the load running again on every render. Its own
+  // dependencies are the store's stable actions and the stable query client.
+  const loadThreads = useCallback(
+    async (projectId: string): Promise<void> => {
+      const requestIntent = intent.current;
+      const sequence = nextSequence(loadSequences.current, projectId);
+      store.beginThreadsLoad(projectId);
+      try {
+        const threads = await queryClient.fetchQuery({
+          queryKey: queryKeys.threads(projectId),
+          queryFn: () => window.doric.threads.list(projectId),
+        });
+        if (!isCurrentSequence(loadSequences.current, projectId, sequence))
+          return;
+        store.applyThreads(projectId, threads);
+      } catch (reason) {
+        if (
+          isCurrentSequence(loadSequences.current, projectId, sequence) &&
+          intent.current === requestIntent
+        ) {
+          store.fail(reason);
+        }
+      } finally {
+        if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
+          store.endThreadsLoad(projectId);
+        }
       }
-    } finally {
-      if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
-        store.endThreadsLoad(projectId);
-      }
-    }
-  };
+    },
+    [
+      queryClient.fetchQuery,
+      store.beginThreadsLoad,
+      store.applyThreads,
+      store.fail,
+      store.endThreadsLoad,
+    ],
+  );
 
   /** Discards loads already in flight for a Project whose Threads just changed. */
   const invalidateLoads = (projectId: string): void => {
@@ -157,8 +169,15 @@ export const useWorkspace = (): Workspace => {
       active = false;
     };
     // The workspace loads its Projects once; the actions it settles through are
-    // stable.
-  }, []);
+    // stable, so listing them keeps the load from running again.
+  }, [
+    queryClient.fetchQuery,
+    store.applyProjects,
+    store.select,
+    store.fail,
+    store.setLoadingProjects,
+    loadThreads,
+  ]);
 
   const { setSelectedThreadId } = usePersistedSelection({
     isCurrent: () => intent.current === restoreIntent.current,

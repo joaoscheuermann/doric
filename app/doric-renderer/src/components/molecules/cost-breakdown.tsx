@@ -32,13 +32,10 @@ function Cost({ total }: { readonly total: UsageTotals }) {
     ? `Partial: ${total.unpricedCalls} calls have no reported cost yet.`
     : undefined;
   return (
-    <span
-      className="shrink-0 tabular-nums"
-      title={note}
-      aria-label={note ? `${costLabel(total)}. ${note}` : undefined}
-    >
+    <span className="shrink-0 tabular-nums" title={note}>
       {costLabel(total)}
       {partial ? ' *' : ''}
+      {note && <span className="sr-only"> {note}</span>}
     </span>
   );
 }
@@ -55,11 +52,11 @@ function TokenCount({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span tabIndex={0} className="inline-flex items-center gap-0.5">
+        <button type="button" className="inline-flex items-center gap-0.5">
           <Icon aria-hidden="true" className="size-3" />
           <span className="sr-only">{label}: </span>
           {value}
-        </span>
+        </button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

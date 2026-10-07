@@ -54,7 +54,9 @@ const extractExport = (
 
     imports.push({ source: literal(sourceNode), symbols });
 
-    symbols.forEach((symbol) => exports.reexports.add(symbol));
+    symbols.forEach((symbol) => {
+      exports.reexports.add(symbol);
+    });
 
     return;
   }
@@ -140,9 +142,9 @@ const addExportClause = (
       alias ? rename(declaration.display, local, alias) : declaration.display,
     );
 
-    declaration.members?.forEach((member) =>
-      exports.methods.add(alias ? rename(member, local, alias) : member),
-    );
+    declaration.members?.forEach((member) => {
+      exports.methods.add(alias ? rename(member, local, alias) : member);
+    });
   }
 };
 
@@ -268,9 +270,9 @@ const addDeclaration = (node: Node, exports: Sets): void => {
 const addClassMembers = (declaration: Node, exports: Sets): void => {
   const className = declaration.childForFieldName('name')?.text ?? 'default';
 
-  classMembers(declaration, className).forEach((member) =>
-    exports.methods.add(member),
-  );
+  classMembers(declaration, className).forEach((member) => {
+    exports.methods.add(member);
+  });
 };
 
 const classMembers = (
@@ -376,9 +378,9 @@ const addValue = (
       rename(referenced.display, value.text, exportedName),
     );
 
-    referenced.members?.forEach((member) =>
-      exports.methods.add(rename(member, value.text, exportedName)),
-    );
+    referenced.members?.forEach((member) => {
+      exports.methods.add(rename(member, value.text, exportedName));
+    });
 
     return;
   }
@@ -386,9 +388,9 @@ const addValue = (
   if (value.type === 'class' || isClassDeclaration(value.type)) {
     exports.classes.add(exportedName);
 
-    classMembers(value, exportedName).forEach((member) =>
-      exports.methods.add(member),
-    );
+    classMembers(value, exportedName).forEach((member) => {
+      exports.methods.add(member);
+    });
 
     return;
   }

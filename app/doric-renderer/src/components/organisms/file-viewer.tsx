@@ -16,6 +16,12 @@ import { baseName, sandboxNotice } from '@/domain/files';
 import type { ProjectFileContent } from '@/domain/workspace';
 import type { ReadState } from '@/hooks/use-project-files';
 
+/** The placeholder rows a read draws until its text arrives. */
+const FILE_SKELETON_ROWS = Array.from(
+  { length: 12 },
+  (_, row) => `file-skeleton-${row}`,
+);
+
 type FileViewerProps = {
   /** The content of the selected file, or why there is none. */
   readonly file: ReadState<ProjectFileContent>;
@@ -97,8 +103,8 @@ export function FileBody({
   if (file.status === 'idle' || file.status === 'loading') {
     return (
       <div className="flex flex-col gap-2 p-3">
-        {Array.from({ length: 12 }, (_, index) => (
-          <Skeleton key={index} className="h-3 w-full" />
+        {FILE_SKELETON_ROWS.map((row) => (
+          <Skeleton key={row} className="h-3 w-full" />
         ))}
       </div>
     );

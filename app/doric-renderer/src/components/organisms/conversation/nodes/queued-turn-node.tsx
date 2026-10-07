@@ -80,7 +80,7 @@ export class QueuedTurnNode extends DecoratorNode<JSX.Element> {
     const first = this.__items[0];
     const grouped = this.__items.length > 1;
     return (
-      <div onKeyDown={(event) => event.stopPropagation()}>
+      <div role="none" onKeyDown={(event) => event.stopPropagation()}>
         <CollapsibleBlock
           chosen={this.__chosen}
           openness={settledOpenness}

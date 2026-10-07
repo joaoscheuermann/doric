@@ -46,79 +46,77 @@ export function BranchPicker({
           <Skeleton className="h-12 w-full" />
         </div>
       ) : (
-        <>
-          <Command className="p-0">
-            <div className="flex items-center gap-2 border-b px-2.5 py-1.5">
-              <SearchIcon
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-muted-foreground"
+        <Command className="p-0">
+          <div className="flex items-center gap-2 border-b px-2.5 py-1.5">
+            <SearchIcon
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-muted-foreground"
+            />
+            <CommandPrimitive.Input asChild>
+              <Input
+                autoComplete="off"
+                autoFocus
+                aria-label="Search branches"
+                className="h-6 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+                placeholder="Search branches"
               />
-              <CommandPrimitive.Input asChild>
-                <Input
-                  autoComplete="off"
-                  autoFocus
-                  aria-label="Search branches"
-                  className="h-6 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
-                  placeholder="Search branches"
-                />
-              </CommandPrimitive.Input>
-            </div>
-            <CommandList className="max-h-none overflow-hidden">
-              <ScrollArea className="[&_[data-slot=scroll-area-viewport]]:max-h-64">
-                <CommandEmpty>No local branches found.</CommandEmpty>
-                <CommandGroup>
-                  {query.data?.branches.map((branch) => (
-                    <CommandItem
-                      key={branch.name}
-                      value={branch.name}
-                      disabled={
-                        mutation.isPending ||
-                        thread.state === 'running' ||
-                        !!query.data?.blocked ||
-                        (!branch.current && !!branch.worktree)
+            </CommandPrimitive.Input>
+          </div>
+          <CommandList className="max-h-none overflow-hidden">
+            <ScrollArea className="[&_[data-slot=scroll-area-viewport]]:max-h-64">
+              <CommandEmpty>No local branches found.</CommandEmpty>
+              <CommandGroup>
+                {query.data?.branches.map((branch) => (
+                  <CommandItem
+                    key={branch.name}
+                    value={branch.name}
+                    disabled={
+                      mutation.isPending ||
+                      thread.state === 'running' ||
+                      !!query.data?.blocked ||
+                      (!branch.current && !!branch.worktree)
+                    }
+                    onSelect={() => {
+                      if (branch.current) {
+                        onSelect();
+                        return;
                       }
-                      onSelect={() => {
-                        if (branch.current) {
-                          onSelect();
-                          return;
-                        }
-                        mutation.mutate(branch.name, { onSuccess: onSelect });
-                      }}
-                    >
-                      {mutation.isPending &&
-                      mutation.variables === branch.name ? (
-                        <LoaderCircleIcon className="animate-spin" />
-                      ) : branch.current ? (
-                        <CheckIcon />
-                      ) : (
-                        <GitBranchIcon />
-                      )}
-                      <span className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="truncate" title={branch.name}>
-                          {branch.name}
-                        </span>
+                      mutation.mutate(branch.name, { onSuccess: onSelect });
+                    }}
+                  >
+                    {mutation.isPending &&
+                    mutation.variables === branch.name ? (
+                      <LoaderCircleIcon className="animate-spin" />
+                    ) : branch.current ? (
+                      <CheckIcon />
+                    ) : (
+                      <GitBranchIcon />
+                    )}
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="truncate" title={branch.name}>
+                        {branch.name}
+                      </span>
+                      <span
+                        className="truncate text-xs text-muted-foreground"
+                        title={branch.subject}
+                      >
+                        {branch.commit} · {branch.subject}
+                      </span>
+                      {!branch.current && branch.worktree && (
                         <span
                           className="truncate text-xs text-muted-foreground"
-                          title={branch.subject}
+                          title={branch.worktree}
                         >
-                          {branch.commit} · {branch.subject}
+                          In use: {branch.worktree}
                         </span>
-                        {!branch.current && branch.worktree && (
-                          <span
-                            className="truncate text-xs text-muted-foreground"
-                            title={branch.worktree}
-                          >
-                            In use: {branch.worktree}
-                          </span>
-                        )}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </ScrollArea>
-            </CommandList>
-          </Command>
-        </>
+                      )}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </ScrollArea>
+          </CommandList>
+        </Command>
       )}
     </div>
   );

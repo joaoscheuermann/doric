@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type Dispatch, type SetStateAction, useEffect } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react';
 
 import { parseSelection, selectionStorageKey } from '@/domain/selection';
 import type { Thread } from '@/domain/workspace';
@@ -30,6 +30,13 @@ export const usePersistedSelection = ({
   get,
 }: SelectionOptions): PersistedSelection => {
   const queryClient = useQueryClient();
+  /**
+   * Read when the fetch settles rather than captured at mount: the restore runs
+   * once, but a later render's callbacks are the ones that carry the current
+   * selection intent, so they are the ones the settled lookup must consult.
+   */
+  const options = useRef({ get, isCurrent, onRestore });
+  options.current = { get, isCurrent, onRestore };
 
   useEffect(() => {
     let active = true;
@@ -43,12 +50,13 @@ export const usePersistedSelection = ({
     void queryClient
       .fetchQuery({
         queryKey: queryKeys.thread(stored.selectedThreadId),
-        queryFn: () => get(stored.selectedThreadId),
+        queryFn: () => options.current.get(stored.selectedThreadId),
       })
       .then((thread) => {
         if (!active) return;
         // A user who acted while restoration was pending owns the newer state.
-        if (thread !== undefined && isCurrent()) onRestore(thread);
+        if (thread !== undefined && options.current.isCurrent())
+          options.current.onRestore(thread);
         selectionStore.getState().settleLoad('restored');
       })
       .catch(() => {
@@ -60,7 +68,7 @@ export const usePersistedSelection = ({
     return () => {
       active = false;
     };
-  }, []);
+  }, [queryClient.fetchQuery]);
 
   return {
     setSelectedThreadId: selectionStore.getState().changeSelectedThreadId,

@@ -63,7 +63,7 @@ export const createConfigStore = (database: Database): ConfigStore => ({
     return fromStored(stored);
   },
 
-  async replace(config) {
+  replace(config) {
     return database.$transaction(
       async (transaction) => {
         await transaction.modelConfiguration.deleteMany({

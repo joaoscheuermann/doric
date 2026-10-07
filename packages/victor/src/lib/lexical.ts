@@ -109,7 +109,7 @@ export const createLexicalIndex = <Data = unknown>(
           { entryCount: entries.length },
           'lexical index add completed',
         );
-        return Promise.resolve();
+        return await Promise.resolve();
       } catch (error) {
         logger.debug(
           { entryCount: entries.length },
@@ -181,7 +181,7 @@ export const createLexicalIndex = <Data = unknown>(
           'lexical index search completed',
         );
 
-        return Promise.resolve(results);
+        return await Promise.resolve(results);
       } catch (error) {
         logger.debug(fields, 'lexical index search failed');
 

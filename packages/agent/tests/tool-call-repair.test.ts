@@ -54,7 +54,7 @@ void test('structured stream suppresses every provider event from a rejected exe
         name,
         input: z.object({ value: z.string() }),
         output: z.string(),
-        execute: (_sandbox, host, { value }) => {
+        execute: (_sandbox, _host, { value }) => {
           executions += 1;
 
           return value;
@@ -196,7 +196,7 @@ for (const mode of ['complete', 'stream'] as const) {
         name: 'lookup',
         input: z.object({ query: z.string() }),
         output: z.string(),
-        execute: (_sandbox, host, { query }) => {
+        execute: (_sandbox, _host, { query }) => {
           executions += 1;
 
           return query;

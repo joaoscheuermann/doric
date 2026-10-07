@@ -25,7 +25,7 @@ export function createRefreshQueue(read: () => Promise<void>, delayMs = 250) {
       else {
         const finished = waiters;
         waiters = [];
-        finished.forEach((resolve) => resolve());
+        finished.forEach((resolve) => void resolve());
       }
     }
   };
@@ -40,7 +40,7 @@ export function createRefreshQueue(read: () => Promise<void>, delayMs = 250) {
     dispose: () => {
       disposed = true;
       if (timer !== undefined) clearTimeout(timer);
-      waiters.forEach((resolve) => resolve());
+      waiters.forEach((resolve) => void resolve());
       waiters = [];
     },
   };

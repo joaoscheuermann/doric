@@ -223,6 +223,7 @@ function ProviderTable({
             // own clicks to itself: without this, opening Delete would also open
             // the configuration screen behind it.
             <div
+              role="none"
               className="flex justify-end"
               onClick={(event) => event.stopPropagation()}
             >

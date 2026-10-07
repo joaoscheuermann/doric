@@ -746,7 +746,7 @@ export const createWorkspaceService = ({
       setColor: (id, color) =>
         changeProject(id, () => projects.setColor(id, color)),
       terminate: (id) =>
-        exclusive(id, async () => {
+        exclusive(id, () => {
           const runtime = runtimes.get(id);
           if (runtime !== undefined) return endProject(runtime);
           // A Project with no runtime has not been resumed; build one under the
@@ -978,11 +978,11 @@ export const createWorkspaceService = ({
         // New input is the point where a live sandbox catches up with a rotated
         // or newly saved credential, before the prompt is enqueued.
         await applyCurrentGit(runtimes.get(record.projectId));
-        return exclusive(record.projectId, async () => {
+        return exclusive(record.projectId, () => {
           const current = runtimes.get(record.projectId);
           const thread = current?.threads.get(id);
           if (current === undefined || thread === undefined)
-            return { status: 'inactive' as const };
+            return Promise.resolve({ status: 'inactive' as const });
           return runner.enqueue(current, thread, prompt, { kind: 'user' });
         });
       },
@@ -1025,11 +1025,11 @@ export const createWorkspaceService = ({
         if (record === undefined) return { status: 'missing' };
         // A rewind enqueues its replacement input the same way a prompt does.
         await applyCurrentGit(runtimes.get(record.projectId));
-        return exclusive(record.projectId, async () => {
+        return exclusive(record.projectId, () => {
           const project = runtimes.get(record.projectId);
           const thread = project?.threads.get(id);
           if (project === undefined || thread === undefined)
-            return { status: 'inactive' as const };
+            return Promise.resolve({ status: 'inactive' as const });
           return runner.rewind(project, thread, promptId, prompt);
         });
       },
@@ -1048,7 +1048,7 @@ export const createWorkspaceService = ({
       interrupt: async (id, _promptId) => {
         const record = await threads.record(id);
         if (record === undefined) return 'missing';
-        return exclusive(record.projectId, async () => {
+        return exclusive(record.projectId, () => {
           const thread = runtimes.get(record.projectId)?.threads.get(id);
           return Promise.resolve(
             thread === undefined

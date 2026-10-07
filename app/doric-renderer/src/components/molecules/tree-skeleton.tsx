@@ -2,13 +2,13 @@ import { indentation, TreeGuides } from '@/components/molecules/tree-guides';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const rows = [
-  { depth: 0, folder: true, width: 'w-24' },
-  { depth: 1, folder: true, width: 'w-28' },
-  { depth: 2, folder: false, width: 'w-24' },
-  { depth: 2, folder: false, width: 'w-32' },
-  { depth: 1, folder: false, width: 'w-20' },
-  { depth: 0, folder: true, width: 'w-20' },
-  { depth: 1, folder: false, width: 'w-28' },
+  { id: 'root', depth: 0, folder: true, width: 'w-24' },
+  { id: 'folder-a', depth: 1, folder: true, width: 'w-28' },
+  { id: 'file-a1', depth: 2, folder: false, width: 'w-24' },
+  { id: 'file-a2', depth: 2, folder: false, width: 'w-32' },
+  { id: 'file-a3', depth: 1, folder: false, width: 'w-20' },
+  { id: 'folder-b', depth: 0, folder: true, width: 'w-20' },
+  { id: 'file-b1', depth: 1, folder: false, width: 'w-28' },
 ];
 
 /** Mirrors tree row heights, nesting, icons and name columns during the first read. */
@@ -41,9 +41,9 @@ export function TreeSkeleton({
             <Skeleton className="absolute right-1 h-3 w-12" />
           </div>
         )}
-        {levels.map((row, index) => (
+        {levels.map((row) => (
           <div
-            key={index}
+            key={row.id}
             className="relative flex h-7 items-center gap-2 pr-8"
             style={{ paddingLeft: indentation(row.depth) }}
           >

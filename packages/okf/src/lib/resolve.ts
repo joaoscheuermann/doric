@@ -23,7 +23,9 @@ export const resolveImports = async (
   for (const item of imports) {
     const symbols = merged.get(item.source) ?? new Set<string>();
 
-    item.symbols.forEach((symbol) => symbols.add(symbol));
+    item.symbols.forEach((symbol) => {
+      symbols.add(symbol);
+    });
 
     merged.set(item.source, symbols);
   }

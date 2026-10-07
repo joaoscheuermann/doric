@@ -721,7 +721,7 @@ describe('Provider catalog boundary', () => {
       ],
       lists: [],
     },
-  ];
+  ] as const;
 
   const answer = async (body: unknown) => {
     const originalFetch = globalThis.fetch;
@@ -746,7 +746,7 @@ describe('Provider catalog boundary', () => {
   });
 
   /** The token field of the first kind, which each malformed case breaks once. */
-  const field = () => kinds[0]!.fields[1]!;
+  const field = () => kinds[0].fields[1];
 
   const malformed: ReadonlyArray<readonly [string, unknown]> = [
     ['a body with no kinds envelope', []],
