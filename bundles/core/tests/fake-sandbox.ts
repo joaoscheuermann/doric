@@ -44,6 +44,11 @@ export const createFakeSandbox = (
   async ssh() {
     return undefined;
   },
+
+  // A local directory has no provider accounting, so it reports no reading.
+  async stats() {
+    return undefined;
+  },
 });
 
 const exec = async (

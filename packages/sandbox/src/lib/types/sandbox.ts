@@ -78,6 +78,12 @@ export interface SandboxRuntime {
   readonly id: string;
   start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+  /**
+   * The runtime's own resource reading, where the provider can produce one. A
+   * provider that cannot see its sandbox's accounting leaves it absent rather
+   * than answering an empty reading.
+   */
+  stats?(): Promise<SandboxStats>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
 
@@ -137,11 +143,33 @@ export interface SandboxDiffInput {
   readonly paths?: readonly string[];
 }
 
+export interface SandboxStats {
+  /**
+   * The sandbox's busy share of its own CPU allotment, 0..100, so a sandbox
+   * using every core it was given reads 100 rather than a fraction of the host.
+   */
+  readonly cpuPercent?: number;
+  /** The cores this sandbox's quota allows, where the provider knows them. */
+  readonly cpuCount?: number;
+  readonly memoryUsedBytes?: number;
+  /** The memory the sandbox is held to, absent where none is enforced. */
+  readonly memoryLimitBytes?: number;
+  /** When the reading was taken, ISO-8601. */
+  readonly at: string;
+}
+
 export interface Sandbox {
   readonly id: string;
   readonly root: string;
   start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+  /**
+   * What this sandbox is consuming right now, or `undefined` when its provider
+   * offers no reading. It is a read: it never provisions, restarts or interrupts
+   * anything, and a sandbox that cannot answer stays a working sandbox. Absent
+   * altogether on implementations that predate measurement.
+   */
+  stats?(): Promise<SandboxStats | undefined>;
 
   cloneRepo(input: CloneRepoInput): Promise<ClonedRepo>;
 

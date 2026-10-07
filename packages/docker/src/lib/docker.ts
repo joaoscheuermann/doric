@@ -13,6 +13,7 @@ import {
   containerInspectFrom,
   createBody,
   defaultConnection,
+  dockerStatsFrom,
   encodeBody,
   execCreateBody,
   imageFrom,
@@ -166,6 +167,21 @@ export const createDockerClient = (
       );
 
       return containerInspectFrom(raw);
+    },
+
+    async stats(container, input = {}) {
+      const raw = await json<Record<string, unknown>>(
+        {
+          method: 'GET',
+          path: `/containers/${encodeURIComponent(containerId(container))}/stats`,
+          query: { stream: false, 'one-shot': true },
+          signal: input.signal,
+          timeoutMs: input.timeoutMs,
+        },
+        200,
+      );
+
+      return dockerStatsFrom(raw, input.cpuCount);
     },
 
     async removeContainer(container, options = {}) {

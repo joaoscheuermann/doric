@@ -78,6 +78,13 @@ const session = (state: State): SandboxSession => ({
 
     return state.runtime.exec(runtimeExec(state, input));
   },
+  stats() {
+    active(state);
+
+    // A provider without a reading answers `undefined`, which callers report as
+    // unknown rather than as a sandbox with nothing in it.
+    return state.runtime.stats?.() ?? Promise.resolve(undefined);
+  },
   async cloneRepo(input) {
     active(state);
 

@@ -543,6 +543,11 @@ const guardedSession = (record: SessionRecord): PooledSandbox => {
 
       return await record.session.ssh();
     },
+    stats: () => {
+      active();
+
+      return record.session.stats?.() ?? Promise.resolve(undefined);
+    },
   };
 };
 

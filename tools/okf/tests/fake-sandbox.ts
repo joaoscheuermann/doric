@@ -34,6 +34,7 @@ export const createFakeSandbox = (localRoot: string): FakeSandbox => {
       getFile: reject,
       diff: reject,
       ssh: async () => undefined,
+      stats: async () => undefined,
       dispose: async () => undefined,
     },
   };

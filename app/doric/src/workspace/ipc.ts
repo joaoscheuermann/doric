@@ -73,6 +73,16 @@ export const registerWorkspaceHandlers = (
     safe(allowedUrls, workspaceApi.tools.catalog),
   );
   ipcMain.handle(
+    'doric:resources:host',
+    safe(allowedUrls, workspaceApi.resources.host),
+  );
+  ipcMain.handle(
+    'doric:resources:project',
+    safe(allowedUrls, (value: unknown) =>
+      workspaceApi.resources.project(identifier(value)),
+    ),
+  );
+  ipcMain.handle(
     'doric:providers:kinds',
     safe(allowedUrls, workspaceApi.providers.kinds),
   );

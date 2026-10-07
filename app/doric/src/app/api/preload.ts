@@ -283,6 +283,29 @@ type ProjectDiff = {
   readonly repositories: readonly ProjectChangeSet[];
 };
 
+type HostResources = {
+  readonly at: string;
+  readonly cpuCount: number;
+  readonly cpuPercent?: number;
+  readonly loadAverage?: number;
+  readonly memoryTotalBytes: number;
+  readonly memoryUsedBytes: number;
+  readonly uptimeSeconds: number;
+};
+
+type ContainerResources = {
+  readonly status: 'ready' | 'unavailable';
+  readonly at: string;
+  readonly cpuPercent?: number;
+  readonly cpuCount?: number;
+  readonly memoryUsedBytes?: number;
+  readonly memoryLimitBytes?: number;
+};
+
+type ProjectResourcesResult =
+  | { readonly status: 'ready'; readonly container: ContainerResources }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number };
+
 type ProjectFilesResult =
   | {
       readonly status: 'ready';
@@ -438,6 +461,16 @@ contextBridge.exposeInMainWorld('doric', {
     update: (id: string, input: CredentialUpdate) =>
       invoke<Credential>('doric:credentials:update', id, input),
     remove: (id: string) => invoke<void>('doric:credentials:remove', id),
+  },
+  /**
+   * The machine the host runs on, and one Project's sandbox. The host reading
+   * holds no lease; the Project reading shares the lease states every other
+   * Project subresource reports.
+   */
+  resources: {
+    host: () => invoke<HostResources>('doric:resources:host'),
+    project: (projectId: string) =>
+      invoke<ProjectResourcesResult>('doric:resources:project', projectId),
   },
   projects: {
     list: () => invoke<readonly Project[]>('doric:projects:list'),

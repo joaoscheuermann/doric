@@ -7,6 +7,7 @@ import type { ProjectColor } from './colors.js';
 import type { FileDiff, RepositoryChanges } from './file-changes.js';
 import type { ProjectChangeSet } from './files.js';
 import type { PromptFailure, PromptProgress } from './prompts.js';
+import type { ContainerResources } from './resources.js';
 import type {
   Terminal,
   TerminalOutput,
@@ -271,6 +272,9 @@ export type ProjectChanges =
 export type ProjectFileDiff =
   | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
   | { readonly status: 'ready'; readonly diff: FileDiff };
+export type ProjectResources =
+  | { readonly status: ProjectLeaseState }
+  | { readonly status: 'ready'; readonly container: ContainerResources };
 
 /** Durable boundaries; queues and running Agents deliberately stay process-local. */
 export interface ProjectStore {
@@ -434,6 +438,7 @@ export interface WorkspaceService {
       repository: string,
       path: string,
     ): Promise<ProjectFileDiff>;
+    resources(id: string): Promise<ProjectResources>;
   };
   readonly threads: {
     queue(id: string): Promise<import('./queue.js').ThreadQueue | undefined>;

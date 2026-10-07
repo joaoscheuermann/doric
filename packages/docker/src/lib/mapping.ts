@@ -6,6 +6,7 @@ import type {
   CreateContainerInput,
   CreateVolumeInput,
   DockerConnection,
+  DockerStats,
   DockerTransportRequest,
   DockerVersion,
   ExecInput,
@@ -137,6 +138,62 @@ export const containerInspectFrom = (
   return { id: stringField(raw, 'Id'), ipAddress: addresses[0], ports, raw };
 };
 
+export const dockerStatsFrom = (
+  raw: Record<string, unknown>,
+  cpuCount?: number,
+): DockerStats => {
+  const cpu = recordValue(raw.cpu_stats);
+  const previous = recordValue(raw.precpu_stats);
+  const cpuUsage = recordValue(cpu.cpu_usage);
+  const previousUsage = recordValue(previous.cpu_usage);
+
+  // The daemon reports total_usage in nanoseconds shared across the host. The
+  // busy delta over the system delta is the share of the host that the
+  // container used; scaling by the host's online CPUs yields the cores it ran
+  // on, and dividing by its own quota turns that into a percentage of the
+  // quota rather than of the host.
+  const cpuDelta = difference(cpuUsage.total_usage, previousUsage.total_usage);
+  const systemDelta = difference(
+    cpu.system_cpu_usage,
+    previous.system_cpu_usage,
+  );
+  const onlineCpus =
+    numberValue(cpu.online_cpus) ??
+    (Array.isArray(cpuUsage.percpu_usage)
+      ? cpuUsage.percpu_usage.length
+      : undefined);
+
+  const cpuPercent =
+    cpuDelta !== undefined &&
+    systemDelta !== undefined &&
+    systemDelta > 0 &&
+    onlineCpus !== undefined &&
+    onlineCpus > 0 &&
+    cpuCount !== undefined &&
+    cpuCount > 0
+      ? clampPercent((cpuDelta / systemDelta) * (onlineCpus / cpuCount) * 100)
+      : undefined;
+
+  const memory = recordValue(raw.memory_stats);
+  const memoryStats = recordValue(memory.stats);
+
+  // cgroup v2 exposes the reclaimable file cache as inactive_file; v1 as cache.
+  const cache =
+    numberValue(memoryStats.inactive_file) ??
+    numberValue(memoryStats.cache) ??
+    0;
+  const usage = numberValue(memory.usage);
+  const memoryUsedBytes =
+    usage === undefined ? undefined : Math.max(0, usage - cache);
+  const memoryLimitBytes = numberValue(memory.limit);
+
+  return {
+    ...(cpuPercent === undefined ? {} : { cpuPercent }),
+    ...(memoryUsedBytes === undefined ? {} : { memoryUsedBytes }),
+    ...(memoryLimitBytes === undefined ? {} : { memoryLimitBytes }),
+  };
+};
+
 export const imageFrom = (raw: Record<string, unknown>): ImageInspect => ({
   id: stringField(raw, 'Id'),
   raw,
@@ -197,6 +254,22 @@ export const pathWithQuery = (request: DockerTransportRequest): string => {
 
 const stringValue = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
+
+const numberValue = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const difference = (
+  current: unknown,
+  previous: unknown,
+): number | undefined => {
+  const from = numberValue(current);
+  const to = numberValue(previous);
+
+  return from === undefined || to === undefined ? undefined : from - to;
+};
+
+const clampPercent = (value: number): number =>
+  Math.min(100, Math.max(0, value));
 
 const recordValue = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null

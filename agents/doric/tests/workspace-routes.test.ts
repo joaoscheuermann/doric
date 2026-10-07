@@ -894,6 +894,7 @@ const serve = async (
       }),
       tree: async () => ({ status: 'ready', path: '', entries: [] }),
       diff: async () => ({ status: 'ready', repositories: [] }),
+      resources: async () => ({ status: 'pending' }),
       ...overrides.projects,
     },
     threads: {
@@ -954,6 +955,13 @@ const serve = async (
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,
+    readHostResources: () => ({
+      at: '',
+      cpuCount: 0,
+      memoryTotalBytes: 0,
+      memoryUsedBytes: 0,
+      uptimeSeconds: 0,
+    }),
     vms: {
       list: () => [],
       find: () => undefined,

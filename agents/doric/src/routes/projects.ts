@@ -251,6 +251,16 @@ export const createProjectsRouter = (service: WorkspaceService): Router => {
       'The Project path is not a directory.',
     );
   });
+  router.get('/:id/resources', async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    const result = await service.projects.resources(request.params.id);
+    if (leaseResponse(response, result.status)) return;
+    if (result.status === 'ready') {
+      response.json(result.container);
+      return;
+    }
+    conflict(response, 'project', 'resources_unavailable');
+  });
   router.get('/:id/tree', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     const input = pathQuery.safeParse(request.query);

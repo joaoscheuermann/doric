@@ -162,6 +162,18 @@ export const provisionDocker = async (
       return extractFirstFile(await client.getArchive(container, { path }))
         .data;
     },
+    async stats() {
+      const reading = await client.stats(container, {
+        cpuCount: input.resources.cpuCount,
+        timeoutMs: input.timeoutMs,
+      });
+
+      return {
+        ...reading,
+        cpuCount: input.resources.cpuCount,
+        at: new Date().toISOString(),
+      };
+    },
     ssh() {
       return Promise.resolve(host.access);
     },

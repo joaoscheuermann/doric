@@ -215,6 +215,13 @@ void test('delegates across isolated conversations sharing a real project sandbo
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,
+    readHostResources: () => ({
+      at: '',
+      cpuCount: 0,
+      memoryTotalBytes: 0,
+      memoryUsedBytes: 0,
+      uptimeSeconds: 0,
+    }),
     vms: {
       list: () => vms.list(),
       find: (id) => vms.find(id),

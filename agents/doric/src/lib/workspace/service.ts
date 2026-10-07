@@ -31,6 +31,7 @@ import {
   resumeExhaustedError,
 } from './prompts.js';
 import { queuedPrompt } from './queue.js';
+import { readSandboxResources } from './resources.js';
 import { createThreadRunner } from './runner.js';
 import {
   createMutationQueue,
@@ -49,6 +50,7 @@ import {
   type ProjectFile,
   type ProjectFileDiff,
   type ProjectFiles,
+  type ProjectResources,
   type ProjectSsh,
   type ProjectStore,
   type ProjectTree,
@@ -661,6 +663,14 @@ export const createWorkspaceService = ({
       ? outcome.value
       : { status: outcome.status };
   };
+  const resources = async (id: string): Promise<ProjectResources> => {
+    const outcome = await withLease(id, (sandbox) =>
+      readSandboxResources(sandbox),
+    );
+    return outcome.status === 'ready'
+      ? { status: 'ready', container: outcome.value }
+      : { status: outcome.status };
+  };
   const changeProject = (
     id: string,
     change: () => Promise<Project | undefined>,
@@ -786,6 +796,7 @@ export const createWorkspaceService = ({
       diff,
       changes,
       fileDiff,
+      resources,
     },
     threads: {
       queue: async (id) => {

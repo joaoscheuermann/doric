@@ -39,18 +39,21 @@ export const createVmRegistry = (
 const tracked = (
   runtime: SandboxRuntime,
   remove: () => void,
-): SandboxRuntime => ({
-  id: runtime.id,
-  exec: (input) => runtime.exec(input),
-  ...(runtime.start === undefined
-    ? {}
-    : { start: runtime.start.bind(runtime) }),
-  putFile: (path, bytes) => runtime.putFile(path, bytes),
-  getFile: (path) => runtime.getFile(path),
-  ssh: () => runtime.ssh(),
-  async dispose() {
-    await runtime.dispose();
-
-    remove();
-  },
-});
+): SandboxRuntime => {
+  const stats = runtime.stats?.bind(runtime);
+  return {
+    id: runtime.id,
+    exec: (input) => runtime.exec(input),
+    ...(runtime.start === undefined
+      ? {}
+      : { start: runtime.start.bind(runtime) }),
+    ...(stats === undefined ? {} : { stats }),
+    putFile: (path, bytes) => runtime.putFile(path, bytes),
+    getFile: (path) => runtime.getFile(path),
+    ssh: () => runtime.ssh(),
+    async dispose() {
+      await runtime.dispose();
+      remove();
+    },
+  };
+};
