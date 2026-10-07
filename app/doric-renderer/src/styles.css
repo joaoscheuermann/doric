@@ -476,6 +476,43 @@
     min-height: 100%;
   }
 
+  /* The conversation preserves its visible block after a transcript update.
+     Native scroll anchoring would apply the same offset a second time. */
+  .conversation-scroll > [data-slot='scroll-area-viewport'] {
+    overflow-anchor: none;
+  }
+
+  /* A trail click briefly uses the same neutral surface as a hovered button.
+     The solid shadow gives the tint breathing room without shifting scroll positions. */
+  .conversation-scroll
+  :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    box-shadow: 0 0 0 0.5rem transparent;
+    transition:
+      background-color 200ms ease-out,
+      box-shadow 200ms ease-out;
+  }
+
+  .conversation-scroll [data-trail-highlight='strong'] {
+    background-color: var(--muted);
+    box-shadow: 0 0 0 0.5rem var(--muted);
+    transition-duration: 0ms;
+  }
+
+  .conversation-scroll [data-trail-highlight='subtle'] {
+    background-color: color-mix(in oklch, var(--muted) 32%, transparent);
+    box-shadow: 0 0 0 0.5rem color-mix(in oklch, var(--muted) 32%, transparent);
+    transition-duration: 500ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .conversation-scroll
+      :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+      transition-duration: 0ms;
+    }
+  }
+
   html,
   body,
   #root {

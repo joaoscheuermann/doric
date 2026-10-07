@@ -4,8 +4,8 @@
  * the viewport's vertical centre. A handle under the reader's hover widens with
  * an animated transition and opens a popover to its left with the prompt's
  * words; the block the reader is looking at wears the app's primary colour.
- * A last handle throws the scroll to the prompt input. A click is the one way
- * the rail ever moves the reader's scroll.
+ * The last handle throws the scroll to the end and follows new content until
+ * the reader scrolls again.
  */
 
 import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
@@ -154,13 +154,11 @@ function RailHandle({
             className={cn(
               'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
               HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
-              kind === 'queued'
-                ? active && emphasis !== 0
-                  ? 'bg-primary/50'
-                  : HANDLE_COLORS.queued[emphasis]
-                : active && emphasis !== 0
-                  ? 'bg-primary'
-                  : HANDLE_COLORS.ordinary[emphasis],
+              active
+                ? 'bg-primary'
+                : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
+                    emphasis
+                  ],
             )}
           />
         </button>
@@ -220,14 +218,16 @@ export function ThreadNavRail({
   turns,
   scrollRoot,
   navigating,
+  following,
 }: {
   /** The conversation's turns, as the surface draws them. */
   readonly turns: readonly Turn[];
   /** The conversation's scroll area root; the rail measures its viewport. */
   readonly scrollRoot: RefObject<HTMLElement | null>;
   readonly navigating: RefObject<boolean>;
+  readonly following: RefObject<boolean>;
 }) {
-  const nav = useThreadNav({ turns, scrollRoot, navigating });
+  const nav = useThreadNav({ turns, scrollRoot, navigating, following });
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const hoveredIndex =
     hoveredHandle === 'prompt-input'

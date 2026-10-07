@@ -12,6 +12,7 @@ import type {
 import {
   activeMarkerIndex,
   markerEmphasis,
+  markerScrollTop,
   threadMarkers,
 } from '../src/domain/thread-nav';
 import type { ThreadEvent } from '../src/domain/workspace';
@@ -181,31 +182,59 @@ describe('threadMarkers', () => {
   });
 });
 
-describe('activeMarkerIndex', () => {
-  test('names the prompt the viewport top is at', () => {
-    assert.equal(activeMarkerIndex([100, 500], 500), 1);
+describe('markerScrollTop', () => {
+  test('places an interior marker at 40% of the viewport', () => {
+    assert.equal(markerScrollTop(1400, 1000, 2000), 1000);
   });
 
-  test('names the nearest prompt above the viewport top between markers', () => {
-    assert.equal(activeMarkerIndex([100, 500, 900], 499.5), 0);
+  test('keeps first and last markers within the available scroll range', () => {
+    assert.equal(markerScrollTop(24, 1000, 2000), 0);
+    assert.equal(markerScrollTop(2600, 1000, 2000), 2000);
+  });
+});
+
+describe('activeMarkerIndex', () => {
+  const prompts = (tops: readonly (number | null)[]) =>
+    tops.map((top) => ({ kind: 'prompt' as const, top }));
+
+  test('names the prompt the viewport top is at', () => {
+    assert.equal(activeMarkerIndex(prompts([100, 500]), 500, 300), 1);
+  });
+
+  test('names the nearest prompt above the reading line between markers', () => {
+    assert.equal(activeMarkerIndex(prompts([100, 500, 900]), 350, 300), 0);
+  });
+
+  test('names the prompt crossing the reading line at 40% of the viewport', () => {
+    assert.equal(activeMarkerIndex(prompts([100, 500]), 350, 400), 1);
   });
 
   test('names the first prompt while the reader is above every marker', () => {
-    assert.equal(activeMarkerIndex([100, 500], 0), 0);
+    assert.equal(activeMarkerIndex(prompts([100, 500]), 0, 300), 0);
   });
 
   test('names the last prompt once the reader is past every marker', () => {
-    assert.equal(activeMarkerIndex([100, 500], 1200), 1);
+    assert.equal(activeMarkerIndex(prompts([100, 500]), 1200, 300), 1);
   });
 
   test('skips a block the surface has not drawn yet', () => {
-    assert.equal(activeMarkerIndex([100, null, 900], 950), 2);
-    assert.equal(activeMarkerIndex([null, 500], 400), 1);
+    assert.equal(activeMarkerIndex(prompts([100, null, 900]), 950, 300), 2);
+    assert.equal(activeMarkerIndex(prompts([null, 500]), 400, 300), 1);
   });
 
   test('highlights nothing when no marker is drawn', () => {
-    assert.equal(activeMarkerIndex([], 300), -1);
-    assert.equal(activeMarkerIndex([null, null], 300), -1);
+    assert.equal(activeMarkerIndex([], 300, 300), -1);
+    assert.equal(activeMarkerIndex(prompts([null, null]), 300, 300), -1);
+  });
+
+  test('highlights a subthread result when it appears below the viewport top', () => {
+    const markers = [
+      { kind: 'prompt' as const, top: 100 },
+      { kind: 'result' as const, top: 550 },
+    ];
+
+    assert.equal(activeMarkerIndex(markers, 300, 300), 1);
+    assert.equal(activeMarkerIndex(markers, 300, 250), 0);
   });
 });
 

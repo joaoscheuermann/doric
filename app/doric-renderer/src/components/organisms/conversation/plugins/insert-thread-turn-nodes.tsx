@@ -73,14 +73,11 @@ import {
   type UserTurnNode,
 } from '@/components/organisms/conversation/nodes/user-turn-node';
 import { type AuthorDraft, READER_NAME } from '@/domain/conversation-authors';
-import { PROMPT_INPUT_ATTRIBUTE } from '@/domain/conversation-nodes';
-import {
-  restOnBottom,
-  restsOnTail,
-  scrollPlan,
-} from '@/domain/conversation-scroll';
+import { scrollPlan } from '@/domain/conversation-scroll';
 import { type SyncPlan, syncPlan } from '@/domain/conversation-sync';
 import type { Turn } from '@/domain/projector';
+
+import { readScroll, settleScroll } from './scroll-position';
 
 /** Any of the turn blocks, once it is in the editor. */
 type TurnBlock =
@@ -292,76 +289,6 @@ const $settlePrompt = (threadId: string): UserPromptNode => {
  */
 const FILL_BATCH = 40;
 
-/** Where the reader sits in the surface's scroll, as a pass finds them. */
-type ScrollReading = {
-  /** The element the conversation scrolls in. */
-  readonly element: HTMLElement;
-  /** The reader's place in it before the pass runs. */
-  readonly scrollTop: number;
-  /** How tall the surface's content was before the pass runs. */
-  readonly scrollHeight: number;
-  /** Where the prompt input rests in it — the conversation's tail. */
-  readonly tailTop: number;
-  /** Whether the reader's place is the tail. */
-  readonly atTail: boolean;
-};
-
-/** How far an element can scroll, whatever its content is at the moment. */
-const maxScroll = (element: HTMLElement): number =>
-  Math.max(0, element.scrollHeight - element.clientHeight);
-
-/** A block's bottom edge in the scroll content's coordinates. */
-const blockBottom = (element: HTMLElement, block: HTMLElement): number =>
-  block.getBoundingClientRect().bottom -
-  element.getBoundingClientRect().top +
-  element.scrollTop;
-
-/** The prompt input's block, the conversation's tail. */
-const inputBlock = (root: HTMLElement | null): HTMLElement | null =>
-  root?.querySelector<HTMLElement>(`[${PROMPT_INPUT_ATTRIBUTE}]`) ?? null;
-
-/**
- * Where the conversation's tail rests in an element: the prompt input's bottom
- * edge on the viewport's, and the surface's own bottom while no input is in the
- * editor yet.
- */
-const tailTop = (element: HTMLElement, root: HTMLElement | null): number => {
-  const input = inputBlock(root);
-  const furthest = maxScroll(element);
-  return input === null
-    ? furthest
-    : restOnBottom(blockBottom(element, input), element.clientHeight, furthest);
-};
-
-/**
- * Whether the browser scrolls this element, whatever it currently holds: the
- * surface opens with a transcript that is still empty, so the element the
- * conversation scrolls in is the one its own style makes scrollable rather than
- * the one that happens to overflow as the opening pass runs.
- */
-const scrolls = (element: HTMLElement): boolean =>
-  /auto|scroll|overlay/.test(getComputedStyle(element).overflowY);
-
-/**
- * The conversation's scroll, the reader's place in it, and where the prompt
- * input rests there: the nearest ancestor the browser scrolls. `null` when the
- * surface has nothing to scroll in.
- */
-const readScroll = (editor: LexicalEditor): ScrollReading | null => {
-  const root = editor.getRootElement();
-  let element: HTMLElement | null = root?.parentElement ?? null;
-  while (element !== null && !scrolls(element)) element = element.parentElement;
-  if (element === null) return null;
-  const rest = tailTop(element, root);
-  return {
-    element,
-    scrollTop: element.scrollTop,
-    scrollHeight: element.scrollHeight,
-    tailTop: rest,
-    atTail: restsOnTail(element.scrollTop, rest),
-  };
-};
-
 /**
  * Renders the chat's turns into the editor with no interaction: every turn is a
  * block, the prompt block and its author line are the last two, and the editor
@@ -387,16 +314,18 @@ export function InsertThreadTurnNodes({
   turns,
   onResume,
   navigating,
+  following,
 }: {
   readonly threadId: string;
   readonly turns: readonly Turn[];
   /** What a marker's Resume action asks the surface for. */
   readonly onResume: ResumePrompt;
   readonly navigating: RefObject<boolean>;
+  /** Whether the reader asked to stay at the end of the conversation. */
+  readonly following: RefObject<boolean>;
 }) {
   const [editor] = useLexicalComposerContext();
   const seated = useRef<LexicalEditor | null>(null);
-  const filling = useRef(false);
   const frame = useRef<number | null>(null);
 
   useEffect(() => {
@@ -404,19 +333,15 @@ export function InsertThreadTurnNodes({
       frame.current = null;
       const opening = seated.current !== editor;
       // What this pass may do to the reader's view, decided from the facts
-      // before it runs. The pass itself keeps out of the reader's way: only
-      // the opener touches focus and the caret, and every later pass settles
-      // the scroll back to the place it found.
-      const scroll = readScroll(editor);
+      // before it runs. Only the opener touches focus and the caret. Later
+      // passes keep the end or the visible block in its place.
+      const scroll = readScroll(editor.getRootElement());
       const decision = scrollPlan({
         opening,
         navigating: navigating.current,
-        atTail: scroll?.atTail ?? true,
+        following: following.current,
       });
       let plan: SyncPlan = { steps: [], removals: [], pending: false };
-      const element = editor.getRootElement();
-      const ownsFocus = element?.contains(element.ownerDocument.activeElement);
-
       editor.update(
         () => {
           const root = $getRoot();
@@ -496,56 +421,28 @@ export function InsertThreadTurnNodes({
             unit?.block.remove();
           }
 
-          // Seat the caret in the prompt as the surface opens. The editor is focused
-          // before the first turn is in, when the root is still empty, so the
-          // browser parks the caret on a line of its own above the transcript; a
-          // selection in the prompt is what keeps that line from existing.
+          // Seat the caret in the prompt before focusing the editor. Focusing an
+          // empty root would park it above the transcript instead.
           if (decision === 'open') prompt.select();
         },
         {
-          // Preserve focus and search text in popovers during background streaming.
-          // Reapplying Lexical's saved selection would dismiss them via focus-outside.
-          tag:
-            opening || (ownsFocus && !navigating.current)
-              ? undefined
-              : SKIP_DOM_SELECTION_TAG,
-          // The commit that lands after this update re-applies the caret's
-          // selection and the browser scrolls it into view — back to the input
-          // the reader just left — and a settled prompt can re-append the tail.
-          // The reader's scroll is owned here instead, after all of that: a pass
-          // follows the input for a reader resting on the tail, and every other
-          // pass returns the reader to the place it found them. 'open' leaves
-          // the scroll to the opener, which rests the view on the input.
+          // Transcript updates never move the caret. Reapplying its DOM selection
+          // would scroll back to the input or dismiss a focused popover.
+          tag: opening ? undefined : SKIP_DOM_SELECTION_TAG,
+          // Reconcile the viewport only after Lexical has committed its DOM.
           onUpdate: () => {
-            if (scroll === null) return;
-            // A reader resting on the tail follows the input: content that
-            // lands above it moves it down by exactly that much, so the view
-            // keeps the place the reader gave it. Every other pass settles the
-            // reader's scroll back to the place it found them. 'open' leaves
-            // the scroll to the opener, which rests the view on the input once
-            // focus and the caret have had their own say.
-            if (decision === 'follow')
-              scroll.element.scrollTop +=
-                scroll.element.scrollHeight - scroll.scrollHeight;
-            else if (decision === 'hold')
-              scroll.element.scrollTop = scroll.scrollTop;
+            const settle = (): void => {
+              if (navigating.current) return;
+              if (following.current) settleScroll(scroll, 'follow');
+              else if (decision === 'hold') settleScroll(scroll, 'hold');
+            };
+            if (decision === 'open') editor.focus(settle);
+            settle();
           },
         },
       );
 
-      if (opening) {
-        seated.current = editor;
-        editor.focus();
-        // Focus and the caret scroll the surface themselves, and a focus into a
-        // tall editing host lands at its top, so the opener places the view on
-        // the input last — once both have run — rather than trusting either.
-        if (scroll !== null)
-          scroll.element.scrollTop = tailTop(
-            scroll.element,
-            editor.getRootElement(),
-          );
-      }
-      filling.current = plan.pending;
+      if (opening) seated.current = editor;
       if (plan.pending) frame.current = requestAnimationFrame(run);
     };
 
@@ -554,7 +451,7 @@ export function InsertThreadTurnNodes({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [editor, navigating, onResume, threadId, turns]);
+  }, [editor, following, navigating, onResume, threadId, turns]);
 
   /**
    * The prompt cannot be deleted. The sync above runs when the chat changes; this

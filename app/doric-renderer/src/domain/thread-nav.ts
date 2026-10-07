@@ -56,24 +56,41 @@ export const threadMarkers = (
       : [];
   });
 
+/** Where a clicked block's top rests in the viewport when scrolling permits it. */
+const READING_LINE = 0.4;
+
+/** Scroll to a marker with its top at the reading line, bounded by the content edges. */
+export const markerScrollTop = (
+  blockTop: number,
+  viewportHeight: number,
+  maxScroll: number,
+): number =>
+  Math.max(0, Math.min(blockTop - viewportHeight * READING_LINE, maxScroll));
+
 /**
  * The marker a scroll position speaks for: the block at or nearest above the
- * viewport's top, and the first measured block while the reader is above every
- * marker. The tops ascend through the transcript, so the last measured marker
- * at or above the top is the nearest one. `-1` when there is nothing to
- * highlight.
+ * reading line, or a subthread result already visible below it. Results can
+ * be too short to ever reach the reading line near the end of a thread.
+ * `-1` when there is nothing to highlight.
  */
 export const activeMarkerIndex = (
-  markerTops: readonly (number | null)[],
+  markers: readonly {
+    readonly kind: ThreadMarker['kind'];
+    readonly top: number | null;
+  }[],
   viewportTop: number,
+  viewportHeight: number,
 ): number => {
+  const readingTop = viewportTop + viewportHeight * READING_LINE;
+  const viewportBottom = viewportTop + viewportHeight;
   let active = -1;
   let first = -1;
-  for (let index = 0; index < markerTops.length; index += 1) {
-    const top = markerTops[index];
+  for (let index = 0; index < markers.length; index += 1) {
+    const { kind, top } = markers[index];
     if (top === null) continue;
     if (first === -1) first = index;
-    if (top <= viewportTop) active = index;
+    if (top <= readingTop || (kind === 'result' && top < viewportBottom))
+      active = index;
   }
   return active === -1 ? first : active;
 };

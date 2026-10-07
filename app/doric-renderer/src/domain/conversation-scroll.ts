@@ -1,23 +1,19 @@
 /**
  * Where the conversation surface scrolls as one sync pass lands on it.
  *
- * The prompt input is the conversation's tail: the transcript grows above it,
- * the line the reader's own turn trails sits under it, and the reader writes in
- * it. So the surface rests on the input — the opener seats the caret in the
- * prompt and puts the view on the input, the trail's last handle throws the
- * scroll back to it, and a reader who is there follows the input as the
- * transcript grows above them. Everything else is the reader's own: a pass that
- * fills older turns in above the tail leaves a reader who scrolled up exactly
- * where it found them, and no pass after the opener touches focus or the caret.
+ * Opening a conversation and choosing the Prompt Input handle follow the end
+ * of the scrollable content. Following remains active while the transcript
+ * grows and stops when the reader scrolls. A reader who left the end keeps the
+ * same visible block through later updates. Only the opener moves the caret.
  */
 
 /** What one sync pass does to the conversation's scroll. */
 export type ScrollPlan =
-  /** The pass opens the surface: the caret goes to the prompt, the view to the input. */
+  /** The pass opens the surface: the caret goes to the prompt, the view to the end. */
   | 'open'
-  /** The pass keeps a reader who rests on the tail there as the transcript grows. */
+  /** The pass keeps the viewport at the end as the transcript grows. */
   | 'follow'
-  /** A trail jump to a block owns the scroll until its smooth movement ends. */
+  /** A trail jump owns the scroll through its immediate landing. */
   | 'navigate'
   /** The pass holds the reader's scroll exactly as it found it. */
   | 'hold';
@@ -26,43 +22,36 @@ export type ScrollPlan =
 export type ScrollPass = {
   /** Whether this is the surface's first sync — the pass that opens it. */
   readonly opening: boolean;
-  /** Whether a trail jump is moving the viewport toward a block. */
+  /** Whether a trail jump is landing in the current frame. */
   readonly navigating: boolean;
-  /** Whether the reader rests on the conversation's tail — the prompt input. */
-  readonly atTail: boolean;
+  /** Whether the reader has chosen to follow the end. */
+  readonly following: boolean;
 };
 
 /**
  * The scroll plan for one sync pass: the opener wins outright, a jump to a
- * block owns the viewport while it moves, a reader resting on the tail follows
- * the input, and every other pass holds the reader's scroll.
+ * block owns the viewport while it lands, a reader following the end stays
+ * there, and every other pass holds the visible content.
  */
 export const scrollPlan = (pass: ScrollPass): ScrollPlan => {
   if (pass.opening) return 'open';
   if (pass.navigating) return 'navigate';
-  if (pass.atTail) return 'follow';
+  if (pass.following) return 'follow';
   return 'hold';
 };
 
-/** How far below the input's own place still counts as resting on it. */
-const TAIL_SLACK = 2;
+/** A small tolerance for a reader who scrolls back to the end by hand. */
+const END_SLACK = 32;
 
-/**
- * The scroll offset that rests a block's bottom edge on the viewport's — the
- * place the prompt input takes when the surface opens on it or the trail throws
- * the scroll to it. `maxScroll` bounds it, so a block the surface cannot bring
- * that low stops as low as the surface scrolls.
- */
-export const restOnBottom = (
-  blockBottom: number,
+export const atEnd = (
+  scrollTop: number,
+  scrollHeight: number,
   viewportHeight: number,
-  maxScroll: number,
-): number => Math.max(0, Math.min(blockBottom - viewportHeight, maxScroll));
+): boolean => scrollHeight - viewportHeight - scrollTop <= END_SLACK;
 
-/**
- * Whether a scroll position rests on the tail: at the input's own place or
- * below it, never above it. The room the surface keeps under the input is
- * still the tail's, so a reader who scrolled into it counts as resting there.
- */
-export const restsOnTail = (scrollTop: number, tailTop: number): boolean =>
-  scrollTop >= tailTop - TAIL_SLACK;
+/** Keep the reader's own scroll while compensating for content inserted above a visible block. */
+export const preserveVisibleBlock = (
+  currentScrollTop: number,
+  blockTopBefore: number,
+  blockTopAfter: number,
+): number => currentScrollTop + blockTopAfter - blockTopBefore;

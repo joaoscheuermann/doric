@@ -2,62 +2,58 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  restOnBottom,
-  restsOnTail,
+  atEnd,
+  preserveVisibleBlock,
   scrollPlan,
 } from '../src/domain/conversation-scroll';
 
 describe('conversation scroll', () => {
-  test('opens the surface on the input when the first sync runs', () => {
+  test('opens the surface at the end when the first sync runs', () => {
     assert.equal(
-      scrollPlan({ opening: true, navigating: false, atTail: false }),
+      scrollPlan({ opening: true, navigating: false, following: false }),
       'open',
     );
     assert.equal(
-      scrollPlan({ opening: true, navigating: false, atTail: true }),
+      scrollPlan({ opening: true, navigating: false, following: true }),
       'open',
     );
   });
 
-  test('follows the input for a reader resting on the tail as the transcript grows', () => {
+  test('follows the end through transcript updates until the reader scrolls', () => {
     assert.equal(
-      scrollPlan({ opening: false, navigating: false, atTail: true }),
+      scrollPlan({ opening: false, navigating: false, following: true }),
       'follow',
     );
   });
 
-  test('holds a reader who left the tail exactly where the pass found them', () => {
+  test('holds a reader who stopped following the end', () => {
     assert.equal(
-      scrollPlan({ opening: false, navigating: false, atTail: false }),
+      scrollPlan({ opening: false, navigating: false, following: false }),
       'hold',
     );
   });
 
   test('lets a trail jump reach its destination while turns continue streaming', () => {
     assert.equal(
-      scrollPlan({ opening: false, navigating: true, atTail: false }),
+      scrollPlan({ opening: false, navigating: true, following: false }),
       'navigate',
     );
     assert.equal(
-      scrollPlan({ opening: false, navigating: true, atTail: true }),
+      scrollPlan({ opening: false, navigating: true, following: true }),
       'navigate',
     );
   });
 
-  test('rests a block on the bottom edge of the viewport', () => {
-    assert.equal(restOnBottom(1200, 600, 900), 600);
-    assert.equal(restOnBottom(900, 600, 900), 300);
+  test('resumes following when a reader scrolls within the end tolerance', () => {
+    assert.equal(atEnd(568, 1000, 400), true);
+    assert.equal(atEnd(567, 1000, 400), false);
+    assert.equal(atEnd(600, 1000, 400), true);
+    assert.equal(atEnd(0, 300, 400), true);
   });
 
-  test('stops a block the surface cannot bring that low at the surface own end', () => {
-    assert.equal(restOnBottom(1500, 600, 900), 900);
-    assert.equal(restOnBottom(200, 600, 900), 0);
-  });
-
-  test('counts a reader at the input or below it as resting on the tail', () => {
-    assert.equal(restsOnTail(600, 600), true);
-    assert.equal(restsOnTail(900, 600), true);
-    assert.equal(restsOnTail(598, 600), true);
-    assert.equal(restsOnTail(500, 600), false);
+  test('preserves a manual scroll made while new content is inserted above the visible block', () => {
+    // The reader moves from 500 to 420 while the block moves from 1000 to 1100.
+    assert.equal(preserveVisibleBlock(420, 1000, 1100), 520);
+    assert.equal(preserveVisibleBlock(420, 1000, 1000), 420);
   });
 });

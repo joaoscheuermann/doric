@@ -306,6 +306,7 @@ export function Conversation({
   // The scroll area whose viewport holds the transcript, for the nav rail beside it.
   const scrollRoot = useRef<HTMLDivElement>(null);
   const navigating = useRef(false);
+  const following = useRef(true);
   // What the editor draws: the log's turns, and the two things the surface is
   // waiting for — the reader's words before the host accepts them, and the
   // agent's first step while it has produced nothing.
@@ -347,6 +348,7 @@ export function Conversation({
               turns={turns}
               onResume={chat.resume}
               navigating={navigating}
+              following={following}
             />
             <SendPrompt
               canStop={running}
@@ -372,6 +374,7 @@ export function Conversation({
           scrollRoot={scrollRoot}
           turns={turns}
           navigating={navigating}
+          following={following}
         />
       </ScrollArea>
     </div>
