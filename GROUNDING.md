@@ -451,8 +451,9 @@ legacy development databases must be explicitly recreated; neither startup nor
 migrations silently reset an existing database.
 
 The Project/Thread implementation replaces the former Session contract.
-The architecture, migration plan, and acceptance criteria are recorded in
-`docs/03-tdd/05-project-thread-architecture.md`.
+Its current architecture is defined here and implemented in `agents/doric`;
+the host's public API and persistence details are documented in
+`agents/doric/README.md`.
 
 Interrupt targets an active `promptId`, preserves pending inputs and children,
 and waits for cooperative cancellation before the next input runs. Terminating
