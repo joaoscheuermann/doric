@@ -14,14 +14,14 @@ import { authorization } from './auth.js';
 
 export const createOpenRouterModelsLoader =
   (
-    deps: Pick<OpenRouterProviderDeps, 'transport' | 'apiKey'>,
+    deps: Pick<OpenRouterProviderDeps, 'transport' | 'apiKey' | 'modelsUrl'>,
     baseUrl: string,
     providerId: ProviderId,
   ) =>
   async (signal?: AbortSignal): Promise<readonly Model[]> => {
     const response = await requestJson(deps.transport, providerId, {
       method: 'GET',
-      url: `${baseUrl}/models`,
+      url: deps.modelsUrl ?? `${baseUrl}/models`,
       headers: {
         authorization: await authorization(deps.apiKey),
         accept: 'application/json',

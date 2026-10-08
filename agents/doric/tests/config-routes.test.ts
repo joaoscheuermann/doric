@@ -46,15 +46,7 @@ void test('answers the provider-kind catalog the host can build', async () => {
     assert.deepEqual(body.kinds, JSON.parse(JSON.stringify(providerKinds)));
     assert.deepEqual(
       (body.kinds as readonly { id: string }[]).map(({ id }) => id),
-      [
-        'openai',
-        'openai-compatible',
-        'openrouter',
-        'unified',
-        'codex',
-        'lmstudio',
-        'lmstudio-openai',
-      ],
+      ['openai', 'openrouter'],
     );
   } finally {
     await host.close();

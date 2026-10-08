@@ -4,8 +4,6 @@ import test from 'node:test';
 import { type LlmProvider, ProviderErrorObject } from '../src/index.js';
 import {
   createCodexProvider,
-  createLmStudioOpenAiProvider,
-  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
   fakeTransport,
@@ -30,7 +28,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
     ],
   };
   const openAiTransport = fakeTransport({ responses: [response(body)] });
-  const lmStudioTransport = fakeTransport({ responses: [response(body)] });
   const openRouterTransport = fakeTransport({ responses: [response(body)] });
 
   return [
@@ -43,16 +40,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
       transport: openAiTransport,
       endpoint: 'https://api.openai.com/v1/rerank',
       authorization: 'Bearer openai-key',
-    },
-    {
-      name: 'LM Studio OpenAI compatibility',
-      provider: createLmStudioOpenAiProvider({
-        transport: lmStudioTransport,
-        apiKey: 'local-key',
-      }),
-      transport: lmStudioTransport,
-      endpoint: 'http://localhost:1234/v1/rerank',
-      authorization: 'Bearer local-key',
     },
     {
       name: 'OpenRouter',
@@ -210,17 +197,11 @@ void test('rejects invalid rerank requests before networking', async () => {
   assert.equal(transport.requests.length, 0);
 });
 
-for (const fixture of [
-  { name: 'LM Studio native', transport: fakeTransport({}) },
-  { name: 'Codex', transport: fakeTransport({}) },
-]) {
-  const provider =
-    fixture.name === 'Codex'
-      ? createCodexProvider({
-          transport: fixture.transport,
-          authorization: 'Bearer codex-token',
-        })
-      : createLmStudioProvider({ transport: fixture.transport });
+for (const fixture of [{ name: 'Codex', transport: fakeTransport({}) }]) {
+  const provider = createCodexProvider({
+    transport: fixture.transport,
+    authorization: 'Bearer codex-token',
+  });
 
   void test(`rejects reranking before networking through ${fixture.name}`, async () => {
     await assert.rejects(

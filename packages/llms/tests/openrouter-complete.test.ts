@@ -387,6 +387,7 @@ void test('parses OpenRouter completion and preserves auth failure diagnostics',
 void test('returns parsed OpenRouter structured output from completions', async () => {
   const transport = fakeTransport({
     responses: [
+      response({ data: [] }),
       response({
         choices: [
           {
@@ -397,7 +398,11 @@ void test('returns parsed OpenRouter structured output from completions', async 
       }),
     ],
   });
-  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({
+    transport,
+    apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
+  });
 
   const result = await provider.complete({
     model: 'openai/gpt-5',
@@ -412,6 +417,7 @@ void test('rejects OpenRouter requests that are missing model or input', async (
   const provider = createOpenRouterProvider({
     transport: fakeTransport({}),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(
@@ -449,6 +455,7 @@ void test('fetches and validates OpenRouter models with context fallback', async
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
   const models = await provider.models();
 
@@ -468,6 +475,7 @@ void test('rejects schema-invalid OpenRouter structured JSON', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
+        response({ data: [] }),
         response({
           choices: [
             {
@@ -479,6 +487,7 @@ void test('rejects schema-invalid OpenRouter structured JSON', async () => {
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(
@@ -498,6 +507,7 @@ void test('describes an empty structured response without exposing response data
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
+        response({ data: [] }),
         response({
           choices: [
             {
@@ -513,6 +523,7 @@ void test('describes an empty structured response without exposing response data
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(

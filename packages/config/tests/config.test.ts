@@ -134,16 +134,16 @@ void test('parses optional provider base URL when provided', () => {
   const config = sampleConfig({
     providers: [
       {
-        id: 'lmstudio',
-        type: 'lmstudio',
+        id: 'openai',
+        type: 'openai',
         baseUrl: 'http://localhost:4321',
       },
     ],
   });
 
   assert.deepEqual(parseConfig(config).providers[0], {
-    id: 'lmstudio',
-    type: 'lmstudio',
+    id: 'openai',
+    type: 'openai',
     baseUrl: 'http://localhost:4321',
   });
 });

@@ -27,8 +27,8 @@ conversations, execution environment, and code changes together.
   pause and resume work, and rewind a conversation. PostgreSQL preserves
   conversation history; Docker volumes preserve Project workspaces across
   backend restarts.
-- **Choose your models.** Configure OpenAI, OpenRouter, Codex, LM Studio, or a
-  compatible endpoint, with model and reasoning controls. Unified OpenRouter
+- **Choose your models.** Configure OpenAI Responses-compatible endpoints or
+  OpenRouter, with model and reasoning controls. OpenRouter
   also supplies context capacity and reported costs for the usage display.
 - **Extend or integrate.** Tool and skill bundles extend the agent; REST and
   Socket.IO expose Projects, Threads, and execution events to other clients.
@@ -134,7 +134,7 @@ Open **Settings** from the conversation footer:
 
 1. In **Credentials**, add an `API_TOKEN` credential with your OpenRouter API
    key, or fill the existing `OPENROUTER_API_KEY` credential.
-2. In **Providers**, add or edit a provider. Choose **Unified (OpenRouter)** as
+2. In **Providers**, add or edit a provider. Choose **OpenRouter** as
    its kind, give it a name, and select that credential. Keep the default
    endpoint and Models URL, then select a model that supports tool calling.
 3. In **Execution**, choose that provider and model, set the reasoning effort

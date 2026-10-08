@@ -9,8 +9,6 @@ import {
 } from '../src/index.js';
 import {
   createCodexProvider,
-  createLmStudioOpenAiProvider,
-  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
 } from './fakes.js';
@@ -49,11 +47,6 @@ const providers: readonly (readonly [
     'openrouter',
     (transport) =>
       createOpenRouterProvider({ transport, apiKey: 'test-token' }),
-  ],
-  ['lmstudio', (transport) => createLmStudioProvider({ transport })],
-  [
-    'lmstudio-openai',
-    (transport) => createLmStudioOpenAiProvider({ transport }),
   ],
   [
     'codex',

@@ -1,4 +1,4 @@
-export type UnifiedLab =
+export type OpenRouterLab =
   | 'openai'
   | 'anthropic'
   | 'gemini'
@@ -14,8 +14,8 @@ export type UnifiedLab =
   | 'minimax'
   | 'unknown';
 
-export interface UnifiedModelProfile {
-  readonly lab: UnifiedLab;
+export interface OpenRouterModelProfile {
+  readonly lab: OpenRouterLab;
   readonly tools: boolean;
   readonly forcedToolChoice: 'full' | 'auto_none';
   readonly forcedToolChoiceWithReasoning: boolean;
@@ -24,9 +24,9 @@ export interface UnifiedModelProfile {
 }
 
 const profile = (
-  lab: UnifiedLab,
-  overrides: Partial<Omit<UnifiedModelProfile, 'lab'>> = {},
-): UnifiedModelProfile => ({
+  lab: OpenRouterLab,
+  overrides: Partial<Omit<OpenRouterModelProfile, 'lab'>> = {},
+): OpenRouterModelProfile => ({
   lab,
   tools: true,
   forcedToolChoice: 'full',
@@ -38,7 +38,7 @@ const profile = (
 
 const knownProfiles: readonly {
   readonly prefix: string;
-  readonly profile: UnifiedModelProfile;
+  readonly profile: OpenRouterModelProfile;
 }[] = [
   {
     prefix: 'google/gemma',
@@ -86,6 +86,8 @@ const unknownProfile = profile('unknown', {
   replay: 'tool_calls',
 });
 
-export const unifiedProfileForModel = (model: string): UnifiedModelProfile =>
+export const openRouterProfileForModel = (
+  model: string,
+): OpenRouterModelProfile =>
   knownProfiles.find(({ prefix }) => model.startsWith(prefix))?.profile ??
   unknownProfile;

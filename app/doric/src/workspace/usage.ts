@@ -1,4 +1,4 @@
-/** OpenRouter unified charges for a Thread and all its descendants. */
+/** OpenRouter charges for a Thread and all its descendants. */
 export type UsageTotals = {
   readonly calls: number;
   readonly unpricedCalls: number;

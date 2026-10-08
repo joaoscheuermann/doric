@@ -21,7 +21,7 @@ const generation = (ids = ['router'], offline = false): Generation => ({
       ...defaultConfig,
       providers: ids.map((id) => ({
         id,
-        kind: 'unified',
+        kind: 'openrouter',
         configuration: {},
         models: [{ name: 'measured' }],
       })),

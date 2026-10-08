@@ -3,33 +3,19 @@ import type { Logger } from 'pino';
 import type { HttpTransport } from '../types/http.js';
 import type { LlmProvider } from '../types/provider.js';
 import { codexMetadata, createCodexProvider } from './codex.js';
-import { createLmStudioProvider, lmStudioMetadata } from './lmstudio.js';
 import {
-  createLmStudioOpenAiProvider,
-  lmStudioOpenAiMetadata,
-} from './lmstudio-openai.js';
-import {
-  createOpenAiCompatibleProvider,
   createOpenAiProvider,
   openAiMetadata,
   type SecretSource,
 } from './openai.js';
-import { createOpenRouterProvider, openRouterMetadata } from './openrouter.js';
 import {
-  createUnifiedProvider,
+  createOpenRouterProvider,
   defaultStructuredOutputRepairs,
-  unifiedMetadata,
-} from './unified.js';
+  openRouterMetadata,
+} from './openrouter.js';
 
 /** Every provider integration this package can configure. */
-export type ProviderKindId =
-  | 'openai'
-  | 'openai-compatible'
-  | 'openrouter'
-  | 'unified'
-  | 'codex'
-  | 'lmstudio'
-  | 'lmstudio-openai';
+export type ProviderKindId = 'openai' | 'openrouter' | 'codex';
 
 export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
@@ -117,45 +103,14 @@ const token = (options: {
   description: options.description,
 });
 
-/**
- * The OpenAI-shaped kinds keep both lists: their factories enumerate the models
- * they serve, and each model names the efforts it accepts. LM Studio's OpenAI
- * compatibility is one of them.
- */
+/** Responses and OpenRouter providers keep models and their reasoning efforts. */
 const openAiLists: readonly ProviderListId[] = ['models', 'reasonings'];
 
-/**
- * The provider integrations a configured provider can name, with the values each
- * factory takes. Every field is a factory dependency: `endpoint` is `baseUrl`,
- * `token` is the secret the factory authenticates with, and any other field
- * keeps the factory's own name. A dependency with a literal default becomes an
- * optional field whose placeholder shows that default.
- *
- * `lists` follows what a kind can offer the operator. A kind keeps `models` when
- * its factory can enumerate the models it serves, and `reasonings` when each
- * model in that list names its own efforts. LM Studio's native server lists the
- * models loaded into it but translates the host's effort onto its own four
- * values, so it keeps models alone, and the ChatGPT Codex backend pins both the
- * model set and the reasoning levels, so it keeps neither list.
- */
-export const providerKinds: readonly ProviderKind[] = [
+/** Supported integrations, including Codex retained for existing internal callers. */
+const supportedKinds: readonly ProviderKind[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    description: "OpenAI's Responses API at api.openai.com.",
-    fields: [
-      endpoint(openAiMetadata.baseUrl),
-      token({
-        required: false,
-        description:
-          'Names the stored API_TOKEN credential to authenticate with. Absent leaves the auth header off, which a compatible endpoint may accept.',
-      }),
-    ],
-    lists: openAiLists,
-  },
-  {
-    id: 'openai-compatible',
-    label: 'OpenAI compatible',
     description:
       'Any endpoint that answers the OpenAI Responses API, under its own identity.',
     fields: [
@@ -172,25 +127,9 @@ export const providerKinds: readonly ProviderKind[] = [
     id: 'openrouter',
     label: 'OpenRouter',
     description:
-      "OpenRouter's Chat Completions API, including its model catalog.",
+      'OpenRouter Chat Completions with curated model profiles, live capability discovery, and structured-output repair.',
     fields: [
       endpoint(openRouterMetadata.baseUrl),
-      token({
-        required: true,
-        description:
-          'Names the stored API_TOKEN credential this provider authenticates with.',
-      }),
-      modelsUrl(`${openRouterMetadata.baseUrl}/models`),
-    ],
-    lists: openAiLists,
-  },
-  {
-    id: 'unified',
-    label: 'Unified (OpenRouter)',
-    description:
-      'OpenRouter through the unified policy: curated model profiles, live capability discovery, and structured-output repair.',
-    fields: [
-      endpoint(unifiedMetadata.baseUrl),
       token({
         required: true,
         description:
@@ -206,7 +145,7 @@ export const providerKinds: readonly ProviderKind[] = [
           'How many corrected attempts a rejected structured response gets.',
         placeholder: String(defaultStructuredOutputRepairs),
       },
-      modelsUrl(`${unifiedMetadata.baseUrl}/models`),
+      modelsUrl(`${openRouterMetadata.baseUrl}/models`),
     ],
     lists: openAiLists,
   },
@@ -242,42 +181,19 @@ export const providerKinds: readonly ProviderKind[] = [
     ],
     lists: [],
   },
-  {
-    id: 'lmstudio',
-    label: 'LM Studio',
-    description: "A local LM Studio server's own REST API.",
-    fields: [
-      endpoint(lmStudioMetadata.baseUrl),
-      token({
-        required: false,
-        description:
-          'Names the stored API_TOKEN credential to authenticate with. Absent leaves the auth header off, which a local server usually accepts.',
-      }),
-    ],
-    lists: ['models'],
-  },
-  {
-    id: 'lmstudio-openai',
-    label: 'LM Studio (OpenAI compatible)',
-    description: "A local LM Studio server's OpenAI-compatible API.",
-    fields: [
-      endpoint(lmStudioOpenAiMetadata.baseUrl),
-      token({
-        required: false,
-        description:
-          'Names the stored API_TOKEN credential to authenticate with. Absent leaves the auth header off, which a local server usually accepts.',
-      }),
-    ],
-    lists: openAiLists,
-  },
 ];
+
+/** The integrations advertised to users. Codex remains internal for now. */
+export const providerKinds: readonly ProviderKind[] = supportedKinds.filter(
+  ({ id }) => id !== 'codex',
+);
 
 /**
  * The kind a configured provider names. A string that names none is not a kind,
  * so a caller decides how to reject it rather than receiving a guess.
  */
 export const providerKind = (id: string): ProviderKind | undefined =>
-  providerKinds.find((kind) => kind.id === id);
+  supportedKinds.find((kind) => kind.id === id);
 
 /**
  * The configuration one provider carries: a value per declared field. A `secret`
@@ -365,37 +281,22 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
     createOpenAiProvider({
       transport: deps.transport,
       logger: deps.logger,
-      apiKey: values.token ?? '',
-      ...baseUrl(values),
-    }),
-
-  'openai-compatible': (values, deps) =>
-    createOpenAiCompatibleProvider({
-      transport: deps.transport,
-      logger: deps.logger,
       identity: deps.identity,
       apiKey: values.token ?? '',
       ...baseUrl(values),
     }),
 
-  openrouter: (values, deps) =>
-    createOpenRouterProvider({
-      transport: deps.transport,
-      logger: deps.logger,
-      apiKey: values.token ?? '',
-      ...baseUrl(values),
-    }),
-
-  unified: (values, deps) => {
+  openrouter: (values, deps) => {
     const repairs = literalValue(
       'maxStructuredOutputRepairs',
       values.maxStructuredOutputRepairs,
     );
 
-    return createUnifiedProvider({
+    return createOpenRouterProvider({
       transport: deps.transport,
       logger: deps.logger,
       apiKey: values.token ?? '',
+      modelsUrl: literalValue('modelsUrl', values.modelsUrl),
       ...(repairs === undefined
         ? {}
         : {
@@ -423,22 +324,6 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
       ...baseUrl(values),
     });
   },
-
-  lmstudio: (values, deps) =>
-    createLmStudioProvider({
-      transport: deps.transport,
-      logger: deps.logger,
-      apiKey: values.token ?? '',
-      ...baseUrl(values),
-    }),
-
-  'lmstudio-openai': (values, deps) =>
-    createLmStudioOpenAiProvider({
-      transport: deps.transport,
-      logger: deps.logger,
-      apiKey: values.token ?? '',
-      ...baseUrl(values),
-    }),
 };
 
 /** A declared value the factory can use: a source, or a literal with something in it. */

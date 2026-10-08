@@ -11,7 +11,7 @@ export const withContextCapacity = async (
     return usage;
   const candidates = generation.snapshot.configuration.providers.filter(
     (provider) =>
-      provider.kind === 'unified' &&
+      provider.kind === 'openrouter' &&
       (context.providerId === undefined
         ? provider.models?.some((model) => model.name === context.model)
         : provider.id === context.providerId),

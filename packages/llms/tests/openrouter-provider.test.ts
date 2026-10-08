@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ProviderErrorObject, type ProviderRequest } from '../src/index.js';
 import {
   collect,
-  createUnifiedProvider,
+  createOpenRouterProvider,
   fakeTransport,
   response,
 } from './fakes.js';
@@ -22,7 +22,7 @@ const modelCatalog = (id: string, supportedParameters: readonly string[]) =>
     ],
   });
 
-void test('reports advertised context capacity alongside unified streaming usage', async () => {
+void test('reports advertised context capacity alongside openrouter streaming usage', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -41,7 +41,7 @@ void test('reports advertised context capacity alongside unified streaming usage
       ],
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
   const events = await collect(
     provider.stream({
       model: 'test/model',
@@ -75,7 +75,7 @@ void test('selects native structured output from live OpenRouter capabilities', 
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   const result = await provider.complete({
     model: 'openai/gpt-5',
@@ -128,7 +128,7 @@ void test('falls back from JSON mode to a schema prompt and repairs locally', as
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   const result = await provider.complete({
     model: 'google/gemma-3-27b-it',
@@ -181,7 +181,7 @@ void test('buffers direct structured streams until validation succeeds', async (
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   const events = await collect(
     provider.stream({
@@ -205,7 +205,7 @@ void test('rejects non-emulatable feature combinations before completion', async
   const transport = fakeTransport({
     responses: [modelCatalog('anthropic/claude-sonnet-4', ['tools'])],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   await assert.rejects(
     provider.complete({
@@ -253,7 +253,7 @@ for (const { name, options } of disabledReasoning) {
         }),
       ],
     });
-    const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+    const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
     await provider.complete({
       model: 'anthropic/claude-sonnet-4',
@@ -278,7 +278,7 @@ void test('rejects forced tools when explicit effort overrides a disabled reason
       modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   await assert.rejects(
     provider.complete({
@@ -319,7 +319,7 @@ void test('allows an unknown laboratory only when live capabilities prove tools 
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   const finish = await provider.complete({
     model: 'acme/model',
@@ -355,7 +355,7 @@ void test('emulates sequential tools when the model does not advertise parallel 
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   await provider.complete({
     model: 'openai/gpt-5',
@@ -394,7 +394,7 @@ void test('forwards parallel tool control when the model advertises it', async (
       }),
     ],
   });
-  const provider = createUnifiedProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
 
   await provider.complete({
     model: 'z-ai/glm-5',
@@ -412,8 +412,8 @@ void test('forwards parallel tool control when the model advertises it', async (
   assert.equal(body.parallel_tool_calls, false);
 });
 
-void test('rejects native schema and tools in the same unified request', async () => {
-  const provider = createUnifiedProvider({
+void test('rejects native schema and tools in the same openrouter request', async () => {
+  const provider = createOpenRouterProvider({
     transport: fakeTransport({}),
     apiKey: 'key',
   });

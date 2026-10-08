@@ -405,15 +405,14 @@ const baselineCredentialId = '00000000-0000-4000-8000-000000000002';
 
 /**
  * The configuration a host starts with. It is the baseline migration's own
- * provider row as the migration maps it: the row the old host built was an
- * OpenAI-compatible provider under its own identity, so that is what it stays,
- * and its model list is empty until an operator names the models it may use.
+ * OpenRouter provider after catalog consolidation, with an empty model list
+ * until an operator names the models it may use.
  */
 export const defaultConfig: ConfigInput = {
   providers: [
     {
       id: 'openrouter',
-      kind: 'openai-compatible',
+      kind: 'openrouter',
       configuration: {
         endpoint: 'https://openrouter.ai/api/v1',
         token: baselineCredentialId,

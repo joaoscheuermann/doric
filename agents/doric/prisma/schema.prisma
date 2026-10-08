@@ -149,7 +149,7 @@ model Thread {
   cwdRepo        String?       @map("cwd_repo")
   messages       Json          @default("[]") @db.JsonB
   checkpoints    Json          @default("{}") @db.JsonB
-  /// Cumulative unified charges, independent of rewound conversation history.
+  /// Cumulative OpenRouter charges, independent of rewound conversation history.
   usage          Json?         @db.JsonB
   /// Reader-controlled dispatch gate; survives host restarts and history rewind.
   queuePaused    Boolean       @default(false) @map("queue_paused")

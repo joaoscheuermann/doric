@@ -5,14 +5,14 @@ import { createToolStorage, defineTool } from 'tool';
 import { z } from 'zod';
 
 import {
-  createOpenAiCompatibleProvider,
+  createOpenAiProvider,
   openAiBody,
   ProviderErrorObject,
 } from '../src/index.js';
 import { fakeTransport, response, silentLogger } from './fakes.js';
 
 void test('preserves configured identity in compatible metadata and errors', async () => {
-  const provider = createOpenAiCompatibleProvider({
+  const provider = createOpenAiProvider({
     transport: fakeTransport({ responses: [response({}, 503)] }),
     baseUrl: 'https://compatible.invalid/v1',
     identity: { id: 'configured', name: 'Configured' },
@@ -45,7 +45,7 @@ void test('preserves configured identity in compatible metadata and errors', asy
 });
 
 void test('preserves compatible identity in credential validation errors', async () => {
-  const provider = createOpenAiCompatibleProvider({
+  const provider = createOpenAiProvider({
     transport: fakeTransport({}),
     baseUrl: 'https://compatible.invalid/v1',
     identity: { id: 'configured', name: 'Configured' },

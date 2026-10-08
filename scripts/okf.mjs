@@ -3,7 +3,7 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createFetchTransport, createLmStudioProvider } from 'llms';
+import { createFetchTransport, createOpenAiProvider } from 'llms';
 import { generate, isOkfError } from 'okf';
 import pino from 'pino';
 import pretty from 'pino-pretty';
@@ -140,8 +140,10 @@ if (!model) {
   process.exitCode = 1;
 } else {
   try {
-    const provider = createLmStudioProvider({
+    const provider = createOpenAiProvider({
       transport: createFetchTransport(),
+      baseUrl: process.env.OKF_BASE_URL ?? 'http://localhost:1234/v1',
+      apiKey: process.env.OKF_API_KEY,
       logger: pino({ enabled: false }),
     });
 

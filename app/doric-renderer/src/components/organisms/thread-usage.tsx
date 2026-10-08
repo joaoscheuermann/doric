@@ -37,7 +37,7 @@ export function ThreadUsage({ thread }: { readonly thread?: Thread }) {
           {query.isError
             ? 'Usage could not be refreshed.'
             : context === undefined
-              ? 'Waiting for an OpenRouter unified measurement.'
+              ? 'Waiting for an OpenRouter measurement.'
               : `${context.model}: last reported input tokens. ${context.contextWindow === undefined ? 'Window size unavailable.' : context.contextWindowSource === 'catalog' ? 'Capacity from the current OpenRouter catalog.' : 'Capacity advertised by OpenRouter at execution time.'}`}
         </TooltipContent>
       </Tooltip>

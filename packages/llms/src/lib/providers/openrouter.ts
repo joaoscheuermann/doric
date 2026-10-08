@@ -1,146 +1,53 @@
-import type { Logger } from 'pino';
-
 import { ProviderErrorObject } from '../classes/provider-error.js';
-import type {
-  DecisionProvider,
-  DecisionQuestions,
-  ProviderDecisionFinished,
-  ProviderDecisionRequest,
-} from '../types/decision.js';
-import type { HttpTransport } from '../types/http.js';
 import type {
   JsonValue,
   LlmProvider,
-  Model,
-  ProviderCapabilities,
-  ProviderEmbeddingFinished,
-  ProviderEmbeddingRequest,
   ProviderFinished,
-  ProviderMetadata,
   ProviderRequest,
-  ProviderRerankFinished,
-  ProviderRerankRequest,
   ProviderStreamEvent,
   ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
+  UsageMetadata,
 } from '../types/provider.js';
-import { parseSseEvents } from '../utils/sse.js';
-import {
-  parseEmbedding,
-  parseJsonBody,
-  parseRerank,
-  requireEmbeddingInput,
-  requireRequestInput,
-  requireRerankInput,
-  streamErrorEvent,
-} from './common.js';
-import { requestJson, withProviderErrors } from './http.js';
 import { withProviderLogging } from './logging.js';
-import { authorization } from './openrouter/auth.js';
+import { createOpenRouterCatalog } from './openrouter/catalog.js';
 import {
-  type OpenRouterBodyOptions,
-  openRouterBody,
-} from './openrouter/body.js';
-import {
-  openRouterDecisionBody,
-  openRouterDecisionsUrl,
-  parseDecisionFinished,
-  requireDecisionInput,
-} from './openrouter/decisions.js';
+  type OpenRouterProviderDeps as CoreDeps,
+  createOpenRouterProviderCore,
+  openRouterCapabilities,
+  openRouterMetadata,
+} from './openrouter/core.js';
 import { createOpenRouterModelsLoader } from './openrouter/models.js';
-import {
-  createStreamState,
-  hasProviderError,
-  parseFinished,
-  streamEvents,
-  streamFinish,
-  streamToolCalls,
-} from './openrouter/parse.js';
+import { createOpenRouterRequestPreparer } from './openrouter/prepare.js';
 import { parseStructuredOutput } from './structured.js';
 
+export type OpenRouterProviderDeps = CoreDeps & {
+  readonly maxStructuredOutputRepairs?: number;
+};
+
 export { openRouterBody } from './openrouter/body.js';
-
-export interface OpenRouterProviderDeps {
-  readonly transport: HttpTransport;
-  readonly apiKey: string | (() => string | Promise<string>);
-  readonly baseUrl?: string;
-  readonly logger: Logger;
-}
-
-export type OpenRouterProvider = LlmProvider & DecisionProvider;
-
-export interface PreparedOpenRouterRequest {
-  readonly request: ProviderRequest<unknown>;
-  readonly bodyOptions?: OpenRouterBodyOptions;
-}
-
-export interface OpenRouterProviderCoreOptions {
-  readonly metadata?: ProviderMetadata;
-  readonly validateStructuredOutput?: boolean;
-  readonly prepare?: (
-    request: ProviderRequest<unknown>,
-  ) => PreparedOpenRouterRequest | Promise<PreparedOpenRouterRequest>;
-}
-
-export const openRouterMetadata: ProviderMetadata = {
-  id: 'openrouter',
-  name: 'OpenRouter',
-  baseUrl: 'https://openrouter.ai/api/v1',
-};
-
-export const openRouterCapabilities: ProviderCapabilities = {
-  streaming: true,
-  embeddings: true,
-  reranking: true,
-  tools: true,
-  reasoning: true,
-  modelListing: true,
-  oauth: false,
-  serviceTier: false,
-  structuredOutputs: true,
-};
+export {
+  openRouterCapabilities,
+  openRouterMetadata,
+} from './openrouter/core.js';
 
 export const createOpenRouterProvider = (
   deps: OpenRouterProviderDeps,
-): OpenRouterProvider =>
-  withProviderLogging(createOpenRouterProviderCore(deps), deps.logger);
-
-/** Shared unlogged transport core used by OpenRouter policy adapters. */
-export const createOpenRouterProviderCore = (
-  dependencies: OpenRouterProviderDeps,
-  options: OpenRouterProviderCoreOptions = {},
-): OpenRouterProvider => {
-  const metadata = options.metadata ?? openRouterMetadata;
-  const providerId = metadata.id;
-  const deps = {
-    ...dependencies,
-    transport: withProviderErrors(dependencies.transport, providerId),
-  };
-  const baseUrl = deps.baseUrl ?? openRouterMetadata.baseUrl;
-  const prepare = async (
-    request: ProviderRequest<unknown>,
-  ): Promise<PreparedOpenRouterRequest> =>
-    options.prepare === undefined
-      ? { request }
-      : await options.prepare(request);
-
-  const post = async (
-    request: ProviderRequest<unknown>,
-    body: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> => {
-    return requestJson(deps.transport, providerId, {
-      method: 'POST',
-      url: `${baseUrl}/chat/completions`,
-      headers: {
-        authorization: await authorization(deps.apiKey),
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: request.signal,
-    });
-  };
+): LlmProvider => {
+  const maxRepairs = repairLimit(deps.maxStructuredOutputRepairs);
+  const resolveSupport = createOpenRouterCatalog(
+    createOpenRouterModelsLoader(
+      deps,
+      deps.baseUrl ?? openRouterMetadata.baseUrl,
+      openRouterMetadata.id,
+    ),
+  );
+  const core = createOpenRouterProviderCore(deps, {
+    metadata: openRouterMetadata,
+    validateStructuredOutput: false,
+    prepare: createOpenRouterRequestPreparer(resolveSupport),
+  });
 
   async function complete<Schema extends StructuredOutputSchema>(
     request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {
@@ -153,189 +60,180 @@ export const createOpenRouterProviderCore = (
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
-    requireRequestInput(providerId, request);
-    const prepared = await prepare(request);
-    const body = openRouterBody(prepared.request, false, {
-      ...prepared.bodyOptions,
-      providerId,
-    });
-    const finish = parseFinished(await post(prepared.request, body));
+    if (request.schema === undefined) {
+      return core.complete(request);
+    }
 
-    return options.validateStructuredOutput === false
-      ? (finish as ProviderFinished<Output>)
-      : parseStructuredOutput(providerId, request, finish);
+    let attempt: ProviderRequest<Output> = request;
+    let usage: UsageMetadata | undefined;
+
+    for (let repairs = 0; ; repairs += 1) {
+      const finish = (await core.complete(
+        attempt,
+      )) as ProviderFinished<unknown>;
+      usage = addUsage(usage, finish.usage);
+      const accumulated = usage === undefined ? finish : { ...finish, usage };
+
+      try {
+        return parseStructuredOutput('openrouter', request, accumulated);
+      } catch (error) {
+        if (!isRepairable(error) || repairs >= maxRepairs) throw error;
+        attempt = structuredRepairRequest(attempt, finish);
+      }
+    }
   }
 
-  return {
-    metadata,
+  const provider: LlmProvider = {
+    metadata: openRouterMetadata,
     capabilities: openRouterCapabilities,
-
     complete,
-
-    async decide<Questions extends DecisionQuestions>(
-      request: ProviderDecisionRequest<Questions>,
-    ): Promise<ProviderDecisionFinished<Questions>> {
-      requireDecisionInput(providerId, request);
-      const response = await requestJson(deps.transport, providerId, {
-        method: 'POST',
-        url: openRouterDecisionsUrl(baseUrl),
-        headers: {
-          authorization: await authorization(deps.apiKey),
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify(openRouterDecisionBody(request)),
-        signal: request.signal,
-      });
-
-      return parseDecisionFinished(providerId, request.questions, response);
-    },
 
     async *stream<Output = JsonValue>(
       request: ProviderRequest<Output>,
     ): AsyncIterable<ProviderStreamEvent<Output>> {
-      requireRequestInput(providerId, request);
-      const prepared = await prepare(request);
-      const body = openRouterBody(prepared.request, true, {
-        ...prepared.bodyOptions,
-        providerId,
-      });
-      const chunks = deps.transport.stream({
-        method: 'POST',
-        url: `${baseUrl}/chat/completions`,
-        headers: {
-          authorization: await authorization(deps.apiKey),
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-        },
-        body: JSON.stringify(body),
-        signal: prepared.request.signal,
-      });
-      const state = createStreamState();
+      if (request.schema === undefined) {
+        for await (const event of core.stream(request)) {
+          if (event.type === 'response.started') {
+            const { contextWindow } = await resolveSupport(
+              request.model,
+              request.signal,
+            );
+            yield {
+              ...event,
+              ...(contextWindow === undefined ? {} : { contextWindow }),
+            };
+          } else yield event;
+        }
+        return;
+      }
 
+      const finish = await complete(request);
       yield {
         type: 'response.started',
-        provider: providerId,
+        provider: openRouterMetadata.id,
         model: request.model,
       };
-
-      for await (const event of parseSseEvents(chunks)) {
-        if (event.done) {
-          break;
-        }
-
-        let payload: Record<string, unknown>;
-
-        try {
-          payload = parseJsonBody(providerId, event.data);
-        } catch {
-          yield streamErrorEvent(
-            providerId,
-            'malformed_stream_event',
-            event.data,
-            undefined,
-          );
-          return;
-        }
-
-        if (hasProviderError(payload)) {
-          yield streamErrorEvent(
-            providerId,
-            'provider_error',
-            'OpenRouter stream error.',
-            event.data,
-          );
-          return;
-        }
-
-        for (const parsed of streamEvents(payload, state)) {
-          yield parsed;
-        }
+      if (finish.text.length > 0) {
+        yield { type: 'text.delta', delta: finish.text };
       }
-
-      for (const call of streamToolCalls(state)) {
-        yield { type: 'tool_call.done', call };
-      }
-
-      yield {
-        type: 'response.finished',
-        finish:
-          options.validateStructuredOutput === false
-            ? (streamFinish(state) as ProviderFinished<Output>)
-            : parseStructuredOutput(
-                providerId,
-                request,
-                streamFinish(state),
-                false,
-              ),
-      };
+      yield { type: 'response.finished', finish };
     },
 
-    async embedding(
-      request: ProviderEmbeddingRequest,
-    ): Promise<ProviderEmbeddingFinished> {
-      requireEmbeddingInput(providerId, request);
-      const body = {
-        model: request.model,
-        input: request.input,
-        ...(request.dimensions === undefined
-          ? {}
-          : { dimensions: request.dimensions }),
-      };
-      const response = await requestJson(deps.transport, providerId, {
-        method: 'POST',
-        url: `${baseUrl}/embeddings`,
-        headers: {
-          authorization: await authorization(deps.apiKey),
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: request.signal,
-      });
-      return parseEmbedding(providerId, response, 'credits');
-    },
-
-    async rerank(
-      request: ProviderRerankRequest,
-    ): Promise<ProviderRerankFinished> {
-      requireRerankInput(providerId, request);
-      const body = {
-        model: request.model,
-        query: request.query,
-        documents: request.documents,
-        ...(request.topN === undefined ? {} : { top_n: request.topN }),
-      };
-      const response = await requestJson(deps.transport, providerId, {
-        method: 'POST',
-        url: `${baseUrl}/rerank`,
-        headers: {
-          authorization: await authorization(deps.apiKey),
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: request.signal,
-      });
-      return parseRerank(providerId, response, 'credits');
-    },
-
-    models: createOpenRouterModelsLoader(deps, baseUrl, providerId),
-
-    async validateModel(model: string, signal?: AbortSignal): Promise<Model> {
-      const found = (await this.models(signal)).find(
+    embedding: (request) => core.embedding(request),
+    rerank: (request) => core.rerank(request),
+    models: resolveSupport.models,
+    async validateModel(model, signal) {
+      const found = (await resolveSupport.models(signal)).find(
         (item) => item.id === model,
       );
-
-      if (found === undefined) {
+      if (found === undefined)
         throw new ProviderErrorObject({
-          provider: providerId,
+          provider: openRouterMetadata.id,
           code: 'missing_model',
           message: `OpenRouter model is not available: ${model}`,
         });
-      }
-
       return found;
     },
   };
+
+  return withProviderLogging(provider, deps.logger);
 };
+
+/** The repair budget an OpenRouter provider uses when a caller names none. */
+export const defaultStructuredOutputRepairs = 2;
+
+const repairLimit = (value: number | undefined): number => {
+  const limit = value ?? defaultStructuredOutputRepairs;
+
+  if (Number.isSafeInteger(limit) && limit >= 0) return limit;
+  throw new TypeError(
+    'OpenRouter provider maxStructuredOutputRepairs must be a non-negative safe integer.',
+  );
+};
+
+const isRepairable = (error: unknown): boolean =>
+  error instanceof ProviderErrorObject &&
+  error.data.code === 'invalid_structured_output';
+
+const structuredRepairRequest = <Output>(
+  request: ProviderRequest<Output>,
+  finish: ProviderFinished<unknown>,
+): ProviderRequest<Output> => ({
+  ...request,
+  messages: [
+    ...request.messages,
+    {
+      role: 'assistant',
+      content: finish.text,
+      ...(finish.replay === undefined ? {} : { replay: finish.replay }),
+    },
+    { role: 'user', content: structuredOutputCorrection },
+  ],
+});
+
+const structuredOutputCorrection = [
+  '# Structured output correction',
+  '',
+  'The previous response was rejected because it did not match the required JSON object schema.',
+  'Return exactly one corrected JSON object. Do not include Markdown or explanatory text.',
+].join('\n');
+
+const addUsage = (
+  left: UsageMetadata | undefined,
+  right: UsageMetadata | undefined,
+): UsageMetadata | undefined => {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+
+  return usage({
+    inputTokens: add(left.inputTokens, right.inputTokens),
+    outputTokens: add(left.outputTokens, right.outputTokens),
+    totalTokens: add(left.totalTokens, right.totalTokens),
+    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
+    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
+    cacheWriteTokens: add(left.cacheWriteTokens, right.cacheWriteTokens),
+    searchUnits: add(left.searchUnits, right.searchUnits),
+    cost: addCost(left.cost, right.cost),
+  });
+};
+
+const addCost = (
+  left: UsageMetadata['cost'],
+  right: UsageMetadata['cost'],
+): UsageMetadata['cost'] => {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  if (
+    left.unit !== undefined &&
+    right.unit !== undefined &&
+    left.unit !== right.unit
+  ) {
+    return undefined;
+  }
+
+  return {
+    amount: left.amount + right.amount,
+    ...(left.unit === undefined && right.unit === undefined
+      ? {}
+      : { unit: left.unit ?? right.unit }),
+    ...(left.upstreamAmount === undefined && right.upstreamAmount === undefined
+      ? {}
+      : {
+          upstreamAmount:
+            (left.upstreamAmount ?? 0) + (right.upstreamAmount ?? 0),
+        }),
+  };
+};
+
+const usage = (value: UsageMetadata): UsageMetadata =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, child]) => child !== undefined),
+  );
+
+const add = (
+  left: number | undefined,
+  right: number | undefined,
+): number | undefined =>
+  left === undefined && right === undefined
+    ? undefined
+    : (left ?? 0) + (right ?? 0);

@@ -451,6 +451,25 @@ docker exec -it doric-sandbox-postgres-1 \
   psql -U doric -h 127.0.0.1 -d doric -c "ALTER ROLE doric WITH PASSWORD 'NEW'"
 ```
 
+## Provider upgrades
+
+The catalog advertises **OpenAI** (Responses-compatible endpoints) and
+**OpenRouter** (the former Unified implementation). Codex remains internal and
+is not advertised. LM Studio integrations and the raw OpenRouter adapter have
+been removed.
+
+The consolidation migration maps `unified` to `openrouter` and
+`openai-compatible` to `openai`, preserving provider ids, credential references,
+models and execution selections. Compatible providers pointing at the standard
+OpenRouter URL, including the bootstrap row, become `openrouter`. Historical
+Project snapshots and events are preserved; usage reads still recognize old
+`unified` events.
+
+Before upgrading a database with `lmstudio` or `lmstudio-openai` providers, use
+the previous app version to configure a supported replacement, select it for
+execution, and remove the old entries. The migration refuses those removed
+protocols instead of silently changing endpoints or deleting configuration.
+
 ## Persistence and security
 
 PostgreSQL stores Projects, Threads, messages, configuration snapshots, and

@@ -153,7 +153,7 @@ void test('rejects an optional value that is set to nothing', () => {
   // provider cannot use and the settings surface must not send.
   const invalid = withProvider({
     id: 'local',
-    kind: 'lmstudio',
+    kind: 'openai',
     configuration: { endpoint: '', token: '' },
     models: [],
   });
@@ -186,9 +186,9 @@ void test('rejects provider URLs outside HTTP and HTTPS', () => {
 });
 
 void test('rejects a number value that is not a number and an enum value outside its options', () => {
-  const unified = {
-    id: 'unified',
-    kind: 'unified',
+  const router = {
+    id: 'router',
+    kind: 'openrouter',
     configuration: {
       endpoint: 'https://openrouter.ai/api/v1',
       token: providerCredential.id,
@@ -203,7 +203,7 @@ void test('rejects a number value that is not a number and an enum value outside
   };
 
   assert.equal(
-    ConfigInputSchema.safeParse(withProvider(unified)).success,
+    ConfigInputSchema.safeParse(withProvider(router)).success,
     false,
   );
   assert.equal(ConfigInputSchema.safeParse(withProvider(codex)).success, false);
@@ -212,9 +212,9 @@ void test('rejects a number value that is not a number and an enum value outside
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
-        ...unified,
+        ...router,
         configuration: {
-          ...unified.configuration,
+          ...router.configuration,
           maxStructuredOutputRepairs: '0',
         },
       }),
@@ -252,22 +252,21 @@ void test('rejects a list the kind does not keep, and a kind that omits one it d
     ConfigInputSchema.safeParse(
       withProvider({
         id: 'openrouter',
-        kind: 'openai-compatible',
+        kind: 'openai',
         configuration: {},
       }),
     ).success,
     false,
   );
 
-  // LM Studio keeps models but not reasoning efforts, so a model of its carries
-  // a name alone.
+  // OpenAI models must carry their reasoning list, even when it is empty.
   assert.equal(
     ConfigInputSchema.safeParse(
       withProvider({
         id: 'local',
-        kind: 'lmstudio',
+        kind: 'openai',
         configuration: {},
-        models: [{ name: 'local-model', reasonings: ['low'] }],
+        models: [{ name: 'local-model' }],
       }),
     ).success,
     false,
@@ -349,9 +348,9 @@ void test('names the credential each provider secret field carries', () => {
   assert.deepEqual(
     providerCredentials({
       id: 'local',
-      kind: 'lmstudio',
+      kind: 'openai',
       configuration: {},
-      models: [{ name: 'local-model' }],
+      models: [{ name: 'local-model', reasonings: [] }],
     }),
     [],
   );
@@ -411,13 +410,13 @@ void test('builds every configured provider through the kind it names', async ()
     providers: [
       {
         id: 'local',
-        kind: 'lmstudio',
+        kind: 'openai',
         configuration: {},
-        models: [{ name: 'local-model' }],
+        models: [{ name: 'local-model', reasonings: [] }],
       },
       {
         id: 'proxy',
-        kind: 'openai-compatible',
+        kind: 'openai',
         configuration: {},
         models: [{ name: 'proxy-model', reasonings: ['low'] }],
       },
@@ -438,7 +437,7 @@ void test('builds every configured provider through the kind it names', async ()
   });
 
   // The factory each provider names is what answers, not one hard-coded kind.
-  assert.equal(providerFor(generation, 'local').metadata.id, 'lmstudio');
+  assert.equal(providerFor(generation, 'local').metadata.id, 'local');
   assert.equal(providerFor(generation, 'proxy').metadata.id, 'proxy');
   assert.throws(() => providerFor(generation, 'missing'));
 });

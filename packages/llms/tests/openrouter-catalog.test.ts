@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createOpenRouterCatalog } from '../src/lib/providers/unified/catalog.js';
+import { createOpenRouterCatalog } from '../src/lib/providers/openrouter/catalog.js';
 import type { Model } from '../src/lib/types/provider.js';
 
 const models: readonly Model[] = [

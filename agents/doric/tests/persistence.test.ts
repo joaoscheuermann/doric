@@ -887,6 +887,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20260930050000_thread_cwd',
     '20261005000000_thread_usage',
     '20261006000000_thread_queue_pause',
+    '20261008000000_consolidate_providers',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -1463,14 +1464,14 @@ integrationTest(
         },
         {
           id: 'local',
-          kind: 'lmstudio',
+          kind: 'openai',
           // A kind's list comes back even when this provider names no model yet.
           configuration: {},
           models: [],
         },
         {
           id: 'proxy',
-          kind: 'openai-compatible',
+          kind: 'openai',
           configuration: {
             token: local.credential.id,
           },
@@ -1513,7 +1514,7 @@ integrationTest(
     assert.deepEqual(provider, {
       configurationId: 1,
       id: 'openrouter',
-      kind: 'openai-compatible',
+      kind: 'openrouter',
       fieldValues: {
         endpoint: 'https://openrouter.ai/api/v1',
       },
@@ -1641,7 +1642,7 @@ void test('converts a configured provider of the old shape without losing its da
     assert.deepEqual(loaded.configuration.providers, [
       {
         id: 'openrouter',
-        kind: 'openai-compatible',
+        kind: 'openrouter',
         configuration: {
           endpoint: 'https://openrouter.ai/api/v1',
           token: '00000000-0000-4000-8000-000000000002',

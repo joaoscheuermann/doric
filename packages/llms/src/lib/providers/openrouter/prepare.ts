@@ -1,9 +1,9 @@
 import { ProviderErrorObject } from '../../classes/provider-error.js';
 import type { ProviderMessage, ProviderRequest } from '../../types/provider.js';
 import { requestReasoningEffort } from '../common.js';
-import type { PreparedOpenRouterRequest } from '../openrouter.js';
 import type { OpenRouterModelSupport } from './catalog.js';
-import { unifiedProfileForModel } from './profiles.js';
+import type { PreparedOpenRouterRequest } from './core.js';
+import { openRouterProfileForModel } from './profiles.js';
 
 type SupportResolver = (
   model: string,
@@ -15,7 +15,7 @@ const curatedSupport: OpenRouterModelSupport = {
   parameters: new Set(),
 };
 
-export const createUnifiedRequestPreparer =
+export const createOpenRouterRequestPreparer =
   (resolve: SupportResolver) =>
   async (
     request: ProviderRequest<unknown>,
@@ -24,10 +24,10 @@ export const createUnifiedRequestPreparer =
 
     if (hasTools && request.schema !== undefined) {
       throw new ProviderErrorObject({
-        provider: 'unified',
+        provider: 'openrouter',
         code: 'unsupported_structured_tools',
         message:
-          'Unified direct structured output cannot be combined with tools. Use the agent terminal-tool contract for tool-enabled structured runs.',
+          'OpenRouter direct structured output cannot be combined with tools. Use the agent terminal-tool contract for tool-enabled structured runs.',
       });
     }
 
@@ -38,7 +38,7 @@ export const createUnifiedRequestPreparer =
     const support = needsSupport
       ? await resolve(request.model, request.signal)
       : curatedSupport;
-    const profile = unifiedProfileForModel(request.model);
+    const profile = openRouterProfileForModel(request.model);
 
     requireToolSupport(request, support, profile.tools);
 
@@ -87,7 +87,7 @@ const requireToolSupport = (
   }
 
   throw new ProviderErrorObject({
-    provider: 'unified',
+    provider: 'openrouter',
     code: 'unsupported_model_feature',
     message: `Model ${request.model} does not advertise tool calling through OpenRouter.`,
   });
@@ -96,7 +96,7 @@ const requireToolSupport = (
 const requireCompatibleChoice = (
   request: ProviderRequest<unknown>,
   support: OpenRouterModelSupport,
-  profile: ReturnType<typeof unifiedProfileForModel>,
+  profile: ReturnType<typeof openRouterProfileForModel>,
 ): void => {
   const forced =
     request.toolChoice === 'required' || typeof request.toolChoice === 'object';
@@ -107,7 +107,7 @@ const requireCompatibleChoice = (
 
   if (hasReasoning(request) && !profile.forcedToolChoiceWithReasoning) {
     throw new ProviderErrorObject({
-      provider: 'unified',
+      provider: 'openrouter',
       code: 'incompatible_model_request',
       message: `${profile.lab} models cannot combine forced tool choice with the requested reasoning mode.`,
     });
@@ -121,7 +121,7 @@ const requireCompatibleChoice = (
 
   if (!supported || curatedRestriction) {
     throw new ProviderErrorObject({
-      provider: 'unified',
+      provider: 'openrouter',
       code: 'unsupported_model_feature',
       message: `Model ${request.model} does not support forced tool choice through OpenRouter.`,
     });

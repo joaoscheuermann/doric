@@ -28,9 +28,9 @@ const valid: Configuration = {
     },
     {
       id: 'local',
-      kind: 'lmstudio',
+      kind: 'openai',
       configuration: {},
-      models: [{ name: 'local-model' }],
+      models: [{ name: 'local-model', reasonings: [] }],
     },
   ],
   models: {

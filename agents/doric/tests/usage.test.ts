@@ -9,7 +9,7 @@ import {
 
 const started = (model = 'model') => ({
   type: 'response.started',
-  provider: 'unified',
+  provider: 'openrouter',
   model,
   contextWindow: 200000,
 });
@@ -30,7 +30,7 @@ void test('retains the configured provider identity and resets context when the 
   assert.equal(state.context?.providerId, 'first');
   const next = projectUsage(state, {
     type: 'response.started',
-    provider: 'unified',
+    provider: 'openrouter',
     model: 'model',
     providerId: 'second',
   });
@@ -69,7 +69,7 @@ void test('distinguishes missing prices from free calls and ignores upstream cos
   assert.equal(usageTotals(state).calls, 2);
 });
 
-void test('keeps charged usage after interruption and keeps providers outside unified out of the total', () => {
+void test('keeps charged usage after interruption and keeps providers outside OpenRouter out of the total', () => {
   const state = fold([
     started(),
     usage(0.5),
@@ -84,10 +84,21 @@ void test('keeps charged usage after interruption and keeps providers outside un
 
 void test('keeps capacity unknown when absent and does not count cache twice', () => {
   const state = fold([
-    { type: 'response.started', provider: 'unified', model: 'unknown' },
+    { type: 'response.started', provider: 'openrouter', model: 'unknown' },
     usage(0.2),
   ]);
   assert.equal(state.context?.contextWindow, undefined);
   assert.equal(state.context?.inputTokens, 48000);
   assert.equal(usageTotals(state).inputTokens, 48000);
+});
+
+void test('combines historical Unified charges with new OpenRouter calls', () => {
+  const state = fold([
+    { ...started(), provider: 'unified' },
+    usage(0.25),
+    started(),
+    usage(0.5),
+  ]);
+  assert.equal(usageTotals(state).cost, 0.75);
+  assert.equal(usageTotals(state).calls, 2);
 });

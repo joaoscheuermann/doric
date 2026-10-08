@@ -1,6 +1,6 @@
 import { isRecord } from 'tool';
 
-/** Unified usage snapshots. Costs are account charges, never upstream costs. */
+/** OpenRouter usage snapshots. Costs are account charges, never upstream costs. */
 export interface UsageTotals {
   readonly calls: number;
   readonly unpricedCalls: number;
@@ -90,7 +90,10 @@ export const projectUsage = (state: UsageState, value: unknown): UsageState => {
   const event = record(value);
   if (event.type === 'response.started') {
     const completed = usageTotals(state);
-    if (event.provider !== 'unified' || typeof event.model !== 'string')
+    if (
+      (event.provider !== 'openrouter' && event.provider !== 'unified') ||
+      typeof event.model !== 'string'
+    )
       return { completed };
     const contextWindow = count(event.contextWindow);
     const providerId =

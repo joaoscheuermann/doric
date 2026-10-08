@@ -53,11 +53,11 @@ main process is paired with the React renderer in `app/doric-renderer`; the
 renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
-The conversation footer shows OpenRouter unified context usage without a text
+The conversation footer shows OpenRouter context usage without a text
 prefix or progress bar and an approximate dollar total. Vertical dividers separate
 the execution picker, context text and cost. Context uses the selected Thread's last
 reported input count and the capacity advertised by that call's model catalog;
-an absent capacity or measurement stays unknown. Unified response-start events
+an absent capacity or measurement stays unknown. OpenRouter response-start events
 carry the optional catalog capacity. Costs sum reported account charges across
 the selected Thread and all existing descendants, including unopened Threads.
 Clicking the total shows the current Thread's own charges and a collapsed
@@ -80,10 +80,11 @@ repeated usage snapshots within a call. These cumulative charges survive rewind;
 context is reconstructed from the surviving events. Old Threads lazily derive
 their totals from retained events until the next response event materializes them.
 When old measurements lack capacity, the usage read fills it from the current
-unified catalog for the measured model, marking that source in the tooltip.
+OpenRouter catalog for the measured model, marking that source in the tooltip.
 New measurements retain the configured provider id; legacy measurements resolve
-only when exactly one unified provider lists that model. Recorded capacities
-remain authoritative. The unified provider shares its model catalog between
+only when exactly one OpenRouter provider lists that model. Recorded capacities
+remain authoritative. Historical `unified` events remain readable for accounting.
+The OpenRouter provider shares its model catalog between
 model listing, validation and execution: 15-minute freshness, one concurrent
 refresh, a 5-second request timeout, stale fallback and 30-second failure backoff.
 Deleting a Thread deletes its accounting along with it. Costs not returned by an
@@ -971,9 +972,13 @@ logging through the injected logger; there is no per-request privacy flag.
 They pass their existing logger to these dependencies; private OKF provider
 calls use a disabled Pino logger.
 
-Doric supports OpenAI, raw OpenRouter, unified OpenRouter, LM Studio native,
-LM Studio OpenAI compatibility, and Codex as provider integrations. The unified
-provider uses stable OpenRouter Chat Completions, a 15-minute live model
+Doric advertises only OpenAI and OpenRouter in its provider catalog. OpenAI is
+the Responses-compatible adapter with caller-configured identity and endpoint.
+Codex remains available internally, including existing configuration, but is
+excluded from the advertised catalog. LM Studio's native and Chat Completions
+adapters, the separate OpenAI-compatible kind, and the raw OpenRouter public
+adapter and Decisions API are removed. OpenRouter incorporates the former
+Unified behavior and uses stable OpenRouter Chat Completions, a 15-minute live model
 capability cache with stale-on-error fallback, and curated profiles for OpenAI,
 Anthropic, Gemini, Gemma, DeepSeek, Kimi, Mistral, Qwen, Llama, xAI, GLM,
 Cohere, and MiniMax. Catalog refresh is shared independently of individual
@@ -997,28 +1002,24 @@ deterministic schema prompt, then validate with the original Zod schema and
 allow at most two correction attempts. Structured streams emit only after
 buffered validation. Tools plus a direct provider schema and other
 non-emulatable combinations fail explicitly before completion.
-The raw OpenRouter provider additionally exposes typed System One decisions for
-Jev through `POST /api/alpha/decisions`. A decision evaluates one JSON state
-against one or more `noul`, `choice`, or `score` questions and returns the
-model-resolved typed answers and normalized usage. Decision payloads are not
-adapted into chat completions or written to operational logs.
-The opt-in paid unified-provider conformance runner reserves stdout for its
+Configuration and execution use the same optional OpenRouter `modelsUrl`,
+defaulting to `/models` below its configured endpoint. The provider consolidation
+migration preserves provider ids, credentials, model selections and historical
+snapshots while mapping `unified` to `openrouter` and `openai-compatible` to
+`openai`; compatible rows pointing at the standard OpenRouter endpoint become
+`openrouter`, including the bootstrap row. Existing LM Studio rows block the
+migration with an explicit instruction to configure a supported replacement
+using the previous app version. No credentials or configuration are silently
+discarded. The repository OKF runner now uses Responses with `OKF_BASE_URL`
+(default `http://localhost:1234/v1`) and optional `OKF_API_KEY`.
+The opt-in paid OpenRouter conformance runner reserves stdout for its
 final JSON report, permits up to 1,024 output tokens per request, and emits Pino
 progress to stderr. Failures identify the exact structured-output, tool-call,
 or tool-replay stage and expose the provider error fields retained by the LLM
 boundary; the runner owns the decision to display those diagnostics. An empty
 structured response diagnostic identifies its finish reason and available output/reasoning token
 counts instead of returning an empty string.
-LM Studio native
-uses its native REST API at `http://localhost:1234` by default. LM Studio
-OpenAI compatibility uses the OpenAI-compatible API at
-`http://localhost:1234/v1` by default and sends structured-output requests
-through chat completions `response_format` rather than OpenAI Responses
-`text.format` when no tools are present. When tools and structured output are
-both requested, LM Studio OpenAI compatibility rejects the request with a
-provider error before sending HTTP because LM Studio rejects `tools` and
-`response_format` together.
-The OpenAI, OpenRouter, and LM Studio OpenAI-compatible integrations support
+The OpenAI and OpenRouter integrations support
 single-text embeddings through their OpenAI-compatible `/embeddings` endpoint
 and text-document reranking through `/rerank` below the configured base URL.
 Embedding requests may include optional positive-integer `dimensions`, which
@@ -1030,9 +1031,9 @@ input, output, total, reasoning, cached-input, and cache-write token counts,
 rerank search units, and normalized cost metadata with amount, optional unit,
 and optional upstream amount. OpenRouter costs use the `credits` unit.
 Successful rerank results expose each original document index and finite
-relevance score. Codex and LM Studio native support neither embeddings nor
+relevance score. Codex supports neither embeddings nor
 reranking.
-`packages/llms` also exposes a generic OpenAI Responses-compatible factory with
+`packages/llms` exposes its OpenAI Responses-compatible factory with
 caller-configured provider identity and base URL. Its `/responses`, `/models`,
 `/embeddings`, and `/rerank` operations preserve that identity in metadata,
 safe logs, stream events, and provider errors.
@@ -1151,12 +1152,10 @@ structured-output repair attempts identically in `complete` and `stream`.
 Tools from the last permitted turn execute and their results are stored before
 the next invocation is rejected with `turn_limit_exceeded`. Exhausted streams
 preserve emitted events and do not emit `agent.finished`.
-OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`;
-LM Studio OpenAI compatibility sends `reasoning_effort`; LM Studio native sends
-its native `reasoning` value with `none` mapped to `off`, `minimal` to `low`,
-and `xhigh` to `high`. The Codex provider uses the existing provider token
+OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`.
+The Codex provider uses the existing provider token
 field for the Codex authorization value and derives Codex-compatible account
-headers from that credential when available. OpenAI and LM Studio provider
+headers from that credential when available. OpenAI provider
 configs may omit or blank the token for compatible local endpoints; in that
 case the auth header is omitted. Codex and OpenRouter provider configs still
 require configured tokens. Credential values must remain private runtime

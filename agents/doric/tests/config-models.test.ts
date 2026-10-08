@@ -125,6 +125,21 @@ const read = (
     transport: http,
   });
 
+void test('uses the configured endpoint for discovery when no models URL overrides it', async () => {
+  const stored = configuration([{ name: 'openai/gpt-5' }]);
+  const provider = stored.providers[0];
+  assert.ok(provider);
+  const { modelsUrl: _modelsUrl, ...fields } = provider.configuration;
+  const http = transport(() =>
+    entries({ id: 'openai/gpt-5', supported_efforts: ['low'] }),
+  );
+  await read(
+    { ...stored, providers: [{ ...provider, configuration: fields }] },
+    http,
+  );
+  assert.equal(http.requests[0]?.url, 'https://catalog.example.com/v1/models');
+});
+
 void test('writes the efforts each model its catalog describes accepts', async () => {
   const http = transport(() =>
     entries(
@@ -310,9 +325,9 @@ void test('reads no catalog for a kind that declares no models URL', async () =>
     providers: [
       {
         id: 'local',
-        kind: 'lmstudio',
+        kind: 'openai',
         configuration: {},
-        models: [{ name: 'local/one' }],
+        models: [{ name: 'local/one', reasonings: [] }],
       },
     ],
     models: { execution: { providerId: 'local', model: 'local/one' } },

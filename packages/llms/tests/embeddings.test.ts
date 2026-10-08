@@ -4,8 +4,6 @@ import test from 'node:test';
 import { type LlmProvider, ProviderErrorObject } from '../src/index.js';
 import {
   createCodexProvider,
-  createLmStudioOpenAiProvider,
-  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
   fakeTransport,
@@ -24,9 +22,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
   const openAiTransport = fakeTransport({
     responses: [response({ data: [{ embedding: [0.25, -0.5] }] })],
   });
-  const lmStudioTransport = fakeTransport({
-    responses: [response({ data: [{ embedding: [0.25, -0.5] }] })],
-  });
   const openRouterTransport = fakeTransport({
     responses: [response({ data: [{ embedding: [0.25, -0.5] }] })],
   });
@@ -41,16 +36,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
       transport: openAiTransport,
       endpoint: 'https://api.openai.com/v1/embeddings',
       authorization: 'Bearer openai-key',
-    },
-    {
-      name: 'LM Studio OpenAI compatibility',
-      provider: createLmStudioOpenAiProvider({
-        transport: lmStudioTransport,
-        apiKey: 'local-key',
-      }),
-      transport: lmStudioTransport,
-      endpoint: 'http://localhost:1234/v1/embeddings',
-      authorization: 'Bearer local-key',
     },
     {
       name: 'OpenRouter',
@@ -192,21 +177,14 @@ void test('rejects invalid embedding dimensions before networking', async () => 
 
 for (const fixture of [
   {
-    name: 'LM Studio native',
-    transport: fakeTransport({}),
-  },
-  {
     name: 'Codex',
     transport: fakeTransport({}),
   },
 ]) {
-  const provider =
-    fixture.name === 'Codex'
-      ? createCodexProvider({
-          transport: fixture.transport,
-          authorization: 'Bearer codex-token',
-        })
-      : createLmStudioProvider({ transport: fixture.transport });
+  const provider = createCodexProvider({
+    transport: fixture.transport,
+    authorization: 'Bearer codex-token',
+  });
 
   void test(`rejects embeddings before networking through ${fixture.name}`, async () => {
     await assert.rejects(

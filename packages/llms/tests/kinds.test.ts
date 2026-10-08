@@ -72,9 +72,6 @@ const chatAnswer = () =>
     choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
   });
 const modelsAnswer = () => response({ data: [] });
-const nativeAnswer = () =>
-  response({ output: [{ type: 'message', content: 'ok' }] });
-
 /**
  * One kind with the request it must send. The URLs are stated here rather than
  * read from the catalog, so a catalog that stops matching its factory fails.
@@ -96,13 +93,6 @@ const cases: readonly Case[] = [
     defaultBaseUrl: 'https://api.openai.com/v1',
     path: '/responses',
     transport: () => fakeTransport({ responses: [responsesAnswer()] }),
-    metadata: { id: 'openai', name: 'OpenAI' },
-  },
-  {
-    kind: 'openai-compatible',
-    defaultBaseUrl: 'https://api.openai.com/v1',
-    path: '/responses',
-    transport: () => fakeTransport({ responses: [responsesAnswer()] }),
     metadata: identity,
   },
   {
@@ -111,16 +101,6 @@ const cases: readonly Case[] = [
     path: '/chat/completions',
     transport: () => fakeTransport({ responses: [chatAnswer()] }),
     metadata: { id: 'openrouter', name: 'OpenRouter' },
-    requiredAuth: `Bearer ${tokenValue}`,
-  },
-  {
-    kind: 'unified',
-    defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    path: '/chat/completions',
-    // A structured request discovers the model's live support first.
-    transport: () =>
-      fakeTransport({ responses: [modelsAnswer(), chatAnswer()] }),
-    metadata: { id: 'unified', name: 'Unified (OpenRouter)' },
     requiredAuth: `Bearer ${tokenValue}`,
   },
   {
@@ -145,23 +125,6 @@ const cases: readonly Case[] = [
     extraHeaders: {
       'ChatGPT-Account-ID': 'chatGptAccountId-value',
       'X-OpenAI-Fedramp': 'true',
-    },
-  },
-  {
-    kind: 'lmstudio',
-    defaultBaseUrl: 'http://localhost:1234',
-    path: '/api/v1/chat',
-    transport: () => fakeTransport({ responses: [nativeAnswer()] }),
-    metadata: { id: 'lmstudio', name: 'LM Studio' },
-  },
-  {
-    kind: 'lmstudio-openai',
-    defaultBaseUrl: 'http://localhost:1234/v1',
-    path: '/chat/completions',
-    transport: () => fakeTransport({ responses: [chatAnswer()] }),
-    metadata: {
-      id: 'lmstudio-openai',
-      name: 'LM Studio OpenAI Compatibility',
     },
   },
 ];
@@ -205,19 +168,20 @@ const complete = async (
   return provider;
 };
 
-void test('lists every provider integration the package can build, once each', () => {
+void test('advertises only OpenAI and OpenRouter while keeping Codex internal', () => {
   assert.deepEqual(
     providerKinds.map(({ id }) => id),
-    [
-      'openai',
-      'openai-compatible',
-      'openrouter',
-      'unified',
-      'codex',
-      'lmstudio',
-      'lmstudio-openai',
-    ],
+    ['openai', 'openrouter'],
   );
+  assert.ok(providerKind('codex'));
+  for (const removed of [
+    'unified',
+    'openai-compatible',
+    'lmstudio',
+    'lmstudio-openai',
+  ]) {
+    assert.equal(providerKind(removed), undefined);
+  }
 
   for (const kind of providerKinds) {
     assert.equal(providerKind(kind.id), kind);
@@ -248,6 +212,51 @@ void test('lists every provider integration the package can build, once each', (
       );
     }
   }
+});
+
+void test('uses the configured OpenRouter catalog for execution and model listing', async () => {
+  const catalog = 'https://catalog.example.test/models';
+  const transport = fakeTransport({
+    responses: [
+      response({
+        data: [
+          {
+            id: 'custom/model',
+            supported_parameters: ['tools'],
+            context_length: 12345,
+          },
+        ],
+      }),
+      chatAnswer(),
+    ],
+  });
+  const provider = createProviderForKind(
+    'openrouter',
+    {
+      token: tokenValue,
+      endpoint: endpointValue,
+      modelsUrl: catalog,
+    },
+    { transport, logger: silentLogger, identity },
+  );
+
+  await provider.complete({
+    model: 'custom/model',
+    messages: [{ role: 'user', content: 'Hi' }],
+    tools: [
+      {
+        name: 'lookup',
+        inputSchema: { type: 'object', properties: {} },
+        outputSchema: { type: 'string' },
+      },
+    ],
+  });
+  assert.equal(transport.requests[0]?.url, catalog);
+  assert.equal(transport.requests[1]?.url, `${endpointValue}/chat/completions`);
+  assert.equal(
+    (await provider.validateModel('custom/model')).contextWindow,
+    12345,
+  );
 });
 
 void test('builds each kind from its required values alone, leaving optional dependencies to the factory', async () => {
@@ -349,14 +358,14 @@ void test('refuses a value its factory cannot use', () => {
     logger: silentLogger,
     identity,
   };
-  const unified = kindOf('unified');
+  const router = kindOf('openrouter');
   const codex = kindOf('codex');
 
   assert.throws(
     () =>
       createProviderForKind(
-        'unified',
-        valuesFor(unified, { maxStructuredOutputRepairs: 'many' }),
+        'openrouter',
+        valuesFor(router, { maxStructuredOutputRepairs: 'many' }),
         deps,
       ),
     /maxStructuredOutputRepairs/u,
@@ -377,7 +386,7 @@ void test('refuses a value its factory cannot use', () => {
 });
 
 void test('passes a number field through to its factory', async () => {
-  const kind = kindOf('unified');
+  const kind = kindOf('openrouter');
   const structured = {
     model: 'catalog-model',
     messages: [{ role: 'user' as const, content: 'Answer as JSON.' }],
@@ -405,7 +414,7 @@ void test('passes a number field through to its factory', async () => {
     };
     if (repairs === undefined) delete values.maxStructuredOutputRepairs;
     else values.maxStructuredOutputRepairs = repairs;
-    const provider = createProviderForKind('unified', values, {
+    const provider = createProviderForKind('openrouter', values, {
       transport,
       logger: silentLogger,
       identity,

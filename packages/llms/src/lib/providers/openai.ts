@@ -58,14 +58,8 @@ export interface OpenAiProviderDeps {
   readonly authorization?: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
+  readonly identity?: { readonly id: string; readonly name: string };
 }
-
-export type OpenAiCompatibleProviderDeps = OpenAiProviderDeps & {
-  readonly identity: {
-    readonly id: string;
-    readonly name: string;
-  };
-};
 
 export const openAiMetadata: ProviderMetadata = {
   id: 'openai',
@@ -85,15 +79,10 @@ export const openAiCapabilities: ProviderCapabilities = {
   structuredOutputs: true,
 };
 
-export const createOpenAiProvider = (deps: OpenAiProviderDeps): LlmProvider =>
-  withProviderLogging(createOpenAiProviderCore(deps), deps.logger);
-
 /** Creates a Responses-compatible provider while preserving its configured identity. */
-export const createOpenAiCompatibleProvider = (
-  deps: OpenAiCompatibleProviderDeps,
-): LlmProvider => {
+export const createOpenAiProvider = (deps: OpenAiProviderDeps): LlmProvider => {
   const baseUrl = deps.baseUrl ?? openAiMetadata.baseUrl;
-  const metadata = { ...deps.identity, baseUrl };
+  const metadata = { ...(deps.identity ?? openAiMetadata), baseUrl };
   return withProviderLogging(
     createOpenAiProviderCore(deps, metadata),
     deps.logger,

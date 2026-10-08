@@ -165,7 +165,12 @@ const catalogUrl = (provider: CatalogProvider): string | undefined => {
 
   if (field === undefined) return undefined;
 
-  return provider.configuration[field.key] ?? field.placeholder;
+  return (
+    provider.configuration[field.key] ??
+    (provider.configuration.endpoint === undefined
+      ? field.placeholder
+      : `${provider.configuration.endpoint}/models`)
+  );
 };
 
 /** The secret the provider authenticates its catalog read with, when it has one. */
