@@ -1,6 +1,5 @@
-import { z } from 'zod';
-
 import { defineTool, type ToolFactory } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
@@ -56,12 +55,12 @@ export type WebOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type FetchResponse = {
+interface FetchResponse {
   readonly ok: boolean;
   readonly status: number;
   readonly statusText?: string;
   text(): Promise<string>;
-};
+}
 
 type FetchLike = (
   url: string,
@@ -75,10 +74,10 @@ type FetchTextResult =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly error: string };
 
-type Options = {
+interface Options {
   readonly fetch?: FetchLike;
   readonly requestTimeoutMs?: number;
-};
+}
 
 /** Creates the provider-neutral web tool. */
 export const createTool = (
@@ -89,13 +88,13 @@ export const createTool = (
     description,
     input,
     output,
-    execute: (_sandbox, input): Promise<WebOutput> =>
+    execute: (_sandbox, _host, input): Promise<WebOutput> =>
       execute(input, options.fetch ?? fetch, requestTimeout(options)),
   });
 
 export default createTool();
 
-const execute = async (
+const execute = (
   input: Input,
   fetcher: FetchLike,
   timeoutMs: number,

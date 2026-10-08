@@ -30,7 +30,8 @@ Create a usable local repository from a remote without overwriting existing work
 3. Never place tokens, passwords, credential-bearing URLs, or credential-helper secrets in tool arguments. Use only authentication already provided by the runtime.
 4. If an exact commit is required, fetch it after cloning and check it out deliberately. Create a branch when later commits are expected; otherwise a detached checkout may be appropriate.
 5. In the cloned repository, inspect `rev-parse --show-toplevel`, `rev-parse HEAD`, the current branch, and concise status. Confirm the result against the requested repository and ref.
-6. Treat network, authentication, missing-ref, and non-empty-destination failures as distinct blockers. Do not retry with broader or destructive arguments without evidence.
+6. Move this thread's working directory to the repository root with the `cwd` tool so the rest of the task runs inside the repository. Return it to the workspace root when the task leaves the repository.
+7. Treat network, authentication, missing-ref, and non-empty-destination failures as distinct blockers. Do not retry with broader or destructive arguments without evidence.
 
 ## Completion
 

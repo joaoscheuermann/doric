@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": ".",
+    "outDir": "../../agents/doric/dist/bundles/threads",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "../../agents/doric/dist/bundles/threads/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["index.mts", "tools/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/tool"
+    },
+    {
+      "path": "../../packages/sandbox"
+    },
+    {
+      "path": "../../packages/host"
+    }
+  ]
+}

@@ -7,9 +7,11 @@ startup.
 ## Capabilities
 
 The routable `git` tool executes `git` with an argument array inside the
-sandbox. It does not invoke a shell, it keeps the working directory under the
-sandbox root, and it bounds captured stdout and stderr. Authentication must be
-provided by the runtime; credentials do not belong in tool arguments.
+sandbox. It does not invoke a shell, it runs in the thread's current working
+directory by default, it keeps the working directory under the sandbox root,
+and it bounds captured stdout and stderr. A relative `working_directory`
+resolves against that working directory. Authentication must be provided by the
+runtime; credentials do not belong in tool arguments.
 
 Focused skills cover:
 

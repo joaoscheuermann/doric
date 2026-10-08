@@ -9,7 +9,7 @@ import {
   openBrowser,
 } from '../src/index.js';
 
-test('parses local OAuth callback paths and query parameters', async () => {
+void test('parses local OAuth callback paths and query parameters', async () => {
   const server = await createLocalCallbackServer({ path: '/oauth/callback' });
 
   try {
@@ -30,7 +30,7 @@ test('parses local OAuth callback paths and query parameters', async () => {
   }
 });
 
-test('closes local OAuth callback connections after a completed callback', async () => {
+void test('closes local OAuth callback connections after a completed callback', async () => {
   const server = await createLocalCallbackServer({ path: '/oauth/callback' });
   const agent = new Agent({ keepAlive: true });
 
@@ -56,7 +56,7 @@ test('closes local OAuth callback connections after a completed callback', async
   }
 });
 
-test('rejects pending local OAuth callbacks when the server closes', async () => {
+void test('rejects pending local OAuth callbacks when the server closes', async () => {
   const server = await createLocalCallbackServer();
   const waiting = server.waitForCallback('state-123');
 
@@ -65,7 +65,7 @@ test('rejects pending local OAuth callbacks when the server closes', async () =>
   await assert.rejects(waiting, hasCode('oauth_callback_server_closed'));
 });
 
-test('rejects pending local OAuth callbacks when the signal aborts', async () => {
+void test('rejects pending local OAuth callbacks when the signal aborts', async () => {
   const server = await createLocalCallbackServer();
   const controller = new AbortController();
   const waiting = server.waitForCallback('state-123', controller.signal);
@@ -79,7 +79,7 @@ test('rejects pending local OAuth callbacks when the signal aborts', async () =>
   }
 });
 
-test('selects browser opener commands by platform', async () => {
+void test('selects browser opener commands by platform', async () => {
   const url = 'https://example.test/callback?code=abc&state=xyz';
   const calls: { command: string; args: readonly string[] }[] = [];
 

@@ -3,16 +3,20 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 
-import type {
-  NormalizedSandboxNetworkPolicy,
-  SandboxExecInput,
-  SandboxExecResult,
-  SandboxSshAccess,
+import {
+  type NormalizedSandboxNetworkPolicy,
+  quote,
+  type SandboxExecInput,
+  type SandboxExecResult,
+  type SandboxProcess,
+  type SandboxProcessInput,
+  type SandboxSshAccess,
 } from 'sandbox';
 
 import { run, text } from './command.js';
+import { startGuestProcess } from './process.js';
 
-export type SshKeys = {
+export interface SshKeys {
   readonly managementPrivate: string;
   readonly managementPublic: string;
   readonly userPrivate: string;
@@ -20,15 +24,16 @@ export type SshKeys = {
   readonly hostPrivate: Uint8Array;
   readonly hostPublic: string;
   readonly fingerprint: string;
-};
+}
 
-export type GuestConnection = {
+export interface GuestConnection {
+  start(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
 
   getFile(path: string): Promise<Uint8Array>;
-};
+}
 
 export const generateSshKeys = async (
   directory: string,
@@ -122,6 +127,8 @@ export const createGuestConnection = (input: {
   readonly env: readonly string[];
   readonly user: string;
 }): GuestConnection => ({
+  start: (request) =>
+    startGuestProcess(input, request, (request) => execute(input, request)),
   exec: (request) => execute(input, request),
   putFile: async (path, bytes) => {
     const result = await invoke(
@@ -254,7 +261,7 @@ export const exposeUserSsh = async (
   };
 };
 
-const execute = async (
+const execute = (
   connection: Parameters<typeof createGuestConnection>[0],
   input: SandboxExecInput,
 ): Promise<SandboxExecResult> => {
@@ -425,5 +432,3 @@ const mergeEnv = (
 
 const root = (user: string): boolean =>
   user === '' || user === 'root' || user === '0' || user === '0:0';
-
-const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;

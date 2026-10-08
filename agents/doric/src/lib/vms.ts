@@ -2,17 +2,17 @@ import type { SandboxProvider, SandboxRuntime } from 'sandbox';
 
 export type VmProvider = 'docker' | 'firecracker';
 
-export type RunningVm = {
+export interface RunningVm {
   readonly id: string;
   readonly provider: VmProvider;
-};
+}
 
-export type VmRegistry = {
+export interface VmRegistry {
   readonly provider: SandboxProvider;
   list(): readonly RunningVm[];
 
   find(id: string): RunningVm | undefined;
-};
+}
 
 /** Tracks successfully provisioned runtimes until their disposal completes. */
 export const createVmRegistry = (
@@ -39,15 +39,21 @@ export const createVmRegistry = (
 const tracked = (
   runtime: SandboxRuntime,
   remove: () => void,
-): SandboxRuntime => ({
-  id: runtime.id,
-  exec: (input) => runtime.exec(input),
-  putFile: (path, bytes) => runtime.putFile(path, bytes),
-  getFile: (path) => runtime.getFile(path),
-  ssh: () => runtime.ssh(),
-  async dispose() {
-    await runtime.dispose();
-
-    remove();
-  },
-});
+): SandboxRuntime => {
+  const stats = runtime.stats?.bind(runtime);
+  return {
+    id: runtime.id,
+    exec: (input) => runtime.exec(input),
+    ...(runtime.start === undefined
+      ? {}
+      : { start: runtime.start.bind(runtime) }),
+    ...(stats === undefined ? {} : { stats }),
+    putFile: (path, bytes) => runtime.putFile(path, bytes),
+    getFile: (path) => runtime.getFile(path),
+    ssh: () => runtime.ssh(),
+    async dispose() {
+      await runtime.dispose();
+      remove();
+    },
+  };
+};

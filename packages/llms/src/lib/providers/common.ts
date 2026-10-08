@@ -1,14 +1,14 @@
 import { ProviderErrorObject } from '../classes/provider-error.js';
 import type {
   FinishReason,
-  ProviderError,
   ProviderEmbeddingFinished,
   ProviderEmbeddingRequest,
+  ProviderError,
   ProviderId,
   ProviderMessage,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
+  ProviderRerankRequest,
   ProviderRerankResult,
   ReasoningEffort,
   UsageMetadata,
@@ -146,6 +146,19 @@ export const httpError = (
     retryable: status === 429 || status >= 500,
     diagnostic: diagnosticExcerpt(body),
   });
+
+/**
+ * A delta event carries the text a chunk produced. A chunk that carries none ask
+ * a consumer to do nothing, so it opens no event: emitting one would let an empty
+ * delta end a run of reasoning or text and split it into a block of its own.
+ */
+export const deltaEvent = <
+  Type extends 'text.delta' | 'reasoning.delta' | 'refusal.delta',
+>(
+  type: Type,
+  delta: string | undefined,
+): { readonly type: Type; readonly delta: string } | undefined =>
+  delta === undefined || delta === '' ? undefined : { type, delta };
 
 export const streamErrorEvent = (
   provider: ProviderId,
@@ -286,7 +299,7 @@ export const parseEmbedding = (
   if (embedding.length > 0 && embedding.every(isFiniteNumber)) {
     const usage = parseUsage(recordField(body, 'usage'), costUnit);
     return {
-      embedding: embedding as readonly number[],
+      embedding: embedding,
       ...(usage === undefined ? {} : { usage }),
     };
   }

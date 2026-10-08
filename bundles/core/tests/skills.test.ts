@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('documents failure-preserving compound shell commands', async () => {
+void test('documents failure-preserving compound shell commands', async () => {
   const body = await readFile(
     'bundles/core/skills/shell-command-execution/SKILL.md',
     'utf8',

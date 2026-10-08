@@ -1,29 +1,52 @@
 import express, { type Express } from 'express';
+import type { Logger } from 'pino';
 
 import { createConfigRouter } from '../../routes/config.js';
+import { createCredentialsRouter } from '../../routes/credentials.js';
 import { createProjectsRouter } from '../../routes/projects.js';
+import { createProvidersRouter } from '../../routes/providers.js';
+import { createResourcesRouter } from '../../routes/resources.js';
+import { createTerminalsRouter } from '../../routes/terminals.js';
 import { createThreadsRouter } from '../../routes/threads.js';
+import { createToolsRouter } from '../../routes/tools.js';
 import {
-  createVmsRouter,
   type CreateVmsRouterOptions,
+  createVmsRouter,
 } from '../../routes/vms.js';
 import type { ConfigService } from '../config/service.js';
-import { handleHttpError } from './errors.js';
+import type { CredentialService } from '../credentials/service.js';
+import type { HostResources } from '../workspace/resources.js';
 import type { WorkspaceService } from '../workspace/types.js';
+import { handleHttpError } from './errors.js';
 
 /** Registers the production HTTP surface on the shared HTTP/Socket.IO app. */
 export const registerHttpRoutes = (
   app: Express,
   dependencies: {
     readonly config: ConfigService;
+    readonly credentials: CredentialService;
+    readonly logger: Logger;
     readonly service: WorkspaceService;
     readonly vms: CreateVmsRouterOptions;
+    /** The machine reading the host exposes; injected so routes stay testable. */
+    readonly readHostResources: () => HostResources;
   },
 ): void => {
   app.use(express.json());
+  app.use(createTerminalsRouter(dependencies.service));
   app.use('/vms', createVmsRouter(dependencies.vms));
   app.use('/config', createConfigRouter(dependencies.config));
+  app.use('/credentials', createCredentialsRouter(dependencies.credentials));
+  app.use('/resources', createResourcesRouter(dependencies.readHostResources));
+  app.use(
+    '/providers',
+    createProvidersRouter({
+      credentials: dependencies.credentials,
+      logger: dependencies.logger,
+    }),
+  );
   app.use('/projects', createProjectsRouter(dependencies.service));
   app.use('/threads', createThreadsRouter(dependencies.service));
+  app.use('/tools', createToolsRouter(dependencies.config));
   app.use(handleHttpError);
 };

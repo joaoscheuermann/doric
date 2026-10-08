@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadBundles } from 'bundle';
-import { createDockerClient } from 'docker';
+import { createDockerClient, discardWorkspace } from 'docker';
 import express from 'express';
 import { createFirecrackerClient } from 'firecracker';
 import pino from 'pino';
@@ -14,13 +14,18 @@ import { Server as SocketServer } from 'socket.io';
 
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
+import { createCredentialService } from './lib/credentials/service.js';
+import { createCredentialStore } from './lib/credentials/store.js';
 import { createDatabase } from './lib/database.js';
-import { registerHttpRoutes } from './lib/http/app.js';
-import { createWorkspaceService } from './lib/workspace/service.js';
-import { createProjectStore } from './lib/workspace/projects.js';
-import { createThreadStore } from './lib/workspace/threads.js';
 import { createWorkspaceSocket } from './lib/events/socket.js';
+import { registerStatusSocket } from './lib/events/status.js';
+import { registerHttpRoutes } from './lib/http/app.js';
 import { createVmRegistry } from './lib/vms.js';
+import { checkDisk } from './lib/workspace/disk.js';
+import { createProjectStore } from './lib/workspace/projects.js';
+import { readHostResources } from './lib/workspace/resources.js';
+import { createWorkspaceService } from './lib/workspace/service.js';
+import { createThreadStore } from './lib/workspace/threads.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -65,20 +70,26 @@ async function main() {
 
   startupStage = 'sandbox_pool';
   startup.info({ sandboxProviderName }, 'Configuring sandbox pool');
-  const sandboxProvider =
-    sandboxProviderName === 'firecracker'
-      ? createFirecrackerClient()
-      : createDockerClient();
+  const dockerClient =
+    sandboxProviderName === 'firecracker' ? undefined : createDockerClient();
+  const sandboxProvider = dockerClient ?? createFirecrackerClient();
 
   const vms = createVmRegistry(sandboxProviderName, sandboxProvider);
-  const sandboxImage = 'node:22-bookworm';
+  // The image is a deployment choice, so it comes from the environment and
+  // defaults to the plain Node image an operator gets without building one. A
+  // named local tag that was never built fails the provider's pull instead of
+  // silently falling back to that default.
+  const sandboxImage = process.env.DORIC_SANDBOX_IMAGE ?? 'node:22-bookworm';
   const sandboxResources = {
     cpuCount: 1,
-    memoryMiB: 512,
+    memoryMiB: sandboxProviderName === 'docker' ? 2048 : 512,
     diskMiB: 4096,
   } as const;
   const poolLimits = {
-    minIdle: 1,
+    // Every acquisition Doric makes names the Project it serves, and the pool
+    // provisions a new session for an identified acquisition instead of leasing
+    // a warmed one, so warming would only hold capacity Doric cannot use.
+    minIdle: 0,
     maxSandboxes: 10,
     maxCreateAttempts: 3,
   } as const;
@@ -86,12 +97,14 @@ async function main() {
   const pool = createSandpool({
     ...poolLimits,
     logger,
-    create: () =>
+    create: (identity) =>
       createSandbox({
         provider: vms.provider,
         image: sandboxImage,
         imagePullPolicy: 'if-not-present',
         resources: sandboxResources,
+        // The Project id names the durable workspace the sandbox reattaches.
+        workspace: identity,
         network: {
           mode: 'egress',
           ssh: sandboxSshEnabled,
@@ -130,10 +143,16 @@ async function main() {
     },
     'Bundles loaded',
   );
+  startupStage = 'credential_activation';
+  startup.info('Activating stored credentials');
+  const credentials = await createCredentialService({
+    store: createCredentialStore(database),
+  });
   startupStage = 'configuration_activation';
   startup.info('Activating Doric configuration');
   const config = await createConfigService({
     store: createConfigStore(database),
+    credentials,
     bundles,
     logger,
   });
@@ -155,27 +174,51 @@ async function main() {
   const interruptedProjects = await projects.reconcile();
   const interrupted = { interruptedThreads, interruptedProjects };
   startup.info(interrupted, 'Project and thread reconciliation complete');
-  const publisher = createWorkspaceSocket(io, projects, threads);
+  registerStatusSocket(io);
+  const publisher = createWorkspaceSocket(io, projects, threads, (id) =>
+    service.terminals.list(id),
+  );
   const service = createWorkspaceService({
     projects,
     threads,
     config,
+    credentials,
     pool,
     publisher,
     logger,
+    checkStorage: () => checkDisk(process.env.DORIC_STORAGE_PATH ?? '.'),
+    // A durable workspace is the Docker provider's own storage. The Firecracker
+    // profile keeps its guest disks per run, so it has no workspace volume to
+    // remove yet.
+    discardWorkspace: async (identity) => {
+      if (dockerClient !== undefined)
+        await discardWorkspace(dockerClient, identity);
+    },
   });
+
+  // Work the reader asked for and a host interruption left unfinished is work
+  // this boot owes them, so every such prompt is taken up before the host starts
+  // serving new ones: it comes back on demand, with its own identity, and its
+  // prompts queue in the order the log accepted them.
+  const resumedPrompts = await service.resumeInterrupted();
+  startup.info({ resumedPrompts }, 'Interrupted prompts resumed');
+  await service.recoverProjects();
+  startup.info('Project sandbox recovery scheduled');
 
   registerHttpRoutes(app, {
     config,
+    credentials,
+    logger,
     service,
+    readHostResources,
     vms: {
-      list: vms.list,
-      find: vms.find,
-      ssh: service.sshForVm,
+      list: () => vms.list(),
+      find: (id) => vms.find(id),
+      ssh: (id) => service.sshForVm(id),
     },
   });
   startup.info(
-    { socketNamespaces: ['/projects', '/threads'] },
+    { socketNamespaces: ['/status', '/projects', '/threads'] },
     'Network interfaces configured',
   );
 
@@ -198,7 +241,7 @@ async function main() {
     const closed = new Promise<void>((resolve) =>
       server.close(() => resolve()),
     );
-    io.close();
+    await io.close();
     await closed;
     await service.dispose();
     await pool.dispose();

@@ -15,6 +15,7 @@ import {
   type DockerResponse,
   type DockerTransport,
   type DockerTransportRequest,
+  discardWorkspace,
 } from '../src/index.js';
 import {
   configureDockerHost,
@@ -35,7 +36,7 @@ const textResponse = (status: number, body: string): DockerResponse => ({
   body: Buffer.from(body),
 });
 
-test('sends create container requests with Docker API paths and JSON body', async () => {
+void test('sends create container requests with Docker API paths and JSON body', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -76,7 +77,7 @@ test('sends create container requests with Docker API paths and JSON body', asyn
   });
 });
 
-test('maps Docker HTTP failures into structured errors', async () => {
+void test('maps Docker HTTP failures into structured errors', async () => {
   const client = createDockerClient({
     request: async () => textResponse(500, 'daemon failed'),
   });
@@ -92,7 +93,7 @@ test('maps Docker HTTP failures into structured errors', async () => {
   );
 });
 
-test('pulls images through the Docker image create endpoint', async () => {
+void test('pulls images through the Docker image create endpoint', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -112,7 +113,7 @@ test('pulls images through the Docker image create endpoint', async () => {
   assert.deepEqual(requests[0]?.query, { fromImage: 'node:slim' });
 });
 
-test('honors timeout and abort controls around the injected transport', async () => {
+void test('honors timeout and abort controls around the injected transport', async () => {
   const never: DockerTransport = async () => new Promise(() => undefined);
 
   const timeoutClient = createDockerClient({
@@ -137,39 +138,35 @@ test('honors timeout and abort controls around the injected transport', async ()
   );
 });
 
-test(
-  'uses DOCKER_HOST as the default Unix socket path when set',
-  {
-    skip: process.platform === 'win32',
-  },
-  async () => {
-    const previous = process.env.DOCKER_HOST;
-    const socketPath = `/tmp/doric-missing-${randomUUID()}.sock`;
+void test('uses DOCKER_HOST as the default Unix socket path when set', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const previous = process.env.DOCKER_HOST;
+  const socketPath = `/tmp/doric-missing-${randomUUID()}.sock`;
 
-    process.env.DOCKER_HOST = `unix://${socketPath}`;
+  process.env.DOCKER_HOST = `unix://${socketPath}`;
 
-    try {
-      await assert.rejects(
-        createDockerClient().ping(),
-        (error: unknown) =>
-          typeof error === 'object' &&
-          error !== null &&
-          'code' in error &&
-          'address' in error &&
-          error.code === 'ENOENT' &&
-          error.address === socketPath,
-      );
-    } finally {
-      if (previous === undefined) {
-        delete process.env.DOCKER_HOST;
-      } else {
-        process.env.DOCKER_HOST = previous;
-      }
+  try {
+    await assert.rejects(
+      createDockerClient().ping(),
+      (error: unknown) =>
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        'address' in error &&
+        error.code === 'ENOENT' &&
+        error.address === socketPath,
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DOCKER_HOST;
+    } else {
+      process.env.DOCKER_HOST = previous;
     }
-  },
-);
+  }
+});
 
-test('creates starts and inspects execs while demuxing non TTY output', async () => {
+void test('creates starts and inspects execs while demuxing non TTY output', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -223,7 +220,7 @@ test('creates starts and inspects execs while demuxing non TTY output', async ()
   assert.equal(result.stderr, 'err\n');
 });
 
-test('uses Docker archive endpoints for upload and download', async () => {
+void test('uses Docker archive endpoints for upload and download', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -261,7 +258,7 @@ test('uses Docker archive endpoints for upload and download', async () => {
   assert.equal(Buffer.from(archive).toString('utf8'), 'archive');
 });
 
-test('provisions Sandbox runtimes with CPU memory and writable disk limits', async () => {
+void test('provisions Sandbox runtimes with CPU memory and writable disk limits', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -314,7 +311,196 @@ test('provisions Sandbox runtimes with CPU memory and writable disk limits', asy
   );
 });
 
-test('inspects containers and starts detached execs', async () => {
+void test('mounts a durable workspace volume and labels the container', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/volumes/create') {
+        return jsonResponse(201, { Name: 'doric-workspace-project-a' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    workspace: 'project-a',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  const volume = requests.find(({ path }) => path === '/volumes/create');
+
+  assert.ok(volume);
+
+  assert.equal(volume.method, 'POST');
+
+  assert.deepEqual(volume.body, {
+    Name: 'doric-workspace-project-a',
+    Labels: { 'doric.sandbox.workspace': 'project-a' },
+  });
+
+  const create = requests.find(({ path }) => path === '/containers/create');
+
+  assert.ok(create);
+
+  const body = create.body as {
+    readonly HostConfig: { readonly Binds: readonly string[] };
+    readonly Labels: Readonly<Record<string, string>>;
+  };
+
+  assert.deepEqual(body.HostConfig.Binds, [
+    'doric-workspace-project-a:/workspace',
+  ]);
+
+  assert.deepEqual(body.Labels, {
+    'doric.sandbox': 'true',
+    'doric.sandbox.root': '/workspace',
+    'doric.sandbox.workspace': 'project-a',
+  });
+
+  assert.ok(
+    requests.findIndex(({ path }) => path === '/volumes/create') <
+      requests.findIndex(({ path }) => path === '/containers/create'),
+  );
+
+  // The container goes away with the sandbox; the workspace volume does not.
+  assert.equal(
+    requests.some(
+      ({ method, path }) => method === 'DELETE' && path.includes('/volumes/'),
+    ),
+    false,
+  );
+
+  await discardWorkspace(client, 'project-a');
+
+  assert.deepEqual(requests.at(-1)?.path, '/volumes/doric-workspace-project-a');
+});
+
+void test('leaves a sandbox without a workspace unbound', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  assert.equal(
+    requests.some(({ path }) => path === '/volumes/create'),
+    false,
+  );
+
+  const create = requests.find(({ path }) => path === '/containers/create');
+
+  assert.ok(create);
+
+  const body = create.body as {
+    readonly HostConfig: { readonly Binds: readonly string[] };
+    readonly Labels: Readonly<Record<string, string>>;
+  };
+
+  assert.deepEqual(body.HostConfig.Binds, []);
+
+  assert.equal(body.Labels['doric.sandbox.workspace'], undefined);
+});
+
+void test('rejects a workspace identity that cannot name a volume', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  await assert.rejects(
+    client.provision({
+      image: 'node:22-slim',
+      root: '/workspace',
+      workspace: 'project a',
+      resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+      network: { mode: 'disabled', ssh: false },
+    }),
+    /workspace identity must match/u,
+  );
+
+  assert.equal(
+    requests.some(({ path }) => path === '/containers/create'),
+    false,
+  );
+});
+
+void test('removes a workspace volume and tolerates a missing one', async () => {
+  const requests: DockerTransportRequest[] = [];
+  const statuses = [204, 404];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      return {
+        status: statuses.shift() ?? 500,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  await discardWorkspace(client, 'project-a');
+
+  await discardWorkspace(client, 'project-a');
+
+  assert.deepEqual(
+    requests.map(({ method, path, query }) => [method, path, query]),
+    [
+      ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
+      ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
+    ],
+  );
+});
+
+void test('inspects containers and starts detached execs', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -359,7 +545,7 @@ test('inspects containers and starts detached execs', async () => {
   assert.deepEqual(requests.at(-1)?.body, { Detach: true, Tty: false });
 });
 
-test('retries without a disk quota when Docker does not support one', async () => {
+void test('retries without a disk quota when Docker does not support one', async () => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -394,7 +580,7 @@ test('retries without a disk quota when Docker does not support one', async () =
 
   assert.equal(creates.length, 2);
 
-  assert.deepEqual((creates[0]?.body as { HostConfig: unknown }).HostConfig, {
+  assert.deepEqual((creates[0].body as { HostConfig: unknown }).HostConfig, {
     AutoRemove: false,
     Binds: [],
     NetworkMode: 'none',
@@ -403,7 +589,7 @@ test('retries without a disk quota when Docker does not support one', async () =
     StorageOpt: { size: '4096M' },
   });
 
-  assert.deepEqual((creates[1]?.body as { HostConfig: unknown }).HostConfig, {
+  assert.deepEqual((creates[1].body as { HostConfig: unknown }).HostConfig, {
     AutoRemove: false,
     Binds: [],
     NetworkMode: 'none',
@@ -412,7 +598,65 @@ test('retries without a disk quota when Docker does not support one', async () =
   });
 });
 
-test('renders host-input and protected-destination Docker rules', () => {
+void test('keeps the workspace mount when retrying without a disk quota', async () => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return requests.filter(({ path }) => path === '/containers/create')
+          .length === 1
+          ? textResponse(500, 'storage-opt size is not supported')
+          : jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/volumes/create') {
+        return jsonResponse(201, { Name: 'doric-workspace-project-a' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    workspace: 'project-a',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  const creates = requests.filter(({ path }) => path === '/containers/create');
+
+  assert.equal(creates.length, 2);
+
+  assert.deepEqual(
+    creates.map(
+      ({ body }) =>
+        (body as { readonly HostConfig: { readonly Binds: unknown } })
+          .HostConfig.Binds,
+    ),
+    [
+      ['doric-workspace-project-a:/workspace'],
+      ['doric-workspace-project-a:/workspace'],
+    ],
+  );
+
+  assert.equal(
+    requests.filter(({ path }) => path === '/volumes/create').length,
+    1,
+  );
+});
+
+void test('renders host-input and protected-destination Docker rules', () => {
   const rules = renderDockerFirewall('doric_test', '172.17.0.2', {
     mode: 'egress',
     ssh: false,
@@ -435,7 +679,7 @@ test('renders host-input and protected-destination Docker rules', () => {
   );
 });
 
-test('selects nftables only on Linux and rejects unknown platforms', () => {
+void test('selects nftables only on Linux and rejects unknown platforms', () => {
   assert.equal(firewallStrategy('linux'), 'nftables');
 
   assert.equal(firewallStrategy('darwin'), 'docker-desktop');
@@ -448,7 +692,7 @@ test('selects nftables only on Linux and rejects unknown platforms', () => {
   );
 });
 
-test('leaves Docker Desktop firewall and bridge networking unchanged', async () => {
+void test('leaves Docker Desktop firewall and bridge networking unchanged', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'doric-docker-host-'));
 
   const client = new Proxy({} as DockerClient, {
@@ -498,7 +742,7 @@ test('leaves Docker Desktop firewall and bridge networking unchanged', async () 
   }
 });
 
-test('rejects unknown platforms before provisioning', async () => {
+void test('rejects unknown platforms before provisioning', async () => {
   await assert.rejects(
     preflightDockerHost(
       { mode: 'disabled', ssh: false },

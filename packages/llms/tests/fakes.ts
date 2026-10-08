@@ -9,16 +9,10 @@ import type {
 import {
   type CodexProviderDeps,
   createCodexProvider as createCodexProviderBase,
-  createLmStudioOpenAiProvider as createLmStudioOpenAiProviderBase,
-  createLmStudioProvider as createLmStudioProviderBase,
   createOpenAiProvider as createOpenAiProviderBase,
   createOpenRouterProvider as createOpenRouterProviderBase,
-  createUnifiedProvider as createUnifiedProviderBase,
-  type LmStudioOpenAiProviderDeps,
-  type LmStudioProviderDeps,
   type OpenAiProviderDeps,
   type OpenRouterProviderDeps,
-  type UnifiedProviderDeps,
 } from '../src/index.js';
 
 type TestDeps<Deps extends { readonly logger: Logger }> = Omit<
@@ -35,23 +29,6 @@ export const createOpenRouterProvider = (
   deps: TestDeps<OpenRouterProviderDeps>,
 ) =>
   createOpenRouterProviderBase({
-    ...deps,
-    logger: deps.logger ?? silentLogger,
-  });
-
-export const createUnifiedProvider = (deps: TestDeps<UnifiedProviderDeps>) =>
-  createUnifiedProviderBase({
-    ...deps,
-    logger: deps.logger ?? silentLogger,
-  });
-
-export const createLmStudioProvider = (deps: TestDeps<LmStudioProviderDeps>) =>
-  createLmStudioProviderBase({ ...deps, logger: deps.logger ?? silentLogger });
-
-export const createLmStudioOpenAiProvider = (
-  deps: TestDeps<LmStudioOpenAiProviderDeps>,
-) =>
-  createLmStudioOpenAiProviderBase({
     ...deps,
     logger: deps.logger ?? silentLogger,
   });

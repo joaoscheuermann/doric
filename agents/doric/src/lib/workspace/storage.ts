@@ -21,12 +21,30 @@ export const storedState = {
   cancelled: 'CANCELLED',
 } as const;
 
+/**
+ * Text PostgreSQL can store. It rejects U+0000 in any string and an unpaired
+ * surrogate in jsonb, while tool and model output carry whatever bytes a file
+ * or command returned. Replacing those with U+FFFD keeps the conversation
+ * persistable instead of failing the whole Thread on one binary match.
+ */
+export const storable = (text: string): string =>
+  Array.from(text, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code === 0 || (code >= 0xd800 && code <= 0xdfff)
+      ? '\uFFFD'
+      : character;
+  }).join('');
+
 export const json = (
   value: unknown,
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull =>
   value === null
     ? Prisma.JsonNull
-    : (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue);
+    : (JSON.parse(
+        JSON.stringify(value, (_key: string, entry: unknown) =>
+          typeof entry === 'string' ? storable(entry) : entry,
+        ),
+      ) as Prisma.InputJsonValue);
 
 export const timestamps = (stored: {
   createdAt: Date;

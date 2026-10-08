@@ -1,11 +1,11 @@
+import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import type { ToolFactory } from 'tool';
 import { parse } from 'yaml';
 import { z } from 'zod';
-
-import type { ToolFactory } from 'tool';
 
 import { SkillSchema } from './schemas/skill.js';
 import type { Bundle, BundleManifest, Skill } from './types/bundle.js';
@@ -122,7 +122,7 @@ const loadSkill = async (
       throw new Error('Skill frontmatter must be an object.');
     }
 
-    const { ['allowed-tools']: allowedTools, ...fields } = metadata as Record<
+    const { 'allowed-tools': allowedTools, ...fields } = metadata as Record<
       string,
       unknown
     >;
@@ -205,7 +205,7 @@ const unique = (
 
 /** Loads strict, manifest-declared bundles immediately below a root directory. */
 export async function loadBundles(root: string): Promise<readonly Bundle[]> {
-  let entries;
+  let entries: Dirent[];
 
   try {
     entries = await readdir(resolve(root), { withFileTypes: true });

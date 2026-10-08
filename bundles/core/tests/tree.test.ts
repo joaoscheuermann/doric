@@ -5,10 +5,10 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/tree.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
-describe('tree tool', () => {
-  test('renders ascii tree and includes .agents while hiding other dot paths', async () => {
+void describe('tree tool', () => {
+  void test('renders ascii tree and includes .agents while hiding other dot paths', async () => {
     const root = await workspace('tree-visible');
 
     await write(root, '.agents/skill.md', 'skill');
@@ -19,7 +19,7 @@ describe('tree tool', () => {
 
     await write(root, 'visible.txt', 'visible');
 
-    const output = await factory(createFakeSandbox(root)).execute({
+    const output = await factory(createFakeSandbox(root), fakeHost()).execute({
       path: '.',
     });
 
@@ -36,7 +36,28 @@ describe('tree tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('honors gitignore whitelist rules while rendering', async () => {
+  void test('renders the working directory when no path is given', async () => {
+    const root = await workspace('tree-cwd');
+
+    await write(root, 'src/deep.ts', 'deep');
+
+    await write(root, 'outside.ts', 'outside');
+
+    const output = await factory(
+      createFakeSandbox(root),
+      fakeHost({ cwd: '/workspace/src' }),
+    ).execute({});
+
+    assert.match(output, /^\/workspace\/src\n/);
+
+    assert.match(output, /deep\.ts/);
+
+    assert.doesNotMatch(output, /outside\.ts/);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('honors gitignore whitelist rules while rendering', async () => {
     const root = await workspace('tree-ignore-whitelist');
 
     await write(root, '.gitignore', '*.txt\n!keep.txt\n');
@@ -45,7 +66,7 @@ describe('tree tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const output = await factory(createFakeSandbox(root)).execute({
+    const output = await factory(createFakeSandbox(root), fakeHost()).execute({
       path: '.',
     });
 

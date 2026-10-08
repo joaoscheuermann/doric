@@ -1,17 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
+import type { ProviderStreamEvent } from '../src/index.js';
+import { collect, createOpenRouterProvider, fakeTransport } from './fakes.js';
 
-import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
-import {
-  collect,
-  createOpenRouterProvider,
-  fakeTransport,
-  response,
-} from './fakes.js';
-
-test('streams OpenRouter deltas usage finish and accumulated tool calls', async () => {
+void test('streams OpenRouter deltas usage finish and accumulated tool calls', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       streams: [
@@ -73,7 +66,6 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
     provider.stream({
       model: 'openai/gpt-5',
       messages: [{ role: 'user', content: 'Hi' }],
-      schema: z.object({ answer: z.string() }),
     }),
   );
   const finished = events.at(-1);
@@ -156,103 +148,7 @@ test('streams OpenRouter deltas usage finish and accumulated tool calls', async 
   assert.equal(finished.finish.structured, undefined);
 });
 
-test('allows OpenRouter structured output from stream finishes without parsing', async () => {
-  const provider = createOpenRouterProvider({
-    transport: fakeTransport({
-      streams: [
-        [
-          sse({ choices: [{ delta: { content: '{"answer"' } }] }),
-          sse({
-            choices: [
-              { delta: { content: ':"Done"}' }, finish_reason: 'stop' },
-            ],
-          }),
-          'data: [DONE]\n\n',
-        ],
-      ],
-    }),
-    apiKey: 'key',
-  });
-
-  const events = await collect(
-    provider.stream({
-      model: 'openai/gpt-5',
-      messages: [{ role: 'user', content: 'Hi' }],
-      schema: z.object({ answer: z.string() }),
-    }),
-  );
-  const finished = events.at(-1);
-
-  assert.equal(finished?.type, 'response.finished');
-
-  if (finished?.type !== 'response.finished') {
-    assert.fail('Expected final response.finished event.');
-  }
-
-  assert.equal(finished.finish.structured, undefined);
-});
-
-test('allows invalid OpenRouter structured JSON from streams', async () => {
-  const completeProvider = createOpenRouterProvider({
-    transport: fakeTransport({
-      responses: [
-        response({
-          choices: [
-            {
-              finish_reason: 'stop',
-              message: { content: 'not-json' },
-            },
-          ],
-        }),
-      ],
-    }),
-    apiKey: 'key',
-  });
-
-  const streamProvider = createOpenRouterProvider({
-    transport: fakeTransport({
-      streams: [
-        [
-          sse({
-            choices: [
-              { delta: { content: 'not-json' }, finish_reason: 'stop' },
-            ],
-          }),
-          'data: [DONE]\n\n',
-        ],
-      ],
-    }),
-    apiKey: 'key',
-  });
-
-  const request = {
-    model: 'openai/gpt-5',
-    messages: [{ role: 'user', content: 'Hi' }],
-    schema: z.object({ answer: z.string() }),
-  } as const;
-
-  await assert.rejects(
-    completeProvider.complete(request),
-    (error: unknown) =>
-      error instanceof ProviderErrorObject &&
-      error.data.code === 'invalid_structured_output',
-  );
-
-  const events = await collect(streamProvider.stream(request));
-  const finished = events.at(-1);
-
-  assert.equal(finished?.type, 'response.finished');
-
-  if (finished?.type !== 'response.finished') {
-    assert.fail('Expected final response.finished event.');
-  }
-
-  assert.equal(finished.finish.text, 'not-json');
-
-  assert.equal(finished.finish.structured, undefined);
-});
-
-test('returns OpenRouter stream error events for malformed and provider errors', async () => {
+void test('returns OpenRouter stream error events for malformed and provider errors', async () => {
   const malformed = createOpenRouterProvider({
     transport: fakeTransport({ streams: [['data: not-json\n\n']] }),
     apiKey: 'key',
@@ -287,6 +183,49 @@ test('returns OpenRouter stream error events for malformed and provider errors',
       )
     ).at(-1)?.type,
     'error',
+  );
+});
+
+void test('emits no OpenRouter delta for a chunk that carries no text', async () => {
+  const provider = createOpenRouterProvider({
+    transport: fakeTransport({
+      streams: [
+        [
+          // The shape OpenRouter sends beside a reasoning token: the chunk names
+          // `content` as the empty string, which is no text at all.
+          sse({ choices: [{ delta: { content: '', reasoning: 'why' } }] }),
+          sse({ choices: [{ delta: { content: '', reasoning: ' not' } }] }),
+          sse({ choices: [{ delta: { content: 'Hi' } }] }),
+          sse({ choices: [{ delta: { reasoning: '' } }] }),
+          'data: [DONE]\n\n',
+        ],
+      ],
+    }),
+    apiKey: 'key',
+  });
+
+  const events = await collect(
+    provider.stream({
+      model: 'openai/gpt-5',
+      messages: [{ role: 'user', content: 'Hi' }],
+    }),
+  );
+
+  assert.deepEqual(
+    events.filter((event) => event.type === 'text.delta'),
+    [{ type: 'text.delta', delta: 'Hi' }],
+  );
+
+  assert.deepEqual(
+    events
+      .filter(
+        (
+          event,
+        ): event is Extract<ProviderStreamEvent, { type: 'reasoning.delta' }> =>
+          event.type === 'reasoning.delta',
+      )
+      .map((event) => event.delta),
+    ['why', ' not'],
   );
 });
 

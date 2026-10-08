@@ -1,9 +1,9 @@
 import { parseDocument } from 'yaml';
 
-export type TreeEntry = {
+export interface TreeEntry {
   readonly path: string;
   readonly description: string;
-};
+}
 
 type Tree = Map<string, Tree | TreeEntry>;
 
@@ -69,7 +69,7 @@ export const renderTree = (entries: readonly TreeEntry[]): string => {
     add(tree, entry);
   }
 
-  return ['# Project', '', ...render(tree)].join('\n') + '\n';
+  return `${['# Project', '', ...render(tree)].join('\n')}\n`;
 };
 
 const add = (tree: Tree, entry: TreeEntry): void => {

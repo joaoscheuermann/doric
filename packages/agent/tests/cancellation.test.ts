@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { createMessageStorage } from 'messages';
 import { createToolStorage, defineTool } from 'tool';
 import { z } from 'zod';
 
-import { createAgent, createToolCallStorage } from '../src/index.js';
 import type { AgentRunOptions } from '../src/index.js';
+import { createAgent, createToolCallStorage } from '../src/index.js';
 import { call, collect, completeFinish, createProvider } from './fakes.js';
 
 const barrier = () => {
@@ -17,10 +18,7 @@ const barrier = () => {
 };
 
 const setup = (
-  hooks: {
-    provider?: () => Promise<void>;
-    tool?: () => Promise<void>;
-  } = {},
+  hooks: { provider?: () => Promise<void>; tool?: () => Promise<void> } = {},
 ) => {
   const executions: string[] = [];
   const messages = createMessageStorage();
@@ -49,7 +47,7 @@ const setup = (
           await hooks.tool?.();
           return name;
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ),
   );
   const agent = createAgent({
@@ -82,7 +80,7 @@ for (const mode of ['complete', 'stream'] as const) {
       ? fixture.agent.complete('Run.', options)
       : collect(fixture.agent.stream('Run.', options));
 
-  test(`${mode} starts no provider or tools with an already aborted signal`, async () => {
+  void test(`${mode} starts no provider or tools with an already aborted signal`, async () => {
     const fixture = setup();
     const reason = new Error('cancelled');
     await assert.rejects(
@@ -93,7 +91,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assert.deepEqual(fixture.executions, []);
   });
 
-  test(`${mode} abandons a returned tool batch when cancellation occurs inside the provider`, async () => {
+  void test(`${mode} abandons a returned tool batch when cancellation occurs inside the provider`, async () => {
     const entered = barrier();
     const resume = barrier();
     const controller = new AbortController();
@@ -119,7 +117,7 @@ for (const mode of ['complete', 'stream'] as const) {
     ]);
   });
 
-  test(`${mode} lets an active tool finish but starts neither the next tool nor provider after cancellation`, async () => {
+  void test(`${mode} lets an active tool finish but starts neither the next tool nor provider after cancellation`, async () => {
     const entered = barrier();
     const resume = barrier();
     const controller = new AbortController();
@@ -155,7 +153,7 @@ for (const mode of ['complete', 'stream'] as const) {
     );
   });
 
-  test(`${mode} rechecks cancellation after an awaited tool.started callback`, async () => {
+  void test(`${mode} rechecks cancellation after an awaited tool.started callback`, async () => {
     const entered = barrier();
     const resume = barrier();
     const controller = new AbortController();
@@ -183,7 +181,7 @@ for (const mode of ['complete', 'stream'] as const) {
     );
   });
 
-  test(`${mode} preserves callback error identity without reporting a completed tool as failed`, async () => {
+  void test(`${mode} preserves callback error identity without reporting a completed tool as failed`, async () => {
     const fixture = setup();
     const failure = new Error('callback failure');
     const events: string[] = [];
@@ -234,7 +232,7 @@ for (const boundary of [
   'tool.started',
   'tool.finished',
 ] as const) {
-  test(`aborting a stream at ${boundary} prevents further tool and provider starts`, async () => {
+  void test(`aborting a stream at ${boundary} prevents further tool and provider starts`, async () => {
     const fixture = setup();
     const controller = new AbortController();
     await assert.rejects(
@@ -254,7 +252,7 @@ for (const boundary of [
     assert.equal(fixture.requests.length, 1);
   });
 
-  test(`closing a stream at ${boundary} completes abandoned calls without execution records`, async () => {
+  void test(`closing a stream at ${boundary} completes abandoned calls without execution records`, async () => {
     const fixture = setup();
     for await (const event of fixture.agent.stream('Run.')) {
       if (event.type === boundary) break;
@@ -273,7 +271,7 @@ for (const boundary of [
 }
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} handler failure leaves the abandoned batch ready for the next run without records`, async () => {
+  void test(`${mode} handler failure leaves the abandoned batch ready for the next run without records`, async () => {
     const failure = new Error('handler failed');
     const fixture = setup({
       tool: async () => {

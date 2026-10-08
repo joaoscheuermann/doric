@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,6 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 
 import pino from 'pino';
-
 import {
   createSandbox,
   type SandboxExecResult,
@@ -16,7 +16,11 @@ import {
 } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
-import { createDockerClient, type DockerClient } from '../src/index.js';
+import {
+  createDockerClient,
+  type DockerClient,
+  discardWorkspace,
+} from '../src/index.js';
 
 const timeoutMs = 20_000;
 const run = promisify(execFile);
@@ -43,7 +47,7 @@ test.before(async () => {
   await sandbox.dispose();
 });
 
-test('executes, transfers bytes, filters egress, and exposes strict SSH', async () => {
+void test('executes, transfers bytes, filters egress, and exposes strict SSH', async () => {
   const docker = createDockerClient({ timeoutMs });
   let sandbox: SandboxSession | undefined;
 
@@ -126,7 +130,44 @@ test('executes, transfers bytes, filters egress, and exposes strict SSH', async 
   }
 });
 
-test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
+void test('keeps a durable workspace across sandbox re-creation', async () => {
+  const docker = createDockerClient({ timeoutMs });
+  const workspace = `e2e-${randomUUID()}`;
+  const provision = () =>
+    createSandbox({
+      provider: docker,
+      image: 'node:22-slim',
+      imagePullPolicy: 'if-not-present',
+      resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+      workspace,
+      timeoutMs,
+    });
+  let first: SandboxSession | undefined;
+  let second: SandboxSession | undefined;
+
+  await reachable(docker);
+
+  try {
+    first = await provision();
+
+    await first.writeFile('notes/message.txt', 'durable\n');
+
+    await first.dispose();
+
+    first = undefined;
+
+    second = await provision();
+
+    assert.equal(await second.readFile('notes/message.txt'), 'durable\n');
+  } finally {
+    await first?.dispose();
+    await second?.dispose();
+    await discardWorkspace(docker, workspace);
+    await discardWorkspace(docker, workspace);
+  }
+});
+
+void test('warms, leases, replaces, and shuts down Docker sandboxes', async () => {
   const docker = createDockerClient({ timeoutMs });
 
   await reachable(docker);

@@ -5,8 +5,6 @@ import pino, { type Logger } from 'pino';
 
 import {
   createCodexProvider,
-  createLmStudioOpenAiProvider,
-  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
   type HttpTransport,
@@ -18,7 +16,7 @@ type LogRecord = Readonly<Record<string, unknown>> & {
   readonly msg: string;
 };
 
-test('emits uniform debug events with safe metadata for all operations', async () => {
+void test('emits uniform debug events with safe metadata for all operations', async () => {
   const captured = captureLogger();
   const transport = fakeTransport({
     responses: [
@@ -134,7 +132,7 @@ test('emits uniform debug events with safe metadata for all operations', async (
   }
 });
 
-test('lets the caller disable operation logs through its logger', async () => {
+void test('lets the caller disable operation logs through its logger', async () => {
   const captured = captureLogger();
   const provider = createOpenAiProvider({
     logger: captured.logger,
@@ -179,75 +177,10 @@ test('lets the caller disable operation logs through its logger', async () => {
   );
 });
 
-test('logs Jev decisions without logging state questions or answers', async () => {
+void test('logs failed unsupported operations without logging the error', async () => {
   const captured = captureLogger();
-  const provider = createOpenRouterProvider({
-    logger: captured.logger,
-    apiKey: 'PRIVATE_CREDENTIAL',
-    transport: fakeTransport({
-      responses: [
-        response({
-          model: 'typesafe/jev-1.13',
-          answers: {
-            private_question: { type: 'noul', noul: 0.9 },
-          },
-          usage: { input_tokens: 10, output_tokens: 2 },
-        }),
-      ],
-    }),
-  });
-
-  await provider.decide({
-    model: '~typesafe/jev-latest',
-    state: 'PRIVATE_STATE',
-    questions: {
-      private_question: {
-        type: 'noul',
-        instructions: 'PRIVATE_INSTRUCTIONS',
-      },
-    },
-  });
-
-  assert.deepEqual(
-    captured.records.map(({ msg }) => msg),
-    [
-      'llm provider initialized',
-      'llm decision started',
-      'llm decision completed',
-    ],
-  );
-  assert.deepEqual(
-    select(captured.records[1] ?? {}, [
-      'model',
-      'questionCount',
-      'answerCount',
-    ]),
-    { model: '~typesafe/jev-latest', questionCount: 1 },
-  );
-  assert.deepEqual(
-    select(captured.records[2] ?? {}, [
-      'model',
-      'questionCount',
-      'answerCount',
-      'inputTokens',
-      'outputTokens',
-    ]),
-    {
-      model: 'typesafe/jev-1.13',
-      answerCount: 1,
-      inputTokens: 10,
-      outputTokens: 2,
-    },
-  );
-  assert.doesNotMatch(
-    JSON.stringify(captured.records),
-    /PRIVATE_(?:STATE|INSTRUCTIONS|CREDENTIAL)|private_question/u,
-  );
-});
-
-test('logs failed unsupported operations without logging the error', async () => {
-  const captured = captureLogger();
-  const provider = createLmStudioProvider({
+  const provider = createCodexProvider({
+    authorization: 'Bearer test',
     transport: fakeTransport({}),
     logger: captured.logger,
   });
@@ -267,7 +200,7 @@ test('logs failed unsupported operations without logging the error', async () =>
   assert.doesNotMatch(JSON.stringify(captured.records), /PRIVATE_INPUT/u);
 });
 
-test('logs a cancelled terminal when a stream consumer stops early', async () => {
+void test('logs a cancelled terminal when a stream consumer stops early', async () => {
   const captured = captureLogger();
   const provider = createOpenAiProvider({
     logger: captured.logger,
@@ -287,39 +220,7 @@ test('logs a cancelled terminal when a stream consumer stops early', async () =>
   );
 });
 
-test('keeps later stream events after logging the first error terminal', async () => {
-  const captured = captureLogger();
-  const provider = createLmStudioProvider({
-    logger: captured.logger,
-    transport: fakeTransport({
-      streams: [
-        [
-          namedSse('error', { error: { message: 'private cause' } }),
-          namedSse('chat.end', {
-            result: {
-              output: [{ type: 'message', content: 'private result' }],
-            },
-          }),
-        ],
-      ],
-    }),
-  });
-
-  const events = await collect(
-    provider.stream({
-      model: 'local-model',
-      messages: [{ role: 'user', content: 'private prompt' }],
-    }),
-  );
-
-  assert.equal(events.at(-1)?.type, 'response.finished');
-  assert.deepEqual(
-    captured.records.map(({ msg }) => msg),
-    ['llm provider initialized', 'llm stream started', 'llm stream failed'],
-  );
-});
-
-test('Codex complete and model validation do not duplicate internal events', async () => {
+void test('Codex complete and model validation do not duplicate internal events', async () => {
   const captured = captureLogger();
   const provider = createCodexProvider({
     authorization: 'Bearer private',
@@ -356,15 +257,13 @@ test('Codex complete and model validation do not duplicate internal events', asy
   assert.ok(captured.records.every(({ provider }) => provider === 'codex'));
 });
 
-test('validates logger methods synchronously for every provider factory', () => {
+void test('validates logger methods synchronously for every provider factory', () => {
   const transport = fakeTransport({});
   const invalid = null as never;
   const factories = [
     () => createOpenAiProvider({ transport, logger: invalid }),
     () =>
       createOpenRouterProvider({ transport, apiKey: 'key', logger: invalid }),
-    () => createLmStudioProvider({ transport, logger: invalid }),
-    () => createLmStudioOpenAiProvider({ transport, logger: invalid }),
     () =>
       createCodexProvider({
         transport,
@@ -382,7 +281,9 @@ test('validates logger methods synchronously for every provider factory', () => 
       createOpenAiProvider({
         transport,
         logger: {
-          debug() {},
+          debug() {
+            /* Intentionally incomplete logger fixture. */
+          },
           child: () => null,
         } as never,
       }),
@@ -390,7 +291,7 @@ test('validates logger methods synchronously for every provider factory', () => 
   );
 });
 
-test('preserves thrown error identity while logging only a failed terminal', async () => {
+void test('preserves thrown error identity while logging only a failed terminal', async () => {
   const captured = captureLogger();
   const failure = new Error('PRIVATE_CAUSE');
   const transport: HttpTransport = {
@@ -398,7 +299,7 @@ test('preserves thrown error identity while logging only a failed terminal', asy
       throw failure;
     },
     async *stream() {
-      return;
+      yield* [];
     },
   };
   const provider = createOpenAiProvider({ transport, logger: captured.logger });
@@ -455,6 +356,3 @@ const finishKeys = [
 ];
 
 const sse = (value: unknown): string => `data: ${JSON.stringify(value)}\n\n`;
-
-const namedSse = (event: string, value: unknown): string =>
-  `event: ${event}\ndata: ${JSON.stringify(value)}\n\n`;

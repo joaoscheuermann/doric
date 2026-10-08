@@ -8,22 +8,22 @@ export type DockerConnection =
       readonly pipePath?: string;
     };
 
-export type CreateDockerClientOptions = {
+export interface CreateDockerClientOptions {
   readonly connection?: DockerConnection;
   readonly request?: DockerTransport;
   readonly timeoutMs?: number;
   readonly dropbearPath?: string;
   readonly statePath?: string;
-};
+}
 
 export type DockerRequestQuery = Readonly<
   Record<string, string | number | boolean | undefined>
 >;
 
-export type DockerRequestOptions = {
+export interface DockerRequestOptions {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
-};
+}
 
 export type DockerTransportRequest = DockerRequestOptions & {
   readonly method: string;
@@ -33,19 +33,19 @@ export type DockerTransportRequest = DockerRequestOptions & {
   readonly body?: unknown;
 };
 
-export type DockerResponse = {
+export interface DockerResponse {
   readonly status: number;
   readonly headers: Readonly<
     Record<string, string | readonly string[] | undefined>
   >;
   readonly body: Uint8Array;
-};
+}
 
 export type DockerTransport = (
   request: DockerTransportRequest,
 ) => Promise<DockerResponse>;
 
-export type DockerVersion = {
+export interface DockerVersion {
   readonly version?: string;
   readonly apiVersion?: string;
   readonly minApiVersion?: string;
@@ -56,9 +56,9 @@ export type DockerVersion = {
   readonly kernelVersion?: string;
   readonly experimental?: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
 
-export type CreateContainerInput = {
+export interface CreateContainerInput {
   readonly image: string;
   readonly cmd?: readonly string[];
   readonly env?: readonly string[];
@@ -69,23 +69,23 @@ export type CreateContainerInput = {
   readonly hostConfig?: Readonly<Record<string, unknown>>;
   readonly networkDisabled?: boolean;
   readonly exposedPorts?: readonly string[];
-};
+}
 
-export type PullImageInput = {
+export interface PullImageInput {
   readonly image: string;
-};
+}
 
-export type ImageInspect = {
+export interface ImageInspect {
   readonly id: string;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
 
-export type ContainerRef = {
+export interface ContainerRef {
   readonly id: string;
   readonly warnings: readonly string[];
-};
+}
 
-export type ContainerInspect = {
+export interface ContainerInspect {
   readonly id: string;
   readonly ipAddress?: string;
   readonly ports: Readonly<
@@ -95,12 +95,31 @@ export type ContainerInspect = {
     >
   >;
   readonly raw: Readonly<Record<string, unknown>>;
-};
+}
+
+export interface DockerStats {
+  /**
+   * Busy share of the container's own CPU quota, 0..100, so a container using
+   * every core it was given reads 100 rather than a fraction of the host.
+   */
+  readonly cpuPercent?: number;
+  readonly memoryUsedBytes?: number;
+  readonly memoryLimitBytes?: number;
+}
 
 export type RemoveContainerOptions = DockerRequestOptions & {
   readonly force?: boolean;
   readonly volumes?: boolean;
   readonly link?: boolean;
+};
+
+export interface CreateVolumeInput {
+  readonly name: string;
+  readonly labels?: Readonly<Record<string, string>>;
+}
+
+export type RemoveVolumeOptions = DockerRequestOptions & {
+  readonly force?: boolean;
 };
 
 export type ExecInput = DockerRequestOptions & {
@@ -111,26 +130,30 @@ export type ExecInput = DockerRequestOptions & {
   readonly tty?: boolean;
 };
 
-export type ExecResult = {
+export interface ExecResult {
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   readonly stdoutBytes: Uint8Array;
   readonly stderrBytes: Uint8Array;
-};
+}
 
-export type ArchiveWriteInput = {
+export interface ArchiveWriteInput {
   readonly path: string;
   readonly archive: Uint8Array;
   readonly noOverwriteDirNonDir?: boolean;
   readonly copyUidGid?: boolean;
-};
+}
 
-export type ArchiveReadInput = {
+export interface ArchiveReadInput {
   readonly path: string;
-};
+}
 
 export interface DockerClient extends SandboxProvider {
+  start?(
+    container: ContainerRef | string,
+    input: SandboxProcessInput,
+  ): Promise<SandboxProcess>;
   ping(options?: DockerRequestOptions): Promise<void>;
 
   version(options?: DockerRequestOptions): Promise<DockerVersion>;
@@ -160,6 +183,16 @@ export interface DockerClient extends SandboxProvider {
     options?: DockerRequestOptions,
   ): Promise<ContainerInspect>;
 
+  /**
+   * Reads one point-in-time resource sample from the daemon. `cpuCount` is the
+   * container's CPU quota in cores, used to express `cpuPercent` against the
+   * container rather than the host.
+   */
+  stats(
+    container: ContainerRef | string,
+    input?: { readonly cpuCount?: number } & DockerRequestOptions,
+  ): Promise<DockerStats>;
+
   removeContainer(
     container: ContainerRef | string,
     options?: RemoveContainerOptions,
@@ -183,6 +216,19 @@ export interface DockerClient extends SandboxProvider {
     input: ArchiveReadInput,
     options?: DockerRequestOptions,
   ): Promise<Uint8Array>;
+
+  /** Creates a named volume, or keeps the existing volume with that name. */
+  createVolume(
+    input: CreateVolumeInput,
+    options?: DockerRequestOptions,
+  ): Promise<void>;
+
+  /** Removes a named volume; a volume that is not there is not an error. */
+  removeVolume(name: string, options?: RemoveVolumeOptions): Promise<void>;
 }
 
-import type { SandboxProvider } from 'sandbox';
+import type {
+  SandboxProcess,
+  SandboxProcessInput,
+  SandboxProvider,
+} from 'sandbox';

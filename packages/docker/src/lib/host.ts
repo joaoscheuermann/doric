@@ -22,17 +22,17 @@ import type {
 } from './types/docker.js';
 import { packFile } from './utils/tar.js';
 
-export type DockerHostConfig = {
+export interface DockerHostConfig {
   readonly connection: DockerConnection;
   readonly dropbearPath: string;
   readonly statePath: string;
   readonly platform: NodeJS.Platform;
-};
+}
 
-export type DockerHostResources = {
+export interface DockerHostResources {
   readonly access?: SandboxSshAccess;
   dispose(): Promise<void>;
-};
+}
 
 const protectedCidrs = [
   '0.0.0.0/8',

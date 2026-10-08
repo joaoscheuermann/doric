@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { eventJson } from '../src/lib/events/serialization.js';
 
-test('preserves reasoning replay and tool IO while redacting credentials', () => {
+void test('preserves reasoning replay and tool IO while redacting credentials', () => {
   const event = {
     type: 'response.finished',
     finish: {
@@ -25,13 +25,40 @@ test('preserves reasoning replay and tool IO while redacting credentials', () =>
   });
 });
 
-test('omits undefined object properties while marking array entries', () => {
+void test('ignores an empty credential instead of redacting between every character', () => {
+  const event = { text: 'private token-value reasoning' };
+
+  assert.deepEqual(eventJson(event, ['token-value', '']), {
+    text: 'private [REDACTED] reasoning',
+  });
+});
+
+void test('omits undefined object properties while marking array entries', () => {
   assert.deepEqual(eventJson({ absent: undefined, values: [undefined] }, []), {
     values: ['[Undefined]'],
   });
 });
 
-test('serializes Error fields own properties cycles and non-JSON values', () => {
+void test('keeps an empty record as the empty object, and marks what exposes no property', () => {
+  // A tool called without arguments carries an empty payload, and that is `{}`:
+  // a marker here would reach the transcript as "[Object: [object Object]]".
+  assert.deepEqual(eventJson({ call: { payload: {} } }, []), {
+    call: { payload: {} },
+  });
+  assert.deepEqual(eventJson({ built: Object.create(null) as object }, []), {
+    built: {},
+  });
+
+  // A value whose contents JSON would drop silently is marked instead.
+  assert.deepEqual(eventJson({ map: new Map([['a', 1]]) }, []), {
+    map: '[Map: [object Map]]',
+  });
+  assert.deepEqual(eventJson({ set: new Set([1]) }, []), {
+    set: '[Set: [object Set]]',
+  });
+});
+
+void test('serializes Error fields own properties cycles and non-JSON values', () => {
   const cause = new Error('root secret');
 
   const error = new Error('failed secret', { cause }) as Error & {

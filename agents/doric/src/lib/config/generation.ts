@@ -1,93 +1,76 @@
-import type { Logger } from 'pino';
-
 import type { Bundle, Skill } from 'bundle';
 import {
   createFetchTransport,
-  createOpenAiCompatibleProvider,
+  createProviderForKind,
   type LlmProvider,
+  type SecretSource,
 } from 'llms';
+import type { Logger } from 'pino';
 import type { ToolFactory } from 'tool';
 
-import type { DoricConfig } from './schema.js';
-import { coordinationNames } from '../agents/direct/tools/index.js';
+import type { CredentialService } from '../credentials/service.js';
+import { type DoricConfig, providerCredentials } from './schema.js';
 
-export type Catalog = {
+export interface Catalog {
   readonly skills: readonly Skill[];
   readonly tools: readonly ToolFactory[];
-};
+}
 
-export type Generation = {
+export interface Generation {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
   readonly catalog: Catalog;
-};
+}
 
-type GenerationOptions = {
+interface GenerationOptions {
   readonly snapshot: DoricConfig;
+  readonly credentials: CredentialService;
   readonly bundles: readonly Bundle[];
   readonly logger: Logger;
-  readonly environment?: NodeJS.ProcessEnv;
-};
+}
 
-/** Builds one provider and bundle generation captured by new Projects. */
-export const createGeneration = async ({
+/**
+ * Builds the providers and catalog of one configuration. Each provider is built
+ * from the kind it names and that kind's own values, and a `secret` value is
+ * passed as a source rather than a value, so the key is read from the credential
+ * store on every call and a rotation reaches a prompt that is already running.
+ */
+export const createGeneration = ({
   snapshot,
+  credentials,
   bundles,
   logger,
-  environment = process.env,
 }: GenerationOptions): Promise<Generation> => {
-  for (const bundle of bundles) {
-    for (const { factory } of bundle.tools) {
-      if (coordinationNames.some((name) => name === factory.name)) {
-        throw new Error('Bundle tool conflicts with a host coordination tool.');
-      }
-    }
-  }
-  const credentials = new Set<string>();
-
-  const credential = (name: string): string => {
-    const value = environment[name] ?? '';
-
-    if (value.length > 0) {
-      credentials.add(value);
-    }
-
-    return value;
-  };
-
   const providers = new Map(
     snapshot.configuration.providers.map((provider) => [
       provider.id,
-      createOpenAiCompatibleProvider({
-        transport: createFetchTransport(),
-        baseUrl: provider.baseUrl,
-        apiKey: () => credential(provider.apiKeyEnv),
-        identity: { id: provider.id, name: provider.id },
-        logger,
-      }),
+      createProviderForKind(
+        provider.kind,
+        providerValues(provider, credentials),
+        {
+          transport: createFetchTransport(),
+          logger,
+          identity: { id: provider.id, name: provider.id },
+        },
+      ),
     ]),
   );
 
-  const redactions = () => {
-    snapshot.configuration.providers.forEach(({ apiKeyEnv }) =>
-      credential(apiKeyEnv),
-    );
-
-    return [...credentials];
-  };
-
-  return {
+  return Promise.resolve({
     snapshot,
     providers,
-    redactions,
+    // Every secret the host holds is redacted, so no persisted history, event,
+    // tool result, or log line can carry one, and a rotation is covered the
+    // moment the store holds it.
+    redactions: () => credentials.secrets(),
     catalog: {
       skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),
       tools: bundles.flatMap(({ tools }) =>
         tools.map(({ factory }) => factory),
       ),
     },
-  };
+  });
 };
 
 export const providerFor = (
@@ -101,4 +84,24 @@ export const providerFor = (
   }
 
   return provider;
+};
+
+/**
+ * The values one configured provider carries, with each `secret` field passed as
+ * the credential it names read at call time. A credential the store cannot read
+ * yet contributes an empty value, which every kind reads as "no secret", exactly
+ * like the empty secrets the credential migration seeds.
+ */
+const providerValues = (
+  provider: DoricConfig['configuration']['providers'][number],
+  credentials: CredentialService,
+): Readonly<Record<string, SecretSource>> => {
+  const values: Record<string, SecretSource> = {
+    ...provider.configuration,
+  };
+
+  for (const { field, id } of providerCredentials(provider))
+    values[field.key] = () => credentials.find(id)?.secret ?? '';
+
+  return values;
 };

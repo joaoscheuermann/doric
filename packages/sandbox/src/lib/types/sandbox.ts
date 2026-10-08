@@ -1,10 +1,10 @@
-export type SandboxResources = {
+export interface SandboxResources {
   readonly cpuCount: number;
   readonly memoryMiB: number;
   readonly diskMiB: number;
-};
+}
 
-export type SandboxNetworkPolicy = {
+export interface SandboxNetworkPolicy {
   readonly mode: 'disabled' | 'egress';
   readonly ssh?:
     | boolean
@@ -19,7 +19,7 @@ export type SandboxNetworkPolicy = {
     readonly protocol: 'tcp' | 'udp';
     readonly ports: readonly number[];
   }[];
-};
+}
 
 export type NormalizedSandboxNetworkPolicy = Omit<
   SandboxNetworkPolicy,
@@ -35,16 +35,16 @@ export type NormalizedSandboxNetworkPolicy = Omit<
       };
 };
 
-export type SandboxSshAccess = {
+export interface SandboxSshAccess {
   readonly host: string;
   readonly port: number;
   readonly username: 'root';
   readonly privateKey: string;
   readonly knownHosts: string;
   readonly hostKeyFingerprint: string;
-};
+}
 
-export type SandboxExecInput = {
+export interface SandboxExecInput {
   readonly cmd: readonly string[];
   readonly cwd?: string;
   readonly env?: readonly string[];
@@ -52,29 +52,38 @@ export type SandboxExecInput = {
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly tty?: boolean;
-};
+}
 
-export type SandboxExecResult = {
+export interface SandboxExecResult {
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   readonly stdoutBytes: Uint8Array;
   readonly stderrBytes: Uint8Array;
-};
+}
 
-export type SandboxProvisionInput = {
+export interface SandboxProvisionInput {
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
   readonly name?: string;
+  /** The durable workspace this sandbox serves; absent means a scratch one. */
+  readonly workspace?: string;
   readonly root: string;
   readonly resources: SandboxResources;
   readonly network: NormalizedSandboxNetworkPolicy;
   readonly timeoutMs?: number;
-};
+}
 
 export interface SandboxRuntime {
   readonly id: string;
+  start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+  /**
+   * The runtime's own resource reading, where the provider can produce one. A
+   * provider that cannot see its sandbox's accounting leaves it absent rather
+   * than answering an empty reading.
+   */
+  stats?(): Promise<SandboxStats>;
 
   putFile(path: string, bytes: Uint8Array): Promise<void>;
 
@@ -101,34 +110,66 @@ export type GitAuth =
       readonly password: string;
     };
 
-export type CloneRepoInput = {
+export interface CloneRepoInput {
   readonly url: string;
   readonly directory?: string;
   readonly branch?: string;
   readonly commit?: string;
   readonly auth?: GitAuth;
   readonly timeoutMs?: number;
-};
+}
 
-export type ClonedRepo = { readonly path: string; readonly commit: string };
+export interface ClonedRepo {
+  readonly path: string;
+  readonly commit: string;
+}
 
-export type CreateSandboxOptions = {
+export interface CreateSandboxOptions {
   readonly provider: SandboxProvider;
   readonly image: string;
   readonly imagePullPolicy?: 'always' | 'if-not-present';
   readonly name?: string;
+  /** The durable workspace this sandbox serves; absent means a scratch one. */
+  readonly workspace?: string;
   readonly root?: string;
   readonly resources: SandboxResources;
   readonly network?: SandboxNetworkPolicy;
   readonly timeoutMs?: number;
-};
+}
 
-export type SandboxDiffInput = { readonly cwd?: string };
+export interface SandboxDiffInput {
+  readonly cwd?: string;
+  /** Workspace-relative paths that scope the diff; the whole tree when omitted. */
+  readonly paths?: readonly string[];
+}
+
+export interface SandboxStats {
+  /**
+   * The sandbox's busy share of its own CPU allotment, 0..100, so a sandbox
+   * using every core it was given reads 100 rather than a fraction of the host.
+   */
+  readonly cpuPercent?: number;
+  /** The cores this sandbox's quota allows, where the provider knows them. */
+  readonly cpuCount?: number;
+  readonly memoryUsedBytes?: number;
+  /** The memory the sandbox is held to, absent where none is enforced. */
+  readonly memoryLimitBytes?: number;
+  /** When the reading was taken, ISO-8601. */
+  readonly at: string;
+}
 
 export interface Sandbox {
   readonly id: string;
   readonly root: string;
+  start?(input: SandboxProcessInput): Promise<SandboxProcess>;
   exec(input: SandboxExecInput): Promise<SandboxExecResult>;
+  /**
+   * What this sandbox is consuming right now, or `undefined` when its provider
+   * offers no reading. It is a read: it never provisions, restarts or interrupts
+   * anything, and a sandbox that cannot answer stays a working sandbox. Absent
+   * altogether on implementations that predate measurement.
+   */
+  stats?(): Promise<SandboxStats | undefined>;
 
   cloneRepo(input: CloneRepoInput): Promise<ClonedRepo>;
 
@@ -147,4 +188,25 @@ export interface Sandbox {
 
 export interface SandboxSession extends Sandbox {
   dispose(): Promise<void>;
+}
+
+export interface SandboxProcessOutput {
+  readonly stream: 'stdout' | 'stderr';
+  readonly data: string;
+}
+
+/** Starts a live process. TTY combines stdout and stderr into stdout. */
+export interface SandboxProcessInput extends SandboxExecInput {
+  readonly cols?: number;
+  readonly rows?: number;
+  readonly onOutput?: (output: SandboxProcessOutput) => void;
+}
+
+export interface SandboxProcess {
+  /** Final output contains at most the last MiB of each stream. */
+  readonly result: Promise<SandboxExecResult>;
+  write(data: string): Promise<void>;
+  resize(cols: number, rows: number): Promise<void>;
+  /** Terminates the remote process tree, not just its transport. */
+  terminate(): Promise<void>;
 }

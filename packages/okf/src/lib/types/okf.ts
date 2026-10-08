@@ -37,7 +37,7 @@ export type ProgressEvent =
 
 export type Progress = (event: ProgressEvent) => void;
 
-export type OkfConfig = {
+export interface OkfConfig {
   readonly provider: LlmProvider;
   readonly model: string;
   readonly effort?: ReasoningEffort;
@@ -46,13 +46,13 @@ export type OkfConfig = {
   readonly ignore?: readonly string[];
   readonly signal?: AbortSignal;
   readonly progress?: Progress;
-};
+}
 
-export type GenerateResult = {
+export interface GenerateResult {
   readonly root: string;
   readonly output: string;
   readonly index: string;
   readonly files: readonly string[];
   readonly generated: number;
   readonly cached: number;
-};
+}

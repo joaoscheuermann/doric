@@ -1,0 +1,47 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-threads",
+  "projectType": "library",
+  "sourceRoot": "bundles/threads",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "dependsOn": ["^build"],
+      "outputs": ["{workspaceRoot}/agents/doric/dist/bundles/threads"],
+      "options": {
+        "outputPath": "agents/doric/dist/bundles/threads",
+        "main": "bundles/threads/index.mts",
+        "tsConfig": "bundles/threads/tsconfig.json",
+        "assets": [
+          {
+            "input": "bundles/threads",
+            "glob": "manifest.json",
+            "output": "."
+          },
+          {
+            "input": "bundles/threads",
+            "glob": "skills/**/SKILL.md",
+            "output": "."
+          }
+        ]
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --build bundles/threads/tsconfig.json --emitDeclarationOnly"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "tsc -p bundles/threads/tsconfig.spec.json",
+          "node --test bundles/threads/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

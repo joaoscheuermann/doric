@@ -1,6 +1,6 @@
-import { z } from 'zod';
-
+import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
+import { z } from 'zod';
 
 import { ToolErrorObject } from './classes/tool-error.js';
 import type { JsonObject } from './types/json.js';
@@ -9,6 +9,7 @@ import type {
   Tool,
   ToolCall,
   ToolCallRequest,
+  ToolConfig,
   ToolDefinition,
   ToolFactory,
   ToolInput,
@@ -19,7 +20,7 @@ import type {
 } from './types/tool.js';
 import { asJsonObject, excerpt, isJsonValue } from './utils/json.js';
 
-/** Defines an inspectable tool factory that binds execution to a sandbox. */
+/** Defines an inspectable tool factory that binds execution to a sandbox and host facade. */
 export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
   options: DefineToolOptions<Input, Output>,
 ): ToolFactory<Input, Output> => {
@@ -39,14 +40,18 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     strict: options.strict ?? true,
   };
 
-  const factory = ((sandbox: Sandbox): Tool<Input, Output> => ({
+  const factory = ((
+    sandbox: Sandbox,
+    host: Host,
+    config: ToolConfig = {},
+  ): Tool<Input, Output> => ({
     name: options.name,
     description: options.description,
     input: options.input,
     output: options.output,
     definition,
     execute: async (payload) => {
-      const result = await options.execute(sandbox, payload);
+      const result = await options.execute(sandbox, host, payload, config);
       const parsed = options.output.safeParse(result);
 
       if (parsed.success) {
@@ -68,6 +73,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     input: { value: options.input },
     output: { value: options.output },
     definition: { value: definition },
+    settings: { value: options.settings ?? [] },
   });
 
   return factory;
@@ -98,20 +104,24 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
 
   const byName = new Map(entries);
 
-  const validate = (call: ToolCall | ToolCallRequest): ToolCall => {
-    const parsed = normalizeCall(call);
-    const tool = byName.get(parsed.name);
+  const requireTool = (call: ToolCall): Tool => {
+    const tool = byName.get(call.name);
 
     if (tool === undefined) {
       throw new ToolErrorObject({
         code: 'unknown_tool',
-        toolName: parsed.name,
-        callId: parsed.id,
-        message: `Unknown tool requested: ${parsed.name}`,
+        toolName: call.name,
+        callId: call.id,
+        message: `Unknown tool requested: ${call.name}`,
       });
     }
 
-    validatePayload(tool, parsed);
+    return tool;
+  };
+
+  const validate = (call: ToolCall | ToolCallRequest): ToolCall => {
+    const parsed = normalizeCall(call);
+    validatePayload(requireTool(parsed), parsed);
 
     return parsed;
   };
@@ -123,7 +133,7 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
     get: (name: string) => byName.get(name),
     execute: async (call: ToolCall | ToolCallRequest): Promise<unknown> => {
       const parsed = validate(call);
-      const tool = byName.get(parsed.name)!;
+      const tool = requireTool(parsed);
       const payload = validatePayload(tool, parsed);
 
       try {

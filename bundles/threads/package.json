@@ -1,0 +1,13 @@
+{
+  "name": "bundle-threads",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "host": "0.0.1",
+    "sandbox": "0.0.1",
+    "tool": "0.0.1",
+    "tslib": "^2.3.0",
+    "zod": "^4.4.3"
+  }
+}

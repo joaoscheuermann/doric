@@ -1,3 +1,3 @@
-export type OkfToolOptions = {
+export interface OkfToolOptions {
   readonly workspaceRoot: string;
-};
+}

@@ -12,7 +12,7 @@ async function* splitStream(text: string) {
   yield bytes.slice(split);
 }
 
-test('decodes split UTF-8 independently in interleaved streams', async () => {
+void test('decodes split UTF-8 independently in interleaved streams', async () => {
   const first = parseSseEvents(splitStream('😀'))[Symbol.asyncIterator]();
   const second = parseSseEvents(splitStream('é'))[Symbol.asyncIterator]();
 
@@ -24,7 +24,7 @@ test('decodes split UTF-8 independently in interleaved streams', async () => {
   assert.equal((await second.next()).done, true);
 });
 
-test('closing a stream with incomplete UTF-8 does not contaminate another stream', async () => {
+void test('closing a stream with incomplete UTF-8 does not contaminate another stream', async () => {
   let closed = false;
   const first = parseSseEvents(
     (async function* () {

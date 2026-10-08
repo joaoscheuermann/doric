@@ -1,19 +1,22 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import hostPath from 'node:path';
-import { posix as path } from 'node:path';
+import hostPath, { posix as path } from 'node:path';
 import { describe, test } from 'node:test';
 
 import type { SandboxSession } from 'sandbox';
 
 import factory from '../tools/write.js';
+import { fakeHost } from './fake-sandbox.js';
 
-describe('write tool', () => {
-  test('creates parent directories and returns byte count with diff', async () => {
+void describe('write tool', () => {
+  void test('creates parent directories and returns byte count with diff', async () => {
     const sandbox = await fakeSandbox('write');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(
+      sandbox,
+      fakeHost({ cwd: '/workspace/repo' }),
+    ).execute({
       path: 'notes/today.txt',
       content: 'hello',
     });
@@ -36,10 +39,40 @@ describe('write tool', () => {
     await sandbox.dispose();
   });
 
-  test('rejects empty paths with structured error output', async () => {
+  void test('resolves relative paths against the working directory the thread holds', async () => {
+    const sandbox = await fakeSandbox('write-cwd');
+    const host = fakeHost({ cwd: '/workspace/repo' });
+    const tool = factory(sandbox, host);
+
+    await tool.execute({ path: 'first.txt', content: 'first' });
+
+    await host.workspace.setCwd('src');
+
+    await tool.execute({ path: 'second.txt', content: 'second' });
+
+    await tool.execute({ path: '/workspace/repo/third.txt', content: 'third' });
+
+    assert.deepEqual(sandbox.writes, [
+      '/workspace/repo/first.txt',
+      '/workspace/repo/src/second.txt',
+      '/workspace/repo/third.txt',
+    ]);
+
+    assert.equal(
+      await sandbox.readHost('/workspace/repo/src/second.txt'),
+      'second',
+    );
+
+    await sandbox.dispose();
+  });
+
+  void test('rejects empty paths with structured error output', async () => {
     const sandbox = await fakeSandbox('write-empty');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(
+      sandbox,
+      fakeHost({ cwd: '/workspace/repo' }),
+    ).execute({
       path: '',
       content: 'hello',
     });

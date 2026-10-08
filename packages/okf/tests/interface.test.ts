@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { test, type TestContext } from 'node:test';
+import { type TestContext, test } from 'node:test';
 
 import Parser from 'tree-sitter';
 
@@ -21,14 +21,16 @@ const callerCannotForgeTrustedErrors = (): void => {
 void callerCannotForgeTrustedErrors;
 
 const tempRoot = async (context: TestContext): Promise<string> => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'okf-interface-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'okf-interface-')),
+  );
 
   context.after(() => fs.rm(root, { recursive: true, force: true }));
 
   return root;
 };
 
-test('derives type from the lowercase final extension', () => {
+void test('derives type from the lowercase final extension', () => {
   assert.equal(detectType('src/FILE.TSX'), 'tsx');
 
   assert.equal(detectType('archive.tar.GZ'), 'gz');
@@ -38,7 +40,7 @@ test('derives type from the lowercase final extension', () => {
   assert.equal(detectType('.env'), 'no-extension');
 });
 
-test('extracts sorted TS imports exports aliases reexports and public members', async (context) => {
+void test('extracts sorted TS imports exports aliases reexports and public members', async (context) => {
   const root = await tempRoot(context);
 
   await fs.mkdir(path.join(root, 'utils'));
@@ -129,7 +131,7 @@ export class Service {
   ]);
 });
 
-test('extracts ESM JSX and CommonJS without non-literal calls', async (context) => {
+void test('extracts ESM JSX and CommonJS without non-literal calls', async (context) => {
   const root = await tempRoot(context);
 
   const content = `
@@ -166,7 +168,7 @@ export const View = () => <section>OK</section>;
   assert.equal(result?.exports?.types, undefined);
 });
 
-test('extracts abstract and ambient exported classes with public members', async (context) => {
+void test('extracts abstract and ambient exported classes with public members', async (context) => {
   const root = await tempRoot(context);
 
   const content = `
@@ -204,7 +206,7 @@ declare class HiddenService { visible(): void; }
   ]);
 });
 
-test('extracts TypeScript import equals export equals and type reexports', async (context) => {
+void test('extracts TypeScript import equals export equals and type reexports', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all([
@@ -256,7 +258,7 @@ export { type Other } from './types';
   ]);
 });
 
-test('extracts bracket and shorthand CommonJS exports canonically', async (context) => {
+void test('extracts bracket and shorthand CommonJS exports canonically', async (context) => {
   const root = await tempRoot(context);
 
   const content = `
@@ -288,7 +290,7 @@ module.exports = { Service, make, renamed: make };
   ]);
 });
 
-test('parses every supported grammar mapping and omits JSON interfaces', async (context) => {
+void test('parses every supported grammar mapping and omits JSON interfaces', async (context) => {
   const root = await tempRoot(context);
 
   const cases = [
@@ -310,7 +312,7 @@ test('parses every supported grammar mapping and omits JSON interfaces', async (
   }
 });
 
-test('resolves exact files and circular imports while deduplicating symbols', async (context) => {
+void test('resolves exact files and circular imports while deduplicating symbols', async (context) => {
   const root = await tempRoot(context);
 
   await Promise.all([
@@ -345,7 +347,7 @@ test('resolves exact files and circular imports while deduplicating symbols', as
   ]);
 });
 
-test('rejects strict TS JavaScript and JSON syntax errors', async (context) => {
+void test('rejects strict TS JavaScript and JSON syntax errors', async (context) => {
   const root = await tempRoot(context);
 
   const cases = [
@@ -384,7 +386,7 @@ test('rejects strict TS JavaScript and JSON syntax errors', async (context) => {
   }
 });
 
-test('parses valid supported source larger than the default Tree-sitter buffer', async (context) => {
+void test('parses valid supported source larger than the default Tree-sitter buffer', async (context) => {
   const root = await tempRoot(context);
   const prefix = 'export const value = "';
   const suffix = '";';
@@ -400,8 +402,9 @@ test('parses valid supported source larger than the default Tree-sitter buffer',
   assert.deepEqual(result?.exports?.variables, ['value']);
 });
 
-test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) => {
+void test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) => {
   const root = await tempRoot(context);
+  // Called below with the parser as its explicit receiver.
   const original = Parser.prototype.parse;
   const observed: number[] = [];
 
@@ -440,7 +443,7 @@ test('sizes the Tree-sitter buffer from UTF-16 content length', async (context) 
   );
 });
 
-test('reports native parse failures with curated details', async (context) => {
+void test('reports native parse failures with curated details', async (context) => {
   const root = await tempRoot(context);
   const diagnostic = 'PRIVATE_NATIVE_PARSE_DIAGNOSTIC';
 

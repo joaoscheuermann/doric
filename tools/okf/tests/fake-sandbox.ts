@@ -1,6 +1,5 @@
 import { lstat, readdir, readFile } from 'node:fs/promises';
-import hostPath from 'node:path';
-import { posix as path } from 'node:path';
+import hostPath, { posix as path } from 'node:path';
 
 import type {
   SandboxExecInput,
@@ -10,10 +9,10 @@ import type {
 
 export const WORKSPACE_ROOT = '/workspace';
 
-export type FakeSandbox = {
+export interface FakeSandbox {
   readonly session: SandboxSession;
   readonly reads: readonly string[];
-};
+}
 
 export const createFakeSandbox = (localRoot: string): FakeSandbox => {
   const reads: string[] = [];
@@ -34,6 +33,8 @@ export const createFakeSandbox = (localRoot: string): FakeSandbox => {
       putFile: reject,
       getFile: reject,
       diff: reject,
+      ssh: async () => undefined,
+      stats: async () => undefined,
       dispose: async () => undefined,
     },
   };

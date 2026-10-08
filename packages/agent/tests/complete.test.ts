@@ -6,12 +6,12 @@ import { createMessageStorage } from 'messages';
 
 import {
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
 } from './fakes.js';
 
-test('complete returns the provider response metadata', async () => {
+void test('complete returns the provider response metadata', async () => {
   const finish: ProviderFinished = {
     ...completeFinish('Final answer.'),
     usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
@@ -38,7 +38,7 @@ test('complete returns the provider response metadata', async () => {
   assert.equal(response.finish.text, 'Final answer.');
 });
 
-test('complete forwards configured request controls to the provider', async () => {
+void test('complete forwards configured request controls to the provider', async () => {
   const provider = createProvider({ complete: () => completeFinish('Done.') });
 
   const definition = {
@@ -81,7 +81,7 @@ test('complete forwards configured request controls to the provider', async () =
   assert.deepEqual(request?.flags, { includeUsage: true });
 });
 
-test('complete stores conversation messages without persisting the system prompt', async () => {
+void test('complete stores conversation messages without persisting the system prompt', async () => {
   const provider = createProvider({ complete: () => completeFinish('Done.') });
   const messages = createMessageStorage();
 

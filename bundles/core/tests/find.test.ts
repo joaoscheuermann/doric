@@ -5,10 +5,10 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/find.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
-describe('find tool', () => {
-  test('returns matching files relative to the requested search path', async () => {
+void describe('find tool', () => {
+  void test('returns matching files relative to the requested search path', async () => {
     const root = await workspace('find-matches');
 
     await write(root, 'src/a.ts', 'a');
@@ -17,7 +17,7 @@ describe('find tool', () => {
 
     await write(root, 'src/c.txt', 'c');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '*.ts',
       path: 'src',
     });
@@ -31,7 +31,35 @@ describe('find tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('respects gitignore files while walking', async () => {
+  void test('searches the working directory and leaves an absolute path absolute', async () => {
+    const root = await workspace('find-cwd');
+
+    await write(root, 'src/a.ts', 'a');
+
+    await write(root, 'b.ts', 'b');
+
+    const host = fakeHost({ cwd: '/workspace/src' });
+    const sandbox = createFakeSandbox(root);
+
+    assert.deepEqual(
+      (await factory(sandbox, host).execute({ pattern: '*.ts' })).results,
+      ['a.ts'],
+    );
+
+    assert.deepEqual(
+      (
+        await factory(sandbox, host).execute({
+          pattern: '*.ts',
+          path: '/workspace',
+        })
+      ).results,
+      ['b.ts', 'src/a.ts'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('respects gitignore files while walking', async () => {
     const root = await workspace('find-ignore');
 
     await write(root, '.gitignore', '*.txt\n!keep.txt\n');
@@ -42,7 +70,7 @@ describe('find tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '*.txt',
     });
 

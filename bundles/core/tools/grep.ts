@@ -1,15 +1,14 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_LIMIT = 100;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const MAX_LINE_LENGTH = 500;
 const description =
-  'Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.';
+  'Search file contents for a pattern. Returns matching lines with file paths and line numbers. A relative path resolves against the current working directory. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.';
 
 export const input = z
   .object({
@@ -49,11 +48,11 @@ export type GrepOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type IgnorePattern = {
+interface IgnorePattern {
   readonly base: string;
   readonly pattern: string;
   readonly negated: boolean;
-};
+}
 
 type PathKind = 'directory' | 'file' | 'missing' | 'other';
 
@@ -63,19 +62,20 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<GrepOutput> =>
-    execute(sandbox.root, sandbox, input),
+  execute: (sandbox, host, input): Promise<GrepOutput> =>
+    execute(sandbox.root, host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
   workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<GrepOutput> => {
   const searchDir = input.path ?? '.';
-  const searchPath = resolvePath(workspaceRoot, searchDir);
+  const searchPath = resolvePath(workspaceRoot, cwd, searchDir);
 
   if (typeof searchPath === 'string') {
     return empty(searchPath);
@@ -441,12 +441,13 @@ const compileGlob = (pattern: string): RegExp | string => {
 
 const resolvePath = (
   workspaceRoot: string,
+  cwd: string,
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
 
   const resolved = normalizePath(
-    path.isAbsolute(value) ? value : path.join(root, value),
+    path.isAbsolute(value) ? value : path.join(cwd, value),
   );
 
   if (!contains(root, resolved)) {

@@ -11,27 +11,27 @@ import type {
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
+  ProviderRerankRequest,
   ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
-import { parseStructuredOutput } from './structured.js';
 import { withProviderLogging } from './logging.js';
 import { createOpenAiProviderCore, type SecretSource } from './openai.js';
+import { parseStructuredOutput } from './structured.js';
 
 const codexBaseUrl = 'https://chatgpt.com/backend-api/codex';
 const codexDefaultInstructions = 'You are Codex, a coding agent.';
 
-export type CodexProviderDeps = {
+export interface CodexProviderDeps {
   readonly transport: HttpTransport;
   readonly authorization: SecretSource;
   readonly chatGptAccountId?: SecretSource;
   readonly fedramp?: boolean;
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
+}
 
 export const codexMetadata: ProviderMetadata = {
   id: 'codex',
@@ -99,24 +99,26 @@ export const createCodexProvider = (deps: CodexProviderDeps): LlmProvider => {
 
       complete,
 
-      async embedding(
+      embedding(
         _request: ProviderEmbeddingRequest,
       ): Promise<ProviderEmbeddingFinished> {
-        throw new ProviderErrorObject({
-          provider: 'codex',
-          code: 'unsupported_embeddings',
-          message: 'Codex provider does not support embeddings.',
-        });
+        return Promise.reject(
+          new ProviderErrorObject({
+            provider: 'codex',
+            code: 'unsupported_embeddings',
+            message: 'Codex provider does not support embeddings.',
+          }),
+        );
       },
 
-      async rerank(
-        _request: ProviderRerankRequest,
-      ): Promise<ProviderRerankFinished> {
-        throw new ProviderErrorObject({
-          provider: 'codex',
-          code: 'unsupported_reranking',
-          message: 'Codex provider does not support reranking.',
-        });
+      rerank(_request: ProviderRerankRequest): Promise<ProviderRerankFinished> {
+        return Promise.reject(
+          new ProviderErrorObject({
+            provider: 'codex',
+            code: 'unsupported_reranking',
+            message: 'Codex provider does not support reranking.',
+          }),
+        );
       },
     },
     deps.logger,

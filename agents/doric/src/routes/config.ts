@@ -1,10 +1,17 @@
 import { Router } from 'express';
 
 import { ConfigInputSchema } from '../lib/config/schema.js';
-import type { ConfigService } from '../lib/config/service.js';
+import {
+  ConfigCredentialError,
+  type ConfigService,
+  ConfigToolError,
+} from '../lib/config/service.js';
 import { sendError } from '../lib/http/errors.js';
 
-/** Exposes the credential-free singleton configuration without changing its schema. */
+/**
+ * Exposes the singleton configuration. It holds no secret of its own: it names
+ * credentials by id, so what it answers is what it accepts.
+ */
 export const createConfigRouter = (service: ConfigService): Router => {
   const router = Router();
 
@@ -28,7 +35,16 @@ export const createConfigRouter = (service: ConfigService): Router => {
 
     try {
       response.json(await service.replace(parsed.data));
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof ConfigCredentialError ||
+        error instanceof ConfigToolError
+      ) {
+        sendError(response, 422, 'invalid_config', error.message);
+
+        return;
+      }
+
       sendError(
         response,
         503,

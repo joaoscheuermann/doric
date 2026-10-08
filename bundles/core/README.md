@@ -8,10 +8,15 @@ artifact through the `bundle` package.
 
 The bundle provides these always-available tools:
 
+- `cwd` — report or move the thread's working directory;
 - `edit`, `write` — change files inside the sandbox workspace;
 - `find`, `grep`, `tree` — discover and inspect workspace content;
 - `terminal` — run shell commands in the sandbox with bounded results;
 - `web` — make bounded web requests.
+
+`cwd` reports and moves the calling thread's working directory, and every other
+relative path in this bundle resolves against it at call time. A move is refused
+unless the path names a directory inside the workspace root.
 
 `goal-directed-tool-use` is the baseline skill. Additional focused skills cover
 workspace discovery, search and inspection, dependency tracing, file changes,

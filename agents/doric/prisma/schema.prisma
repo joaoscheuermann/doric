@@ -11,6 +11,17 @@ enum ModelRole {
   EXECUTION
 }
 
+/**
+ * The closed set of credential kinds. The kind fixes the field set a row may
+ * carry, which is why the invariant lives in the credentials domain rule rather
+ * than in a row-level database constraint.
+ */
+enum CredentialKind {
+  API_TOKEN
+  USERNAME_PASSWORD
+  GIT
+}
+
 enum ProjectState {
   QUEUED
   READY
@@ -29,24 +40,64 @@ enum ThreadState {
 }
 
 model DoricConfiguration {
-  id         Int                     @id @default(1)
-  revision   Int                     @default(1)
-  generation String                  @db.Uuid
-  maxTurns   Int                     @map("max_turns")
-  updatedAt  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providers  ProviderConfiguration[]
-  models     ModelConfiguration[]
+  id                 Int                     @id @default(1)
+  revision           Int                     @default(1)
+  generation         String                  @db.Uuid
+  maxTurns           Int                     @map("max_turns")
+  /// The most a single tool result may carry into the model, in characters.
+  /// Absent means no cap.
+  maxToolResultChars Int?                    @map("max_tool_result_chars")
+  /// Per-tool configuration values, keyed by tool name and then by field key.
+  toolConfig         Json                    @default("{}") @map("tool_config") @db.JsonB
+  gitCredentialId    String?                 @map("git_credential_id") @db.Uuid
+  githubCredentialId String?                 @map("github_credential_id") @db.Uuid
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  gitCredential      Credential?             @relation("GitCredential", fields: [gitCredentialId], references: [id], onDelete: Restrict)
+  githubCredential   Credential?             @relation("GithubCredential", fields: [githubCredentialId], references: [id], onDelete: Restrict)
+  providers          ProviderConfiguration[]
+  models             ModelConfiguration[]
 
   @@map("doric_configuration")
 }
 
+/**
+ * One named credential. A provider key and the GitHub token are both
+ * `API_TOKEN` rows whose secret is stored as a versioned ciphertext envelope.
+ */
+model Credential {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  kind                 CredentialKind
+  name                 String
+  username             String?
+  email                String?
+  secret               String?
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providers            ProviderConfiguration[]
+  gitConfigurations    DoricConfiguration[]    @relation("GitCredential")
+  githubConfigurations DoricConfiguration[]    @relation("GithubCredential")
+
+  @@unique([kind, name])
+  @@map("credential")
+}
+
 model ProviderConfiguration {
-  configurationId Int                  @map("configuration_id")
-  id              String
-  baseUrl         String               @map("base_url")
-  apiKeyEnv       String               @map("api_key_env")
-  configuration   DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
-  models          ModelConfiguration[]
+  configurationId  Int                  @map("configuration_id")
+  id               String
+  kind             String
+  /// The kind's non-secret field values, keyed by the kind's own field keys.
+  fieldValues      Json                 @map("field_values") @db.JsonB
+  /// The value of the kind's one `secret` field: the stored credential it names.
+  /// It is a column rather than a JSON value so the reference is enforced, and
+  /// `null` means a kind whose provider named none.
+  credentialId     String?              @map("credential_id") @db.Uuid
+  /// The models this provider offers, as `ProviderModel[]` JSON. Each model names
+  /// itself and, when its kind keeps them, its own reasoning efforts. Empty means
+  /// the kind keeps no model list, or the operator has named none yet.
+  models           Json                 @default("[]") @db.JsonB
+  configuration    DoricConfiguration   @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  credential       Credential?          @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  modelConfigurations ModelConfiguration[]
 
   @@id([configurationId, id])
   @@map("provider_configuration")
@@ -57,7 +108,7 @@ model ModelConfiguration {
   role            ModelRole
   providerId      String                @map("provider_id")
   model           String
-  effort          String
+  effort          String?
   configuration   DoricConfiguration    @relation(fields: [configurationId], references: [id], onDelete: Cascade)
   provider        ProviderConfiguration @relation(fields: [configurationId, providerId], references: [configurationId, id])
 
@@ -67,6 +118,8 @@ model ModelConfiguration {
 
 model Project {
   id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  color          String?
   state          ProjectState @default(QUEUED)
   configRevision Int          @map("config_revision")
   configSnapshot Json         @map("config_snapshot") @db.JsonB
@@ -85,11 +138,30 @@ model Thread {
   id             String        @id @default(uuid()) @db.Uuid
   projectId      String        @map("project_id") @db.Uuid
   parentThreadId String?       @map("parent_thread_id") @db.Uuid
+  name           String
   state          ThreadState   @default(QUEUED)
+  /// The Thread's own working directory, absolute inside its Project's sandbox.
+  /// Every Thread starts at the sandbox workspace root.
+  cwd            String        @default("/workspace")
+  /// The cheap `is this a Git repository` hint of `cwd`: `git` when the
+  /// directory's own root holds a `.git` marker, `github` when its `origin`
+  /// points at github.com, and absent until a probe observes one.
+  cwdRepo        String?       @map("cwd_repo")
   messages       Json          @default("[]") @db.JsonB
+  checkpoints    Json          @default("{}") @db.JsonB
+  /// Cumulative OpenRouter charges, independent of rewound conversation history.
+  usage          Json?         @db.JsonB
+  /// Reader-controlled dispatch gate; survives host restarts and history rewind.
+  queuePaused    Boolean       @default(false) @map("queue_paused")
   activePromptId String?       @map("active_prompt_id") @db.Uuid
   errorCode      String?       @map("error_code")
   lastSequence   Int           @default(0) @map("last_sequence")
+  /// The materialized result of the most recent finished prompt, so reading a
+  /// child's state never has to reconstruct it from the event log.
+  resultText     String?       @map("result_text")
+  resultStatus   String?       @map("result_status")
+  resultPromptId String?       @map("result_prompt_id") @db.Uuid
+  resultAt       DateTime?     @map("result_at") @db.Timestamptz(3)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   startedAt      DateTime?     @map("started_at") @db.Timestamptz(3)

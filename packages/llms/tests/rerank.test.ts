@@ -1,24 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProviderErrorObject, type LlmProvider } from '../src/index.js';
+import { type LlmProvider, ProviderErrorObject } from '../src/index.js';
 import {
   createCodexProvider,
-  createLmStudioOpenAiProvider,
-  createLmStudioProvider,
   createOpenAiProvider,
   createOpenRouterProvider,
   fakeTransport,
   response,
 } from './fakes.js';
 
-type CompatibleProvider = {
+interface CompatibleProvider {
   readonly name: string;
   readonly provider: LlmProvider;
   readonly transport: ReturnType<typeof fakeTransport>;
   readonly endpoint: string;
   readonly authorization?: string;
-};
+}
 
 const compatibleProviders = (): readonly CompatibleProvider[] => {
   const body = {
@@ -30,7 +28,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
     ],
   };
   const openAiTransport = fakeTransport({ responses: [response(body)] });
-  const lmStudioTransport = fakeTransport({ responses: [response(body)] });
   const openRouterTransport = fakeTransport({ responses: [response(body)] });
 
   return [
@@ -43,16 +40,6 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
       transport: openAiTransport,
       endpoint: 'https://api.openai.com/v1/rerank',
       authorization: 'Bearer openai-key',
-    },
-    {
-      name: 'LM Studio OpenAI compatibility',
-      provider: createLmStudioOpenAiProvider({
-        transport: lmStudioTransport,
-        apiKey: 'local-key',
-      }),
-      transport: lmStudioTransport,
-      endpoint: 'http://localhost:1234/v1/rerank',
-      authorization: 'Bearer local-key',
     },
     {
       name: 'OpenRouter',
@@ -68,7 +55,7 @@ const compatibleProviders = (): readonly CompatibleProvider[] => {
 };
 
 for (const fixture of compatibleProviders()) {
-  test(`reranks documents through ${fixture.name}`, async () => {
+  void test(`reranks documents through ${fixture.name}`, async () => {
     const controller = new AbortController();
 
     const result = await fixture.provider.rerank({
@@ -102,7 +89,7 @@ for (const fixture of compatibleProviders()) {
   });
 }
 
-test('preserves OpenRouter rerank usage and cost', async () => {
+void test('preserves OpenRouter rerank usage and cost', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -139,7 +126,7 @@ test('preserves OpenRouter rerank usage and cost', async () => {
   assert.equal(result.usage?.totalTokens, 150);
 });
 
-test('rejects malformed rerank responses', async () => {
+void test('rejects malformed rerank responses', async () => {
   const transport = fakeTransport({
     responses: [
       response({ results: [] }),
@@ -167,7 +154,7 @@ test('rejects malformed rerank responses', async () => {
   }
 });
 
-test('rejects invalid rerank requests before networking', async () => {
+void test('rejects invalid rerank requests before networking', async () => {
   const transport = fakeTransport({});
   const provider = createOpenRouterProvider({
     transport,
@@ -210,19 +197,13 @@ test('rejects invalid rerank requests before networking', async () => {
   assert.equal(transport.requests.length, 0);
 });
 
-for (const fixture of [
-  { name: 'LM Studio native', transport: fakeTransport({}) },
-  { name: 'Codex', transport: fakeTransport({}) },
-]) {
-  const provider =
-    fixture.name === 'Codex'
-      ? createCodexProvider({
-          transport: fixture.transport,
-          authorization: 'Bearer codex-token',
-        })
-      : createLmStudioProvider({ transport: fixture.transport });
+for (const fixture of [{ name: 'Codex', transport: fakeTransport({}) }]) {
+  const provider = createCodexProvider({
+    transport: fixture.transport,
+    authorization: 'Bearer codex-token',
+  });
 
-  test(`rejects reranking before networking through ${fixture.name}`, async () => {
+  void test(`rejects reranking before networking through ${fixture.name}`, async () => {
     await assert.rejects(
       provider.rerank({
         model: 'rerank-model',

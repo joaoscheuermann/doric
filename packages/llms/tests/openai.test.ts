@@ -1,19 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { createToolStorage, defineTool } from 'tool';
 import { z } from 'zod';
 
-import { createToolStorage, defineTool } from 'tool';
-
 import {
-  createOpenAiCompatibleProvider,
+  createOpenAiProvider,
   openAiBody,
   ProviderErrorObject,
 } from '../src/index.js';
 import { fakeTransport, response, silentLogger } from './fakes.js';
 
-test('preserves configured identity in compatible metadata and errors', async () => {
-  const provider = createOpenAiCompatibleProvider({
+void test('preserves configured identity in compatible metadata and errors', async () => {
+  const provider = createOpenAiProvider({
     transport: fakeTransport({ responses: [response({}, 503)] }),
     baseUrl: 'https://compatible.invalid/v1',
     identity: { id: 'configured', name: 'Configured' },
@@ -45,8 +44,8 @@ test('preserves configured identity in compatible metadata and errors', async ()
   );
 });
 
-test('preserves compatible identity in credential validation errors', async () => {
-  const provider = createOpenAiCompatibleProvider({
+void test('preserves compatible identity in credential validation errors', async () => {
+  const provider = createOpenAiProvider({
     transport: fakeTransport({}),
     baseUrl: 'https://compatible.invalid/v1',
     identity: { id: 'configured', name: 'Configured' },
@@ -64,7 +63,7 @@ test('preserves compatible identity in credential validation errors', async () =
   );
 });
 
-test('maps OpenAI Responses DTO with instructions tools reasoning and fast service tier', () => {
+void test('maps OpenAI Responses DTO with instructions tools reasoning and fast service tier', () => {
   const body = openAiBody(
     {
       model: 'gpt-5-fast',
@@ -126,7 +125,7 @@ test('maps OpenAI Responses DTO with instructions tools reasoning and fast servi
   assert.equal(body.store, false);
 });
 
-test('maps top-level OpenAI effort before legacy reasoning effort', () => {
+void test('maps top-level OpenAI effort before legacy reasoning effort', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -140,7 +139,7 @@ test('maps top-level OpenAI effort before legacy reasoning effort', () => {
   assert.deepEqual(body.reasoning, { effort: 'xhigh', summary: 'concise' });
 });
 
-test('maps assistant tool calls to Responses function call input items', () => {
+void test('maps assistant tool calls to Responses function call input items', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -178,7 +177,7 @@ test('maps assistant tool calls to Responses function call input items', () => {
   ]);
 });
 
-test('omits assistant text while keeping Responses function call input items', () => {
+void test('omits assistant text while keeping Responses function call input items', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -210,7 +209,7 @@ test('omits assistant text while keeping Responses function call input items', (
   ]);
 });
 
-test('omits assistant text-only messages from Responses input items', () => {
+void test('omits assistant text-only messages from Responses input items', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -230,7 +229,7 @@ test('omits assistant text-only messages from Responses input items', () => {
   ]);
 });
 
-test('does not mutate strict OpenAI tool schemas with optional properties', () => {
+void test('does not mutate strict OpenAI tool schemas with optional properties', () => {
   const inputSchema = {
     type: 'object',
     properties: {
@@ -277,7 +276,7 @@ test('does not mutate strict OpenAI tool schemas with optional properties', () =
   assert.deepEqual(inputSchema.required, ['pattern']);
 });
 
-test('maps OpenAI structured output schemas to text format DTOs', () => {
+void test('maps OpenAI structured output schemas to text format DTOs', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -303,7 +302,7 @@ test('maps OpenAI structured output schemas to text format DTOs', () => {
   });
 });
 
-test('adds a schema system instruction while retaining OpenAI text format', () => {
+void test('adds a schema system instruction while retaining OpenAI text format', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -337,7 +336,7 @@ test('adds a schema system instruction while retaining OpenAI text format', () =
   ]);
 });
 
-test('maps OpenAI nested union structured output schemas to text format DTOs', () => {
+void test('maps OpenAI nested union structured output schemas to text format DTOs', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -390,7 +389,7 @@ test('maps OpenAI nested union structured output schemas to text format DTOs', (
   );
 });
 
-test('rejects OpenAI top-level union structured output schemas', () => {
+void test('rejects OpenAI top-level union structured output schemas', () => {
   const request = {
     model: 'gpt-5',
     messages: [{ role: 'user', content: 'Return JSON.' }],
@@ -421,7 +420,7 @@ test('rejects OpenAI top-level union structured output schemas', () => {
   );
 });
 
-test('keeps nested optional structured output properties non-strict', () => {
+void test('keeps nested optional structured output properties non-strict', () => {
   const body = openAiBody(
     {
       model: 'gpt-5',
@@ -467,7 +466,7 @@ test('keeps nested optional structured output properties non-strict', () => {
   });
 });
 
-test('maps tool controls and replays opaque Responses output items', () => {
+void test('maps tool controls and replays opaque Responses output items', () => {
   const replay = [
     { type: 'reasoning', encrypted_content: 'opaque' },
     {
@@ -516,15 +515,15 @@ test('maps tool controls and replays opaque Responses output items', () => {
   ]);
 });
 
-test('accepts tool definitions from shared tool storage', () => {
+void test('accepts tool definitions from shared tool storage', () => {
   const tools = createToolStorage([
     defineTool({
       name: 'lookup',
       description: 'Lookup context',
       input: z.object({ query: z.string() }),
       output: z.string(),
-      execute: (_sandbox, { query }) => query,
-    })(undefined as never),
+      execute: (_sandbox, _host, { query }) => query,
+    })(undefined as never, undefined as never),
   ]);
 
   const body = openAiBody(

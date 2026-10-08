@@ -36,12 +36,12 @@ const INTERFACE_QUERY = `
 ] @item
 `;
 
-type ParseInput = {
+interface ParseInput {
   readonly content: string;
   readonly root: string;
   readonly source: string;
   readonly type: SupportedType;
-};
+}
 
 /** Strictly parses supported files and extracts TS/JS module relationships. */
 export const parseInterface = async (

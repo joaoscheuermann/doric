@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
-
 import type { ProviderStreamEvent } from 'llms';
 import { createMessageStorage, type MessageStorage } from 'messages';
 import { createToolStorage, defineTool, ToolErrorObject } from 'tool';
+import { z } from 'zod';
 
 import {
   type Agent,
@@ -16,8 +15,8 @@ import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';
@@ -45,7 +44,7 @@ const assertIncomplete = (messages: MessageStorage, callId: string): void => {
   assert.equal(result.toolResultStatus, 'incomplete');
 };
 
-test('structured stream suppresses every provider event from a rejected executable batch', async () => {
+void test('structured stream suppresses every provider event from a rejected executable batch', async () => {
   const marker = 'rejected-private-event';
   let executions = 0;
 
@@ -55,12 +54,12 @@ test('structured stream suppresses every provider event from a rejected executab
         name,
         input: z.object({ value: z.string() }),
         output: z.string(),
-        execute: (_sandbox, { value }) => {
+        execute: (_sandbox, _host, { value }) => {
           executions += 1;
 
           return value;
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ),
   );
 
@@ -138,7 +137,7 @@ test('structured stream suppresses every provider event from a rejected executab
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} stores an incomplete result for a final rejected terminal call`, async () => {
+  void test(`${mode} stores an incomplete result for a final rejected terminal call`, async () => {
     const callId = `terminal-${mode}`;
 
     const provider = createProvider({
@@ -188,7 +187,7 @@ for (const mode of ['complete', 'stream'] as const) {
     assertIncomplete(messages, callId);
   });
 
-  test(`${mode} stores an incomplete result for a final rejected executable call`, async () => {
+  void test(`${mode} stores an incomplete result for a final rejected executable call`, async () => {
     const callId = `executable-${mode}`;
     let executions = 0;
 
@@ -197,12 +196,12 @@ for (const mode of ['complete', 'stream'] as const) {
         name: 'lookup',
         input: z.object({ query: z.string() }),
         output: z.string(),
-        execute: (_sandbox, { query }) => {
+        execute: (_sandbox, _host, { query }) => {
           executions += 1;
 
           return query;
         },
-      })(undefined as never),
+      })(undefined as never, undefined as never),
     ]);
 
     const provider = createProvider({

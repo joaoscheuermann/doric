@@ -4,8 +4,8 @@ import test from 'node:test';
 
 import express from 'express';
 import type {
-  SandboxProvisionInput,
   SandboxProvider,
+  SandboxProvisionInput,
   SandboxRuntime,
 } from 'sandbox';
 
@@ -19,7 +19,7 @@ const input: SandboxProvisionInput = {
   network: { mode: 'disabled', ssh: false },
 };
 
-test('tracks provisioned VMs until disposal completes', async () => {
+void test('tracks provisioned VMs until disposal completes', async () => {
   let release!: () => void;
   const disposing = new Promise<void>((resolve) => {
     release = resolve;
@@ -62,7 +62,59 @@ test('tracks provisioned VMs until disposal completes', async () => {
   await second.dispose();
 });
 
-test('keeps a VM registered when disposal fails', async () => {
+void test('preserves live terminal control through the VM registry', async () => {
+  const received: string[] = [];
+  const provider: SandboxProvider = {
+    provision: async () => ({
+      ...runtime('vm-terminal'),
+      start: async (command) => {
+        command.onOutput?.({ stream: 'stdout', data: 'ready' });
+        return {
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: 'ready',
+            stderr: '',
+            stdoutBytes: Buffer.from('ready'),
+            stderrBytes: new Uint8Array(),
+          }),
+          write: async (data) => {
+            received.push(data);
+          },
+          resize: async () => undefined,
+          terminate: async () => {
+            received.push('terminated');
+          },
+        };
+      },
+    }),
+  };
+  const registry = createVmRegistry('docker', provider);
+  const tracked = await registry.provider.provision(input);
+  if (tracked.start === undefined)
+    assert.fail('Live process capability was lost');
+  const output: string[] = [];
+  const process = await tracked.start({
+    cmd: ['bash'],
+    onOutput: ({ data }) => output.push(data),
+  });
+  await process.write('hello\r');
+  await process.terminate();
+  assert.deepEqual(output, ['ready']);
+  assert.deepEqual(received, ['hello\r', 'terminated']);
+  assert.equal((await process.result).stdout, 'ready');
+});
+
+void test('keeps live execution absent for a provider without that capability', async () => {
+  const registry = createVmRegistry('docker', {
+    provision: async () => runtime('legacy'),
+  });
+  assert.equal(
+    typeof (await registry.provider.provision(input)).start,
+    'undefined',
+  );
+});
+
+void test('keeps a VM registered when disposal fails', async () => {
   let reject!: (cause: Error) => void;
   const disposal = new Promise<void>((_resolve, fail) => {
     reject = fail;
@@ -89,7 +141,7 @@ test('keeps a VM registered when disposal fails', async () => {
   assert.equal(registry.find('vm-1')?.id, 'vm-1');
 });
 
-test('returns every running VM', async () => {
+void test('returns every running VM', async () => {
   const host = await serveVms();
 
   try {
@@ -105,7 +157,7 @@ test('returns every running VM', async () => {
   }
 });
 
-test('returns leased VM SSH access without permitting caches', async () => {
+void test('returns leased VM SSH access without permitting caches', async () => {
   const host = await serveVms();
 
   try {
@@ -122,7 +174,7 @@ test('returns leased VM SSH access without permitting caches', async () => {
   }
 });
 
-test('rejects SSH access for an idle VM', async () => {
+void test('rejects SSH access for an idle VM', async () => {
   const host = await serveVms();
 
   try {
@@ -138,7 +190,7 @@ test('rejects SSH access for an idle VM', async () => {
   }
 });
 
-test('reports missing VMs through the stable error code', async () => {
+void test('reports missing VMs through the stable error code', async () => {
   const host = await serveVms();
 
   try {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+
 import type { LlmProvider, ProviderRequest } from 'llms';
 
 export const marker = 'written by the delegated child';
@@ -52,13 +53,16 @@ export function scriptedProvider(): LlmProvider {
     models: unused,
     validateModel: unused,
     stream: async function* (request: ProviderRequest) {
-      const input = String(
-        request.messages.filter(({ role }) => role === 'user').at(-1)?.content,
-      );
+      const input = request.messages
+        .filter(({ role }) => role === 'user')
+        .at(-1)?.content;
+      if (typeof input !== 'string') throw new Error('Expected a text prompt');
       const tool = request.messages.at(-1);
       if (tool?.role === 'tool') {
         // The fixture has one JSON result; surrounding readable Markdown is presentation.
-        const content = String(tool.content);
+        const content = tool.content;
+        if (typeof content !== 'string')
+          throw new Error('Expected a text tool result');
         const output = JSON.parse(
           content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1),
         ) as {
@@ -101,7 +105,7 @@ export function scriptedProvider(): LlmProvider {
         });
       } else {
         assert.ok(input.includes(parentPrompt), `Unexpected input: ${input}`);
-        yield call('spawn_thread', { prompt: childPrompt });
+        yield call('thread-spawn', { prompt: childPrompt });
       }
     },
   };

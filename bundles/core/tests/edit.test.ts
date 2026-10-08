@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import hostPath from 'node:path';
-import { posix as path } from 'node:path';
+import hostPath, { posix as path } from 'node:path';
 import { describe, test } from 'node:test';
 
 import type { SandboxSession } from 'sandbox';
 
 import factory from '../tools/edit.js';
+import { fakeHost } from './fake-sandbox.js';
 
-describe('edit tool', () => {
-  test('updates a unique exact match and returns first changed line', async () => {
+void describe('edit tool', () => {
+  void test('updates a unique exact match and returns first changed line', async () => {
     const sandbox = await fakeSandbox('edit-exact');
 
     await sandbox.seed(
@@ -18,7 +18,10 @@ describe('edit tool', () => {
       'one\noldCall();\nthree\n',
     );
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(
+      sandbox,
+      fakeHost({ cwd: '/workspace/repo' }),
+    ).execute({
       path: 'src/lib.ts',
       edits: [{ oldText: 'oldCall();', newText: 'newCall();' }],
     });
@@ -43,12 +46,40 @@ describe('edit tool', () => {
     await sandbox.dispose();
   });
 
-  test('rejects duplicate old text with context guidance', async () => {
+  void test('edits the file a relative path names inside the working directory', async () => {
+    const sandbox = await fakeSandbox('edit-cwd');
+
+    await sandbox.seed('/workspace/repo/src/lib.ts', 'one\noldCall();\n');
+
+    const result = await factory(
+      sandbox,
+      fakeHost({ cwd: '/workspace/repo/src' }),
+    ).execute({
+      path: 'lib.ts',
+      edits: [{ oldText: 'oldCall();', newText: 'newCall();' }],
+    });
+
+    assert.equal(result.success, true);
+
+    assert.deepEqual(sandbox.writes, ['/workspace/repo/src/lib.ts']);
+
+    assert.equal(
+      await sandbox.readHost('/workspace/repo/src/lib.ts'),
+      'one\nnewCall();\n',
+    );
+
+    await sandbox.dispose();
+  });
+
+  void test('rejects duplicate old text with context guidance', async () => {
     const sandbox = await fakeSandbox('edit-duplicate');
 
     await sandbox.seed('/workspace/repo/same.txt', 'same\nsame\n');
 
-    const result = await factory(sandbox).execute({
+    const result = await factory(
+      sandbox,
+      fakeHost({ cwd: '/workspace/repo' }),
+    ).execute({
       path: 'same.txt',
       edits: [{ oldText: 'same', newText: 'changed' }],
     });
@@ -60,12 +91,12 @@ describe('edit tool', () => {
     await sandbox.dispose();
   });
 
-  test('distinguishes missing files from other read failures', async () => {
+  void test('distinguishes missing files from other read failures', async () => {
     const sandbox = await fakeSandbox('edit-read-errors');
 
     await sandbox.mkdir('/workspace/repo/src');
 
-    const tool = factory(sandbox);
+    const tool = factory(sandbox, fakeHost({ cwd: '/workspace/repo' }));
 
     const missing = await tool.execute({
       path: 'missing.txt',

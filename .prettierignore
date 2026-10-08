@@ -25,3 +25,22 @@ models/**/artifact*/
 **/cases/
 scripts/**/evidence/
 package-lock.json
+
+# Biome formats and lints these languages.
+**/*.js
+**/*.jsx
+**/*.mjs
+**/*.cjs
+**/*.ts
+**/*.tsx
+**/*.mts
+**/*.cts
+**/*.json
+**/*.jsonc
+**/*.css
+**/*.graphql
+**/*.gql
+
+# The shadcn vendor boundary is written by the CLI and edited only through it,
+# so no formatter should rewrite it. Biome excludes it in `biome.json` too.
+app/doric-renderer/src/components/ui/

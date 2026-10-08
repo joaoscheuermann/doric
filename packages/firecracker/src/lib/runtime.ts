@@ -23,14 +23,20 @@ import { createVmNetwork, type VmNetwork } from './network.js';
 import {
   createGuestConnection,
   exposeUserSsh,
-  generateSshKeys,
   type GuestConnection,
+  generateSshKeys,
   waitForGuest,
   writeKnownHosts,
 } from './ssh.js';
+import {
+  type CpuSample,
+  cpuPercent,
+  memoryUsedBytes,
+  parseGuestStats,
+} from './stats.js';
 import type { FirecrackerConfig } from './types.js';
 
-type Resources = {
+interface Resources {
   readonly id: string;
   readonly directory: string;
   readonly jailDirectory: string;
@@ -40,7 +46,7 @@ type Resources = {
   process?: ChildProcess;
   baseMounted: boolean;
   proxy?: Awaited<ReturnType<typeof exposeUserSsh>>;
-};
+}
 
 /** Provisions one jailed Firecracker microVM and its management channel. */
 export const provisionFirecracker = async (
@@ -146,7 +152,10 @@ export const provisionFirecracker = async (
       keys,
     );
 
-    return runtime(resources, connection);
+    return runtime(resources, connection, {
+      cpuCount: input.resources.cpuCount,
+      timeoutMs: input.timeoutMs,
+    });
   } catch (cause) {
     await dispose(resources).catch(() => undefined);
 
@@ -157,16 +166,52 @@ export const provisionFirecracker = async (
 const runtime = (
   resources: Resources,
   connection: GuestConnection,
+  options: { readonly cpuCount: number; readonly timeoutMs?: number },
 ): SandboxRuntime => {
   let disposed = false;
+  let previous: CpuSample | undefined;
 
   return {
     id: resources.id,
+    start: (input) => connection.start(input),
     exec: (input) => connection.exec(input),
     putFile: (path, bytes) => connection.putFile(path, bytes),
     getFile: (path) => connection.getFile(path),
-    async ssh() {
-      return resources.proxy?.access;
+    async stats() {
+      const result = await connection.exec({
+        cmd: ['cat', '/proc/stat', '/proc/meminfo'],
+        timeoutMs: options.timeoutMs,
+      });
+
+      if (result.exitCode !== 0) {
+        throw new Error('Firecracker guest stats are unavailable');
+      }
+
+      const stats = parseGuestStats(result.stdout);
+
+      if (stats.memory === undefined) {
+        throw new Error('Firecracker guest stats are unavailable');
+      }
+
+      const percent =
+        previous === undefined || stats.cpu === undefined
+          ? undefined
+          : cpuPercent(previous, stats.cpu);
+
+      if (stats.cpu !== undefined) {
+        previous = stats.cpu;
+      }
+
+      return {
+        ...(percent === undefined ? {} : { cpuPercent: percent }),
+        cpuCount: options.cpuCount,
+        memoryUsedBytes: memoryUsedBytes(stats.memory),
+        memoryLimitBytes: stats.memory.totalBytes,
+        at: new Date().toISOString(),
+      };
+    },
+    ssh() {
+      return Promise.resolve(resources.proxy?.access);
     },
     async dispose() {
       if (disposed) {
@@ -219,7 +264,7 @@ const copyBootArtifacts = async (
 };
 
 const mountBase = async (source: string, target: string): Promise<void> => {
-  (await open(target, 'w', 0o400)).close();
+  await (await open(target, 'w', 0o400)).close();
 
   await run({ file: 'mount', args: ['--bind', source, target] });
 
@@ -341,7 +386,7 @@ const close = (
   server: NonNullable<Resources['proxy']>['server'],
 ): Promise<void> =>
   new Promise((resolveClose, reject) => {
-    if (server === undefined || !server.listening) {
+    if (!server?.listening) {
       resolveClose();
 
       return;

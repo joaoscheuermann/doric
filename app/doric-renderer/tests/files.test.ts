@@ -1,0 +1,330 @@
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+import {
+  baseName,
+  changeLetter,
+  collapsedPath,
+  emptyDirectoryNotice,
+  fileLanguage,
+  fileReadState,
+  joinPath,
+  parentPath,
+  pathSegments,
+  ROOT_NAME,
+  ROOT_PATH,
+  sandboxNotice,
+  toggleExpanded,
+  treeReadState,
+  truncationNotice,
+} from '../src/domain/files';
+import type {
+  ProjectFileContent,
+  ProjectTreeNode,
+} from '../src/domain/workspace';
+
+describe('sandbox paths', () => {
+  test('joins and parents a path at the workspace root', () => {
+    assert.equal(joinPath(ROOT_PATH, 'src'), 'src');
+    assert.equal(joinPath('src', 'app.ts'), 'src/app.ts');
+    assert.equal(parentPath('src/app.ts'), 'src');
+    assert.equal(parentPath('app.ts'), ROOT_PATH);
+    assert.equal(baseName('src/app.ts'), 'app.ts');
+    assert.equal(baseName('app.ts'), 'app.ts');
+    assert.equal(baseName(ROOT_PATH), ROOT_PATH);
+  });
+
+  test('names every segment from the workspace root down to the path', () => {
+    assert.deepEqual(pathSegments('src/domain/files.ts'), [
+      { name: ROOT_NAME, path: ROOT_PATH },
+      { name: 'src', path: 'src' },
+      { name: 'domain', path: 'src/domain' },
+      { name: 'files.ts', path: 'src/domain/files.ts' },
+    ]);
+    assert.deepEqual(pathSegments(ROOT_PATH), [
+      { name: ROOT_NAME, path: ROOT_PATH },
+    ]);
+  });
+
+  test('toggles one directory without touching the others', () => {
+    const expanded = toggleExpanded(new Set(['src']), 'src/domain');
+    assert.deepEqual([...expanded].sort(), ['src', 'src/domain']);
+    assert.deepEqual([...toggleExpanded(expanded, 'src')], ['src/domain']);
+  });
+
+  test('keeps a short chain whole and collapses the middle of a deep one', () => {
+    assert.deepEqual(collapsedPath(ROOT_PATH), {
+      leading: { name: ROOT_NAME, path: ROOT_PATH },
+      hidden: [],
+      trailing: [],
+    });
+
+    // The root, one directory and the file: nothing to hide.
+    const short = collapsedPath('src/files.ts');
+
+    assert.deepEqual(short.hidden, []);
+    assert.deepEqual(
+      short.trailing.map(({ path }) => path),
+      ['src', 'src/files.ts'],
+    );
+
+    // Two directories deep already puts the outer one behind the trigger.
+    const deep = collapsedPath('src/domain/hooks/files.ts');
+
+    assert.deepEqual(deep.leading, { name: ROOT_NAME, path: ROOT_PATH });
+    assert.deepEqual(deep.hidden, [
+      { name: 'src', path: 'src' },
+      { name: 'domain', path: 'src/domain' },
+    ]);
+    assert.deepEqual(deep.trailing, [
+      { name: 'hooks', path: 'src/domain/hooks' },
+      {
+        name: 'files.ts',
+        path: 'src/domain/hooks/files.ts',
+      },
+    ]);
+  });
+});
+
+describe('the language a file is read as', () => {
+  test('names a language by the extension of the file itself', () => {
+    const named = [
+      'src/app.ts',
+      'src/app.tsx',
+      'src/app.mts',
+      'src/app.cts',
+      'src/app.mjs',
+      'src/app.jsx',
+      'src/app.css',
+      'src/app.html',
+      'src/app.xml',
+      'src/app.yaml',
+      'src/app.yml',
+      'src/app.sh',
+      'src/app.py',
+      'src/app.rs',
+      'src/app.sql',
+      'README.md',
+    ];
+
+    assert.deepEqual(named.map(fileLanguage), [
+      'typescript',
+      'typescript',
+      'typescript',
+      'typescript',
+      'javascript',
+      'javascript',
+      'css',
+      'html',
+      'xml',
+      'yaml',
+      'yaml',
+      'shell',
+      'python',
+      'rust',
+      'sql',
+      'markdown',
+    ]);
+  });
+
+  test('reads an extension whatever case it is written in', () => {
+    assert.equal(fileLanguage('SRC/App.TSX'), 'typescript');
+    assert.equal(fileLanguage('Docker.YML'), 'yaml');
+  });
+
+  test('reads a name with no extension as plaintext', () => {
+    assert.equal(fileLanguage('Makefile'), 'plaintext');
+    assert.equal(fileLanguage('src/Dockerfile'), 'plaintext');
+    assert.equal(fileLanguage('.gitignore'), 'plaintext');
+    assert.equal(fileLanguage('LICENSE'), 'plaintext');
+    assert.equal(fileLanguage('README.'), 'plaintext');
+    assert.equal(fileLanguage(ROOT_PATH), 'plaintext');
+  });
+
+  test('reads an extension no grammar covers as plaintext', () => {
+    // Monaco serves JSON as a worker-backed language service, which this
+    // read-only view does not bundle.
+    assert.equal(fileLanguage('package.json'), 'plaintext');
+    assert.equal(fileLanguage('src/app.rb'), 'plaintext');
+    assert.equal(fileLanguage('src/app.toml'), 'plaintext');
+  });
+
+  test('takes the extension of the file, not one of a directory in its path', () => {
+    assert.equal(fileLanguage('docs.md/notes'), 'plaintext');
+    assert.equal(fileLanguage('docs.md/notes.ts'), 'typescript');
+  });
+
+  test('names only the languages this surface registers a grammar for', () => {
+    const extensions = [
+      'bash',
+      'cjs',
+      'css',
+      'cts',
+      'htm',
+      'html',
+      'js',
+      'jsx',
+      'markdown',
+      'md',
+      'mjs',
+      'mts',
+      'py',
+      'rs',
+      'sh',
+      'sql',
+      'svg',
+      'ts',
+      'tsx',
+      'xml',
+      'yaml',
+      'yml',
+      'zsh',
+    ];
+
+    assert.deepEqual(
+      [
+        ...new Set(
+          extensions.map((extension) => fileLanguage(`a.${extension}`)),
+        ),
+      ].sort(),
+      [
+        'css',
+        'html',
+        'javascript',
+        'markdown',
+        'python',
+        'rust',
+        'shell',
+        'sql',
+        'typescript',
+        'xml',
+        'yaml',
+      ],
+    );
+  });
+});
+
+describe('what the surface says', () => {
+  test('states that a truncated payload shows only its first part', () => {
+    assert.equal(
+      truncationNotice(true),
+      'This file is larger than the read limit, so only its first part is shown.',
+    );
+    assert.equal(truncationNotice(false), undefined);
+  });
+
+  test('explains a sandbox the surface cannot read', () => {
+    assert.equal(
+      sandboxNotice('pending', 5),
+      'The sandbox is still being prepared; the host suggests trying again in 5 seconds.',
+    );
+    assert.equal(
+      sandboxNotice('pending'),
+      'The sandbox is still being prepared.',
+    );
+    assert.match(sandboxNotice('expired'), /lease/);
+    assert.match(sandboxNotice('unavailable'), /unavailable/);
+    assert.match(sandboxNotice('missing'), /no sandbox yet/);
+    assert.match(sandboxNotice('invalid_path'), /not inside the workspace/);
+    assert.match(sandboxNotice('not_found'), /no longer in the workspace/);
+  });
+
+  test('says that an empty directory is empty', () => {
+    assert.equal(emptyDirectoryNotice, 'This directory is empty.');
+  });
+
+  test('gives every change the letter its badge carries', () => {
+    assert.deepEqual(
+      (['added', 'modified', 'deleted', 'renamed', 'untracked'] as const).map(
+        changeLetter,
+      ),
+      ['A', 'M', 'D', 'R', 'U'],
+    );
+  });
+});
+
+const treeNode: ProjectTreeNode = {
+  name: 'app.ts',
+  path: 'src/app.ts',
+  type: 'file',
+};
+
+const fileContent: ProjectFileContent = {
+  path: 'src/app.ts',
+  content: 'one',
+  truncated: false,
+  binary: false,
+};
+
+const lease = { status: 'pending', retryAfterSeconds: 5 } as const;
+
+describe('what a sandbox read shows', () => {
+  test('shows the tree and the file each read answered with', () => {
+    assert.deepEqual(
+      treeReadState({ status: 'ready', path: '', entries: [treeNode] }, false),
+      {
+        status: 'ready',
+        value: [treeNode],
+      },
+    );
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, false, false),
+      { status: 'ready', value: fileContent },
+    );
+  });
+
+  test('explains a lease instead of failing, and reuses its retry hint', () => {
+    for (const state of [treeReadState(lease, false)]) {
+      assert.equal(state.status, 'pending');
+      assert.equal(
+        state.status === 'pending' ? state.retryAfterSeconds : undefined,
+        5,
+      );
+    }
+    assert.deepEqual(fileReadState(lease, false, false), lease);
+    assert.deepEqual(treeReadState({ status: 'not_found' }, false), {
+      status: 'not_found',
+    });
+  });
+
+  test('keeps what is on screen when a reread of it fails', () => {
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, false, true),
+      { status: 'ready', value: fileContent },
+    );
+    assert.deepEqual(
+      treeReadState({ status: 'ready', path: '', entries: [treeNode] }, true),
+      {
+        status: 'ready',
+        value: [treeNode],
+      },
+    );
+  });
+
+  test('keeps waiting on a tree whose read failed without answering', () => {
+    assert.deepEqual(treeReadState(undefined, false), { status: 'loading' });
+    assert.deepEqual(treeReadState(undefined, true), { status: 'loading' });
+    // A lease that a failed reread left behind is no longer an answer.
+    assert.deepEqual(treeReadState(lease, true), { status: 'loading' });
+  });
+
+  test('keeps cached file content visible during background reads', () => {
+    assert.deepEqual(
+      fileReadState({ status: 'ready', file: fileContent }, true, false),
+      { status: 'ready', value: fileContent },
+    );
+  });
+
+  test('shows loading placeholders only while awaiting first content', () => {
+    assert.deepEqual(fileReadState(undefined, true, false), {
+      status: 'loading',
+    });
+  });
+
+  test('has no file content when the first read failed', () => {
+    assert.deepEqual(fileReadState(undefined, false, true), { status: 'idle' });
+    assert.deepEqual(fileReadState(undefined, false, false), {
+      status: 'idle',
+    });
+  });
+});

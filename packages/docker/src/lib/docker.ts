@@ -13,6 +13,7 @@ import {
   containerInspectFrom,
   createBody,
   defaultConnection,
+  dockerStatsFrom,
   encodeBody,
   execCreateBody,
   imageFrom,
@@ -22,8 +23,10 @@ import {
   socketPath,
   stringField,
   versionFrom,
+  volumeCreateBody,
   withDefaultTimeout,
 } from './mapping.js';
+import { startDockerProcess } from './process.js';
 import { provisionDocker } from './provider.js';
 import type {
   CreateDockerClientOptions,
@@ -62,6 +65,19 @@ export const createDockerClient = (
   ): Promise<Value> => parseJson((await send(input, expectedStatus)).body);
 
   const client: DockerClient = {
+    start: (container, input) =>
+      startDockerProcess(
+        client,
+        options.connection ?? defaultConnection(),
+        async (request, status) => {
+          const response = await send(request, status);
+          return response.body.length === 0
+            ? {}
+            : parseJson<Record<string, unknown>>(response.body);
+        },
+        container,
+        input,
+      ),
     provision: (input) =>
       provisionDocker(client, input, {
         connection: options.connection ?? defaultConnection(),
@@ -151,6 +167,23 @@ export const createDockerClient = (
       );
 
       return containerInspectFrom(raw);
+    },
+
+    async stats(container, input = {}) {
+      const raw = await json<Record<string, unknown>>(
+        {
+          method: 'GET',
+          path: `/containers/${encodeURIComponent(containerId(container))}/stats`,
+          // A single sample has no previous CPU counters, so the daemon cannot
+          // report the delta needed for CPU usage.
+          query: { stream: false },
+          signal: input.signal,
+          timeoutMs: input.timeoutMs,
+        },
+        200,
+      );
+
+      return dockerStatsFrom(raw, input.cpuCount);
     },
 
     async removeContainer(container, options = {}) {
@@ -274,6 +307,31 @@ export const createDockerClient = (
           200,
         )
       ).body;
+    },
+
+    async createVolume(input, control = {}) {
+      await send(
+        {
+          method: 'POST',
+          path: '/volumes/create',
+          body: volumeCreateBody(input),
+          ...control,
+        },
+        201,
+      );
+    },
+
+    async removeVolume(name, options = {}) {
+      await send(
+        {
+          method: 'DELETE',
+          path: `/volumes/${encodeURIComponent(name)}`,
+          query: { force: options.force },
+          signal: options.signal,
+          timeoutMs: options.timeoutMs,
+        },
+        [204, 404],
+      );
     },
   };
 

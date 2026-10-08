@@ -12,12 +12,12 @@ import type {
   SandboxSession,
 } from './types/sandbox.js';
 
-type State = {
+interface State {
   readonly runtime: SandboxRuntime;
   readonly root: string;
   repoPath: string | undefined;
   disposed: boolean;
-};
+}
 
 /** Validates policy and returns the effective provider-facing network policy. */
 export const normalizeSandboxNetwork = (
@@ -53,6 +53,7 @@ export const createSandbox = async (
     image: options.image,
     imagePullPolicy: options.imagePullPolicy,
     name: options.name,
+    workspace: options.workspace,
     root,
     resources: options.resources,
     network: normalizeSandboxNetwork(options.network),
@@ -65,10 +66,24 @@ export const createSandbox = async (
 const session = (state: State): SandboxSession => ({
   id: state.runtime.id,
   root: state.root,
+  start(input) {
+    active(state);
+    if (state.runtime.start === undefined) {
+      throw new Error('Sandbox provider does not support live processes');
+    }
+    return state.runtime.start({ ...input, ...runtimeExec(state, input) });
+  },
   exec(input) {
     active(state);
 
     return state.runtime.exec(runtimeExec(state, input));
+  },
+  stats() {
+    active(state);
+
+    // A provider without a reading answers `undefined`, which callers report as
+    // unknown rather than as a sandbox with nothing in it.
+    return state.runtime.stats?.() ?? Promise.resolve(undefined);
   },
   async cloneRepo(input) {
     active(state);
@@ -129,7 +144,7 @@ const session = (state: State): SandboxSession => ({
   async getFile(path) {
     active(state);
 
-    return state.runtime.getFile(resolvePath(state.root, path));
+    return await state.runtime.getFile(resolvePath(state.root, path));
   },
   async diff(input: SandboxDiffInput = {}) {
     active(state);
@@ -139,7 +154,14 @@ const session = (state: State): SandboxSession => ({
         ? (state.repoPath ?? state.root)
         : resolvePath(state.root, input.cwd);
 
-    return (await checked(state, { cmd: ['git', 'diff'], cwd })).stdout;
+    const paths = input.paths ?? [];
+
+    return (
+      await checked(state, {
+        cmd: ['git', 'diff', ...(paths.length === 0 ? [] : ['--', ...paths])],
+        cwd,
+      })
+    ).stdout;
   },
   ssh() {
     active(state);

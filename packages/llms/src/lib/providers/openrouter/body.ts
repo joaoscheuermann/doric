@@ -16,13 +16,13 @@ import {
 
 const structuredOutputName = 'structured_output';
 
-export type OpenRouterBodyOptions = {
+export interface OpenRouterBodyOptions {
   readonly structuredOutput?: 'json_schema' | 'json_object' | 'prompt';
   readonly requireParameters?: boolean;
   readonly replay?: 'all' | 'tool_calls';
   readonly strictTools?: boolean;
   readonly providerId?: ProviderId;
-};
+}
 
 export const openRouterBody = (
   request: ProviderRequest<unknown>,

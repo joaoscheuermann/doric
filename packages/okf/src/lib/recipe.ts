@@ -11,14 +11,14 @@ import type { OkfConfig } from './types/okf.js';
 export const CONCEPT_SCHEMA_VERSION = 'okf-yaml-v1';
 export const YAML_DEPENDENCY_VERSION = '2.9.0';
 
-export type RecipeVersions = {
+export interface RecipeVersions {
   readonly parser: string;
   readonly extractor: string;
   readonly yaml: string;
   readonly conceptSchema: string;
   readonly plainTextFields: string;
   readonly pipeline: string;
-};
+}
 
 export const RECIPE_VERSIONS: RecipeVersions = {
   parser: PARSER_VERSION,
@@ -29,7 +29,7 @@ export const RECIPE_VERSIONS: RecipeVersions = {
   pipeline: THREE_STAGE_PIPELINE_VERSION,
 };
 
-type RecipeInput = {
+interface RecipeInput {
   readonly config: OkfConfig;
   readonly content: string;
   readonly interface?: ModuleInterface;
@@ -42,7 +42,7 @@ type RecipeInput = {
   readonly promptTarget: string;
   readonly type: string;
   readonly versions?: RecipeVersions;
-};
+}
 
 /** Calculates the recipe-aware identity for a generated concept. */
 export const recipeHash = (input: RecipeInput): string => {

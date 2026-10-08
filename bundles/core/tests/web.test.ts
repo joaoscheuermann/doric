@@ -4,16 +4,17 @@ import { describe, test } from 'node:test';
 import type { Sandbox } from 'sandbox';
 
 import { createTool } from '../tools/web.js';
+import { fakeHost } from './fake-sandbox.js';
 
 const sandbox = { id: 'web', root: '/workspace' } as Sandbox;
 
-describe('web tool', () => {
-  test('parses DuckDuckGo search results and normalizes redirect URLs', async () => {
+void describe('web tool', () => {
+  void test('parses DuckDuckGo search results and normalizes redirect URLs', async () => {
     const html = `
       <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdoc&amp;rut=abc">Example &amp; Docs</a>
       <a class="result__snippet">A <b>short</b> snippet &amp; context.</a>
     `;
-    const tool = createTool({ fetch: fakeFetch(html) })(sandbox);
+    const tool = createTool({ fetch: fakeFetch(html) })(sandbox, fakeHost());
     const result = await tool.execute({ action: 'search', query: 'docs' });
 
     assert.deepEqual(result.results, [
@@ -27,12 +28,12 @@ describe('web tool', () => {
     assert.equal(result.total, 1);
   });
 
-  test('extracts page text and finds literal matches case insensitively', async () => {
+  void test('extracts page text and finds literal matches case insensitively', async () => {
     const html = `
       <html><head><title>Example &amp; Page</title></head>
       <body><h1>Hello&nbsp;World</h1><p>Beta Needle</p><p>needle two</p></body></html>
     `;
-    const tool = createTool({ fetch: fakeFetch(html) })(sandbox);
+    const tool = createTool({ fetch: fakeFetch(html) })(sandbox, fakeHost());
 
     const opened = await tool.execute({
       action: 'open_page',
@@ -57,7 +58,7 @@ describe('web tool', () => {
     assert.equal(found.truncated, true);
   });
 
-  test('aborts requests after the configured timeout', async () => {
+  void test('aborts requests after the configured timeout', async () => {
     let observedAbort = false;
 
     const tool = createTool({
@@ -70,7 +71,7 @@ describe('web tool', () => {
             reject(new Error('aborted by test fetch'));
           });
         }),
-    })(sandbox);
+    })(sandbox, fakeHost());
 
     const result = await tool.execute({
       action: 'open_page',

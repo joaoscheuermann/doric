@@ -1,18 +1,13 @@
 import type { Logger } from 'pino';
 
 import type {
-  DecisionProvider,
-  DecisionQuestions,
-  ProviderDecisionRequest,
-} from '../types/decision.js';
-import type {
   JsonValue,
   LlmProvider,
   ProviderFinished,
   ProviderRequest,
   ProviderRerankRequest,
-  ProviderStructuredFinished,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
   UsageMetadata,
@@ -23,7 +18,6 @@ type Terminal = 'completed' | 'failed' | 'cancelled';
 
 const operationNames = {
   complete: 'completion',
-  decide: 'decision',
   stream: 'stream',
   embedding: 'embedding',
   rerank: 'rerank',
@@ -35,17 +29,9 @@ type Operation = keyof typeof operationNames;
 
 /** Adds uniform operational events to an LLM provider. */
 export function withProviderLogging(
-  provider: LlmProvider & DecisionProvider,
-  logger: Logger,
-): LlmProvider & DecisionProvider;
-export function withProviderLogging(
   provider: LlmProvider,
   logger: Logger,
-): LlmProvider;
-export function withProviderLogging(
-  provider: LlmProvider | (LlmProvider & DecisionProvider),
-  logger: Logger,
-): LlmProvider | (LlmProvider & DecisionProvider) {
+): LlmProvider {
   assertLogger(logger);
   const log = logger.child({
     component: 'llms',
@@ -54,15 +40,15 @@ export function withProviderLogging(
   assertLogger(log);
   log.debug('llm provider initialized');
 
-  async function complete<Schema extends StructuredOutputSchema>(
+  function complete<Schema extends StructuredOutputSchema>(
     request: ProviderRequest<StructuredOutputValue<Schema>, Schema> & {
       readonly schema: Schema;
     },
   ): Promise<ProviderStructuredFinished<StructuredOutputValue<Schema>>>;
-  async function complete<Output = JsonValue>(
+  function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>>;
-  async function complete<Output = JsonValue>(
+  function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
     return loggedPromise(
@@ -146,32 +132,7 @@ export function withProviderLogging(
     },
   };
 
-  if (!hasDecisionProvider(provider)) {
-    return logged;
-  }
-
-  return {
-    ...logged,
-    decide<Questions extends DecisionQuestions>(
-      request: ProviderDecisionRequest<Questions>,
-    ) {
-      return loggedPromise(
-        log,
-        'decide',
-        {
-          model: request.model,
-          questionCount: Object.keys(request.questions).length,
-        },
-        request.signal,
-        () => provider.decide(request),
-        ({ model, answers, usage }) => ({
-          model,
-          answerCount: Object.keys(answers).length,
-          ...usageFields(usage),
-        }),
-      );
-    },
-  };
+  return logged;
 }
 
 const loggedPromise = async <Result>(
@@ -297,11 +258,6 @@ const terminalFromFinish = (finish: ProviderFinished<unknown>): Terminal => {
 const cancelled = (error: unknown, signal: AbortSignal | undefined): boolean =>
   signal?.aborted === true ||
   (error instanceof Error && error.name === 'AbortError');
-
-const hasDecisionProvider = (
-  provider: LlmProvider | (LlmProvider & DecisionProvider),
-): provider is LlmProvider & DecisionProvider =>
-  'decide' in provider && typeof provider.decide === 'function';
 
 const assertLogger = (logger: Logger): void => {
   if (

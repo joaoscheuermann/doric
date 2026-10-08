@@ -1,12 +1,11 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const description =
-  "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit.";
+  "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit. A relative path resolves against the current working directory.";
 
 const entry = z
   .object({
@@ -35,17 +34,17 @@ export type EditOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type NormalizedEdit = {
+interface NormalizedEdit {
   readonly oldText: string;
   readonly newText: string;
-};
+}
 
-type MatchedEdit = {
+interface MatchedEdit {
   readonly editIndex: number;
   readonly matchIndex: number;
   readonly matchLength: number;
   readonly newText: string;
-};
+}
 
 type ReadResult =
   | { readonly ok: true; readonly content: string }
@@ -57,18 +56,18 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<EditOutput> =>
-    execute(sandbox.root, sandbox, input),
+  execute: (sandbox, host, input): Promise<EditOutput> =>
+    execute(host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
-  workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<EditOutput> => {
-  const filePath = resolvePath(workspaceRoot, input.path);
+  const filePath = resolvePath(cwd, input.path);
   const readResult = await readTarget(sandbox, filePath, input.path);
 
   if (!readResult.ok) {
@@ -349,7 +348,7 @@ const normalizeToLf = (value: string): string =>
   value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
 const detectLineEnding = (value: string): string =>
-  value.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+  value.includes('\r\n') ? '\r\n' : '\n';
 
 const restoreLineEndings = (value: string, ending: string): string =>
   ending === '\r\n' ? value.replaceAll('\n', '\r\n') : value;
@@ -369,10 +368,8 @@ const formatLine = (
   width: number,
 ): string => `${String(line).padStart(width, ' ')} ${marker}${text}`;
 
-const resolvePath = (workspaceRoot: string, value: string): string =>
-  path.normalize(
-    path.isAbsolute(value) ? value : path.join(workspaceRoot, value),
-  );
+const resolvePath = (cwd: string, value: string): string =>
+  path.normalize(path.isAbsolute(value) ? value : path.join(cwd, value));
 
 const readFailure = (filePath: string, error: unknown): string =>
   hasCode(error, 'ENOENT')

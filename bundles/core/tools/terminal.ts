@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { z } from 'zod';
-
-import type { Sandbox, SandboxExecResult } from 'sandbox';
+import type { Host } from 'host';
+import type { Sandbox } from 'sandbox';
 import { defineTool, type ToolFactory } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -16,13 +16,15 @@ const MAX_LINE_CHARS = 1000;
 const DIAGNOSTIC_LINE_LIMIT = 20;
 const DIAGNOSTIC_CONTEXT_RADIUS = 2;
 const description =
-  'Executes shell commands inside the injected sandbox session. Returns compact stdout/stderr summaries, diagnostics, exit_code, duration, and a raw_output_ref when trace storage is enabled.';
+  'Executes tracked shell commands in the current working directory. Foreground returns compact output and exit status. Set background to continue working immediately; the host delivers the terminal result to this Thread when it ends. Set pty for interactive commands (stdout and stderr are combined). A relative working_directory resolves against the current directory.';
 
 export const input = z
   .object({
     command: z.string(),
     working_directory: z.string().optional(),
     timeout_ms: z.number().int().nonnegative().optional(),
+    background: z.boolean().optional(),
+    pty: z.boolean().optional(),
   })
   .strict();
 
@@ -53,7 +55,7 @@ const terminalDiagnostic = z
   })
   .strict();
 
-export const output = z
+const completedOutput = z
   .object({
     schema: z.literal('terminal.compact.v1'),
     trace_id: z.string().nullable(),
@@ -61,6 +63,9 @@ export const output = z
     working_directory: z.string(),
     exit_code: z.number(),
     duration_ms: z.number(),
+    termination_reason: z
+      .enum(['exited', 'timeout', 'terminated', 'failed'])
+      .optional(),
     success: z.boolean(),
     stdout: compactStreamSchema,
     stderr: compactStreamSchema,
@@ -72,27 +77,32 @@ export const output = z
     trace_error: z.string().optional(),
   })
   .strict();
+export const output = z.union([
+  completedOutput,
+  z.object({ terminal_id: z.string(), background: z.literal(true) }).strict(),
+]);
 
 export type CompactStream = z.output<typeof compactStreamSchema>;
 
 export type TerminalDiagnostic = z.output<typeof terminalDiagnostic>;
 
-export type TerminalOutput = z.output<typeof output>;
+export type TerminalOutput = z.output<typeof completedOutput>;
 
 type Input = z.output<typeof input>;
 
-type Options = {
+interface Options {
   readonly traceDir?: string;
-};
+}
 
-type Execution = {
+interface Execution {
   readonly command: string;
   readonly workingDirectory: string;
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
   readonly durationMs: number;
-};
+  readonly reason?: 'exited' | 'timeout' | 'terminated' | 'failed';
+}
 
 /** Creates the provider-neutral sandbox terminal tool. */
 export const createTool = (
@@ -103,20 +113,21 @@ export const createTool = (
     description,
     input,
     output,
-    execute: (sandbox, input): Promise<TerminalOutput> =>
-      execute(sandbox.root, sandbox, options.traceDir, input),
+    execute: (sandbox, host, input) =>
+      execute(host.workspace.cwd(), sandbox, options.traceDir, input, host),
   });
 
 export default createTool();
 
 const execute = async (
-  workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   traceDir: string | undefined,
   input: Input,
-): Promise<TerminalOutput> => {
+  host: Host,
+): Promise<z.output<typeof output>> => {
   const workingDirectory = resolvePath(
-    workspaceRoot,
+    cwd,
     input.working_directory?.trim() === ''
       ? '.'
       : (input.working_directory ?? '.'),
@@ -127,6 +138,23 @@ const execute = async (
     MAX_TIMEOUT_MS,
   );
 
+  if (host.terminals !== undefined) {
+    const result = await host.terminals.run({
+      command: input.command,
+      cwd: workingDirectory,
+      timeoutMs,
+      ...(input.background === undefined
+        ? {}
+        : { background: input.background }),
+      ...(input.pty === undefined ? {} : { pty: input.pty }),
+    });
+    if ('background' in result)
+      return { terminal_id: result.terminalId, background: true };
+    const execution = { ...result, command: input.command, workingDirectory };
+    return compact(execution, await writeTrace(traceDir, execution));
+  }
+  if (input.background || input.pty)
+    throw new Error('This host does not support live terminals.');
   const execution = await runCommand(
     sandbox,
     input.command,
@@ -152,42 +180,25 @@ const runCommand = async (
       timeoutMs,
     });
 
-    return finish(command, workingDirectory, result, started);
+    return {
+      command,
+      workingDirectory,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode ?? -1,
+      durationMs: Date.now() - started,
+    };
   } catch (error) {
-    return failedExecution(command, workingDirectory, error, started);
+    return {
+      command,
+      workingDirectory,
+      stdout: '',
+      stderr: `Failed to execute command in sandbox: ${error instanceof Error ? error.message : String(error)}`,
+      exitCode: -1,
+      durationMs: Date.now() - started,
+    };
   }
 };
-
-const finish = (
-  command: string,
-  workingDirectory: string,
-  result: SandboxExecResult,
-  started: number,
-): Execution => ({
-  command,
-  workingDirectory,
-  stdout: result.stdout,
-  stderr: result.stderr,
-  exitCode: result.exitCode ?? -1,
-  durationMs: Date.now() - started,
-});
-
-const failedExecution = (
-  command: string,
-  workingDirectory: string,
-  error: unknown,
-  started: number,
-): Execution => ({
-  command,
-  workingDirectory,
-  stdout: '',
-  stderr: `Failed to execute command in sandbox: ${errorMessage(error)}`,
-  exitCode: -1,
-  durationMs: Date.now() - started,
-});
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const compact = (
   execution: Execution,
@@ -208,7 +219,12 @@ const compact = (
     working_directory: execution.workingDirectory,
     exit_code: execution.exitCode,
     duration_ms: execution.durationMs,
-    success: execution.exitCode === 0,
+    ...(execution.reason === undefined
+      ? {}
+      : { termination_reason: execution.reason }),
+    success:
+      execution.exitCode === 0 &&
+      (execution.reason === undefined || execution.reason === 'exited'),
     stdout,
     stderr,
     diagnostics: [...reduceDiagnostics(execution)],
@@ -454,9 +470,7 @@ const isCargoVerification = (command: string): boolean => {
     .replace(/\\/g, '/')
     .toLowerCase();
 
-  return /(?:^|[\s;\/])cargo(?:\.exe)?\s+(test|check|clippy)\b/.test(
-    normalized,
-  );
+  return /(?:^|[\s;/])cargo(?:\.exe)?\s+(test|check|clippy)\b/.test(normalized);
 };
 
 const splitLines = (value: string): readonly string[] =>
@@ -471,9 +485,7 @@ const capLine = (line: string): string =>
     ? line
     : `${line.slice(0, MAX_LINE_CHARS)} [line truncated; ${line.length - MAX_LINE_CHARS} chars omitted]`;
 
-const resolvePath = (workspaceRoot: string, value: string): string =>
+const resolvePath = (cwd: string, value: string): string =>
   path.posix.normalize(
-    path.posix.isAbsolute(value)
-      ? value
-      : path.posix.join(workspaceRoot, value),
+    path.posix.isAbsolute(value) ? value : path.posix.join(cwd, value),
   );

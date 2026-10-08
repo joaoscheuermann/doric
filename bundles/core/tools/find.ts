@@ -1,14 +1,13 @@
 import { posix as path } from 'node:path';
 
-import { z } from 'zod';
-
 import type { Sandbox } from 'sandbox';
 import { defineTool } from 'tool';
+import { z } from 'zod';
 
 const DEFAULT_LIMIT = 1000;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 const description =
-  'Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).';
+  'Search for files by glob pattern. Returns matching file paths relative to the search directory. A relative path resolves against the current working directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).';
 
 export const input = z
   .object({
@@ -31,11 +30,11 @@ export type FindOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type IgnorePattern = {
+interface IgnorePattern {
   readonly base: string;
   readonly pattern: string;
   readonly negated: boolean;
-};
+}
 
 type PathKind = 'directory' | 'file' | 'missing' | 'other';
 
@@ -45,19 +44,20 @@ const factory = defineTool({
   description,
   input,
   output,
-  execute: (sandbox, input): Promise<FindOutput> =>
-    execute(sandbox.root, sandbox, input),
+  execute: (sandbox, host, input): Promise<FindOutput> =>
+    execute(sandbox.root, host.workspace.cwd(), sandbox, input),
 });
 
 export default factory;
 
 const execute = async (
   workspaceRoot: string,
+  cwd: string,
   sandbox: Sandbox,
   input: Input,
 ): Promise<FindOutput> => {
   const searchDir = input.path ?? '.';
-  const searchPath = resolvePath(workspaceRoot, searchDir);
+  const searchPath = resolvePath(workspaceRoot, cwd, searchDir);
 
   if (typeof searchPath === 'string') {
     return empty(searchPath);
@@ -89,12 +89,12 @@ const execute = async (
   return collect(searchPath.path, visible, glob, input.limit ?? DEFAULT_LIMIT);
 };
 
-const collect = async (
+const collect = (
   searchPath: string,
   files: readonly string[],
   glob: RegExp,
   limit: number,
-): Promise<FindOutput> => {
+): FindOutput => {
   const results: string[] = [];
   let totalBytes = 0;
   let totalMatched = 0;
@@ -300,12 +300,13 @@ const compileGlob = (pattern: string): RegExp | string => {
 
 const resolvePath = (
   workspaceRoot: string,
+  cwd: string,
   value: string,
 ): { readonly path: string } | string => {
   const root = normalizePath(workspaceRoot);
 
   const resolved = normalizePath(
-    path.isAbsolute(value) ? value : path.join(root, value),
+    path.isAbsolute(value) ? value : path.join(cwd, value),
   );
 
   if (!contains(root, resolved)) {

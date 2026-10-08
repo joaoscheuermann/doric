@@ -7,7 +7,9 @@ export function inbox(socket: Socket) {
   let failure: Error | undefined;
   const fail = (error: Error) => {
     failure = error;
-    listeners.forEach((notify) => notify());
+    listeners.forEach((notify) => {
+      notify();
+    });
   };
   socket.on('connect_error', fail);
   socket.on('workspace:error', (error) =>
@@ -15,7 +17,9 @@ export function inbox(socket: Socket) {
   );
   socket.onAny((name: string, value: unknown) => {
     notices.push({ name, value });
-    listeners.forEach((notify) => notify());
+    listeners.forEach((notify) => {
+      notify();
+    });
   });
   return {
     values: <T>(name: string) =>
@@ -43,8 +47,8 @@ export function inbox(socket: Socket) {
           if (!match && !failure) return;
           clearTimeout(timer);
           listeners.delete(check);
-          if (failure) reject(failure);
-          else resolve(match!.value as T);
+          if (failure !== undefined) reject(failure);
+          else if (match !== undefined) resolve(match.value as T);
         };
         listeners.add(check);
         check();

@@ -1,60 +1,494 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
+import { type ProviderKind, providerKinds } from 'llms';
 import { pino } from 'pino';
 
 import {
+  createGeneration,
+  type Generation,
+  providerFor,
+} from '../src/lib/config/generation.js';
+import {
+  type ConfigInput,
   ConfigInputSchema,
-  defaultConfig,
   type DoricConfig,
+  defaultConfig,
+  providerCredentials,
 } from '../src/lib/config/schema.js';
-import { createConfigService } from '../src/lib/config/service.js';
-import type { Generation } from '../src/lib/config/generation.js';
+import {
+  ConfigCredentialError,
+  createConfigService,
+} from '../src/lib/config/service.js';
+import type { Credential } from '../src/lib/credentials/kind.js';
+import type { CredentialService } from '../src/lib/credentials/service.js';
+import { eventJson } from '../src/lib/events/serialization.js';
+import { credentialResolver } from './helpers/workspace.js';
 
-test('accepts the complete default configuration', () => {
+/** The credential the seeded baseline provider authenticates with. */
+const providerCredential: Credential = {
+  id: defaultConfig.providers[0].configuration.token,
+  kind: 'API_TOKEN',
+  name: 'OPENROUTER_API_KEY',
+  secret: 'sk_stored',
+};
+
+const gitCredential: Credential = {
+  id: '00000000-0000-4000-8000-00000000000a',
+  kind: 'GIT',
+  name: 'github',
+  username: 'octocat',
+  email: 'octocat@example.com',
+};
+
+/** The provider's own values, so a case can break exactly one of them. */
+const providerOf = () => structuredClone(defaultConfig.providers[0]);
+
+/**
+ * A configuration whose one provider is the value under test, executed by it, so
+ * every case is about that provider alone. Values are typed loosely because most
+ * cases are shapes the schema is meant to refuse.
+ */
+const withProvider = (
+  provider: { readonly id: string } & Readonly<Record<string, unknown>>,
+): unknown => ({
+  ...structuredClone(defaultConfig),
+  providers: [provider],
+  models: {
+    execution: {
+      ...defaultConfig.models.execution,
+      providerId: provider.id,
+    },
+  },
+});
+
+void test('accepts the complete default configuration', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
 
-test('rejects credential values embedded in provider configuration', () => {
-  const secret = {
-    ...defaultConfig,
-    providers: defaultConfig.providers.map((provider) => ({
-      ...provider,
-      apiKey: 'private',
-    })),
+void test('carries each provider kind with the values that kind declares', () => {
+  // Every kind the catalog declares is a kind a stored configuration can name.
+  assert.deepEqual(
+    providerKinds.map(({ id }) => id).sort(),
+    [...new Set(providerKinds.map(({ id }) => id))].sort(),
+  );
+
+  for (const kind of providerKinds) {
+    const provider = {
+      id: 'provider',
+      kind: kind.id,
+      configuration: Object.fromEntries(
+        kind.fields
+          .filter((field) => field.required)
+          .map((field) => [field.key, valueFor(field)]),
+      ),
+      ...(kind.lists.includes('models')
+        ? {
+            models: [
+              {
+                name: 'a-model',
+                ...(kind.lists.includes('reasonings')
+                  ? { reasonings: ['low'] }
+                  : {}),
+              },
+            ],
+          }
+        : {}),
+    };
+
+    assert.equal(
+      ConfigInputSchema.safeParse(withProvider(provider)).success,
+      true,
+      `kind ${kind.id} was rejected with its own values`,
+    );
+  }
+});
+
+/** A value a field's own kind accepts, which is what the schema judges. */
+const valueFor = (field: ProviderKind['fields'][number]): string => {
+  switch (field.kind) {
+    case 'url':
+      return 'https://example.test/v1';
+    case 'number':
+      return '1';
+    case 'enum':
+      return field.options?.[0] ?? '';
+    case 'secret':
+      return providerCredential.id;
+    case 'text':
+      return `${field.key} value`;
+  }
+};
+
+void test('rejects a provider kind the catalog does not know', () => {
+  const invalid = withProvider({ ...providerOf(), kind: 'anthropic' });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects a value the kind does not declare, including a credential of its own', () => {
+  const invalid = withProvider({
+    ...providerOf(),
+    configuration: { ...providerOf().configuration, apiKey: 'private' },
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects a provider that omits a value its kind requires', () => {
+  // OpenRouter authenticates with a stored token, and a provider without one
+  // cannot be built.
+  const invalid = withProvider({
+    id: 'openrouter',
+    kind: 'openrouter',
+    configuration: { endpoint: 'https://openrouter.ai/api/v1' },
+    models: [{ name: 'a-model', reasonings: ['low'] }],
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects an optional value that is set to nothing', () => {
+  // Absence is how an optional field is unset; an empty string is a value the
+  // provider cannot use and the settings surface must not send.
+  const invalid = withProvider({
+    id: 'local',
+    kind: 'openai',
+    configuration: { endpoint: '', token: '' },
+    models: [],
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects a provider credential reference that is not a UUID', () => {
+  const invalid = withProvider({
+    ...providerOf(),
+    configuration: {
+      ...providerOf().configuration,
+      token: 'OPENROUTER_API_KEY',
+    },
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects provider URLs outside HTTP and HTTPS', () => {
+  const invalid = withProvider({
+    ...providerOf(),
+    configuration: {
+      ...providerOf().configuration,
+      endpoint: 'file:///tmp/provider',
+    },
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('rejects a number value that is not a number and an enum value outside its options', () => {
+  const router = {
+    id: 'router',
+    kind: 'openrouter',
+    configuration: {
+      endpoint: 'https://openrouter.ai/api/v1',
+      token: providerCredential.id,
+      maxStructuredOutputRepairs: 'two',
+    },
+    models: [{ name: 'a-model', reasonings: ['low'] }],
   };
-  assert.equal(ConfigInputSchema.safeParse(secret).success, false);
+  const codex = {
+    id: 'codex',
+    kind: 'codex',
+    configuration: { token: providerCredential.id, fedramp: 'sometimes' },
+  };
+
+  assert.equal(
+    ConfigInputSchema.safeParse(withProvider(router)).success,
+    false,
+  );
+  assert.equal(ConfigInputSchema.safeParse(withProvider(codex)).success, false);
+
+  // The same two kinds accept the values their own kinds declare.
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...router,
+        configuration: {
+          ...router.configuration,
+          maxStructuredOutputRepairs: '0',
+        },
+      }),
+    ).success,
+    true,
+  );
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...codex,
+        configuration: { ...codex.configuration, fedramp: 'true' },
+      }),
+    ).success,
+    true,
+  );
 });
 
-test('rejects credential environment names outside the API key convention', () => {
-  const invalid = structuredClone(defaultConfig);
-  invalid.providers[0]!.apiKeyEnv = 'TOKEN';
-  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+void test('rejects a list the kind does not keep, and a kind that omits one it does', () => {
+  // Codex keeps no model list, and the OpenAI-compatible kind keeps one.
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        id: 'codex',
+        kind: 'codex',
+        configuration: { token: providerCredential.id },
+        models: [{ name: 'gpt-codex' }],
+      }),
+    ).success,
+    false,
+  );
+
+  // A kind that keeps a model list must carry it, even when the provider names
+  // no model yet.
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        id: 'openrouter',
+        kind: 'openai',
+        configuration: {},
+      }),
+    ).success,
+    false,
+  );
+
+  // OpenAI models must carry their reasoning list, even when it is empty.
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        id: 'local',
+        kind: 'openai',
+        configuration: {},
+        models: [{ name: 'local-model' }],
+      }),
+    ).success,
+    false,
+  );
 });
 
-test('rejects provider URLs outside HTTP and HTTPS', () => {
-  const invalid = structuredClone(defaultConfig);
-  invalid.providers[0]!.baseUrl = 'file:///tmp/provider';
-  assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+void test('accepts a model list a kind keeps while it holds nothing yet', () => {
+  // A migrated provider has no models of its own until an operator names them,
+  // and the execution section is what falls back to a typed model.
+  const [provider] = defaultConfig.providers;
+  assert.deepEqual(provider?.models, []);
+  assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
 
-test('rejects model profiles that reference an unavailable provider', () => {
+void test('rejects a model list entry that repeats, is empty, or carries a bad effort', () => {
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model' }, { name: 'a-model' }],
+      }),
+    ).success,
+    false,
+  );
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({ ...providerOf(), models: [{ name: ' ' }] }),
+    ).success,
+    false,
+  );
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model', reasonings: ['low', 'low'] }],
+      }),
+    ).success,
+    false,
+  );
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withProvider({
+        ...providerOf(),
+        models: [{ name: 'a-model', reasonings: ['extreme'] }],
+      }),
+    ).success,
+    false,
+  );
+});
+
+void test('rejects model profiles that reference an unavailable provider', () => {
   const invalid = structuredClone(defaultConfig);
   invalid.models.execution.providerId = 'missing';
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects fields outside the Direct configuration contract', () => {
+void test('rejects fields outside the Direct configuration contract', () => {
   const invalid = { ...structuredClone(defaultConfig), routing: {} };
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('rejects duplicate provider identifiers', () => {
+void test('rejects duplicate provider identifiers', () => {
   const invalid = structuredClone(defaultConfig);
-  invalid.providers.push(structuredClone(invalid.providers[0]!));
+  invalid.providers.push(structuredClone(invalid.providers[0]));
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
 });
 
-test('serializes concurrent replacements in request order', async () => {
+void test('names the credential each provider secret field carries', () => {
+  const [provider] = defaultConfig.providers;
+  assert.ok(provider !== undefined);
+
+  assert.deepEqual(
+    providerCredentials(provider).map(({ field, id }) => ({
+      key: field.key,
+      id,
+    })),
+    [{ key: 'token', id: providerCredential.id }],
+  );
+  assert.deepEqual(
+    providerCredentials({
+      id: 'local',
+      kind: 'openai',
+      configuration: {},
+      models: [{ name: 'local-model', reasonings: [] }],
+    }),
+    [],
+  );
+});
+
+void test('rejects a provider that references a credential of the wrong kind', async () => {
+  const harness = await configHarness({
+    credentials: [providerCredential, gitCredential],
+  });
+  const invalid = withProvider({
+    ...providerOf(),
+    configuration: {
+      ...providerOf().configuration,
+      token: gitCredential.id,
+    },
+  }) as ConfigInput;
+
+  await assert.rejects(harness.service.replace(invalid), ConfigCredentialError);
+  assert.deepEqual(harness.writes, []);
+});
+
+void test('rejects a configuration that references an unstored credential', async () => {
+  const harness = await configHarness({ credentials: [providerCredential] });
+  const invalid = structuredClone(defaultConfig);
+  invalid.gitCredentialId = gitCredential.id;
+
+  await assert.rejects(harness.service.replace(invalid), ConfigCredentialError);
+  assert.deepEqual(harness.writes, []);
+});
+
+void test('accepts a Git identity and a GitHub token of the right kinds', async () => {
+  const harness = await configHarness({
+    credentials: [providerCredential, gitCredential],
+  });
+  const github: Credential = {
+    id: '00000000-0000-4000-8000-00000000000b',
+    kind: 'API_TOKEN',
+    name: 'github',
+    secret: 'ghp_stored',
+  };
+  harness.store([providerCredential, gitCredential, github]);
+
+  const snapshot = await harness.service.replace({
+    ...structuredClone(defaultConfig),
+    gitCredentialId: gitCredential.id,
+    githubCredentialId: github.id,
+  });
+
+  assert.deepEqual(snapshot.configuration.gitCredentialId, gitCredential.id);
+  assert.deepEqual(snapshot.configuration.githubCredentialId, github.id);
+  assert.deepEqual(harness.writes, [defaultConfig.models.execution.model]);
+});
+
+void test('builds every configured provider through the kind it names', async () => {
+  const configuration: ConfigInput = {
+    ...structuredClone(defaultConfig),
+    providers: [
+      {
+        id: 'local',
+        kind: 'openai',
+        configuration: {},
+        models: [{ name: 'local-model', reasonings: [] }],
+      },
+      {
+        id: 'proxy',
+        kind: 'openai',
+        configuration: {},
+        models: [{ name: 'proxy-model', reasonings: ['low'] }],
+      },
+    ],
+    models: {
+      execution: {
+        providerId: 'local',
+        model: 'local-model',
+        effort: 'low',
+      },
+    },
+  };
+  const generation = await createGeneration({
+    snapshot: snapshot(configuration, 1),
+    credentials: credentialResolver(() => [providerCredential]),
+    bundles: [],
+    logger: pino({ enabled: false }),
+  });
+
+  // The factory each provider names is what answers, not one hard-coded kind.
+  assert.equal(providerFor(generation, 'local').metadata.id, 'local');
+  assert.equal(providerFor(generation, 'proxy').metadata.id, 'proxy');
+  assert.throws(() => providerFor(generation, 'missing'));
+});
+
+void test('redacts every stored secret from event values', async () => {
+  const generation = await createGeneration({
+    snapshot: snapshot(defaultConfig, 1),
+    credentials: credentialResolver(() => [providerCredential]),
+    bundles: [],
+    logger: pino({ enabled: false }),
+  });
+  const unconfigured = await createGeneration({
+    snapshot: snapshot(defaultConfig, 1),
+    credentials: credentialResolver(),
+    bundles: [],
+    logger: pino({ enabled: false }),
+  });
+
+  const secret = providerCredential.secret;
+
+  assert.ok(secret !== undefined);
+
+  assert.equal(generation.redactions().includes(secret), true);
+  assert.equal(unconfigured.redactions().includes(secret), false);
+  assert.deepEqual(
+    eventJson({ output: providerCredential.secret }, generation.redactions()),
+    { output: '[REDACTED]' },
+  );
+});
+
+void test('redacts a secret the credentials learned after the generation was built', async () => {
+  const rotated = 'ghp_rotated_later';
+  const credentials: CredentialService = credentialResolver();
+  const generation = await createGeneration({
+    snapshot: snapshot(defaultConfig, 1),
+    credentials,
+    bundles: [],
+    logger: pino({ enabled: false }),
+  });
+
+  assert.equal(generation.redactions().includes(rotated), false);
+
+  credentials.register(rotated);
+
+  assert.equal(generation.redactions().includes(rotated), true);
+  assert.deepEqual(eventJson({ output: rotated }, generation.redactions()), {
+    output: '[REDACTED]',
+  });
+});
+
+void test('serializes concurrent replacements in request order', async () => {
   const harness = await configHarness({ blockedBuild: 'first' });
   const first = configured('first');
   const second = configured('second');
@@ -72,7 +506,7 @@ test('serializes concurrent replacements in request order', async () => {
   );
 });
 
-test('keeps the active generation and accepts later replacements after a build failure', async () => {
+void test('keeps the active generation and accepts later replacements after a build failure', async () => {
   const harness = await configHarness({ failedBuild: 'broken-build' });
 
   await assert.rejects(harness.service.replace(configured('broken-build')));
@@ -90,7 +524,7 @@ test('keeps the active generation and accepts later replacements after a build f
   );
 });
 
-test('keeps the active generation when persistent replacement fails', async () => {
+void test('keeps the active generation when persistent replacement fails', async () => {
   const harness = await configHarness({ failedWrite: 'broken-store' });
   const original = harness.service.current();
 
@@ -109,13 +543,15 @@ test('keeps the active generation when persistent replacement fails', async () =
   );
 });
 
-type ConfigHarnessOptions = {
+interface ConfigHarnessOptions {
+  readonly credentials?: readonly Credential[];
   readonly blockedBuild?: string;
   readonly failedBuild?: string;
   readonly failedWrite?: string;
-};
+}
 
 const configHarness = async ({
+  credentials = [providerCredential],
   blockedBuild,
   failedBuild,
   failedWrite,
@@ -126,9 +562,10 @@ const configHarness = async ({
   const buildGate = new Promise<void>((resolve) => {
     releaseBuild = resolve;
   });
+  let stored = credentials;
   const store = {
     load: async () => snapshot(defaultConfig, revision),
-    replace: async (configuration: typeof defaultConfig) => {
+    replace: async (configuration: ConfigInput) => {
       const model = configuration.models.execution.model;
       if (model === failedWrite) throw new Error('store unavailable');
       writes.push(model);
@@ -148,11 +585,22 @@ const configHarness = async ({
   };
   const service = await createConfigService({
     store,
+    credentials: credentialResolver(() => stored),
     bundles: [],
     logger: pino({ enabled: false }),
     buildGeneration: build,
+    // The catalog reader has its own cases; this harness is about the store and
+    // the service, so it must never reach an endpoint.
+    readModels: (configuration) => Promise.resolve(configuration),
   });
-  return { service, writes, releaseBuild };
+  return {
+    service,
+    writes,
+    releaseBuild,
+    store: (next: readonly Credential[]) => {
+      stored = next;
+    },
+  };
 };
 
 const configured = (model: string) => {
@@ -162,7 +610,7 @@ const configured = (model: string) => {
 };
 
 const snapshot = (
-  configuration: typeof defaultConfig,
+  configuration: ConfigInput,
   revision: number,
 ): DoricConfig => ({
   configuration,

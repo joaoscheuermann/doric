@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 
+import type { Terminal } from '../workspace/terminals.js';
 import type {
   ProjectStore,
   ThreadEvent,
@@ -8,18 +9,21 @@ import type {
   WorkspacePublisher,
 } from '../workspace/types.js';
 
-const threadQuery = z.object({
+const threadAuth = z.object({
   threadId: z.uuid(),
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
-const projectQuery = z.object({ projectId: z.uuid() });
-type Notice = { readonly name: string; readonly value: unknown };
-type Subscription = {
+const projectAuth = z.object({ projectId: z.uuid() });
+interface Notice {
+  readonly name: string;
+  readonly value: unknown;
+}
+interface Subscription {
   ready: boolean;
   lastSequence: number;
   readonly events: Map<number, ThreadEvent>;
   readonly notices: Notice[];
-};
+}
 type Subscribers = Map<string, Map<Socket, Subscription>>;
 
 /** Subscribe before reading durable data, then deduplicate replay against live events. */
@@ -27,25 +31,24 @@ export const createWorkspaceSocket = (
   io: Server,
   projects: ProjectStore,
   threads: ThreadStore,
+  terminals: (projectId: string) => readonly Terminal[] = () => [],
 ): WorkspacePublisher => {
   const threadSubscriptions: Subscribers = new Map();
   const projectSubscriptions: Subscribers = new Map();
   const threadNamespace = io.of('/threads');
   const projectNamespace = io.of('/projects');
   threadNamespace.use((socket, next) => {
-    const input = threadQuery.safeParse(socket.handshake.query);
+    const input = threadAuth.safeParse(socket.handshake.auth);
     next(input.success ? undefined : new Error('Invalid thread subscription.'));
   });
   projectNamespace.use((socket, next) => {
-    const input = projectQuery.safeParse(socket.handshake.query);
+    const input = projectAuth.safeParse(socket.handshake.auth);
     next(
       input.success ? undefined : new Error('Invalid project subscription.'),
     );
   });
   threadNamespace.on('connection', (socket) => {
-    const { threadId, afterSequence } = threadQuery.parse(
-      socket.handshake.query,
-    );
+    const { threadId, afterSequence } = threadAuth.parse(socket.handshake.auth);
     const subscription = subscribe(
       threadSubscriptions,
       threadId,
@@ -55,7 +58,7 @@ export const createWorkspaceSocket = (
     void replayThread(socket, subscription, threadId, afterSequence);
   });
   projectNamespace.on('connection', (socket) => {
-    const { projectId } = projectQuery.parse(socket.handshake.query);
+    const { projectId } = projectAuth.parse(socket.handshake.auth);
     const subscription = subscribe(projectSubscriptions, projectId, socket, 0);
     void replayProject(socket, subscription, projectId);
   });
@@ -68,22 +71,22 @@ export const createWorkspaceSocket = (
   ) {
     try {
       const [record, history] = await Promise.all([
-        threads.find(threadId),
+        threads.record(threadId),
         threads.eventsAfter(threadId, afterSequence),
       ]);
       const project =
         record === undefined
           ? undefined
-          : await projects.find(record.thread.projectId);
+          : await projects.record(record.projectId);
       if (!socket.connected) return;
       const events = history
         .filter((event) => event.sequence > afterSequence)
         .sort((a, b) => a.sequence - b.sequence);
       socket.emit('thread:snapshot', {
         threadId,
-        projectId: record?.thread.projectId ?? null,
-        project: project?.project ?? null,
-        thread: record?.thread ?? null,
+        projectId: record?.projectId ?? null,
+        project: project ?? null,
+        thread: record ?? null,
         events,
       });
       subscription.lastSequence = events.at(-1)?.sequence ?? afterSequence;
@@ -101,14 +104,19 @@ export const createWorkspaceSocket = (
   ) {
     try {
       const [record, tree] = await Promise.all([
-        projects.find(projectId),
+        projects.record(projectId),
         threads.listByProject(projectId),
       ]);
       if (!socket.connected) return;
       socket.emit('project:snapshot', {
         projectId,
-        project: record?.project ?? null,
+        project: record ?? null,
         threads: tree,
+        terminals: terminals(projectId),
+      });
+      socket.emit('terminal:snapshot', {
+        projectId,
+        terminals: terminals(projectId),
       });
       subscription.ready = true;
       flushNotices(socket, subscription);
@@ -117,6 +125,21 @@ export const createWorkspaceSocket = (
     }
   }
   return {
+    terminalUpdated(value) {
+      notify(projectSubscriptions, value.projectId, 'terminal:updated', value);
+    },
+    terminalOutput(value) {
+      // Reconnect reads the bounded terminal snapshot instead of buffering a
+      // second, unbounded copy of stdout while the durable tree is loading.
+      projectSubscriptions
+        .get(value.projectId)
+        ?.forEach((subscription, socket) => {
+          if (subscription.ready) socket.emit('terminal:output', value);
+        });
+    },
+    terminalRemoved(value) {
+      notify(projectSubscriptions, value.projectId, 'terminal:removed', value);
+    },
     event(value) {
       threadSubscriptions
         .get(value.threadId)

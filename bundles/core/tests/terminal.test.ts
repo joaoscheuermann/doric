@@ -12,16 +12,65 @@ import type {
 } from 'sandbox';
 
 import { createTool } from '../tools/terminal.js';
+import { fakeHost } from './fake-sandbox.js';
 
 type FakeSandbox = SandboxSession & {
   readonly execs: SandboxExecInput[];
 };
 
-describe('terminal tool', () => {
-  test('executes a command from the requested sandbox working directory', async () => {
+void describe('terminal tool', () => {
+  void test('returns a terminal reference immediately for a tracked background command', async () => {
+    const sandbox = fakeSandbox(new Error('Untracked execution is forbidden'));
+    const host = {
+      ...fakeHost(),
+      terminals: {
+        run: async (input: {
+          command: string;
+          background?: boolean;
+          pty?: boolean;
+        }) => {
+          assert.equal(input.command, 'npm run dev');
+          assert.equal(input.background, true);
+          assert.equal(input.pty, true);
+          return { terminalId: 'terminal-1', background: true as const };
+        },
+      },
+    };
+    const result = await createTool()(sandbox, host).execute({
+      command: 'npm run dev',
+      background: true,
+      pty: true,
+    });
+    assert.deepEqual(result, { terminal_id: 'terminal-1', background: true });
+  });
+
+  void test('compacts the result of a tracked foreground command', async () => {
+    const sandbox = fakeSandbox(new Error('Untracked execution is forbidden'));
+    const host = {
+      ...fakeHost(),
+      terminals: {
+        run: async () => ({
+          terminalId: 'terminal-1',
+          stdout: 'hello\n',
+          stderr: '',
+          exitCode: 0,
+          durationMs: 42,
+          reason: 'exited' as const,
+        }),
+      },
+    };
+    const result = await createTool()(sandbox, host).execute({
+      command: 'echo hello',
+    });
+    assert.ok('schema' in result);
+    assert.deepEqual(result.stdout.head, ['hello']);
+    assert.equal(result.duration_ms, 42);
+  });
+
+  void test('executes a command from the requested sandbox working directory', async () => {
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: "printf 'hello'",
       working_directory: 'repo/src',
       timeout_ms: 5000,
@@ -35,6 +84,7 @@ describe('terminal tool', () => {
       },
     ]);
 
+    assert.ok('schema' in result);
     assert.equal(result.schema, 'terminal.compact.v1');
 
     assert.equal(result.working_directory, '/workspace/repo/src');
@@ -46,10 +96,10 @@ describe('terminal tool', () => {
     assert.deepEqual(result.stdout.head, ['hello']);
   });
 
-  test('uses the sandbox workspace root by default and caps timeout', async () => {
+  void test('uses the sandbox workspace root by default and caps timeout', async () => {
     const sandbox = fakeSandbox(execResult());
 
-    await createTool()(sandbox).execute({
+    await createTool()(sandbox, fakeHost()).execute({
       command: 'pwd',
       timeout_ms: 999_999,
     });
@@ -63,7 +113,35 @@ describe('terminal tool', () => {
     ]);
   });
 
-  test('maps a sandbox result without an exit code to -1', async () => {
+  void test('runs in the working directory the thread moved to', async () => {
+    const sandbox = fakeSandbox(execResult());
+    const host = fakeHost({ cwd: '/workspace/repo' });
+    const tool = createTool();
+
+    await host.workspace.setCwd('src');
+
+    const byDefault = await tool(sandbox, host).execute({ command: 'pwd' });
+
+    await tool(sandbox, host).execute({
+      command: 'ls',
+      working_directory: 'lib',
+    });
+
+    await tool(sandbox, host).execute({
+      command: 'ls',
+      working_directory: '/workspace/other',
+    });
+
+    assert.deepEqual(
+      sandbox.execs.map((exec) => exec.cwd),
+      ['/workspace/repo/src', '/workspace/repo/src/lib', '/workspace/other'],
+    );
+
+    assert.ok('schema' in byDefault);
+    assert.equal(byDefault.working_directory, '/workspace/repo/src');
+  });
+
+  void test('maps a sandbox result without an exit code to -1', async () => {
     const sandbox = fakeSandbox(
       execResult({
         exitCode: null,
@@ -71,11 +149,12 @@ describe('terminal tool', () => {
       }),
     );
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'sleep 1',
       timeout_ms: 10,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.exit_code, -1);
 
     assert.equal(result.success, false);
@@ -83,14 +162,15 @@ describe('terminal tool', () => {
     assert.match(result.stderr.head.join('\n'), /timed out/u);
   });
 
-  test('returns sandbox execution errors as compact terminal output', async () => {
+  void test('returns sandbox execution errors as compact terminal output', async () => {
     const sandbox = fakeSandbox(new Error('container exec failed'));
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'echo hello',
       timeout_ms: 5000,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.exit_code, -1);
 
     assert.equal(result.success, false);
@@ -98,7 +178,7 @@ describe('terminal tool', () => {
     assert.match(result.stderr.head.join('\n'), /container exec failed/u);
   });
 
-  test('extracts diagnostics from sandbox stderr', async () => {
+  void test('extracts diagnostics from sandbox stderr', async () => {
     const sandbox = fakeSandbox(
       execResult({
         exitCode: 1,
@@ -106,11 +186,12 @@ describe('terminal tool', () => {
       }),
     );
 
-    const result = await createTool()(sandbox).execute({
+    const result = await createTool()(sandbox, fakeHost()).execute({
       command: 'npm test',
       timeout_ms: 5000,
     });
 
+    assert.ok('schema' in result);
     assert.equal(result.success, false);
 
     assert.equal(result.diagnostics[0]?.kind, 'typescript_error');
@@ -120,14 +201,18 @@ describe('terminal tool', () => {
     assert.match(result.diagnostics[0]?.text ?? '', /TS2304/u);
   });
 
-  test('writes raw output traces on the host when trace storage is enabled', async () => {
+  void test('writes raw output traces on the host when trace storage is enabled', async () => {
     const traceDir = await mkdtemp(path.join(os.tmpdir(), 'doric-terminal-'));
     const sandbox = fakeSandbox(execResult({ stdout: 'hello\n' }));
 
     try {
-      const result = await createTool({ traceDir })(sandbox).execute({
+      const result = await createTool({ traceDir })(
+        sandbox,
+        fakeHost(),
+      ).execute({
         command: 'echo hello',
       });
+      assert.ok('schema' in result);
       const rawOutputRef = result.raw_output_ref;
 
       assert.ok(result.trace_id);

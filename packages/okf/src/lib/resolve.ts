@@ -8,10 +8,10 @@ import type {
   ModuleImports,
 } from './types/interface.js';
 
-type ResolveInput = {
+interface ResolveInput {
   readonly root: string;
   readonly source: string;
-};
+}
 
 /** Resolves and groups extracted module sources into deterministic imports. */
 export const resolveImports = async (
@@ -23,7 +23,9 @@ export const resolveImports = async (
   for (const item of imports) {
     const symbols = merged.get(item.source) ?? new Set<string>();
 
-    item.symbols.forEach((symbol) => symbols.add(symbol));
+    item.symbols.forEach((symbol) => {
+      symbols.add(symbol);
+    });
 
     merged.set(item.source, symbols);
   }

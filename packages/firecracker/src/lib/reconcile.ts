@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { run } from './command.js';
 import type { FirecrackerConfig } from './types.js';
 
-type StaleState = {
+interface StaleState {
   readonly pid?: unknown;
-};
+}
 
 /** Removes resources recorded by a previous provider process before launch. */
 export const reconcileStaleFirecrackerResources = async (

@@ -1,11 +1,10 @@
 import express, { type Router } from 'express';
-
 import type { SandboxSshAccess } from 'sandbox';
 
 import { handleHttpError, sendError } from '../lib/http/errors.js';
 import type { RunningVm } from '../lib/vms.js';
 
-export type CreateVmsRouterOptions = {
+export interface CreateVmsRouterOptions {
   readonly list: () => readonly RunningVm[];
   readonly find: (id: string) => RunningVm | undefined;
   readonly ssh: (
@@ -13,7 +12,7 @@ export type CreateVmsRouterOptions = {
   ) => Promise<
     { readonly projectId: string; readonly ssh: SandboxSshAccess } | undefined
   >;
-};
+}
 
 /** Creates the mountable routes for observing active VM runtimes. */
 export const createVmsRouter = ({

@@ -5,10 +5,10 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import factory from '../tools/grep.js';
-import { createFakeSandbox } from './fake-sandbox.js';
+import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
 
-describe('grep tool', () => {
-  test('finds matching lines with requested context and glob filtering', async () => {
+void describe('grep tool', () => {
+  void test('finds matching lines with requested context and glob filtering', async () => {
     const root = await workspace('grep-context');
 
     await write(
@@ -19,7 +19,7 @@ describe('grep tool', () => {
 
     await write(root, 'src/two.txt', 'Target\n');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: 'Target',
       path: 'src',
       glob: '*.ts',
@@ -39,10 +39,42 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('returns a structured error for invalid regular expressions', async () => {
+  void test('searches the working directory and leaves an absolute path absolute', async () => {
+    const root = await workspace('grep-cwd');
+
+    await write(root, 'src/one.ts', 'before\nTarget\n');
+
+    await write(root, 'two.txt', 'Target\n');
+
+    const host = fakeHost({ cwd: '/workspace/src' });
+    const sandbox = createFakeSandbox(root);
+
+    const relative = await factory(sandbox, host).execute({
+      pattern: 'Target',
+    });
+
+    assert.deepEqual(
+      relative.matches.map((match) => match.file),
+      ['one.ts'],
+    );
+
+    const absolute = await factory(sandbox, host).execute({
+      pattern: 'Target',
+      path: '/workspace',
+    });
+
+    assert.deepEqual(
+      absolute.matches.map((match) => match.file),
+      ['src/one.ts', 'two.txt'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('returns a structured error for invalid regular expressions', async () => {
     const root = await workspace('grep-invalid-regex');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: '[',
     });
 
@@ -53,7 +85,7 @@ describe('grep tool', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test('honors gitignore whitelist rules while walking', async () => {
+  void test('honors gitignore whitelist rules while walking', async () => {
     const root = await workspace('grep-ignore-whitelist');
 
     await write(root, '.gitignore', '*.txt\n!keep.txt\n');
@@ -62,7 +94,7 @@ describe('grep tool', () => {
 
     await write(root, 'keep.txt', 'Target\n');
 
-    const result = await factory(createFakeSandbox(root)).execute({
+    const result = await factory(createFakeSandbox(root), fakeHost()).execute({
       pattern: 'Target',
       glob: '*.txt',
     });

@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type {
   ProviderFinished,
   ProviderReplayItem,
@@ -11,9 +13,9 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
-import { finishReason, parseUsage } from '../common.js';
+import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
-export type StreamState = {
+export interface StreamState {
   readonly text: string[];
   readonly reasoning: string[];
   readonly refusal: string[];
@@ -21,7 +23,7 @@ export type StreamState = {
   readonly replay: ProviderReplayItem[];
   usage?: ProviderFinished['usage'];
   finishReason?: ProviderFinished['finishReason'];
-};
+}
 
 export const createStreamState = (): StreamState => ({
   text: [],
@@ -101,22 +103,25 @@ export const streamEvents = (
 
     state.replay.push(...replayItems(delta));
 
-    if (content !== undefined) {
-      state.text.push(content);
+    const text = deltaEvent('text.delta', content);
+    if (text !== undefined) {
+      state.text.push(text.delta);
 
-      events.push({ type: 'text.delta', delta: content });
+      events.push(text);
     }
 
-    if (reasoning !== undefined) {
-      state.reasoning.push(reasoning);
+    const thought = deltaEvent('reasoning.delta', reasoning);
+    if (thought !== undefined) {
+      state.reasoning.push(thought.delta);
 
-      events.push({ type: 'reasoning.delta', delta: reasoning });
+      events.push(thought);
     }
 
-    if (refusal !== undefined) {
-      state.refusal.push(refusal);
+    const declined = deltaEvent('refusal.delta', refusal);
+    if (declined !== undefined) {
+      state.refusal.push(declined.delta);
 
-      events.push({ type: 'refusal.delta', delta: refusal });
+      events.push(declined);
     }
 
     for (const call of arrayField(delta, 'tool_calls')
@@ -173,7 +178,3 @@ const replayItems = (
   arrayField(value, 'reasoning_details')
     .map(asRecord)
     .filter(isRecord) as readonly ProviderReplayItem[];
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

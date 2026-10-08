@@ -1,11 +1,10 @@
 import { Buffer } from 'node:buffer';
 import { posix as path } from 'node:path';
 
+import type { Sandbox } from 'sandbox';
+import { defineTool, isRecord } from 'tool';
 import * as YAML from 'yaml';
 import { z } from 'zod';
-
-import type { Sandbox } from 'sandbox';
-import { defineTool } from 'tool';
 
 import type { OkfToolOptions } from './types/okf.js';
 
@@ -19,12 +18,12 @@ const MAX_OUTPUT_BYTES = 50 * 1024;
 const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/u;
 const RESERVED = new Set(['index.md', 'log.md']);
 
-type YamlModule = {
+interface YamlModule {
   readonly parse?: (value: string, options?: object) => unknown;
   readonly default?: {
     readonly parse?: (value: string, options?: object) => unknown;
   };
-};
+}
 
 const yaml = YAML as unknown as YamlModule;
 const parseYaml = yaml.parse ?? yaml.default?.parse;
@@ -78,10 +77,10 @@ type Concept = Omit<OkfSearchResult, 'contentTruncated' | 'score'> & {
   readonly sourceTruncated: boolean;
 };
 
-type Ranked = {
+interface Ranked {
   readonly concept: Concept;
   readonly score: number;
-};
+}
 
 type LoadResult = { readonly concept: Concept } | { readonly skipped: true };
 
@@ -94,7 +93,7 @@ export const createTool = (options: OkfToolOptions) =>
     description,
     input,
     output,
-    execute: (sandbox, input): Promise<OkfSearchOutput> =>
+    execute: (sandbox, _host, input): Promise<OkfSearchOutput> =>
       execute({ ...options, sandbox }, input),
   });
 
@@ -465,9 +464,6 @@ const compact = <Value extends Readonly<Record<string, unknown>>>(
   Object.fromEntries(
     Object.entries(value).filter((entry) => entry[1] !== undefined),
   ) as Value;
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const empty = (error: string): OkfSearchOutput => ({
   results: [],

@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
-
 import { createMessageStorage } from 'messages';
+import { z } from 'zod';
 
 import { type Agent, AgentErrorObject } from '../src/index.js';
 import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';
@@ -40,7 +39,7 @@ const assertTurnLimit = (error: unknown): boolean => {
   return true;
 };
 
-test('omitted maxTurns preserves an unbounded multi-turn completion', async () => {
+void test('omitted maxTurns preserves an unbounded multi-turn completion', async () => {
   const harness = createHarness({
     complete: (_request, index) =>
       index === 0
@@ -54,7 +53,7 @@ test('omitted maxTurns preserves an unbounded multi-turn completion', async () =
   assert.equal(harness.provider.requests.length, 2);
 });
 
-test('invalid maxTurns values fail before message or provider activity', async () => {
+void test('invalid maxTurns values fail before message or provider activity', async () => {
   for (const maxTurns of [0, -1, 1.5, Number.NaN, Infinity, 2 ** 53]) {
     const completeHarness = createHarness({});
 
@@ -80,7 +79,7 @@ test('invalid maxTurns values fail before message or provider activity', async (
   }
 });
 
-test('a direct response succeeds with a one-turn limit', async () => {
+void test('a direct response succeeds with a one-turn limit', async () => {
   const harness = createHarness({ complete: () => completeFinish('Done.') });
   const response = await harness.agent.complete('Answer.', { maxTurns: 1 });
 
@@ -90,7 +89,7 @@ test('a direct response succeeds with a one-turn limit', async () => {
 });
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} stores tools from the final turn and fails before another provider call`, async () => {
+  void test(`${mode} stores tools from the final turn and fails before another provider call`, async () => {
     const lookup = call('lookup', { query: 'evidence' });
 
     const harness = createHarness({
@@ -115,11 +114,12 @@ for (const mode of ['complete', 'stream'] as const) {
 
     assert.equal(message?.toolCallId, lookup.id);
 
-    assert.match(String(message?.content), /\{"found":true\}/u);
+    assert.ok(typeof message?.content === 'string');
+    assert.match(message.content, /\{"found":true\}/u);
   });
 }
 
-test('stream exhaustion preserves earlier events without emitting agent.finished', async () => {
+void test('stream exhaustion preserves earlier events without emitting agent.finished', async () => {
   const harness = createHarness({
     stream: () =>
       streamEvents(completeFinish('', [call('lookup', {}, 'call-stream')])),
@@ -141,7 +141,7 @@ test('stream exhaustion preserves earlier events without emitting agent.finished
   assert.ok(!events.includes('agent.finished'));
 });
 
-test('structured-output repair attempts consume the same turn limit', async () => {
+void test('structured-output repair attempts consume the same turn limit', async () => {
   const schema = z.object({ answer: z.string() });
 
   const lookup = {

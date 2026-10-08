@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type { Model, ProviderId } from '../../types/provider.js';
 import {
   arrayField,
@@ -12,14 +14,14 @@ import { authorization } from './auth.js';
 
 export const createOpenRouterModelsLoader =
   (
-    deps: Pick<OpenRouterProviderDeps, 'transport' | 'apiKey'>,
+    deps: Pick<OpenRouterProviderDeps, 'transport' | 'apiKey' | 'modelsUrl'>,
     baseUrl: string,
     providerId: ProviderId,
   ) =>
   async (signal?: AbortSignal): Promise<readonly Model[]> => {
     const response = await requestJson(deps.transport, providerId, {
       method: 'GET',
-      url: `${baseUrl}/models`,
+      url: deps.modelsUrl ?? `${baseUrl}/models`,
       headers: {
         authorization: await authorization(deps.apiKey),
         accept: 'application/json',
@@ -49,13 +51,8 @@ const model = (value: Record<string, unknown>): Model => {
         : numberField(topProvider, 'context_length')) ??
       (architecture === undefined
         ? undefined
-        : numberField(architecture, 'context_length')) ??
-      4096,
+        : numberField(architecture, 'context_length')),
     provider: 'openrouter',
     raw: value,
   };
 };
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

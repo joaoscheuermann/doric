@@ -7,14 +7,14 @@ import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} forwards the same cancellation signal to every provider turn`, async () => {
+  void test(`${mode} forwards the same cancellation signal to every provider turn`, async () => {
     const controller = new AbortController();
 
     const provider = createProvider({

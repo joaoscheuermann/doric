@@ -40,8 +40,10 @@ services:
       DORIC_DATABASE_URL: postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}
       DORIC_HOST: 0.0.0.0
       DORIC_SANDBOX_PROVIDER: firecracker
+      DORIC_STORAGE_PATH: /var/lib/doric/postgresql
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Encrypts stored credential secrets; required once a credential holds one.
+      DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +58,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - firecracker-state:/var/lib/doric/firecracker
       - firecracker-cache:/var/cache/doric/firecracker
+      - postgres-data:/var/lib/doric/postgresql:ro
 
   docker:
     profiles: [docker]
@@ -67,8 +70,15 @@ services:
       DORIC_DATABASE_URL: postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}
       DORIC_HOST: 0.0.0.0
       DORIC_SANDBOX_PROVIDER: docker
+      DORIC_STORAGE_PATH: /var/lib/doric/postgresql
+      # Sandboxes run the image built from agents/doric/.sandbox.Dockerfile, which
+      # ships git and gh (see "Docker deploy" in README.md). A missing local tag
+      # makes the provider's image pull fail rather than falling back to the
+      # plain Node image; publish the tag or set DORIC_SANDBOX_IMAGE to override.
+      DORIC_SANDBOX_IMAGE: ${DORIC_SANDBOX_IMAGE:-doric-sandbox:local}
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Encrypts stored credential secrets; required once a credential holds one.
+      DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +89,7 @@ services:
       - NET_ADMIN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - postgres-data:/var/lib/doric/postgresql:ro
 
 volumes:
   postgres-data:

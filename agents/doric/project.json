@@ -19,7 +19,7 @@
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
-        "command": "nx run-many --target=build --projects=bundle-core,bundle-git --parallel=2"
+        "command": "nx run-many --target=build --projects=bundle-core,bundle-git,bundle-threads --parallel=3"
       }
     },
     "prisma-generate": {

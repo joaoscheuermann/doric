@@ -3,6 +3,10 @@
   "description": "Core capabilities available to the Doric agent.",
   "tools": [
     {
+      "path": "tools/cwd.js",
+      "alwaysAvailable": true
+    },
+    {
       "path": "tools/edit.js",
       "alwaysAvailable": true
     },

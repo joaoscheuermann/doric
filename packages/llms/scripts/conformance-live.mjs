@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import {
   createFetchTransport,
-  createUnifiedProvider,
+  createOpenRouterProvider,
   ProviderErrorObject,
 } from '../dist/index.js';
 
@@ -78,7 +78,7 @@ if (!apiKey) {
   throw new Error('OPENROUTER_API_KEY is required');
 }
 
-const provider = createUnifiedProvider({
+const provider = createOpenRouterProvider({
   transport: createFetchTransport(),
   apiKey,
   logger,
