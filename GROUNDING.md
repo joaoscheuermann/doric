@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-06
+Last reviewed: 2026-10-08
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -43,6 +43,67 @@ The repository is not currently grounded in the former Rust CLI, daemon,
 worker, lifecycle, TUI, slash-command, service, or multi-process architecture.
 Those terms are out-of-scope markers unless the user explicitly expands the
 product scope and current files support the change.
+
+The user has requested a future bundle architecture that can supply providers,
+executors, events, hooks, workflow nodes, domain models and durable storage,
+and the entire desktop UI, including its root layout and every product
+component. Public UI surfaces can be bundle-owned Web Components; versioned
+services let bundles call one another, while durable events and local signals
+retain distinct delivery contracts. Bundles may also own Electron-main
+features such as the local history cache. In that target the app lifecycle is
+defined by hooks: the app itself defines the default lifecycle hooks and the
+basic features, including one technical splash and recovery surface outside
+any bundle; the core bundle opens windows and registers menus from those
+hooks and decides what other bundles may add to them; and any bundle may
+define hooks of its own so that other bundles can modify its behavior. The
+host is the source of truth for installed bundles and the composition, which
+names one core bundle activated first; the desktop downloads and verifies
+bundle artifacts during the splash and serves them from a single
+`doric://app` origin, with React, Lexical, the shadcn components, Tailwind and
+theme tokens provided as shared platform packages. Client bundles may own
+React-backed Web Components, while Electron creates the actual windows and
+keeps the preload and IPC boundary.
+On 2026-10-08 the user approved, as the target of that proposal, one process
+per bundle generation on the host and one Electron `utilityProcess` per
+generation for desktop-main code; this is the explicit HC-003 approval for
+that multi-process design, and it takes effect only as the migration steps are
+implemented and validated. The source-grounded target and migration sequence are
+recorded in `docs/architecture/bundles.md`, which links the concept documents
+under `docs/architecture/bundles/`; concrete UI examples live in
+`docs/architecture/bundles/react-web-components.md`,
+`docs/architecture/bundles/windows.md`,
+`docs/architecture/bundles/navigation.md` and
+`docs/architecture/bundles/layout.md`. The proposal writes bundle
+contracts (hooks, services, events, commands, settings and storage types) in
+zod through the `define*` family from the browser-safe `bundle/contracts`
+subpath of `packages/bundle`, modeled on `defineTool`, and generates the
+canonical JSON Schema from zod at build time. As with tools, a service method
+(`defineMethod`) and a command (`defineCommand`) carry their `execute(input,
+call, services)` in the definition, which lives in the providing part; a
+bundle's public `contracts/` entrypoint exports only typed references
+(`ref<typeof definition>(id)`), so consumers never import implementation code. In the revision of 2026-10-09,
+a bundle's activation context carries only `services`: hooks, log, settings,
+secrets, tools, skills, storage, events, models, commands, UI, regions,
+windows and menus are service contracts that the `core` bundle provides by
+default and that any other bundle may replace when the composition selects it
+in `providers`; the platform registers its lifecycle hooks in whichever
+`hooks/v1` provider is active, and keeps only what must work without the
+core (catalog, diagnostics, splash and recovery, `doric://app`, IPC,
+generation processes and the native window and menu APIs). Bundles use
+minimal names (`core`, `runtime`, `postgres`, `chat`, `layout`, `files` and
+so on), contracts are named `<bundle>.<name>/vN`, basic services by domain
+alone, and platform contracts `doric.*`. Contract definitions expose only the
+properties they need (for example, `defineHook` takes `kind` and `input`,
+`defineEvent` takes `type` and `payload`, and `defineService` takes only
+`cardinality` as an option), and security is not a design concern of the
+proposal. A route is a URL path (`/projects/:projectId/threads/:threadId`)
+registered with a `create` function and an optional `parent`; a window is a
+key plus a path; the core provides the router (`navigation/v1`), the
+`<core-outlet>` element that shows the active route like a React Router
+outlet, `ui/v1` and `regions/v1`, and the `layout` bundle registers `/` with
+the workspace frame, its regions and its tabs. These files are proposals: the current
+package responsibilities and runtime behavior below remain authoritative until
+the relevant migration steps are implemented and validated.
 
 `agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
