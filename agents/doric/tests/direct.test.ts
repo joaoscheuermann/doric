@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { AgentErrorObject } from 'agent';
+import type { CallScope } from 'bundle/contracts';
+import { createTestServices } from 'bundle/testing';
 import type { ProviderMessage, ProviderRequest } from 'llms';
+import { defineTool } from 'tool';
 import { z } from 'zod';
 
 import {
+  createDirectExecutor,
   directSystemPrompt,
-  runDirectPrompt,
 } from '../src/lib/agents/direct/executor.js';
 import { defaultConfig } from '../src/lib/config/schema.js';
 import { ThreadPersistenceError } from '../src/lib/workspace/runtime.js';
@@ -94,6 +97,15 @@ void test('binds every fresh Direct agent to the project sandbox', async () => {
 
   assert.equal(harness.boundSandboxes.length, 2);
   assert.deepEqual(harness.boundSandboxes, ['vm-1', 'vm-1']);
+});
+
+void test('binds every tool to a call scoped to the running prompt until the run ends', async () => {
+  const harness = directHarness();
+  await harness.run('use-tool').catch(() => undefined);
+
+  assert.deepEqual(harness.toolScopes, [{ projectId, threadId, promptId }]);
+  assert.deepEqual(harness.attached, [{ projectId, threadId, promptId }]);
+  assert.deepEqual(harness.released, [{ projectId, threadId, promptId }]);
 });
 
 void test('persists streamed Direct events', async () => {
@@ -281,6 +293,32 @@ const directHarness = (
   const requests: ProviderRequest[] = [];
   const events: { event: unknown }[] = [];
   const boundSandboxes: string[] = [];
+  const toolScopes: (CallScope | undefined)[] = [];
+  const attached: CallScope[] = [];
+  const released: CallScope[] = [];
+  const bundle = createTestServices({ bundle: { id: 'direct-test' } });
+  // A tool the bundles registered: bound to its bundle's services, it runs
+  // under the prompt's call. It declares no settings.
+  const inspect = defineTool({
+    name: 'inspect',
+    description: 'Inspect state.',
+    input: z.object({}),
+    output: z.object({}),
+    execute: async (_payload, call) => {
+      executions += 1;
+      toolScopes.push(call.scope);
+      return {};
+    },
+  }).bind(bundle.services);
+  const execute = createDirectExecutor({
+    call: (scope, signal) => bundle.call(scope, signal),
+    // The run's Host and sandbox stay attached to its prompt until it ends.
+    attach: (scope, binding) => {
+      boundSandboxes.push(binding.sandbox.id);
+      attached.push(scope);
+      return () => released.push(scope);
+    },
+  });
   /** What the host held when it asked the provider for each turn. */
   const calls: {
     readonly persisted: readonly ProviderMessage[];
@@ -332,32 +370,7 @@ const directHarness = (
     redactions: () => [],
     catalog: {
       skills: [skill('sandbox', 'Inspect before reporting.')],
-      tools: [
-        // A tool factory binds to the sandbox at the moment a run is created, so
-        // the run records which one it received. It declares no settings.
-        Object.assign(
-          (sandbox: { id: string }) => {
-            boundSandboxes.push(sandbox.id);
-            return {
-              name: 'inspect',
-              description: 'Inspect state.',
-              input: z.object({}),
-              output: z.object({}),
-              definition: {
-                name: 'inspect',
-                inputSchema: { type: 'object', properties: {} },
-                outputSchema: { type: 'object', properties: {} },
-                strict: true,
-              },
-              execute: async () => {
-                executions += 1;
-                return {};
-              },
-            };
-          },
-          { settings: [] },
-        ),
-      ],
+      tools: [inspect],
     },
   };
   const store = {
@@ -394,6 +407,9 @@ const directHarness = (
     calls,
     events,
     boundSandboxes,
+    toolScopes,
+    attached,
+    released,
     executions: () => executions,
     /**
      * The durable state a Thread holds before a run, as the runner would have
@@ -408,7 +424,7 @@ const directHarness = (
       checkpoints = value.checkpoints ?? checkpoints;
     },
     run: (prompt: string, signal = new AbortController().signal) =>
-      runDirectPrompt({
+      execute({
         thread: { id: threadId, projectId } as never,
         job: { id: promptId, prompt, source: { kind: 'user' } },
         generation: generation as never,

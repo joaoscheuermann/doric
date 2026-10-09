@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { loadBundles } from 'bundle';
 import { createDockerClient } from 'docker';
 import express from 'express';
 import pino from 'pino';
@@ -26,6 +25,7 @@ import type {
   Thread,
   ThreadEvent,
 } from '../src/lib/workspace/types.js';
+import { defaultBundles } from './helpers/bundles.js';
 import {
   childPrompt,
   childResult,
@@ -147,21 +147,14 @@ void test('delegates across isolated conversations sharing a real project sandbo
   cleanup.defer(resources.close);
   const { database } = resources;
   const logger = pino({ level: 'silent' });
-  const bundles = await loadBundles('agents/doric/dist/bundles');
-  assert.ok(
-    bundles
-      .flatMap(({ tools }) => tools)
-      .some(({ factory }) => factory.name === 'write'),
-  );
-  assert.ok(
-    bundles
-      .flatMap(({ tools }) => tools)
-      .some(({ factory }) => factory.name === 'terminal'),
-  );
+  const bundles = await defaultBundles();
+  cleanup.defer(() => bundles.platform.stop());
+  assert.ok(bundles.catalog.tools.some(({ name }) => name === 'write'));
+  assert.ok(bundles.catalog.tools.some(({ name }) => name === 'terminal'));
   const config = await createConfigService({
     store: createConfigStore(database),
     credentials: credentialResolver(),
-    bundles,
+    catalog: bundles.catalog,
     logger,
     buildGeneration: async (options) => {
       const generation = await createGeneration(options);
@@ -208,6 +201,7 @@ void test('delegates across isolated conversations sharing a real project sandbo
     logger,
     publisher: createWorkspaceSocket(sockets, projects, threads),
     discardWorkspace: async () => undefined,
+    execute: bundles.execute,
   });
   cleanup.defer(() => service.dispose());
   registerHttpRoutes(app, {
@@ -340,6 +334,12 @@ void test('delegates across isolated conversations sharing a real project sandbo
   });
   assert.equal(completion(childDone).status, 'completed');
   assert.ok(childEvents.events.some(({ type }) => type === 'tool.finished'));
+  // The parent's queue.updated follows prompt.finished, and ready follows it, so
+  // this barrier makes the log below complete rather than racing its last event.
+  await rootSocket.wait<Thread>(
+    'thread:updated',
+    (value) => value.state === 'ready' && value.lastSequence > resumed.sequence,
+  );
 
   // REST, live delivery, and exclusive-cursor reconnect replay describe the same durable records.
   const rootEvents = await request<{ events: ThreadEvent[] }>(

@@ -1,9 +1,12 @@
 import { createAgent, createToolCallStorage } from 'agent';
 import type { Skill } from 'bundle';
+import type { Call, CallScope } from 'bundle/contracts';
 import type { ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
 import { createToolStorage } from 'tool';
 
+import type { HostAdapter } from '../../bundles/adapter.js';
+import type { Generation } from '../../config/generation.js';
 import { providerFor } from '../../config/generation.js';
 import { resolveToolConfigs } from '../../config/tool-config.js';
 import { eventJson } from '../../events/serialization.js';
@@ -12,6 +15,11 @@ import {
   type ThreadExecution,
   ThreadPersistenceError,
 } from '../../workspace/runtime.js';
+import type {
+  Thread,
+  ThreadStore,
+  WorkspacePublisher,
+} from '../../workspace/types.js';
 import { systemPrompt } from './prompts/system.js';
 
 /** Common Direct policy for human chats and delegated child chats. */
@@ -101,22 +109,77 @@ const repaired = (
 const addedMessages = (value: { readonly type: string }): boolean =>
   value.type === 'response.finished' || value.type === 'tool.finished';
 
-/** Runs one input, retaining provider-ready history independently for each Thread. */
-export const runDirectPrompt: ThreadExecution = async ({
-  thread,
+export interface DirectExecutorOptions {
+  /** A platform `Call` for one prompt: its scope and its abort signal. */
+  readonly call: (scope: CallScope, signal: AbortSignal) => Call;
+  /** Binds the prompt's Host and sandbox for the bundle contracts its tools use. */
+  readonly attach: HostAdapter['attach'];
+}
+
+/**
+ * Runs one input, retaining provider-ready history independently for each
+ * Thread. Every tool the bundles registered is bound to the prompt's `Call`,
+ * whose scope names the prompt, and the prompt's Host facade and sandbox stay
+ * attached to that scope until the run's final save.
+ */
+export const createDirectExecutor =
+  (options: DirectExecutorOptions): ThreadExecution =>
+  async ({
+    thread,
+    job,
+    generation,
+    sandbox,
+    signal,
+    store,
+    publisher,
+    host,
+  }) => {
+    signal.throwIfAborted();
+    const record = await store.find(thread.id).catch((cause) => {
+      throw new ThreadPersistenceError(cause);
+    });
+    if (record === undefined) throw new Error('Thread no longer exists.');
+    const scope = {
+      projectId: thread.projectId,
+      threadId: thread.id,
+      promptId: job.id,
+    };
+    const release = options.attach(scope, { host, sandbox });
+    try {
+      return await run({
+        record,
+        job,
+        generation,
+        signal,
+        store,
+        publisher,
+        thread,
+        call: options.call(scope, signal),
+      });
+    } finally {
+      release();
+    }
+  };
+
+const run = async ({
+  record,
   job,
   generation,
-  sandbox,
   signal,
   store,
   publisher,
-  host,
-}) => {
-  signal.throwIfAborted();
-  const record = await store.find(thread.id).catch((cause) => {
-    throw new ThreadPersistenceError(cause);
-  });
-  if (record === undefined) throw new Error('Thread no longer exists.');
+  thread,
+  call,
+}: {
+  readonly record: NonNullable<Awaited<ReturnType<ThreadStore['find']>>>;
+  readonly job: PromptJob;
+  readonly generation: Generation;
+  readonly signal: AbortSignal;
+  readonly store: ThreadStore;
+  readonly publisher: WorkspacePublisher;
+  readonly thread: Thread;
+  readonly call: Call;
+}): Promise<string> => {
   const boundary = record.checkpoints[job.id];
   const resume = boundary !== undefined && record.messages.length > boundary;
   const messages = createMessageStorage(repaired(record.messages));
@@ -156,14 +219,14 @@ export const runDirectPrompt: ThreadExecution = async ({
     system: directSystemPrompt(generation.catalog.skills),
     tools: createToolStorage(
       (() => {
-        const configs = resolveToolConfigs(
+        // Tool values reach tools through settings/v1 from stage 2; resolving
+        // them here still refuses a prompt whose tool settings are unmet.
+        resolveToolConfigs(
           generation.catalog.tools,
           generation.snapshot.configuration,
         );
 
-        return generation.catalog.tools.map((factory) =>
-          factory(sandbox, host, configs.get(factory.name)),
-        );
+        return generation.catalog.tools.map((tool) => tool.toTool(call));
       })(),
     ),
     toolCalls: createToolCallStorage(),

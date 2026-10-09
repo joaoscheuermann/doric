@@ -432,7 +432,7 @@ void test('builds every configured provider through the kind it names', async ()
   const generation = await createGeneration({
     snapshot: snapshot(configuration, 1),
     credentials: credentialResolver(() => [providerCredential]),
-    bundles: [],
+    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -446,13 +446,13 @@ void test('redacts every stored secret from event values', async () => {
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials: credentialResolver(() => [providerCredential]),
-    bundles: [],
+    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
   const unconfigured = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials: credentialResolver(),
-    bundles: [],
+    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -474,7 +474,7 @@ void test('redacts a secret the credentials learned after the generation was bui
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials,
-    bundles: [],
+    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -586,7 +586,7 @@ const configHarness = async ({
   const service = await createConfigService({
     store,
     credentials: credentialResolver(() => stored),
-    bundles: [],
+    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
     buildGeneration: build,
     // The catalog reader has its own cases; this harness is about the store and

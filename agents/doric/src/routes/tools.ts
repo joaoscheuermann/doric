@@ -13,10 +13,10 @@ export const createToolsRouter = (service: ConfigService): Router => {
 
   router.get('/', (_request, response) => {
     response.json({
-      tools: service.current().catalog.tools.map((factory) => ({
-        name: factory.name,
-        description: factory.description,
-        settings: factory.settings,
+      tools: service.current().catalog.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        settings: tool.settings,
       })),
     });
   });

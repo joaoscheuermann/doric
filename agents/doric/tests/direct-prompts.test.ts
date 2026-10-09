@@ -52,9 +52,11 @@ void test('keeps the working-directory instruction in the assembled Direct promp
 });
 
 void test('moves each git skill into the working directory with the cwd tool', async () => {
-  const cloning = await readSkill('bundles/git/skills/git-cloning/SKILL.md');
+  const cloning = await readSkill(
+    'bundles/git/src/skills/git-cloning/SKILL.md',
+  );
   const worktrees = await readSkill(
-    'bundles/git/skills/git-worktrees/SKILL.md',
+    'bundles/git/src/skills/git-worktrees/SKILL.md',
   );
 
   assert.match(cloning, workingDirectoryStep);

@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "files",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Core capabilities available to the Doric agent.",
+  "provides": [],
+  "requires": [
+    "tools/v1@^1.0.0",
+    "runtime.workspace/v1@^1.0.0",
+    "runtime.lease/v1@^1.0.0"
+  ]
+}

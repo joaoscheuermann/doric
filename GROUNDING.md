@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-08
+Last reviewed: 2026-10-09
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -103,7 +103,9 @@ key plus a path; the core provides the router (`navigation/v1`), the
 outlet, `ui/v1` and `regions/v1`, and the `layout` bundle registers `/` with
 the workspace frame, its regions and its tabs. These files are proposals: the current
 package responsibilities and runtime behavior below remain authoritative until
-the relevant migration steps are implemented and validated.
+the relevant migration steps are implemented and validated. Migration stage 1
+(contracts, loader, manifest v1, composition, `core`, quarantine and the
+provisional host adapter) is implemented and described under Current Runtime.
 
 `agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
@@ -544,66 +546,121 @@ This organization does not change bundle ownership or runtime behavior.
 
 ### Current Runtime
 
-Repository-owned executable bundles live as individual Nx packages immediately
-below `/bundles`; each bundle owns its package metadata, TypeScript build, and
-isolated output below `agents/doric/dist/bundles/<name>`. `/bundles/core` owns
-the built-in `cwd`, `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and
-`write` tools; the `cwd` tool reports the calling Thread's working directory and
-moves it, and a relative path a tool is given resolves against that directory
-rather than the workspace root, exactly as `cd` resolves one against the current
-directory; a move that resolves outside the workspace root changes nothing. `/bundles/git` owns the routable `git` tool plus focused skills for
-cloning, commit preparation, conflict resolution, rebasing, remote
-synchronization, and linked worktrees. The Git tool executes structured argv
-directly without shell interpretation, forces non-interactive Git behavior,
-bounds stdout and stderr, and exposes no dedicated credential input.
-`/bundles/threads` owns the delegation tools `thread-spawn`, `thread-list`,
-`thread-get`, `thread-events`, `thread-send`, `thread-interrupt`, and
-`thread-terminate` plus
-focused delegation, inspection, and steering skills.
-`packages/bundle` owns strict manifest validation and runtime loading.
-Doric loads only immediate bundle directories, in lexical order, from its
-built `dist/bundles` artifact. Manifests explicitly order every resource and
-carry `alwaysAvailable` flags for tools and skills. Runtime tools are compiled
-ESM `.js` default exports created through `packages/tool`; each export is an
-inspectable `ToolFactory` that Doric binds, in its composition root, to a
-sandbox and to a per-prompt `Host` capability facade. The loader validates the
-definition, input, and output schemas and never inspects handler arity. Runtime
-TypeScript is rejected. Skill `allowed-tools` references resolve
-only within their declaring bundle. Bundle, skill, and tool-factory names are
-globally unique, and duplicates are rejected rather than aliased or
-deduplicated. `packages/bundle` publicly owns the JSON-Schema-compatible
-`SkillSchema`, whose input is normalized into a canonical `SkillRecord` with
-trimmed fields, stable unique `allowedTools`, and a recalculated `indexText`.
-Doric includes every canonical skill body in its Direct system prompt in
-bundle order. `packages/tool` publicly owns the
+Migration stage 1 of `docs/architecture/bundles/migration.md` ("Contrato") is
+implemented; the binding choices it made are recorded in
+`docs/architecture/bundles/implementation-decisions.md`. Repository-owned
+bundles live as individual Nx packages immediately below `/bundles`, named by
+their bundle ID (Nx projects `bundle-<id>`); each owns its package metadata, a
+v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist`, a public
+`<id>/contracts` entrypoint and, when it publishes contracts, a committed
+`contracts.published.json` baseline. The bundle build CLI of `packages/bundle`
+validates the manifest and skills, dry-activates the host part to write the
+contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas, and
+checks them against the baseline; `doric:build-bundles` then stages each
+`dist` into `agents/doric/dist/bundles/<id>`.
+
+`/bundles/core` is the composition's core. Its host part provides the basic
+contracts `hooks/v1`, `log/v1`, `tools/v1` and `skills/v1` of
+`bundle/contracts`: hooks run in catalog order, the platform first, each
+handler bounded by a 10-second deadline and every handler failure or timeout
+reported to diagnostics; log records name the calling bundle, its version,
+generation, call scope, trace and environment and reach the host's pino
+destinations through the platform's `doric.log/v1`; tools and skills are kept
+in bundle order with globally unique names, and skill `allowed-tools` resolve
+only against tools the same bundle registered. `/bundles/files` (the former
+`/bundles/core`) owns the built-in `cwd`, `edit`, `find`, `grep`, `terminal`,
+`tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
+working directory and moves it, and a relative path a tool is given resolves
+against that directory rather than the workspace root, exactly as `cd`
+resolves one against the current directory; a move that resolves outside the
+workspace root changes nothing. `/bundles/git` owns the routable `git` tool
+plus focused skills for cloning, commit preparation, conflict resolution,
+rebasing, remote synchronization, and linked worktrees. The Git tool executes
+structured argv directly without shell interpretation, forces non-interactive
+Git behavior, bounds stdout and stderr, and exposes no dedicated credential
+input. `/bundles/threads` owns the delegation tools `thread-spawn`,
+`thread-list`, `thread-get`, `thread-events`, `thread-send`,
+`thread-interrupt`, and `thread-terminate` plus focused delegation,
+inspection, and steering skills. `/bundles/runtime` and `/bundles/terminal`
+exist only as the contracts packages `runtime/contracts`
+(`runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`) and
+`terminal/contracts` (`terminal/v1`); they have no manifest and are not staged.
+
+`packages/bundle` owns the bundle platform: the browser-safe `bundle/contracts`
+API (`define*`, `ref`, `Call`, `ContractError`, `Services`, the basic and
+`doric.*` contracts), the shared service runtime `bundle/runtime`, the Node
+loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
+`bundle_load` stage, Doric reads the installed bundles below
+`DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
+JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
+names `core` and enables `core`, `files`, `git` and `threads`), and always
+adds the embedded `host-adapter` bundle. The loader activates the foundation,
+then the core, then the others in dependency order with lexical tie-break,
+registers each bundle's `skills/*/SKILL.md` through `skills/v1` in lexical
+folder order on the bundle's behalf, fires `doric.app.hooks/v1`'s
+`onActivateHook` for every bundle activated after the hooks provider,
+`onHostReadyHook` before the listener binds and `onDeactivateHook` in reverse
+order at shutdown. A bundle that fails validation, dependency resolution or
+activation, or whose tools or skills collide, is quarantined with reason codes
+(`invalid_manifest`, `missing_dependency`, `activate_failed`, ...), logged as
+`Bundle quarantined`, and dropped with its registrations while the others keep
+serving; a core that cannot activate puts the host in recovery mode, which in
+stage 1 ends in the existing fatal startup path after logging `Bundle recovery
+mode` with every bundle's state and reasons. The catalog and diagnostics are
+read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
+Doric reads `tools/v1` and `skills/v1` once after boot; `Bundles loaded`
+reports the activated installed bundles and the registered tools and skills.
+`alwaysAvailable` (a `tools/v1` registration option and an optional skill
+frontmatter key) is recorded and never consulted: every registered tool is
+bound on every prompt, and Doric includes every canonical skill body in its
+Direct system prompt in bundle order. `bundle/contracts` publicly owns the
+JSON-Schema-compatible `SkillSchema`, whose input is normalized into a
+canonical `SkillRecord` with trimmed fields, stable unique `allowedTools`, and
+a recalculated `indexText`. `packages/tool` publicly owns `defineTool`, whose
+`execute(payload, call, services)` receives the validated payload, the prompt
+`Call` and the services of the bundle that registered it; registering the
+definition with `tools/v1` binds it to those services, and `toTool(call)`
+gives the agent-loop tool for one prompt. It also owns the
 JSON-Schema-compatible `ToolDefinitionSchema`, whose runtime descriptors carry
 both `inputSchema` and `outputSchema`, plus strict-output-compatible
 `ToolMetadataSchema` and JSON value schemas used by structured consumers.
-Executable tool factories expose Zod `input` and `output` schemas; handler
-results are output-validated before execution resolves, with sanitized
-`invalid_output` failures. Providers transmit only their supported tool fields
-and use `inputSchema` as function parameters. Model-generated graph nodes use
-tool metadata rather than executable tools or arbitrary tool input schemas.
+Tools expose Zod `input` and `output` schemas; handler results are
+output-validated before execution resolves, with sanitized `invalid_output`
+failures. Declared tool `settings` keep feeding `GET /tools` and configuration
+validation; their values reach tools through `settings/v1` in a later stage.
+Providers transmit only their supported tool fields and use `inputSchema` as
+function parameters. Model-generated graph nodes use tool metadata rather than
+executable tools or arbitrary tool input schemas.
 
-`packages/host` publicly owns the `Host` capability facade that every tool
-handler receives as its second argument, after the sandbox. It is types only: a
-bundle depends on this package for the contract, never on `agents/doric`
-internals, and the host implements it in the composition root. A `Host` is
-prompt-scoped; it closes over the calling prompt's Project and Thread, so
-`host.threads.*` reaches only that prompt's direct children and stops when the
-prompt ends, and `host.workspace.*` reports and moves only that prompt's own
-Thread's working directory. Today's namespaces are `threads`, `workspace`, and
-`terminals`; the latter starts tracked foreground or background commands in the
-calling Thread's sandbox without exposing other Threads' sessions. Background
-process ownership survives completion of its originating prompt;
-future namespaces
-(`config`, `vms`, `providers`) are added only for a concrete need, never as a
-state dump, a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch.
-Exposing a host facade to every tool handler is an approved tool-privilege
-expansion under HC-004 and HC-007: a bundle previously reached only the sandbox.
-Because a tool result goes to the model, the facade exposes capabilities, never
-credential reads; secrets stay in the host's credential store. `loadBundles` still enforces
-globally unique names, so a bundle tool cannot collide with a host capability.
+`packages/host` publicly owns the `Host` capability facade the runner builds
+for every prompt. It is types only, and the host implements it in the
+composition root. A `Host` is prompt-scoped; it closes over the calling
+prompt's Project and Thread, so `host.threads.*` reaches only that prompt's
+direct children and stops when the prompt ends, and `host.workspace.*` reports
+and moves only that prompt's own Thread's working directory. Today's
+namespaces are `threads`, `workspace`, and `terminals`; the latter starts
+tracked foreground or background commands in the calling Thread's sandbox
+without exposing other Threads' sessions. Background process ownership
+survives completion of its originating prompt; future namespaces (`config`,
+`vms`, `providers`) are added only for a concrete need, never as a state dump,
+a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch. Bundle
+tools no longer receive it as an argument: the embedded `host-adapter` bundle
+(`agents/doric/src/lib/bundles/adapter.ts`) provides `runtime.threads/v1`,
+`runtime.workspace/v1`, `runtime.lease/v1` and `terminal/v1` by forwarding
+each call one to one to the `Host` and sandbox the runner built for the
+prompt named by the call's scope, while that prompt runs; an ended prompt's
+calls fail with `Thread control is no longer active.`, Host failures reach the
+tool unchanged, `runtime.lease/v1` forwards no abort signal, and a prompt
+without live terminals answers `unavailable`, which keeps the terminal tool's
+plain-command fallback. Exposing these capabilities to every tool handler is
+an approved tool-privilege expansion under HC-004 and HC-007: a bundle
+previously reached only the sandbox. Because the contracts are reached by call
+scope, any bundle that requires them and builds a scope naming a running
+prompt reaches that prompt's controls; every stage-1 bundle is first-party and
+external bundles remain deferred. Because a tool result goes to the model, the
+contracts expose capabilities, never credential reads; secrets stay in the
+host's credential store. Tool names stay globally unique in `tools/v1`, so a
+bundle tool cannot collide with another bundle's.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API
@@ -809,7 +866,7 @@ holds its files on the host's own storage, so a sandbox's `diskMiB` bounds only
 the container's writable layer. It also owns the
 one implementation of the workspace visibility rules — root confinement,
 `.gitignore` handling with negation, hidden entries except `.agents`, and
-directories-first ordering — which the `/bundles/core` `tree` tool and Doric's
+directories-first ordering — which the `/bundles/files` `tree` tool and Doric's
 Project file routes both consume, so neither can drift from the other; a scoped
 diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has
@@ -1324,8 +1381,9 @@ live lease. Terminal Projects remain terminal. Termination needs no live runtime
 Thread whose Project holds no lease still takes itself and its subtree through
 `cancelling -> cancelled` durably, so a reader can terminate and delete a resumed
 Thread without prompting it first. A fresh Agent per prompt
-receives a fresh tool-call store, every bundle tool bound to that sandbox and
-the per-prompt host facade, the deterministic
+receives a fresh tool-call store, every registered bundle tool bound to a
+prompt `Call` scoped to that prompt (its sandbox and per-prompt host facade
+attached to that scope for the run), the deterministic
 all-skills system prompt, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete

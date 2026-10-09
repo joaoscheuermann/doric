@@ -74,6 +74,15 @@
     },
     {
       "path": "./packages/host"
+    },
+    {
+      "path": "./bundles/files"
+    },
+    {
+      "path": "./bundles/runtime"
+    },
+    {
+      "path": "./bundles/terminal"
     }
   ]
 }

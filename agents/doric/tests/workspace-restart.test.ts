@@ -4,13 +4,13 @@ import test from 'node:test';
 
 import type { ProviderRequest } from 'llms';
 
-import { runDirectPrompt } from '../src/lib/agents/direct/executor.js';
 import { defaultConfig } from '../src/lib/config/schema.js';
 import { createProjectStore } from '../src/lib/workspace/projects.js';
 import type { ThreadExecution } from '../src/lib/workspace/service.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import { createThreadStore } from '../src/lib/workspace/threads.js';
 import type { ThreadEvent } from '../src/lib/workspace/types.js';
+import { directExecutor } from './helpers/bundles.js';
 import { persistenceFixture } from './helpers/persistence-fixture.js';
 import {
   credentialResolver,
@@ -795,7 +795,7 @@ void test('continues a resumed prompt from the history it had already written', 
 }, async () => {
   const requests: ProviderRequest[] = [];
   const host = await restart({
-    execute: runDirectPrompt,
+    execute: directExecutor(),
     providers: new Map([
       [
         defaultConfig.models.execution.providerId,

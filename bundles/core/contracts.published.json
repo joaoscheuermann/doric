@@ -1,0 +1,269 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "core",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "hooks/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/hooks/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "define.input": {
+            "x-doric-local": true
+          },
+          "define.output": {
+            "x-doric-local": true
+          },
+          "execute.input": {
+            "x-doric-local": true
+          },
+          "execute.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": true
+          },
+          "whenDefined.input": {
+            "x-doric-local": true
+          },
+          "whenDefined.output": {
+            "x-doric-local": true
+          }
+        }
+      }
+    },
+    {
+      "id": "log/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/log/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "debug.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "debug.output": {},
+          "error.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "error.output": {},
+          "info.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "info.output": {},
+          "warn.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "warn.output": {}
+        }
+      }
+    },
+    {
+      "id": "tools/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/tools/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "list.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "list.output": {
+            "x-doric-local": true
+          },
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": true
+          }
+        }
+      }
+    },
+    {
+      "id": "skills/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/skills/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "list.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "list.output": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bundleId": {
+                  "type": "string"
+                },
+                "alwaysAvailable": {
+                  "type": "boolean"
+                },
+                "skill": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "body": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "allowedTools": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "indexText": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "body",
+                    "allowedTools",
+                    "indexText"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["bundleId", "alwaysAvailable", "skill"],
+              "additionalProperties": false
+            }
+          },
+          "register.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "allowedTools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "indexText": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "description", "body", "allowedTools"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "alwaysAvailable": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "register.output": {
+            "x-doric-local": true
+          }
+        }
+      }
+    }
+  ]
+}

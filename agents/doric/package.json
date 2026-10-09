@@ -34,12 +34,14 @@
     "oauth": "0.0.1",
     "pg": "8.16.3",
     "pino": "^10.3.1",
+    "runtime": "0.0.1",
     "sandbox": "0.0.1",
     "sandpool": "0.0.1",
     "session": "0.0.1",
     "socket.io": "^4.8.3",
-    "tslib": "^2.3.0",
+    "terminal": "0.0.1",
     "tool": "0.0.1",
+    "tslib": "^2.3.0",
     "typescript": "~5.9.2"
   },
   "devDependencies": {

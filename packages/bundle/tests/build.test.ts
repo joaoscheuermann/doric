@@ -1,0 +1,452 @@
+import assert from 'node:assert/strict';
+import { access, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { z } from 'zod';
+
+import {
+  defineHook,
+  defineHooks,
+  defineMethod,
+  defineService,
+  HooksV1,
+  type HostContext,
+} from '../src/contracts/index.js';
+import {
+  buildBundle,
+  checkRecording,
+  contractDocument,
+  documentChange,
+  manifestV1Schema,
+  memberChange,
+  platformSchemaDocuments,
+  recordActivation,
+  stageBundles,
+  writeBaseline,
+} from '../src/index.js';
+import {
+  contractsUrl,
+  manifest,
+  skillSource,
+  withRoot,
+  writeBundle,
+} from './support/fixtures.js';
+
+const zodUrl = import.meta.resolve('zod');
+
+const demoManifest = (
+  options: {
+    version?: string;
+    api?: string;
+    requires?: readonly string[];
+  } = {},
+) =>
+  manifest('demo', {
+    version: options.version ?? '1.0.0',
+    provides: [
+      `demo.api/v1@${options.api ?? '1.0.0'}`,
+      'demo.hooks/v1@1.0.0',
+      'demo.desk/v1@1.0.0',
+    ],
+    requires: ['hooks/v1@^1.0.0', ...(options.requires ?? [])],
+  });
+
+const hostPart = (
+  methods: string,
+) => `import { z } from ${JSON.stringify(zodUrl)};
+import { defineHook, defineHooks, defineMethod, defineService, HooksV1, LogV1 } from ${JSON.stringify(contractsUrl)};
+const api = defineService('demo.api/v1', { ${methods} });
+const hooks = defineHooks('demo.hooks/v1', {
+  onThingHook: defineHook({ kind: 'observe', input: z.object({ id: z.string() }).strict() }),
+});
+export const activate = ({ services }) => {
+  services.provide(api);
+  services.use(HooksV1).define(hooks);
+  if (globalThis.__demoUsesLog) services.use(LogV1).info('x');
+};
+`;
+
+const getMethod = `get: defineMethod({ input: z.object({ id: z.string() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) })`;
+const listMethod = `list: defineMethod({ input: z.tuple([]), output: z.array(z.string()), execute: () => [] })`;
+const optionalField = `get: defineMethod({ input: z.object({ id: z.string(), deep: z.boolean().optional() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) })`;
+
+const desktopPart = `import { z } from ${JSON.stringify(zodUrl)};
+import { defineMethod, defineService } from ${JSON.stringify(contractsUrl)};
+export const activate = ({ services }) => {
+  services.provide(defineService('demo.desk/v1', {
+    ping: defineMethod({ input: z.tuple([]), output: z.literal('pong'), execute: () => 'pong' }),
+  }));
+};
+`;
+
+const writeDemo = (
+  root: string,
+  options: {
+    manifest?: unknown;
+    host?: string;
+    files?: Record<string, string>;
+    directory?: string;
+  } = {},
+) =>
+  writeBundle(root, options.directory ?? 'demo', {
+    manifest: options.manifest ?? demoManifest(),
+    files: {
+      'dist/host/index.js': options.host ?? hostPart(getMethod),
+      'dist/desktop/index.js': desktopPart,
+      'src/skills/01-use/SKILL.md': skillSource('use-demo', {
+        alwaysAvailable: true,
+      }),
+      ...options.files,
+    },
+  });
+
+const exists = async (path: string) => {
+  try {
+    await access(path);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+void test('the build records environments, writes the descriptor, schemas and skills', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root, {
+      files: { 'dist/skills/stale/SKILL.md': skillSource('stale') },
+    });
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id, kind, environment, cardinality }) => [
+        id,
+        kind,
+        environment,
+        cardinality,
+      ]),
+      [
+        ['demo.api/v1', 'service', 'host', 'one'],
+        ['demo.hooks/v1', 'hooks', 'host', 'one'],
+        ['demo.desk/v1', 'service', 'desktopMain', 'one'],
+      ],
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(join(dir, 'dist', 'contracts.json'), 'utf8')),
+      descriptor,
+    );
+
+    const schema = JSON.parse(
+      await readFile(
+        join(dir, 'dist', 'schemas', 'demo.api', 'v1.json'),
+        'utf8',
+      ),
+    ) as { $id: string; $defs: Record<string, unknown> };
+
+    assert.equal(schema.$id, 'doric:contract/demo.api/v1');
+    assert.deepEqual(Object.keys(schema.$defs).sort(), [
+      'get.input',
+      'get.output',
+    ]);
+    assert.equal(
+      await exists(join(dir, 'dist', 'skills', '01-use', 'SKILL.md')),
+      true,
+    );
+    assert.equal(await exists(join(dir, 'dist', 'skills', 'stale')), false);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(dir, 'dist', 'package.json'), 'utf8')),
+      { type: 'module' },
+    );
+    assert.equal(
+      manifestV1Schema.parse(
+        JSON.parse(await readFile(join(dir, 'dist', 'manifest.json'), 'utf8')),
+      ).id,
+      'demo',
+    );
+  });
+});
+
+void test('the build fails on an undeclared use, an unrecorded provide or an invalid skill', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root);
+
+    (globalThis as { __demoUsesLog?: boolean }).__demoUsesLog = true;
+
+    try {
+      await assert.rejects(buildBundle(dir), /log\/v1/);
+    } finally {
+      delete (globalThis as { __demoUsesLog?: boolean }).__demoUsesLog;
+    }
+  });
+
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root, {
+      manifest: manifest('demo', {
+        provides: [
+          'demo.api/v1@1.0.0',
+          'demo.hooks/v1@1.0.0',
+          'demo.desk/v1@1.0.0',
+          'demo.ghost/v1@1.0.0',
+        ],
+        requires: ['hooks/v1@^1.0.0'],
+      }),
+    });
+
+    await assert.rejects(buildBundle(dir), /demo\.ghost\/v1/);
+  });
+
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root, {
+      files: { 'src/skills/02-bad/SKILL.md': 'no frontmatter' },
+    });
+
+    await assert.rejects(buildBundle(dir), /Invalid skill/);
+  });
+});
+
+void test('the semver check accepts compatible versions and refuses what the change does not allow', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root);
+
+    await buildBundle(dir);
+    await writeBaseline(dir);
+
+    const baseline = await readFile(
+      join(dir, 'contracts.published.json'),
+      'utf8',
+    );
+
+    // Unchanged: passes.
+    await buildBundle(dir);
+
+    // Each variant is a fresh directory carrying the same baseline, so the
+    // module loader imports its part anew.
+    const variant = (
+      directory: string,
+      options: Parameters<typeof writeDemo>[1],
+    ) =>
+      writeDemo(root, {
+        ...options,
+        directory,
+        files: { 'contracts.published.json': baseline },
+      });
+
+    // A new optional input field is minor: same versions are refused.
+    await assert.rejects(
+      buildBundle(
+        await variant('same-versions', { host: hostPart(optionalField) }),
+      ),
+      /Semver check failed/,
+    );
+
+    // Bumping the contract and the bundle minor passes.
+    await buildBundle(
+      await variant('bumped', {
+        host: hostPart(optionalField),
+        manifest: demoManifest({ version: '1.1.0', api: '1.1.0' }),
+      }),
+    );
+
+    // Removing a method is major inside /v1: always refused.
+    await assert.rejects(
+      buildBundle(
+        await variant('major', {
+          host: hostPart(listMethod),
+          manifest: demoManifest({ version: '2.0.0', api: '1.5.0' }),
+        }),
+      ),
+      /major: new \/v2/,
+    );
+  });
+});
+
+void test('member changes are classified by direction', () => {
+  const object = (properties: Record<string, unknown>, required: string[]) => ({
+    type: 'object',
+    properties,
+    required,
+    additionalProperties: false,
+  });
+  const text = { type: 'string' };
+
+  assert.equal(
+    memberChange(
+      object({ a: text }, ['a']),
+      object({ a: text }, ['a']),
+      'input',
+    ),
+    'none',
+  );
+  assert.equal(
+    memberChange(
+      object({ a: text }, ['a']),
+      object({ a: text, b: text }, ['a']),
+      'input',
+    ),
+    'minor',
+  );
+  assert.equal(
+    memberChange(
+      object({ a: text }, ['a']),
+      object({ a: text, b: text }, ['a', 'b']),
+      'input',
+    ),
+    'major',
+  );
+  assert.equal(
+    memberChange(
+      object({ a: text }, ['a']),
+      object({ a: text, b: text }, ['a', 'b']),
+      'output',
+    ),
+    'minor',
+  );
+  assert.equal(
+    memberChange(
+      object({ a: text, b: text }, ['a']),
+      object({ a: text }, ['a']),
+      'output',
+    ),
+    'major',
+  );
+  assert.equal(
+    memberChange(
+      object({ a: text }, ['a']),
+      object({ a: { type: 'number' } }, ['a']),
+      'output',
+    ),
+    'major',
+  );
+  assert.equal(
+    documentChange(
+      { $defs: { 'get.input': text } },
+      { $defs: { 'get.input': text, 'list.input': text } },
+    ),
+    'minor',
+  );
+  assert.equal(
+    documentChange(
+      { 'x-doric-kind': 'service', $defs: {} },
+      { 'x-doric-kind': 'hooks', $defs: {} },
+    ),
+    'major',
+  );
+});
+
+void test('the recorder sees provides, hook definitions and only declared uses', async () => {
+  const source = manifestV1Schema.parse(
+    manifest('rec', {
+      provides: ['rec.api/v1@1.0.0', 'rec.hooks/v1@1.0.0', 'hooks/v1@1.0.0'],
+      requires: ['hooks/v1@^1.0.0'],
+    }),
+  );
+  const RecHooksV1 = defineHooks('rec.hooks/v1', {
+    onX: defineHook({ kind: 'decide', input: z.object({}).strict() }),
+  });
+  const recorded = await recordActivation({
+    manifest: source,
+    environment: 'host',
+    activate: ({ services }: HostContext) => {
+      services.provide(
+        defineService('rec.api/v1', {
+          fn: defineMethod({
+            input: z.custom<() => void>(),
+            output: z.void(),
+            execute: () => undefined,
+          }),
+        }),
+      );
+      services.use(HooksV1).define(RecHooksV1);
+      services.whenAvailable(HooksV1, () => {
+        throw new Error('never fires');
+      });
+    },
+  });
+
+  assert.deepEqual(
+    recorded.map(({ id, kind }) => `${id}:${kind}`),
+    ['rec.api/v1:service', 'rec.hooks/v1:hooks'],
+  );
+  const problems = checkRecording(source, recorded);
+
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? '', /hooks\/v1/);
+  assert.equal(
+    contractDocument(recorded[0] as (typeof recorded)[number]).local,
+    true,
+  );
+  assert.equal(
+    contractDocument(recorded[1] as (typeof recorded)[number]).local,
+    false,
+  );
+});
+
+void test('the recorder refuses hooks.use of a hooks contract outside requires', async () => {
+  const OtherHooksV1 = defineHooks('other.hooks/v1', {
+    onY: defineHook({ kind: 'observe', input: z.object({}).strict() }),
+  });
+  const record = (requires: readonly string[]) =>
+    recordActivation({
+      manifest: manifestV1Schema.parse(manifest('rec', { requires })),
+      environment: 'host',
+      activate: ({ services }: HostContext) => {
+        services.use(HooksV1).use(OtherHooksV1);
+      },
+    });
+
+  await assert.rejects(record(['hooks/v1@^1.0.0']), {
+    name: 'RecordingError',
+    message: /other\.hooks\/v1/,
+  });
+  assert.deepEqual(
+    await record(['hooks/v1@^1.0.0', 'other.hooks/v1@^1.0.0']),
+    [],
+  );
+});
+
+void test('staging replaces each bundle directory with its dist', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root);
+    const destination = join(root, 'staged');
+
+    await buildBundle(dir);
+    await writeBundle(destination, 'demo', {
+      manifest: {},
+      files: { 'leftover.txt': 'x' },
+    });
+    await stageBundles(destination, [dir]);
+
+    assert.equal(
+      await exists(join(destination, 'demo', 'contracts.json')),
+      true,
+    );
+    assert.equal(
+      await exists(join(destination, 'demo', 'host', 'index.js')),
+      true,
+    );
+    assert.equal(
+      await exists(join(destination, 'demo', 'leftover.txt')),
+      false,
+    );
+  });
+});
+
+void test('platform schema documents cover the manifest, composition, descriptor and contracts', () => {
+  const documents = platformSchemaDocuments();
+
+  assert.equal(
+    documents.get('bundle-manifest/v1.json')?.$id,
+    'doric://app/schemas/bundle-manifest/v1.json',
+  );
+
+  for (const path of [
+    'composition/v1.json',
+    'contracts-descriptor/v1.json',
+    'contracts/hooks/v1.json',
+    'contracts/tools/v1.json',
+    'contracts/doric.catalog/v1.json',
+    'contracts/doric.app.hooks/v1.json',
+  ]) {
+    assert.ok(documents.has(path), path);
+  }
+});

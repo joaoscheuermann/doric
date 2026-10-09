@@ -46,15 +46,37 @@ src/lib/
 ```
 
 The Direct system prompt is one exported literal template string; the executor
-appends bundle skills in their declared order. The thread delegation tools
-(`thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
-`thread-interrupt`, `thread-terminate`) ship in the `/bundles/threads` bundle and
-reach the host only through the per-prompt `Host` facade's `threads` namespace,
-whose contract lives in `packages/host`. Shared lifecycle and authorization
-remain in `workspace`: `runner.ts` builds the prompt-scoped facade, and every
-tool call acts only on the calling prompt's direct children in the same Project.
-Sandbox tools still belong to their existing bundles. HTTP routes and generated
-Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
+appends bundle skills in bundle order. The host boots its bundles through the
+`bundle` loader: it reads the installed bundles below `DORIC_BUNDLES_PATH`
+(default: the staged `agents/doric/dist/bundles`) and the composition at
+`DORIC_COMPOSITION` (default: [`composition.json`](composition.json), which
+names `core` as the core and enables `core`, `files`, `git` and `threads`). The
+`core` bundle provides `hooks/v1`, `log/v1`, `tools/v1` and `skills/v1`; every
+other bundle registers its tools with `tools/v1`, and the loader registers each
+bundle's `skills/*/SKILL.md` with `skills/v1`, in lexical folder order. The
+executor binds every registered tool and appends every registered skill on
+each prompt.
+
+The thread delegation tools (`thread-spawn`, `thread-list`, `thread-get`,
+`thread-events`, `thread-send`, `thread-interrupt`, `thread-terminate`) ship in
+the `/bundles/threads` bundle and reach the host only through
+`runtime.threads/v1`; the `files` and `git` tools reach the Thread's working
+directory and the Project sandbox through `runtime.workspace/v1` and
+`runtime.lease/v1`, and the `terminal` tool reaches tracked terminals through
+`terminal/v1`. Until the `runtime` and `terminal` bundles exist, the embedded
+`host-adapter` bundle in `src/lib/bundles/adapter.ts` provides those contracts
+by forwarding each call to the per-prompt `Host` facade (`packages/host`) and
+sandbox the runner builds, bound to the calling prompt's scope only while that
+prompt runs. Shared lifecycle and authorization remain in `workspace`:
+`runner.ts` builds the prompt-scoped facade, and every tool call acts only on
+the calling prompt's direct children in the same Project. HTTP routes and
+generated Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
+
+A bundle that fails validation or activation is quarantined, logged as
+`Bundle quarantined` with its reasons, and the others keep serving. A core that
+cannot activate puts the host in recovery mode; until the desktop recovery
+surface exists, startup then fails at the `bundle_load` stage after logging
+`Bundle recovery mode` with every bundle's state and reasons.
 
 ## Lifecycle
 
@@ -434,9 +456,9 @@ the tag is published or `DORIC_SANDBOX_IMAGE` is pointed at a public image.
 Two traps break the image build or the deployed catalog:
 
 - every bundle must also appear in `agents/doric/.Dockerfile`: its `tsc --build`
-  list and the resource copies. The Direct host loads whatever the image puts in
-  `agents/doric/dist/bundles`, so a bundle missing there is silently absent at
-  runtime;
+  list, the bundle `build` loop and the `stage` list. The Direct host loads
+  whatever the image stages in `agents/doric/dist/bundles`, so a bundle missing
+  there is absent at runtime (and its composition entry is reported missing);
 - `package-lock.json` must be generated with the npm major the build image runs
   (`node:22-bookworm-slim` ships npm 10). A lock rewritten by a newer local npm
   fails `npm ci` with `Missing: <package> from lock file`; regenerate it with

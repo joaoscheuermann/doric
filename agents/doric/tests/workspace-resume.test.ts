@@ -6,6 +6,7 @@ import type { SandboxExecInput } from 'sandbox';
 import { defaultConfig } from '../src/lib/config/schema.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
 import type { Thread, ThreadEvent } from '../src/lib/workspace/types.js';
+import { directExecutor } from './helpers/bundles.js';
 import { deferred, fakeSandbox, workspace } from './helpers/workspace.js';
 
 void test('refuses a superseded pause through the service and after restart', async () => {
@@ -42,6 +43,7 @@ void test('refuses a superseded pause through the service and after restart', as
   });
   const service = createWorkspaceService({
     ...harness.dependencies,
+    execute: directExecutor(),
     pool: {
       acquire: async () => ({
         sandbox: fakeSandbox(),

@@ -1,36 +1,13 @@
 {
-  "name": "git",
+  "manifestVersion": 1,
+  "id": "git",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
   "description": "Git repository management capabilities for the Doric agent.",
-  "tools": [
-    {
-      "path": "tools/git.js",
-      "alwaysAvailable": false
-    }
-  ],
-  "skills": [
-    {
-      "path": "skills/git-cloning/SKILL.md",
-      "alwaysAvailable": false
-    },
-    {
-      "path": "skills/git-commit-preparation/SKILL.md",
-      "alwaysAvailable": false
-    },
-    {
-      "path": "skills/git-conflict-resolution/SKILL.md",
-      "alwaysAvailable": false
-    },
-    {
-      "path": "skills/git-rebase/SKILL.md",
-      "alwaysAvailable": false
-    },
-    {
-      "path": "skills/git-remote-synchronization/SKILL.md",
-      "alwaysAvailable": false
-    },
-    {
-      "path": "skills/git-worktrees/SKILL.md",
-      "alwaysAvailable": false
-    }
+  "provides": [],
+  "requires": [
+    "tools/v1@^1.0.0",
+    "runtime.workspace/v1@^1.0.0",
+    "runtime.lease/v1@^1.0.0"
   ]
 }

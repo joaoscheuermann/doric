@@ -10,13 +10,22 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["tools/**/*.ts", "tests/**/*.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/tool"
+      "path": "../../packages/bundle/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/sandbox"
+      "path": "../../packages/tool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/host/tsconfig.lib.json"
+    },
+    {
+      "path": "../runtime"
     }
   ]
 }

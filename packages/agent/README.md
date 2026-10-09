@@ -30,11 +30,13 @@ const lookup = defineTool({
   description: 'Lookup indexed project context.',
   input: z.object({ query: z.string() }).strict(),
   output: z.object({ result: z.string() }).strict(),
-  async execute(sandbox, { query }) {
+  async execute({ query }, call, services) {
     return { result: `context for ${query}` };
   },
 });
-const tools = createToolStorage([lookup(sandbox)]);
+// `services` are the registering bundle's services and `call` the prompt call
+// (in Doric both come from the bundle runtime).
+const tools = createToolStorage([lookup.bind(services).toTool(call)]);
 
 const messages = createMessageStorage();
 const toolCalls = createToolCallStorage();

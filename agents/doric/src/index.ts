@@ -1,8 +1,7 @@
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadBundles } from 'bundle';
 import { createDockerClient, discardWorkspace } from 'docker';
 import express from 'express';
 import { createFirecrackerClient } from 'firecracker';
@@ -12,6 +11,9 @@ import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';
 import { Server as SocketServer } from 'socket.io';
 
+import { createDirectExecutor } from './lib/agents/direct/executor.js';
+import { createHostAdapter } from './lib/bundles/adapter.js';
+import { bundlePaths, startBundles } from './lib/bundles/boot.js';
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
 import { createCredentialService } from './lib/credentials/service.js';
@@ -126,20 +128,17 @@ async function main() {
 
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
-  const bundles = await loadBundles(
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'bundles'),
-  );
+  const adapter = createHostAdapter();
+  const bundles = await startBundles({
+    ...bundlePaths(process.env, dirname(fileURLToPath(import.meta.url))),
+    adapter,
+    logger,
+  });
   startup.info(
     {
-      bundleCount: bundles.length,
-      skillCount: bundles.reduce(
-        (count, bundle) => count + bundle.skills.length,
-        0,
-      ),
-      toolCount: bundles.reduce(
-        (count, bundle) => count + bundle.tools.length,
-        0,
-      ),
+      bundleCount: bundles.bundleCount,
+      skillCount: bundles.catalog.skills.length,
+      toolCount: bundles.catalog.tools.length,
     },
     'Bundles loaded',
   );
@@ -153,7 +152,7 @@ async function main() {
   const config = await createConfigService({
     store: createConfigStore(database),
     credentials,
-    bundles,
+    catalog: bundles.catalog,
     logger,
   });
   const snapshot = config.current().snapshot;
@@ -186,6 +185,10 @@ async function main() {
     pool,
     publisher,
     logger,
+    execute: createDirectExecutor({
+      call: (scope, signal) => bundles.platform.call({ scope, signal }),
+      attach: adapter.attach,
+    }),
     checkStorage: () => checkDisk(process.env.DORIC_STORAGE_PATH ?? '.'),
     // A durable workspace is the Docker provider's own storage. The Firecracker
     // profile keeps its guest disks per run, so it has no workspace volume to
@@ -222,6 +225,9 @@ async function main() {
     'Network interfaces configured',
   );
 
+  // The bundles hear that the host is ready before it accepts any request.
+  await bundles.platform.ready();
+
   startupStage = 'network_binding';
   startup.info({ host, port }, 'Binding HTTP listener');
   await new Promise<void>((resolve, reject) => {
@@ -244,6 +250,7 @@ async function main() {
     await io.close();
     await closed;
     await service.dispose();
+    await bundles.platform.stop();
     await pool.dispose();
     await database.$disconnect();
   };

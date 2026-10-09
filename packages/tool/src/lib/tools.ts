@@ -1,17 +1,21 @@
-import type { Host } from 'host';
-import type { Sandbox } from 'sandbox';
+import {
+  bindRegistrant,
+  type Call,
+  isRegistrable,
+  type Services,
+} from 'bundle/contracts';
 import { z } from 'zod';
 
 import { ToolErrorObject } from './classes/tool-error.js';
 import type { JsonObject } from './types/json.js';
 import type {
+  BoundTool,
   DefineToolOptions,
   Tool,
   ToolCall,
   ToolCallRequest,
-  ToolConfig,
   ToolDefinition,
-  ToolFactory,
+  ToolDefinitionObject,
   ToolInput,
   ToolIssue,
   ToolOutput,
@@ -20,10 +24,14 @@ import type {
 } from './types/tool.js';
 import { asJsonObject, excerpt, isJsonValue } from './utils/json.js';
 
-/** Defines an inspectable tool factory that binds execution to a sandbox and host facade. */
+/**
+ * Defines an inspectable tool. Registering it with `tools/v1` binds it to the
+ * registering bundle's services; `toTool(call)` then gives the agent-loop tool
+ * for one prompt call.
+ */
 export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
   options: DefineToolOptions<Input, Output>,
-): ToolFactory<Input, Output> => {
+): ToolDefinitionObject<Input, Output> => {
   if (!(options.input instanceof z.ZodObject)) {
     throw new ToolErrorObject({
       code: 'invalid_schema',
@@ -39,19 +47,14 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     outputSchema: jsonSchema(options.name, options.output, false),
     strict: options.strict ?? true,
   };
+  const settings = options.settings ?? [];
 
-  const factory = ((
-    sandbox: Sandbox,
-    host: Host,
-    config: ToolConfig = {},
-  ): Tool<Input, Output> => ({
-    name: options.name,
-    description: options.description,
-    input: options.input,
-    output: options.output,
-    definition,
-    execute: async (payload) => {
-      const result = await options.execute(sandbox, host, payload, config);
+  const bind = (services: Services): BoundTool<Input, Output> => {
+    const execute = async (
+      payload: z.output<Input>,
+      call: Call,
+    ): Promise<z.output<Output>> => {
+      const result = await options.execute(payload, call, services);
       const parsed = options.output.safeParse(result);
 
       if (parsed.success) {
@@ -64,20 +67,49 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
         message: `Tool handler returned invalid output: ${options.name}`,
         issues: parsed.error.issues.map(issueFromZod),
       });
-    },
-  })) as ToolFactory<Input, Output>;
+    };
 
-  Object.defineProperties(factory, {
-    name: { value: options.name },
-    description: { value: options.description },
-    input: { value: options.input },
-    output: { value: options.output },
-    definition: { value: definition },
-    settings: { value: options.settings ?? [] },
+    return Object.freeze({
+      name: options.name,
+      description: options.description,
+      input: options.input,
+      output: options.output,
+      definition,
+      settings,
+      execute,
+      toTool: (call: Call): Tool<Input, Output> => ({
+        name: options.name,
+        description: options.description,
+        input: options.input,
+        output: options.output,
+        definition,
+        execute: (payload) => execute(payload, call),
+      }),
+    });
+  };
+
+  return Object.freeze({
+    name: options.name,
+    description: options.description,
+    input: options.input,
+    output: options.output,
+    definition,
+    settings,
+    bind,
+    [bindRegistrant]: bind,
   });
-
-  return factory;
 };
+
+/** Whether a tool read back from `tools/v1` is one `defineTool` bound. */
+export const isBoundTool = (value: unknown): value is BoundTool =>
+  typeof value === 'object' &&
+  value !== null &&
+  !isRegistrable(value) &&
+  typeof (value as { name?: unknown }).name === 'string' &&
+  typeof (value as { execute?: unknown }).execute === 'function' &&
+  typeof (value as { toTool?: unknown }).toTool === 'function' &&
+  typeof (value as { definition?: unknown }).definition === 'object' &&
+  Array.isArray((value as { settings?: unknown }).settings);
 
 /** Registers tools and provides neutral definitions, call parsing, lookup, and execution. */
 export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {

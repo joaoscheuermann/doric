@@ -1,4 +1,3 @@
-import type { Bundle, Skill } from 'bundle';
 import {
   createFetchTransport,
   createProviderForKind,
@@ -6,15 +5,13 @@ import {
   type SecretSource,
 } from 'llms';
 import type { Logger } from 'pino';
-import type { ToolFactory } from 'tool';
 
+import type { BundleCatalog } from '../bundles/boot.js';
 import type { CredentialService } from '../credentials/service.js';
 import { type DoricConfig, providerCredentials } from './schema.js';
 
-export interface Catalog {
-  readonly skills: readonly Skill[];
-  readonly tools: readonly ToolFactory[];
-}
+/** The tools and skills the activated bundles registered, in bundle order. */
+export type Catalog = BundleCatalog;
 
 export interface Generation {
   readonly snapshot: DoricConfig;
@@ -26,7 +23,7 @@ export interface Generation {
 interface GenerationOptions {
   readonly snapshot: DoricConfig;
   readonly credentials: CredentialService;
-  readonly bundles: readonly Bundle[];
+  readonly catalog: Catalog;
   readonly logger: Logger;
 }
 
@@ -39,7 +36,7 @@ interface GenerationOptions {
 export const createGeneration = ({
   snapshot,
   credentials,
-  bundles,
+  catalog,
   logger,
 }: GenerationOptions): Promise<Generation> => {
   const providers = new Map(
@@ -64,12 +61,7 @@ export const createGeneration = ({
     // tool result, or log line can carry one, and a rotation is covered the
     // moment the store holds it.
     redactions: () => credentials.secrets(),
-    catalog: {
-      skills: bundles.flatMap(({ skills }) => skills.map(({ skill }) => skill)),
-      tools: bundles.flatMap(({ tools }) =>
-        tools.map(({ factory }) => factory),
-      ),
-    },
+    catalog,
   });
 };
 

@@ -13,7 +13,7 @@
   "include": ["src/**/*.ts", "tests/**/*.ts"],
   "references": [
     {
-      "path": "../sandbox/tsconfig.lib.json"
+      "path": "../bundle/tsconfig.lib.json"
     }
   ]
 }

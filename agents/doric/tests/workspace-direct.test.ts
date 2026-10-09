@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { loadBundles } from 'bundle';
 import type { ProviderRequest } from 'llms';
-import type { ToolFactory } from 'tool';
 
 import type { ConfigService } from '../src/lib/config/service.js';
 import { createWorkspaceService } from '../src/lib/workspace/service.js';
+import { defaultBundles, directExecutor } from './helpers/bundles.js';
+import { cleanupStack } from './helpers/persistence-fixture.js';
 import { deferred, pool, workspace } from './helpers/workspace.js';
 
 const finish = (text: string) => ({
@@ -14,21 +14,22 @@ const finish = (text: string) => ({
   finish: { text, finishReason: 'stop' as const, toolCalls: [] },
 });
 
-// Thread tools ship in /bundles/threads and reach the host through the
-// per-prompt facade, so the catalog comes from the real built bundles.
-const catalogTools = async (): Promise<readonly ToolFactory[]> =>
-  (await loadBundles('agents/doric/dist/bundles')).flatMap(({ tools }) =>
-    tools.map(({ factory }) => factory),
-  );
+// Thread tools ship in /bundles/threads and reach the host through
+// runtime.threads/v1, so the catalog and executor come from the real built
+// bundles and their host adapter.
 
 void test('executes delegated work through real Direct tools and resumes the parent automatically', {
   timeout: 5000,
-}, async () => {
+}, async (t) => {
+  const cleanup = cleanupStack();
+  t.after(() => cleanup.close());
   const harness = workspace();
   const resumed = deferred();
   const requests: ProviderRequest[] = [];
   const generation = (harness.dependencies.config as ConfigService).current();
-  const tools = await catalogTools();
+  const bundles = await defaultBundles();
+  cleanup.defer(() => bundles.platform.stop());
+  const { tools } = bundles.catalog;
   assert.ok(
     tools.some(({ name }) => name === 'thread-spawn'),
     'the threads bundle must supply thread-spawn',
@@ -72,6 +73,7 @@ void test('executes delegated work through real Direct tools and resumes the par
   const service = createWorkspaceService({
     ...harness.dependencies,
     pool: pool(),
+    execute: bundles.execute,
     config: {
       current: () => ({
         ...generation,
@@ -85,6 +87,7 @@ void test('executes delegated work through real Direct tools and resumes the par
       }),
     } as never,
   });
+  cleanup.defer(() => service.dispose());
   const project = await service.projects.create('Project');
   const created = await service.threads.create(project.id, 'Thread');
   assert.ok(created.status === 'created');
@@ -114,7 +117,6 @@ void test('executes delegated work through real Direct tools and resumes the par
         (event as { source?: { kind: string } }).source?.kind === 'result',
     ),
   );
-  await service.dispose();
 });
 
 void test('stops queued execution when Direct cannot persist its resulting history', {
@@ -128,6 +130,7 @@ void test('stops queued execution when Direct cannot persist its resulting histo
   let failSave = true;
   const service = createWorkspaceService({
     ...harness.dependencies,
+    execute: directExecutor(),
     pool: pool(),
     threads: {
       ...harness.threads,
@@ -247,6 +250,7 @@ void test('fails closed when Direct cannot persist a streamed event after queued
   let executions = 0;
   const service = createWorkspaceService({
     ...harness.dependencies,
+    execute: directExecutor(),
     pool: pool(),
     threads: {
       ...harness.threads,

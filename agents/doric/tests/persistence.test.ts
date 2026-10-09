@@ -1199,7 +1199,7 @@ void test('carries configured GitHub data and every provider into the credential
         secret: string | null;
       }[]
     >`SELECT kind, name, username, email, secret FROM credential
-        ORDER BY kind, name`;
+        ORDER BY kind, name COLLATE "C"`;
     assert.deepEqual(credentials, [
       {
         kind: 'API_TOKEN',

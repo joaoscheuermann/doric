@@ -5,13 +5,16 @@ Provider-neutral, read-only search over Open Knowledge Format bundles stored at
 
 ## Use
 
-`createTool` returns a `ToolFactory`; bind it to the sandbox that contains the
-workspace before executing it:
+`createTool` returns a tool definition over the sandbox that contains the
+workspace. Register it with `tools/v1`, or bind it and take its agent-loop tool
+directly:
 
 ```ts
 import { createTool } from 'tool-okf';
 
-const search = createTool({ workspaceRoot: '/workspace' })(sandbox);
+const search = createTool({ workspaceRoot: '/workspace', sandbox })
+  .bind(services)
+  .toTool(call);
 const result = await search.execute({
   query: 'session persistence',
   bundle: 'project',

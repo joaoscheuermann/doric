@@ -7,7 +7,6 @@ import {
 } from 'sandbox';
 import type { Sandpool } from 'sandpool';
 
-import { runDirectPrompt } from '../agents/direct/executor.js';
 import type { ConfigInput } from '../config/schema.js';
 import { providerCredentials } from '../config/schema.js';
 import type { ConfigService } from '../config/service.js';
@@ -82,7 +81,8 @@ interface Options {
    * after the record is gone; a rejection is logged and never fails the deletion.
    */
   readonly discardWorkspace: (identity: string) => Promise<void>;
-  readonly execute?: ThreadExecution;
+  /** Runs one prompt; the composition root passes the Direct executor. */
+  readonly execute: ThreadExecution;
   readonly checkStorage?: () => Promise<void>;
 }
 
@@ -107,7 +107,7 @@ export const createWorkspaceService = ({
   publisher,
   logger,
   discardWorkspace,
-  execute = runDirectPrompt,
+  execute,
   checkStorage,
 }: Options): WorkspaceService => {
   const runtimes = new Map<string, ProjectRuntime>();

@@ -2,48 +2,46 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "bundle-core",
   "projectType": "library",
-  "sourceRoot": "bundles/core",
+  "sourceRoot": "bundles/core/src",
   "targets": {
     "build": {
-      "executor": "@nx/js:tsc",
+      "executor": "nx:run-commands",
       "dependsOn": ["^build"],
-      "outputs": ["{workspaceRoot}/agents/doric/dist/bundles/core"],
+      "outputs": ["{projectRoot}/dist"],
       "options": {
-        "outputPath": "agents/doric/dist/bundles/core",
-        "main": "bundles/core/index.mts",
-        "tsConfig": "bundles/core/tsconfig.json",
-        "assets": [
-          { "input": "bundles/core", "glob": "manifest.json", "output": "." },
-          {
-            "input": "bundles/core",
-            "glob": "skills/**/SKILL.md",
-            "output": "."
-          },
-          {
-            "input": "bundles/core",
-            "glob": "skills/**/.gitkeep",
-            "output": "."
-          },
-          {
-            "input": "bundles/core",
-            "glob": "tools/**/.gitkeep",
-            "output": "."
-          }
-        ]
+        "commands": [
+          "tsc --build bundles/core/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/core"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
       "options": {
         "command": "tsc --build bundles/core/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
       "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p bundles/core/tsconfig.spec.json",
           "node --test bundles/core/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/core",
+          "biome format --write bundles/core/contracts.published.json"
         ],
         "parallel": false
       }

@@ -26,30 +26,37 @@ RUN npm install --global npm@11.13.0
 
 # Lifecycle scripts are initially disabled because dependencies are untrusted
 # build inputs. Nx's required setup is then invoked explicitly. Direct tsc
-# builds avoid coupling the container build to the Nx task graph, the Doric
-# entrypoint is placed at the path expected by its package metadata, and the
-# non-TypeScript bundle resources are staged beside the compiled bundle.
+# builds avoid coupling the container build to the Nx task graph, and the Doric
+# entrypoint is placed at the path expected by its package metadata. Each
+# bundle is compiled to its own `dist`; the bundle build CLI then validates its
+# manifest and skills, dry-activates its host part to write the contract
+# descriptor and JSON Schemas, and checks them against the committed baseline,
+# and `stage` copies each bundle's `dist` into `agents/doric/dist/bundles/<id>`.
+# A failing bundle build stops the image build here rather than at boot.
 RUN npm ci --ignore-scripts \
  && node node_modules/nx/bin/post-install \
  && npx prisma generate --config agents/doric/prisma.config.ts \
  && npx tsc --build \
       agents/doric/tsconfig.lib.json \
       bundles/core/tsconfig.json \
+      bundles/files/tsconfig.json \
       bundles/git/tsconfig.json \
       bundles/threads/tsconfig.json \
+      bundles/runtime/tsconfig.json \
+      bundles/terminal/tsconfig.json \
       --force \
+ && node packages/bundle/dist/build/platform-schemas.js \
+ && for bundle in core files git threads; do \
+      node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
+    done \
+ && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
+      bundles/core bundles/files bundles/git bundles/threads \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
  && mv agents/doric/dist/generated \
        agents/doric/dist/lib \
        agents/doric/dist/routes \
-       agents/doric/dist/src/ \
- && cp bundles/core/manifest.json bundles/core/package.json agents/doric/dist/bundles/core/ \
- && cp -R bundles/core/skills agents/doric/dist/bundles/core/ \
- && cp bundles/git/manifest.json bundles/git/package.json agents/doric/dist/bundles/git/ \
- && cp -R bundles/git/skills agents/doric/dist/bundles/git/ \
- && cp bundles/threads/manifest.json bundles/threads/package.json agents/doric/dist/bundles/threads/ \
- && cp -R bundles/threads/skills agents/doric/dist/bundles/threads/
+       agents/doric/dist/src/
 
 # Migration only needs the compiled workspace.
 FROM ${BASE_IMAGE} AS agent-runtime

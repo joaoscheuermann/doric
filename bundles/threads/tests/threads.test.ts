@@ -1,33 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Host, ThreadControl } from 'host';
+import type { ThreadControl, ThreadView } from 'host';
 import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 
-import events from '../tools/thread-events.js';
-import get from '../tools/thread-get.js';
-import interrupt from '../tools/thread-interrupt.js';
-import list from '../tools/thread-list.js';
-import send from '../tools/thread-send.js';
-import spawn from '../tools/thread-spawn.js';
-import terminate from '../tools/thread-terminate.js';
+import { activatedTools } from './support/services.js';
 
 const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 
-/** Thread tools never reach the workspace; the facade only has to carry one. */
-const host = (control: ThreadControl): Host => ({
-  threads: control,
-  workspace: {
-    cwd: () => '/workspace',
-    setCwd: () => {
-      throw new Error('Thread tests never move the working directory');
-    },
-  },
-});
-const tools = [spawn, list, get, events, send, interrupt, terminate] as const;
+/** A child record as the host stores it, with keys beyond ThreadView. */
+const view: ThreadView & { readonly cwd: string } = {
+  id: threadId,
+  projectId: '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1600',
+  parentThreadId: '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603',
+  name: 'Child',
+  state: 'ready',
+  lastSequence: 0,
+  cwd: '/workspace',
+  createdAt: '2026-10-09T00:00:00.000Z',
+  updatedAt: '2026-10-09T00:00:00.000Z',
+};
 
-void test('exposes thread tools in the established model-visible order', () => {
+void test('registers thread tools in the established model-visible order', async () => {
+  const tools = await activatedTools({} as never);
   const expected = [
     'thread-spawn',
     'thread-list',
@@ -56,7 +52,7 @@ void test('preserves thread control arguments, defaults, and serialized results'
     },
     get: async (id) => {
       assert.equal(id, threadId);
-      return { thread: { id } as never };
+      return { thread: { ...view, id } };
     },
     events: async (id, afterSequence, limit) => {
       assert.equal(id, threadId);
@@ -67,7 +63,7 @@ void test('preserves thread control arguments, defaults, and serialized results'
     send: async (id, prompt) => {
       assert.equal(id, threadId);
       assert.equal(prompt, ' follow-up ');
-      return { promptId } as never;
+      return { status: 'accepted', promptId };
     },
     interrupt: async (id, activePromptId) => {
       assert.equal(id, threadId);
@@ -76,12 +72,10 @@ void test('preserves thread control arguments, defaults, and serialized results'
     },
     terminate: async (id) => {
       assert.equal(id, threadId);
-      return { id, state: 'cancelled' } as never;
+      return { ...view, id, state: 'cancelled' };
     },
   };
-  const storage = createToolStorage(
-    tools.map((tool) => tool({} as never, host(control))),
-  );
+  const storage = createToolStorage(await activatedTools(control));
   const execute = (name: string, payload: ToolCall['payload']) =>
     storage.execute({ id: 'call', name, payload });
 
@@ -92,7 +86,7 @@ void test('preserves thread control arguments, defaults, and serialized results'
   assert.equal(await execute('thread-list', {}), JSON.stringify({ items: [] }));
   assert.equal(
     await execute('thread-get', { threadId }),
-    JSON.stringify({ thread: { id: threadId } }),
+    JSON.stringify({ thread: view }),
   );
   assert.equal(
     await execute('thread-events', { threadId }),
@@ -100,7 +94,7 @@ void test('preserves thread control arguments, defaults, and serialized results'
   );
   assert.equal(
     await execute('thread-send', { threadId, prompt: ' follow-up ' }),
-    JSON.stringify({ promptId }),
+    JSON.stringify({ status: 'accepted', promptId }),
   );
   assert.equal(
     await execute('thread-interrupt', { threadId, promptId }),
@@ -108,14 +102,12 @@ void test('preserves thread control arguments, defaults, and serialized results'
   );
   assert.equal(
     await execute('thread-terminate', { threadId }),
-    JSON.stringify({ id: threadId, state: 'cancelled' }),
+    JSON.stringify({ ...view, state: 'cancelled' }),
   );
 });
 
 void test('rejects invalid thread control inputs at the tool boundary', async () => {
-  const storage = createToolStorage(
-    tools.map((tool) => tool({} as never, host({} as never))),
-  );
+  const storage = createToolStorage(await activatedTools({} as never));
   for (const [name, payload] of [
     ['thread-spawn', { prompt: '   ' }],
     ['thread-send', { threadId, prompt: '' }],

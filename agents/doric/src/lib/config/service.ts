@@ -1,10 +1,13 @@
-import type { Bundle } from 'bundle';
 import type { Logger } from 'pino';
 
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
 import { createMutationQueue } from '../workspace/runtime.js';
-import { createGeneration, type Generation } from './generation.js';
+import {
+  type Catalog,
+  createGeneration,
+  type Generation,
+} from './generation.js';
 import { readModelProperties } from './models.js';
 import type { ConfigInput, DoricConfig } from './schema.js';
 import { providerCredentials } from './schema.js';
@@ -42,7 +45,7 @@ export interface ConfigService {
 interface ConfigServiceOptions {
   readonly store: ConfigStore;
   readonly credentials: CredentialService;
-  readonly bundles: readonly Bundle[];
+  readonly catalog: Catalog;
   readonly logger: Logger;
   readonly buildGeneration?: typeof createGeneration;
   /**
@@ -57,7 +60,7 @@ interface ConfigServiceOptions {
 export const createConfigService = async ({
   store,
   credentials,
-  bundles,
+  catalog,
   logger,
   buildGeneration = createGeneration,
   readModels,
@@ -69,7 +72,7 @@ export const createConfigService = async ({
   let active = await buildGeneration({
     snapshot: await store.load(),
     credentials,
-    bundles,
+    catalog,
     logger,
   });
   const mutations = createMutationQueue();
@@ -83,7 +86,7 @@ export const createConfigService = async ({
         requireCredentials(config, credentials);
         const filled = await models(config);
         try {
-          requireToolConfigs(filled, bundles);
+          requireToolConfigs(filled, catalog.tools);
         } catch (error) {
           throw new ConfigToolError(
             error instanceof Error
@@ -94,7 +97,7 @@ export const createConfigService = async ({
         const candidate = await buildGeneration({
           snapshot: { configuration: filled, revision: 0, updatedAt: '' },
           credentials,
-          bundles,
+          catalog,
           logger,
         });
         const snapshot = await store.replace(filled);

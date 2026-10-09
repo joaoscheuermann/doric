@@ -2,38 +2,46 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "bundle-git",
   "projectType": "library",
-  "sourceRoot": "bundles/git",
+  "sourceRoot": "bundles/git/src",
   "targets": {
     "build": {
-      "executor": "@nx/js:tsc",
+      "executor": "nx:run-commands",
       "dependsOn": ["^build"],
-      "outputs": ["{workspaceRoot}/agents/doric/dist/bundles/git"],
+      "outputs": ["{projectRoot}/dist"],
       "options": {
-        "outputPath": "agents/doric/dist/bundles/git",
-        "main": "bundles/git/index.mts",
-        "tsConfig": "bundles/git/tsconfig.json",
-        "assets": [
-          { "input": "bundles/git", "glob": "manifest.json", "output": "." },
-          {
-            "input": "bundles/git",
-            "glob": "skills/**/SKILL.md",
-            "output": "."
-          }
-        ]
+        "commands": [
+          "tsc --build bundles/git/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/git"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
       "options": {
         "command": "tsc --build bundles/git/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
       "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p bundles/git/tsconfig.spec.json",
           "node --test bundles/git/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/git",
+          "biome format --write bundles/git/contracts.published.json"
         ],
         "parallel": false
       }

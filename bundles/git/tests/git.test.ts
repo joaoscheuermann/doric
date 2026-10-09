@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, test } from 'node:test';
 
+import type { Host } from 'host';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
-import { createTool } from '../tools/git.js';
+import { createTool } from '../src/host/tools/git.js';
+import { bindTool } from './support/services.js';
 
 type FakeSandbox = Sandbox & {
   readonly execs: SandboxExecInput[];
@@ -14,7 +16,11 @@ void describe('git tool', () => {
   void test('executes structured Git arguments without a shell', async () => {
     const sandbox = fakeSandbox(result({ stdout: 'main\n' }));
 
-    const output = await createTool()(sandbox, fakeHost('/workspace')).execute({
+    const output = await bindTool(
+      createTool(),
+      sandbox,
+      fakeHost('/workspace'),
+    ).execute({
       args: ['branch', '--show-current'],
       working_directory: 'repo',
       timeout_ms: 5000,
@@ -48,7 +54,7 @@ void describe('git tool', () => {
   void test('runs in the working directory by default and caps the timeout', async () => {
     const sandbox = fakeSandbox(result());
 
-    await createTool()(sandbox, fakeHost('/workspace/repo')).execute({
+    await bindTool(createTool(), sandbox, fakeHost('/workspace/repo')).execute({
       args: ['status', '--short'],
       timeout_ms: 999_999,
     });
@@ -62,12 +68,12 @@ void describe('git tool', () => {
     const sandbox = fakeSandbox(result());
     const host = fakeHost('/workspace/repo');
 
-    await createTool()(sandbox, host).execute({
+    await bindTool(createTool(), sandbox, host).execute({
       args: ['status', '--short'],
       working_directory: 'src',
     });
 
-    await createTool()(sandbox, host).execute({
+    await bindTool(createTool(), sandbox, host).execute({
       args: ['status', '--short'],
       working_directory: '/workspace/other',
     });
@@ -79,7 +85,8 @@ void describe('git tool', () => {
   });
 
   void test('returns execution errors as observable Git failures', async () => {
-    const output = await createTool()(
+    const output = await bindTool(
+      createTool(),
       fakeSandbox(new Error('exec failed')),
       fakeHost('/workspace'),
     ).execute({ args: ['status'] });
@@ -94,7 +101,8 @@ void describe('git tool', () => {
   void test('bounds large stdout while preserving its beginning and end', async () => {
     const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
 
-    const output = await createTool()(
+    const output = await bindTool(
+      createTool(),
       fakeSandbox(result({ stdout })),
       fakeHost('/workspace'),
     ).execute({
@@ -138,7 +146,7 @@ const fakeSandbox = (behavior: SandboxExecResult | Error): FakeSandbox => {
 };
 
 /** Git tests only read the working directory; they never move it. */
-const fakeHost = (cwd: string) => ({
+const fakeHost = (cwd: string): Host => ({
   threads: {} as never,
   workspace: {
     cwd: () => cwd,

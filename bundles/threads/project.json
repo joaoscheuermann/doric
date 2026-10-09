@@ -2,42 +2,46 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "bundle-threads",
   "projectType": "library",
-  "sourceRoot": "bundles/threads",
+  "sourceRoot": "bundles/threads/src",
   "targets": {
     "build": {
-      "executor": "@nx/js:tsc",
+      "executor": "nx:run-commands",
       "dependsOn": ["^build"],
-      "outputs": ["{workspaceRoot}/agents/doric/dist/bundles/threads"],
+      "outputs": ["{projectRoot}/dist"],
       "options": {
-        "outputPath": "agents/doric/dist/bundles/threads",
-        "main": "bundles/threads/index.mts",
-        "tsConfig": "bundles/threads/tsconfig.json",
-        "assets": [
-          {
-            "input": "bundles/threads",
-            "glob": "manifest.json",
-            "output": "."
-          },
-          {
-            "input": "bundles/threads",
-            "glob": "skills/**/SKILL.md",
-            "output": "."
-          }
-        ]
+        "commands": [
+          "tsc --build bundles/threads/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/threads"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
       "options": {
         "command": "tsc --build bundles/threads/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
       "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p bundles/threads/tsconfig.spec.json",
           "node --test bundles/threads/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/threads",
+          "biome format --write bundles/threads/contracts.published.json"
         ],
         "parallel": false
       }

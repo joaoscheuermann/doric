@@ -1,8 +1,9 @@
 # Threads bundle
 
-`bundle-threads` contains the delegation capabilities Doric exposes to its
-agent. Its build produces `agents/doric/dist/bundles/threads`; the Direct host
-loads that artifact through the `bundle` package.
+`threads` contains the delegation capabilities Doric exposes to its agent. Its
+build writes `bundles/threads/dist`, which `doric:build-bundles` stages into
+`agents/doric/dist/bundles/threads`; the Direct host loads it through the
+`bundle` loader.
 
 ## Capabilities
 
@@ -17,23 +18,25 @@ prompt's direct child threads in the same project:
 - `thread-interrupt`, `thread-terminate` — cancel one active prompt or close a
   child subtree.
 
-Each tool reads its capabilities from the per-prompt `Host` facade's `threads`
-namespace, whose contract lives in `packages/host`. The bundle never imports
-`agents/doric` internals.
+Each tool reaches the calling prompt's children through `runtime.threads/v1`
+(`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
+the serialized result. The bundle never imports `agents/doric` internals.
 
 Skills cover delegating self-contained work, inspecting delegated work, and
-steering or closing children. The authoritative resource order and availability
-flags are in [`manifest.json`](manifest.json).
+steering or closing children. Skills live in `src/skills/<name>/SKILL.md` and
+are registered in lexical folder order; `thread-delegation` is marked
+`alwaysAvailable` in its frontmatter.
 
 ## Change the bundle
 
-1. Update a tool in `tools/<name>.ts` or add a skill at
-   `skills/<name>/SKILL.md`.
-2. Reach the host only through the `Host` contract; add a namespace to
-   `packages/host` first if one is missing.
+1. Update a tool in `src/host/tools/<name>.ts` or add a skill at
+   `src/skills/<name>/SKILL.md`; tools are registered in order in
+   `src/host/index.ts`.
+2. Reach the runtime only through contracts declared in `manifest.json`
+   `requires`.
 3. Keep each skill's `allowed-tools` references local to this bundle.
-4. Update `manifest.json` when resources or their ordering change.
-5. Build and test; the runtime loader accepts compiled `.js` tools only.
+4. Build and test; the build validates the manifest and skills and
+   dry-activates the host part.
 
 ## Development
 
@@ -43,7 +46,7 @@ npx nx typecheck bundle-threads
 npx nx test bundle-threads
 ```
 
-To rebuild every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Direct host:
 
 ```console
 npx nx run doric:build-bundles
