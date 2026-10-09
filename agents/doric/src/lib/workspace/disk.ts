@@ -1,5 +1,7 @@
 import { statfs } from 'node:fs/promises';
 
+import type { Storage } from 'bundle/contracts';
+
 import { type ThreadExecution, ThreadPersistenceError } from './runtime.js';
 
 export const storageMessage =
@@ -25,6 +27,27 @@ export const checkDisk = async (
       throw new StoragePressureError();
   } catch {
     // An unreadable configured mount is not evidence that execution is safe.
+    throw new StoragePressureError();
+  }
+};
+
+/**
+ * The same 10% rule over the storage backend's own measurement of the
+ * filesystem holding persistence (`storage/v1.health`). A store that cannot
+ * measure it, or a failed check, is not evidence that execution is safe.
+ */
+export const checkStorageHealth = async (
+  storage: Pick<Storage, 'health'>,
+): Promise<void> => {
+  try {
+    const { disk } = await storage.health();
+    if (
+      disk === undefined ||
+      disk.blocks <= 0 ||
+      disk.availableBlocks * 10 <= disk.blocks
+    )
+      throw new StoragePressureError();
+  } catch {
     throw new StoragePressureError();
   }
 };

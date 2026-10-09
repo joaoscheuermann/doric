@@ -3,10 +3,10 @@ import { readdir, readFile } from 'node:fs/promises';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { PrismaClient } from 'postgres/prisma';
 
-import { PrismaClient } from '../../src/generated/prisma/client.js';
-
-export const migrationDirectory = 'agents/doric/prisma/migrations';
+/** The migrations belong to the `postgres` bundle, which owns the schema. */
+export const migrationDirectory = 'bundles/postgres/prisma/migrations';
 
 /** Runs every release even when a dependent resource fails to close. */
 export function cleanupStack() {
@@ -80,6 +80,9 @@ export async function persistenceFixture(
     return {
       database: client(),
       second: client(),
+      /** The fixture schema and a connection string that selects it. */
+      schema,
+      url: url.toString(),
       migrate: (migration: string) => sql.query(migration),
       close: () => cleanup.close(),
     };

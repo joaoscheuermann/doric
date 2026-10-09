@@ -83,6 +83,12 @@
     },
     {
       "path": "./bundles/terminal"
+    },
+    {
+      "path": "./bundles/postgres"
+    },
+    {
+      "path": "./packages/storage"
     }
   ]
 }

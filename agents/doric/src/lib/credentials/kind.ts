@@ -1,72 +1,24 @@
+import {
+  type CredentialKind,
+  credentialFieldsMessage,
+  credentialFieldsSatisfied,
+  credentialKinds,
+} from 'bundle/contracts';
 import { z } from 'zod';
 
-/** The closed set of credential kinds. A kind fixes the field set below. */
-export const credentialKinds = [
-  'API_TOKEN',
-  'USERNAME_PASSWORD',
-  'GIT',
-] as const;
-
-export type CredentialKind = (typeof credentialKinds)[number];
-
-/** The columns a credential row may carry. */
-export const credentialFieldNames = ['username', 'email', 'secret'] as const;
-
-export type CredentialField = (typeof credentialFieldNames)[number];
-
-export interface CredentialValues {
-  readonly username?: string;
-  readonly email?: string;
-  readonly secret?: string;
-}
-
-export interface CredentialFieldSet {
-  readonly required: readonly CredentialField[];
-  readonly optional: readonly CredentialField[];
-}
-
-/**
- * The one rule every kind derives from, and the reason `credential` carries no
- * cross-column CHECK: a required field must be present, and every other field
- * must be absent. `API_TOKEN` is authentication (a provider key or a GitHub
- * token); `USERNAME_PASSWORD` is authentication with a name; `GIT` is identity
- * alone, which is why it holds no secret at all.
- */
-const fieldSets: Record<CredentialKind, CredentialFieldSet> = {
-  API_TOKEN: { required: ['secret'], optional: [] },
-  USERNAME_PASSWORD: { required: ['username', 'secret'], optional: [] },
-  GIT: { required: ['username', 'email'], optional: [] },
-};
-
-export const credentialFields = (kind: CredentialKind): CredentialFieldSet =>
-  fieldSets[kind];
-
-/** Whether these values satisfy the kind's required and forbidden fields. */
-export const credentialFieldsSatisfied = (
-  kind: CredentialKind,
-  values: CredentialValues,
-): boolean => {
-  const { required, optional } = credentialFields(kind);
-  const allowed = new Set<CredentialField>([...required, ...optional]);
-
-  return (
-    required.every((field) => values[field] !== undefined) &&
-    credentialFieldNames.every(
-      (field) => values[field] === undefined || allowed.has(field),
-    )
-  );
-};
-
-/** The readable statement of that rule, used by the API's rejection messages. */
-export const credentialFieldsMessage = (kind: CredentialKind): string => {
-  const { required, optional } = credentialFields(kind);
-  const carries =
-    optional.length === 0
-      ? 'and carries no other field'
-      : `and may also carry ${optional.join(', ')}`;
-
-  return `A ${kind} credential requires ${required.join(', ')} ${carries}.`;
-};
+// The one field rule of every kind lives beside `secrets/v1` (decision S-6),
+// so the route schemas below and the `secrets/v1` provider derive from it.
+export {
+  type CredentialField,
+  type CredentialFieldSet,
+  type CredentialKind,
+  type CredentialValues,
+  credentialFieldNames,
+  credentialFields,
+  credentialFieldsMessage,
+  credentialFieldsSatisfied,
+  credentialKinds,
+} from 'bundle/contracts';
 
 /** A stored credential with its secret decrypted for host use. */
 export interface Credential {

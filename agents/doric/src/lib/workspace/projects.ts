@@ -1,6 +1,6 @@
-import type { Project as StoredProject } from '../../generated/prisma/client.js';
+import type { Database, Project as StoredProject } from 'postgres/prisma';
+
 import type { DoricConfig } from '../config/schema.js';
-import type { Database } from '../database.js';
 import { isProjectColor } from './colors.js';
 import {
   before,

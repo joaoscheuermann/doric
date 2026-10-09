@@ -6,7 +6,7 @@
   "targets": {
     "build": {
       "executor": "@nx/js:tsc",
-      "dependsOn": ["prisma-generate", "^build", "build-bundles"],
+      "dependsOn": ["^build", "build-bundles"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "outputPath": "agents/doric/dist",
@@ -20,17 +20,10 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "nx run-many --target=build --projects=bundle-core,bundle-files,bundle-git,bundle-threads,bundle-runtime,bundle-terminal --parallel=3",
-          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/core bundles/files bundles/git bundles/threads"
+          "nx run-many --target=build --projects=bundle-postgres,bundle-core,bundle-files,bundle-git,bundle-threads,bundle-runtime,bundle-terminal --parallel=3",
+          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/postgres bundles/core bundles/files bundles/git bundles/threads"
         ],
         "parallel": false
-      }
-    },
-    "prisma-generate": {
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/src/generated/prisma"],
-      "options": {
-        "command": "prisma generate --config agents/doric/prisma.config.ts"
       }
     },
     "migrate": {
@@ -56,7 +49,7 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["prisma-generate", "^build", "build-bundles"],
+      "dependsOn": ["^build", "build-bundles"],
       "cache": false,
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ProviderMessage } from 'llms';
-
 import type {
+  Database,
   ThreadEvent as StoredEvent,
   Thread as StoredThread,
-} from '../../generated/prisma/client.js';
-import type { Database } from '../database.js';
+} from 'postgres/prisma';
+
 import type { PauseReason, PromptFailure, PromptProgress } from './prompts.js';
 import { delegatedResult } from './prompts.js';
 import { queueSnapshot } from './queue.js';

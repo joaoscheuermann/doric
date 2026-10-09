@@ -1,4 +1,5 @@
-import type { Database } from '../database.js';
+import type { Database } from 'postgres/prisma';
+
 import { json } from './storage.js';
 import {
   addTotals,

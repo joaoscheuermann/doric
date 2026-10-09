@@ -1,208 +1,122 @@
-import { randomUUID } from 'node:crypto';
+import type { Settings, SettingsEntry } from 'bundle/contracts';
+import { providerKind } from 'llms';
 
-import { type ProviderField, type ProviderKindId, providerKind } from 'llms';
-
-import { ModelRole, type Prisma } from '../../generated/prisma/client.js';
-import type { Database } from '../database.js';
+import type { ConfigurationSettings } from '../bundles/configuration.js';
+import { jsonbKeyOrder } from './order.js';
 import {
   type ConfigInput,
   ConfigInputSchema,
   type DoricConfig,
 } from './schema.js';
 
-const singletonId = 1;
-
-type StoredConfig = Prisma.DoricConfigurationGetPayload<{
-  include: { providers: true; models: true };
-}>;
-
-type StoredProviderRow = StoredConfig['providers'][number];
-
-/**
- * One model a stored provider lists, with the efforts it carries when its kind
- * keeps them. The stored JSON is read as this shape and handed to the schema,
- * which is what decides whether it matches the provider's kind.
- */
-interface ProviderModelInput {
-  readonly name: string;
-  readonly reasonings?: readonly string[];
-}
-
-/**
- * One provider row read back as the configuration's own input, which the schema
- * then judges: a stored value that disagrees with its kind fails there rather
- * than being served as a valid configuration.
- */
-interface ProviderInput {
-  readonly id: string;
-  readonly kind: ProviderKindId;
-  readonly configuration: Readonly<Record<string, string>>;
-  readonly models?: readonly ProviderModelInput[];
-}
-
 export interface ConfigStore {
   load(): Promise<DoricConfig>;
   replace(config: ConfigInput): Promise<DoricConfig>;
 }
 
+interface Options {
+  /** The `settings/v1` provider that holds the configuration space. */
+  readonly settings: Settings;
+  readonly definition: ConfigurationSettings;
+  /** Told the configuration the host loaded, so its references are known. */
+  readonly track: (configuration: ConfigInput) => void;
+}
+
+type ProviderInput = ConfigInput['providers'][number];
+
+const byId = (left: { id: string }, right: { id: string }): number =>
+  left.id.localeCompare(right.id);
+
+/** The key of the one `secret` field a provider kind declares, if any. */
+const secretKey = (kindId: string): string | undefined =>
+  providerKind(kindId)?.fields.find((field) => field.kind === 'secret')?.key;
+
 /**
- * The one value a kind carries that has to be a real column: a `secret` field is
- * a credential reference, which PostgreSQL can keep but JSON cannot. Every kind
- * declares at most one, so one column holds every provider's reference.
+ * One provider as the old provider row read back: its non-secret values in
+ * jsonb order, then the credential its `secret` field names.
  */
-const secretField = (kindId: string): ProviderField | undefined =>
-  providerKind(kindId)?.fields.find((field) => field.kind === 'secret');
-
-/** Persists the singleton configuration and its normalized provider/model rows. */
-export const createConfigStore = (database: Database): ConfigStore => ({
-  async load() {
-    const stored = await database.doricConfiguration.findUniqueOrThrow({
-      where: { id: singletonId },
-      include: { providers: true, models: true },
-    });
-    return fromStored(stored);
-  },
-
-  replace(config) {
-    return database.$transaction(
-      async (transaction) => {
-        await transaction.modelConfiguration.deleteMany({
-          where: { configurationId: singletonId },
-        });
-        await transaction.providerConfiguration.deleteMany({
-          where: { configurationId: singletonId },
-        });
-        await transaction.providerConfiguration.createMany({
-          data: config.providers.map((provider) => ({
-            configurationId: singletonId,
-            ...providerRow(provider),
-          })),
-        });
-        await transaction.modelConfiguration.createMany({
-          data: [
-            {
-              configurationId: singletonId,
-              role: ModelRole.EXECUTION,
-              providerId: config.models.execution.providerId,
-              model: config.models.execution.model,
-              effort: config.models.execution.effort ?? null,
-            },
-          ],
-        });
-        const stored = await transaction.doricConfiguration.update({
-          where: { id: singletonId },
-          data: {
-            revision: { increment: 1 },
-            generation: randomUUID(),
-            maxTurns: config.execution.maxTurns,
-            maxToolResultChars: config.execution.maxToolResultChars ?? null,
-            toolConfig: config.tools ?? {},
-            gitCredentialId: config.gitCredentialId ?? null,
-            githubCredentialId: config.githubCredentialId ?? null,
-          },
-          include: { providers: true, models: true },
-        });
-        return fromStored(stored);
-      },
-      { isolationLevel: 'Serializable' },
-    );
-  },
-});
-
-const fromStored = (stored: StoredConfig): DoricConfig => {
-  const execution = stored.models.find(
-    ({ role }) => role === ModelRole.EXECUTION,
+const provider = (stored: ProviderInput): ProviderInput => {
+  const secret = secretKey(stored.kind);
+  const values = Object.fromEntries(
+    Object.entries(stored.configuration).filter(([key]) => key !== secret),
   );
-  if (execution === undefined)
-    throw new Error(
-      `Stored Doric model role is missing: ${ModelRole.EXECUTION}`,
-    );
-
-  const configuration = ConfigInputSchema.parse({
-    providers: stored.providers
-      .map(providerFromStored)
-      .sort((left, right) => left.id.localeCompare(right.id)),
-    models: {
-      execution: {
-        providerId: execution.providerId,
-        model: execution.model,
-        ...(execution.effort === null ? {} : { effort: execution.effort }),
-      },
-    },
-    execution: {
-      maxTurns: stored.maxTurns,
-      ...(stored.maxToolResultChars === null
-        ? {}
-        : { maxToolResultChars: stored.maxToolResultChars }),
-    },
-    tools: stored.toolConfig as Readonly<
-      Record<string, Readonly<Record<string, string>>>
-    >,
-    ...(stored.gitCredentialId === null
-      ? {}
-      : { gitCredentialId: stored.gitCredentialId }),
-    ...(stored.githubCredentialId === null
-      ? {}
-      : { githubCredentialId: stored.githubCredentialId }),
-  });
-
-  return {
-    configuration,
-    revision: stored.revision,
-    updatedAt: stored.updatedAt.toISOString(),
-  };
-};
-
-/**
- * One provider row as the configuration shape. The stored kind decides where the
- * credential comes from, and a model list a kind keeps is read even when the row
- * holds nothing, so a migrated provider round-trips as the kind it was mapped to.
- * A model list a kind does not keep is read only when the row disagrees with its
- * kind, which the configuration schema then rejects instead of dropping it
- * silently.
- */
-const providerFromStored = (stored: StoredProviderRow): ProviderInput => {
-  const kind = providerKind(stored.kind);
-  if (kind === undefined)
-    throw new Error(`Stored provider kind is unknown: ${stored.kind}`);
-
-  const secret = secretField(stored.kind);
-  const models = Array.isArray(stored.models)
-    ? (stored.models as unknown as readonly ProviderModelInput[])
-    : undefined;
+  const credentialId =
+    secret === undefined ? undefined : stored.configuration[secret];
 
   return {
     id: stored.id,
-    kind: kind.id,
+    kind: stored.kind,
     configuration: {
-      ...(stored.fieldValues as Readonly<Record<string, string>>),
-      ...(secret === undefined || stored.credentialId === null
+      ...jsonbKeyOrder(values),
+      ...(secret === undefined || credentialId === undefined
         ? {}
-        : { [secret.key]: stored.credentialId }),
+        : { [secret]: credentialId }),
     },
-    ...(models !== undefined &&
-    (models.length > 0 || kind.lists.includes('models'))
-      ? { models }
-      : {}),
+    ...(stored.models === undefined ? {} : { models: stored.models }),
   };
 };
 
-/** One provider as its row: its field values, its credential, and its models. */
-const providerRow = (provider: ConfigInput['providers'][number]) => {
-  const secret = secretField(provider.kind);
+/**
+ * The configuration space as `GET /config` has always answered it. The old
+ * store read rows back from PostgreSQL, so providers come in `localeCompare`
+ * order of their IDs, record keys in jsonb order with each provider's
+ * credential last, and `tools` is always present; the schema then emits every
+ * object in its own shape order. Reading and writing both pass through here,
+ * so the two bodies stay identical byte for byte.
+ */
+const fromSettings = (entry: SettingsEntry<ConfigInput>): DoricConfig => {
+  const value = entry.value;
 
   return {
-    id: provider.id,
-    kind: provider.kind,
-    fieldValues: Object.fromEntries(
-      Object.entries(provider.configuration).filter(
-        ([key]) => key !== secret?.key,
+    configuration: ConfigInputSchema.parse({
+      providers: value.providers.map(provider).sort(byId),
+      models: value.models,
+      execution: value.execution,
+      tools: jsonbKeyOrder(
+        Object.fromEntries(
+          Object.entries(value.tools ?? {}).map(([tool, fields]) => [
+            tool,
+            jsonbKeyOrder(fields),
+          ]),
+        ),
       ),
-    ),
-    credentialId:
-      secret === undefined
-        ? null
-        : (provider.configuration[secret.key] ?? null),
-    models: provider.models ?? [],
+      ...(value.gitCredentialId === undefined
+        ? {}
+        : { gitCredentialId: value.gitCredentialId }),
+      ...(value.githubCredentialId === undefined
+        ? {}
+        : { githubCredentialId: value.githubCredentialId }),
+    }),
+    revision: entry.revision,
+    updatedAt: entry.updatedAt,
   };
 };
+
+/** What a write stores: providers in ID order and the tool values always set. */
+const toSettings = (config: ConfigInput): ConfigInput => ({
+  ...config,
+  providers: [...config.providers].sort(byId),
+  tools: config.tools ?? {},
+});
+
+/**
+ * The singleton configuration as one `settings/v1` space. A replacement is one
+ * settings write, serialized with credential writes by the provider, and its
+ * revision is the next one.
+ */
+export const createConfigStore = ({
+  settings,
+  definition,
+  track,
+}: Options): ConfigStore => ({
+  async load() {
+    const config = fromSettings(await settings.entry(definition));
+
+    track(config.configuration);
+    return config;
+  },
+
+  async replace(config) {
+    return fromSettings(await settings.set(definition, toSettings(config)));
+  },
+});

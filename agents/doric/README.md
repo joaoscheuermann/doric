@@ -15,17 +15,21 @@ src/lib/
 ├── agents/direct/
 │   ├── executor.ts
 │   └── prompts/system.ts
+├── bundles/
+│   ├── adapter.ts
+│   ├── boot.ts
+│   ├── configuration.ts
+│   └── database.ts
 ├── config/
 │   ├── schema.ts
 │   ├── service.ts
 │   ├── store.ts
+│   ├── order.ts
 │   └── generation.ts
 ├── credentials/
 │   ├── kind.ts
 │   ├── resolve.ts
-│   ├── secret.ts
-│   ├── service.ts
-│   └── store.ts
+│   └── service.ts
 ├── workspace/
 │   ├── types.ts
 │   ├── service.ts
@@ -41,7 +45,6 @@ src/lib/
 ├── events/
 │   ├── socket.ts
 │   └── serialization.ts
-├── database.ts
 └── vms.ts
 ```
 
@@ -50,9 +53,12 @@ appends bundle skills in bundle order. The host boots its bundles through the
 `bundle` loader: it reads the installed bundles below `DORIC_BUNDLES_PATH`
 (default: the staged `agents/doric/dist/bundles`) and the composition at
 `DORIC_COMPOSITION` (default: [`composition.json`](composition.json), which
-names `core` as the core and enables `core`, `files`, `git` and `threads`). The
-`core` bundle provides `hooks/v1`, `log/v1`, `tools/v1` and `skills/v1`; every
-other bundle registers its tools with `tools/v1`, and the loader registers each
+names `core` as the core, enables `postgres`, `core`, `files`, `git` and
+`threads`, and chooses `postgres` for `storage.backend/v1` and
+`secrets.backend/v1`). The `postgres` foundation bundle owns the Prisma schema,
+the migrations and the process's one PostgreSQL client. The `core` bundle
+provides `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,
+`secrets/v1`, `storage/v1` and `events/v1`; every other bundle registers its tools with `tools/v1`, and the loader registers each
 bundle's `skills/*/SKILL.md` with `skills/v1`, in lexical folder order. The
 executor binds every registered tool and appends every registered skill on
 each prompt.
@@ -69,8 +75,18 @@ by forwarding each call to the per-prompt `Host` facade (`packages/host`) and
 sandbox the runner builds, bound to the calling prompt's scope only while that
 prompt runs. Shared lifecycle and authorization remain in `workspace`:
 `runner.ts` builds the prompt-scoped facade, and every tool call acts only on
-the calling prompt's direct children in the same Project. HTTP routes and
-generated Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
+the calling prompt's direct children in the same Project. HTTP routes remain in
+`src/routes`, outside `lib`.
+
+Activating the bundles opens no database. After `bundle_load`, the
+`database_client` stage connects the client through the provisional
+`postgres.database/v1` contract (`src/lib/bundles/database.ts`), and the Project
+and Thread stores keep using it. Credentials are read through `secrets/v1`
+(`credentials/service.ts` adapts it to the host's credential service), and the
+configuration is one `settings/v1` space, `host-config.configuration/v1`, owned
+by the embedded `host-config` bundle in `src/lib/bundles/configuration.ts`. That
+bundle also names the credentials the configuration references, so deleting one
+is refused.
 
 A bundle that fails validation or activation is quarantined, logged as
 `Bundle quarantined` with its reasons, and the others keep serving. A core that
@@ -495,14 +511,19 @@ protocols instead of silently changing endpoints or deleting configuration.
 ## Persistence and security
 
 PostgreSQL stores Projects, Threads, messages, configuration snapshots, and
-Thread events. Apply migrations separately with `npx nx run doric:migrate`;
-startup does not apply them. The migration history starts with the clean
+Thread events. The schema and migrations live in the `postgres` bundle
+(`bundles/postgres/prisma`); `agents/doric/prisma.config.ts` points at them, so
+apply migrations separately with `npx nx run doric:migrate` as before; startup
+does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and
 immutable-tree trigger. The following incremental migration adds and backfills
 Project and Thread names, the next adds the per-turn provider-history
 checkpoints that rewind truncates, then the Project color, the nullable
 GitHub identity and token columns, and last the credential store that replaces
-them. It does not convert Session data.
+them. It does not convert Session data. The generic-storage migration converts
+the configuration tables into the `host-config.configuration/v1` settings
+document, keeping its revision and update time, verifies the conversion, and
+then drops those tables; it cannot be reversed, so back up the database first.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the

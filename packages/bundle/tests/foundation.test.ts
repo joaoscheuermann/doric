@@ -112,3 +112,49 @@ void test('a chosen foundation provider that fails sends the host to recovery', 
     await platform.stop();
   });
 });
+
+void test('a storage backend the composition does not choose leaves the core without its foundation: recovery', async () => {
+  await withRoot(async (root) => {
+    const backend = embedded(
+      manifest('membackend', { provides: ['storage.backend/v1@1.0.0'] }),
+      () => undefined,
+    );
+    const core = () => minimalCore({ requires: ['storage.backend/v1@^1.0.0'] });
+    const unchosen = await start({
+      bundlesPath: root,
+      composition: { enabled: ['mincore', 'membackend'] },
+      embedded: [core(), backend],
+    });
+
+    assert.equal(unchosen.platform.mode, 'recovery');
+    assert.match(
+      unchosen.platform.diagnostics().recovery?.reason ?? '',
+      /core mincore requires storage\.backend\/v1@\^1\.0\.0, which no active foundation bundle provides/,
+    );
+    assert.equal(states(unchosen.platform).mincore, 'inactive');
+
+    await unchosen.platform.stop();
+
+    const chosen = await start({
+      bundlesPath: root,
+      composition: {
+        enabled: ['mincore', 'membackend'],
+        providers: { 'storage.backend/v1': 'membackend' },
+      },
+      embedded: [core(), backend],
+    });
+
+    assert.equal(chosen.platform.mode, 'normal');
+    assert.deepEqual(chosen.platform.catalog().order, [
+      'membackend',
+      'mincore',
+    ]);
+    assert.equal(
+      chosen.platform.catalog().bundles.find(({ id }) => id === 'membackend')
+        ?.phase,
+      'foundation',
+    );
+
+    await chosen.platform.stop();
+  });
+});

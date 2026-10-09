@@ -5,8 +5,10 @@ import test from 'node:test';
 import express from 'express';
 
 import type { Credential } from '../src/lib/credentials/kind.js';
-import { MissingKeyError } from '../src/lib/credentials/secret.js';
-import type { CredentialService } from '../src/lib/credentials/service.js';
+import {
+  type CredentialService,
+  MissingKeyError,
+} from '../src/lib/credentials/service.js';
 import { createCredentialsRouter } from '../src/routes/credentials.js';
 
 const id = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';

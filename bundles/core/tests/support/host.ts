@@ -11,7 +11,16 @@ import {
   type PlatformLog,
   startHost,
 } from 'bundle';
-import type { HostContext, LogRecord } from 'bundle/contracts';
+import {
+  type AnyServiceDefinition,
+  defineMethod,
+  defineService,
+  type HostContext,
+  isServiceDefinition,
+  type LogRecord,
+  type Services,
+} from 'bundle/contracts';
+import { type MemoryFoundationOptions, memoryFoundation } from 'storage/memory';
 
 import { createActivate } from '../../src/host/index.js';
 
@@ -32,10 +41,17 @@ export const core = async (
   host: { activate: createActivate(options) },
 });
 
+export type ProbeKind =
+  | 'service'
+  | 'hooks'
+  | 'settings'
+  | 'event'
+  | 'storage-type';
+
 export interface ProbeOptions {
   readonly requires?: readonly string[];
-  /** Contracts the probe provides: `[id, kind]`, all at 1.0.0 on the host. */
-  readonly provides?: readonly (readonly [string, 'service' | 'hooks'])[];
+  /** Contracts the probe provides on the host: `[id, kind, version = 1.0.0]`. */
+  readonly provides?: readonly (readonly [string, ProbeKind, string?])[];
   readonly activate?: (ctx: HostContext) => unknown;
 }
 
@@ -52,15 +68,17 @@ export const probe = (
       id,
       version: '1.2.3',
       engines: { doric: '^1.0.0' },
-      provides: provides.map(([contract]) => `${contract}@1.0.0`),
+      provides: provides.map(
+        ([contract, , version]) => `${contract}@${version ?? '1.0.0'}`,
+      ),
       requires: [...(options.requires ?? [])],
     },
     descriptor: {
       descriptorVersion: 1,
       bundle: { id, version: '1.2.3' },
-      contracts: provides.map(([contract, kind]) => ({
+      contracts: provides.map(([contract, kind, version]) => ({
         id: contract,
-        version: '1.0.0',
+        version: version ?? '1.0.0',
         kind,
         environment: 'host' as const,
         cardinality: 'one' as const,
@@ -89,18 +107,111 @@ const silent: PlatformLog = {
   error: () => undefined,
 };
 
-/** Boots the host with the core and the given bundles, no installed bundles. */
+/** Wraps every method of a service so each call is recorded as `<contract>.<method>`. */
+const spiedDefinition = (
+  definition: AnyServiceDefinition,
+  calls: string[],
+): AnyServiceDefinition =>
+  defineService(
+    definition.id,
+    Object.fromEntries(
+      Object.entries(definition.methods).map(([name, method]) => [
+        name,
+        defineMethod({
+          input: method.input,
+          output: method.output,
+          execute: (input, call, services) => {
+            calls.push(`${definition.id}.${name}`);
+
+            return method.execute(input, call, services) as never;
+          },
+        }),
+      ]),
+    ),
+    definition.cardinality === 'many' ? { cardinality: 'many' } : undefined,
+  );
+
+/**
+ * The same bundle, with every service it provides recorded in `calls`: the
+ * backend is the database boundary, so this is how a test sees whether the
+ * host reached it.
+ */
+export const spied = (
+  bundle: EmbeddedBundle,
+  calls: string[],
+): EmbeddedBundle => ({
+  ...bundle,
+  host: {
+    activate: (ctx: HostContext) => {
+      const services: Services = {
+        ...ctx.services,
+        provide: (definition) =>
+          ctx.services.provide(
+            isServiceDefinition(definition)
+              ? spiedDefinition(definition, calls)
+              : definition,
+          ),
+      };
+
+      return bundle.host?.activate?.({ services });
+    },
+  },
+});
+
+/** The backend choice every test composition makes. */
+export const backends = {
+  'storage.backend/v1': 'memory',
+  'secrets.backend/v1': 'memory',
+} as const;
+
+export interface BootOptions {
+  readonly sink?: LogSink;
+  /** Options of the default memory foundation (bundle `memory`). */
+  readonly memory?: MemoryFoundationOptions;
+  /** Records every call that reaches the memory backends. */
+  readonly backendCalls?: string[];
+  /** Replaces the default foundation and backend choice. */
+  readonly foundation?: {
+    readonly bundles: readonly EmbeddedBundle[];
+    readonly providers: Readonly<Record<string, string>>;
+  };
+  /** Further enabled bundles and choices. */
+  readonly enabled?: readonly string[];
+  readonly providers?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Boots the host with the core, the memory foundation chosen for both
+ * backends, and the given bundles; no installed bundles.
+ */
 export const boot = async (
   embedded: readonly EmbeddedBundle[],
-  options: { readonly sink?: LogSink } = {},
+  options: BootOptions = {},
 ): Promise<Booted> => {
   const root = await mkdtemp(join(tmpdir(), 'core-test-'));
   const records: LogRecord[] = [];
   const warnings: Booted['warnings'] = [];
+  const memory = memoryFoundation(options.memory);
+  const foundation = options.foundation ?? {
+    bundles: [
+      options.backendCalls === undefined
+        ? memory
+        : spied(memory, options.backendCalls),
+    ],
+    providers: backends,
+  };
   const platform = await startHost({
     bundlesPath: root,
-    composition: { core: 'core', enabled: ['core'], providers: {} },
-    embedded,
+    composition: {
+      core: 'core',
+      enabled: [
+        'core',
+        ...foundation.bundles.map(({ manifest }) => manifest.id),
+        ...(options.enabled ?? []),
+      ],
+      providers: { ...foundation.providers, ...options.providers },
+    },
+    embedded: [...foundation.bundles, ...embedded],
     log: {
       ...silent,
       warn: (fields, message) => warnings.push({ fields, message }),

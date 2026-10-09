@@ -105,7 +105,10 @@ the workspace frame, its regions and its tabs. These files are proposals: the cu
 package responsibilities and runtime behavior below remain authoritative until
 the relevant migration steps are implemented and validated. Migration stage 1
 (contracts, loader, manifest v1, composition, `core`, quarantine and the
-provisional host adapter) is implemented and described under Current Runtime.
+provisional host adapter) and stages 2 and 3, implemented together (the
+`postgres` foundation bundle, the `packages/storage` protocol and conformance
+kit, and the core's `settings/v1`, `secrets/v1`, `storage/v1` and `events/v1`),
+are implemented and described under Current Runtime.
 
 `agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
@@ -546,8 +549,9 @@ This organization does not change bundle ownership or runtime behavior.
 
 ### Current Runtime
 
-Migration stage 1 of `docs/architecture/bundles/migration.md` ("Contrato") is
-implemented; the binding choices it made are recorded in
+Migration stage 1 of `docs/architecture/bundles/migration.md` ("Contrato") and
+stages 2 and 3 ("Storage" and "Protocolo genérico", implemented together) are
+implemented; the binding choices they made are recorded in
 `docs/architecture/bundles/implementation-decisions.md`. Repository-owned
 bundles live as individual Nx packages immediately below `/bundles`, named by
 their bundle ID (Nx projects `bundle-<id>`); each owns its package metadata, a
@@ -560,16 +564,40 @@ checks them against the baseline; `doric:build-bundles` then stages each
 `dist` into `agents/doric/dist/bundles/<id>`.
 
 `/bundles/core` is the composition's core. Its host part provides the basic
-contracts `hooks/v1`, `log/v1`, `tools/v1` and `skills/v1` of
-`bundle/contracts`: hooks run in catalog order, the platform first, each
+contracts `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,
+`secrets/v1`, `storage/v1` and `events/v1` of `bundle/contracts`, and it
+requires `storage.backend/v1` and `secrets.backend/v1`, which the composition
+must choose in `providers`: hooks run in catalog order, the platform first, each
 handler bounded by a 10-second deadline and every handler failure or timeout
 reported to diagnostics; log records name the calling bundle, its version,
-generation, call scope, trace and environment and reach the host's pino
-destinations through the platform's `doric.log/v1`; tools and skills are kept
-in bundle order with globally unique names, and skill `allowed-tools` resolve
-only against tools the same bundle registered. `/bundles/files` (the former
-`/bundles/core`) owns the built-in `cwd`, `edit`, `find`, `grep`, `terminal`,
-`tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
+generation, call scope, trace and environment, have every stored or added
+credential secret replaced with `[REDACTED]` in the message and the string
+fields, and reach the host's pino destinations through the platform's
+`doric.log/v1`; tools and skills are kept in bundle order with globally unique
+names, and skill `allowed-tools` resolve only against tools the same bundle
+registered. The other four are facades over the chosen backends. `storage/v1`
+lets a bundle define the storage types its namespace names and lists in
+`provides`, validates every write against the type's schema, lets only the
+owner read or write a type and only the bundle a stream's first segment names
+(or the active `events/v1` provider) read or write the stream, refuses a batch
+over the backend's limits before sending it, and declares a type to the backend
+on its first use rather than at activation. `settings/v1` keeps each registered
+space as a `core.settings/v1` document with its revision, the owner's contract
+version, the write time and the global `core.settings-generation/v1` counter,
+and runs subscribers after each commit, before the next queued write.
+`secrets/v1` caches the backend's credentials on first load (backend name
+order, then `localeCompare` after each save), applies the shared credential
+field rules, resolves by id or by kind, keeps the redaction set, and answers
+`referenced` to a delete while a registered reference source names the
+credential; `settings.set` and the secrets writes share one write queue, which
+replaces the foreign keys that used to protect referenced credentials and
+assumes, as the credential cache already did, one host process per database.
+`events/v1` appends a registered event's envelope `{ projectId, threadId,
+promptId, type, event }`, redacted and made storable, to
+`runtime.thread.events/<threadId>`; no shipped bundle registers an event yet, so
+nothing reaches that stream and REST and Socket.IO still serve the Thread event
+table. `/bundles/files` (the former `/bundles/core`) owns the built-in `cwd`,
+`edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
 working directory and moves it, and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
 resolves one against the current directory; a move that resolves outside the
@@ -586,6 +614,35 @@ exist only as the contracts packages `runtime/contracts`
 (`runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`) and
 `terminal/contracts` (`terminal/v1`); they have no manifest and are not staged.
 
+`/bundles/postgres` is the foundation bundle the composition chooses for
+`storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
+It owns the Prisma ORM 7 schema, the versioned migrations and the generated
+client (`bundles/postgres/prisma` and the git-ignored `src/generated/prisma`)
+and the process's single PostgreSQL client, which it creates on first use from
+`DORIC_DATABASE_URL` and disconnects when it deactivates; neither it nor the
+core performs I/O during activation. Its `storage.backend/v1` keeps the generic
+primitives in `storage_*` tables: versioned documents with declared equality
+and ordered indexes, streams with sequences, truncation marks and whole-stream
+removal, atomic declarative commits applied as expect, delete, put,
+dropStreams, truncate and append, a gapless commit feed in commit order, blobs,
+health, and the reserved `hostId`/`storageGeneration` identity row that the
+catalog publishes. Its health measures the filesystem at `DORIC_STORAGE_PATH`
+without a database round trip and leaves the low-storage policy to the caller.
+Its `secrets.backend/v1` keeps the `credential` table, which no other table
+references, sealing each secret in the AES-256-GCM envelope under
+`DORIC_CREDENTIAL_KEY` and reading existing envelopes without rewriting them.
+The provisional local contract `postgres.database/v1` (`connect`, `client`) and
+the `postgres/prisma` subpath give the kernel's Project, Thread, event and usage
+stores that same client and its generated types; those tables and their SQL
+are unchanged until the runtime moves to `storage/v1`. `packages/storage` (npm
+`storage`) is the protocol package for `storage.backend/v1`: the index-key
+encoding (`null` < `false` < `true` < numbers < strings, strings bytewise in
+UTF-8, ties by document id), query cursors, stream ids and batch limits, the
+in-memory storage and secrets backends with an embedded `memory` foundation for
+tests, and the `storage/conformance` kit that the memory backend and the
+`postgres` backend both pass. Only backends and the core host part import it;
+other bundles reach storage through `storage/v1`.
+
 `packages/bundle` owns the bundle platform: the browser-safe `bundle/contracts`
 API (`define*`, `ref`, `Call`, `ContractError`, `Services`, the basic and
 `doric.*` contracts), the shared service runtime `bundle/runtime`, the Node
@@ -593,8 +650,12 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `bundle_load` stage, Doric reads the installed bundles below
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
-names `core` and enables `core`, `files`, `git` and `threads`), and always
-adds the embedded `host-adapter` bundle. The loader activates the foundation,
+names `core`, enables `postgres`, `core`, `files`, `git` and `threads`, and
+chooses `postgres` for `storage.backend/v1` and `secrets.backend/v1`), and always
+adds the embedded `host-adapter` bundle and the embedded provisional
+`host-config` bundle, which owns the configuration's `settings/v1` space. A
+composition that chooses no backend for either contract puts the host in
+recovery, because the core requires them. The loader activates the foundation,
 then the core, then the others in dependency order with lexical tie-break,
 registers each bundle's `skills/*/SKILL.md` through `skills/v1` in lexical
 folder order on the bundle's behalf, fires `doric.app.hooks/v1`'s
@@ -609,7 +670,17 @@ stage 1 ends in the existing fatal startup path after logging `Bundle recovery
 mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads `tools/v1` and `skills/v1` once after boot; `Bundles loaded`
-reports the activated installed bundles and the registered tools and skills.
+reports the activated installed bundles (five in the shipped composition; the
+embedded ones are not counted) and the registered tools and skills. Because
+activation opens no database, the startup stages run as `bootstrap`,
+`sandbox_pool`, `bundle_load`, `database_client` (connects the client through
+`postgres.database/v1` and resolves the storage identity, so a missing URL or
+an unreachable database still fails here), `credential_activation` (loads the
+credentials through `secrets/v1`, so a missing or malformed key or an
+unreadable envelope still fails here), `configuration_activation`,
+`workspace_reconciliation`, `network_binding` and `ready`. At shutdown the
+database disconnects inside the platform's stop, after the workspace service
+is disposed and before the sandbox pool is.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
@@ -659,8 +730,9 @@ scope, any bundle that requires them and builds a scope naming a running
 prompt reaches that prompt's controls; every stage-1 bundle is first-party and
 external bundles remain deferred. Because a tool result goes to the model, the
 contracts expose capabilities, never credential reads; secrets stay in the
-host's credential store. Tool names stay globally unique in `tools/v1`, so a
-bundle tool cannot collide with another bundle's.
+host's credential store, and no shipped tool bundle requires `secrets/v1`.
+Tool names stay globally unique in `tools/v1`, so a bundle tool cannot collide
+with another bundle's.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API
@@ -808,8 +880,8 @@ host writes it on every save: the effort that model's own catalog names as its
 default when it names one, and its first effort other than `none` otherwise. A
 profile that already names an effort is kept as it stands, including the `none`
 that asks for no reasoning; a model that lists none carries no effort at all,
-which is why the column is nullable, so no prompt carries a reasoning block the
-endpoint never offered.
+which is why the stored effort is optional, so no prompt carries a reasoning
+block the endpoint never offered.
 The OpenAI-compatible kind reports the configured provider's own
 id and name as its identity rather than taking them as fields, so nothing in the
 catalog asks an operator for an identity the provider already has. The settings
@@ -821,13 +893,16 @@ provenance, not authority. Every prompt reads the configuration in force when it
 runs, so a provider, model, reasoning effort, or turn limit chosen in the
 settings reaches the next prompt of any Project, including one already running.
 
-`agents/doric` owns a credential store: named `credential` rows of a closed kind
-set, where the kind fixes the field set. `API_TOKEN` is authentication and the
-provider keys and GitHub token are both ones; `USERNAME_PASSWORD` is
-authentication with a name; and `GIT` is identity alone and therefore holds no
-secret. `credentialFields` in `src/lib/credentials` is the one rule the Zod
-input schemas and the service validation both derive from, so a value the kind
-forbids is rejected before it is stored. A secret is stored as a versioned
+The host's credential store is the `credential` table of the `postgres`
+bundle's `secrets.backend/v1`, reached through the core's `secrets/v1`, which
+`agents/doric` adapts to its unchanged credential service: named rows of a
+closed kind set, where the kind fixes the field set. `API_TOKEN` is
+authentication and the provider keys and GitHub token are both ones;
+`USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity alone
+and therefore holds no secret. `credentialFields` in `bundle/contracts`
+(re-exported by `agents/doric/src/lib/credentials`) is the one rule the Zod
+input schemas and the `secrets/v1` validation both derive from, so a value the
+kind forbids is rejected before it is stored. A secret is stored as a versioned
 AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`, a base64 32-byte key, so the
 key can rotate later. The host refuses to start when a stored secret exists and
 that key is missing or unusable, and it never serves an unreadable secret as an
@@ -1015,13 +1090,30 @@ PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.
 
-`agents/doric` owns its Prisma ORM 7 schema, generated client configuration,
-and versioned PostgreSQL migrations. Production uses one adapter-pg Prisma
-client per process and never applies migrations implicitly during HTTP startup.
-PostgreSQL stores the singleton configuration, the credential store, normalized
-provider/model rows,
-Project names, colors and configuration snapshots, Thread names, parentage and
-provider-ready message history, and ordered JSONB Thread events. The credential
+The `postgres` bundle owns the Prisma ORM 7 schema, generated client
+configuration, and versioned PostgreSQL migrations;
+`agents/doric/prisma.config.ts` remains the compatible entry point that
+Compose's migrate service, the image build and `nx run doric:migrate` use.
+Production uses one adapter-pg Prisma client per process and never applies
+migrations implicitly during HTTP startup. PostgreSQL stores the singleton
+configuration as the `settings/v1` space `host-config.configuration/v1` (one
+`core.settings/v1` document of the generic storage tables), the credential
+store, Project names, colors and configuration snapshots, Thread names,
+parentage and provider-ready message history, and ordered JSONB Thread events.
+The generic-storage migration converts the former `doric_configuration`,
+`provider_configuration` and `model_configuration` rows losslessly into that
+document, keeping the configuration revision and update time so the next
+replacement answers the next revision, verifies the conversion, and only then
+drops those tables and the `ModelRole` enum; a stored provider kind outside
+`openai`, `openrouter` and `codex` stops the migration instead of being
+discarded or converted. It cannot be reversed, so operators back up the
+database before applying it. The configuration has no foreign keys any more and
+the `credential` table stands alone: the embedded `host-config` bundle refuses
+a configuration that names a credential that is not stored and registers the
+provider tokens, Git identity and GitHub token the stored configuration names as
+references, so the core's `secrets/v1` refuses to delete them, exactly as the
+former foreign keys did; a credential named only in the tool configuration is
+still deletable. The credential
 store is populated by migration from the former provider environment
 variables and the former plaintext GitHub identity columns; a provider keeps its
 row and receives a named `API_TOKEN` credential whose secret is empty until its
@@ -1047,8 +1139,8 @@ at `/var/lib/postgresql`, runs migrations as a one-shot dependency, and starts
 either Doric sandbox profile only after the database is healthy and migrations
 complete.
 Doric startup emits safe structured `info` logs for its listener and sandbox
-selection, PostgreSQL client initialization, sandbox limits, bundle resource
-counts, active configuration revision and model profiles, Project/Thread
+selection, sandbox limits, bundle resource counts, PostgreSQL client
+initialization, active configuration revision and model profiles, Project/Thread
 reconciliation, mounted interfaces, and listener readiness. Startup failures
 identify only the active bootstrap stage; they do not retain or emit database
 or provider URLs, credential values, prompts, caught
@@ -1353,10 +1445,11 @@ command execution, network access, filesystem mutation, credential handling,
 persistence, or session behavior without explicit scope and validation.
 
 Credentials and secrets must not be printed, logged, or committed, and must not
-be persisted outside one explicitly approved place: the host's credential store,
-which keeps each secret as an AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`,
-answers only whether one exists over the API, redacts it from events and logs,
-and keeps it out of tool payloads. Prefer dependency injection and
+be persisted outside one explicitly approved place: the host's credential store
+(the `postgres` bundle's `credential` table behind `secrets/v1`), which keeps
+each secret as an AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`, answers
+only whether one exists over the API, redacts it from events and logs, and
+keeps it out of tool payloads. Prefer dependency injection and
 explicit configuration objects for sensitive runtime inputs.
 
 Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
@@ -1391,8 +1484,10 @@ or partial history, redacting configured credentials and replacing the
 characters PostgreSQL refuses (U+0000 and unpaired surrogates, which binary tool
 output can carry) with U+FFFD rather than failing the Thread. Provider/tool failures
 return the Thread to `ready`. Storage pressure pauses execution instead of closing
-the Thread: before dispatch and every three seconds during a run, the host checks
-the filesystem at `DORIC_STORAGE_PATH` (the current directory for native runs).
+the Thread: before dispatch and every three seconds during a run, the host reads
+`storage/v1.health`, the `postgres` bundle's measurement of the filesystem at
+`DORIC_STORAGE_PATH` (the current directory for native runs), which makes no
+database round trip, and applies the policy itself.
 At or below 10 percent available blocks, or if that check is unavailable, dispatch
 stays paused until an explicit resume passes a fresh check. Compose mounts the
 PostgreSQL volume read-only at that path so the measurement describes persistence,

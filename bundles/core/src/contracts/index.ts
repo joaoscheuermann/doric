@@ -3,3 +3,8 @@
 
 export { OpenSettingsCommandV1, openSettingsInput } from './commands.js';
 export { CoreHooksV1, onBeforeOpenWindowHook } from './hooks.js';
+export {
+  settingsGenerationId,
+  settingsGenerationType,
+  settingsType,
+} from './storage.js';

@@ -32,11 +32,15 @@ RUN npm install --global npm@11.13.0
 # manifest and skills, dry-activates its host part to write the contract
 # descriptor and JSON Schemas, and checks them against the committed baseline,
 # and `stage` copies each bundle's `dist` into `agents/doric/dist/bundles/<id>`.
-# A failing bundle build stops the image build here rather than at boot.
+# A failing bundle build stops the image build here rather than at boot. The
+# Prisma client is generated into the `postgres` bundle, which owns the schema;
+# the Doric config only points at it.
 RUN npm ci --ignore-scripts \
  && node node_modules/nx/bin/post-install \
  && npx prisma generate --config agents/doric/prisma.config.ts \
  && npx tsc --build \
+      packages/storage/tsconfig.lib.json \
+      bundles/postgres/tsconfig.json \
       agents/doric/tsconfig.lib.json \
       bundles/core/tsconfig.json \
       bundles/files/tsconfig.json \
@@ -46,15 +50,14 @@ RUN npm ci --ignore-scripts \
       bundles/terminal/tsconfig.json \
       --force \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for bundle in core files git threads; do \
+ && for bundle in postgres core files git threads; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
-      bundles/core bundles/files bundles/git bundles/threads \
+      bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
- && mv agents/doric/dist/generated \
-       agents/doric/dist/lib \
+ && mv agents/doric/dist/lib \
        agents/doric/dist/routes \
        agents/doric/dist/src/
 

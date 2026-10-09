@@ -55,6 +55,12 @@
     },
     {
       "path": "../../packages/agent/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/postgres"
+    },
+    {
+      "path": "../../packages/storage/tsconfig.lib.json"
     }
   ]
 }

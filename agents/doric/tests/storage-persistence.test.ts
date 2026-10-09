@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
-import { createConfigStore } from '../src/lib/config/store.js';
 import { createProjectStore } from '../src/lib/workspace/projects.js';
 import { createThreadStore } from '../src/lib/workspace/threads.js';
 import { persistenceFixture } from './helpers/persistence-fixture.js';
+import { kernelOver } from './helpers/platform.js';
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 
@@ -14,12 +14,16 @@ void test('PostgreSQL retains storage pauses, history, and FIFO across reconcili
 }, async () => {
   assert.ok(connectionString);
   const fixture = await persistenceFixture(connectionString);
+  const kernel = await kernelOver(fixture.database).catch(async (error) => {
+    await fixture.close();
+    throw error;
+  });
   try {
     const projects = createProjectStore(fixture.database);
     const threads = createThreadStore(fixture.database);
     const { project } = await projects.create(
       'Storage',
-      await createConfigStore(fixture.database).load(),
+      await kernel.configs.load(),
       'blue',
     );
     const { thread } = await threads.create(project.id, 'Important');
@@ -60,6 +64,7 @@ void test('PostgreSQL retains storage pauses, history, and FIFO across reconcili
       { role: 'user', content: 'current' },
     ]);
   } finally {
+    await kernel.close();
     await fixture.close();
   }
 });

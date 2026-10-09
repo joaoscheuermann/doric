@@ -3,6 +3,10 @@ import { z } from 'zod';
 import type { MethodSpecs } from './basic/common.js';
 import type { Keybinding, MenuItem } from './basic/menus.js';
 import { keybindingSchema, menuItemSchema } from './basic/menus.js';
+import {
+  type StorageIdentity,
+  storageIdentitySchema,
+} from './basic/storage.js';
 import type { OpenWindowRequest } from './basic/windows.js';
 import { openWindowRequestSchema } from './basic/windows.js';
 import type { CallArg, Caller, CallScope } from './call.js';
@@ -160,6 +164,8 @@ export interface CatalogSnapshot {
   /** Activation order of this environment (hooks providers order handlers by it). */
   readonly order: readonly string[];
   readonly contracts: readonly CatalogContract[];
+  /** The storage backend's identity, once the host resolved it. */
+  readonly storage?: StorageIdentity;
 }
 
 export const catalogSnapshotSchema: z.ZodType<CatalogSnapshot> = z
@@ -198,6 +204,7 @@ export const catalogSnapshotSchema: z.ZodType<CatalogSnapshot> = z
         })
         .strict(),
     ),
+    storage: storageIdentitySchema.optional(),
   })
   .strict();
 

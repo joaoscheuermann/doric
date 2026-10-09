@@ -32,6 +32,12 @@
     },
     {
       "path": "../../packages/llms/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/postgres"
+    },
+    {
+      "path": "../../packages/storage/tsconfig.lib.json"
     }
   ]
 }

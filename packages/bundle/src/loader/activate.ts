@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { SkillsV1 } from '../contracts/basic/skills.js';
+import {
+  StorageBackendV1,
+  type StorageIdentity,
+} from '../contracts/basic/storage.js';
 import { ToolsV1 } from '../contracts/basic/tools.js';
 import type { Call, CallScope } from '../contracts/call.js';
 import type { Activate, Services } from '../contracts/context.js';
@@ -66,6 +70,12 @@ export interface HostPlatform {
   /** A platform-originated Call (caller doric, new trace). */
   call(options?: PlatformCallOptions): Call;
   catalog(): CatalogSnapshot;
+  /**
+   * The storage identity of the active storage.backend/v1 provider, or
+   * undefined without one. A resolved identity is kept (and published in the
+   * catalog); a failure is not, so the next call asks the backend again.
+   */
+  storageIdentity(): Promise<StorageIdentity | undefined>;
   diagnostics(): Diagnostics;
   /** Fires AppHooksV1.onHostReadyHook once; no-op in recovery mode. */
   ready(): Promise<void>;
@@ -298,7 +308,8 @@ export const startHost = async (
     provides: 'any',
     requires: 'any',
   });
-  const snapshot = () => catalogSnapshot(resolved, diagnostics);
+  let storage: StorageIdentity | undefined;
+  const snapshot = () => catalogSnapshot(resolved, diagnostics, storage);
 
   providePlatformServices(platform, {
     snapshot,
@@ -378,6 +389,7 @@ export const startHost = async (
 
   let readied: Promise<void> | undefined;
   let stopping: Promise<void> | undefined;
+  let identity: Promise<StorageIdentity> | undefined;
 
   return {
     mode: final.mode,
@@ -401,6 +413,35 @@ export const startHost = async (
         ...(options.now === undefined ? {} : { now: options.now }),
       }),
     catalog: snapshot,
+    storageIdentity: async () => {
+      if (
+        identity === undefined &&
+        runtime.directory.active(StorageBackendV1.id) === undefined
+      ) {
+        return undefined;
+      }
+
+      identity ??= platform.services
+        .use(StorageBackendV1)
+        .identity()
+        .then((resolvedIdentity) => {
+          storage = resolvedIdentity;
+
+          return resolvedIdentity;
+        });
+
+      const pending = identity;
+
+      try {
+        return await pending;
+      } catch (error) {
+        if (identity === pending) {
+          identity = undefined;
+        }
+
+        throw error;
+      }
+    },
     diagnostics: () => diagnostics.snapshot(),
     ready: () => {
       readied ??= (async () => {

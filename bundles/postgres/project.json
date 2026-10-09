@@ -1,0 +1,65 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-postgres",
+  "projectType": "library",
+  "sourceRoot": "bundles/postgres/src",
+  "targets": {
+    "prisma-generate": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/src/generated/prisma"],
+      "options": {
+        "command": "prisma generate --config bundles/postgres/prisma.config.ts"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prisma-generate", "^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/postgres/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/postgres"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prisma-generate", "^build"],
+      "options": {
+        "command": "tsc --build bundles/postgres/tsconfig.json --emitDeclarationOnly"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "cache": false,
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p bundles/postgres/tsconfig.spec.json",
+          "node --test bundles/postgres/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/postgres",
+          "biome format --write bundles/postgres/contracts.published.json"
+        ],
+        "parallel": false
+      }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prisma migrate deploy --config bundles/postgres/prisma.config.ts"
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

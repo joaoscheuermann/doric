@@ -35,6 +35,8 @@ export interface MinimalCoreOptions {
   readonly id?: string;
   readonly version?: string;
   readonly provides?: readonly MinimalContract[];
+  /** Manifest `requires` entries, such as `storage.backend/v1@^1.0.0`. */
+  readonly requires?: readonly string[];
   readonly failActivate?: boolean;
   /** Per-handler deadline; the default mirrors a production-like 10 s. */
   readonly hookDeadlineMs?: number;
@@ -420,7 +422,7 @@ export const minimalCore = (
       version,
       engines: { doric: '^1.0.0' },
       provides: provides.map((contract) => `${contract}@1.0.0`),
-      requires: [],
+      requires: [...(options.requires ?? [])],
     },
     descriptor: {
       descriptorVersion: 1,

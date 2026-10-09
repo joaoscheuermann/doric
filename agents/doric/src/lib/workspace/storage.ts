@@ -1,4 +1,5 @@
-import { Prisma } from '../../generated/prisma/client.js';
+import { Prisma } from 'postgres/prisma';
+
 import type { Page, ThreadState } from './types.js';
 
 export const terminal = ['FAILED', 'CANCELLED'] as const;

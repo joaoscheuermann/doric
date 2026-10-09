@@ -16,6 +16,9 @@
       "path": "../../packages/bundle"
     },
     {
+      "path": "../../packages/storage"
+    },
+    {
       "path": "../../packages/tool"
     }
   ]

@@ -8,14 +8,30 @@ import {
   type LogRecord,
   LogV1,
   logMethods,
+  SecretsV1,
   type Services,
 } from 'bundle/contracts';
+
+import { redactLeaves, redactSecrets } from './redact.js';
 
 type Level = LogRecord['level'];
 
 /** The trace ID of a W3C traceparent (`00-<trace>-<span>-<flags>`). */
 const traceIdOf = (call: Call): string | undefined =>
   call.trace.traceparent.split('-')[1];
+
+/**
+ * The secrets a record must not show. Before the credentials are loaded (or
+ * without a secrets/v1 provider) nothing can have been resolved, so the
+ * record is written as it is.
+ */
+const redactionsOf = (services: Services): readonly string[] => {
+  try {
+    return services.use(SecretsV1).view().redactions();
+  } catch {
+    return [];
+  }
+};
 
 const write = (
   level: Level,
@@ -27,10 +43,17 @@ const write = (
   try {
     const { environment } = services.use(DoricBundleV1).describe(call);
     const traceId = traceIdOf(call);
+    const secrets = redactionsOf(services);
     const record: LogRecord = {
       level,
-      message,
-      ...(fields === undefined ? {} : { fields }),
+      message: redactSecrets(message, secrets),
+      ...(fields === undefined
+        ? {}
+        : {
+            fields: redactLeaves(fields, secrets) as Readonly<
+              Record<string, unknown>
+            >,
+          }),
       bundleId: call.caller.bundleId,
       version: call.caller.version,
       generation: call.caller.generation,
@@ -66,7 +89,9 @@ const level = (name: Level) =>
 /**
  * The core's `log/v1`: each record names the calling bundle, its version and
  * generation, the call's scope and trace, and the environment, and reaches
- * the host's log files through `doric.log/v1`.
+ * the host's log files through `doric.log/v1`. Every secret of
+ * `secrets/v1.view().redactions()` is replaced by `[REDACTED]` in the message
+ * and in the string leaves of the fields first.
  */
 export const createLog = () =>
   defineService(LogV1, {

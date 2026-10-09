@@ -1,3 +1,4 @@
+import type { StorageIdentity } from '../contracts/basic/storage.js';
 import { defineMethod, definePlatformService } from '../contracts/define.js';
 import {
   type CatalogSnapshot,
@@ -14,10 +15,14 @@ import type { DiagnosticsStore } from '../runtime/diagnostics.js';
 import type { Principal } from '../runtime/principal.js';
 import type { LogSink } from './log.js';
 
-/** The catalog snapshot `doric.catalog/v1` publishes, with live bundle states. */
+/**
+ * The catalog snapshot `doric.catalog/v1` publishes, with live bundle states
+ * and, once resolved, the storage identity.
+ */
 export const catalogSnapshot = (
   resolved: ResolvedEnvironment,
   diagnostics: DiagnosticsStore,
+  storage?: StorageIdentity,
 ): CatalogSnapshot => {
   const states = diagnostics.snapshot().bundles;
 
@@ -70,6 +75,7 @@ export const catalogSnapshot = (
         )
         .map((provider) => ({ ...provider })),
     })),
+    ...(storage === undefined ? {} : { storage: { ...storage } }),
   };
 };
 

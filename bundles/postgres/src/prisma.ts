@@ -1,6 +1,11 @@
+// `postgres/prisma` (Node, provisional): the generated Prisma client and the
+// one way to build the process's client. Only the kernel stores import it,
+// until their data moves to `storage/v1` (decision S-12).
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaClient } from './generated/prisma/client.js';
+
+export * from './generated/prisma/client.js';
 
 export type Database = PrismaClient;
 

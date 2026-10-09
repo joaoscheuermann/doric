@@ -82,6 +82,30 @@ chosen foundation provider cannot activate. `catalog()`, `diagnostics()` and the
 `doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1` and `doric.log/v1`
 services expose the result.
 
+`platform.storageIdentity()` asks the active `storage.backend/v1` provider for
+the host's `{ hostId, storageGeneration }` (or answers `undefined` without
+one). A resolved identity is kept and published as `catalog().storage`; a
+failure is not kept, so the next call asks again. The host calls it once the
+database is reachable.
+
+## Basic contracts
+
+`bundle/contracts` defines each basic contract's interface, its `ref`
+(`StorageV1`, `SecretsV1`, ...) and its method table (`storageMethods`,
+`secretsMethods`, ...). A provider must implement exactly that table with the
+same schemas, or `provide` fails with `contract_mismatch`. The tables are also
+published under `bundle/schemas/contracts/`.
+
+| Contract                           | Notes                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `storage/v1`, `storage.backend/v1` | Documents with revisions (`expect` revision 0 = must not exist), indexed queries (at most 1000 per page), streams with protocol `createdAt` and truncation marks, atomic commits (expect → delete → put → dropStreams → truncate → append), a commit feed, blobs, `health()` measurements and the backend's `identity()` |
+| `secrets/v1`, `secrets.backend/v1` | Credentials by kind with the one field rule (`credentialFieldsSatisfied`, `credentialFieldsMessage`), `resolveByKind(kind, { exclude }?)`, `redactions()`, and the local `view()` and `registerReferences(source)`; the backend stores plaintext across the contract                                                     |
+| `settings/v1`                      | Spaces with `get`, `entry` (`value`, `revision`, `version`, `updatedAt`, `generation`), `set` with `expectedRevision`, and `subscribe`                                                                                                                                                                                   |
+| `events/v1`                        | `register` and `append`; Thread events go to `threadEventsStream(threadId)` (`runtime.thread.events/<threadId>`) as `threadEventEnvelopeSchema` values                                                                                                                                                                   |
+
+Every contract documents its error codes beside it; they are listed in
+`contractErrorCodes`.
+
 ## Build tooling
 
 ```console

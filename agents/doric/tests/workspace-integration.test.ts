@@ -12,7 +12,6 @@ import { io } from 'socket.io-client';
 
 import { createGeneration } from '../src/lib/config/generation.js';
 import { createConfigService } from '../src/lib/config/service.js';
-import { createConfigStore } from '../src/lib/config/store.js';
 import { createWorkspaceSocket } from '../src/lib/events/socket.js';
 import { registerHttpRoutes } from '../src/lib/http/app.js';
 import { createVmRegistry } from '../src/lib/vms.js';
@@ -39,6 +38,7 @@ import {
   cleanupStack,
   persistenceFixture,
 } from './helpers/persistence-fixture.js';
+import { kernelOver } from './helpers/platform.js';
 import { inbox } from './helpers/socket-inbox.js';
 import { credentialResolver } from './helpers/workspace.js';
 
@@ -146,13 +146,15 @@ void test('delegates across isolated conversations sharing a real project sandbo
   const resources = await persistenceFixture(connectionString);
   cleanup.defer(resources.close);
   const { database } = resources;
+  const kernel = await kernelOver(database);
+  cleanup.defer(() => kernel.close());
   const logger = pino({ level: 'silent' });
   const bundles = await defaultBundles();
   cleanup.defer(() => bundles.platform.stop());
   assert.ok(bundles.catalog.tools.some(({ name }) => name === 'write'));
   assert.ok(bundles.catalog.tools.some(({ name }) => name === 'terminal'));
   const config = await createConfigService({
-    store: createConfigStore(database),
+    store: kernel.configs,
     credentials: credentialResolver(),
     catalog: bundles.catalog,
     logger,

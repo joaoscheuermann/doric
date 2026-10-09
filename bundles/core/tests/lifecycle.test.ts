@@ -54,6 +54,7 @@ void test('onActivateHook sees every later activation in order; a failing handle
     ]);
     assert.deepEqual(states(host.platform), {
       core: 'active',
+      memory: 'active',
       observer: 'active',
       thrower: 'active',
       waiter: 'active',

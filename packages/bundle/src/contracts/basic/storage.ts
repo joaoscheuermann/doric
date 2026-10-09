@@ -10,8 +10,22 @@ import {
   storageTypeDefinitionSchema,
 } from './common.js';
 
-// Shapes for stage 2/3 providers; they may be refined before a provider
-// publishes a baseline, and every refinement is recorded in the decisions.
+// Shapes refined in stages 2/3 before any provider published a baseline
+// (decision S-1). Error codes raised by storage/v1 and storage.backend/v1:
+//
+// - `revision_conflict`: an `expect` entry does not match the stored revision
+//   (details `{ type, id, expected, actual }`); nothing of the batch applies.
+// - `sequence_conflict`: an append's `expectedSequence` is not the stream's
+//   `lastSequence`; nothing of the batch applies.
+// - `unique_conflict`: a put violates a unique index; nothing applies.
+// - `limit_exceeded`: the batch, a document or an append goes over the
+//   backend's `capabilities()`; refused before anything is written.
+// - `unknown_type`: storage/v1 was asked about a type nobody defined.
+// - `invalid_index_value`: an indexed field holds an object or an array.
+// - `invalid_stream`: a stream ID does not follow `<owner>.<family>/<key>`.
+// - `invalid_input`: the value fails the type's schema, an empty batch, a
+//   read after the stream's `lastSequence`, or a malformed cursor.
+// - `not_owner`: storage/v1 refuses a type or stream of another bundle.
 
 const documentKey = z.object({ type: z.string(), id: z.string() }).strict();
 
@@ -43,7 +57,7 @@ export const storageQuerySchema = z
       .strict()
       .optional(),
     order: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().int().positive(),
+    limit: z.number().int().positive().max(1000),
     cursor: z.string().optional(),
   })
   .strict();
@@ -62,46 +76,84 @@ export type StoragePage = z.output<typeof storagePageSchema>;
 export const streamReadSchema = z
   .object({
     stream: z.string(),
-    afterSequence: z.number().int(),
+    afterSequence: z.number().int().nonnegative(),
     limit: z.number().int().positive(),
   })
   .strict();
 
+export type StreamRead = z.output<typeof streamReadSchema>;
+
 export const streamEntrySchema = z
-  .object({ sequence: z.number().int(), value: z.unknown() })
+  .object({
+    sequence: z.number().int().positive(),
+    value: z.unknown(),
+    /** Protocol timestamp (ISO-8601, milliseconds, UTC), set by the backend at commit. */
+    createdAt: z.string(),
+  })
   .strict();
+
+export type StreamEntry = z.output<typeof streamEntrySchema>;
+
+export const truncationMarkSchema = z
+  .object({
+    /** Entries above this sequence were removed. */
+    afterSequence: z.number().int().nonnegative(),
+    /** The stream's `lastSequence` when the truncation committed. */
+    atSequence: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type TruncationMark = z.output<typeof truncationMarkSchema>;
 
 export const streamPageSchema = z
   .object({
     entries: z.array(streamEntrySchema),
-    lastSequence: z.number().int(),
+    /** The stream's counter: it never decreases, even after a truncation. */
+    lastSequence: z.number().int().nonnegative(),
+    /**
+     * The marks with `afterSequence < request.afterSequence <= atSequence`:
+     * the truncations that removed entries this reader may already hold.
+     */
+    truncations: z.array(truncationMarkSchema),
   })
   .strict();
 
 export type StreamPage = z.output<typeof streamPageSchema>;
 
+/** Revision 0 means "must not exist". */
+export const expectedRevisionSchema = documentKey.extend({
+  revision: z.number().int().nonnegative(),
+});
+
+/**
+ * One atomic batch. It applies in this order, or not at all:
+ * expect → delete → put → dropStreams → truncate → append.
+ */
 export const commitBatchSchema = z
   .object({
-    expect: z
-      .array(documentKey.extend({ revision: z.number().int() }))
-      .optional(),
+    expect: z.array(expectedRevisionSchema).optional(),
     put: z.array(documentKey.extend({ value: z.unknown() })).optional(),
     delete: z.array(documentKey).optional(),
+    truncate: z
+      .object({
+        stream: z.string(),
+        afterSequence: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
     append: z
       .array(
         z
           .object({
             stream: z.string(),
-            expectedSequence: z.number().int().optional(),
-            events: z.array(z.unknown()),
+            expectedSequence: z.number().int().nonnegative().optional(),
+            events: z.array(z.unknown()).min(1),
           })
           .strict(),
       )
       .optional(),
-    truncate: z
-      .object({ stream: z.string(), afterSequence: z.number().int() })
-      .strict()
-      .optional(),
+    /** API mínima: removes whole streams, entries and truncation marks. */
+    dropStreams: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -110,6 +162,37 @@ export type CommitBatch = z.output<typeof commitBatchSchema>;
 export const commitResultSchema = z
   .object({ position: z.number().int() })
   .strict();
+
+/**
+ * Measurements only: the low-storage policy belongs to the caller. A disk
+ * that cannot be measured is `unavailable` without `disk`.
+ */
+export const storageHealthSchema = z
+  .object({
+    status: z.enum(['ok', 'unavailable']),
+    writable: z.boolean(),
+    reason: z.string().optional(),
+    disk: z
+      .object({
+        blocks: z.number().int().nonnegative(),
+        availableBlocks: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type StorageHealth = z.output<typeof storageHealthSchema>;
+
+/** The host's storage identity, kept in a reserved record of the backend. */
+export const storageIdentitySchema = z
+  .object({
+    hostId: z.uuid(),
+    storageGeneration: z.number().int().positive(),
+  })
+  .strict();
+
+export type StorageIdentity = z.output<typeof storageIdentitySchema>;
 
 export interface Storage {
   defineType(definition: StorageTypeDefinition): Disposable;
@@ -123,6 +206,8 @@ export interface Storage {
     call?: CallArg,
   ): Promise<StreamPage>;
   commit(batch: CommitBatch, call?: CallArg): Promise<{ position: number }>;
+  /** API mínima: the backend's measurements for the caller's own policy. */
+  health(call?: CallArg): Promise<StorageHealth>;
 }
 
 export const StorageV1 = ref<Storage>('storage/v1');
@@ -133,17 +218,8 @@ export const storageMethods = {
   query: { input: storageQuerySchema, output: storagePageSchema },
   read: { input: streamReadSchema, output: streamPageSchema },
   commit: { input: commitBatchSchema, output: commitResultSchema },
+  health: { input: noInput, output: storageHealthSchema },
 } as const satisfies MethodSpecs;
-
-export const storageHealthSchema = z
-  .object({
-    status: z.enum(['ok', 'pressure', 'unavailable']),
-    writable: z.boolean(),
-    reason: z.string().optional(),
-  })
-  .strict();
-
-export type StorageHealth = z.output<typeof storageHealthSchema>;
 
 export const storageCapabilitiesSchema = z
   .object({
@@ -166,7 +242,12 @@ export const feedPageSchema = z
         .object({
           position: z.number().int(),
           documents: z.array(documentKey),
+          /** Streams that received appends. */
           streams: z.array(z.string()),
+          /** Streams truncated by the commit. */
+          truncated: z.array(z.string()),
+          /** Streams removed by the commit. */
+          dropped: z.array(z.string()),
         })
         .strict(),
     ),
@@ -175,7 +256,7 @@ export const feedPageSchema = z
 
 export type FeedPage = z.output<typeof feedPageSchema>;
 
-const declareTypeSchema = z
+export const storageDeclarationSchema = z
   .object({
     type: z.string(),
     indexes: z.array(
@@ -190,11 +271,10 @@ const declareTypeSchema = z
   })
   .strict();
 
+export type StorageDeclaration = z.input<typeof storageDeclarationSchema>;
+
 export interface StorageBackend {
-  declareType(
-    declaration: z.input<typeof declareTypeSchema>,
-    call?: CallArg,
-  ): Promise<void>;
+  declareType(declaration: StorageDeclaration, call?: CallArg): Promise<void>;
   get(
     key: { readonly type: string; readonly id: string },
     call?: CallArg,
@@ -209,16 +289,19 @@ export interface StorageBackend {
     request: z.input<typeof feedRequestSchema>,
     call?: CallArg,
   ): Promise<FeedPage>;
+  /** Base64 bytes in, `sha256:<hex>` out. */
   putBlob(bytes: string, call?: CallArg): Promise<{ hash: string }>;
   getBlob(hash: string, call?: CallArg): Promise<string | undefined>;
   capabilities(call?: CallArg): Promise<StorageCapabilities>;
   health(call?: CallArg): Promise<StorageHealth>;
+  /** The reserved metadata record; created by the first call. */
+  identity(call?: CallArg): Promise<StorageIdentity>;
 }
 
 export const StorageBackendV1 = ref<StorageBackend>('storage.backend/v1');
 
 export const storageBackendMethods = {
-  declareType: { input: declareTypeSchema, output: z.void() },
+  declareType: { input: storageDeclarationSchema, output: z.void() },
   get: { input: documentKey, output: storedDocumentSchema.optional() },
   query: { input: storageQuerySchema, output: storagePageSchema },
   read: { input: streamReadSchema, output: streamPageSchema },
@@ -232,4 +315,5 @@ export const storageBackendMethods = {
   getBlob: { input: z.string(), output: z.string().optional() },
   capabilities: { input: noInput, output: storageCapabilitiesSchema },
   health: { input: noInput, output: storageHealthSchema },
+  identity: { input: noInput, output: storageIdentitySchema },
 } as const satisfies MethodSpecs;

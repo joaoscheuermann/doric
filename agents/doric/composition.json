@@ -1,5 +1,8 @@
 {
   "core": "core",
-  "enabled": ["core", "files", "git", "threads"],
-  "providers": {}
+  "enabled": ["postgres", "core", "files", "git", "threads"],
+  "providers": {
+    "storage.backend/v1": "postgres",
+    "secrets.backend/v1": "postgres"
+  }
 }

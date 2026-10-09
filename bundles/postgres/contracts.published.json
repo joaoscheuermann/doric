@@ -1,0 +1,761 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "postgres",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "storage.backend/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/storage.backend/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "capabilities.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "capabilities.output": {
+            "type": "object",
+            "properties": {
+              "maxBatch": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxDocumentBytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxAppendBytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["maxBatch", "maxDocumentBytes", "maxAppendBytes"],
+            "additionalProperties": false
+          },
+          "commit.input": {
+            "type": "object",
+            "properties": {
+              "expect": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["type", "id", "revision"],
+                  "additionalProperties": false
+                }
+              },
+              "put": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": ["type", "id", "value"],
+                  "additionalProperties": false
+                }
+              },
+              "delete": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "id"],
+                  "additionalProperties": false
+                }
+              },
+              "truncate": {
+                "type": "object",
+                "properties": {
+                  "stream": {
+                    "type": "string"
+                  },
+                  "afterSequence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["stream", "afterSequence"],
+                "additionalProperties": false
+              },
+              "append": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stream": {
+                      "type": "string"
+                    },
+                    "expectedSequence": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "events": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "required": ["stream", "events"],
+                  "additionalProperties": false
+                }
+              },
+              "dropStreams": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "commit.output": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["position"],
+            "additionalProperties": false
+          },
+          "declareType.input": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "indexes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "unique": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["name", "fields"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "indexes"],
+            "additionalProperties": false
+          },
+          "declareType.output": {},
+          "feed.input": {
+            "type": "object",
+            "properties": {
+              "after": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["after", "limit"],
+            "additionalProperties": false
+          },
+          "feed.output": {
+            "type": "object",
+            "properties": {
+              "commits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["type", "id"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "streams": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "truncated": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dropped": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "position",
+                    "documents",
+                    "streams",
+                    "truncated",
+                    "dropped"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["commits"],
+            "additionalProperties": false
+          },
+          "get.input": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "id"],
+            "additionalProperties": false
+          },
+          "get.output": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "value": {}
+            },
+            "required": ["type", "id", "revision", "value"],
+            "additionalProperties": false
+          },
+          "getBlob.input": {
+            "type": "string"
+          },
+          "getBlob.output": {
+            "type": "string"
+          },
+          "health.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "health.output": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["ok", "unavailable"]
+              },
+              "writable": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "disk": {
+                "type": "object",
+                "properties": {
+                  "blocks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "availableBlocks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["blocks", "availableBlocks"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["status", "writable"],
+            "additionalProperties": false
+          },
+          "identity.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "identity.output": {
+            "type": "object",
+            "properties": {
+              "hostId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "storageGeneration": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["hostId", "storageGeneration"],
+            "additionalProperties": false
+          },
+          "putBlob.input": {
+            "type": "string"
+          },
+          "putBlob.output": {
+            "type": "object",
+            "properties": {
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": ["hash"],
+            "additionalProperties": false
+          },
+          "query.input": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "index": {
+                "type": "string"
+              },
+              "equals": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "range": {
+                "type": "object",
+                "properties": {
+                  "gt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "gte": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lte": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "order": {
+                "type": "string",
+                "enum": ["asc", "desc"]
+              },
+              "limit": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000
+              },
+              "cursor": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "index", "equals", "limit"],
+            "additionalProperties": false
+          },
+          "query.output": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "value": {}
+                  },
+                  "required": ["type", "id", "revision", "value"],
+                  "additionalProperties": false
+                }
+              },
+              "cursor": {
+                "type": "string"
+              }
+            },
+            "required": ["items"],
+            "additionalProperties": false
+          },
+          "read.input": {
+            "type": "object",
+            "properties": {
+              "stream": {
+                "type": "string"
+              },
+              "afterSequence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["stream", "afterSequence", "limit"],
+            "additionalProperties": false
+          },
+          "read.output": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sequence": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "value": {},
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["sequence", "value", "createdAt"],
+                  "additionalProperties": false
+                }
+              },
+              "lastSequence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "truncations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "afterSequence": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "atSequence": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["afterSequence", "atSequence"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["entries", "lastSequence", "truncations"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "secrets.backend/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/secrets.backend/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "delete.input": {
+            "type": "string"
+          },
+          "delete.output": {
+            "type": "string",
+            "enum": ["deleted", "missing"]
+          },
+          "get.input": {
+            "type": "string"
+          },
+          "get.output": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["API_TOKEN", "USERNAME_PASSWORD", "GIT"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "kind", "name"],
+            "additionalProperties": false
+          },
+          "list.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "list.output": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["API_TOKEN", "USERNAME_PASSWORD", "GIT"]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "kind", "name"],
+              "additionalProperties": false
+            }
+          },
+          "put.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["API_TOKEN", "USERNAME_PASSWORD", "GIT"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "kind", "name"],
+            "additionalProperties": false
+          },
+          "put.output": {}
+        }
+      }
+    },
+    {
+      "id": "postgres.database/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/postgres.database/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "client.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "client.output": {
+            "x-doric-local": true
+          },
+          "connect.input": {
+            "type": "array",
+            "prefixItems": []
+          },
+          "connect.output": {}
+        }
+      }
+    }
+  ]
+}

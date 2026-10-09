@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SecretsV1, SettingsV1, StorageV1 } from 'bundle/contracts';
 import { createDockerClient, discardWorkspace } from 'docker';
 import express from 'express';
 import { createFirecrackerClient } from 'firecracker';
@@ -14,16 +15,16 @@ import { Server as SocketServer } from 'socket.io';
 import { createDirectExecutor } from './lib/agents/direct/executor.js';
 import { createHostAdapter } from './lib/bundles/adapter.js';
 import { bundlePaths, startBundles } from './lib/bundles/boot.js';
+import { createHostConfig } from './lib/bundles/configuration.js';
+import { connectDatabase } from './lib/bundles/database.js';
 import { createConfigService } from './lib/config/service.js';
 import { createConfigStore } from './lib/config/store.js';
 import { createCredentialService } from './lib/credentials/service.js';
-import { createCredentialStore } from './lib/credentials/store.js';
-import { createDatabase } from './lib/database.js';
 import { createWorkspaceSocket } from './lib/events/socket.js';
 import { registerStatusSocket } from './lib/events/status.js';
 import { registerHttpRoutes } from './lib/http/app.js';
 import { createVmRegistry } from './lib/vms.js';
-import { checkDisk } from './lib/workspace/disk.js';
+import { checkStorageHealth } from './lib/workspace/disk.js';
 import { createProjectStore } from './lib/workspace/projects.js';
 import { readHostResources } from './lib/workspace/resources.js';
 import { createWorkspaceService } from './lib/workspace/service.js';
@@ -60,12 +61,6 @@ async function main() {
     },
     'Doric starting',
   );
-  startupStage = 'database_client';
-  startup.info('Initializing PostgreSQL client');
-  const database = createDatabase(process.env.DORIC_DATABASE_URL ?? '');
-  await database.$connect();
-  startup.info('PostgreSQL client initialized');
-
   const app = express();
   const server = createServer(app);
   const io = new SocketServer(server);
@@ -129,9 +124,11 @@ async function main() {
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
   const adapter = createHostAdapter();
+  const hostConfig = createHostConfig();
   const bundles = await startBundles({
     ...bundlePaths(process.env, dirname(fileURLToPath(import.meta.url))),
     adapter,
+    embedded: [hostConfig.bundle],
     logger,
   });
   startup.info(
@@ -142,15 +139,28 @@ async function main() {
     },
     'Bundles loaded',
   );
+  // Bundle activation opens no database, so the client is connected here,
+  // through the `postgres` bundle; only a missing URL fails at this stage.
+  startupStage = 'database_client';
+  startup.info('Initializing PostgreSQL client');
+  const database = await connectDatabase(bundles.platform);
+  startup.info('PostgreSQL client initialized');
   startupStage = 'credential_activation';
   startup.info('Activating stored credentials');
   const credentials = await createCredentialService({
-    store: createCredentialStore(database),
+    secrets: bundles.platform.services.use(SecretsV1),
   });
+  // The storage identity is the first query of the storage backend, so it is
+  // read in this stage, where the first database round trip always failed.
+  await bundles.platform.storageIdentity();
   startupStage = 'configuration_activation';
   startup.info('Activating Doric configuration');
   const config = await createConfigService({
-    store: createConfigStore(database),
+    store: createConfigStore({
+      settings: bundles.platform.services.use(SettingsV1),
+      definition: hostConfig.definition,
+      track: hostConfig.track,
+    }),
     credentials,
     catalog: bundles.catalog,
     logger,
@@ -189,7 +199,8 @@ async function main() {
       call: (scope, signal) => bundles.platform.call({ scope, signal }),
       attach: adapter.attach,
     }),
-    checkStorage: () => checkDisk(process.env.DORIC_STORAGE_PATH ?? '.'),
+    checkStorage: () =>
+      checkStorageHealth(bundles.platform.services.use(StorageV1)),
     // A durable workspace is the Docker provider's own storage. The Firecracker
     // profile keeps its guest disks per run, so it has no workspace volume to
     // remove yet.
@@ -250,9 +261,9 @@ async function main() {
     await io.close();
     await closed;
     await service.dispose();
+    // The `postgres` bundle disconnects the client when it deactivates.
     await bundles.platform.stop();
     await pool.dispose();
-    await database.$disconnect();
   };
   process.once('SIGINT', () => void close());
   process.once('SIGTERM', () => void close());

@@ -5,10 +5,10 @@ import {
   CredentialUpdateSchema,
   publicCredential,
 } from '../lib/credentials/kind.js';
-import { MissingKeyError } from '../lib/credentials/secret.js';
-import type {
-  CredentialService,
-  CredentialWrite,
+import {
+  type CredentialService,
+  type CredentialWrite,
+  MissingKeyError,
 } from '../lib/credentials/service.js';
 import { sendError } from '../lib/http/errors.js';
 import { conflict, missing, validateId } from './workspace-input.js';

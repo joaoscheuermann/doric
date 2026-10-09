@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import {
+  type EmbeddedBundle,
   type HostPlatform,
   type LogSink,
   type PlatformLog,
@@ -43,6 +44,8 @@ export interface StartBundlesOptions {
   readonly bundlesPath: string;
   readonly compositionPath: string;
   readonly adapter: HostAdapter;
+  /** Further embedded bundles, such as the configuration owner `host-config`. */
+  readonly embedded?: readonly EmbeddedBundle[];
   readonly logger: Logger;
 }
 
@@ -81,7 +84,8 @@ const platformLog = (logger: Logger): PlatformLog => ({
 
 /**
  * Boots the host's bundles: the installed bundles below `bundlesPath`, the
- * composition at `compositionPath` and the embedded host adapter. It returns
+ * composition at `compositionPath`, the embedded host adapter and any further
+ * embedded bundles. Activation opens no database. It returns
  * the platform and the tools and skills the Direct agent binds on every
  * prompt, read once, because bundles never change while the process runs.
  */
@@ -89,12 +93,13 @@ export const startBundles = async ({
   bundlesPath,
   compositionPath,
   adapter,
+  embedded = [],
   logger,
 }: StartBundlesOptions): Promise<Bundles> => {
   const platform = await startHost({
     bundlesPath,
     composition: { path: compositionPath },
-    embedded: [adapter.bundle],
+    embedded: [adapter.bundle, ...embedded],
     log: platformLog(logger.child({ component: 'platform' })),
     sink: pinoSink(logger.child({ component: 'bundles' })),
   });
@@ -126,7 +131,8 @@ export const startBundles = async ({
       .map(({ id }) => id),
   );
 
-  installed.delete(adapter.bundle.manifest.id);
+  for (const { manifest } of [adapter.bundle, ...embedded])
+    installed.delete(manifest.id);
 
   return {
     platform,

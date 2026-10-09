@@ -16,6 +16,30 @@ export const contractErrorCodes = [
   'duplicate_tool',
   'duplicate_skill',
   'unavailable_tool',
+  // storage/v1 and storage.backend/v1
+  'revision_conflict',
+  'sequence_conflict',
+  'unique_conflict',
+  'limit_exceeded',
+  'unknown_type',
+  'invalid_index_value',
+  'invalid_stream',
+  // settings/v1
+  'unknown_settings',
+  'settings_missing',
+  'settings_conflict',
+  // events/v1
+  'unknown_event',
+  'invalid_scope',
+  // secrets/v1 and secrets.backend/v1
+  'credential_missing',
+  'credential_invalid',
+  'credential_name_taken',
+  'credential_kind_immutable',
+  'credential_ambiguous',
+  'credential_storage_unavailable',
+  'credential_key_required',
+  'credential_unreadable',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

@@ -16,6 +16,9 @@
       "path": "../../packages/bundle/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/storage/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/tool/tsconfig.lib.json"
     }
   ]

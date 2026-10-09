@@ -162,17 +162,19 @@ void test('skills and tools keep their canonical records and availability flags'
   });
 });
 
-void test('the catalog and diagnostics list every bundle active, with the core first', async () => {
+void test('the catalog and diagnostics list every bundle active, with the foundation and then the core first', async () => {
   await withBundles(async (bundles) => {
     const diagnostics = bundles.platform.diagnostics();
 
     assert.equal(bundles.platform.mode, 'normal');
-    assert.equal(bundles.bundleCount, 4);
+    // The installed bundles: the `postgres` foundation is one of them.
+    assert.equal(bundles.bundleCount, 5);
     assert.deepEqual(
       Object.fromEntries(
         diagnostics.bundles.map(({ id, state, phase }) => [id, [state, phase]]),
       ),
       {
+        postgres: ['active', 'foundation'],
         core: ['active', 'core'],
         files: ['active', 'others'],
         git: ['active', 'others'],
@@ -182,7 +184,7 @@ void test('the catalog and diagnostics list every bundle active, with the core f
     );
     assert.deepEqual(
       bundles.platform.catalog().order.filter((id) => id !== 'host-adapter'),
-      ['core', 'files', 'git', 'threads'],
+      ['postgres', 'core', 'files', 'git', 'threads'],
     );
   });
 });

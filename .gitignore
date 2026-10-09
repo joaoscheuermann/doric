@@ -42,7 +42,7 @@ npm-debug.log
 yarn-error.log
 testem.log
 /typings
-/agents/doric/src/generated/prisma/
+/bundles/postgres/src/generated/prisma/
 
 # System Files
 .DS_Store

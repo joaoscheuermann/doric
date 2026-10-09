@@ -9,7 +9,10 @@ import {
   type MethodSpecs,
 } from './common.js';
 
-/** First provider in stage 2; shapes may be refined before a provider publishes. */
+// Error codes raised by events/v1: `unknown_event` (the definition is not
+// registered), `invalid_scope` (the call scope lacks a project, Thread or
+// prompt), `not_owner` (only the owner appends) and `registration_conflict`.
+
 export interface Events {
   register(definition: EventDefinition): Disposable;
   append<D extends EventDefinition>(
@@ -28,3 +31,23 @@ export const eventsMethods = {
     output: z.void(),
   },
 } as const satisfies MethodSpecs;
+
+/** The Thread log stream events/v1 appends to; the runtime adopts it in stage 5. */
+export const threadEventsStream = (threadId: string): string =>
+  `runtime.thread.events/${threadId}`;
+
+/**
+ * The value of every entry of a Thread log stream. The sequence and
+ * `createdAt` are the protocol entry's.
+ */
+export const threadEventEnvelopeSchema = z
+  .object({
+    projectId: z.string(),
+    threadId: z.string(),
+    promptId: z.string(),
+    type: z.string(),
+    event: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+export type ThreadEventEnvelope = z.output<typeof threadEventEnvelopeSchema>;
