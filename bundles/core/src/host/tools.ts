@@ -9,12 +9,20 @@ import {
   toolsMethods,
 } from 'bundle/contracts';
 
+import { collidesIn, seenBy, viewOf } from './partition.js';
+
+interface Entry {
+  readonly generation: number;
+  readonly registered: RegisteredTool;
+}
+
 /**
  * The core's `tools/v1`: one ordered registry of bound tools (activation order,
- * then call order) whose names are unique across bundles.
+ * then call order) whose names are unique across the bundles one generation
+ * view sees (D4-11): the kernel partition plus one generation.
  */
 export const createTools = () => {
-  const registered: RegisteredTool[] = [];
+  const registered: Entry[] = [];
 
   return defineService(ToolsV1, {
     register: defineMethod({
@@ -23,9 +31,15 @@ export const createTools = () => {
       execute: (
         [tool, options]: [ContractTool, { alwaysAvailable: boolean }],
         call,
+        services,
       ): Disposable => {
         const bundleId = call.caller.bundleId;
-        const taken = registered.find((entry) => entry.tool.name === tool.name);
+        const view = viewOf(call, services);
+        const taken = registered.find(
+          (entry) =>
+            entry.registered.tool.name === tool.name &&
+            collidesIn(entry.generation, view),
+        )?.registered;
 
         if (taken !== undefined) {
           throw new ContractError(
@@ -34,11 +48,14 @@ export const createTools = () => {
           );
         }
 
-        const entry: RegisteredTool = Object.freeze({
-          bundleId,
-          alwaysAvailable: options.alwaysAvailable,
-          tool,
-        });
+        const entry: Entry = {
+          generation: view.generation,
+          registered: Object.freeze({
+            bundleId,
+            alwaysAvailable: options.alwaysAvailable,
+            tool,
+          }),
+        };
 
         registered.push(entry);
 
@@ -64,7 +81,15 @@ export const createTools = () => {
     list: defineMethod({
       input: toolsMethods.list.input,
       output: toolsMethods.list.output,
-      execute: () => Object.freeze([...registered]),
+      execute: (_input, call, services) => {
+        const view = viewOf(call, services);
+
+        return Object.freeze(
+          registered
+            .filter((entry) => seenBy(entry.generation, view))
+            .map((entry) => entry.registered),
+        );
+      },
     }),
   });
 };

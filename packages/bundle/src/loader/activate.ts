@@ -28,7 +28,7 @@ import type { CatalogEntry, ResolvedEnvironment } from '../runtime/catalog.js';
 import { type Composition, compositionSchema } from '../runtime/composition.js';
 import { DiagnosticsStore } from '../runtime/diagnostics.js';
 import { ServiceDirectory } from '../runtime/directory.js';
-import type { LegacyResource } from '../runtime/manifest.js';
+import type { LegacyResource, ReadManifest } from '../runtime/manifest.js';
 import type { Principal, ServiceRuntime } from '../runtime/principal.js';
 import { createPrincipal } from '../runtime/services.js';
 import { PLATFORM_VERSION } from '../runtime/version.js';
@@ -60,6 +60,8 @@ export interface PlatformCallOptions {
   readonly scope?: CallScope;
   readonly signal?: AbortSignal;
   readonly deadline?: number;
+  /** Pins the call (and every hop it makes) to a bundle generation. */
+  readonly generation?: number;
 }
 
 export interface HostPlatform {
@@ -120,7 +122,9 @@ const failure = (code: QuarantineCode, error: unknown): ActivationFailure =>
   new ActivationFailure(code, messageOf(error), { cause: error });
 
 /** Imports `<dir>/host/index.js` and returns its `activate`. */
-const importHostPart = async (dir: string): Promise<Activate | undefined> => {
+export const importHostPart = async (
+  dir: string,
+): Promise<Activate | undefined> => {
   const path = join(dir, 'host', 'index.js');
 
   if (!(await fileExists(path))) {
@@ -228,6 +232,32 @@ const registerSkills = async (
   }
 };
 
+/**
+ * After a successful `activate` of an installed bundle: v0 manifest tools and
+ * skills, or the v1 `skills/` directory.
+ */
+export const registerInstalledResources = async (
+  dir: string,
+  legacy: ReadManifest['legacy'],
+  principal: Principal,
+): Promise<void> => {
+  if (legacy !== undefined) {
+    await registerLegacyTools(dir, legacy.tools, principal);
+    await registerSkills(dir, legacy.skills, false, principal);
+
+    return;
+  }
+
+  const paths = await discoverSkills(dir);
+
+  await registerSkills(
+    dir,
+    paths.map((path) => ({ path })),
+    true,
+    principal,
+  );
+};
+
 const placeholderComposition: Composition = Object.freeze({
   core: '',
   enabled: [],
@@ -235,17 +265,17 @@ const placeholderComposition: Composition = Object.freeze({
 }) as Composition;
 
 /**
- * Boots the host environment: discovers installed bundles, reads the
- * composition, resolves the catalog, registers the platform providers and
- * activates foundation, core and the others.
+ * Discovers the installed bundles, reads the composition and resolves the
+ * host catalog of one generation. Discovery problems become catalog issues;
+ * an unreadable composition forces recovery.
  */
-export const startHost = async (
-  options: StartHostOptions,
-): Promise<HostPlatform> => {
-  generations += 1;
-
-  const generation = generations;
-  const controller = new AbortController();
+export const readHostCatalog = async (
+  options: Pick<StartHostOptions, 'bundlesPath' | 'composition' | 'embedded'>,
+  generation: number,
+): Promise<{
+  readonly installed: readonly InstalledBundle[];
+  readonly resolved: ResolvedEnvironment;
+}> => {
   const issues: string[] = [];
   let recovery: { readonly reason: string } | undefined;
   let installed: readonly InstalledBundle[] = [];
@@ -267,16 +297,33 @@ export const startHost = async (
     recovery = { reason: `invalid composition: ${messageOf(error)}` };
   }
 
-  const embedded = options.embedded ?? [];
   const resolved: ResolvedEnvironment = buildCatalog({
     installed,
-    embedded,
+    embedded: options.embedded ?? [],
     composition,
     platformVersion: PLATFORM_VERSION,
     generation,
     issues,
     ...(recovery === undefined ? {} : { recovery }),
   });
+
+  return { installed, resolved };
+};
+
+/**
+ * Boots the host environment: discovers installed bundles, reads the
+ * composition, resolves the catalog, registers the platform providers and
+ * activates foundation, core and the others.
+ */
+export const startHost = async (
+  options: StartHostOptions,
+): Promise<HostPlatform> => {
+  generations += 1;
+
+  const generation = generations;
+  const controller = new AbortController();
+  const { installed, resolved } = await readHostCatalog(options, generation);
+  const embedded = options.embedded ?? [];
   const diagnostics = new DiagnosticsStore({
     generation,
     ...(options.now === undefined ? {} : { now: options.now }),
@@ -342,22 +389,9 @@ export const startHost = async (
       return;
     }
 
-    const { dir } = entry.source;
-    const legacy = installedById.get(entry.id)?.read?.legacy;
-
-    if (legacy !== undefined) {
-      await registerLegacyTools(dir, legacy.tools, principal);
-      await registerSkills(dir, legacy.skills, false, principal);
-
-      return;
-    }
-
-    const paths = await discoverSkills(dir);
-
-    await registerSkills(
-      dir,
-      paths.map((path) => ({ path })),
-      true,
+    await registerInstalledResources(
+      entry.source.dir,
+      installedById.get(entry.id)?.read?.legacy,
       principal,
     );
   };
@@ -401,6 +435,9 @@ export const startHost = async (
         ...(callOptions.scope === undefined
           ? {}
           : { useScope: callOptions.scope }),
+        ...(callOptions.generation === undefined
+          ? {}
+          : { generation: callOptions.generation }),
         arg: {
           ...(callOptions.signal === undefined
             ? {}

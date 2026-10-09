@@ -646,6 +646,7 @@ void test('runs each prompt with the configuration in force, not the one its Pro
     pool: pool(),
     config: {
       current: () => current,
+      catalog: () => ({ skills: [], tools: [] }),
       replace: () => Promise.resolve(saved.snapshot),
     },
     execute: async ({ generation }) => {

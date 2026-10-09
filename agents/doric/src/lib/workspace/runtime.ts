@@ -55,7 +55,13 @@ export interface ThreadRuntime {
    * instead of as a failure; an explicit termination leaves it unset and stays
    * terminal.
    */
-  pausing?: 'host_stopped' | 'reader_stopped';
+  pausing?: 'host_stopped' | 'reader_stopped' | 'host_restarted';
+  /**
+   * Set while the bundle generation this Thread's run was pinned to is lost:
+   * the Thread still accepts and queues prompts but starts none until the host
+   * takes the interrupted prompt up again on a live generation.
+   */
+  held?: true;
   active?: {
     readonly job: PromptJob;
     readonly controller: AbortController;

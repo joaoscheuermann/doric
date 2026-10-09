@@ -15,6 +15,7 @@ import {
 import { checkBatchLimits, parseStreamId } from 'storage';
 
 import { describeIssues } from '../issues.js';
+import { type View, viewOf } from '../partition.js';
 import { assertDefinitionOwner, type CoreState, PLATFORM } from '../state.js';
 import { createTypeRegistry, type TypeEntry } from './registry.js';
 import { assertIndexes, fingerprintOf } from './validate.js';
@@ -34,8 +35,8 @@ export const createStorage = (state: CoreState) => {
   const backendOf = (services: Services) => services.use(StorageBackendV1);
 
   /** The registered type, or `unknown_type`. */
-  const registered = (type: string): TypeEntry => {
-    const entry = types.get(type);
+  const registered = (type: string, view: View): TypeEntry => {
+    const entry = types.get(type, view);
 
     if (entry === undefined) {
       throw new ContractError(
@@ -149,20 +150,22 @@ export const createStorage = (state: CoreState) => {
           definition,
           call.caller.bundleId,
           fingerprintOf(definition),
+          viewOf(call, services),
         );
       },
     }),
     get: defineMethod({
       ...storageMethods.get,
       execute: async (key, call, services) => {
-        const entry = types.get(key.type);
+        const view = viewOf(call, services);
+        const entry = types.get(key.type, view);
 
         // The platform reads raw, even a type nobody defines now.
         if (entry === undefined && call.caller.bundleId === PLATFORM) {
           return await backendOf(services).get(key, call);
         }
 
-        const known = registered(key.type);
+        const known = registered(key.type, view);
 
         assertTypeOwner(known, call);
         await declared(known, services, call);
@@ -173,13 +176,14 @@ export const createStorage = (state: CoreState) => {
     query: defineMethod({
       ...storageMethods.query,
       execute: async (query, call, services) => {
-        const entry = types.get(query.type);
+        const view = viewOf(call, services);
+        const entry = types.get(query.type, view);
 
         if (entry === undefined && call.caller.bundleId === PLATFORM) {
           return await backendOf(services).query(query, call);
         }
 
-        const known = registered(query.type);
+        const known = registered(query.type, view);
 
         assertTypeOwner(known, call);
         await declared(known, services, call);
@@ -208,8 +212,9 @@ export const createStorage = (state: CoreState) => {
       ...storageMethods.commit,
       execute: async (batch, call, services) => {
         const touched = new Map<string, TypeEntry>();
+        const view = viewOf(call, services);
         const use = (type: string): TypeEntry => {
-          const entry = registered(type);
+          const entry = registered(type, view);
 
           assertTypeOwner(entry, call);
           touched.set(type, entry);

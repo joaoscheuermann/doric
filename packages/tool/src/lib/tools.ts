@@ -19,6 +19,7 @@ import type {
   ToolInput,
   ToolIssue,
   ToolOutput,
+  ToolPayloadCheck,
   ToolStorage,
   ToolTurn,
 } from './types/tool.js';
@@ -69,6 +70,14 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
       });
     };
 
+    const check = (payload: unknown): ToolPayloadCheck => {
+      const parsed = options.input.safeParse(payload);
+
+      return parsed.success
+        ? { success: true, data: parsed.data }
+        : { success: false, issues: parsed.error.issues.map(issueFromZod) };
+    };
+
     return Object.freeze({
       name: options.name,
       description: options.description,
@@ -77,6 +86,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
       definition,
       settings,
       execute,
+      check,
       toTool: (call: Call): Tool<Input, Output> => ({
         name: options.name,
         description: options.description,
@@ -84,6 +94,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
         output: options.output,
         definition,
         execute: (payload) => execute(payload, call),
+        check,
       }),
     });
   };
@@ -151,11 +162,49 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
     return tool;
   };
 
-  const validate = (call: ToolCall | ToolCallRequest): ToolCall => {
-    const parsed = normalizeCall(call);
-    validatePayload(requireTool(parsed), parsed);
+  /**
+   * The validated payload of a call. Tools without `check`, or with a
+   * synchronous one, stay synchronous; only a `check` that returns a promise
+   * makes the result asynchronous.
+   */
+  const checkPayload = (
+    tool: Tool,
+    call: ToolCall,
+  ): { readonly payload: unknown } | Promise<unknown> => {
+    if (tool.check === undefined) {
+      return { payload: validatePayload(tool, call) };
+    }
 
-    return parsed;
+    const checked = tool.check(call.payload);
+
+    return checked instanceof Promise
+      ? checked.then((result) => payloadFromCheck(call, result))
+      : { payload: payloadFromCheck(call, checked) };
+  };
+
+  const validate = (
+    call: ToolCall | ToolCallRequest,
+  ): ToolCall | Promise<ToolCall> => {
+    const parsed = normalizeCall(call);
+    const checked = checkPayload(requireTool(parsed), parsed);
+
+    return checked instanceof Promise ? checked.then(() => parsed) : parsed;
+  };
+
+  /** Synchronous tools validate twice, as before; asynchronous ones once. */
+  const executablePayload = async (
+    tool: Tool,
+    call: ToolCall,
+  ): Promise<unknown> => {
+    const checked = checkPayload(tool, call);
+
+    if (checked instanceof Promise) {
+      return await checked;
+    }
+
+    const again = checkPayload(tool, call);
+
+    return again instanceof Promise ? await again : again.payload;
   };
 
   return {
@@ -164,12 +213,12 @@ export const createToolStorage = (tools: readonly Tool[]): ToolStorage => {
     validate,
     get: (name: string) => byName.get(name),
     execute: async (call: ToolCall | ToolCallRequest): Promise<unknown> => {
-      const parsed = validate(call);
+      const parsed = normalizeCall(call);
       const tool = requireTool(parsed);
-      const payload = validatePayload(tool, parsed);
+      const payload = await executablePayload(tool, parsed);
 
       try {
-        return await tool.execute(payload);
+        return await tool.execute(payload as z.output<ToolInput>);
       } catch (cause) {
         if (
           cause instanceof ToolErrorObject &&
@@ -277,6 +326,23 @@ const validatePayload = <Input extends ToolInput>(
     callId: call.id,
     message: `Tool call payload failed validation: ${call.name}`,
     issues: parsed.error.issues.map(issueFromZod),
+  });
+};
+
+const payloadFromCheck = (
+  call: ToolCall,
+  result: ToolPayloadCheck,
+): unknown => {
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new ToolErrorObject({
+    code: 'invalid_payload',
+    toolName: call.name,
+    callId: call.id,
+    message: `Tool call payload failed validation: ${call.name}`,
+    issues: result.issues,
   });
 };
 

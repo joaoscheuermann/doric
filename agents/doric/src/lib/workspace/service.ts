@@ -97,6 +97,27 @@ const jobFor = (prompt: PromptProgress): PromptJob => ({
   source: prompt.source,
 });
 
+/** One prompt run a lost bundle generation interrupted. */
+export interface InterruptedExecution {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+}
+
+/** How the host answers a bundle generation process that exited under prompts. */
+export interface GenerationRecovery {
+  /**
+   * Pauses the running prompts of a lost generation with `host_restarted`. It
+   * is synchronous: the runs are aborted before the lost calls reject.
+   */
+  suspendForGenerationLoss(executions: readonly InterruptedExecution[]): void;
+  /**
+   * Takes up every prompt a lost generation paused, once its run settled, on
+   * the active generation, with the same attempt budget a boot applies.
+   */
+  resumeAfterGenerationLoss(): Promise<void>;
+}
+
 /** Composes project-owned sandboxes with independently scheduled conversations. */
 export const createWorkspaceService = ({
   projects,
@@ -109,7 +130,7 @@ export const createWorkspaceService = ({
   discardWorkspace,
   execute,
   checkStorage,
-}: Options): WorkspaceService => {
+}: Options): WorkspaceService & GenerationRecovery => {
   const runtimes = new Map<string, ProjectRuntime>();
   const exclusive = createMutationQueue();
   const terminals = createTerminalRegistry(publisher, () =>
@@ -126,6 +147,8 @@ export const createWorkspaceService = ({
     exclusive,
   });
   let disposed = false;
+  /** Prompts a lost generation paused and the host has not taken up yet. */
+  const pendingRecovery = new Map<string, InterruptedExecution>();
 
   const setProject = async (
     runtime: ProjectRuntime,
@@ -1192,6 +1215,49 @@ export const createWorkspaceService = ({
         }
         cursor = page.nextCursor;
       } while (cursor !== undefined && !disposed);
+    },
+    suspendForGenerationLoss: (executions) => {
+      for (const execution of executions) {
+        const thread = runtimes
+          .get(execution.projectId)
+          ?.threads.get(execution.threadId);
+        if (thread === undefined) continue;
+        if (runner.pauseForGenerationLoss(thread, execution.promptId))
+          pendingRecovery.set(execution.threadId, execution);
+      }
+    },
+    resumeAfterGenerationLoss: async () => {
+      const pending = [...pendingRecovery.values()];
+      await Promise.all(
+        pending.map(async (execution) => {
+          const runtime = runtimes.get(execution.projectId);
+          const thread = runtime?.threads.get(execution.threadId);
+          if (runtime === undefined || thread === undefined) {
+            pendingRecovery.delete(execution.threadId);
+            return;
+          }
+          await thread.task;
+          await exclusive(execution.projectId, async () => {
+            if (pendingRecovery.get(execution.threadId) !== execution) return;
+            pendingRecovery.delete(execution.threadId);
+            if (disposed || thread.thread.queuePaused) {
+              // A durable pause survives, as it does at boot: the reader takes
+              // the prompt up again when they resume the queue.
+              thread.held = undefined;
+              return;
+            }
+            const progress = (
+              await threads.unfinishedPrompts(execution.threadId)
+            ).find(
+              (prompt) =>
+                prompt.promptId === execution.promptId &&
+                !prompt.superseded &&
+                hostOwesRun(prompt),
+            );
+            await runner.resumeHeld(runtime, thread, progress);
+          });
+        }),
+      );
     },
     sshForVm: async (id) => {
       const runtime = [...runtimes.values()].find(

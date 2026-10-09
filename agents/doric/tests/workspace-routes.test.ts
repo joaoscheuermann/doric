@@ -951,7 +951,11 @@ const serve = async (
     throw new Error('Unexpected config access');
   };
   registerHttpRoutes(app, {
-    config: { current: unsupported, replace: unsupported },
+    config: {
+      current: unsupported,
+      catalog: unsupported,
+      replace: unsupported,
+    },
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,

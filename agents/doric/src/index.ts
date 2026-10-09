@@ -14,7 +14,11 @@ import { Server as SocketServer } from 'socket.io';
 
 import { createDirectExecutor } from './lib/agents/direct/executor.js';
 import { createHostAdapter } from './lib/bundles/adapter.js';
-import { bundlePaths, startBundles } from './lib/bundles/boot.js';
+import {
+  bundlePaths,
+  recoverGenerationLoss,
+  startBundles,
+} from './lib/bundles/boot.js';
 import { createHostConfig } from './lib/bundles/configuration.js';
 import { connectDatabase } from './lib/bundles/database.js';
 import { createConfigService } from './lib/config/service.js';
@@ -131,11 +135,12 @@ async function main() {
     embedded: [hostConfig.bundle],
     logger,
   });
+  const loaded = bundles.catalog();
   startup.info(
     {
       bundleCount: bundles.bundleCount,
-      skillCount: bundles.catalog.skills.length,
-      toolCount: bundles.catalog.tools.length,
+      skillCount: loaded.skills.length,
+      toolCount: loaded.tools.length,
     },
     'Bundles loaded',
   );
@@ -196,7 +201,7 @@ async function main() {
     publisher,
     logger,
     execute: createDirectExecutor({
-      call: (scope, signal) => bundles.platform.call({ scope, signal }),
+      acquire: bundles.acquire,
       attach: adapter.attach,
     }),
     checkStorage: () =>
@@ -209,6 +214,10 @@ async function main() {
         await discardWorkspace(dockerClient, identity);
     },
   });
+
+  // A generation process that exits under running prompts pauses them, and
+  // the active generation takes them up again.
+  recoverGenerationLoss(bundles.platform.generations, service);
 
   // Work the reader asked for and a host interruption left unfinished is work
   // this boot owes them, so every such prompt is taken up before the host starts

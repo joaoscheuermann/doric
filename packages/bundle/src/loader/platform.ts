@@ -1,19 +1,49 @@
 import type { StorageIdentity } from '../contracts/basic/storage.js';
+import type { Call } from '../contracts/call.js';
+import type { Disposable } from '../contracts/context.js';
 import { defineMethod, definePlatformService } from '../contracts/define.js';
 import {
+  type BundleState,
   type CatalogSnapshot,
   type DiagnosticReport,
+  type Diagnostics,
   DoricBundleV1,
   DoricCatalogV1,
   DoricDiagnosticsV1,
+  DoricGenerationV1,
   DoricLogV1,
+  type ExecutionRef,
+  type GenerationDescription,
   type LogRecord,
   platformContracts,
 } from '../contracts/platform.js';
 import type { ResolvedEnvironment } from '../runtime/catalog.js';
 import type { DiagnosticsStore } from '../runtime/diagnostics.js';
 import type { Principal } from '../runtime/principal.js';
+import { toDisposable } from '../runtime/scope.js';
 import type { LogSink } from './log.js';
+
+/** What a catalog snapshot reads of the live bundle states. */
+export interface BundleStates {
+  snapshot(): Diagnostics;
+  state(id: string): BundleState | undefined;
+}
+
+/**
+ * Bundle states from a diagnostics snapshot: like `DiagnosticsStore.state`,
+ * the first bundle with an ID holds its state.
+ */
+export const statesOf = (diagnostics: Diagnostics): BundleStates => {
+  const first = new Map<string, BundleState>();
+
+  for (const bundle of diagnostics.bundles) {
+    if (!first.has(bundle.id)) {
+      first.set(bundle.id, bundle.state);
+    }
+  }
+
+  return { snapshot: () => diagnostics, state: (id) => first.get(id) };
+};
 
 /**
  * The catalog snapshot `doric.catalog/v1` publishes, with live bundle states
@@ -21,7 +51,7 @@ import type { LogSink } from './log.js';
  */
 export const catalogSnapshot = (
   resolved: ResolvedEnvironment,
-  diagnostics: DiagnosticsStore,
+  diagnostics: BundleStates,
   storage?: StorageIdentity,
 ): CatalogSnapshot => {
   const states = diagnostics.snapshot().bundles;
@@ -85,9 +115,17 @@ const specs = platformContracts;
 export const providePlatformServices = (
   platform: Principal,
   options: {
-    readonly snapshot: () => CatalogSnapshot;
+    /** The catalog the call sees (its operation generation's, in the kernel). */
+    readonly snapshot: (call: Call) => CatalogSnapshot;
     readonly diagnostics: DiagnosticsStore;
+    /** The diagnostics the call sees; default the store's snapshot. */
+    readonly diagnosticsFor?: (call: Call) => Diagnostics;
     readonly sink: LogSink;
+    /** The kernel's `doric.generation/v1` (absent in a single-process host). */
+    readonly generation?: {
+      describe(call: Call): GenerationDescription;
+      hold(execution: ExecutionRef, call: Call): Disposable;
+    };
   },
 ): void => {
   const { services, runtime } = platform;
@@ -101,7 +139,7 @@ export const providePlatformServices = (
       get: defineMethod({
         input: catalog.get.input,
         output: catalog.get.output,
-        execute: () => options.snapshot(),
+        execute: (_input, call) => options.snapshot(call),
       }),
     }),
   );
@@ -110,7 +148,10 @@ export const providePlatformServices = (
       get: defineMethod({
         input: diagnostics.get.input,
         output: diagnostics.get.output,
-        execute: () => options.diagnostics.snapshot(),
+        execute: (_input, call) =>
+          options.diagnosticsFor === undefined
+            ? options.diagnostics.snapshot()
+            : options.diagnosticsFor(call),
       }),
       report: defineMethod({
         input: diagnostics.report.input,
@@ -135,6 +176,31 @@ export const providePlatformServices = (
       }),
     }),
   );
+  const { generation } = options;
+
+  if (generation !== undefined) {
+    const methods = specs['doric.generation/v1'].methods;
+
+    services.provide(
+      definePlatformService(DoricGenerationV1, {
+        describe: defineMethod({
+          input: methods.describe.input,
+          output: methods.describe.output,
+          execute: async (_input, call) => generation.describe(call),
+        }),
+        hold: defineMethod({
+          input: methods.hold.input,
+          output: methods.hold.output,
+          execute: (execution: ExecutionRef, call) => {
+            const held = generation.hold(execution, call);
+
+            return toDisposable(() => held.dispose());
+          },
+        }),
+      }),
+    );
+  }
+
   services.provide(
     definePlatformService(DoricLogV1, {
       write: defineMethod({

@@ -489,9 +489,9 @@ const restart = async (
             current: () => ({
               snapshot,
               providers: options.providers,
-              catalog: { skills: [], tools: [] },
               redactions: () => [],
             }),
+            catalog: () => ({ skills: [], tools: [] }),
           } as never),
     credentials: credentialResolver(),
     pool: {

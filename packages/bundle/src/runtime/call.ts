@@ -5,7 +5,9 @@ import {
   type CallScope,
   callBrand,
   callDeadline,
+  callGeneration,
   deadlineOf,
+  generationOf,
   isCall,
 } from '../contracts/call.js';
 import { childTrace, newTrace } from './trace.js';
@@ -21,6 +23,10 @@ export interface CallFactoryInput {
   readonly generationSignal: AbortSignal;
   /** Client dispatcher only: overwrites `scope.windowKey`. */
   readonly windowKey?: string;
+  /** Explicit generation pin of a call without a parent call. */
+  readonly generation?: number;
+  /** Generation of the dispatching runtime, used without a parent or a pin. */
+  readonly defaultGeneration?: number;
   readonly now?: () => number;
 }
 
@@ -153,8 +159,14 @@ export const createHopCall = (input: CallFactoryInput): Call => {
 
   Object.defineProperty(call, callBrand, { value: true });
   Object.defineProperty(call, callDeadline, { value: deadline });
+  Object.defineProperty(call, callGeneration, {
+    value:
+      parent === undefined
+        ? (input.generation ?? input.defaultGeneration ?? 0)
+        : generationOf(parent),
+  });
 
   return Object.freeze(call);
 };
 
-export { deadlineOf };
+export { deadlineOf, generationOf };

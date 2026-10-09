@@ -85,9 +85,9 @@ const sandbox = { id: 'vm-1', root: '/workspace' } as Sandbox;
 /** The agent-loop tool storage of one prompt, as the Direct executor builds it. */
 const promptTools = (bundles: DefaultBundles) =>
   createToolStorage(
-    bundles.catalog.tools.map((tool) =>
-      tool.toTool(bundles.platform.call({ scope })),
-    ),
+    bundles
+      .catalog()
+      .tools.map((tool) => tool.toTool(bundles.platform.call({ scope }))),
   );
 
 void test('the default composition exposes the pre-migration tools, in order, byte for byte', async () => {
@@ -95,14 +95,14 @@ void test('the default composition exposes the pre-migration tools, in order, by
     const expected = JSON.parse(await readFixture('tools.json')) as unknown;
 
     assert.deepEqual(
-      bundles.catalog.tools.map(({ definition, settings }) => ({
+      bundles.catalog().tools.map(({ definition, settings }) => ({
         definition,
         settings,
       })),
       expected,
     );
     assert.deepEqual(
-      bundles.catalog.tools.map(({ name }) => name),
+      bundles.catalog().tools.map(({ name }) => name),
       [
         'cwd',
         'edit',
@@ -128,7 +128,7 @@ void test('the default composition exposes the pre-migration tools, in order, by
 void test('the Direct system prompt is byte-identical to the pre-migration one', async () => {
   await withBundles(async (bundles) => {
     assert.equal(
-      directSystemPrompt(bundles.catalog.skills),
+      directSystemPrompt(bundles.catalog().skills),
       await readFixture('system-prompt.md'),
     );
   });
@@ -196,7 +196,7 @@ void test('GET /tools answers the pre-migration catalog', async () => {
     app.use(
       '/tools',
       createToolsRouter({
-        current: () => ({ catalog: bundles.catalog }),
+        catalog: bundles.catalog,
       } as never),
     );
 
@@ -286,7 +286,13 @@ void test('a Host control failure fails the tool call with that same error as it
         (error: unknown) => {
           assert.ok(error instanceof ToolErrorObject);
           assert.equal(error.data.code, 'handler_failed');
-          assert.equal(error.cause, refusal);
+          // The tool runs in the generation process, so the cause is the
+          // refusal rebuilt across two process boundaries: the same class,
+          // name and message, not the same object.
+          assert.ok(error.cause instanceof Error);
+          assert.equal(Object.getPrototypeOf(error.cause), Error.prototype);
+          assert.equal(error.cause.name, refusal.name);
+          assert.equal(error.cause.message, refusal.message);
           return true;
         },
       );
@@ -609,12 +615,12 @@ void test('a broken non-core bundle is quarantined and the others still serve', 
               reasons.some(({ code }) => code === 'invalid_manifest'),
           ),
       );
-      assert.ok(!bundles.catalog.tools.some(({ name }) => name === 'git'));
+      assert.ok(!bundles.catalog().tools.some(({ name }) => name === 'git'));
       assert.ok(
-        bundles.catalog.tools.some(({ name }) => name === 'thread-spawn'),
+        bundles.catalog().tools.some(({ name }) => name === 'thread-spawn'),
       );
       assert.ok(
-        !bundles.catalog.skills.some(({ name }) => name.startsWith('git-')),
+        !bundles.catalog().skills.some(({ name }) => name.startsWith('git-')),
       );
     } finally {
       await bundles.platform.stop();

@@ -15,6 +15,7 @@ export {
   type CallFactoryInput,
   createHopCall,
   deadlineOf,
+  generationOf,
 } from './call.js';
 export {
   type CatalogCandidate,
@@ -47,6 +48,7 @@ export {
   DiagnosticsStore,
 } from './diagnostics.js';
 export {
+  type Directory,
   type ProviderListener,
   type ProviderRecord,
   ServiceDirectory,
@@ -55,18 +57,28 @@ export {
   createStub,
   type DispatchTarget,
   dispatch,
+  isRegistrationConflict,
   isTupleSchema,
   normalizeArguments,
 } from './dispatch.js';
 export { createHooksFacade } from './facades.js';
 export {
+  type ContractDocument,
   canonicalJson,
+  contractDocument,
+  JSON_SCHEMA_DIALECT,
   jsonEqual,
+  LOCAL_KEY,
+  type LocalCodecKind,
+  localCodecKinds,
   localMarker,
   type MemberSchema,
   memberSchema,
+  type RecordedContract,
   type SchemaDirection,
+  schemaPath,
 } from './json-schema.js';
+export { LayeredDirectory } from './layered-directory.js';
 export {
   type ContractEntry,
   convertV0,

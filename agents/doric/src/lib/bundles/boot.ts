@@ -2,15 +2,22 @@ import { join } from 'node:path';
 
 import {
   type EmbeddedBundle,
-  type HostPlatform,
+  type ExecutionRef,
+  type KernelPlatform,
   type LogSink,
   type PlatformLog,
   type Skill,
-  startHost,
+  startKernel,
 } from 'bundle';
-import { SkillsV1, ToolsV1 } from 'bundle/contracts';
+import {
+  type Call,
+  type CallScope,
+  type RegisteredTool,
+  SkillsV1,
+  ToolsV1,
+} from 'bundle/contracts';
 import type { Logger } from 'pino';
-import { type BoundTool, isBoundTool } from 'tool';
+import { type BoundTool, isBoundTool, ToolErrorObject } from 'tool';
 
 import type { HostAdapter } from './adapter.js';
 
@@ -20,9 +27,29 @@ export interface BundleCatalog {
   readonly skills: readonly Skill[];
 }
 
+/**
+ * One prompt run pinned to a bundle generation: the call its tools run under
+ * and the tools and skills that generation registered. The run keeps it until
+ * it ends or pauses, so a published generation never changes a running prompt.
+ */
+export interface BundleLease {
+  readonly generation: number;
+  readonly call: (scope: CallScope, signal: AbortSignal) => Call;
+  readonly tools: (call: Call) => readonly BoundTool[];
+  readonly skills: (call: Call) => Promise<readonly Skill[]>;
+  /** Idempotent. */
+  release(): void;
+}
+
 export interface Bundles {
-  readonly platform: HostPlatform;
-  readonly catalog: BundleCatalog;
+  readonly platform: KernelPlatform;
+  /** The tools and skills of the active generation, for configuration and GET /tools. */
+  readonly catalog: () => BundleCatalog;
+  /** Pins one prompt run to the active generation, waiting (abortably) for one. */
+  readonly acquire: (
+    execution: ExecutionRef,
+    signal: AbortSignal,
+  ) => Promise<BundleLease>;
   /** Installed bundles the host activated. */
   readonly bundleCount: number;
 }
@@ -82,12 +109,21 @@ const platformLog = (logger: Logger): PlatformLog => ({
   error: (fields, message) => logger.error(fields, message),
 });
 
+const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
+  tools.map(({ tool }) => {
+    if (!isBoundTool(tool))
+      throw new TypeError(
+        `Tool "${tool.name}" was not defined with defineTool.`,
+      );
+    return tool;
+  });
+
 /**
- * Boots the host's bundles: the installed bundles below `bundlesPath`, the
- * composition at `compositionPath`, the embedded host adapter and any further
- * embedded bundles. Activation opens no database. It returns
- * the platform and the tools and skills the Direct agent binds on every
- * prompt, read once, because bundles never change while the process runs.
+ * Boots the host's bundles through the kernel: the foundation, the core and the
+ * embedded bundles (the host adapter and any further ones) run in this
+ * process, and the installed bundles run in a generation process the kernel
+ * forks. Activation opens no database. It returns the platform, the catalog of
+ * the active generation and how a prompt pins itself to one.
  */
 export const startBundles = async ({
   bundlesPath,
@@ -96,12 +132,13 @@ export const startBundles = async ({
   embedded = [],
   logger,
 }: StartBundlesOptions): Promise<Bundles> => {
-  const platform = await startHost({
+  const platform = await startKernel({
     bundlesPath,
     composition: { path: compositionPath },
     embedded: [adapter.bundle, ...embedded],
     log: platformLog(logger.child({ component: 'platform' })),
     sink: pinoSink(logger.child({ component: 'bundles' })),
+    errorClasses: [ToolErrorObject],
   });
 
   if (platform.mode === 'recovery') {
@@ -111,19 +148,41 @@ export const startBundles = async ({
     throw new BundleRecoveryError(reason);
   }
 
-  const tools = platform.services
-    .use(ToolsV1)
-    .list()
-    .map(({ tool }) => {
-      if (!isBoundTool(tool))
-        throw new TypeError(
-          `Tool "${tool.name}" was not defined with defineTool.`,
-        );
-      return tool;
-    });
-  const skills = (await platform.services.use(SkillsV1).list()).map(
-    ({ skill }) => skill,
-  );
+  const tools = platform.services.use(ToolsV1);
+  const skillsOf = async (call?: Call): Promise<readonly Skill[]> => {
+    const skills = platform.services.use(SkillsV1);
+    // An explicit `undefined` would be one argument more than `list` accepts.
+    const listed = await (call === undefined
+      ? skills.list()
+      : skills.list(call));
+
+    return listed.map(({ skill }) => skill);
+  };
+  // Skills are read asynchronously, so the active generation's are kept from
+  // the moment it became active; tools are read on every call.
+  let skills: {
+    readonly generation: number;
+    readonly skills: readonly Skill[];
+  };
+  try {
+    skills = { generation: platform.generation, skills: await skillsOf() };
+  } catch (error) {
+    await platform.stop();
+    throw error;
+  }
+
+  platform.generations.onActive((generation) => {
+    void skillsOf(platform.call({ generation })).then(
+      (value) => {
+        if (generation >= skills.generation)
+          skills = { generation, skills: value };
+      },
+      (error: unknown) => {
+        logger.error({ err: error, generation }, 'Bundle skills unreadable');
+      },
+    );
+  });
+
   const installed = new Set(
     platform
       .catalog()
@@ -136,7 +195,56 @@ export const startBundles = async ({
 
   return {
     platform,
-    catalog: { tools, skills },
+    catalog: () => ({ tools: boundTools(tools.list()), skills: skills.skills }),
+    acquire: async (execution, signal) => {
+      const lease = await platform.generations.acquire(execution, signal);
+
+      return {
+        generation: lease.generation,
+        call: (scope, callSignal) => lease.call({ scope, signal: callSignal }),
+        tools: (call) => boundTools(tools.list(call)),
+        skills: (call) => skillsOf(call),
+        release: () => lease.release(),
+      };
+    },
     bundleCount: installed.size,
+  };
+};
+
+/** What the workspace does when a generation process exits under its prompts. */
+export interface GenerationLossHandler {
+  suspendForGenerationLoss(executions: readonly ExecutionRef[]): void;
+  resumeAfterGenerationLoss(): Promise<void>;
+}
+
+/**
+ * Wires the workspace to the kernel's generations: a generation process that
+ * exits under running prompts pauses them, as a host crash would, and the
+ * active generation takes them up again — at once when the lost one was
+ * draining, otherwise once its respawn is active. Returns the unsubscriber.
+ */
+export const recoverGenerationLoss = (
+  generations: KernelPlatform['generations'],
+  handler: GenerationLossHandler,
+): (() => void) => {
+  const lost = generations.onLost((value) => {
+    handler.suspendForGenerationLoss(value.executions);
+    if (
+      generations
+        .describe()
+        .some(
+          ({ generation, state }) =>
+            state === 'active' && generation !== value.generation,
+        )
+    )
+      void handler.resumeAfterGenerationLoss();
+  });
+  const active = generations.onActive(() => {
+    void handler.resumeAfterGenerationLoss();
+  });
+
+  return () => {
+    lost();
+    active();
   };
 };

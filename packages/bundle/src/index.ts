@@ -68,6 +68,28 @@ export {
   parseSkillDocument,
   readSkill,
 } from './loader/skills.js';
+export { ajvValidators } from './process/ajv.js';
+export {
+  defaultRunnerPath,
+  type ExecutionRef,
+  forkGeneration,
+  type GenerationLease,
+  type GenerationManager,
+  type GenerationSummary,
+  type KernelPlatform,
+  type LostGeneration,
+  type PublishResult,
+  type SpawnedGeneration,
+  type StartKernelOptions,
+  startKernel,
+} from './process/kernel.js';
+export { childTransport, parentTransport } from './process/node-transport.js';
+export {
+  type HostPartition,
+  isKernelResident,
+  kernelSignature,
+  partitionCatalog,
+} from './process/partition.js';
 export type {
   CatalogEntry,
   Composition,
@@ -87,6 +109,14 @@ export {
   PLATFORM_VERSION,
   resolveEnvironment,
 } from './runtime/index.js';
+export {
+  AnnouncingDirectory,
+  type GenerationInit,
+  generationInitSchema,
+  type RunnerOptions,
+  runGeneration,
+  type SerializedCatalogEntry,
+} from './runtime/runner.js';
 export {
   createTestServices,
   type TestServices,

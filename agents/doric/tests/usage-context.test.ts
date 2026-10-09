@@ -42,7 +42,6 @@ const generation = (ids = ['router'], offline = false): Generation => ({
       } as unknown as LlmProvider,
     ]),
   ),
-  catalog: { skills: [], tools: [] },
   redactions: () => [],
 });
 

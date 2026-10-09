@@ -10,12 +10,15 @@ import {
   decisionSchema,
   defineMethod,
   defineService,
+  generationOf,
   type HooksContract,
   HooksV1,
   hooksMethods,
   isPlatformContract,
   type Services,
 } from 'bundle/contracts';
+
+import { seenBy, viewOf } from './partition.js';
 
 /** How long one hook handler may run before the chain moves on. */
 export const DEFAULT_HOOK_DEADLINE_MS = 10_000;
@@ -31,6 +34,8 @@ export interface HooksOptions {
 interface Registration {
   readonly bundleId: string;
   readonly seq: number;
+  /** The generation partition of the registering call (D4-11). */
+  readonly generation: number;
   readonly handler: AnyHookHandler;
 }
 
@@ -47,6 +52,7 @@ interface Waiter {
 interface ContractState {
   owner?: string;
   contract?: HooksContract;
+  /** Shared by every generation's state of the same contract ID. */
   readonly handlers: Map<string, Registration[]>;
   readonly waiters: Set<Waiter>;
 }
@@ -119,16 +125,36 @@ const abortable = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
 export const createHooks = (options: HooksOptions = {}) => {
   const deadlineMs = options.deadlineMs ?? DEFAULT_HOOK_DEADLINE_MS;
   const states = new Map<string, ContractState>();
+  /** Handlers by contract ID; each carries its generation (D4-11). */
+  const handlerMaps = new Map<string, Map<string, Registration[]>>();
   /** Registrations made while a `whenDefined` callback runs, synchronously. */
   let collecting: Set<Registration> | undefined;
   let seq = 0;
 
-  const stateOf = (id: string): ContractState => {
-    let state = states.get(id);
+  const handlersOf = (id: string): Map<string, Registration[]> => {
+    let handlers = handlerMaps.get(id);
+
+    if (handlers === undefined) {
+      handlers = new Map();
+      handlerMaps.set(id, handlers);
+    }
+
+    return handlers;
+  };
+
+  /**
+   * The definition state of a contract in one generation: a bundle hooks
+   * contract has one per `(id, generation)`, so two generations of the same
+   * owner never collide; a platform (`doric.*`) contract has one shared state.
+   */
+  const stateOf = (id: string, generation: number): ContractState => {
+    const key =
+      isPlatformContract(id) || generation === 0 ? id : `${id}@@${generation}`;
+    let state = states.get(key);
 
     if (state === undefined) {
-      state = { handlers: new Map(), waiters: new Set() };
-      states.set(id, state);
+      state = { handlers: handlersOf(id), waiters: new Set() };
+      states.set(key, state);
     }
 
     return state;
@@ -223,7 +249,7 @@ export const createHooks = (options: HooksOptions = {}) => {
         } else {
           const bundle = services
             .use(DoricCatalogV1)
-            .get()
+            .get(call)
             .bundles.find(({ id }) => id === owner);
 
           if (
@@ -238,7 +264,7 @@ export const createHooks = (options: HooksOptions = {}) => {
           }
         }
 
-        const state = stateOf(contract.id);
+        const state = stateOf(contract.id, generationOf(call));
 
         if (state.owner !== undefined && state.owner !== owner) {
           throw new ContractError(
@@ -269,10 +295,12 @@ export const createHooks = (options: HooksOptions = {}) => {
       input: hooksMethods.register.input,
       output: hooksMethods.register.output,
       execute: ([contract, hook, handler], call) => {
-        const state = stateOf(contract.id);
+        const generation = generationOf(call);
+        const state = stateOf(contract.id, generation);
         const entry: Registration = {
           bundleId: call.caller.bundleId,
           seq: seq++,
+          generation,
           handler,
         };
 
@@ -285,8 +313,8 @@ export const createHooks = (options: HooksOptions = {}) => {
     whenDefined: defineMethod({
       input: hooksMethods.whenDefined.input,
       output: hooksMethods.whenDefined.output,
-      execute: ([contract, callback]) => {
-        const state = stateOf(contract.id);
+      execute: ([contract, callback], call) => {
+        const state = stateOf(contract.id, generationOf(call));
         const waiter: Waiter = {
           callback,
           ran: false,
@@ -344,15 +372,17 @@ export const createHooks = (options: HooksOptions = {}) => {
           );
         }
 
-        const order = services.use(DoricCatalogV1).get().order;
+        const order = services.use(DoricCatalogV1).get(call).order;
         const rank = (bundleId: string) =>
           bundleId === 'doric' ? -1 : order.indexOf(bundleId);
-        const handlers = [
-          ...(stateOf(contract.id).handlers.get(hook) ?? []),
-        ].sort(
-          (left, right) =>
-            rank(left.bundleId) - rank(right.bundleId) || left.seq - right.seq,
-        );
+        const view = viewOf(call, services);
+        const handlers = (handlersOf(contract.id).get(hook) ?? [])
+          .filter((entry) => seenBy(entry.generation, view))
+          .sort(
+            (left, right) =>
+              rank(left.bundleId) - rank(right.bundleId) ||
+              left.seq - right.seq,
+          );
         const limit =
           contract.id === WINDOW_HOOKS
             ? hook === 'onCloseHook'

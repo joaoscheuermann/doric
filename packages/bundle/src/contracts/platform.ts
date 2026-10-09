@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { MethodSpecs } from './basic/common.js';
+import { disposableSchema, type MethodSpecs } from './basic/common.js';
 import type { Keybinding, MenuItem } from './basic/menus.js';
 import { keybindingSchema, menuItemSchema } from './basic/menus.js';
 import {
@@ -10,6 +10,7 @@ import {
 import type { OpenWindowRequest } from './basic/windows.js';
 import { openWindowRequestSchema } from './basic/windows.js';
 import type { CallArg, Caller, CallScope } from './call.js';
+import type { Disposable } from './context.js';
 import { defineHook, definePlatformHooks, ref } from './define.js';
 import type { Environment } from './ids.js';
 
@@ -72,6 +73,8 @@ export const quarantineCodes = [
   'activate_failed',
   'registration_failed',
   'skill_invalid',
+  'generation_failed',
+  'kernel_requires_generation',
 ] as const;
 
 export type QuarantineCode = (typeof quarantineCodes)[number];
@@ -425,6 +428,51 @@ export interface DoricTokens {
   get(call?: CallArg): Promise<Readonly<Record<string, string>>>;
 }
 
+/** One execution a generation keeps running (a prompt of a Thread). */
+export interface ExecutionRef {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+}
+
+export const executionRefSchema = z
+  .object({
+    projectId: z.string(),
+    threadId: z.string(),
+    promptId: z.string(),
+  })
+  .strict();
+
+export type GenerationState =
+  | 'starting'
+  | 'active'
+  | 'draining'
+  | 'stopped'
+  | 'failed';
+
+export interface GenerationDescription {
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly state: GenerationState;
+}
+
+export const generationDescriptionSchema = z
+  .object({
+    generation: z.number().int(),
+    incarnation: z.number().int(),
+    state: z.enum(['starting', 'active', 'draining', 'stopped', 'failed']),
+  })
+  .strict();
+
+/**
+ * API mínima: the bundle generation of the caller's operation. A hold keeps
+ * that generation alive (draining) until it is disposed.
+ */
+export interface DoricGeneration {
+  describe(call?: CallArg): Promise<GenerationDescription>;
+  hold(execution: ExecutionRef, call?: CallArg): Disposable;
+}
+
 export const DoricCatalogV1 = ref<DoricCatalog>('doric.catalog/v1');
 export const DoricDiagnosticsV1 = ref<DoricDiagnostics>('doric.diagnostics/v1');
 export const DoricBundleV1 = ref<DoricBundle>('doric.bundle/v1');
@@ -433,6 +481,7 @@ export const DoricWindowsV1 = ref<DoricWindows>('doric.windows/v1');
 export const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 export const DoricCacheV1 = ref<DoricCache>('doric.cache/v1');
 export const DoricTokensV1 = ref<DoricTokens>('doric.tokens/v1');
+export const DoricGenerationV1 = ref<DoricGeneration>('doric.generation/v1');
 
 const noInput = z.tuple([]);
 
@@ -499,6 +548,13 @@ export const platformContracts = Object.freeze({
   'doric.cache/v1': {
     environments: ['desktopMain'],
     methods: { directory: { input: noInput, output: z.string() } },
+  },
+  'doric.generation/v1': {
+    environments: ['host'],
+    methods: {
+      describe: { input: noInput, output: generationDescriptionSchema },
+      hold: { input: executionRefSchema, output: disposableSchema },
+    },
   },
   'doric.tokens/v1': {
     environments: ['client', 'desktopMain'],

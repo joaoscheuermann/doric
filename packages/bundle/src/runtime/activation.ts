@@ -5,6 +5,7 @@ import { isContractError } from '../contracts/error.js';
 import { AppHooksV1, type QuarantineCode } from '../contracts/platform.js';
 import type { CatalogEntry, ResolvedEnvironment } from './catalog.js';
 import type { DiagnosticsStore } from './diagnostics.js';
+import { isRegistrationConflict } from './dispatch.js';
 import { parseContractEntry } from './manifest.js';
 import type {
   ContractCatalogView,
@@ -132,6 +133,31 @@ export interface ActivationOptions {
   ) => Promise<void>;
   /** Extra platform definitions once the hooks/v1 provider is active. */
   readonly onHooksProviderReady?: (platform: Principal) => void | Promise<void>;
+  /**
+   * Bundles already active elsewhere in this environment (another process);
+   * they satisfy the dependency check. Default: none.
+   */
+  readonly preActive?: readonly string[];
+  /**
+   * `remote`: hooks/v1 is provided outside this loop, so AppHooksV1 is
+   * defined before the first bundle and every bundle is observed. Default
+   * `local`: AppHooksV1 is defined once the hooks/v1 provider activates.
+   */
+  readonly hooksProvider?: 'local' | 'remote';
+  /**
+   * Waits for the bundle's pending registrations; runs after `activate` and
+   * again after `afterActivate`. A rejection quarantines the bundle with the
+   * code the same refusal raised in-process would have produced.
+   */
+  readonly settle?: (
+    entry: CatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
+  /**
+   * Runs once a bundle's principal exists, before its part loads (the
+   * envelope needs it to scope callbacks the bundle exports).
+   */
+  readonly onPrincipal?: (entry: CatalogEntry, principal: Principal) => void;
   readonly log?: PlatformLog;
   readonly now?: () => number;
 }
@@ -173,10 +199,13 @@ export const activateEnvironment = async (
       .filter(({ state }) => state === 'scheduled')
       .map((entry) => [entry.id, entry]),
   );
-  const hooksProvider = resolved.contracts.find(({ id }) => id === 'hooks/v1')
-    ?.providers[0]?.bundleId;
+  const hooksProvider =
+    options.hooksProvider === 'remote'
+      ? undefined
+      : resolved.contracts.find(({ id }) => id === 'hooks/v1')?.providers[0]
+          ?.bundleId;
   const active: ActiveBundle[] = [];
-  const activeIds = new Set<string>();
+  const activeIds = new Set<string>(options.preActive ?? []);
   const principals = new Map<string, Principal>();
   let appHooks: HookHandle<typeof AppHooksV1> | undefined;
   const lifecycle = (entry: CatalogEntry) => ({
@@ -192,6 +221,24 @@ export const activateEnvironment = async (
       message: messageOf(error),
       ...(details === undefined ? {} : { details }),
     });
+  if (options.hooksProvider === 'remote') {
+    try {
+      appHooks = platform.services.use(HooksV1).define(AppHooksV1);
+    } catch (error) {
+      reportPlatform('app_hooks_failed', error);
+    }
+  }
+
+  const settleFailureCode = (
+    principal: Principal,
+    error: unknown,
+  ): QuarantineCode => {
+    if (isRegistrationConflict(error)) {
+      principal.noteRegistrationError(error);
+    }
+
+    return activateFailureCode(principal, error);
+  };
   const fail = (entry: CatalogEntry, code: QuarantineCode, message: string) => {
     diagnostics.quarantine(entry.id, { code, message });
     log?.warn(
@@ -240,6 +287,8 @@ export const activateEnvironment = async (
     );
     let cleanup: Cleanup | undefined;
 
+    options.onPrincipal?.(entry, principal);
+
     try {
       let part: Activate | undefined;
 
@@ -271,9 +320,22 @@ export const activateEnvironment = async (
         }
       }
 
+      if (options.settle !== undefined) {
+        try {
+          await options.settle(entry, principal);
+        } catch (error) {
+          throw new ActivationFailure(
+            settleFailureCode(principal, error),
+            messageOf(error),
+            { cause: error },
+          );
+        }
+      }
+
       if (options.afterActivate !== undefined) {
         try {
           await options.afterActivate(entry, principal);
+          await options.settle?.(entry, principal);
         } catch (error) {
           throw new ActivationFailure(
             codeOf(error, 'registration_failed'),

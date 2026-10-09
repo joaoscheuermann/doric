@@ -9,13 +9,21 @@ import {
   ToolsV1,
 } from 'bundle/contracts';
 
+import { collidesIn, seenBy, viewOf } from './partition.js';
+
+interface Entry {
+  readonly generation: number;
+  readonly registered: RegisteredSkill;
+}
+
 /**
  * The core's `skills/v1`: canonical skill records (decoded by SkillSchema) in
  * bundle order, with unique names and `allowed-tools` resolved only against
- * the tools the same bundle registered.
+ * the tools the same bundle registered, all within one generation view
+ * (D4-11): the kernel partition plus one generation.
  */
 export const createSkills = () => {
-  const registered: RegisteredSkill[] = [];
+  const registered: Entry[] = [];
 
   return defineService(SkillsV1, {
     register: defineMethod({
@@ -23,9 +31,12 @@ export const createSkills = () => {
       output: skillsMethods.register.output,
       execute: ([skill, options], call, services): Disposable => {
         const bundleId = call.caller.bundleId;
+        const view = viewOf(call, services);
         const taken = registered.find(
-          (entry) => entry.skill.name === skill.name,
-        );
+          (entry) =>
+            entry.registered.skill.name === skill.name &&
+            collidesIn(entry.generation, view),
+        )?.registered;
 
         if (taken !== undefined) {
           throw new ContractError(
@@ -37,7 +48,7 @@ export const createSkills = () => {
         const local = new Set(
           services
             .use(ToolsV1)
-            .list()
+            .list(call)
             .filter((entry) => entry.bundleId === bundleId)
             .map((entry) => entry.tool.name),
         );
@@ -51,11 +62,14 @@ export const createSkills = () => {
           }
         }
 
-        const entry: RegisteredSkill = Object.freeze({
-          bundleId,
-          alwaysAvailable: options?.alwaysAvailable ?? false,
-          skill,
-        });
+        const entry: Entry = {
+          generation: view.generation,
+          registered: Object.freeze({
+            bundleId,
+            alwaysAvailable: options?.alwaysAvailable ?? false,
+            skill,
+          }),
+        };
 
         registered.push(entry);
 
@@ -81,10 +95,14 @@ export const createSkills = () => {
     list: defineMethod({
       input: skillsMethods.list.input,
       output: skillsMethods.list.output,
-      execute: async () => {
+      execute: async (_input, call, services) => {
         await Promise.resolve();
 
-        return [...registered];
+        const view = viewOf(call, services);
+
+        return registered
+          .filter((entry) => seenBy(entry.generation, view))
+          .map((entry) => entry.registered);
       },
     }),
   });

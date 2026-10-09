@@ -4,6 +4,7 @@ import {
   type EventDefinition,
 } from 'bundle/contracts';
 
+import { collidesIn, seenBy, type View } from '../partition.js';
 import { once } from '../state.js';
 
 /** One registered event type and the bundle that owns it. */
@@ -13,21 +14,31 @@ export interface EventEntry {
 }
 
 export interface EventRegistry {
-  /** The registered type, or `unknown_event`. */
-  require(type: string): EventEntry;
-  register(definition: EventDefinition, owner: string): Disposable;
+  /** The type as `view` sees it, or `unknown_event`. */
+  require(type: string, view: View): EventEntry;
+  /** Registers a type for its owner in the partition of `view`. */
+  register(definition: EventDefinition, owner: string, view: View): Disposable;
+}
+
+interface Slot {
+  readonly entry: EventEntry;
+  readonly generation: number;
 }
 
 /**
- * The facade's event types by ID. Stage 4 partitions the entries by
- * generation (D4-11); in one process every entry belongs to generation 0.
+ * The facade's event types by `(ID, generation)` (D4-11): the same owner may
+ * register the same type once per generation, and disposing one generation's
+ * type never removes another's. In one process every entry belongs to
+ * generation 0.
  */
 export const createEventRegistry = (): EventRegistry => {
-  const events = new Map<string, EventEntry>();
+  const events = new Map<string, Slot[]>();
 
   return {
-    require: (type) => {
-      const entry = events.get(type);
+    require: (type, view) => {
+      const entry = events
+        .get(type)
+        ?.find((slot) => seenBy(slot.generation, view))?.entry;
 
       if (entry === undefined) {
         throw new ContractError(
@@ -39,24 +50,34 @@ export const createEventRegistry = (): EventRegistry => {
 
       return entry;
     },
-    register: (definition, owner) => {
-      const current = events.get(definition.type);
+    register: (definition, owner, view) => {
+      const list = events.get(definition.type) ?? [];
+      const current = list.find((slot) => collidesIn(slot.generation, view));
 
       if (current !== undefined) {
         throw new ContractError(
           'registration_conflict',
-          `Event ${definition.type} is already registered by "${current.owner}".`,
-          { type: definition.type, owner: current.owner },
+          `Event ${definition.type} is already registered by "${current.entry.owner}".`,
+          { type: definition.type, owner: current.entry.owner },
         );
       }
 
-      const entry: EventEntry = { definition, owner };
+      const slot: Slot = {
+        entry: { definition, owner },
+        generation: view.generation,
+      };
 
-      events.set(definition.type, entry);
+      events.set(definition.type, [...list, slot]);
 
       return once(() => {
-        if (events.get(definition.type) === entry) {
+        const remaining = (events.get(definition.type) ?? []).filter(
+          (item) => item !== slot,
+        );
+
+        if (remaining.length === 0) {
           events.delete(definition.type);
+        } else {
+          events.set(definition.type, remaining);
         }
       });
     },

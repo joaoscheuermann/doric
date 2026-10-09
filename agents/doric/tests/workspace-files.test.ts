@@ -333,7 +333,11 @@ const serve = async (overrides: Partial<WorkspaceService['projects']> = {}) => {
     throw new Error('Unexpected core service access');
   };
   registerHttpRoutes(app, {
-    config: { current: unsupported, replace: unsupported },
+    config: {
+      current: unsupported,
+      catalog: unsupported,
+      replace: unsupported,
+    },
     credentials: credentialResolver(),
     logger: { warn: () => undefined } as never,
     service,

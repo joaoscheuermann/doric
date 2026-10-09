@@ -17,18 +17,16 @@ export interface Generation {
   readonly snapshot: DoricConfig;
   readonly providers: ReadonlyMap<string, LlmProvider>;
   readonly redactions: () => readonly string[];
-  readonly catalog: Catalog;
 }
 
 interface GenerationOptions {
   readonly snapshot: DoricConfig;
   readonly credentials: CredentialService;
-  readonly catalog: Catalog;
   readonly logger: Logger;
 }
 
 /**
- * Builds the providers and catalog of one configuration. Each provider is built
+ * Builds the providers of one configuration. Each provider is built
  * from the kind it names and that kind's own values, and a `secret` value is
  * passed as a source rather than a value, so the key is read from the credential
  * store on every call and a rotation reaches a prompt that is already running.
@@ -36,7 +34,6 @@ interface GenerationOptions {
 export const createGeneration = ({
   snapshot,
   credentials,
-  catalog,
   logger,
 }: GenerationOptions): Promise<Generation> => {
   const providers = new Map(
@@ -61,7 +58,6 @@ export const createGeneration = ({
     // tool result, or log line can carry one, and a rotation is covered the
     // moment the store holds it.
     redactions: () => credentials.secrets(),
-    catalog,
   });
 };
 

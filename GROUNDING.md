@@ -669,7 +669,8 @@ serving; a core that cannot activate puts the host in recovery mode, which in
 stage 1 ends in the existing fatal startup path after logging `Bundle recovery
 mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
-Doric reads `tools/v1` and `skills/v1` once after boot; `Bundles loaded`
+Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
+and for each prompt; `Bundles loaded`
 reports the activated installed bundles (five in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, the startup stages run as `bootstrap`,
@@ -681,6 +682,28 @@ unreadable envelope still fails here), `configuration_activation`,
 `workspace_reconciliation`, `network_binding` and `ready`. At shutdown the
 database disconnects inside the platform's stop, after the workspace service
 is disposed and before the sandbox pool is.
+Migration stage 4 ("Processos de geração") implements the approved
+multi-process scope of HC-003 for the host. The Doric process is the kernel: it
+runs the foundation, the core, every embedded bundle and the platform (catalog,
+diagnostics, dispatcher, generation manager). The installed other bundles
+(`files`, `git`, `threads`) activate in one Node `child_process.fork` per bundle
+generation, through `startKernel` and the runner of `packages/bundle`, and the
+two processes call each other's services through one RPC envelope; the tools
+of those bundles execute in the generation process. Each prompt holds a lease
+on the generation that was active when it started and keeps that generation's
+tools and skills until it ends. A kernel-internal `publish` activates a new
+generation, switches new prompts to it and drains the old one until its leases
+end; a change to the kernel partition is refused with
+`kernel_restart_required`. The child ignores SIGINT and SIGTERM and exits when
+the kernel disconnects. When a generation process crashes, its pending calls
+fail with `generation_lost` and record no `tool.failed`; the prompts pinned to
+it pause with `host_restarted`, their Threads hold their queues, and they
+resume with the boot's attempt budget and order once the respawned process
+(same generation number, next incarnation) or the active generation is ready.
+After three failed starts the generation's bundles are quarantined with
+`generation_failed` and the host keeps serving with an empty tool catalog.
+There is no external trigger for a new generation in stage 4, and no Prisma
+schema change.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
@@ -1527,7 +1550,8 @@ optimistic send even before the input is dispatched. Live replay and reload
 produce the same chronological view.
 `prompt.paused` carries the reason an interruption left the prompt unfinished —
 `host_stopped` when the host stopped, `host_restarted` when a restart was only
-discovered at the next boot, `reader_stopped` when the reader stopped the run —
+discovered at the next boot or when the bundle generation process running the
+prompt's tools crashed, `reader_stopped` when the reader stopped the run —
 and `prompt.resumed` carries the attempt number of a prompt the host took up
 again. An interrupted prompt is resumed from the provider history persisted as
 the run advanced, so it continues where it stopped, and an attempt budget counted

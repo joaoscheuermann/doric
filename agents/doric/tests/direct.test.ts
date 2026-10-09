@@ -311,7 +311,15 @@ const directHarness = (
     },
   }).bind(bundle.services);
   const execute = createDirectExecutor({
-    call: (scope, signal) => bundle.call(scope, signal),
+    acquire: () =>
+      Promise.resolve({
+        generation: 1,
+        call: (scope, signal) => bundle.call(scope, signal),
+        tools: () => [inspect],
+        skills: () =>
+          Promise.resolve([skill('sandbox', 'Inspect before reporting.')]),
+        release: () => undefined,
+      }),
     // The run's Host and sandbox stay attached to its prompt until it ends.
     attach: (scope, binding) => {
       boundSandboxes.push(binding.sandbox.id);
@@ -368,10 +376,6 @@ const directHarness = (
     },
     providers: new Map([[configuration.models.execution.providerId, provider]]),
     redactions: () => [],
-    catalog: {
-      skills: [skill('sandbox', 'Inspect before reporting.')],
-      tools: [inspect],
-    },
   };
   const store = {
     find: async () => ({

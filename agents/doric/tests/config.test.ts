@@ -432,7 +432,6 @@ void test('builds every configured provider through the kind it names', async ()
   const generation = await createGeneration({
     snapshot: snapshot(configuration, 1),
     credentials: credentialResolver(() => [providerCredential]),
-    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -446,13 +445,11 @@ void test('redacts every stored secret from event values', async () => {
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials: credentialResolver(() => [providerCredential]),
-    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
   const unconfigured = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials: credentialResolver(),
-    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -474,7 +471,6 @@ void test('redacts a secret the credentials learned after the generation was bui
   const generation = await createGeneration({
     snapshot: snapshot(defaultConfig, 1),
     credentials,
-    catalog: { skills: [], tools: [] },
     logger: pino({ enabled: false }),
   });
 
@@ -580,13 +576,12 @@ const configHarness = async ({
       snapshot: current,
       providers: new Map(),
       redactions: () => [],
-      catalog: { skills: [], tools: [] },
     } satisfies Generation;
   };
   const service = await createConfigService({
     store,
     credentials: credentialResolver(() => stored),
-    catalog: { skills: [], tools: [] },
+    catalog: () => ({ skills: [], tools: [] }),
     logger: pino({ enabled: false }),
     buildGeneration: build,
     // The catalog reader has its own cases; this harness is about the store and

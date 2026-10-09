@@ -19,6 +19,8 @@ export interface ProviderRecord {
   readonly environment: Environment;
   readonly cardinality: Cardinality;
   readonly methods: Readonly<Record<string, MethodSpec>>;
+  /** Where the provider runs: in this process (default) or across the envelope. */
+  readonly origin?: 'local' | 'remote';
   invoke(method: string, input: unknown, call: Call): unknown;
 }
 
@@ -28,7 +30,19 @@ export interface ProviderListener {
 }
 
 /** Active providers per contract ID, with synchronous availability notifications. */
-export class ServiceDirectory {
+export interface Directory {
+  /** Registers a provider; returns its unregister function. */
+  register(record: ProviderRecord): () => void;
+  providers(contractId: string): readonly ProviderRecord[];
+  /** The active provider of a `one` contract (the first one for `many`). */
+  active(contractId: string): ProviderRecord | undefined;
+  isActive(record: ProviderRecord): boolean;
+  /** Subscribes to a contract; `added` runs now for every active provider. */
+  subscribe(contractId: string, listener: ProviderListener): () => void;
+}
+
+/** The plain in-memory directory of one process. */
+export class ServiceDirectory implements Directory {
   readonly #providers = new Map<string, ProviderRecord[]>();
   readonly #listeners = new Map<string, Set<ProviderListener>>();
 

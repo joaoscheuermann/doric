@@ -19,6 +19,7 @@ import {
   settingsType,
 } from '../../contracts/storage.js';
 import { describeIssues } from '../issues.js';
+import { viewOf } from '../partition.js';
 import { assertDefinitionOwner, type CoreState, once } from '../state.js';
 import { createSpaceRegistry, type SpaceEntry } from './registry.js';
 
@@ -126,7 +127,7 @@ export const createSettings = (state: CoreState) => {
     call: Call,
     services: Services,
   ): Promise<SettingsEntry> => {
-    const space = spaces.require(definition.id);
+    const space = spaces.require(definition.id, viewOf(call, services));
 
     return entryOf(space, await load(definition.id, services, call));
   };
@@ -225,7 +226,13 @@ export const createSettings = (state: CoreState) => {
       generation,
     };
 
-    for (const { bundleId, listener } of [...space.listeners]) {
+    // One document backs the space in every generation, so every live
+    // registration's subscribers hear the write (D4-11).
+    const listeners = spaces
+      .all(definition.id)
+      .flatMap((registered) => [...registered.listeners]);
+
+    for (const { bundleId, listener } of listeners) {
       try {
         listener(entry);
       } catch (error) {
@@ -248,7 +255,12 @@ export const createSettings = (state: CoreState) => {
           'settings',
         );
 
-        return spaces.register(definition, call.caller.bundleId, version);
+        return spaces.register(
+          definition,
+          call.caller.bundleId,
+          version,
+          viewOf(call, services),
+        );
       },
     }),
     get: defineMethod({
@@ -272,7 +284,7 @@ export const createSettings = (state: CoreState) => {
         call,
         services,
       ) => {
-        const space = spaces.require(definition.id);
+        const space = spaces.require(definition.id, viewOf(call, services));
 
         return await state.writes.run(() =>
           write(space, value, options, call, services),
@@ -287,8 +299,9 @@ export const createSettings = (state: CoreState) => {
           (entry: SettingsEntry) => void,
         ],
         call,
+        services,
       ) => {
-        const space = spaces.require(definition.id);
+        const space = spaces.require(definition.id, viewOf(call, services));
         const subscription = { bundleId: call.caller.bundleId, listener };
 
         space.listeners.add(subscription);

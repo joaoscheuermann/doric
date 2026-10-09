@@ -5,6 +5,7 @@ import type {
   ProviderRequest,
   ProviderStreamEvent,
 } from 'llms';
+import type { ToolCall } from 'tool';
 
 import { AgentErrorObject } from './classes/agent-error.js';
 import type {
@@ -163,8 +164,18 @@ export const createAgent = (options: AgentOptions): Agent => {
     for (const call of finish.toolCalls) pendingCalls.add(call.id);
   };
 
-  const validatedCalls = (finish: ProviderFinished<unknown>) =>
-    options.tools.calls(finish).map((call) => options.tools.validate(call));
+  /** Validates calls in order and stops at the first failure. */
+  const validatedCalls = async (
+    finish: ProviderFinished<unknown>,
+  ): Promise<ToolCall[]> => {
+    const calls: ToolCall[] = [];
+
+    for (const call of options.tools.calls(finish)) {
+      calls.push(await options.tools.validate(call));
+    }
+
+    return calls;
+  };
 
   return {
     complete: async <Output = JsonValue>(
@@ -276,9 +287,9 @@ export const createAgent = (options: AgentOptions): Agent => {
             return responseFromFinish(finish);
           }
 
-          let calls: ReturnType<typeof validatedCalls>;
+          let calls: Awaited<ReturnType<typeof validatedCalls>>;
           try {
-            calls = validatedCalls(finish);
+            calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
             if (invalidSubmissions >= maxRepairs) throw error;
@@ -442,9 +453,9 @@ export const createAgent = (options: AgentOptions): Agent => {
           if (finish.toolCalls.length > 0) baseline = undefined;
 
           /** A normalized terminal finish has no calls and completes the stream. */
-          let calls: ReturnType<typeof validatedCalls>;
+          let calls: Awaited<ReturnType<typeof validatedCalls>>;
           try {
-            calls = validatedCalls(finish);
+            calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
             if (invalidSubmissions >= maxRepairs) throw error;

@@ -19,7 +19,9 @@
         "$defs": {
           "capabilities.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "capabilities.output": {
             "type": "object",
@@ -311,7 +313,9 @@
           },
           "health.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "health.output": {
             "type": "object",
@@ -349,7 +353,9 @@
           },
           "identity.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "identity.output": {
             "type": "object",
@@ -657,7 +663,9 @@
           },
           "list.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "list.output": {
             "type": "array",
@@ -744,14 +752,18 @@
         "$defs": {
           "client.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "client.output": {
             "x-doric-local": true
           },
           "connect.input": {
             "type": "array",
-            "prefixItems": []
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
           },
           "connect.output": {}
         }

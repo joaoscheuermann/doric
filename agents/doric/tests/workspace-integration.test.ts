@@ -151,8 +151,8 @@ void test('delegates across isolated conversations sharing a real project sandbo
   const logger = pino({ level: 'silent' });
   const bundles = await defaultBundles();
   cleanup.defer(() => bundles.platform.stop());
-  assert.ok(bundles.catalog.tools.some(({ name }) => name === 'write'));
-  assert.ok(bundles.catalog.tools.some(({ name }) => name === 'terminal'));
+  assert.ok(bundles.catalog().tools.some(({ name }) => name === 'write'));
+  assert.ok(bundles.catalog().tools.some(({ name }) => name === 'terminal'));
   const config = await createConfigService({
     store: kernel.configs,
     credentials: credentialResolver(),

@@ -104,6 +104,10 @@ const registrationConflicts: ReadonlySet<string> = new Set([
   'contract_mismatch',
 ]);
 
+/** Whether `error` is a refusal a registration through services raises. */
+export const isRegistrationConflict = (error: unknown): boolean =>
+  isContractError(error) && registrationConflicts.has(error.code);
+
 export interface DispatchTarget {
   readonly contractId: string;
   readonly useScope?: CallScope;
@@ -172,6 +176,7 @@ export const dispatch = (
     useScope: target.useScope,
     arg: normalized.callArg,
     generationSignal: runtime.generationSignal,
+    defaultGeneration: runtime.operationGeneration ?? 0,
     now: runtime.now,
   });
   const settle = (value: unknown): unknown => {
@@ -193,7 +198,7 @@ export const dispatch = (
     return value;
   };
   const noteConflict = (error: unknown): never => {
-    if (isContractError(error) && registrationConflicts.has(error.code)) {
+    if (isRegistrationConflict(error)) {
       principal.noteRegistrationError(error);
     }
 

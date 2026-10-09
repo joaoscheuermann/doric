@@ -1,11 +1,12 @@
 import { createAgent, createToolCallStorage } from 'agent';
-import type { Skill } from 'bundle';
-import type { Call, CallScope } from 'bundle/contracts';
+import type { ExecutionRef, Skill } from 'bundle';
+import type { Call } from 'bundle/contracts';
 import type { ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
-import { createToolStorage } from 'tool';
+import { type BoundTool, createToolStorage, ToolErrorObject } from 'tool';
 
 import type { HostAdapter } from '../../bundles/adapter.js';
+import type { BundleLease } from '../../bundles/boot.js';
 import type { Generation } from '../../config/generation.js';
 import { providerFor } from '../../config/generation.js';
 import { resolveToolConfigs } from '../../config/tool-config.js';
@@ -109,9 +110,36 @@ const repaired = (
 const addedMessages = (value: { readonly type: string }): boolean =>
   value.type === 'response.finished' || value.type === 'tool.finished';
 
+/**
+ * Whether a failed tool call failed only because the generation process that
+ * ran it exited. The host aborts the run of every prompt pinned to that
+ * generation before the call rejects, so the failure is the crash itself, not
+ * something the tool did.
+ */
+const generationLost = (error: unknown): boolean => {
+  if (
+    !(error instanceof ToolErrorObject) ||
+    error.data.code !== 'handler_failed'
+  )
+    return false;
+  for (
+    let cause: unknown = error.cause;
+    cause instanceof Error;
+    cause = cause.cause
+  ) {
+    if ((cause as { code?: unknown }).code === 'generation_lost') return true;
+  }
+  return false;
+};
+
+export type { BundleLease } from '../../bundles/boot.js';
+
 export interface DirectExecutorOptions {
-  /** A platform `Call` for one prompt: its scope and its abort signal. */
-  readonly call: (scope: CallScope, signal: AbortSignal) => Call;
+  /** Pins the run to the active bundle generation and reads its tools and skills. */
+  readonly acquire: (
+    execution: ExecutionRef,
+    signal: AbortSignal,
+  ) => Promise<BundleLease>;
   /** Binds the prompt's Host and sandbox for the bundle contracts its tools use. */
   readonly attach: HostAdapter['attach'];
 }
@@ -144,20 +172,28 @@ export const createDirectExecutor =
       threadId: thread.id,
       promptId: job.id,
     };
-    const release = options.attach(scope, { host, sandbox });
+    const lease = await options.acquire(scope, signal);
     try {
-      return await run({
-        record,
-        job,
-        generation,
-        signal,
-        store,
-        publisher,
-        thread,
-        call: options.call(scope, signal),
-      });
+      const release = options.attach(scope, { host, sandbox });
+      try {
+        const call = lease.call(scope, signal);
+        return await run({
+          record,
+          job,
+          generation,
+          signal,
+          store,
+          publisher,
+          thread,
+          call,
+          tools: lease.tools(call),
+          skills: await lease.skills(call),
+        });
+      } finally {
+        release();
+      }
     } finally {
-      release();
+      lease.release();
     }
   };
 
@@ -170,6 +206,8 @@ const run = async ({
   publisher,
   thread,
   call,
+  tools,
+  skills,
 }: {
   readonly record: NonNullable<Awaited<ReturnType<ThreadStore['find']>>>;
   readonly job: PromptJob;
@@ -179,6 +217,8 @@ const run = async ({
   readonly publisher: WorkspacePublisher;
   readonly thread: Thread;
   readonly call: Call;
+  readonly tools: readonly BoundTool[];
+  readonly skills: readonly Skill[];
 }): Promise<string> => {
   const boundary = record.checkpoints[job.id];
   const resume = boundary !== undefined && record.messages.length > boundary;
@@ -216,23 +256,22 @@ const run = async ({
     provider: providerFor(generation, execution.providerId),
     model: execution.model,
     effort: execution.effort,
-    system: directSystemPrompt(generation.catalog.skills),
+    system: directSystemPrompt(skills),
     tools: createToolStorage(
       (() => {
         // Tool values reach tools through settings/v1 from stage 2; resolving
         // them here still refuses a prompt whose tool settings are unmet.
-        resolveToolConfigs(
-          generation.catalog.tools,
-          generation.snapshot.configuration,
-        );
+        resolveToolConfigs(tools, generation.snapshot.configuration);
 
-        return generation.catalog.tools.map((tool) => tool.toTool(call));
+        return tools.map((tool) => tool.toTool(call));
       })(),
     ),
     toolCalls: createToolCallStorage(),
     messages,
   });
   let text = '';
+  /** Set once the run's generation process was lost; see below. */
+  let lost = false;
   try {
     for await (const value of agent.stream(input(job), {
       resume,
@@ -241,6 +280,20 @@ const run = async ({
       maxToolResultChars:
         generation.snapshot.configuration.execution.maxToolResultChars,
     })) {
+      if (
+        value.type === 'tool.failed' &&
+        signal.aborted &&
+        generationLost(value.error)
+      ) {
+        // The generation process died under this tool call. The history is
+        // kept exactly as a host crash leaves it — the call without a result,
+        // which the resumed run answers with the interrupted-call result — so
+        // it is saved now, before the agent answers the call itself, and the
+        // failure is not recorded: the run pauses instead.
+        lost = true;
+        await save();
+        throw signal.reason;
+      }
       try {
         pendingEvent = eventJson(
           value.type === 'response.started'
@@ -262,6 +315,6 @@ const run = async ({
   } finally {
     // The run ended, so whatever it left — complete or partial — is the history
     // its Thread carries on with.
-    await save();
+    if (!lost) await save();
   }
 };

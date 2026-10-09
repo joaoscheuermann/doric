@@ -29,7 +29,7 @@ void test('executes delegated work through real Direct tools and resumes the par
   const generation = (harness.dependencies.config as ConfigService).current();
   const bundles = await defaultBundles();
   cleanup.defer(() => bundles.platform.stop());
-  const { tools } = bundles.catalog;
+  const { tools } = bundles.catalog();
   assert.ok(
     tools.some(({ name }) => name === 'thread-spawn'),
     'the threads bundle must supply thread-spawn',
@@ -77,7 +77,6 @@ void test('executes delegated work through real Direct tools and resumes the par
     config: {
       current: () => ({
         ...generation,
-        catalog: { skills: generation.catalog.skills, tools },
         providers: new Map([
           [
             generation.snapshot.configuration.models.execution.providerId,

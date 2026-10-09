@@ -3,7 +3,7 @@ import type { Services } from '../contracts/context.js';
 import type { Cardinality } from '../contracts/define.js';
 import type { Environment } from '../contracts/ids.js';
 import type { DiagnosticReport } from '../contracts/platform.js';
-import type { ServiceDirectory } from './directory.js';
+import type { Directory } from './directory.js';
 import { DisposalScope } from './scope.js';
 
 /** What the services runtime needs to know about the resolved catalog. */
@@ -21,10 +21,15 @@ export const emptyCatalogView: ContractCatalogView = Object.freeze({
 
 /** Shared state of one environment of one generation. */
 export interface ServiceRuntime {
-  readonly directory: ServiceDirectory;
+  readonly directory: Directory;
   readonly catalog: ContractCatalogView;
   readonly environment: Environment;
   readonly generation: number;
+  /**
+   * Generation calls without a parent are pinned to: 0 in the kernel and in
+   * single-process hosts, N in the process of generation N.
+   */
+  readonly operationGeneration?: number;
   /** Aborted when the generation ends; the default `call.signal`. */
   readonly generationSignal: AbortSignal;
   /** Records a failure against a bundle in diagnostics. */

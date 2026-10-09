@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Call } from '../call.js';
+import type { Call, CallArg } from '../call.js';
 import type { Disposable } from '../context.js';
 import { ref } from '../define.js';
 import type { Registrable } from '../registrable.js';
@@ -16,6 +16,17 @@ export interface ContractToolDefinition {
   readonly strict?: boolean;
 }
 
+/** One validation issue of a tool payload, as the model repair flow shows it. */
+export interface ToolIssueView {
+  readonly path: string;
+  readonly message: string;
+}
+
+/** Result of validating a tool payload with the tool's own schema. */
+export type ToolPayloadCheck =
+  | { readonly success: true; readonly data: unknown }
+  | { readonly success: false; readonly issues: readonly ToolIssueView[] };
+
 /** A tool as tools/v1 stores it: already bound to its registering bundle's services. */
 export interface ContractTool {
   readonly name: string;
@@ -25,6 +36,8 @@ export interface ContractTool {
   readonly definition: ContractToolDefinition;
   /** Configuration field metadata (the `tool` package's ConfigField); opaque here. */
   readonly settings: readonly object[];
+  /** Exact payload validation in the tool's own process; asynchronous only for remote tools. */
+  check?(payload: unknown): ToolPayloadCheck | Promise<ToolPayloadCheck>;
   execute(payload: unknown, call: Call): Promise<unknown>;
 }
 
@@ -44,8 +57,11 @@ export interface Tools {
     tool: Registrable<ContractTool>,
     options: ToolRegistrationOptions,
   ): Disposable;
-  /** Local. Registration order: bundle activation order, then call order. */
-  list(): readonly RegisteredTool[];
+  /**
+   * Local. Registration order: bundle activation order, then call order. The
+   * call picks the generation whose tools are listed (D4-11).
+   */
+  list(call?: CallArg): readonly RegisteredTool[];
 }
 
 export const ToolsV1 = ref<Tools>('tools/v1');

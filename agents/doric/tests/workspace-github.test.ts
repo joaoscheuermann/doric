@@ -74,7 +74,6 @@ const host = (
       updatedAt: new Date(0).toISOString(),
     },
     providers: new Map(),
-    catalog: { skills: [], tools: [] },
     redactions: () => [
       ...current.flatMap(({ secret }) => (secret ? [secret] : [])),
       ...registered,
@@ -90,6 +89,7 @@ const host = (
     ...harness.dependencies,
     config: {
       current: generation,
+      catalog: () => ({ skills: [], tools: [] }),
       replace: () => {
         throw new Error('Configuration is not replaced in this test');
       },

@@ -16,6 +16,9 @@ export const contractErrorCodes = [
   'duplicate_tool',
   'duplicate_skill',
   'unavailable_tool',
+  // process envelope
+  'generation_lost',
+  'protocol_error',
   // storage/v1 and storage.backend/v1
   'revision_conflict',
   'sequence_conflict',

@@ -122,7 +122,7 @@ void test('no host, platform or bundle log line carries a stored or applied secr
       const config = await createConfigService({
         store: kernel.configs,
         credentials: kernel.credentials,
-        catalog: { tools: [], skills: [] },
+        catalog: () => ({ tools: [], skills: [] }),
         logger,
       });
       const app = express();

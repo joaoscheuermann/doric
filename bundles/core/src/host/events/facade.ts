@@ -11,6 +11,7 @@ import {
 } from 'bundle/contracts';
 
 import { describeIssues } from '../issues.js';
+import { viewOf } from '../partition.js';
 import { redactJson } from '../redact.js';
 import { assertDefinitionOwner, type CoreState, PLATFORM } from '../state.js';
 import { createEventRegistry } from './registry.js';
@@ -38,7 +39,11 @@ export const createEvents = (state: CoreState) => {
           );
         }
 
-        return events.register(definition, call.caller.bundleId);
+        return events.register(
+          definition,
+          call.caller.bundleId,
+          viewOf(call, services),
+        );
       },
     }),
     append: defineMethod({
@@ -48,7 +53,7 @@ export const createEvents = (state: CoreState) => {
         call,
         services,
       ) => {
-        const entry = events.require(definition.type);
+        const entry = events.require(definition.type, viewOf(call, services));
         const caller = call.caller.bundleId;
 
         if (caller !== PLATFORM && caller !== entry.owner) {

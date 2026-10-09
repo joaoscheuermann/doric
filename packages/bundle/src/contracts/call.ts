@@ -41,6 +41,14 @@ export const callBrand: unique symbol = Symbol.for('doric.call');
 /** Non-enumerable property holding the call deadline (epoch ms, 0 = none). */
 export const callDeadline: unique symbol = Symbol.for('doric.call.deadline');
 
+/**
+ * Non-enumerable property holding the generation an operation is pinned to.
+ * Inherited along a call chain like the scope; 0 = kernel-originated, unpinned.
+ */
+export const callGeneration: unique symbol = Symbol.for(
+  'doric.call.generation',
+);
+
 export const isCall = (value: unknown): value is Call =>
   typeof value === 'object' &&
   value !== null &&
@@ -90,6 +98,13 @@ export const isCallOptions = (value: unknown): value is CallOptions => {
 /** The deadline of a runtime-created call (epoch ms), 0 when it has none. */
 export const deadlineOf = (call: Call): number => {
   const value = (call as { [callDeadline]?: unknown })[callDeadline];
+
+  return typeof value === 'number' ? value : 0;
+};
+
+/** The generation an operation is pinned to; 0 = kernel-originated, unpinned. */
+export const generationOf = (call: Call): number => {
+  const value = (call as { [callGeneration]?: unknown })[callGeneration];
 
   return typeof value === 'number' ? value : 0;
 };

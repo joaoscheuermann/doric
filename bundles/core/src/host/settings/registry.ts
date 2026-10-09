@@ -5,6 +5,7 @@ import {
   type SettingsEntry,
 } from 'bundle/contracts';
 
+import { collidesIn, seenBy, type View } from '../partition.js';
 import { once } from '../state.js';
 
 export interface Listener {
@@ -21,27 +22,42 @@ export interface SpaceEntry {
 }
 
 export interface SpaceRegistry {
-  get(id: string): SpaceEntry | undefined;
-  /** The registered space, or `unknown_settings`. */
-  require(id: string): SpaceEntry;
+  /** The space as `view` sees it: the kernel partition, then its generation. */
+  get(id: string, view: View): SpaceEntry | undefined;
+  /** The space as `view` sees it, or `unknown_settings`. */
+  require(id: string, view: View): SpaceEntry;
+  /** Every live registration of the space, in every generation. */
+  all(id: string): readonly SpaceEntry[];
+  /** Registers a space for its owner in the partition of `view`. */
   register(
     definition: SettingsDefinition,
     owner: string,
     version: string,
+    view: View,
   ): Disposable;
 }
 
+interface Slot {
+  readonly space: SpaceEntry;
+  readonly generation: number;
+}
+
 /**
- * The facade's spaces by ID. Stage 4 partitions the entries by generation
- * (D4-11); in one process every entry belongs to generation 0.
+ * The facade's spaces by `(ID, generation)` (D4-11): the same owner may
+ * register the same space once per generation, and disposing one
+ * generation's space never removes another's. In one process every entry
+ * belongs to generation 0.
  */
 export const createSpaceRegistry = (): SpaceRegistry => {
-  const spaces = new Map<string, SpaceEntry>();
+  const spaces = new Map<string, Slot[]>();
+
+  const get = (id: string, view: View): SpaceEntry | undefined =>
+    spaces.get(id)?.find((slot) => seenBy(slot.generation, view))?.space;
 
   return {
-    get: (id) => spaces.get(id),
-    require: (id) => {
-      const space = spaces.get(id);
+    get,
+    require: (id, view) => {
+      const space = get(id, view);
 
       if (space === undefined) {
         throw new ContractError(
@@ -53,29 +69,35 @@ export const createSpaceRegistry = (): SpaceRegistry => {
 
       return space;
     },
-    register: (definition, owner, version) => {
-      const current = spaces.get(definition.id);
+    all: (id) => (spaces.get(id) ?? []).map((slot) => slot.space),
+    register: (definition, owner, version, view) => {
+      const list = spaces.get(definition.id) ?? [];
+      const current = list.find((slot) => collidesIn(slot.generation, view));
 
       if (current !== undefined) {
         throw new ContractError(
           'registration_conflict',
-          `Settings ${definition.id} are already registered by "${current.owner}".`,
-          { settings: definition.id, owner: current.owner },
+          `Settings ${definition.id} are already registered by "${current.space.owner}".`,
+          { settings: definition.id, owner: current.space.owner },
         );
       }
 
-      const space: SpaceEntry = {
-        definition,
-        owner,
-        version,
-        listeners: new Set(),
+      const slot: Slot = {
+        space: { definition, owner, version, listeners: new Set() },
+        generation: view.generation,
       };
 
-      spaces.set(definition.id, space);
+      spaces.set(definition.id, [...list, slot]);
 
       return once(() => {
-        if (spaces.get(definition.id) === space) {
+        const remaining = (spaces.get(definition.id) ?? []).filter(
+          (item) => item !== slot,
+        );
+
+        if (remaining.length === 0) {
           spaces.delete(definition.id);
+        } else {
+          spaces.set(definition.id, remaining);
         }
       });
     },

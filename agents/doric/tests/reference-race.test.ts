@@ -38,7 +38,7 @@ const withHost = (name: string, run: (host: Host) => Promise<void>) =>
         const config = await createConfigService({
           store: kernel.configs,
           credentials: kernel.credentials,
-          catalog: { tools: [], skills: [] },
+          catalog: () => ({ tools: [], skills: [] }),
           logger: pino({ enabled: false }),
           // The model catalogs are the slow step between the credential check
           // and the write, which is where a delete can land.

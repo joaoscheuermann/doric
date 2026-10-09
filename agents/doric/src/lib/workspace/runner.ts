@@ -9,7 +9,12 @@ import { physicallyInside } from './cwd.js';
 import { guardStorage, storageFull } from './disk.js';
 import { cwdRepoHint, threadGit } from './git-status.js';
 import { nameFromPrompt } from './names.js';
-import { delegatedResult } from './prompts.js';
+import {
+  delegatedResult,
+  type PromptProgress,
+  resumeExhausted,
+  resumeExhaustedError,
+} from './prompts.js';
 import {
   type EditQueueResult,
   queuedPrompt,
@@ -211,6 +216,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
         if (
           project.closing ||
           thread.closing ||
+          thread.held === true ||
           thread.thread.queuePaused ||
           thread.storagePending !== undefined ||
           project.lease === undefined
@@ -347,6 +353,7 @@ export const createThreadRunner = (context: RuntimeContext) => {
   const start = (project: ProjectRuntime, thread: ThreadRuntime) => {
     if (
       thread.task !== undefined ||
+      thread.held === true ||
       thread.thread.queuePaused ||
       thread.storagePending !== undefined ||
       thread.closing ||
@@ -1035,6 +1042,116 @@ export const createThreadRunner = (context: RuntimeContext) => {
     thread.thread = updated;
     publisher.threadUpdated(updated);
   };
+  /**
+   * Pauses the run a lost bundle generation interrupted. It is synchronous, so
+   * the run is aborted before the lost process's pending calls reject: the run
+   * then ends as a `host_restarted` pause, exactly as a host crash leaves it,
+   * and the Thread starts nothing until `resumeHeld` takes the prompt up again.
+   */
+  const pauseForGenerationLoss = (
+    thread: ThreadRuntime,
+    promptId: string,
+  ): boolean => {
+    if (thread.active?.job.id !== promptId || thread.active.finished)
+      return false;
+    thread.held = true;
+    thread.pausing ??= 'host_restarted';
+    thread.active.controller.abort();
+    return true;
+  };
+  /**
+   * Takes up a prompt a lost generation paused, as a boot takes up the prompts
+   * a host crash left: the next attempt goes before the queue, and a prompt
+   * already taken up as often as the budget allows is closed as a failure with
+   * the same events and delegated result a boot writes.
+   */
+  // Caller holds the project's mutation lock.
+  const resumeHeld = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    progress: PromptProgress | undefined,
+  ) => {
+    thread.held = undefined;
+    if (
+      progress === undefined ||
+      project.closing ||
+      thread.closing ||
+      isTerminal(thread.thread.state)
+    ) {
+      start(project, thread);
+      return;
+    }
+    const job: PromptJob = {
+      id: progress.promptId,
+      prompt: progress.text,
+      source: progress.source,
+    };
+    if (resumeExhausted(progress)) {
+      const after = await lastSequence(thread);
+      const parent =
+        progress.source.kind === 'parent'
+          ? project.threads.get(progress.source.threadId)
+          : undefined;
+      const parentAfter =
+        parent === undefined ? undefined : await lastSequence(parent);
+      await store.failPrompt(progress, resumeExhaustedError);
+      for (const event of await store.eventsAfter(thread.thread.id, after))
+        publisher.event(event);
+      const current = await store.record(thread.thread.id);
+      if (current !== undefined) thread.thread = current;
+      publisher.threadUpdated(thread.thread);
+      if (parent !== undefined && parentAfter !== undefined)
+        await deliverClosedResult(project, parent, parentAfter, progress);
+      start(project, thread);
+      return;
+    }
+    await publish(thread, job, {
+      type: 'prompt.resumed',
+      attempt: progress.attempts + 1,
+    });
+    thread.jobs.unshift(job);
+    const current = await store.record(thread.thread.id);
+    if (current !== undefined) thread.thread = current;
+    start(project, thread);
+  };
+  /** The durable last sequence: the in-memory record can be events behind it. */
+  const lastSequence = async (thread: ThreadRuntime) =>
+    (await store.record(thread.thread.id))?.lastSequence ??
+    thread.thread.lastSequence;
+  /**
+   * Queues on a live parent the delegated result `failPrompt` accepted for it
+   * in its own transaction, so the parent runs it as a boot would.
+   */
+  const deliverClosedResult = async (
+    project: ProjectRuntime,
+    parent: ThreadRuntime,
+    after: number,
+    progress: PromptProgress,
+  ) => {
+    if (parent.closing) return;
+    for (const event of await store.eventsAfter(parent.thread.id, after))
+      publisher.event(event);
+    const result = (await store.unfinishedPrompts(parent.thread.id)).find(
+      (prompt) =>
+        prompt.source.kind === 'result' &&
+        prompt.source.promptId === progress.promptId &&
+        !prompt.superseded,
+    );
+    const current = await store.record(parent.thread.id);
+    if (current !== undefined) parent.thread = current;
+    publisher.threadUpdated(parent.thread);
+    if (
+      result === undefined ||
+      parent.jobs.some(({ id }) => id === result.promptId)
+    )
+      return;
+    parent.jobs.push({
+      id: result.promptId,
+      prompt: result.text,
+      source: result.source,
+    });
+    start(project, parent);
+  };
   return {
     start,
     enqueue,
@@ -1049,6 +1166,8 @@ export const createThreadRunner = (context: RuntimeContext) => {
     descendants,
     close,
     suspend,
+    pauseForGenerationLoss,
+    resumeHeld,
     state,
     setCwd,
     resetCwd,

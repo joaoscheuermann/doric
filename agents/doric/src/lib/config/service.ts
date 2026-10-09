@@ -39,13 +39,16 @@ export class ConfigToolError extends Error {
 
 export interface ConfigService {
   current(): Generation;
+  /** The tools and skills of the active bundle generation. */
+  catalog(): Catalog;
   replace(config: ConfigInput): Promise<DoricConfig>;
 }
 
 interface ConfigServiceOptions {
   readonly store: ConfigStore;
   readonly credentials: CredentialService;
-  readonly catalog: Catalog;
+  /** Reads the active bundle generation's tools and skills. */
+  readonly catalog: () => Catalog;
   readonly logger: Logger;
   readonly buildGeneration?: typeof createGeneration;
   /**
@@ -72,13 +75,13 @@ export const createConfigService = async ({
   let active = await buildGeneration({
     snapshot: await store.load(),
     credentials,
-    catalog,
     logger,
   });
   const mutations = createMutationQueue();
 
   return {
     current: () => active,
+    catalog,
     // One fixed key serializes every replacement; the queue releases in a
     // finally, so a rejected replacement does not block later requests.
     replace: (config) =>
@@ -86,7 +89,7 @@ export const createConfigService = async ({
         requireCredentials(config, credentials);
         const filled = await models(config);
         try {
-          requireToolConfigs(filled, catalog.tools);
+          requireToolConfigs(filled, catalog().tools);
         } catch (error) {
           throw new ConfigToolError(
             error instanceof Error
@@ -97,7 +100,6 @@ export const createConfigService = async ({
         const candidate = await buildGeneration({
           snapshot: { configuration: filled, revision: 0, updatedAt: '' },
           credentials,
-          catalog,
           logger,
         });
         const snapshot = await store.replace(filled);

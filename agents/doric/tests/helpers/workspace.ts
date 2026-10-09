@@ -525,9 +525,9 @@ export const workspace = () => {
             updatedAt: now,
           },
           providers: new Map(),
-          catalog: { skills: [], tools: [] },
           redactions: () => ['secret-value'],
         }),
+        catalog: () => ({ skills: [], tools: [] }),
       } as never,
       credentials: credentialResolver(),
       logger: {

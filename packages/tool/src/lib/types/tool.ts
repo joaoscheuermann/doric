@@ -78,6 +78,14 @@ export type ToolHandler<Input extends ToolInput, Output extends ToolOutput> = (
   payload: z.output<Input>,
 ) => Promise<z.output<Output>>;
 
+/**
+ * The result of validating one payload against a tool's input schema, in the
+ * process that owns the tool. `data` is the parsed payload the tool executes.
+ */
+export type ToolPayloadCheck =
+  | { readonly success: true; readonly data: unknown }
+  | { readonly success: false; readonly issues: readonly ToolIssue[] };
+
 export interface Tool<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
@@ -88,6 +96,13 @@ export interface Tool<
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly execute: ToolHandler<Input, Output>;
+  /**
+   * Exact payload validation. When it is absent, `input` validates the payload.
+   * A tool that runs in another process checks asynchronously.
+   */
+  readonly check?: (
+    payload: unknown,
+  ) => ToolPayloadCheck | Promise<ToolPayloadCheck>;
 }
 
 /**
@@ -134,6 +149,8 @@ export interface BoundTool<
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
   execute(payload: z.output<Input>, call: Call): Promise<z.output<Output>>;
+  /** Validates a payload against `input` without executing the tool. */
+  check(payload: unknown): ToolPayloadCheck;
   /** The agent-loop tool whose executions run under `call`. */
   toTool(call: Call): Tool<Input, Output>;
 }
@@ -160,7 +177,11 @@ export interface ToolStorage {
 
   calls(turn: ToolTurn): readonly ToolCall[];
 
-  validate(call: ToolCall | ToolCallRequest): ToolCall;
+  /**
+   * Parses and validates one call without executing it. The result is
+   * asynchronous only when the tool's `check` is.
+   */
+  validate(call: ToolCall | ToolCallRequest): ToolCall | Promise<ToolCall>;
 
   get(name: string): Tool | undefined;
 
