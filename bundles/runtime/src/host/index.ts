@@ -18,6 +18,7 @@ import { runtimeService } from './services/runtime.js';
 import { terminalService } from './services/terminal.js';
 import { terminalsService } from './services/terminals.js';
 import { threadsService } from './services/threads.js';
+import { createWatches } from './services/watches.js';
 import { workspaceService } from './services/workspace.js';
 import {
   createRuntimeStores,
@@ -60,13 +61,33 @@ export const provideRuntime = (
     bindings,
   });
 
+  // The remote watches read what the transport socket reads (R-STREAM).
+  const watches = createWatches({
+    notices,
+    reads: {
+      thread: (threadId) => threads.record(threadId),
+      eventsAfter: (threadId, afterSequence) =>
+        threads.eventsAfter(threadId, afterSequence),
+      project: (projectId) => service.projects.find(projectId),
+      projectThreads: (projectId) => threads.listByProject(projectId),
+      terminals: async (projectId) => service.terminals.list(projectId),
+    },
+  });
+
   services.provide(
-    runtimeService({ service, notices, projects, threads, log: ports.log }),
+    runtimeService({
+      service,
+      notices,
+      projects,
+      threads,
+      log: ports.log,
+      watches,
+    }),
   );
-  services.provide(threadsService({ service, threads, bindings }));
+  services.provide(threadsService({ service, threads, bindings, watches }));
   services.provide(workspaceService(bindings));
   services.provide(leaseService({ service, bindings }));
-  services.provide(terminalsService(service));
+  services.provide(terminalsService(service, watches));
   services.provide(terminalService(bindings));
 
   // Idempotent: the kernel already called runtime/v1.dispose on a normal stop.

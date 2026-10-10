@@ -17,6 +17,7 @@
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "rm -rf app/doric-renderer/dist-tests",
           "tsc -p app/doric-renderer/tsconfig.spec.json",
           "node --test app/doric-renderer/dist-tests/tests/*.test.js"
         ],

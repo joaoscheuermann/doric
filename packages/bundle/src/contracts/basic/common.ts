@@ -26,10 +26,23 @@ export const isDisposable = (value: unknown): value is Disposable =>
   value !== null &&
   typeof (value as { dispose?: unknown }).dispose === 'function';
 
-/** A registration result; local to the process (holds a function). */
-export const disposableSchema = z.custom<Disposable>(isDisposable, {
-  message: 'Expected a Disposable.',
-});
+/**
+ * A registration result; local to the process (holds a function). Its codec
+ * kind is metadata in zod's global registry, which every copy of zod in a
+ * window shares: a client part's `bundle/contracts` (the import map's) and
+ * the shell's bundled copy are different modules, so identity with this
+ * constant does not survive between them (stage 9 integration).
+ */
+export const disposableSchema = z
+  .custom<Disposable>(isDisposable, {
+    message: 'Expected a Disposable.',
+  })
+  .meta({ 'x-doric-local': 'disposable' });
+
+/** Whether a schema is `disposableSchema`, from this or another copy of the contracts. */
+export const isDisposableSchema = (schema: z.ZodType): boolean =>
+  schema === disposableSchema ||
+  z.globalRegistry.get(schema)?.['x-doric-local'] === 'disposable';
 
 /** A function argument (handler, callback, factory); local to the process. */
 export const functionSchema = <T>() =>

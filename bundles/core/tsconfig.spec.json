@@ -27,5 +27,6 @@
     {
       "path": "../models-adapter"
     }
-  ]
+  ],
+  "exclude": ["src/desktop/**", "src/client/**", "tests/client/**"]
 }

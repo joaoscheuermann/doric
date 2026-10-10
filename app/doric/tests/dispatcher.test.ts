@@ -5,9 +5,11 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
 
-import type { Call } from 'bundle/contracts';
+import type { Call, NotificationRequest } from 'bundle/contracts';
 import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
+import { ConnectionRelay } from '../src/connection/relay';
+import type { ConnectionListener } from '../src/connection/status';
 import {
   type GenerationView,
   generationView,
@@ -110,6 +112,30 @@ let dispatcher: Dispatcher;
 let workspace: WindowEntry;
 let window: ReturnType<typeof fakeContents>;
 let hostConnected: boolean;
+let relay: ConnectionRelay;
+let notified: NotificationRequest[];
+
+/** The `/status` monitor's surface: a status and its change listeners. */
+const statusSource = (initial: 'connected' | 'disconnected') => {
+  let current = initial;
+  const listeners = new Set<ConnectionListener>();
+
+  return {
+    status: () => current,
+    subscribe: (listener: ConnectionListener) => {
+      listeners.add(listener);
+
+      return () => listeners.delete(listener);
+    },
+    set: (status: 'connected' | 'disconnected') => {
+      current = status;
+
+      for (const listener of listeners) {
+        listener(status);
+      }
+    },
+  };
+};
 
 const envelope = (overrides: Record<string, unknown> = {}) => ({
   id: 'w-1',
@@ -127,6 +153,8 @@ beforeEach(() => {
   calls = [];
   records = new ServiceDirectory();
   hostConnected = false;
+  relay = new ConnectionRelay();
+  notified = [];
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -223,6 +251,10 @@ beforeEach(() => {
     bindingsFor: () => [{ key: 'CmdOrCtrl+K', command: 'probe.ping/v1' }],
     dispatchCommand: async () => undefined,
     diagnostic: () => undefined,
+    connection: relay,
+    notify: (request) => {
+      notified.push(request);
+    },
   });
 });
 
@@ -402,5 +434,96 @@ describe('desktop IPC dispatcher', () => {
         event: [{ key: 'CmdOrCtrl+K', command: 'probe.ping/v1' }],
       },
     });
+  });
+
+  test('every window follows the host connection: the current status first, then each change, until it navigates', async () => {
+    const source = statusSource('connected');
+    const subscribe = (contents: ReturnType<typeof fakeContents>, id: string) =>
+      dispatcher.handle(event(contents.contents), {
+        op: 'subscribe',
+        envelope: envelope({
+          id,
+          bundleId: null,
+          contract: 'doric.shell/v1',
+          method: 'connection',
+          input: [],
+        }),
+      });
+    const settings = fakeContents(12, 'doric://app/settings/providers');
+
+    registry.add({
+      key: 'settings',
+      window: {
+        webContents: settings.contents,
+      } as unknown as WindowEntry['window'],
+      appearance: { titleBar: 'integrated', background: 'window' },
+      pinnedGeneration: null,
+      context: { path: null, focus: null },
+    });
+    await describeWindow();
+    await dispatcher.handle(event(settings.contents), {
+      op: 'describeWindow',
+      generation: 1,
+    });
+
+    assert.deepEqual(await subscribe(window, 'w-conn'), {
+      ok: true,
+      output: undefined,
+    });
+    await subscribe(settings, 's-conn');
+    relay.attach(source);
+    source.set('disconnected');
+    source.set('disconnected');
+    dispatcher.navigating(settings.contents.id);
+    source.set('connected');
+
+    const statuses = (sent: Sent[], id: string) =>
+      sent
+        .map(({ payload }) => payload as { id?: string; event?: unknown })
+        .filter((payload) => payload.id === id)
+        .map((payload) => payload.event);
+
+    assert.deepEqual(statuses(window.sent, 'w-conn'), [
+      'disconnected',
+      'connected',
+      'disconnected',
+      'connected',
+    ]);
+    assert.deepEqual(statuses(settings.sent, 's-conn'), [
+      'disconnected',
+      'connected',
+      'disconnected',
+    ]);
+  });
+
+  test('a window notification reaches main with exactly a title and a body', async () => {
+    await describeWindow();
+
+    const shown = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        bundleId: null,
+        contract: 'doric.shell/v1',
+        method: 'notify',
+        input: { title: 'Thread finished', body: 'Done.' },
+      }),
+    });
+    const refused = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        id: 'w-2',
+        bundleId: null,
+        contract: 'doric.shell/v1',
+        method: 'notify',
+        input: { title: 'Thread finished' },
+      }),
+    });
+
+    assert.deepEqual(shown, { ok: true, output: undefined });
+    assert.equal(
+      (refused as { error?: { code: string } }).error?.code,
+      'invalid_input',
+    );
+    assert.deepEqual(notified, [{ title: 'Thread finished', body: 'Done.' }]);
   });
 });

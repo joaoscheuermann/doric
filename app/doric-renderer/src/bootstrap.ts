@@ -1,9 +1,5 @@
 import { bootstrapWindow } from 'desktop-client';
 
-import { legacyFlushListeners } from './legacy/flush';
-
-void bootstrapWindow({
-  mount: async ({ description }) =>
-    (await import('./legacy/mount')).legacyMount(description),
-  flushParticipants: legacyFlushListeners,
-});
+// Stage 9: every window shows the core outlet (D9-1); the legacy React tree
+// under `legacy/` is no longer mounted and is removed by the cut-over (WP6).
+void bootstrapWindow({});

@@ -464,6 +464,10 @@ export const shellMethods = {
   commandResult: { stream: false },
   log: { stream: false },
   diagnostic: { stream: false },
+  // Stage 9: the host connection status (D9-5) and native notifications of
+  // the client `doric.notifications/v1` (D9-6).
+  connection: { stream: true },
+  notify: { stream: false },
 } as const;
 
 export type ShellMethod = keyof typeof shellMethods;

@@ -42,6 +42,7 @@ import {
   utilityProcess,
 } from 'electron';
 
+import { ConnectionRelay } from '../connection/relay';
 import {
   cacheSchemaReader,
   type GenerationView,
@@ -162,6 +163,8 @@ export class DesktopPlatform {
   readonly windows: NativeWindows;
   readonly menus: NativeMenus;
   readonly dispatcher: Dispatcher;
+  /** Stage 9: what windows read as the host connection status (D9-5). */
+  readonly connection = new ConnectionRelay();
   readonly startup: Startup;
   readonly lifecycle: Lifecycle;
   readonly #paths;
@@ -327,6 +330,8 @@ export class DesktopPlatform {
           { windowKey: entry.key, diagnostic },
           'Window diagnostic',
         ),
+      connection: this.connection,
+      notify: (request) => this.notify(request),
     });
     const host = this.host;
 

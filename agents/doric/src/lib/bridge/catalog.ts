@@ -32,8 +32,8 @@ export interface CatalogDistributionOptions {
 /** One generation's files, computed once: a published generation's files do not change. */
 interface Published {
   readonly catalog: DistributionCatalog;
-  /** sha256 → the installed file that holds it. */
-  readonly files: ReadonlyMap<string, string>;
+  /** sha256 → the installed file that holds it, or the bytes of an embedded document. */
+  readonly files: ReadonlyMap<string, string | Buffer>;
 }
 
 const sha256Of = (bytes: Uint8Array): string =>
@@ -58,9 +58,35 @@ export const createCatalogDistribution = ({
           hostBoot,
           platformVersion,
         });
-        const files = new Map<string, string>();
+        const files = new Map<string, string | Buffer>();
+        const bundles = catalog.bundles.map((bundle, index) => {
+          if (view.resolved.entries[index]?.source.kind !== 'embedded') {
+            return bundle;
+          }
 
-        for (const [index, bundle] of catalog.bundles.entries()) {
+          // A kernel-embedded bundle has no directory: its contract
+          // documents are distributed from memory, so the desktop can route
+          // calls to its host contracts (`host-config/v1`, `resources/v1`).
+          const documents = Object.entries(
+            source.embeddedDocuments?.(bundle.id) ?? {},
+          ).sort(([left], [right]) =>
+            left < right ? -1 : left > right ? 1 : 0,
+          );
+          const listed = documents.map(([path, document]) => {
+            const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
+            const sha256 = sha256Of(bytes);
+
+            if (!files.has(sha256)) {
+              files.set(sha256, bytes);
+            }
+
+            return { path, sha256, size: bytes.byteLength };
+          });
+
+          return { ...bundle, files: listed };
+        });
+
+        for (const [index, bundle] of bundles.entries()) {
           const installed = view.resolved.entries[index]?.source;
 
           if (installed?.kind !== 'installed') {
@@ -77,7 +103,7 @@ export const createCatalogDistribution = ({
           }
         }
 
-        return { catalog, files };
+        return { catalog: { ...catalog, bundles }, files };
       })();
       entry.catch(() => published.delete(view.resolved));
       published.set(view.resolved, entry);
@@ -117,7 +143,10 @@ export const createCatalogDistribution = ({
           continue;
         }
 
-        const bytes = await readFile(path).catch(() => undefined);
+        const bytes =
+          typeof path === 'string'
+            ? await readFile(path).catch(() => undefined)
+            : path;
 
         if (bytes !== undefined && sha256Of(bytes) === sha256) {
           return { sha256, base64: bytes.toString('base64') };

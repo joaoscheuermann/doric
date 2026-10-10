@@ -1,6 +1,5 @@
 // `window.doric.desktop` as the preload builds it: the two channels, the
-// generation read from the shell's meta tag, the close protocol answers and
-// the legacy `settings.onFlush` listeners in the flush phase.
+// generation read from the shell's meta tag and the close protocol answers.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -121,14 +120,17 @@ describe('preload desktop API', () => {
     });
   });
 
-  test('the flush phase runs the legacy onFlush listeners before answering', async () => {
+  test('the flush phase answers only after the window flush settles', async () => {
     const fake = fakeIpc();
-    const binding = createDesktopApi(fake.ipc);
+    const { api } = createDesktopApi(fake.ipc);
     const flushed: string[] = [];
 
-    binding.onFlush(async () => {
-      await tick();
-      flushed.push('settings saved');
+    api.onCloseRequested(async (request) => {
+      if (request.phase === 'flush') {
+        await tick();
+        flushed.push('settings saved');
+      }
+      return undefined;
     });
     fake.push({
       type: 'close-requested',
@@ -139,7 +141,11 @@ describe('preload desktop API', () => {
     await tick();
 
     assert.deepEqual(flushed, ['settings saved']);
-    assert.equal(fake.invoked.at(-1)?.payload.op, 'closeAnswer');
+    assert.deepEqual(fake.invoked.at(-1)?.payload, {
+      op: 'closeAnswer',
+      id: 'c3',
+      answer: { allow: true },
+    });
   });
 
   test('stream events reach the subscriber until it unsubscribes', async () => {

@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 1,
+  "id": "settings",
+  "version": "1.0.0",
+  "engines": {
+    "doric": "^1.0.0"
+  },
+  "description": "The settings window and the footer execution picker.",
+  "provides": [],
+  "requires": [
+    "hooks/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "navigation/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "host-config/v1@^1.0.0",
+    "secrets/v1@^1.0.0",
+    "models/v1@^1.0.0",
+    "tools/v1@^1.0.0"
+  ]
+}

@@ -2,25 +2,28 @@
 
 import { activateClientBundles, type ImportPart } from './activate.js';
 import { applyChrome } from './chrome.js';
-import { type FlushParticipants, wireClose } from './close.js';
+import { wireClose } from './close.js';
 import { serveShellCommands } from './commands.js';
+import type { ElementRegistry } from './elements.js';
 import { installKeybindings } from './keybindings.js';
 import type { DoricDesktopApi, WindowDescription } from './protocol.js';
 
 export interface BootstrapOptions {
   /**
-   * Stage 8: the legacy mount; stage 9 replaces it with the core outlet.
+   * A custom mount (fixture shells). Without it, as in the product shell, the
+   * window shows the core outlet: `<${core}-outlet>` replaces the body's
+   * children (D9-1).
    */
-  readonly mount: (context: {
+  readonly mount?: (context: {
     readonly description: WindowDescription;
   }) => void | Promise<void>;
-  /** Extra participants of the flush phase (stage 8: legacy onFlush listeners). */
-  readonly flushParticipants?: FlushParticipants;
   /** Default `window.doric.desktop` (tests inject). */
   readonly desktop?: DoricDesktopApi;
   readonly document?: Document;
   /** Default dynamic `import()` (tests inject). */
   readonly importPart?: ImportPart;
+  /** Default `globalThis.customElements` (tests inject). */
+  readonly elementRegistry?: () => ElementRegistry;
   /** Target of the keydown listener; default `window`. */
   readonly keyTarget?: Pick<
     EventTarget,
@@ -58,26 +61,19 @@ export const bootstrapWindow = async (
       ...(options.importPart === undefined
         ? {}
         : { importPart: options.importPart }),
+      ...(options.elementRegistry === undefined
+        ? {}
+        : { elementRegistry: options.elementRegistry }),
     });
 
-    wireClose({
-      desktop,
-      windowHooks: activation.windowHooks,
-      ...(options.flushParticipants === undefined
-        ? {}
-        : { flushParticipants: options.flushParticipants }),
-    });
+    wireClose({ desktop, windowHooks: activation.windowHooks });
     installKeybindings({
       desktop,
       ...(options.keyTarget === undefined ? {} : { target: options.keyTarget }),
     });
     serveShellCommands({ desktop, services: activation.services });
-    await options.mount({ description });
-
     const core = catalog.resolved.composition.core;
-
-    failure =
-      description.key === 'workspace' &&
+    const quarantined =
       activation.diagnostics.state(core) === 'quarantined'
         ? {
             bundleId: core,
@@ -88,6 +84,30 @@ export const bootstrapWindow = async (
                 .join('; ') || `Core bundle "${core}" is quarantined.`,
           }
         : null;
+
+    const coreFailure = description.key === 'workspace' ? quarantined : null;
+
+    if (options.mount !== undefined) {
+      await options.mount({ description });
+      failure = coreFailure;
+    } else {
+      const tag = `${core}-outlet`;
+      const registry =
+        options.elementRegistry?.() ??
+        (globalThis as { customElements?: ElementRegistry }).customElements;
+
+      if (coreFailure !== null) {
+        failure = coreFailure;
+      } else if (registry?.get(tag) === undefined) {
+        failure = quarantined ?? {
+          bundleId: core,
+          message: `Core bundle "${core}" did not define <${tag}>.`,
+        };
+      } else {
+        document.body.replaceChildren(document.createElement(tag));
+        failure = null;
+      }
+    }
   } catch (error) {
     await desktop.reportFailure({
       kind: 'bootstrap',

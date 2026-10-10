@@ -13,6 +13,7 @@ import { createLog } from '../shared/log.js';
 import { createCoreState } from '../shared/state.js';
 import { WORKSPACE_APPEARANCE } from './appearance.js';
 import { createCommands, openSettings } from './commands.js';
+import { createCommandsBridge } from './commands-bridge.js';
 import { defaultMenuSkeleton } from './menu.js';
 import { coreMenus } from './menus.js';
 import { createDesktopSettings } from './settings.js';
@@ -40,6 +41,7 @@ export const createActivate =
     services.provide(createLog());
     services.provide(createDesktopSettings(state));
     services.provide(createCommands());
+    services.provide(createCommandsBridge());
     services.provide(coreWindows);
     services.provide(coreMenus);
 
@@ -69,7 +71,7 @@ export const createActivate =
 
 /**
  * Provides the core's desktop services (hooks, log, local settings,
- * commands, windows and menus), defines `core.hooks/v1`, registers
+ * commands, the client commands bridge, windows and menus), defines `core.hooks/v1`, registers
  * `core.open-settings/v1`, and opens the workspace window once the app is
  * ready.
  */

@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["src/contracts/**/*.ts"],
+  "references": [
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../history"
+    },
+    {
+      "path": "../../packages/desktop-ui"
+    },
+    {
+      "path": "../../packages/bundle"
+    },
+    {
+      "path": "../../packages/desktop-client"
+    },
+    {
+      "path": "../core"
+    }
+  ]
+}

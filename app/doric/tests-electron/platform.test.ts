@@ -198,7 +198,9 @@ describe('desktop platform, default composition', () => {
     // The page answers the veto but hangs its flush forever.
     await page(
       contents,
-      `window.doric.settings.onFlush(() => new Promise(() => {})); 'armed'`,
+      `window.doric.desktop.onCloseRequested((request) =>
+        request.phase === 'flush' ? new Promise(() => {}) : Promise.resolve(undefined),
+      ); 'armed'`,
     );
 
     const started = Date.now();

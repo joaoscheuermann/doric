@@ -5,7 +5,11 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
 
-import { DoricNotificationsV1, type MenuSkeleton } from 'bundle/contracts';
+import {
+  DoricNotificationsV1,
+  DoricWindowsV1,
+  type MenuSkeleton,
+} from 'bundle/contracts';
 import {
   createPrincipal,
   PLATFORM_VERSION,
@@ -269,6 +273,7 @@ describe('doric.notifications/v1 (broker)', () => {
         open: async () => undefined,
         focusOrOpen: async () => undefined,
         lastPath: () => null,
+        focus: () => false,
       },
       menus,
       cacheDirectory: async () => '/cache',
@@ -298,5 +303,58 @@ describe('doric.notifications/v1 (broker)', () => {
     );
 
     assert.deepEqual(shown, [{ title: 'Prompt finished', body: 'Thread A' }]);
+  });
+});
+
+describe('doric.windows/v1 focus (broker)', () => {
+  test('focuses an open key without opening or navigating, and answers whether one was open', async () => {
+    const actions: string[] = [];
+    const platform = createPrincipal(
+      {
+        directory: new ServiceDirectory(),
+        catalog: {
+          cardinality: () => undefined,
+          activeProvider: () => undefined,
+        },
+        environment: 'desktopMain',
+        generation: 0,
+        generationSignal: new AbortController().signal,
+        report: () => undefined,
+      },
+      {
+        bundleId: 'doric',
+        version: PLATFORM_VERSION,
+        provides: 'any',
+        requires: 'any',
+      },
+    );
+
+    provideBroker(platform, {
+      windows: {
+        open: async (request) => {
+          actions.push(`open:${request.key}`);
+        },
+        focusOrOpen: async (key) => {
+          actions.push(`focusOrOpen:${key}`);
+        },
+        lastPath: () => null,
+        focus: (key) => {
+          actions.push(`focus:${key}`);
+
+          return key === 'settings';
+        },
+      },
+      menus,
+      cacheDirectory: async () => '/cache',
+      tokens: () => ({}),
+      notify: () => undefined,
+      log: silentLog,
+    });
+
+    const windows = platform.services.use(DoricWindowsV1);
+
+    assert.equal(await windows.focus('settings'), true);
+    assert.equal(await windows.focus('about'), false);
+    assert.deepEqual(actions, ['focus:settings', 'focus:about']);
   });
 });

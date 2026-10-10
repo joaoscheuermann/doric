@@ -47,6 +47,16 @@ export interface RegisteredTool {
   readonly tool: ContractTool;
 }
 
+/**
+ * One tool as `GET /tools` lists it: the name, the description and the
+ * configuration fields it declares. Plain data, so it crosses any boundary.
+ */
+export interface ToolCatalogEntry {
+  readonly name: string;
+  readonly description?: string;
+  readonly settings: readonly object[];
+}
+
 export interface ToolRegistrationOptions {
   readonly alwaysAvailable: boolean;
 }
@@ -65,6 +75,12 @@ export interface Tools {
    * tools are listed (D4-11).
    */
   list(call?: CallArg): readonly RegisteredTool[];
+  /**
+   * The `list` the call sees as serializable catalog entries, in the same
+   * order (1.1.0, stage 9): remote-callable, so a desktop window reads the
+   * tool catalog over the bridge.
+   */
+  catalog(call?: CallArg): Promise<readonly ToolCatalogEntry[]>;
 }
 
 export const ToolsV1 = ref<Tools>('tools/v1');
@@ -86,6 +102,17 @@ export const isContractTool = (value: unknown): value is ContractTool => {
   );
 };
 
+export const toolCatalogEntrySchema: z.ZodType<
+  ToolCatalogEntry,
+  ToolCatalogEntry
+> = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    settings: z.array(z.looseObject({})),
+  })
+  .strict();
+
 export const toolsMethods = {
   register: {
     input: z.tuple([
@@ -101,5 +128,9 @@ export const toolsMethods = {
     output: z.custom<readonly RegisteredTool[]>((value) =>
       Array.isArray(value),
     ),
+  },
+  catalog: {
+    input: noInput,
+    output: z.array(toolCatalogEntrySchema),
   },
 } as const satisfies MethodSpecs;

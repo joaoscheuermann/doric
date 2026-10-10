@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { CommandsV1, type Disposable, defineCommand } from 'bundle/contracts';
-import { OpenSettingsCommandV1 } from 'core/contracts';
+import { CoreCommandsV1, OpenSettingsCommandV1 } from 'core/contracts';
 import { z } from 'zod';
 
 import { bootDesktop, probe } from '../support/desktop.js';
@@ -161,6 +161,92 @@ void test('a second registration of the same command ID is a registration_confli
       'unknown_command',
     );
     assert.deepEqual(outcomes, ['registration_conflict']);
+  } finally {
+    await desktop.stop();
+  }
+});
+
+void test('the settings gear only focuses an open settings window, keeping its section', async () => {
+  const desktop = await bootDesktop([], { openWindows: ['settings'] });
+
+  try {
+    const commands = desktop.services.use(CommandsV1);
+
+    await commands.execute('core.open-settings/v1', {}, desktop.call());
+
+    assert.deepEqual(
+      desktop.received('doric.windows/v1.focus').map(({ input }) => input),
+      ['settings'],
+    );
+    assert.deepEqual(desktop.received('doric.windows/v1.open'), []);
+
+    // A path is always respected: the window is opened (focused and
+    // navigated by main) at that path.
+    await commands.execute(
+      'core.open-settings/v1',
+      { path: '/settings/tools' },
+      desktop.call(),
+    );
+
+    assert.deepEqual(
+      desktop.received('doric.windows/v1.open').map(({ input }) => input),
+      [
+        {
+          key: 'settings',
+          path: '/settings/tools',
+          appearance: settingsAppearance,
+        },
+      ],
+    );
+  } finally {
+    await desktop.stop();
+  }
+});
+
+void test('core.commands/v1 runs a desktopMain command for a window, and a miss is unknown_command', async () => {
+  const runs: unknown[] = [];
+  const desktop = await bootDesktop([
+    probe('graph', {
+      requires: ['commands/v1@^1.0.0'],
+      provides: [['graph.ping/v1', 'command']],
+      activate: ({ services }) => {
+        services.use(CommandsV1).register(
+          defineCommand({
+            id: 'graph.ping/v1',
+            input: z.object({ times: z.number() }).strict(),
+            execute: (input) => {
+              runs.push(input);
+            },
+          }),
+        );
+      },
+    }),
+  ]);
+
+  try {
+    const bridge = desktop.services.use(CoreCommandsV1);
+
+    await bridge.execute(
+      { id: 'graph.ping/v1', input: { times: 2 } },
+      desktop.call(),
+    );
+
+    assert.deepEqual(runs, [{ times: 2 }]);
+    assert.equal(
+      await codeOf(
+        bridge.execute({ id: 'graph.missing/v1', input: {} }, desktop.call()),
+      ),
+      'unknown_command',
+    );
+    assert.equal(
+      await codeOf(
+        bridge.execute(
+          { id: 'graph.ping/v1', input: { times: 'x' } },
+          desktop.call(),
+        ),
+      ),
+      'invalid_input',
+    );
   } finally {
     await desktop.stop();
   }

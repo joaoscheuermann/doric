@@ -2,12 +2,12 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "runtime",
-    "version": "1.0.0"
+    "version": "1.2.0"
   },
   "contracts": [
     {
       "id": "runtime.project/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "storage-type",
       "environment": "host",
       "cardinality": "one",
@@ -89,6 +89,30 @@
               },
               "createdKey": {
                 "type": "string"
+              },
+              "owner": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "generation": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "incarnation": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": ["generation", "incarnation"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -739,7 +763,7 @@
     },
     {
       "id": "runtime/v1",
-      "version": "1.0.0",
+      "version": "1.2.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -749,6 +773,34 @@
         "$id": "doric:contract/runtime/v1",
         "x-doric-kind": "service",
         "$defs": {
+          "adopt.input": {
+            "type": "object",
+            "properties": {
+              "live": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "generation": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "incarnation": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["generation", "incarnation"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["live"],
+            "additionalProperties": false
+          },
+          "adopt.output": {},
           "createProject.input": {
             "type": "object",
             "properties": {
@@ -828,6 +880,10 @@
             "maxItems": 0
           },
           "dispose.output": {},
+          "drain.input": {
+            "x-doric-local": "callback"
+          },
+          "drain.output": {},
           "project.input": {
             "type": "string"
           },
@@ -980,6 +1036,53 @@
             "maxItems": 0
           },
           "recover.output": {
+            "type": "object",
+            "properties": {
+              "interruptedThreads": {
+                "type": "number"
+              },
+              "interruptedProjects": {
+                "type": "number"
+              },
+              "resumedPrompts": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "interruptedThreads",
+              "interruptedProjects",
+              "resumedPrompts"
+            ],
+            "additionalProperties": {}
+          },
+          "recoverWith.input": {
+            "type": "object",
+            "properties": {
+              "live": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "generation": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "incarnation": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["generation", "incarnation"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["live"],
+            "additionalProperties": false
+          },
+          "recoverWith.output": {
             "type": "object",
             "properties": {
               "interruptedThreads": {
@@ -1261,17 +1364,506 @@
           },
           "watch.output": {
             "x-doric-local": "disposable"
+          },
+          "watchProject.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": ["projectId"],
+                "additionalProperties": false
+              },
+              {
+                "x-doric-local": "callback",
+                "x-doric-stream": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "snapshot"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "project": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "color": {
+                                  "type": "string",
+                                  "enum": [
+                                    "red",
+                                    "orange",
+                                    "amber",
+                                    "green",
+                                    "teal",
+                                    "blue",
+                                    "violet",
+                                    "pink"
+                                  ]
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "queued",
+                                    "ready",
+                                    "cancelling",
+                                    "cancelled",
+                                    "failed"
+                                  ]
+                                },
+                                "configRevision": {
+                                  "type": "number"
+                                },
+                                "errorCode": {
+                                  "type": "string"
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                },
+                                "updatedAt": {
+                                  "type": "string"
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "finishedAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "state",
+                                "configRevision",
+                                "createdAt",
+                                "updatedAt"
+                              ],
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threads": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "parentThreadId": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "ready",
+                                  "running",
+                                  "cancelling",
+                                  "cancelled",
+                                  "failed"
+                                ]
+                              },
+                              "lastSequence": {
+                                "type": "number"
+                              },
+                              "queuePaused": {
+                                "type": "boolean"
+                              },
+                              "cwd": {
+                                "type": "string"
+                              },
+                              "cwdRepo": {
+                                "type": "string",
+                                "enum": ["git", "github"]
+                              },
+                              "activePromptId": {
+                                "type": "string"
+                              },
+                              "executionStartedAt": {
+                                "type": "string"
+                              },
+                              "lastExecutionMs": {
+                                "type": "number"
+                              },
+                              "errorCode": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string"
+                              },
+                              "startedAt": {
+                                "type": "string"
+                              },
+                              "finishedAt": {
+                                "type": "string"
+                              },
+                              "result": {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "promptId": {
+                                    "type": "string"
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "text",
+                                  "promptId",
+                                  "at"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "projectId",
+                              "name",
+                              "state",
+                              "lastSequence",
+                              "cwd",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        },
+                        "terminals": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "enum": ["agent", "user"]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "cwd": {
+                                "type": "string"
+                              },
+                              "startedAt": {
+                                "type": "string"
+                              },
+                              "timeoutMs": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["starting", "running", "exited"]
+                              },
+                              "pty": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "projectId",
+                              "threadId",
+                              "origin",
+                              "command",
+                              "cwd",
+                              "startedAt",
+                              "timeoutMs",
+                              "state",
+                              "pty"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "projectId",
+                        "project",
+                        "threads",
+                        "terminals"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "project-updated"
+                        },
+                        "project": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "color": {
+                              "type": "string",
+                              "enum": [
+                                "red",
+                                "orange",
+                                "amber",
+                                "green",
+                                "teal",
+                                "blue",
+                                "violet",
+                                "pink"
+                              ]
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "ready",
+                                "cancelling",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "configRevision": {
+                              "type": "number"
+                            },
+                            "errorCode": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "state",
+                            "configRevision",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "project"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "project-deleted"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "projectId"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "thread-updated"
+                        },
+                        "thread": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "parentThreadId": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "ready",
+                                "running",
+                                "cancelling",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "lastSequence": {
+                              "type": "number"
+                            },
+                            "queuePaused": {
+                              "type": "boolean"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "cwdRepo": {
+                              "type": "string",
+                              "enum": ["git", "github"]
+                            },
+                            "activePromptId": {
+                              "type": "string"
+                            },
+                            "executionStartedAt": {
+                              "type": "string"
+                            },
+                            "lastExecutionMs": {
+                              "type": "number"
+                            },
+                            "errorCode": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": "string"
+                            },
+                            "result": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "promptId": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["status", "text", "promptId", "at"],
+                              "additionalProperties": {}
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "projectId",
+                            "name",
+                            "state",
+                            "lastSequence",
+                            "cwd",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "thread"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "thread-deleted"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "projectId", "threadId"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "watchProject.output": {
+            "x-doric-local": "disposable"
           }
         }
       }
     },
     {
       "id": "runtime.threads/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/runtime.threads/v1",
@@ -3634,6 +4226,451 @@
             },
             "required": ["total", "threads"],
             "additionalProperties": {}
+          },
+          "watchThread.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "object",
+                "properties": {
+                  "threadId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "afterSequence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["threadId", "afterSequence"],
+                "additionalProperties": false
+              },
+              {
+                "x-doric-local": "callback",
+                "x-doric-stream": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "snapshot"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "project": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "color": {
+                                  "type": "string",
+                                  "enum": [
+                                    "red",
+                                    "orange",
+                                    "amber",
+                                    "green",
+                                    "teal",
+                                    "blue",
+                                    "violet",
+                                    "pink"
+                                  ]
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "queued",
+                                    "ready",
+                                    "cancelling",
+                                    "cancelled",
+                                    "failed"
+                                  ]
+                                },
+                                "configRevision": {
+                                  "type": "number"
+                                },
+                                "errorCode": {
+                                  "type": "string"
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                },
+                                "updatedAt": {
+                                  "type": "string"
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "finishedAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "state",
+                                "configRevision",
+                                "createdAt",
+                                "updatedAt"
+                              ],
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "thread": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "projectId": {
+                                  "type": "string"
+                                },
+                                "parentThreadId": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "queued",
+                                    "ready",
+                                    "running",
+                                    "cancelling",
+                                    "cancelled",
+                                    "failed"
+                                  ]
+                                },
+                                "lastSequence": {
+                                  "type": "number"
+                                },
+                                "queuePaused": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "type": "string"
+                                },
+                                "cwdRepo": {
+                                  "type": "string",
+                                  "enum": ["git", "github"]
+                                },
+                                "activePromptId": {
+                                  "type": "string"
+                                },
+                                "executionStartedAt": {
+                                  "type": "string"
+                                },
+                                "lastExecutionMs": {
+                                  "type": "number"
+                                },
+                                "errorCode": {
+                                  "type": "string"
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                },
+                                "updatedAt": {
+                                  "type": "string"
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "finishedAt": {
+                                  "type": "string"
+                                },
+                                "result": {
+                                  "type": "object",
+                                  "properties": {
+                                    "status": {
+                                      "type": "string"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "promptId": {
+                                      "type": "string"
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "status",
+                                    "text",
+                                    "promptId",
+                                    "at"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "projectId",
+                                "name",
+                                "state",
+                                "lastSequence",
+                                "cwd",
+                                "createdAt",
+                                "updatedAt"
+                              ],
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "promptId": {
+                                "type": "string"
+                              },
+                              "sequence": {
+                                "type": "number"
+                              },
+                              "type": {
+                                "type": "string"
+                              },
+                              "event": {},
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "projectId",
+                              "threadId",
+                              "promptId",
+                              "sequence",
+                              "type",
+                              "event",
+                              "createdAt"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "threadId",
+                        "projectId",
+                        "project",
+                        "thread",
+                        "events"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "event"
+                        },
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "threadId": {
+                              "type": "string"
+                            },
+                            "promptId": {
+                              "type": "string"
+                            },
+                            "sequence": {
+                              "type": "number"
+                            },
+                            "type": {
+                              "type": "string"
+                            },
+                            "event": {},
+                            "createdAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "threadId",
+                            "promptId",
+                            "sequence",
+                            "type",
+                            "event",
+                            "createdAt"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "event"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "updated"
+                        },
+                        "thread": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "parentThreadId": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "ready",
+                                "running",
+                                "cancelling",
+                                "cancelled",
+                                "failed"
+                              ]
+                            },
+                            "lastSequence": {
+                              "type": "number"
+                            },
+                            "queuePaused": {
+                              "type": "boolean"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "cwdRepo": {
+                              "type": "string",
+                              "enum": ["git", "github"]
+                            },
+                            "activePromptId": {
+                              "type": "string"
+                            },
+                            "executionStartedAt": {
+                              "type": "string"
+                            },
+                            "lastExecutionMs": {
+                              "type": "number"
+                            },
+                            "errorCode": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": "string"
+                            },
+                            "result": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "promptId": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["status", "text", "promptId", "at"],
+                              "additionalProperties": {}
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "projectId",
+                            "name",
+                            "state",
+                            "lastSequence",
+                            "cwd",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "thread"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "deleted"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "projectId", "threadId"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "watchThread.output": {
+            "x-doric-local": "disposable"
           }
         }
       }
@@ -4687,11 +5724,11 @@
     },
     {
       "id": "runtime.terminals/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/runtime.terminals/v1",
@@ -4959,6 +5996,234 @@
           },
           "stop.output": {
             "type": "boolean"
+          },
+          "watchProject.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "x-doric-local": "callback",
+                "x-doric-stream": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "snapshot"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "terminals": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "enum": ["agent", "user"]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "cwd": {
+                                "type": "string"
+                              },
+                              "startedAt": {
+                                "type": "string"
+                              },
+                              "timeoutMs": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["starting", "running", "exited"]
+                              },
+                              "pty": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "projectId",
+                              "threadId",
+                              "origin",
+                              "command",
+                              "cwd",
+                              "startedAt",
+                              "timeoutMs",
+                              "state",
+                              "pty"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": ["kind", "projectId", "terminals"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "updated"
+                        },
+                        "terminal": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "threadId": {
+                              "type": "string"
+                            },
+                            "origin": {
+                              "type": "string",
+                              "enum": ["agent", "user"]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": ["starting", "running", "exited"]
+                            },
+                            "pty": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "projectId",
+                            "threadId",
+                            "origin",
+                            "command",
+                            "cwd",
+                            "startedAt",
+                            "timeoutMs",
+                            "state",
+                            "pty"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "terminal"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "removed"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        },
+                        "terminalId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "projectId",
+                        "threadId",
+                        "terminalId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "output"
+                        },
+                        "output": {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "threadId": {
+                              "type": "string"
+                            },
+                            "terminalId": {
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "string"
+                            },
+                            "offset": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "threadId",
+                            "terminalId",
+                            "data",
+                            "offset"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "output"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "watchProject.output": {
+            "x-doric-local": "disposable"
           }
         }
       }

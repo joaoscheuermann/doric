@@ -5,9 +5,10 @@ import {
   RuntimeTerminalsV1,
 } from '../../contracts/terminals.js';
 import type { WorkspaceService } from '../domain/types.js';
+import type { Watches } from './watches.js';
 
 /** runtime.terminals/v1: the manual terminal sessions (design 57 §2.6). */
-export const terminalsService = (service: WorkspaceService) =>
+export const terminalsService = (service: WorkspaceService, watches: Watches) =>
   defineService(RuntimeTerminalsV1, {
     list: defineMethod({
       ...methods.list,
@@ -33,5 +34,10 @@ export const terminalsService = (service: WorkspaceService) =>
     stop: defineMethod({
       ...methods.stop,
       execute: (id) => service.terminals.stop(id),
+    }),
+    watchProject: defineMethod({
+      ...methods.watchProject,
+      execute: ([projectId, listener]) =>
+        watches.terminals(projectId, listener),
     }),
   });

@@ -5,6 +5,7 @@ import {
   functionSchema,
   noInput,
   ref,
+  type StreamListener,
 } from 'bundle/contracts';
 import type { SandboxSshAccess } from 'sandbox';
 import { z } from 'zod';
@@ -24,6 +25,11 @@ import {
   type Thread,
   type ThreadEvent,
 } from './model.js';
+import {
+  type ProjectWatchInput,
+  type ProjectWatchItem,
+  watchMethods,
+} from './watches.js';
 
 /*
  * runtime/v1: Projects, boot recovery, host stop and the live notices of the
@@ -146,6 +152,16 @@ export interface Runtime {
   vmSsh(vmId: string, call?: CallArg): Promise<VmSsh | undefined>;
   /** Every notice, in publication order, after its commit. */
   watch(listener: RuntimeListener, call?: CallArg): Disposable;
+  /**
+   * The `/projects` namespace as a stream (stage 9 R-STREAM, 1.2.0): one
+   * snapshot of the Project, its Threads and terminals, then its Project and
+   * Thread notices. Remote-callable; the desktop bridge subscribes to it.
+   */
+  watchProject(
+    input: ProjectWatchInput,
+    listener: StreamListener<ProjectWatchItem>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 const optional = <T extends z.ZodType>(schema: T) => schema.optional();
@@ -211,6 +227,7 @@ export const runtimeMethods = {
   deleteProject: { input: z.string(), output: deleteResultSchema },
   vmSsh: { input: z.string(), output: optional(vmSshSchema) },
   watch: { input: runtimeListenerSchema, output: disposableSchema },
+  watchProject: watchMethods.project,
 } as const;
 
 export const RuntimeV1 = ref<Runtime>('runtime/v1');

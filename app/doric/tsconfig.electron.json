@@ -14,14 +14,11 @@
     "src/connection/**/*.ts",
     "src/platform/**/*.ts",
     "src/app/api/desktop.ts",
-    "src/notifications.ts",
-    "src/workspace/validation.ts",
-    "src/workspace/api.ts",
-    "src/workspace/config.ts",
     "tests/support/**/*.ts",
     "tests-electron/**/*.ts"
   ],
   "exclude": [
+    "src/connection/ipc.ts",
     "src/platform/generation/runner-bootstrap.ts",
     "src/platform/generation/runner-entry.ts"
   ]

@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import type { MethodSpec, MethodSpecs } from '../../contracts/basic/common.js';
+import {
+  type MethodSpec,
+  type MethodSpecs,
+  streamListener,
+} from '../../contracts/basic/common.js';
 import type { JsonObject } from '../../contracts/types.js';
 
 /** One JSON Schema validation failure, relative to the validated value. */
@@ -63,7 +67,12 @@ export const memberSpec = (
   const minimum =
     typeof schema.minItems === 'number' ? schema.minItems : items.length;
   const tupleItems = items.map((item, index) => {
-    const zod = validatorSchema(validators, item);
+    const stream = item['x-doric-stream'];
+    // A stream listener stays a stream listener (stage 9 R-STREAM), so the
+    // desktop bridge tells a remote provider's stream methods apart too.
+    const zod = isObject(stream)
+      ? streamListener(validatorSchema(validators, stream))
+      : validatorSchema(validators, item);
 
     return index < minimum ? zod : zod.optional();
   });

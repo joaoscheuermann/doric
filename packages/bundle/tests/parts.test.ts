@@ -165,6 +165,32 @@ void test('a client part leaves the import-map specifiers to the window', async 
   );
 });
 
+void test('a bundled CommonJS dependency that requires an external gets the window instance', async () => {
+  await withBundle(
+    {
+      'node_modules/cjs-dep/package.json': JSON.stringify({
+        name: 'cjs-dep',
+        main: 'index.js',
+      }),
+      'node_modules/cjs-dep/index.js':
+        "var React = require('react');\nexports.useIt = function () { return React.useState; };\n",
+      'src/client/index.ts': [
+        `import { useIt } from 'cjs-dep';`,
+        `export const activate = () => [useIt];`,
+        '',
+      ].join('\n'),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      const source = await read(dir, 'client/index.js');
+
+      assert.deepEqual(importsOf(source), ['react']);
+      assert.doesNotMatch(source, /__require\(\s*["']react["']\s*\)/);
+    },
+  );
+});
+
 void test('client CSS compiles the utilities its sources use and refuses @theme', async () => {
   await withBundle(
     {
@@ -229,16 +255,120 @@ void test('cli build records desktopMain and client entries from the built parts
   );
 });
 
-void test('cli build refuses a client part that touches the DOM during activate', async () => {
+void test('cli build imports and dry-activates a client part with the DOM shim, then removes it', async () => {
   await withBundle(
     {
-      'src/client/index.ts': `export const activate = () => { document.body.append('x'); };\n`,
+      'src/client/index.ts': [
+        `import { defineMethod, defineService } from 'bundle/contracts';`,
+        `import { z } from 'zod';`,
+        // Import-time DOM through a custom element class only.
+        `class DemoView extends HTMLElement {}`,
+        `export const activate = ({ services }) => {`,
+        `  customElements.define('demo-view', DemoView);`,
+        `  document.body.append(document.createElement('demo-view'));`,
+        `  window.localStorage.setItem('k', 'v');`,
+        `  new ResizeObserver(() => undefined).observe(document.body);`,
+        `  matchMedia('(prefers-color-scheme: dark)');`,
+        `  services.provide(defineService('demo.view/v1', {`,
+        `    ping: defineMethod({ input: z.tuple([]), output: z.literal('pong'), execute: () => 'pong' }),`,
+        `  }));`,
+        `};`,
+        '',
+      ].join('\n'),
     },
     async (dir) => {
-      await assert.rejects(
-        buildBundle(dir),
-        /client part touched the DOM during activate/,
+      const { descriptor } = await buildBundle(dir);
+
+      assert.deepEqual(
+        descriptor.contracts.map(({ id, environment }) => [id, environment]),
+        [['demo.view/v1', 'client']],
       );
+
+      for (const name of [
+        'HTMLElement',
+        'customElements',
+        'document',
+        'window',
+        'localStorage',
+        'ResizeObserver',
+        'matchMedia',
+      ]) {
+        assert.equal(name in globalThis, false, name);
+      }
+    },
+    { provides: ['demo.view/v1@1.0.0'] },
+  );
+});
+
+void test('cli build names the client module that touches more of the DOM at import time', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': `document.fonts.add('x');\nexport const activate = () => undefined;\n`,
+    },
+    async (dir) => {
+      await assert.rejects(buildBundle(dir), (error: unknown) => {
+        const message = error instanceof Error ? error.message : '';
+
+        return (
+          message.startsWith('Loading client/index.js failed:') &&
+          message.includes('class … extends HTMLElement') &&
+          message.includes('dynamic import()')
+        );
+      });
+      assert.equal('document' in globalThis, false);
+    },
+  );
+});
+
+void test('client workers are self-contained modules next to the part', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': `export const activate = () => new URL('./workers/editor.js', import.meta.url);\n`,
+      'src/client/workers/editor.ts': [
+        `import { z } from 'zod';`,
+        `import { helper } from '../helper.js';`,
+        `self.onmessage = () => [z.string().parse('ok'), helper()];`,
+        '',
+      ].join('\n'),
+      'src/client/helper.ts': `export const helper = () => 'inlined-worker-helper';\n`,
+    },
+    async (dir) => {
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(built, { client: 'client/index.js' });
+
+      const worker = await read(dir, 'client/workers/editor.js');
+
+      assert.deepEqual(importsOf(worker), []);
+      assert.match(worker, /inlined-worker-helper/);
+    },
+  );
+});
+
+void test('CSS the client imports is appended after the Tailwind output, and fonts become files', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': `import './vendor.css';\nexport const activate = () => 'flex';\n`,
+      'src/client/vendor.css': `@font-face { font-family: Demo; src: url('./demo.woff2'); }\n.vendor-rule { color: red; }\n`,
+      'src/client/demo.woff2': 'wOF2',
+      'src/client/styles.css': `@import 'tailwindcss/utilities.css' layer(utilities);\n@source './';\n`,
+    },
+    async (dir) => {
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.equal(built.clientStyles, 'client/styles.css');
+
+      const css = await read(dir, 'client/styles.css');
+      const tailwindAt = css.search(/\.flex\s*\{/);
+      const vendorAt = css.indexOf('.vendor-rule');
+
+      assert.ok(tailwindAt >= 0 && vendorAt > tailwindAt, css);
+
+      const font = /url\("?\.\/(assets\/demo-[A-Z0-9]+\.woff2)"?\)/.exec(css);
+
+      assert.ok(font !== null, css);
+      assert.equal(await read(dir, `client/${font[1]}`), 'wOF2');
+      await assert.rejects(read(dir, 'client/index.css'));
     },
   );
 });

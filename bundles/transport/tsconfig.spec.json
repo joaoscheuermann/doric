@@ -19,6 +19,9 @@
       "path": "../runtime"
     },
     {
+      "path": "../resources"
+    },
+    {
       "path": "../../packages/llms/tsconfig.lib.json"
     }
   ]

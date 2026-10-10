@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { defineMethod, defineService, isHooksContract } from 'bundle/contracts';
-import { manifestV1Schema, memberSchema } from 'bundle/runtime';
+import {
+  manifestV1Schema,
+  memberSchema,
+  streamItemSchema,
+} from 'bundle/runtime';
 import { createTestServices } from 'bundle/testing';
 import { TerminalV1 } from 'terminal/contracts';
 import type { z } from 'zod';
@@ -72,21 +76,49 @@ const serializable: Record<string, Specs> = {
   'host-config/v1': configurationMethods,
 };
 
+/** The stage-9 remote watches (R-STREAM): a stream listener, then a Disposable. */
+const streams: Record<string, readonly string[]> = {
+  'runtime/v1': ['watchProject'],
+  'runtime.threads/v1': ['watchThread'],
+  'runtime.terminals/v1': ['watchProject'],
+};
+
 void test('the transport-facing contracts carry no process-local member', () => {
   for (const [contract, methods] of Object.entries(serializable))
     for (const [name, spec] of Object.entries(methods))
-      for (const io of ['input', 'output'] as const)
-        assert.deepEqual(
-          markers(spec[io], io),
-          [],
-          `${contract}.${name}.${io}`,
-        );
+      if (!streams[contract]?.includes(name))
+        for (const io of ['input', 'output'] as const)
+          assert.deepEqual(
+            markers(spec[io], io),
+            [],
+            `${contract}.${name}.${io}`,
+          );
 
   // watch and drain take a kernel listener (a callback across the envelope).
   for (const [name, spec] of Object.entries(runtimeMethods))
-    if (name !== 'watch' && name !== 'drain')
+    if (name !== 'watch' && name !== 'drain' && name !== 'watchProject')
       for (const io of ['input', 'output'] as const)
         assert.deepEqual(markers(spec[io], io), [], `runtime/v1.${name}.${io}`);
+});
+
+void test('the remote watches cross as streams: only a listener and a Disposable are local', () => {
+  const specs: Record<string, Specs> = {
+    'runtime/v1': runtimeMethods,
+    'runtime.threads/v1': runtimeThreadsMethods,
+    'runtime.terminals/v1': runtimeTerminalsMethods,
+  };
+  for (const [contract, names] of Object.entries(streams))
+    for (const name of names) {
+      const spec = specs[contract]?.[name];
+      assert.ok(spec !== undefined, `${contract}.${name}`);
+      assert.deepEqual(markers(spec.input, 'input'), ['callback']);
+      assert.deepEqual(markers(spec.output, 'output'), ['disposable']);
+      assert.ok(
+        streamItemSchema(memberSchema(spec.input, 'input').schema) !==
+          undefined,
+        `${contract}.${name} is a stream`,
+      );
+    }
 });
 
 void test('local members name the codec that carries them', () => {
@@ -119,12 +151,14 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   );
 
   assert.deepEqual(manifest.provides, [
-    // 1.1.0: the generation handover members (57-WP-H).
-    `${RuntimeV1.id}@1.1.0`,
-    `${RuntimeThreadsV1.id}@1.0.0`,
+    // 1.1.0: the generation handover members (57-WP-H); 1.2.0: watchProject.
+    `${RuntimeV1.id}@1.2.0`,
+    // 1.1.0: watchThread (stage 9 R-STREAM).
+    `${RuntimeThreadsV1.id}@1.1.0`,
     `${RuntimeWorkspaceV1.id}@1.0.0`,
     `${RuntimeLeaseV1.id}@1.0.0`,
-    `${RuntimeTerminalsV1.id}@1.0.0`,
+    // 1.1.0: watchProject (stage 9 R-STREAM).
+    `${RuntimeTerminalsV1.id}@1.1.0`,
     `${RuntimeHooksV1.id}@1.0.0`,
     `${promptFinishedEvent.type}@1.0.0`,
     `${TerminalV1.id}@1.0.0`,

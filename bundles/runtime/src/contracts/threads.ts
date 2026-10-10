@@ -1,4 +1,9 @@
-import { type CallArg, ref } from 'bundle/contracts';
+import {
+  type CallArg,
+  type Disposable,
+  ref,
+  type StreamListener,
+} from 'bundle/contracts';
 import { z } from 'zod';
 
 import {
@@ -30,6 +35,11 @@ import {
   threadSchema,
   threadUsageSchema,
 } from './model.js';
+import {
+  type ThreadWatchInput,
+  type ThreadWatchItem,
+  watchMethods,
+} from './watches.js';
 
 /*
  * Each schema is annotated with its interface so a provider returns the
@@ -308,6 +318,16 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     call?: CallArg,
   ): Promise<RemoveQueuedResult>;
   usage(id: string, call?: CallArg): Promise<ThreadUsage | undefined>;
+  /**
+   * The `/threads` namespace as a stream (stage 9 R-STREAM, 1.1.0): one
+   * snapshot with the events after `afterSequence`, then gap-free live
+   * events and the Thread's lifecycle notices. Remote-callable.
+   */
+  watchThread(
+    input: ThreadWatchInput,
+    listener: StreamListener<ThreadWatchItem>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 const threadPrompt = z
@@ -413,6 +433,7 @@ export const runtimeThreadsMethods = {
   },
   removeQueued: { input: threadPrompt, output: removeQueuedResultSchema },
   usage: { input: z.string(), output: threadUsageSchema.optional() },
+  watchThread: watchMethods.thread,
 } as const;
 
 export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');

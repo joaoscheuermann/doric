@@ -25,12 +25,23 @@ export interface RouteRegistration {
   readonly parent?: string;
 }
 
+/** One route of the active chain: its match (own params only) and its registration. */
+export interface RouteEntry {
+  readonly match: RouteMatch;
+  readonly route: RouteRegistration;
+}
+
 /** First provider in stage 9 (client, one per window). */
 export interface Navigation {
   register(route: RouteRegistration): Disposable;
   navigate(path: string, options?: { readonly replace?: boolean }): void;
   back(): void;
   current(): RouteMatch | undefined;
+  /**
+   * Root-first chain of the active route through `parent`; `[]` when no
+   * route matches. The same array is returned until the next navigation.
+   */
+  chain(): readonly RouteEntry[];
   subscribe(listener: (match: RouteMatch | undefined) => void): Disposable;
 }
 
@@ -56,6 +67,12 @@ export const navigationMethods = {
   },
   back: { input: noInput, output: z.void() },
   current: { input: noInput, output: routeMatchSchema.optional() },
+  chain: {
+    input: noInput,
+    output: z.custom<readonly RouteEntry[]>((value) => Array.isArray(value), {
+      message: 'Expected an array of route entries.',
+    }),
+  },
   subscribe: {
     input: functionSchema<(match: RouteMatch | undefined) => void>(),
     output: disposableSchema,

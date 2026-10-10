@@ -7,6 +7,8 @@
 import {
   ContractError,
   type JsonObject,
+  type NotificationRequest,
+  notificationRequestSchema,
   toContractError,
 } from 'bundle/contracts';
 import {
@@ -33,6 +35,7 @@ import {
 } from 'desktop-client/protocol';
 import { z } from 'zod';
 
+import type { ConnectionSource } from '../../connection/relay';
 import type { GenerationProcess } from '../generation/process';
 import type { PlatformLog } from '../log';
 import {
@@ -95,6 +98,10 @@ export interface DispatcherDeps {
   ) => Promise<void>;
   /** Client diagnostics a window forwards (main reports them to the host). */
   readonly diagnostic: (entry: WindowEntry, diagnostic: unknown) => void;
+  /** Stage 9: the host connection status every window follows (D9-5). */
+  readonly connection: ConnectionSource;
+  /** Stage 9: a native notification of a window (D9-6). */
+  readonly notify: (request: NotificationRequest) => void;
   readonly now?: () => number;
 }
 
@@ -814,6 +821,10 @@ export class Dispatcher {
           );
 
           return ok(undefined);
+        case 'notify':
+          this.#deps.notify(notificationRequestSchema.parse(envelope.input));
+
+          return ok(undefined);
         default:
           throw new ContractError(
             'invalid_input',
@@ -876,6 +887,22 @@ export class Dispatcher {
       this.#streams.set(id, {
         contents,
         dispose: () => this.#commandStreams.get(contents)?.delete(id),
+      });
+
+      return ok(undefined);
+    }
+
+    if (envelope.method === 'connection') {
+      // The current status first, then every change, to this window.
+      const unsubscribe = this.#deps.connection.subscribe((status) =>
+        push(sender, { type: 'event', id, event: status }),
+      );
+
+      this.#streams.set(id, { contents, dispose: unsubscribe });
+      push(sender, {
+        type: 'event',
+        id,
+        event: this.#deps.connection.status(),
       });
 
       return ok(undefined);

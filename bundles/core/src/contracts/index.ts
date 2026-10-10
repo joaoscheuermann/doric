@@ -10,7 +10,14 @@ export {
   type FillProvider,
   readModelProperties,
 } from '../host/models/catalog.js';
-export { OpenSettingsCommandV1, openSettingsInput } from './commands.js';
+export {
+  type CoreCommands,
+  CoreCommandsV1,
+  coreCommandsExecuteInput,
+  coreCommandsMethods,
+  OpenSettingsCommandV1,
+  openSettingsInput,
+} from './commands.js';
 export { CoreHooksV1, onBeforeOpenWindowHook } from './hooks.js';
 export {
   settingsGenerationId,

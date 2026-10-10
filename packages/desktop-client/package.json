@@ -25,5 +25,8 @@
     "bundle": "0.0.1",
     "tslib": "^2.3.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "happy-dom": "20.8.9"
   }
 }

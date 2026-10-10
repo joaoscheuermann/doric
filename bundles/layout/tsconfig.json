@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": [],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
+  "references": [
+    {
+      "path": "../resources"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../../packages/desktop-ui"
+    },
+    {
+      "path": "../../packages/bundle"
+    }
+  ]
+}

@@ -55,14 +55,20 @@ RUN npm ci --ignore-scripts \
       bundles/models-adapter/tsconfig.json \
       bundles/sandbox-adapter/tsconfig.json \
       bundles/transport/tsconfig.json \
+      bundles/resources/tsconfig.json \
+      bundles/layout/tsconfig.json \
+      bundles/chat/tsconfig.json \
+      bundles/history/tsconfig.json \
       --force \
+ && npx tsc -p bundles/settings/tsconfig.json \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for bundle in postgres core files git threads runtime direct models-adapter sandbox-adapter; do \
+ && for bundle in postgres core files git threads runtime direct models-adapter sandbox-adapter layout settings chat history; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
       bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
       bundles/runtime bundles/direct bundles/models-adapter bundles/sandbox-adapter \
+      bundles/layout bundles/settings bundles/chat bundles/history \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
  && mv agents/doric/dist/lib agents/doric/dist/src/

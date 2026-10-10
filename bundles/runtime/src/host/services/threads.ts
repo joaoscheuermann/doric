@@ -7,6 +7,7 @@ import {
 import type { Bindings } from '../domain/bindings.js';
 import type { WorkspaceService } from '../domain/types.js';
 import type { ThreadStore } from '../store/types.js';
+import type { Watches } from './watches.js';
 
 /*
  * runtime.threads/v1 (design 57 §2.3): the stage-1 child controls, bound to
@@ -17,10 +18,12 @@ export const threadsService = ({
   service,
   threads,
   bindings,
+  watches,
 }: {
   readonly service: WorkspaceService;
   readonly threads: ThreadStore;
   readonly bindings: Bindings;
+  readonly watches: Watches;
 }) =>
   defineService(RuntimeThreadsV1, {
     spawn: defineMethod({
@@ -149,5 +152,9 @@ export const threadsService = ({
     usage: defineMethod({
       ...methods.usage,
       execute: (id) => service.threads.usage(id),
+    }),
+    watchThread: defineMethod({
+      ...methods.watchThread,
+      execute: ([input, listener]) => watches.thread(input, listener),
     }),
   });

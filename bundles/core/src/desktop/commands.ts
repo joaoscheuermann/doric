@@ -17,14 +17,22 @@ import { SETTINGS_APPEARANCE } from './appearance.js';
 
 /**
  * `core.open-settings/v1`: opens the settings window at `path`, `/settings`
- * by default. `doric.windows/v1` focuses the window when it is already open
- * and navigates it when the path differs (P2).
+ * by default. Without a `path`, an open settings window is only focused and
+ * keeps its section (D9-7, as the gear does today); with one,
+ * `doric.windows/v1` focuses the window and navigates it when the path
+ * differs (P2).
  */
 export const openSettings = defineCommand({
   id: 'core.open-settings/v1',
   input: openSettingsInput,
   execute: async ({ path }, call, services) => {
-    await services.use(DoricWindowsV1).open(
+    const windows = services.use(DoricWindowsV1);
+
+    if (path === undefined && (await windows.focus('settings', call))) {
+      return;
+    }
+
+    await windows.open(
       {
         key: 'settings',
         path: path ?? '/settings',

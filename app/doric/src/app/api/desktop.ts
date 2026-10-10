@@ -30,11 +30,6 @@ export interface PreloadIpc {
 
 export interface DesktopBinding {
   readonly api: DoricDesktopApi;
-  /**
-   * `window.doric.settings.onFlush` (legacy): its listeners run in the flush
-   * phase of the close protocol beside the bootstrap's handler.
-   */
-  onFlush(listener: () => void | Promise<void>): () => void;
 }
 
 export interface MetaDocument {
@@ -74,7 +69,6 @@ export const createDesktopApi = (
   };
   const streams = new Map<string, (event: BridgeStreamEvent) => void>();
   const chromeListeners = new Set<(chrome: WindowChrome) => void>();
-  const flushListeners = new Set<() => void | Promise<void>>();
   let closeHandler:
     | ((request: CloseRequest) => Promise<CloseAnswer | undefined>)
     | undefined;
@@ -97,10 +91,9 @@ export const createDesktopApi = (
     } else {
       const handler = closeHandler;
 
-      await Promise.allSettled([
-        ...(handler === undefined ? [] : [handler(closeRequest)]),
-        ...[...flushListeners].map(async (listener) => listener()),
-      ]);
+      await Promise.allSettled(
+        handler === undefined ? [] : [handler(closeRequest)],
+      );
     }
 
     await request({ op: 'closeAnswer', id, answer }).catch(() => undefined);
@@ -202,14 +195,5 @@ export const createDesktopApi = (
     },
   };
 
-  return {
-    api,
-    onFlush: (listener) => {
-      flushListeners.add(listener);
-
-      return () => {
-        flushListeners.delete(listener);
-      };
-    },
-  };
+  return { api };
 };

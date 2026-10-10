@@ -2,7 +2,7 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "core",
-    "version": "1.3.0"
+    "version": "1.5.0"
   },
   "contracts": [
     {
@@ -131,7 +131,7 @@
     },
     {
       "id": "tools/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -141,6 +141,36 @@
         "$id": "doric:contract/tools/v1",
         "x-doric-kind": "service",
         "$defs": {
+          "catalog.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "catalog.output": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "settings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {}
+                  }
+                }
+              },
+              "required": ["name", "settings"],
+              "additionalProperties": false
+            }
+          },
           "list.input": {
             "type": "array",
             "prefixItems": [],
@@ -1792,6 +1822,33 @@
       }
     },
     {
+      "id": "core.commands/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/core.commands/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "execute.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {}
+            },
+            "required": ["id", "input"],
+            "additionalProperties": false
+          },
+          "execute.output": {}
+        }
+      }
+    },
+    {
       "id": "windows/v1",
       "version": "1.0.0",
       "kind": "service",
@@ -2035,6 +2092,379 @@
               }
             },
             "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "id": "hooks/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/hooks/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "define.input": {
+            "x-doric-local": true
+          },
+          "define.output": {
+            "x-doric-local": "disposable"
+          },
+          "execute.input": {
+            "x-doric-local": true
+          },
+          "execute.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          },
+          "whenDefined.input": {
+            "x-doric-local": true
+          },
+          "whenDefined.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "log/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/log/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "debug.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "debug.output": {},
+          "error.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "error.output": {},
+          "info.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "info.output": {},
+          "warn.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "warn.output": {}
+        }
+      }
+    },
+    {
+      "id": "ui/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/ui/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "create.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "create.output": {
+            "x-doric-local": true
+          },
+          "define.input": {
+            "x-doric-local": true
+          },
+          "define.output": {
+            "x-doric-local": "disposable"
+          },
+          "dispose.input": {
+            "x-doric-local": true
+          },
+          "dispose.output": {}
+        }
+      }
+    },
+    {
+      "id": "navigation/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/navigation/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "back.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "back.output": {},
+          "chain.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "chain.output": {
+            "x-doric-local": true
+          },
+          "current.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "current.output": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["path", "pattern", "params"],
+            "additionalProperties": false
+          },
+          "navigate.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "replace": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "navigate.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          },
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "regions/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/regions/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "add.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "tag": {
+                    "type": "string"
+                  },
+                  "props": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "order": {
+                    "type": "number"
+                  }
+                },
+                "required": ["id", "tag"],
+                "additionalProperties": false
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "add.output": {
+            "x-doric-local": "disposable"
+          },
+          "items.input": {
+            "type": "string"
+          },
+          "items.output": {
+            "x-doric-local": true
+          },
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "commands/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/commands/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "execute.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ref"
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "id"]
+                  }
+                ]
+              },
+              {}
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "execute.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
           }
         }
       }

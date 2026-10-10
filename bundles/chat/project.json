@@ -1,0 +1,58 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-chat",
+  "projectType": "library",
+  "sourceRoot": "bundles/chat/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/chat/tsconfig.json",
+          "tsc -p bundles/chat/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/chat"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/chat/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/chat/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/chat/dist-tests",
+          "tsc -p bundles/chat/tsconfig.spec.json",
+          "tsc -p bundles/chat/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/chat/dist-tests/tests/*.test.js bundles/chat/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/chat",
+          "biome format --write bundles/chat/contracts.published.json"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

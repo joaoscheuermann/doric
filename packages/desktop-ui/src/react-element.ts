@@ -1,5 +1,10 @@
 import type { Services } from 'bundle/contracts';
-import { type ComponentType, createElement, type ReactNode } from 'react';
+import {
+  type ComponentType,
+  createElement,
+  type ReactNode,
+  useSyncExternalStore,
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 export interface ReactElementOptions<P extends object> {
@@ -54,11 +59,6 @@ export const defineReactElement = <P extends object>(
       }
     }
 
-    constructor() {
-      super();
-      this.style.display = options.display ?? 'contents';
-    }
-
     get services(): Services {
       return this.#services as Services;
     }
@@ -69,6 +69,10 @@ export const defineReactElement = <P extends object>(
     }
 
     connectedCallback(): void {
+      // Set on connect, not in the constructor: an element made by
+      // `document.createElement` must not have attributes when its
+      // constructor returns, and `style` is one.
+      this.style.display = options.display ?? 'contents';
       this.#render();
     }
 
@@ -105,4 +109,111 @@ export const defineReactElement = <P extends object>(
   }
 
   return ReactElement;
+};
+
+/** One connected portal host and the props set on it. */
+export interface PortalHost<P extends object> {
+  readonly element: HTMLElement;
+  readonly props: Readonly<Partial<P>>;
+}
+
+export interface PortalHosts<P extends object> {
+  /** The host element: `display: contents`, no React root of its own. */
+  readonly Element: new () => HTMLElement;
+  /**
+   * The connected hosts in connection order, for `createPortal` by the root
+   * that owns them; re-renders when a host connects, disconnects or a listed
+   * property changes.
+   */
+  useHosts(): readonly PortalHost<P>[];
+}
+
+/**
+ * Host elements whose content another React root renders through portals
+ * (stage 9, D9-12): a bundle's region items share its root instead of each
+ * owning one, so ordering and state stay in that root.
+ */
+export const portalHosts = <P extends object>(
+  properties: readonly (keyof P & string)[],
+): PortalHosts<P> => {
+  const connected: PortalHostElement[] = [];
+  const listeners = new Set<() => void>();
+  let snapshot: readonly PortalHost<P>[] = Object.freeze([]);
+
+  const changed = (): void => {
+    snapshot = Object.freeze(
+      connected.map((element) => Object.freeze(element.host())),
+    );
+
+    for (const listener of [...listeners]) {
+      listener();
+    }
+  };
+
+  class PortalHostElement extends HTMLElement {
+    services: Services | undefined;
+    readonly #values = new Map<string, unknown>();
+
+    static {
+      for (const name of properties) {
+        Object.defineProperty(PortalHostElement.prototype, name, {
+          configurable: true,
+          enumerable: true,
+          get(this: PortalHostElement) {
+            return this.#values.get(name);
+          },
+          set(this: PortalHostElement, value: unknown) {
+            this.#values.set(name, value);
+
+            if (connected.includes(this)) {
+              changed();
+            }
+          },
+        });
+      }
+    }
+
+    host(): PortalHost<P> {
+      return {
+        element: this,
+        props: Object.freeze(
+          Object.fromEntries(
+            properties.map((name) => [name, this.#values.get(name)]),
+          ),
+        ) as Readonly<Partial<P>>,
+      };
+    }
+
+    connectedCallback(): void {
+      // On connect: a constructor must leave the element without attributes.
+      this.style.display = 'contents';
+      if (!connected.includes(this)) {
+        connected.push(this);
+        changed();
+      }
+    }
+
+    disconnectedCallback(): void {
+      const index = connected.indexOf(this);
+
+      if (index >= 0) {
+        connected.splice(index, 1);
+        changed();
+      }
+    }
+  }
+
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+  const read = () => snapshot;
+
+  return {
+    Element: PortalHostElement,
+    useHosts: () => useSyncExternalStore(subscribe, read, read),
+  };
 };

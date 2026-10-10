@@ -133,6 +133,26 @@ export class NativeWindows {
     }
   }
 
+  /**
+   * Stage 9 (D9-7): focuses the open window of `key` without navigating it;
+   * false when no such window is open.
+   */
+  focus(key: string): boolean {
+    const existing = this.#options.registry.byKey(key);
+
+    if (existing === undefined) {
+      return false;
+    }
+
+    if (existing.window.isMinimized()) {
+      existing.window.restore();
+    }
+
+    existing.window.focus();
+
+    return true;
+  }
+
   /** Focuses an open key, or reopens it with this run's last request. */
   async focusOrOpen(key: string): Promise<void> {
     const existing = this.#options.registry.byKey(key);

@@ -27,7 +27,7 @@ import {
   type PrincipalOptions,
   type ServiceRuntime,
 } from './principal.js';
-import { inertDisposable, toDisposable } from './scope.js';
+import { type DisposalScope, inertDisposable, toDisposable } from './scope.js';
 import { PLATFORM_VERSION } from './version.js';
 
 const HOOKS_ID = 'hooks/v1';
@@ -329,4 +329,127 @@ export const createPrincipal = (
   principal.unchecked = servicesOf(principal, false);
 
   return principal;
+};
+
+/** What `createElementScope` returns: the element's services and their end. */
+export interface ElementScope {
+  readonly services: Services;
+  /** Disposes everything registered through `services`; idempotent. */
+  dispose(): Promise<void>;
+}
+
+const isThenable = (value: unknown): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { then?: unknown }).then === 'function';
+
+/**
+ * Whether an object result carries functions a later call would run (a hooks
+ * handle or registrar), as opposed to data or a plain Disposable.
+ */
+const carriesCalls = (value: object, depth = 2): boolean =>
+  Object.entries(value).some(
+    ([key, member]) =>
+      (typeof member === 'function' && key !== 'dispose') ||
+      (depth > 1 &&
+        typeof member === 'object' &&
+        member !== null &&
+        carriesCalls(member, depth - 1)),
+  );
+
+/**
+ * Stage 9 (D9-2): services for one element, a child scope of the owner's
+ * activation scope. Every `provide`, every stub method call and every
+ * `whenAvailable` made through them (also later, from a stub kept by the
+ * element) runs inside that child, so its Disposables end with `dispose`
+ * while the owner's own registrations survive.
+ */
+export const createElementScope = (principal: Principal): ElementScope => {
+  const child = principal.scope.child();
+  const run = <T>(scope: DisposalScope, fn: () => T): T =>
+    principal.runInScope(scope, fn);
+
+  const wrapFunction =
+    (
+      fn: (...args: unknown[]) => unknown,
+      owner: unknown,
+      scope: DisposalScope,
+    ) =>
+    (...args: unknown[]): unknown =>
+      wrapResult(
+        run(scope, () => Reflect.apply(fn, owner, args)),
+        scope,
+      );
+
+  /** A view of a stub or facade whose calls run in `scope`. */
+  const wrapObject = (target: object, scope: DisposalScope): object => {
+    const cache = new Map<PropertyKey, unknown>();
+
+    return new Proxy(Object.create(null) as object, {
+      get: (_view, property) => {
+        const member = Reflect.get(target, property) as unknown;
+
+        if (typeof member !== 'function') {
+          return typeof member === 'object' &&
+            member !== null &&
+            !isThenable(member) &&
+            carriesCalls(member)
+            ? wrapObject(member, scope)
+            : member;
+        }
+
+        let wrapped = cache.get(property);
+
+        if (wrapped === undefined) {
+          wrapped = wrapFunction(
+            member as (...args: unknown[]) => unknown,
+            target,
+            scope,
+          );
+          cache.set(property, wrapped);
+        }
+
+        return wrapped;
+      },
+      has: (_view, property) => Reflect.has(target, property),
+    });
+  };
+
+  const wrapResult = (value: unknown, scope: DisposalScope): unknown =>
+    typeof value === 'object' &&
+    value !== null &&
+    !isThenable(value) &&
+    carriesCalls(value)
+      ? wrapObject(value, scope)
+      : value;
+
+  const base = principal.services;
+  const services = Object.freeze({
+    provide: (definition: AnyServiceDefinition) =>
+      run(child, () => base.provide(definition as never)),
+    use: (contract: AnyServiceRef, scope?: CallScope) =>
+      wrapObject(
+        run(child, () => base.use(contract as never, scope)) as object,
+        child,
+      ),
+    whenAvailable: (
+      contract: AnyServiceRef,
+      // biome-ignore lint/suspicious/noConfusingVoidType: callbacks may return nothing or a cleanup; `void` keeps callbacks that end on a void call assignable, which `undefined` would reject
+      callback: (api: unknown, provider: ProviderInfo) => void | Cleanup,
+    ) =>
+      run(child, () =>
+        base.whenAvailable(
+          contract as never,
+          ((api: unknown, provider: ProviderInfo) =>
+            // whenAvailable runs the callback in a child of `child`; later
+            // calls of the api stay in that child.
+            callback(
+              wrapObject(api as object, principal.current),
+              provider,
+            )) as never,
+        ),
+      ),
+  }) as unknown as Services;
+
+  return { services, dispose: () => child.dispose() };
 };

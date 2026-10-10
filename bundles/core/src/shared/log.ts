@@ -33,17 +33,27 @@ const redactionsOf = (services: Services): readonly string[] => {
   }
 };
 
+export interface LogOptions {
+  /**
+   * Whether records are redacted with `secrets/v1.view().redactions()`
+   * (default true). The client part passes false: a window never holds
+   * resolved secrets, and `secrets/v1` there is a host contract.
+   */
+  readonly redact?: boolean;
+}
+
 const write = (
   level: Level,
   message: string,
   fields: Readonly<Record<string, unknown>> | undefined,
   call: Call,
   services: Services,
+  redact: boolean,
 ): void => {
   try {
     const { environment } = services.use(DoricBundleV1).describe(call);
     const traceId = traceIdOf(call);
-    const secrets = redactionsOf(services);
+    const secrets = redact ? redactionsOf(services) : [];
     const record: LogRecord = {
       level,
       message: redactSecrets(message, secrets),
@@ -77,12 +87,12 @@ const write = (
   }
 };
 
-const level = (name: Level) =>
+const level = (name: Level, redact: boolean) =>
   defineMethod({
     input: logMethods[name].input,
     output: logMethods[name].output,
     execute: ([message, fields], call, services) => {
-      write(name, message, fields, call, services);
+      write(name, message, fields, call, services, redact);
     },
   });
 
@@ -93,10 +103,13 @@ const level = (name: Level) =>
  * `secrets/v1.view().redactions()` is replaced by `[REDACTED]` in the message
  * and in the string leaves of the fields first.
  */
-export const createLog = () =>
-  defineService(LogV1, {
-    debug: level('debug'),
-    info: level('info'),
-    warn: level('warn'),
-    error: level('error'),
+export const createLog = (options: LogOptions = {}) => {
+  const redact = options.redact ?? true;
+
+  return defineService(LogV1, {
+    debug: level('debug', redact),
+    info: level('info', redact),
+    warn: level('warn', redact),
+    error: level('error', redact),
   });
+};

@@ -1,0 +1,8 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "settings",
+    "version": "1.0.0"
+  },
+  "contracts": []
+}

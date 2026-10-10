@@ -9,7 +9,11 @@
     "runtime",
     "direct",
     "models-adapter",
-    "sandbox-adapter"
+    "sandbox-adapter",
+    "layout",
+    "settings",
+    "chat",
+    "history"
   ],
   "providers": {
     "storage.backend/v1": "postgres",

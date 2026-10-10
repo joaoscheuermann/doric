@@ -2,6 +2,9 @@ export { ChromeBar, type ChromeBarProps } from './chrome-bar.js';
 export { cn } from './lib/utils.js';
 export {
   defineReactElement,
+  type PortalHost,
+  type PortalHosts,
+  portalHosts,
   type ReactElementInstance,
   type ReactElementOptions,
 } from './react-element.js';

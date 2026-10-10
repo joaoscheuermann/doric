@@ -1,0 +1,110 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "layout",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "layout.tabs/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/layout.tabs/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "close.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "close.output": {},
+          "focus.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "focus.output": {},
+          "open.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "tag": {
+                "type": "string",
+                "minLength": 1
+              },
+              "props": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["id", "title", "tag"],
+            "additionalProperties": false
+          },
+          "open.output": {}
+        }
+      }
+    },
+    {
+      "id": "layout.workspace/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/layout.workspace/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "selectedThread.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "selectedThread.output": {
+            "x-doric-local": true
+          },
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          },
+          "thread.input": {
+            "type": "string"
+          },
+          "thread.output": {
+            "x-doric-local": true
+          }
+        }
+      }
+    }
+  ]
+}

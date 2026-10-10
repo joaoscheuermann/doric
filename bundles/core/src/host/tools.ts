@@ -1,10 +1,12 @@
 import {
+  type Call,
   ContractError,
   type ContractTool,
   type Disposable,
   defineMethod,
   defineService,
   type RegisteredTool,
+  type Services,
   ToolsV1,
   toolsMethods,
 } from 'bundle/contracts';
@@ -23,6 +25,15 @@ interface Entry {
  */
 export const createTools = () => {
   const registered: Entry[] = [];
+
+  /** The registered tools one call's generation view sees, in order. */
+  const seen = (call: Call, services: Services) => {
+    const view = viewOf(call, services);
+
+    return registered
+      .filter((entry) => seenBy(entry.generation, view))
+      .map((entry) => entry.registered);
+  };
 
   return defineService(ToolsV1, {
     register: defineMethod({
@@ -81,15 +92,20 @@ export const createTools = () => {
     list: defineMethod({
       input: toolsMethods.list.input,
       output: toolsMethods.list.output,
-      execute: (_input, call, services) => {
-        const view = viewOf(call, services);
-
-        return Object.freeze(
-          registered
-            .filter((entry) => seenBy(entry.generation, view))
-            .map((entry) => entry.registered),
-        );
-      },
+      execute: (_input, call, services) => Object.freeze(seen(call, services)),
+    }),
+    // GET /tools as data: the same entries the transport route answers.
+    catalog: defineMethod({
+      input: toolsMethods.catalog.input,
+      output: toolsMethods.catalog.output,
+      execute: async (_input, call, services) =>
+        seen(call, services).map(({ tool }) => ({
+          name: tool.name,
+          ...(tool.description === undefined
+            ? {}
+            : { description: tool.description }),
+          settings: tool.settings,
+        })),
     }),
   });
 };

@@ -1,4 +1,4 @@
-import type { EmbeddedBundle } from 'bundle';
+import { contractDocument, type EmbeddedBundle } from 'bundle';
 import {
   defineMethod,
   defineService,
@@ -165,6 +165,16 @@ export const createHostConfig = (): HostConfig => {
             schema: `schemas/${ConfigurationV1.id}.json`,
           },
         ],
+      },
+      // The service document a desktop part routes `host-config/v1` with.
+      documents: {
+        [`schemas/${ConfigurationV1.id}.json`]: contractDocument({
+          id: ConfigurationV1.id,
+          environment: 'host',
+          cardinality: 'one',
+          kind: 'service',
+          methods: configurationMethods,
+        }).document,
       },
       host: {
         activate: ({ services }: HostContext) => {

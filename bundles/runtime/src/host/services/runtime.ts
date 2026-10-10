@@ -9,6 +9,7 @@ import {
 import type { Notices } from '../domain/notices.js';
 import type { WorkspaceService } from '../domain/types.js';
 import type { ProjectStore, ThreadStore } from '../store/types.js';
+import type { Watches } from './watches.js';
 
 /*
  * runtime/v1 (design 57 §2.2, §4.9): Projects, the boot recovery, the host
@@ -20,12 +21,14 @@ export const runtimeService = ({
   projects,
   threads,
   log,
+  watches,
 }: {
   readonly service: WorkspaceService;
   readonly notices: Notices;
   readonly projects: ProjectStore;
   readonly threads: ThreadStore;
   readonly log: Log;
+  readonly watches: Watches;
 }) => {
   let recovery: Promise<RecoverySummary> | undefined;
   let disposal: Promise<void> | undefined;
@@ -132,6 +135,10 @@ export const runtimeService = ({
     watch: defineMethod({
       ...runtimeMethods.watch,
       execute: (listener) => notices.watch(listener),
+    }),
+    watchProject: defineMethod({
+      ...runtimeMethods.watchProject,
+      execute: ([input, listener]) => watches.project(input, listener),
     }),
   });
 };

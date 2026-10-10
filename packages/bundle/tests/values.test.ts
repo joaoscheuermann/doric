@@ -79,6 +79,7 @@ void test('every basic and platform method has a stated way across the envelope'
     'tools/v1': {
       register: 'optimistic via disposable+tool',
       list: 'crosses via tool',
+      catalog: 'crosses',
     },
     'skills/v1': { register: 'optimistic via disposable', list: 'crosses' },
     'settings/v1': {
@@ -151,9 +152,14 @@ void test('every basic and platform method has a stated way across the envelope'
       navigate: 'crosses',
       back: 'crosses',
       current: 'crosses',
+      chain: 'refused',
       subscribe: 'refused',
     },
-    'regions/v1': { add: 'optimistic via disposable' },
+    'regions/v1': {
+      add: 'optimistic via disposable',
+      items: 'refused',
+      subscribe: 'refused',
+    },
     'windows/v1': { open: 'crosses' },
     'menus/v1': {
       addItem: 'crosses',
@@ -175,6 +181,7 @@ void test('every basic and platform method has a stated way across the envelope'
       open: 'crosses',
       focusOrOpen: 'crosses',
       lastPath: 'crosses',
+      focus: 'crosses',
     },
     'doric.menus/v1': {
       setSkeleton: 'crosses',
@@ -189,6 +196,14 @@ void test('every basic and platform method has a stated way across the envelope'
     },
     'doric.tokens/v1': { get: 'crosses' },
     'doric.notifications/v1': { show: 'crosses' },
+    // Client-only (stage 9): elements and callbacks stay in the window.
+    'doric.elements/v1': {
+      define: 'refused',
+      owner: 'crosses',
+      attach: 'refused',
+      release: 'refused',
+    },
+    'doric.connection/v1': { status: 'crosses', subscribe: 'refused' },
   };
   const actual = Object.fromEntries(
     Object.entries({

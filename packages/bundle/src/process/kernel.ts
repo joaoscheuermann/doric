@@ -11,6 +11,7 @@ import { type CallScope, generationOf } from '../contracts/call.js';
 import type { Activate, Services } from '../contracts/context.js';
 import { ContractError } from '../contracts/error.js';
 import { platformContracts } from '../contracts/platform.js';
+import type { JsonObject } from '../contracts/types.js';
 import {
   type HostPlatform,
   importHostPart,
@@ -104,6 +105,8 @@ export interface KernelDistributionSource {
   storage(): StorageIdentity | undefined;
   /** Fired after a generation became active (boot, publish, respawn). */
   onActive(listener: (generation: number) => void): () => void;
+  /** The contract documents of a kernel-embedded bundle, by path. */
+  embeddedDocuments?(bundleId: string): Readonly<Record<string, JsonObject>>;
 }
 
 export interface KernelPlatform extends HostPlatform {
@@ -318,6 +321,9 @@ export const startKernel = async (
         .map(({ generation }) => generation),
     storage: () => (storage === undefined ? undefined : { ...storage }),
     onActive: (listener) => manager.onActive(listener),
+    embeddedDocuments: (bundleId) =>
+      (options.embedded ?? []).find((bundle) => embeddedId(bundle) === bundleId)
+        ?.documents ?? {},
   };
   const distribution = options.distribution?.(distributionSource);
   const overridesPath = options.compositionOverrides;

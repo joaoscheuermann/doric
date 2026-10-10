@@ -167,3 +167,23 @@ void test('the document computed from a live definition equals the one the build
     assert.equal(live.local, true);
   });
 });
+
+void test('a disposable from another copy of the contracts keeps its codec', async () => {
+  // A window loads `bundle/contracts` twice: the shell's bundled copy and the
+  // import map's, which client parts use. A query string loads a second
+  // instance of the same module, as the window does.
+  const path = join(import.meta.dirname, '../src/contracts/basic/common.js');
+  const copy = (await import(
+    `${pathToFileURL(path).href}?copy`
+  )) as typeof import('../src/contracts/basic/common.js');
+  const own = await import('../src/contracts/basic/common.js');
+
+  assert.notEqual(copy.disposableSchema, own.disposableSchema);
+  assert.deepEqual(memberSchema(copy.disposableSchema, 'output').schema, {
+    'x-doric-local': 'disposable',
+  });
+  assert.deepEqual(
+    memberSchema(copy.disposableSchema, 'output').schema,
+    memberSchema(own.disposableSchema, 'output').schema,
+  );
+});

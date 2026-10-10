@@ -17,13 +17,16 @@ export {
   withoutWindowKey,
 } from './bridge.js';
 export { applyChrome } from './chrome.js';
-export { answerClose, type FlushParticipants, wireClose } from './close.js';
+export { answerClose, wireClose } from './close.js';
 export { serveShellCommands } from './commands.js';
+export { provideConnection } from './connection.js';
+export { type ElementRegistry, provideElements } from './elements.js';
 export {
   installKeybindings,
   matchesChord,
   parseAccelerator,
 } from './keybindings.js';
+export { provideNotifications } from './notifications.js';
 export { provideClientPlatform, WindowDiagnostics } from './platform.js';
 export * from './protocol.js';
 export { insertBundleStyles } from './styles.js';

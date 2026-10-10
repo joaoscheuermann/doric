@@ -100,7 +100,7 @@ void test('a window without client hooks allows closing', async () => {
   );
 });
 
-void test('the flush phase runs onFlushHook and every participant, even when one fails', async () => {
+void test('the flush phase runs onFlushHook before answering allow', async () => {
   const flushed: string[] = [];
   const { desktop, windowHooks } = await windowWith({
     flush: async () => {
@@ -108,18 +108,7 @@ void test('the flush phase runs onFlushHook and every participant, even when one
     },
   });
 
-  wireClose({
-    desktop,
-    windowHooks,
-    flushParticipants: () => [
-      async () => {
-        throw new Error('settings write failed');
-      },
-      async () => {
-        flushed.push('legacy settings');
-      },
-    ],
-  });
+  wireClose({ desktop, windowHooks });
 
   assert.deepEqual(
     await desktop.requestClose({
@@ -129,5 +118,5 @@ void test('the flush phase runs onFlushHook and every participant, even when one
     }),
     { allow: true },
   );
-  assert.deepEqual([...flushed].sort(), ['hook', 'legacy settings']);
+  assert.deepEqual(flushed, ['hook']);
 });

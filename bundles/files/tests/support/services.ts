@@ -160,6 +160,11 @@ const registry = (registered: Omit<RegisteredTool, 'bundleId'>[]) =>
       output: toolsMethods.list.output,
       execute: () => [],
     }),
+    catalog: defineMethod({
+      input: toolsMethods.catalog.input,
+      output: toolsMethods.catalog.output,
+      execute: async () => [],
+    }),
   });
 
 export interface ActivatedTool {

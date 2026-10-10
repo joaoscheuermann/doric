@@ -2,6 +2,7 @@ import { basename } from 'node:path';
 
 import type { Activate, HostContext } from '../contracts/context.js';
 import type { QuarantineReason } from '../contracts/platform.js';
+import type { JsonObject } from '../contracts/types.js';
 import {
   type CatalogCandidate,
   type ResolvedEnvironment,
@@ -16,6 +17,12 @@ import type { InstalledBundle } from './discover.js';
 export interface EmbeddedBundle {
   readonly manifest: ManifestV1Input;
   readonly descriptor: Descriptor;
+  /**
+   * The contract documents an installed bundle would ship as files, by the
+   * descriptor's `schema` path (`schemas/<id>.json`). The host distributes
+   * them, so a desktop part can call the bundle's host contracts (stage 9).
+   */
+  readonly documents?: Readonly<Record<string, JsonObject>>;
   readonly host?: { readonly activate: Activate<HostContext> };
 }
 

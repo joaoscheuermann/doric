@@ -107,6 +107,18 @@
     },
     {
       "path": "./packages/desktop-ui"
+    },
+    {
+      "path": "./bundles/history"
+    },
+    {
+      "path": "./bundles/resources"
+    },
+    {
+      "path": "./bundles/chat"
+    },
+    {
+      "path": "./bundles/layout"
     }
   ]
 }

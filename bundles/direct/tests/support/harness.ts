@@ -239,6 +239,15 @@ export const directServices = (options: HarnessOptions) => {
           output: toolsMethods.list.output,
           execute: () => options.tools ?? [],
         }),
+        catalog: defineMethod({
+          input: toolsMethods.catalog.input,
+          output: toolsMethods.catalog.output,
+          execute: async () =>
+            (options.tools ?? []).map(({ tool }) => ({
+              name: tool.name,
+              settings: tool.settings,
+            })),
+        }),
       }),
       defineService(SkillsV1.id, {
         register: defineMethod({

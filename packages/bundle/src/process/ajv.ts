@@ -5,7 +5,7 @@ import type {
   SchemaCheck,
   SchemaValidators,
 } from '../runtime/envelope/validators.js';
-import { canonicalJson } from '../runtime/json-schema.js';
+import { canonicalJson, compilableSchema } from '../runtime/json-schema.js';
 
 const pathOf = (instancePath: string): (string | number)[] =>
   instancePath
@@ -35,7 +35,7 @@ export const ajvValidators = (): SchemaValidators => {
         return known;
       }
 
-      const validate = ajv.compile(schema);
+      const validate = ajv.compile(compilableSchema(schema) as JsonObject);
       const check: SchemaCheck = (value) =>
         validate(value)
           ? []

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import {
-  disposableSchema,
   isDisposable,
+  isDisposableSchema,
   type MethodSpecs,
 } from '../../contracts/basic/common.js';
 import type { AnyHookHandler } from '../../contracts/basic/hooks.js';
@@ -953,7 +953,7 @@ const defaultPlan = (
     return plain;
   }
 
-  if (!inputLocal && spec.output === disposableSchema) {
+  if (!inputLocal && isDisposableSchema(spec.output)) {
     return { optimistic: true, output: disposableOut };
   }
 

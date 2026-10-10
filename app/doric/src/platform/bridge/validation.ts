@@ -5,6 +5,7 @@ import { Ajv2020 } from 'ajv/dist/2020';
 import type { JsonObject } from 'bundle/contracts';
 import {
   canonicalJson,
+  compilableSchema,
   type SchemaCheck,
   type SchemaValidators,
 } from 'bundle/runtime';
@@ -33,7 +34,7 @@ export const createSchemaValidators = (): SchemaValidators => {
         return known;
       }
 
-      const validate = ajv.compile(schema);
+      const validate = ajv.compile(compilableSchema(schema) as JsonObject);
       const check: SchemaCheck = (value) =>
         validate(value)
           ? []

@@ -76,3 +76,13 @@ export const createTestServices = (
     },
   };
 };
+
+export {
+  createMinimalHooks,
+  type MinimalHooksOptions,
+} from './minimal-hooks.js';
+export {
+  MINIMAL_CORE_TEXT,
+  type MinimalUiCore,
+  minimalUiCore,
+} from './minimal-ui-core.js';

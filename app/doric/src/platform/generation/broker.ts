@@ -33,7 +33,10 @@ import type {
 import type { NativeWindows } from '../windows/native-windows';
 
 export interface BrokerDeps {
-  readonly windows: Pick<NativeWindows, 'open' | 'focusOrOpen' | 'lastPath'>;
+  readonly windows: Pick<
+    NativeWindows,
+    'open' | 'focusOrOpen' | 'lastPath' | 'focus'
+  >;
   readonly menus: Pick<
     NativeMenus,
     'setSkeleton' | 'add' | 'addKeybinding' | 'setContext'
@@ -85,6 +88,11 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
         input: windows.lastPath.input,
         output: windows.lastPath.output,
         execute: (key: string) => Promise.resolve(deps.windows.lastPath(key)),
+      }),
+      focus: defineMethod({
+        input: windows.focus.input,
+        output: windows.focus.output,
+        execute: (key: string) => Promise.resolve(deps.windows.focus(key)),
       }),
     }),
   );

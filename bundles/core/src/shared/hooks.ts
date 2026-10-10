@@ -36,6 +36,11 @@ interface Registration {
   readonly seq: number;
   /** The generation partition of the registering call (D4-11). */
   readonly generation: number;
+  /**
+   * `scope.windowKey` of the registering call: a `doric.window.hooks/v1`
+   * handler runs only for calls of its own window (stage 9, §4.7).
+   */
+  readonly windowKey: string | undefined;
   readonly handler: AnyHookHandler;
 }
 
@@ -301,6 +306,7 @@ export const createHooks = (options: HooksOptions = {}) => {
           bundleId: call.caller.bundleId,
           seq: seq++,
           generation,
+          windowKey: call.scope?.windowKey,
           handler,
         };
 
@@ -377,7 +383,12 @@ export const createHooks = (options: HooksOptions = {}) => {
           bundleId === 'doric' ? -1 : order.indexOf(bundleId);
         const view = viewOf(call, services);
         const handlers = (handlersOf(contract.id).get(hook) ?? [])
-          .filter((entry) => seenBy(entry.generation, view))
+          .filter(
+            (entry) =>
+              seenBy(entry.generation, view) &&
+              (contract.id !== WINDOW_HOOKS ||
+                entry.windowKey === call.scope?.windowKey),
+          )
           .sort(
             (left, right) =>
               rank(left.bundleId) - rank(right.bundleId) ||

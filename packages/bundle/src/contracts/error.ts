@@ -47,6 +47,8 @@ export const contractErrorCodes = [
   'not_found',
   'disconnected',
   'unknown_command',
+  // desktop UI (stage 9, D9-18)
+  'route_conflict',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

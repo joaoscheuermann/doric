@@ -41,6 +41,12 @@
       "import": "./dist/lib/utils.js",
       "default": "./dist/lib/utils.js"
     },
+    "./cmdk": {
+      "@org/source": "./src/cmdk.ts",
+      "types": "./dist/cmdk.d.ts",
+      "import": "./dist/cmdk.js",
+      "default": "./dist/cmdk.js"
+    },
     "./*": {
       "@org/source": "./src/components/*.tsx",
       "types": "./dist/components/*.d.ts",

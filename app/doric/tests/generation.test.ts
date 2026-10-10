@@ -92,6 +92,7 @@ const bootGeneration = async (
         opened.push({ key, path: `focus:${key}` });
       },
       lastPath: (key) => lastPaths.get(key) ?? null,
+      focus: () => false,
     },
     menus: {
       setSkeleton: (generation, skeleton) =>

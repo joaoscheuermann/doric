@@ -1,0 +1,75 @@
+/**
+ * The blocks the conversation renders, and what each one allows.
+ *
+ * A conversation node names itself with one of these types, and the editor's
+ * block plugins — `components/organisms/conversation/plugins` — read the two
+ * rules below: a deletion may empty a block but never remove one, and a
+ * read-only block's text never changes under an editing command. The rules are
+ * stated in terms of type names so they can be checked without a DOM.
+ */
+
+/** The block a turn of each kind renders as. */
+export const AGENT_TURN_BLOCK = 'agent-turn-node';
+export const THINKING_TURN_BLOCK = 'thinking-turn-node';
+export const TOOL_TURN_BLOCK = 'tool-turn-node';
+export const USER_TURN_BLOCK = 'user-turn-node';
+export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
+
+/** The author line that trails the agent's and the reader's turns. */
+export const TURN_AUTHOR_BLOCK = 'turn-author-node';
+
+/**
+ * A completed burst of the agent's reasoning and tool calls, kept as one block so
+ * a long run of steps reads as one line.
+ */
+export const ACTIVITY_TURN_BLOCK = 'activity-turn-node';
+
+/** A prompt's pause or resume: a quiet row between the blocks it sits between. */
+export const LIFECYCLE_TURN_BLOCK = 'lifecycle-turn-node';
+
+/** A prompt the host closed as a failure, and what it was closed with. */
+export const FAILURE_TURN_BLOCK = 'failure-turn-node';
+
+/** The block the reader writes the next prompt in. */
+export const USER_PROMPT_BLOCK = 'user-prompt-node';
+export const QUEUE_BLOCK = 'queue-node';
+export const QUEUED_TURN_BLOCK = 'queued-turn-node';
+export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';
+
+/**
+ * The attribute the prompt input's block carries in the DOM. The conversation's
+ * tail is the input, so the surface finds it by this: the trail's last handle
+ * throws the scroll to it, and the sync rests the view on it.
+ */
+export const PROMPT_INPUT_ATTRIBUTE = 'data-prompt-input';
+
+const UNDELETABLE = new Set([
+  PROMPT_EDIT_BLOCK,
+  QUEUE_BLOCK,
+  QUEUED_TURN_BLOCK,
+  TURN_AUTHOR_BLOCK,
+  AGENT_TURN_BLOCK,
+  THINKING_TURN_BLOCK,
+  TOOL_TURN_BLOCK,
+  USER_TURN_BLOCK,
+  DELEGATED_TURN_BLOCK,
+  USER_PROMPT_BLOCK,
+  ACTIVITY_TURN_BLOCK,
+  LIFECYCLE_TURN_BLOCK,
+  FAILURE_TURN_BLOCK,
+]);
+
+/**
+ * Agent answers and delegated inputs need this rule: the thinking, tool, lifecycle and
+ * failure turns render as decorators, which the editor already refuses to let
+ * anyone type into.
+ */
+const READ_ONLY = new Set([AGENT_TURN_BLOCK, DELEGATED_TURN_BLOCK]);
+
+/** Whether a block of this type survives every deletion, empty or not. */
+export const isUndeletableBlock = (nodeType: string): boolean =>
+  UNDELETABLE.has(nodeType);
+
+/** Whether a block of this type refuses every text-editing command. */
+export const isReadOnlyBlock = (nodeType: string): boolean =>
+  READ_ONLY.has(nodeType);

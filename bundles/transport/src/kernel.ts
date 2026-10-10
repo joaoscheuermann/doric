@@ -1,4 +1,4 @@
-import type { EmbeddedBundle } from 'bundle';
+import { contractDocument, type EmbeddedBundle } from 'bundle';
 import {
   type HostContext,
   ModelsV1,
@@ -7,6 +7,7 @@ import {
 } from 'bundle/contracts';
 import type { Express } from 'express';
 import type { Logger } from 'pino';
+import { resourcesMethods } from 'resources/contracts';
 import {
   ConfigurationV1,
   RuntimeLeaseV1,
@@ -19,6 +20,10 @@ import type { Server as SocketServer } from 'socket.io';
 
 import { registerHttpRoutes } from './host/app.js';
 import { type HostResources, readHostResources } from './host/resources.js';
+import {
+  resourcesContract,
+  resourcesService,
+} from './host/resources-service.js';
 import type { TransportServices } from './host/services.js';
 import { registerStatusSocket } from './host/sockets/status.js';
 import { createWorkspaceSocket } from './host/sockets/workspace.js';
@@ -56,7 +61,8 @@ export const transportRequires = [
 
 /**
  * The REST and Socket.IO surface as a kernel-embedded bundle (design 57 §8).
- * It provides no contract. Activation registers the routes and namespaces
+ * Its only contract is `resources/v1` (stage 9 WP-H), the `GET /resources`
+ * reading for the desktop. Activation registers the routes and namespaces
  * over lazy stubs and subscribes the workspace socket to each `runtime/v1`
  * provider as it becomes available, so nothing here calls the generation
  * while it is not running yet.
@@ -68,13 +74,34 @@ export const createTransport = (options: TransportOptions): EmbeddedBundle => ({
     version,
     engines: { doric: '^1.0.0' },
     description: 'The host REST routes and Socket.IO namespaces.',
-    provides: [],
+    // resources/v1 has no host owner before stage 10 (stage 9 WP-H).
+    provides: [`${resourcesContract.id}@${resourcesContract.version}`],
     requires: [...transportRequires],
   },
   descriptor: {
     descriptorVersion: 1,
     bundle: { id, version },
-    contracts: [],
+    contracts: [
+      {
+        id: resourcesContract.id,
+        version: resourcesContract.version,
+        kind: 'service',
+        environment: 'host',
+        cardinality: 'one',
+        local: false,
+        schema: `schemas/${resourcesContract.id}.json`,
+      },
+    ],
+  },
+  // The service document a desktop part routes `resources/v1` with.
+  documents: {
+    [`schemas/${resourcesContract.id}.json`]: contractDocument({
+      id: resourcesContract.id,
+      environment: 'host',
+      cardinality: 'one',
+      kind: 'service',
+      methods: resourcesMethods,
+    }).document,
   },
   host: {
     activate: ({ services }: HostContext) => {
@@ -107,11 +134,10 @@ export const createTransport = (options: TransportOptions): EmbeddedBundle => ({
         runtime.watch(listener);
       });
 
-      registerHttpRoutes(
-        options.app,
-        transport,
-        options.readHostResources ?? readHostResources,
-      );
+      const read = options.readHostResources ?? readHostResources;
+
+      services.provide(resourcesService(read));
+      registerHttpRoutes(options.app, transport, read);
 
       return () => {
         watching.dispose();

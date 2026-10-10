@@ -1,153 +1,62 @@
-# Renderer Agent Instructions
+# Renderer Shell Agent Instructions
 
 These instructions apply to `app/doric-renderer` and narrow the root
 `AGENTS.md`. Read that one first; this file only adds what is specific to the
-renderer.
+shell.
 
-## Layers
+## What lives here
+
+Since the stage-9 cut-over this project is only the window shell: the page
+every window loads from `doric://app`, served by main under
+`/platform/shell@<version>/`.
 
 ```
 src/
-  components/
-    molecules/   a few atoms composed into one small unit
-    organisms/   one functional section of the app, with its own data
-    templates/   arrangement only: layout and regions, no app state
-  views/         pages: own the state, read the hooks, compose templates
-  hooks/         every `use*` hook
-  stores/        Zustand stores: the client/UI state the hooks hand out
-  queries/       TanStack Query: the query keys and the one client per window
-  domain/        the vocabulary of the product
-  utility/       small helpers with no product vocabulary
+  bootstrap.ts   calls desktop-client's `bootstrapWindow({})`; the core's
+                 outlet then shows whatever the active route renders
+  shell.html     the template main renders per request (import map, CSP)
+  styles.css     the window-wide rules and the sorted utility set
+  favicon.ico
 ```
 
-Where a new file goes, in order:
-
-1. Does it render? Then it is a component, and its level decides the folder.
-   - One element with no composition and no behaviour: it is a shared
-     primitive of `packages/desktop-ui` (the atom layer), imported as
-     `desktop-ui/<name>`.
-   - A few atoms composed into one thing a person uses as a unit: `molecules`.
-   - A section that fetches or subscribes to something: `organisms`.
-   - Nothing but arrangement — a layout, a region, a slot taking `ReactNode`:
-     `templates`.
-2. Does it own a page's state and compose templates? Then it is a `view`.
-3. Does it start with `use`? Then it is a hook, whatever it talks to. Server
-   state behind a hook is read through TanStack Query (`queries/`), and client
-   state behind one lives in a Zustand store (`stores/`).
-4. Does it name what the product is about — a Thread, a Project, a tab, the
-   projection of the event log? Then it is `domain`.
-5. Otherwise it is `utility`: a helper stated in terms of nothing but its
-   arguments, such as `cn`.
-
-Two boundaries around `components` matter and are easy to break:
-
-- The shadcn primitives live in `packages/desktop-ui`, a **vendor boundary**
-  with its own `components.json` and provenance record
-  (`packages/desktop-ui/PROVENANCE.md`); the renderer imports them as
-  `desktop-ui/<name>` and never copies or edits them here.
-- A `template` must not know a `view`, and a `molecule` must not know an
-  `organism`. Data enters from above, through props or a hook.
-
-## Splitting code
-
-One file, one responsibility. When a file grows past what you can describe in a
-sentence, or past the 500-line rule the repository already states, split it along
-this line:
-
-**If a rule can be stated in terms of its arguments, it belongs in `domain/` or
-`utility/`, and it must have a test.**
-
-**If it needs React or the DOM, it belongs in `components/` or `hooks/`, and it is
-proven in the running app.**
-
-That criterion decides the cut, not taste. It exists because the test build is
-DOM-free (see Tests): a rule left inside a component or a hook cannot be tested at
-all, so the layer a piece of logic lands in decides whether it is verifiable.
-
-Signals that a file is hiding a rule:
-
-- a component that derives its own data (filtering, grouping, ordering, cascade)
-  before rendering it — the derivation is `domain/`;
-- a component that measures the DOM to decide something — keep the measurement,
-  move the decision out;
-- a hook whose options are several `setState` functions — that is a state machine
-  in disguise, so the transition belongs in `domain/` as a pure
-  `(state, input) => state`;
-- a view that owns orchestration beyond composing templates and calling hooks.
-
-When you split, do not change in the same step the contract a neighbour depends on
-(a template's props, an organism's model, a hook's options). The cut and the
-contract change are two moves, so that one of them can be reviewed on its own.
-
-## Imports
-
-- Anything crossing a folder is imported through the `@/` alias
-  (`@/domain/workspace`, `@/components/molecules/inline-name`).
-- Only imports inside one folder stay relative (`./use-thread-chat`).
-- `cn` is imported from `desktop-ui/utils`.
+The UI itself lives in client bundles: the workspace frame in
+`bundles/layout`, the conversation in `bundles/chat`, the settings page in
+`bundles/settings`, the outlet, regions and router in `bundles/core`. Each has
+its own `AGENTS.md`. Do not add components, hooks, stores or product logic to
+the shell; a page or a region item is a bundle's.
 
 ## The IPC boundary
 
-The renderer never opens HTTP or Socket.IO. Everything it knows about the host
-arrives through `window.doric`, typed in `src/doric.d.ts` and implemented by the
-preload in `app/doric`. The main process owns the connections, one subscription
-per watched Thread and the selected-Project tree; the renderer asks for those
-and subscribes to what comes back. Adding a transport to the renderer is a
-boundary change, not a feature.
-
-Conversation history is durable in PostgreSQL and replayed, never invented
-locally: the Thread chat store subscribes each opened Thread on a connection of
-its own, accumulates what arrives, and treats its own copy as a view, while
-`useThreadChat` binds a surface to one Thread's slice of that state.
+The shell never opens HTTP or Socket.IO and has no semantic API. The preload
+exposes only `window.doric.desktop` (desktop-client's protocol); every host or
+desktop call is a contract call routed by main's dispatcher. Adding a channel
+to the preload is a boundary change, not a feature.
 
 ## Styling
 
-Tailwind and the shadcn surface belong here, not in `app/doric`. Prose and
-machine-facing surfaces use the fonts desktop-ui vendors and its `theme.css`
-declares, because the packaged CSP allows fonts from `self` only. The window
-loads that `theme.css` (preflight, faces, tokens, theme mapping) before
-`src/styles.css`, which references the theme and holds only the renderer's own
-rules. Rules that Tailwind's optimizer mis-parses, such as a Custom Highlight
-pseudo-element, belong in the shell page (`src/shell.html`).
+The window loads desktop-ui's `theme.css` (preflight, faces, tokens, theme
+mapping) first, this project's `src/styles.css` next, and each UI bundle's
+`client/styles.css` after it. `src/styles.css` holds only window-wide rules —
+the base layer, `.chrome-bar` and the footer weight invariant — plus the whole
+sorted utility set of the in-repo UI bundles, so that a class two sheets emit
+keeps the order one compiled stylesheet gave it. A rule a single bundle draws
+belongs in that bundle's sheet.
 
-All footer text, including nested controls, must use `font-weight: 400`, never 500. Use a semantic `footer` element or a `data-slot` ending in `-footer` so
-the shared rule in `src/styles.css` applies. Do not override or weaken that rule
-or add per-control font weights inside footers. Portaled menus and popovers are
-separate surfaces; their triggers remain covered by the footer rule.
+All footer text, including nested controls, must use `font-weight: 400`, never
+500, through the shared rule in `src/styles.css`. Do not override or weaken it.
 
 ## Tests
 
-The test target compiles a fixed root list from `tsconfig.spec.json` and runs it
-under `node --test`, so tests here are pure and DOM-free: `domain/` and
-`utility/` code is testable, components are not. A component's behaviour has to
-be proven elsewhere — in the running app.
-
-Two traps:
-
-- The test target does not clean `dist-tests`, so a test file you deleted keeps
-  running from its stale build output. Remove `app/doric-renderer/dist-tests`
-  after deleting one.
-- The dev server's type checker keeps a program cache that outlives the files it
-  describes. When a module appears in the tree — you wrote it, or a merge brought
-  it in — it can report `TS6307 "not listed within the file list"` even though
-  `tsc` is clean and the `include` pattern is right, and it shows it as an overlay
-  that covers the application and swallows pointer input. Restart `npm run
-doric:dev` (and clear `node_modules/.cache` if it persists). `tsc` being happy
-  is not evidence that the checker is.
+`tests/stylesheet.test.ts` compiles the theme, the shell sheet and the bundle
+sheets and checks the cascade they form. The test target removes
+`dist-tests` first, so a deleted test never keeps running from stale output.
 
 ## Validate
 
 Run these from the repository root and report what they printed:
 
 ```
-npx tsc -p app/doric-renderer/tsconfig.app.json --noEmit
-npx tsc -p app/doric-renderer/tsconfig.spec.json
-npx biome check app/doric-renderer --formatter-enabled=false
-npx biome format app/doric-renderer
-npx prettier --check app/doric-renderer
-NX_SOCKET_DIR=/tmp/nx-tmp npx nx test doric-renderer
-NX_SOCKET_DIR=/tmp/nx-tmp npx nx build doric-renderer
+npx nx run doric-renderer:typecheck
+npx nx run doric-renderer:test
+npx nx run doric-renderer:build
 ```
-
-`nx` needs `NX_SOCKET_DIR` when the checkout path is long, which it is inside a
-Delta worktree.

@@ -26,12 +26,9 @@ module.exports = {
     publicPath: shellPath,
   },
   resolve: {
-    // Workspace packages (desktop-client, desktop-ui, bundle) compile from
-    // source, so the legacy tree and the shell share this build's one React.
+    // Workspace packages (desktop-client, bundle) compile from source into
+    // the shell's one script.
     conditionNames: ['@org/source', 'import', 'module', 'browser', 'default'],
-    alias: {
-      '@': join(__dirname, 'src'),
-    },
   },
   devServer: {
     port: 4200,
@@ -57,17 +54,9 @@ module.exports = {
       index: './src/shell.html',
       baseHref: false,
       deployUrl: shellPath,
-      // Vendored fonts are emitted by css-loader with content hashes; copying
-      // them raw as well would ship every font twice. The license still ships.
-      assets: [
-        './src/favicon.ico',
-        {
-          input: './src/assets',
-          glob: '**/*',
-          ignore: ['fonts/*.woff2'],
-          output: 'assets',
-        },
-      ],
+      // The faces and their licenses ship with desktop-ui's theme (stage 8);
+      // the shell's only asset is its icon.
+      assets: ['./src/favicon.ico'],
       styles: ['./src/styles.css'],
       outputHashing: process.env.NODE_ENV === 'production' ? 'all' : 'none',
       optimization: process.env.NODE_ENV === 'production',

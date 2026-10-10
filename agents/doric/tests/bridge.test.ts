@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { join, relative, sep } from 'node:path';
 import test from 'node:test';
 
-import { distributionCatalogSchema } from 'bundle/contracts';
+import { distributionCatalogSchema, ToolsV1 } from 'bundle/contracts';
 import { PLATFORM_VERSION } from 'bundle/runtime';
 import express from 'express';
 import pino from 'pino';
@@ -243,6 +243,47 @@ void test('artifact answers the bytes of a distributed hash, and not_found for a
   });
 });
 
+void test('the kernel-embedded bundles distribute the documents of their host contracts', {
+  timeout: 60_000,
+}, async () => {
+  // A desktop part routes a host contract by the document its bundle ships;
+  // `host-config` and `transport` live in the kernel, without a directory.
+  await withHost(async (host) => {
+    const catalog = distributionCatalogSchema.parse(
+      await output(host.desktop, 'doric.catalog/v1', 'distribution', []),
+    );
+    for (const [bundleId, contract, method] of [
+      ['host-config', 'host-config/v1', 'current'],
+      ['transport', 'resources/v1', 'host'],
+    ] as const) {
+      const bundle = catalog.bundles.find(({ id }) => id === bundleId);
+      const file = bundle?.files.find(
+        ({ path }) => path === `schemas/${contract}.json`,
+      );
+      assert.ok(file, `${bundleId} lists schemas/${contract}.json`);
+      assert.deepEqual(bundle?.parts, {});
+
+      const artifact = (await output(
+        host.desktop,
+        'doric.catalog/v1',
+        'artifact',
+        { sha256: file.sha256 },
+      )) as { sha256: string; base64: string };
+      const bytes = Buffer.from(artifact.base64, 'base64');
+      assert.equal(sha256(bytes), file.sha256);
+      assert.equal(bytes.byteLength, file.size);
+      const document = JSON.parse(bytes.toString('utf8')) as {
+        $defs?: Record<string, unknown>;
+      };
+      assert.ok(
+        document.$defs?.[`${method}.input`] !== undefined &&
+          document.$defs?.[`${method}.output`] !== undefined,
+        `${contract} documents ${method}`,
+      );
+    }
+  });
+});
+
 void test('watch emits the new generation once it is published, and stops after unsubscribe', {
   timeout: 120_000,
 }, async () => {
@@ -387,6 +428,150 @@ void test('a desktop quarantine reported over the bridge reaches the host diagno
             kind === 'desktop_quarantine' &&
             message === 'engines_unsatisfied',
         ),
+    );
+  });
+});
+
+/** Opens a bridge stream; resolves its first item or its end. */
+const firstOf = (
+  desktop: Socket,
+  id: string,
+  contract: string,
+  method: string,
+  input: unknown,
+) =>
+  new Promise<
+    | { readonly item: unknown }
+    | { readonly end: { readonly code: string; readonly message: string } }
+  >((resolve) => {
+    const onEvent = (message: { id: string; values: unknown[] }) => {
+      if (message.id !== id) return;
+      desktop.off('event', onEvent);
+      desktop.off('end', onEnd);
+      resolve({ item: message.values[0] });
+    };
+    const onEnd = (message: {
+      id: string;
+      error?: { code: string; message: string };
+    }) => {
+      if (message.id !== id) return;
+      desktop.off('event', onEvent);
+      desktop.off('end', onEnd);
+      resolve({ end: message.error ?? { code: '', message: '' } });
+    };
+    desktop.on('event', onEvent);
+    desktop.on('end', onEnd);
+    desktop.emit('subscribe', {
+      kind: 'subscribe',
+      id,
+      contract,
+      method,
+      input,
+      ...wire(),
+    });
+  });
+
+void test('a desktop caller reaches only the allowlisted host methods (HR-10)', {
+  timeout: 60_000,
+}, async () => {
+  await withHost(async (host) => {
+    const credential = { kind: 'OPENAI', id: randomUUID() };
+    for (const [contract, method, input] of [
+      ['secrets/v1', 'resolve', credential],
+      ['secrets/v1', 'resolveByKind', ['OPENAI', 'key']],
+      ['secrets/v1', 'redactions', []],
+      ['runtime/v1', 'recover', []],
+      ['runtime/v1', 'dispose', []],
+      ['runtime/v1', 'vmSsh', randomUUID()],
+      ['runtime.threads/v1', 'spawn', 'prompt'],
+      [
+        'runtime.threads/v1',
+        'storedEventsAfter',
+        { id: randomUUID(), afterSequence: 0 },
+      ],
+      ['runtime.lease/v1', 'exec', { command: 'id' }],
+      ['runtime.lease/v1', 'writeFile', ['/etc/passwd', '']],
+      ['terminal/v1', 'run', { command: 'id' }],
+      ['tools/v1', 'list', []],
+    ] as const) {
+      const refused = await call(host.desktop, contract, method, input);
+      assert.deepEqual(
+        refused.ok ? undefined : refused.error.code,
+        'unavailable',
+        `${contract} ${method}`,
+      );
+    }
+    const watch = await firstOf(
+      host.desktop,
+      'd:w1',
+      'runtime/v1',
+      'watch',
+      [],
+    );
+    assert.equal('end' in watch ? watch.end.code : undefined, 'unavailable');
+    // The refused dispose did not reach the runtime: it still answers.
+    assert.deepEqual(
+      await output(host.desktop, 'runtime.terminals/v1', 'list', randomUUID()),
+      [],
+    );
+  });
+});
+
+void test('the tool catalog and the host machine are read over the bridge', {
+  timeout: 60_000,
+}, async () => {
+  await withHost(async (host) => {
+    const catalog = (await output(
+      host.desktop,
+      'tools/v1',
+      'catalog',
+      [],
+    )) as readonly { name: string }[];
+    const listed = await host.platform.services.use(ToolsV1).list();
+    assert.ok(catalog.length > 0);
+    assert.deepEqual(
+      catalog.map(({ name }) => name),
+      listed.map(({ tool }) => tool.name),
+    );
+    const machine = (await output(
+      host.desktop,
+      'resources/v1',
+      'host',
+      [],
+    )) as {
+      cpuCount: number;
+      memoryTotalBytes: number;
+    };
+    assert.equal(typeof machine.cpuCount, 'number');
+    assert.ok(machine.memoryTotalBytes > 0);
+  });
+});
+
+void test('the runtime watches stream over the bridge and through the generation process', {
+  timeout: 60_000,
+}, async () => {
+  await withHost(async (host) => {
+    const projectId = randomUUID();
+    assert.deepEqual(
+      await firstOf(
+        host.desktop,
+        'd:w2',
+        'runtime.terminals/v1',
+        'watchProject',
+        [projectId],
+      ),
+      { item: { kind: 'snapshot', projectId, terminals: [] } },
+    );
+    const refused = await firstOf(
+      host.desktop,
+      'd:w3',
+      'runtime.threads/v1',
+      'watchThread',
+      [{ threadId: 'not-an-id', afterSequence: 0 }],
+    );
+    assert.equal(
+      'end' in refused ? refused.end.code : undefined,
+      'invalid_input',
     );
   });
 });

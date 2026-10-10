@@ -18,10 +18,15 @@ import {
   streamListener,
   toStreamObserver,
 } from '../src/contracts/index.js';
-import { wireMessageSchema } from '../src/runtime/envelope/index.js';
+import { ajvValidators } from '../src/process/ajv.js';
+import {
+  documentMethodSpecs,
+  wireMessageSchema,
+} from '../src/runtime/envelope/index.js';
 import {
   contractDocument,
   DiagnosticsStore,
+  memberSchema,
   providePlatformServices,
   STREAM_KEY,
   streamItemSchema,
@@ -64,6 +69,48 @@ void test('a stream method records its item schema, and a plain method does not'
     'object',
   );
   assert.equal(streamItemSchema(defs['get.input']), undefined);
+});
+
+void test('a provider of another process keeps its stream methods streams (R-STREAM)', () => {
+  const item = z.object({ id: z.string() }).strict();
+  const service = defineService('demo.watch/v1', {
+    watch: defineMethod({
+      input: z.tuple([z.string(), streamListener(item)]),
+      output: z.custom<{ dispose(): void }>(() => true),
+      execute: () => ({ dispose: () => undefined }),
+    }),
+    get: defineMethod({
+      input: z.tuple([z.string()]),
+      output: z.string(),
+      execute: ([id]) => id,
+    }),
+  });
+  const { document } = contractDocument({
+    id: 'demo.watch/v1',
+    environment: 'host',
+    cardinality: 'one',
+    kind: 'service',
+    methods: service.methods,
+  });
+  // The kernel reads a generation provider's specs from its published document.
+  const remote = documentMethodSpecs(ajvValidators(), document);
+  const watch = remote.watch;
+  const get = remote.get;
+  assert.ok(watch !== undefined && get !== undefined);
+
+  assert.notEqual(
+    streamItemSchema(memberSchema(watch.input, 'input').schema),
+    undefined,
+  );
+  assert.equal(
+    streamItemSchema(memberSchema(get.input, 'input').schema),
+    undefined,
+  );
+  assert.equal(
+    watch.input.safeParse(['a', { next: () => undefined }]).success,
+    true,
+  );
+  assert.equal(watch.input.safeParse(['a', 'not a listener']).success, false);
 });
 
 void test('a function listener is an observer with only next', () => {

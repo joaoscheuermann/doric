@@ -16,6 +16,7 @@ import {
   parseContractEntry,
 } from '../runtime/manifest.js';
 import { baselineSchema, compareWithBaseline } from './compare.js';
+import { installDomShim } from './dom-shim.js';
 import { checkRecording, recordActivation } from './record.js';
 import {
   contractDocument,
@@ -43,8 +44,9 @@ const exists = async (path: string): Promise<boolean> => {
 };
 
 /**
- * Parts recorded at build time. A client part is recorded only while its
- * `activate` stays DOM-free (stage 8); stage 9 brings a DOM-capable recorder.
+ * Parts recorded at build time. A client part is imported and dry-activated
+ * with the DOM shim installed (stage 9): it may touch the DOM at import time
+ * only through `class … extends HTMLElement`.
  */
 const parts: readonly {
   readonly path: string;
@@ -55,12 +57,8 @@ const parts: readonly {
   { path: 'client/index.js', environment: 'client' },
 ];
 
-const domGlobals =
-  /\b(document|window|customElements|HTMLElement|localStorage)\b/;
-
-/** Whether a failure comes from touching a DOM global that Node lacks. */
-const touchedDom = (error: unknown): error is ReferenceError =>
-  error instanceof ReferenceError && domGlobals.test(error.message);
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 export interface BuildResult {
   readonly manifest: ManifestV1;
@@ -151,46 +149,44 @@ export const buildBundle = async (
       continue;
     }
 
-    let loaded: { readonly activate?: unknown };
+    const restore = part.environment === 'client' ? installDomShim() : null;
 
     try {
-      loaded = (await import(pathToFileURL(path).href)) as {
-        readonly activate?: unknown;
-      };
-    } catch (error) {
-      if (part.environment === 'client' && touchedDom(error)) {
+      let loaded: { readonly activate?: unknown };
+
+      try {
+        loaded = (await import(pathToFileURL(path).href)) as {
+          readonly activate?: unknown;
+        };
+      } catch (error) {
         throw new BuildError(
-          `Loading ${part.path} failed: the client part touched the DOM (${error.message}); the stage-8 recorder records only DOM-free client parts.`,
+          part.environment === 'client'
+            ? `Loading ${part.path} failed: ${messageOf(error)}. A client module may touch the DOM at import time only through "class … extends HTMLElement"; load heavier modules with a dynamic import() inside a component.`
+            : `Loading ${part.path} failed: ${messageOf(error)}`,
         );
       }
 
-      throw error;
-    }
-
-    if (typeof loaded.activate !== 'function') {
-      throw new BuildError(
-        `${part.path} does not export an activate function.`,
-      );
-    }
-
-    try {
-      recorded.push(
-        ...(await recordActivation({
-          manifest,
-          environment: part.environment,
-          activate: loaded.activate as Activate,
-        })),
-      );
-    } catch (error) {
-      if (part.environment === 'client' && touchedDom(error)) {
+      if (typeof loaded.activate !== 'function') {
         throw new BuildError(
-          `Dry activation of ${part.path} failed: the client part touched the DOM during activate (${error instanceof Error ? error.message : String(error)}); the stage-8 recorder records only DOM-free client activation.`,
+          `${part.path} does not export an activate function.`,
         );
       }
 
-      throw new BuildError(
-        `Dry activation of ${part.path} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      try {
+        recorded.push(
+          ...(await recordActivation({
+            manifest,
+            environment: part.environment,
+            activate: loaded.activate as Activate,
+          })),
+        );
+      } catch (error) {
+        throw new BuildError(
+          `Dry activation of ${part.path} failed: ${messageOf(error)}`,
+        );
+      }
+    } finally {
+      restore?.();
     }
   }
 

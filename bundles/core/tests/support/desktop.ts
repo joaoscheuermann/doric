@@ -53,6 +53,8 @@ export interface BrokerOptions {
   readonly lastPaths?: Readonly<Record<string, string>>;
   /** `doric.cache/v1.directory` of the core. */
   readonly cacheDirectory?: string;
+  /** Keys of the windows that are open, which `doric.windows/v1.focus` finds. */
+  readonly openWindows?: readonly string[];
 }
 
 export interface DesktopBundle {
@@ -156,6 +158,7 @@ const brokerSpecs: Readonly<
   'doric.windows/v1': {
     open: { input: openWindowRequestSchema, output: z.void() },
     focusOrOpen: { input: z.string(), output: z.void() },
+    focus: { input: z.string(), output: z.boolean() },
     lastPath: { input: z.string(), output: z.string().nullable() },
   },
   'doric.menus/v1': {
@@ -249,6 +252,10 @@ export const bootDesktop = async (
   const answer = (method: string, input: unknown): unknown => {
     if (method === 'doric.windows/v1.lastPath') {
       return options.lastPaths?.[input as string] ?? null;
+    }
+
+    if (method === 'doric.windows/v1.focus') {
+      return options.openWindows?.includes(input as string) ?? false;
     }
 
     if (method === 'doric.cache/v1.directory') {

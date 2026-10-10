@@ -17,6 +17,7 @@ import {
   createPrincipal,
   type Directory,
   PLATFORM_VERSION,
+  type Principal,
   type ProviderListener,
   type ProviderRecord,
   ServiceDirectory,
@@ -24,6 +25,9 @@ import {
 } from 'bundle/runtime';
 
 import { remoteContractRecord } from './bridge.js';
+import { provideConnection } from './connection.js';
+import { type ElementRegistry, provideElements } from './elements.js';
+import { provideNotifications } from './notifications.js';
 import { provideClientPlatform, WindowDiagnostics } from './platform.js';
 import type {
   DoricDesktopApi,
@@ -148,6 +152,8 @@ export const activateClientBundles = async (input: {
   readonly description: WindowDescription;
   readonly importPart?: ImportPart;
   readonly document?: Document;
+  /** Default `globalThis.customElements` (tests inject). */
+  readonly elementRegistry?: () => ElementRegistry;
   readonly now?: () => number;
 }): Promise<ClientActivation> => {
   const { catalog, desktop, description } = input;
@@ -190,8 +196,33 @@ export const activateClientBundles = async (input: {
     tokens: description.tokens,
   });
 
+  // Stage 9 window platform contracts: elements, connection, notifications.
+  const principals = new Map<string, Principal>();
+
+  provideElements(platform, {
+    principals,
+    diagnostics,
+    ...(input.elementRegistry === undefined
+      ? {}
+      : { registry: input.elementRegistry }),
+  });
+  const connection = provideConnection(platform, desktop);
+
+  provideNotifications(platform, desktop);
+
+  // A contract the window's own client parts provide is served here: its
+  // desktopMain or host provider stays reachable only through that
+  // provider (stage 9: the core's client hooks/v1, log/v1 and commands/v1).
+  const local = new Set(
+    resolved.contracts
+      .filter((contract) => contract.providers.length > 0)
+      .map((contract) => contract.id),
+  );
+
   for (const contract of catalog.remote) {
-    runtime.directory.register(remoteContractRecord(desktop, contract));
+    if (!local.has(contract.id)) {
+      runtime.directory.register(remoteContractRecord(desktop, contract));
+    }
   }
 
   insertBundleStyles({
@@ -221,6 +252,9 @@ export const activateClientBundles = async (input: {
 
       return module.activate;
     },
+    onPrincipal: (entry, principal) => {
+      principals.set(entry.id, principal);
+    },
     onHooksProviderReady: (principal) => {
       windowHooks = principal.services.use(HooksV1).define(WindowHooksV1);
     },
@@ -232,6 +266,7 @@ export const activateClientBundles = async (input: {
       ...result,
       stop: async () => {
         await result.stop();
+        connection.dispose();
         controller.abort();
       },
     },

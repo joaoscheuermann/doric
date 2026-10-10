@@ -9,11 +9,11 @@ import { DoricNotificationsV1 } from '../src/contracts/index.js';
 import { platformContracts } from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
 
-void test('doric.notifications/v1 is a desktopMain contract taking exactly a title and a body', () => {
+void test('doric.notifications/v1 is a desktopMain contract, with a transitional client form (D9-6), taking exactly a title and a body', () => {
   const spec = platformContracts['doric.notifications/v1'];
 
   assert.equal(DoricNotificationsV1.id, 'doric.notifications/v1');
-  assert.deepEqual(spec.environments, ['desktopMain']);
+  assert.deepEqual(spec.environments, ['desktopMain', 'client']);
   assert.equal(
     spec.methods.show.input.safeParse({ title: 'Done', body: 'ok' }).success,
     true,

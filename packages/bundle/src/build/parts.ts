@@ -4,7 +4,14 @@
 // instance of `zod`, `bundle/contracts` and each `<id>/contracts` exists per
 // generation.
 
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compile } from '@tailwindcss/node';
@@ -102,17 +109,63 @@ const inside = (root: string, path: string): boolean => {
  * [S8-18] Imports that resolve into the bundle's own `src/contracts/**`
  * become the external `<id>/contracts`, and forbidden imports fail.
  */
+/** Whether a specifier is one of esbuild-style `external` patterns. */
+const matchesExternal = (
+  external: readonly string[],
+  specifier: string,
+): boolean =>
+  external.some((pattern) => {
+    const star = pattern.indexOf('*');
+
+    if (star < 0) {
+      return pattern === specifier;
+    }
+
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+
+    return (
+      specifier.length >= prefix.length + suffix.length &&
+      specifier.startsWith(prefix) &&
+      specifier.endsWith(suffix)
+    );
+  });
+
+const EXTERNAL_REQUIRE = 'doric-external-require';
+
 const partPlugin = (input: {
   readonly id: string;
   readonly contractsDir: string;
   readonly part: 'desktop' | 'client';
   readonly forbidden: (specifier: string) => boolean;
+  /** The part's external specifiers (stage 9). */
+  readonly external?: readonly string[];
 }): Plugin => ({
   name: 'doric-part',
   setup(context) {
+    // Stage 9: a bundled CommonJS dependency that `require`s an external
+    // (`use-sync-external-store` requiring `react`) would get esbuild's
+    // throwing `__require` in ESM output. The require is served by a module
+    // that re-exports the external's ESM namespace, so the external stays
+    // one instance from the import map.
+    context.onLoad({ filter: /.*/, namespace: EXTERNAL_REQUIRE }, (args) => ({
+      contents: `export * from ${JSON.stringify(args.path)};\n`,
+      loader: 'js',
+    }));
+
     context.onResolve({ filter: /.*/ }, (args) => {
       if (args.kind === 'entry-point') {
         return undefined;
+      }
+
+      if (
+        args.kind === 'require-call' &&
+        args.namespace !== EXTERNAL_REQUIRE &&
+        input.external !== undefined &&
+        !input.forbidden(args.path) &&
+        matchesExternal(input.external, args.path)
+      ) {
+        return { path: args.path, namespace: EXTERNAL_REQUIRE };
       }
 
       if (input.forbidden(args.path)) {
@@ -173,6 +226,14 @@ const buildScript = async (input: {
       target: input.platform === 'node' ? 'node22' : 'es2022',
       external: [...input.external],
       plugins: [input.plugin],
+      // Stage 9: fonts a client imports (directly or through CSS) are files
+      // next to the part, served from the bundle's own directory.
+      ...(input.platform === 'browser'
+        ? {
+            loader: { '.woff2': 'file', '.woff': 'file', '.ttf': 'file' },
+            assetNames: 'assets/[name]-[hash]',
+          }
+        : {}),
       sourcemap: input.mode === 'development' ? 'inline' : false,
       logLevel: 'silent',
       write: true,
@@ -185,7 +246,7 @@ const buildScript = async (input: {
 };
 
 /** A bundle's client CSS: Tailwind utilities over the platform theme, no `@theme`. */
-const buildStyles = async (source: string, target: string): Promise<void> => {
+const buildStyles = async (source: string): Promise<string> => {
   const css = await readFile(source, 'utf8');
 
   if (/@theme\b/.test(css)) {
@@ -220,7 +281,19 @@ const buildStyles = async (source: string, target: string): Promise<void> => {
     );
   }
 
-  await writeFile(target, output);
+  return output;
+};
+
+/** `src/client/workers/*.ts`: each a self-contained module worker. */
+const workerEntries = async (dir: string): Promise<readonly string[]> => {
+  try {
+    return (await readdir(dir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
 };
 
 /**
@@ -259,6 +332,7 @@ export const buildParts = async (
         contractsDir,
         part: 'desktop',
         forbidden: forbiddenInDesktop,
+        external: desktopExternals,
       }),
       mode: options.mode,
       label: 'desktop',
@@ -273,6 +347,10 @@ export const buildParts = async (
     await rm(join(dist, 'client'), { recursive: true, force: true });
   }
 
+  // CSS esbuild extracted from the client's JS imports (Monaco, xterm).
+  const extracted = join(dist, 'client', 'index.css');
+  let importedCss: string | undefined;
+
   if (hasClient) {
     await buildScript({
       entry: clientEntry,
@@ -284,16 +362,50 @@ export const buildParts = async (
         contractsDir,
         part: 'client',
         forbidden: forbiddenInClient,
+        external: clientExternals,
       }),
       mode: options.mode,
       label: 'client',
     });
     built.client = 'client/index.js';
+
+    if (await exists(extracted)) {
+      importedCss = await readFile(extracted, 'utf8');
+      await rm(extracted, { force: true });
+    }
+
+    // Workers run outside the window's import map: nothing is external.
+    const workersDir = join(root, 'src', 'client', 'workers');
+
+    for (const name of await workerEntries(workersDir)) {
+      await buildScript({
+        entry: join(workersDir, name),
+        outfile: join(dist, 'client', 'workers', name.replace(/\.ts$/, '.js')),
+        platform: 'browser',
+        external: [],
+        plugin: partPlugin({
+          id: manifest.id,
+          contractsDir,
+          part: 'client',
+          forbidden: forbiddenInClient,
+        }),
+        mode: options.mode,
+        label: `client worker ${name}`,
+      });
+    }
   }
 
-  if (hasStyles) {
+  if (hasStyles || importedCss !== undefined) {
+    const tailwind = hasStyles ? await buildStyles(clientStyles) : '';
+    const css =
+      importedCss === undefined
+        ? tailwind
+        : tailwind === ''
+          ? importedCss
+          : `${tailwind.replace(/\n*$/, '\n')}${importedCss}`;
+
     await mkdir(join(dist, 'client'), { recursive: true });
-    await buildStyles(clientStyles, join(dist, 'client', 'styles.css'));
+    await writeFile(join(dist, 'client', 'styles.css'), css);
     built.clientStyles = 'client/styles.css';
   }
 

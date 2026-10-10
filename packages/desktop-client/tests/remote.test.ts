@@ -213,7 +213,12 @@ void test('a stream subscribes without the listener, delivers items, ends with t
     next: (item) => items.push(item),
     end: (error) => ends.push(error),
   });
-  const [entry] = desktop.subscriptions;
+  // The window platform's own shell streams (connection) are not the probe's.
+  const probeStreams = () =>
+    desktop.subscriptions.filter(
+      ({ envelope }) => envelope.contract === 'probe.api/v1',
+    );
+  const [entry] = probeStreams();
 
   assert.ok(entry !== undefined);
   assert.deepEqual(
@@ -235,7 +240,7 @@ void test('a stream subscribes without the listener, delivers items, ends with t
   assert.equal(ends[0]?.code, 'disconnected');
 
   const second = services.use(ProbeV1).watch((item) => items.push(item));
-  const reopened = desktop.subscriptions[1];
+  const reopened = probeStreams()[1];
 
   desktop.push('probe.api/v1', 'watch', 4);
   second.dispose();

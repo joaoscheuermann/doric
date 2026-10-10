@@ -26,6 +26,12 @@
     },
     {
       "path": "../../packages/llms"
+    },
+    {
+      "path": "../../packages/desktop-ui"
+    },
+    {
+      "path": "../../packages/desktop-client"
     }
   ],
   "exclude": ["src/desktop/**", "src/client/**"]

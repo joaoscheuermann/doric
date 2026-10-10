@@ -178,8 +178,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     const diagnostics = host.platform.diagnostics();
 
     assert.equal(host.platform.mode, 'normal');
-    // The installed bundles: the `postgres` foundation is one of them.
-    assert.equal(host.bundleCount, 9);
+    // The installed bundles: the `postgres` foundation is one of them, and the
+    // stage-9 desktop bundles (`layout`, `settings`, `chat`, `history`), which
+    // have no host part.
+    assert.equal(host.bundleCount, 13);
     assert.deepEqual(
       Object.fromEntries(
         diagnostics.bundles.map(({ id, state, phase }) => [id, [state, phase]]),
@@ -194,6 +196,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         direct: ['active', 'others'],
         'models-adapter': ['active', 'others'],
         'sandbox-adapter': ['active', 'others'],
+        layout: ['active', 'others'],
+        settings: ['active', 'others'],
+        chat: ['active', 'others'],
+        history: ['active', 'others'],
         'host-config': ['active', 'others'],
         transport: ['active', 'others'],
       },

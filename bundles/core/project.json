@@ -22,7 +22,8 @@
       "options": {
         "commands": [
           "tsc --build bundles/core/tsconfig.json --emitDeclarationOnly",
-          "tsc -p bundles/core/tsconfig.parts.json"
+          "tsc -p bundles/core/tsconfig.parts.json",
+          "tsc -p bundles/core/tsconfig.client.json"
         ],
         "parallel": false
       }
@@ -34,7 +35,8 @@
       "options": {
         "commands": [
           "tsc -p bundles/core/tsconfig.spec.json",
-          "node --test bundles/core/dist-tests/tests/*.test.js bundles/core/dist-tests/tests/desktop/*.test.js"
+          "tsc -p bundles/core/tsconfig.client-spec.json",
+          "node --test bundles/core/dist-tests/tests/*.test.js bundles/core/dist-tests/tests/desktop/*.test.js bundles/core/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

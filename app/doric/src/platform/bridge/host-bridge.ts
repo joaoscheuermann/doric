@@ -22,6 +22,13 @@ export const HOST_UNAVAILABLE_MESSAGE = 'Doric backend is unavailable.';
 export const hostUnavailable = (): ContractError =>
   new ContractError('unavailable', HOST_UNAVAILABLE_MESSAGE);
 
+/**
+ * The host every window's calls reach, through main alone: the bridge
+ * namespace and the `/status` monitor connect to it (moved here from the
+ * legacy `workspace/config.ts` at the stage-9 cut-over).
+ */
+export const HOST_URL = 'http://127.0.0.1:3000';
+
 export const BRIDGE_NAMESPACE = '/doric/bridge';
 /** = today's `connectionPollMs` (P4). */
 export const CONNECTION_RETRY_MS = 1_000;

@@ -1,0 +1,266 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "history",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "history.snapshots/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/history.snapshots/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "read.input": {
+            "type": "string"
+          },
+          "read.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "thread": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lastSequence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        },
+                        "promptId": {
+                          "type": "string"
+                        },
+                        "sequence": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "projectId",
+                        "threadId",
+                        "promptId",
+                        "sequence",
+                        "type",
+                        "createdAt"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  }
+                },
+                "required": ["thread", "lastSequence", "events"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "write.input": {
+            "type": "object",
+            "properties": {
+              "threadId": {
+                "type": "string"
+              },
+              "updates": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "snapshot"
+                        },
+                        "thread": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id"],
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "promptId": {
+                                "type": "string"
+                              },
+                              "sequence": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "type": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "projectId",
+                              "threadId",
+                              "promptId",
+                              "sequence",
+                              "type",
+                              "createdAt"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": ["kind", "thread", "events"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "event"
+                        },
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "threadId": {
+                              "type": "string"
+                            },
+                            "promptId": {
+                              "type": "string"
+                            },
+                            "sequence": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "type": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "threadId",
+                            "promptId",
+                            "sequence",
+                            "type",
+                            "createdAt"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "event"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "updated"
+                        },
+                        "thread": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id"],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": ["kind", "thread"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "deleted"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "threadId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "projectId", "threadId"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["threadId", "updates"],
+            "additionalProperties": false
+          },
+          "write.output": {}
+        }
+      }
+    }
+  ]
+}

@@ -115,9 +115,12 @@ Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
-main process is paired with the React renderer in `app/doric-renderer`; the
-renderer owns the Tailwind CSS surface, using the shadcn/ui components and Radix
-primitives of `packages/desktop-ui`.
+windows load the shell built by `app/doric-renderer`, which since migration
+stage 9 only boots the client bundles; the UI described below is drawn by the
+`layout`, `chat` and `settings` client bundles (and the core's outlet), using
+Tailwind CSS and the shadcn/ui components and Radix primitives of
+`packages/desktop-ui`. Where this section says "the renderer", it means those
+bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
 The conversation footer shows OpenRouter context usage without a text
@@ -156,14 +159,16 @@ model listing, validation and execution: 15-minute freshness, one concurrent
 refresh, a 5-second request timeout, stale fallback and 30-second failure backoff.
 Deleting a Thread deletes its accounting along with it. Costs not returned by an
 interrupted provider call remain unknown; the host makes no generation audit call.
-The main process alone communicates with Doric HTTP and Socket.IO at
-`127.0.0.1:3000` and exposes only semantic Project, Thread, and configuration
-operations, one event subscription per watched Thread, one selected-Project tree
-subscription, one Thread history snapshot read, connection status, and one
-native-notification write through a preload IPC boundary. The status and Project
-namespaces share one process-long Socket.IO Manager and Engine.IO connection,
-while each watched Thread is given a Manager and connection of its own, so that
-Thread's subscription lives and dies with its watch. The renderer keeps the
+The main process alone communicates with Doric at `127.0.0.1:3000`: the window
+never opens HTTP or Socket.IO, and its preload exposes only
+`window.doric.desktop`. Since migration stage 9 every Project, Thread,
+configuration, terminal and usage operation, each Thread watch, the
+selected-Project tree watch, connection status and the native-notification
+write are contract calls and streams that main's one `doric:desktop`
+dispatcher routes over the host bridge (`/doric/bridge`) or to the desktopMain
+generation; the semantic IPC channels and the main-process Thread history are
+gone, and the Thread history snapshot is the `history` bundle's
+`history.snapshots/v1` cache in desktopMain. The renderer keeps the
 Threads it has read for each Project, so every open Project row renders its own
 subtree while live updates continue to follow the selected Project alone. A
 prompt that finishes is announced to the operating system: the renderer's Thread
@@ -777,17 +782,40 @@ per desktop generation, executing the core's `desktopMain` part, which opens
 the `workspace` window at the last path the main stored for that key
 (`doric/windows.json`, paths only, no bounds) and defines the menu skeleton
 without a Settings item or `Cmd+,`. One dispatcher routes window calls by
-contract to the window, the `desktopMain` generation or the host; the legacy
-Project, Thread, settings and terminal IPC channels remain beside it and answer
-`Doric backend is unavailable.` in last-good-core mode. The renderer is the
-shell's legacy React tree, still bundled by webpack, which picks the workspace
-or the settings surface by path; the shared platform packages are
+contract to the window, the `desktopMain` generation or the host; at stage 8 the
+legacy Project, Thread, settings and terminal IPC channels remained beside it
+and the renderer was the shell's legacy React tree (both removed by stage 9);
+the shared platform packages are
 `packages/desktop-ui` (tokens, theme, fonts and shadcn/ui components),
 `packages/desktop-client` (the window client) and `app/doric-platform` (the
 platform files and import map). The CSP adds `worker-src 'self'` and the import
 map's script hash. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`; development
 profiles do not migrate.
+
+Migration stage 9 ("UI em bundles") moves the whole renderer UI into client
+bundles; decisions D9-1 to D9-20 are recorded in `implementation-decisions.md`.
+The composition enables `layout`, `settings`, `chat` and `history`. Every
+window's shell calls `bootstrapWindow({})` and shows `<core-outlet>`; the core's
+client part provides `ui/v1`, `navigation/v1` (routes are URL paths matched on
+`pathname`), `regions/v1`, `commands/v1` and the outlet, region, not-found and
+unavailable elements. `layout` registers `/` with the workspace frame, its
+`layout.sidebar`, `layout.header` and `layout.footer` regions,
+`layout.tabs/v1` and `layout.workspace/v1`, and keeps the files, changes,
+terminals, usage, resources, working-directory and branch UI under
+`src/client/provisional/` until stage 10; `chat` registers
+`/projects/:projectId/threads/:threadId` (child of `/`) with `<chat-view>`, its
+composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1` and
+`chat.hooks/v1`; `settings` registers `/settings` with sections as child routes
+and the execution picker as a `layout.footer` item; `history` (desktopMain)
+keeps the per-Thread snapshot cache over `doric.cache/v1`. The new platform
+contracts are `doric.elements/v1`, `doric.connection/v1`, the transitional
+client form of `doric.notifications/v1` and `doric.windows/v1.focus`. The
+selected Thread is the window path; the old `localStorage['doric.selection']`
+is converted once into a path and removed. The shell's stylesheet keeps only the
+window-wide rules and the sorted utility set; each UI bundle ships its own
+`client/styles.css`. The visible text, roles, layout and quirks of the stage-8
+renderer are unchanged.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its

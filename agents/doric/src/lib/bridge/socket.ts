@@ -2,7 +2,8 @@
 // `/doric/bridge` on the host's HTTP server. Each message is emitted under its
 // `kind` and carries the whole envelope message: the desktop sends `call`,
 // `cancel`, `subscribe` and `unsubscribe`; the host answers `result`, `event`
-// and `end`. Calls resolve in the kernel's active view, as principal `doric`.
+// and `end`. Calls resolve in the kernel's active view, as principal `doric`,
+// and reach only the methods of the host allowlist (HR-10, `allowlist.ts`).
 
 import type { KernelPlatform } from 'bundle';
 import {
@@ -23,6 +24,8 @@ import {
   wireMessageSchema,
 } from 'bundle/runtime';
 import type { Server, Socket } from 'socket.io';
+
+import { assertBridgeAllowed } from './allowlist.js';
 
 export const BRIDGE_NAMESPACE = '/doric/bridge';
 
@@ -114,6 +117,7 @@ const serve = (platform: KernelPlatform, socket: Socket, log: BridgeLog) => {
     calls.set(message.id, controller);
 
     try {
+      assertBridgeAllowed(message.contract, message.method);
       const args = argumentsOf(platform, message, false);
       const output = await methodOf(platform, message)(
         ...args,
@@ -161,6 +165,7 @@ const serve = (platform: KernelPlatform, socket: Socket, log: BridgeLog) => {
     streams.set(id, open);
 
     try {
+      assertBridgeAllowed(message.contract, message.method);
       const args = argumentsOf(platform, message, true);
       const held = (await methodOf(platform, message)(
         ...args,

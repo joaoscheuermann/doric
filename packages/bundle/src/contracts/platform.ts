@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   disposableSchema,
+  functionSchema,
   type MethodSpecs,
   type StreamListener,
   streamListener,
@@ -12,6 +13,7 @@ import {
   type StorageIdentity,
   storageIdentitySchema,
 } from './basic/storage.js';
+import type { ElementConstructor } from './basic/ui.js';
 import type { OpenWindowRequest } from './basic/windows.js';
 import { openWindowRequestSchema } from './basic/windows.js';
 import type { CallArg, Caller, CallScope } from './call.js';
@@ -538,6 +540,11 @@ export interface DoricWindows {
   focusOrOpen(key: string, call?: CallArg): Promise<void>;
   /** API mínima [S8-6]: the last path main stored for a key, or null. */
   lastPath(key: string, call?: CallArg): Promise<string | null>;
+  /**
+   * Stage 9 (D9-7): focuses the window of `key` without navigating it; true
+   * when such a window existed and was focused.
+   */
+  focus(key: string, call?: CallArg): Promise<boolean>;
 }
 
 export interface DoricMenus {
@@ -580,7 +587,46 @@ export const notificationRequestSchema = z
   .strict();
 
 export interface DoricNotifications {
+  /**
+   * Main bounds each line to 200 code points; an empty title or an
+   * unsupported platform is a silent no-op; an OS refusal is only logged.
+   */
   show(request: NotificationRequest, call?: CallArg): Promise<void>;
+}
+
+/**
+ * Stage 9 (D9-2), client only: custom elements and the services they get.
+ * Only the window's active `ui/v1` provider may call it (`not_owner`).
+ */
+export interface DoricElements {
+  /** Records `owner` for `tag` and calls `customElements.define`. */
+  define(
+    input: {
+      readonly tag: string;
+      readonly element: ElementConstructor;
+      readonly owner: Caller;
+    },
+    call?: CallArg,
+  ): Disposable;
+  /** The active owner of a defined tag, or undefined (absent, quarantined or disposed). */
+  owner(tag: string, call?: CallArg): Caller | undefined;
+  /** Assigns `element.services`: a child scope of the tag owner's services. */
+  attach(element: object, call?: CallArg): void;
+  /** Disposes that child scope; idempotent. */
+  release(element: object, call?: CallArg): void;
+}
+
+/** Stage 9 (D9-5): the host connection status a window shows. */
+export type ConnectionStatus = 'connected' | 'disconnected';
+
+export interface DoricConnection {
+  /** `disconnected` until main reports the first status. */
+  status(call?: CallArg): ConnectionStatus;
+  /** Called on every change (deduplicated); not called with the current value. */
+  subscribe(
+    listener: (status: ConnectionStatus) => void,
+    call?: CallArg,
+  ): Disposable;
 }
 
 /** One execution a generation keeps running (a prompt of a Thread). */
@@ -640,8 +686,17 @@ export const DoricNotificationsV1 = ref<DoricNotifications>(
   'doric.notifications/v1',
 );
 export const DoricGenerationV1 = ref<DoricGeneration>('doric.generation/v1');
+export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
+export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
 
 const noInput = z.tuple([]);
+
+const elementSchema = z.custom<object>(
+  (value) => typeof value === 'object' && value !== null,
+  { message: 'Expected an element.' },
+);
+
+export const connectionStatusSchema = z.enum(['connected', 'disconnected']);
 
 export interface PlatformContractSpec {
   readonly environments: readonly Environment[];
@@ -692,6 +747,7 @@ export const platformContracts = Object.freeze({
       open: { input: openWindowRequestSchema, output: z.void() },
       focusOrOpen: { input: z.string(), output: z.void() },
       lastPath: { input: z.string(), output: z.union([z.string(), z.null()]) },
+      focus: { input: z.string(), output: z.boolean() },
     },
   },
   'doric.menus/v1': {
@@ -738,9 +794,41 @@ export const platformContracts = Object.freeze({
       get: { input: noInput, output: z.record(z.string(), z.string()) },
     },
   },
+  // D9-6 (transitional, stage 9): the client form forwards to main.
   'doric.notifications/v1': {
-    environments: ['desktopMain'],
+    environments: ['desktopMain', 'client'],
     methods: { show: { input: notificationRequestSchema, output: z.void() } },
+  },
+  'doric.elements/v1': {
+    environments: ['client'],
+    methods: {
+      define: {
+        input: z
+          .object({
+            tag: z.string(),
+            element: functionSchema<ElementConstructor>(),
+            owner: ownerSchema,
+          })
+          .strict(),
+        output: disposableSchema,
+      },
+      owner: {
+        input: z.string(),
+        output: ownerSchema.optional(),
+      },
+      attach: { input: elementSchema, output: z.void() },
+      release: { input: elementSchema, output: z.void() },
+    },
+  },
+  'doric.connection/v1': {
+    environments: ['client'],
+    methods: {
+      status: { input: noInput, output: connectionStatusSchema },
+      subscribe: {
+        input: functionSchema<(status: ConnectionStatus) => void>(),
+        output: disposableSchema,
+      },
+    },
   },
 } satisfies Record<string, PlatformContractSpec>);
 

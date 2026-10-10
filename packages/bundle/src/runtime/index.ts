@@ -88,6 +88,7 @@ export { createHooksFacade } from './facades.js';
 export {
   type ContractDocument,
   canonicalJson,
+  compilableSchema,
   contractDocument,
   JSON_SCHEMA_DIALECT,
   jsonEqual,
@@ -163,6 +164,10 @@ export {
   type SemVer,
   satisfies,
 } from './semver.js';
-export { createPrincipal } from './services.js';
+export {
+  createElementScope,
+  createPrincipal,
+  type ElementScope,
+} from './services.js';
 export { childTrace, newTrace, traceIdOf } from './trace.js';
 export { PLATFORM_VERSION } from './version.js';

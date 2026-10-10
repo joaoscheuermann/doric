@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import {
-  disposableSchema,
+  isDisposableSchema,
   type MethodSpec,
   streamItemOf,
 } from '../contracts/basic/common.js';
@@ -103,7 +103,7 @@ const localKindOf = (schema: z.ZodType): LocalCodecKind | undefined => {
     return declared;
   }
 
-  return schema === disposableSchema ? 'disposable' : undefined;
+  return isDisposableSchema(schema) ? 'disposable' : undefined;
 };
 
 const hasUncodedLocal = (value: unknown): boolean => {
@@ -348,4 +348,32 @@ export const contractDocument = (
     },
     local,
   };
+};
+
+/**
+ * A member schema ajv accepts. An empty tuple (`noInput`) generates
+ * `prefixItems: []`, which the 2020-12 meta-schema refuses (`minItems: 1`);
+ * without it the schema means the same (`maxItems: 0` keeps it empty).
+ */
+export const compilableSchema = (schema: JsonValue): JsonValue => {
+  if (Array.isArray(schema)) {
+    return schema.map(compilableSchema);
+  }
+
+  if (typeof schema !== 'object' || schema === null) {
+    return schema;
+  }
+
+  return Object.fromEntries(
+    Object.entries(schema)
+      .filter(
+        ([key, value]) =>
+          !(
+            key === 'prefixItems' &&
+            Array.isArray(value) &&
+            value.length === 0
+          ),
+      )
+      .map(([key, value]) => [key, compilableSchema(value)]),
+  );
 };

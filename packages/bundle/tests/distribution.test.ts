@@ -273,3 +273,73 @@ void test('a distributed bundle with an unreadable manifest or descriptor is qua
     ],
   );
 });
+
+void test('a contract only a kernel-embedded host bundle provides satisfies a client part', () => {
+  const descriptorOf = (id: string, contracts: readonly string[]) => ({
+    descriptorVersion: 1,
+    bundle: { id, version: '1.0.0' },
+    contracts: contracts.map((contract) => ({
+      id: contract,
+      version: '1.0.0',
+      kind: 'service',
+      environment: 'host',
+      cardinality: 'one',
+      local: false,
+      schema: `schemas/${contract}.json`,
+    })),
+  });
+  const bundleOf = (
+    id: string,
+    provides: readonly string[],
+    requires: readonly string[],
+    parts: Record<string, string>,
+  ) => ({
+    id,
+    version: '1.0.0',
+    state: 'active' as const,
+    reasons: [],
+    manifest: {
+      manifestVersion: 1,
+      id,
+      version: '1.0.0',
+      engines: { doric: '^1.0.0' },
+      provides: provides.map((contract) => `${contract}@1.0.0`),
+      requires,
+    },
+    descriptor: descriptorOf(id, provides),
+    files: [],
+    parts,
+  });
+  const composition = { core: 'base', enabled: ['base', 'ui'], providers: {} };
+  const catalog = {
+    generation: 1,
+    hostBoot: 'b',
+    platformVersion: PLATFORM_VERSION,
+    composition,
+    host: { generation: 1, composition, bundles: [], order: [], contracts: [] },
+    bundles: [
+      bundleOf('base', [], [], {}),
+      bundleOf('ui', [], ['host-config/v1@^1.0.0'], {
+        client: 'client/index.js',
+      }),
+      // Embedded in the kernel: active, outside the composition, no desktop part.
+      bundleOf('host-config', ['host-config/v1'], [], {}),
+    ],
+  } as unknown as DistributionCatalog;
+
+  const client = resolveEnvironment(
+    {
+      candidates: candidatesFromDistribution(catalog),
+      composition: compositionFromDistribution(catalog),
+      platformVersion: PLATFORM_VERSION,
+      generation: 1,
+    },
+    'client',
+  );
+  const ui = client.entries.find((entry) => entry.id === 'ui');
+
+  assert.deepEqual(
+    [ui?.state, ui?.reasons.map((reason) => reason.code)],
+    ['scheduled', []],
+  );
+});

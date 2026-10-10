@@ -134,3 +134,56 @@ void test('a bundle whose activation fails leaves no tool behind', async () => {
     await host.close();
   }
 });
+
+void test('catalog answers the GET /tools entries as plain data, in list order', async () => {
+  const field = {
+    key: 'endpoint',
+    label: 'Endpoint',
+    kind: 'url',
+    required: true,
+    placeholder: 'https://example.com',
+  } as const;
+  const configured = probe('gamma', {
+    requires: usesTools,
+    activate: ({ services }) => {
+      services.use(ToolsV1).register(
+        defineTool({
+          name: 'fetch-page',
+          description: 'Reads one web page.',
+          input: z.object({}).strict(),
+          output: z.string(),
+          settings: [field],
+          execute: () => 'page',
+        }),
+        { alwaysAvailable: false },
+      );
+    },
+  });
+  const host = await boot([
+    await core(),
+    registering('alpha', [{ name: 'a-one', always: true }]),
+    configured,
+  ]);
+
+  try {
+    const tools = host.platform.services.use(ToolsV1);
+    const catalog = await tools.catalog();
+
+    assert.deepEqual(catalog, [
+      { name: 'a-one', settings: [] },
+      {
+        name: 'fetch-page',
+        description: 'Reads one web page.',
+        settings: [field],
+      },
+    ]);
+    assert.deepEqual(
+      catalog.map(({ name }) => name),
+      tools.list().map(({ tool }) => tool.name),
+    );
+    // The answer crosses any boundary unchanged: it is JSON already.
+    assert.deepEqual(JSON.parse(JSON.stringify(catalog)), catalog);
+  } finally {
+    await host.close();
+  }
+});

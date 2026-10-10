@@ -1,0 +1,8 @@
+/*
+ * The settings bundle's utilities: the classes its components use, over the
+ * platform theme, which the window loads once. No unlayered rules of its own
+ * (design §9.4).
+ */
+@import 'tailwindcss/utilities.css' layer(utilities);
+@reference 'desktop-ui/tailwind.css';
+@source './';

@@ -34,8 +34,13 @@ export const distributedSource = (bundle: {
   dir: `${bundle.id}@${bundle.version}`,
 });
 
-const candidateOf = (bundle: DistributionBundle): CatalogCandidate => {
-  const source = distributedSource(bundle);
+const candidateOf = (
+  bundle: DistributionBundle,
+  embedded = false,
+): CatalogCandidate => {
+  const source: CatalogCandidate['source'] = embedded
+    ? { kind: 'embedded' }
+    : distributedSource(bundle);
   const manifest = manifestV1Schema.safeParse(bundle.manifest);
 
   if (!manifest.success) {
@@ -97,7 +102,24 @@ const candidateOf = (bundle: DistributionBundle): CatalogCandidate => {
  */
 export const candidatesFromDistribution = (
   catalog: DistributionCatalog,
-): CatalogCandidate[] => catalog.bundles.map(candidateOf);
+): CatalogCandidate[] => {
+  // The kernel-embedded bundles (`host-config`, `transport`) are always
+  // enabled outside the composition; the host lists them, active and without
+  // a desktop part. They keep that standing on the desktop, so a part that
+  // requires a contract only they provide (`host-config/v1`, `resources/v1`)
+  // resolves as it does on the host instead of seeing a disabled provider.
+  const enabled = new Set(catalog.composition.enabled);
+
+  return catalog.bundles.map((bundle) =>
+    candidateOf(
+      bundle,
+      !enabled.has(bundle.id) &&
+        bundle.state === 'active' &&
+        bundle.parts.desktopMain === undefined &&
+        bundle.parts.client === undefined,
+    ),
+  );
+};
 
 /**
  * The composition the desktop resolves: the host's, without the bundles the

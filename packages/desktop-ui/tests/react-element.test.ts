@@ -31,6 +31,9 @@ const installed = [
 let defineReactElement: <P extends object>(
   options: ReactElementOptions<P>,
 ) => new () => ReactElementInstance;
+let portalHosts: typeof import('desktop-ui/react-element').portalHosts;
+let createPortal: typeof import('react-dom').createPortal;
+let createRoot: typeof import('react-dom/client').createRoot;
 let act: (callback: () => void | Promise<void>) => Promise<void>;
 let createElement: typeof import('react').createElement;
 let useEffect: typeof import('react').useEffect;
@@ -48,7 +51,11 @@ before(async () => {
   act = react.act as typeof act;
   createElement = react.createElement;
   useEffect = react.useEffect;
-  ({ defineReactElement } = await import('desktop-ui/react-element'));
+  ({ defineReactElement, portalHosts } = await import(
+    'desktop-ui/react-element'
+  ));
+  ({ createPortal } = await import('react-dom'));
+  ({ createRoot } = await import('react-dom/client'));
 });
 
 after(async () => {
@@ -143,12 +150,32 @@ describe('defineReactElement', () => {
     await act(() => element.dispose());
   });
 
-  test('stays out of the layout unless told otherwise', () => {
-    assert.equal(greetingElement().create().style.display, 'contents');
-    assert.equal(
-      greetingElement({ display: 'flex' }).create().style.display,
-      'flex',
-    );
+  test('stays out of the layout unless told otherwise, once connected', async () => {
+    const contents = greetingElement().create();
+    const flex = greetingElement({ display: 'flex' }).create();
+    // A browser refuses `document.createElement` for a custom element whose
+    // constructor leaves an attribute (`style` included).
+    assert.equal(contents.attributes.length, 0);
+    assert.equal(flex.attributes.length, 0);
+    contents.services = services('core');
+    flex.services = services('core');
+    await act(() => {
+      attach(contents);
+      attach(flex);
+    });
+    assert.equal(contents.style.display, 'contents');
+    assert.equal(flex.style.display, 'flex');
+  });
+
+  test('a portal host is created without attributes and stays out of the layout', () => {
+    const hosts = portalHosts<Record<string, never>>([]);
+    tags += 1;
+    const tag = `test-portal-${tags}`;
+    window.customElements.define(tag, hosts.Element as never);
+    const host = window.document.createElement(tag);
+    assert.equal(host.attributes.length, 0);
+    window.document.body.appendChild(host);
+    assert.equal(host.style.display, 'contents');
   });
 
   test('moving it within the document keeps its root', async () => {
@@ -230,5 +257,66 @@ describe('defineReactElement', () => {
       'Hi from core',
     );
     await act(() => element.dispose());
+  });
+});
+
+describe('portalHosts', () => {
+  interface Item {
+    readonly label?: string;
+  }
+
+  test('the owner root renders each connected host through a portal, following props and disconnects', async () => {
+    const hosts = portalHosts<Item>(['label']);
+    tags += 1;
+    const tag = `test-portal-${tags}`;
+    window.customElements.define(tag, hosts.Element as never);
+
+    const Owner = () =>
+      createElement(
+        'div',
+        null,
+        hosts
+          .useHosts()
+          .map(({ element, props }, index) =>
+            createPortal(
+              createElement('span', null, props.label ?? '?'),
+              element,
+              String(index),
+            ),
+          ),
+      );
+    const container = window.document.createElement('main');
+    window.document.body.appendChild(container);
+    const root = createRoot(container as never);
+    await act(() => root.render(createElement(Owner)));
+
+    const first = window.document.createElement(tag) as unknown as HTMLElement &
+      Item & { label?: string };
+    const second = window.document.createElement(
+      tag,
+    ) as unknown as HTMLElement & Item & { label?: string };
+    first.label = 'cwd';
+    await act(() => {
+      window.document.body.appendChild(first as never);
+      window.document.body.appendChild(second as never);
+    });
+    assert.equal(first.textContent, 'cwd');
+    assert.equal(second.textContent, '?');
+    assert.equal(first.children.length, 1);
+
+    await act(() => {
+      second.label = 'usage';
+    });
+    assert.equal(second.textContent, 'usage');
+
+    await act(() => {
+      first.remove();
+    });
+    assert.equal(first.textContent, '');
+    assert.equal(second.textContent, 'usage');
+
+    await act(() => root.unmount());
+    second.remove();
+    container.remove();
   });
 });

@@ -1,4 +1,9 @@
-import { type CallArg, ref } from 'bundle/contracts';
+import {
+  type CallArg,
+  type Disposable,
+  ref,
+  type StreamListener,
+} from 'bundle/contracts';
 import { z } from 'zod';
 
 import {
@@ -7,6 +12,7 @@ import {
   terminalRecordSchema,
   terminalSnapshotSchema,
 } from './model.js';
+import { type TerminalWatchItem, watchMethods } from './watches.js';
 
 /*
  * runtime.terminals/v1: the manual terminal sessions of WorkspaceService.
@@ -41,6 +47,16 @@ export interface RuntimeTerminals {
     call?: CallArg,
   ): Promise<boolean>;
   stop(id: string, call?: CallArg): Promise<boolean>;
+  /**
+   * The terminal half of the `/projects` namespace as a stream (stage 9
+   * R-STREAM, 1.1.0): one snapshot of the Project's terminals, then their
+   * updates and removals, and live output only after the snapshot.
+   */
+  watchProject(
+    projectId: string,
+    listener: StreamListener<TerminalWatchItem>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 export const runtimeTerminalsMethods = {
@@ -70,6 +86,7 @@ export const runtimeTerminalsMethods = {
     output: z.boolean(),
   },
   stop: { input: z.string(), output: z.boolean() },
+  watchProject: watchMethods.terminals,
 } as const;
 
 export const RuntimeTerminalsV1 = ref<RuntimeTerminals>('runtime.terminals/v1');
