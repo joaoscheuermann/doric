@@ -18,7 +18,11 @@ import { fileURLToPath } from 'node:url';
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const recordPath = join(packageRoot, 'tests/fixtures/provenance.json');
 
-/** The renderer path each vendored file came from. */
+/**
+ * The renderer path each vendored file came from at the recorded commit. It is
+ * read only through `git show <commit>:<path>`, never from the working tree,
+ * so the check holds after the renderer sources are deleted.
+ */
 const origin = (file) =>
   file.startsWith('components/')
     ? `app/doric-renderer/src/components/ui/${file.slice('components/'.length)}`

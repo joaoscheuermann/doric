@@ -56,7 +56,7 @@ const catalogRead: CatalogResult = {
 
 /**
  * Kernel: a models/v1 core that builds each provider once and resolves it.
- * Generation: the provider (models adapter) and the consumer (direct).
+ * Generation: a test-local OpenAI-kind provider fixture and the consumer (direct).
  */
 const modelsWorld = () => {
   const world = processes();
@@ -66,7 +66,7 @@ const modelsWorld = () => {
   let provider: ModelsProvider | undefined;
   let cached: LanguageModel | undefined;
 
-  world.generation.principal('models-adapter').services.provide(
+  world.generation.principal('openai-fixture').services.provide(
     basicProvider(
       'models.provider/v1',
       modelsProviderMethods,

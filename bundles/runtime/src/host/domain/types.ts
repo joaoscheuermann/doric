@@ -22,7 +22,6 @@ import type {
   RewindResult,
   Terminal,
   TerminalOutput,
-  TerminalSnapshot,
   Thread,
   ThreadCreateResult,
   ThreadEvent,
@@ -63,18 +62,6 @@ export interface WorkspacePublisher {
 }
 
 export interface WorkspaceService {
-  readonly terminals: {
-    list(projectId: string): readonly Terminal[];
-    create(
-      threadId: string,
-      cols?: number,
-      rows?: number,
-    ): Promise<Terminal | undefined>;
-    snapshot(id: string, after?: number): TerminalSnapshot | undefined;
-    input(id: string, data: string): Promise<boolean>;
-    resize(id: string, cols: number, rows: number): Promise<boolean>;
-    stop(id: string): Promise<boolean>;
-  };
   readonly projects: {
     create(name: string): Promise<Project>;
     find(id: string): Promise<Project | undefined>;

@@ -214,7 +214,9 @@ void test('closes manual terminals when their owning Thread is terminated', asyn
   const created = await service.threads.create(project.id, 'Thread');
   assert.equal(created.status, 'created');
   if (created.status !== 'created') throw new Error('Thread unavailable');
-  const terminal = await service.terminals.create(created.thread.id);
+  const terminal = await harness.terminals.create({
+    threadId: created.thread.id,
+  });
   assert.ok(terminal);
   assert.equal((await harness.terminals.list(project.id)).length, 1);
   await service.threads.terminate(created.thread.id);
@@ -230,12 +232,12 @@ void test('interrupting a prompt terminates its foreground command', async () =>
   const f = fixture();
   const harness = createHarness({
     sandbox: { sandbox: f.sandbox },
-    execute: async ({ tools }) => {
-      await tools.terminal.run({
-        command: 'sleep 100',
-        cwd: '/workspace',
-        timeoutMs: 0,
-      });
+    execute: async ({ tools, signal }) => {
+      // The executor's tool call carries the prompt's signal.
+      await tools.terminal.run(
+        { command: 'sleep 100', cwd: '/workspace', timeoutMs: 0 },
+        { ...(signal === undefined ? {} : { signal }) },
+      );
       return 'finished';
     },
   });
@@ -266,12 +268,12 @@ void test('storage pressure interrupts the host-owned foreground terminal and pr
     sandbox: { sandbox: f.sandbox },
     health: async () =>
       low ? { ...healthy, disk: { blocks: 100, availableBlocks: 1 } } : healthy,
-    execute: async ({ tools }) => {
-      await tools.terminal.run({
-        command: 'sleep 100',
-        cwd: '/workspace',
-        timeoutMs: 0,
-      });
+    execute: async ({ tools, signal }) => {
+      // The executor's tool call carries the prompt's signal.
+      await tools.terminal.run(
+        { command: 'sleep 100', cwd: '/workspace', timeoutMs: 0 },
+        { ...(signal === undefined ? {} : { signal }) },
+      );
       return 'finished';
     },
   });
@@ -356,7 +358,7 @@ void test('a provider cleanup failure does not strand Thread or Project terminat
   const project = await service.projects.create('Project');
   const created = await service.threads.create(project.id, 'Thread');
   if (created.status !== 'created') throw new Error('Thread unavailable');
-  assert.ok(await service.terminals.create(created.thread.id));
+  assert.ok(await harness.terminals.create({ threadId: created.thread.id }));
   await service.threads.terminate(created.thread.id);
   await service.dispose();
   assert.equal(

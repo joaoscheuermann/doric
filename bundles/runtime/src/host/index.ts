@@ -13,10 +13,11 @@ import { type Bindings, createBindings } from './domain/bindings.js';
 import { createNotices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
 import { createWorkspaceService } from './domain/service.js';
+import { type ProjectResourcesReader, ResourcesV1 } from './peers.js';
 import { createPorts, type RuntimePorts } from './ports.js';
 import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
-import { terminalsService } from './services/terminals.js';
+import { terminalSessionsService } from './services/terminal-sessions.js';
 import { threadsService } from './services/threads.js';
 import { usageService } from './services/usage.js';
 import { createWatches } from './services/watches.js';
@@ -44,6 +45,7 @@ export const provideRuntime = (
     ports,
     bindings = createBindings(),
     terminal = () => undefined,
+    resources = () => undefined,
   }: {
     readonly projects: ProjectStore;
     readonly threads: ThreadStore;
@@ -53,9 +55,14 @@ export const provideRuntime = (
     /**
      * The `terminal` bundle's `terminal/v1` while one is active: it owns the
      * terminal sessions since the stage-10 host switch, so the runtime's
-     * terminal reads delegate to it; without one, the provisional registry.
+     * terminal reads delegate to it; without one, a Project has none.
      */
     readonly terminal?: () => TerminalService | undefined;
+    /**
+     * The `resources` bundle's `resources/v1` while one is active: the
+     * deprecated `runtime.lease/v1.resources` read delegates to it.
+     */
+    readonly resources?: () => ProjectResourcesReader | undefined;
   },
 ): Cleanup => {
   const notices = createNotices(ports.log);
@@ -67,6 +74,7 @@ export const provideRuntime = (
     publisher: notices.publisher,
     redactor,
     bindings,
+    terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
   });
 
   // The remote watches read what the transport socket reads (R-STREAM).
@@ -78,9 +86,7 @@ export const provideRuntime = (
         threads.eventsAfter(threadId, afterSequence),
       project: (projectId) => service.projects.find(projectId),
       projectThreads: (projectId) => threads.listByProject(projectId),
-      terminals: async (projectId) =>
-        (await terminal()?.list(projectId)) ??
-        service.terminals.list(projectId),
+      terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
     },
   });
 
@@ -97,8 +103,8 @@ export const provideRuntime = (
   services.provide(threadsService({ service, threads, bindings, watches }));
   services.provide(workspaceService(bindings, service));
   services.provide(usageService(service));
-  services.provide(leaseService({ service, bindings }));
-  services.provide(terminalsService(service, watches, terminal));
+  services.provide(leaseService({ service, bindings, resources }));
+  services.provide(terminalSessionsService(watches, terminal));
 
   // Idempotent: the kernel already called runtime/v1.dispose on a normal stop.
   return () => service.dispose();
@@ -135,9 +141,20 @@ export const activate = ({ services }: HostContext): Cleanup => {
     };
   });
 
+  // resources/v1 is the `resources` bundle's (stage 10 §3.12), which also
+  // activates after the runtime.
+  let resources: ProjectResourcesReader | undefined;
+  services.whenAvailable(ResourcesV1, (api) => {
+    resources = api;
+    return () => {
+      if (resources === api) resources = undefined;
+    };
+  });
+
   return provideRuntime(services, {
     ...runtimeStores(storage, ports),
     ports,
     terminal: () => terminal,
+    resources: () => resources,
   });
 };

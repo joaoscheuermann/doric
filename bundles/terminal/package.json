@@ -5,6 +5,12 @@
   "type": "module",
   "exports": {
     "./package.json": "./package.json",
+    "./host": {
+      "@org/source": "./src/host/index.ts",
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js",
+      "default": "./dist/host/index.js"
+    },
     "./contracts": {
       "@org/source": "./src/contracts/index.ts",
       "types": "./dist/contracts/index.d.ts",

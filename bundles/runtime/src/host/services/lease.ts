@@ -13,6 +13,7 @@ import {
 } from '../../contracts/lease.js';
 import type { Bindings } from '../domain/bindings.js';
 import type { WorkspaceService } from '../domain/types.js';
+import type { ProjectResourcesReader } from '../peers.js';
 
 /*
  * runtime.lease/v1 (design 57 §2.5): the stage-1 sandbox operations of the
@@ -33,9 +34,16 @@ const scoped = (call: Call, key: 'projectId' | 'threadId'): string => {
 export const leaseService = ({
   service,
   bindings,
+  resources = () => undefined,
 }: {
   readonly service: WorkspaceService;
   readonly bindings: Bindings;
+  /**
+   * The `resources` bundle's `resources/v1` while one is active: it reads the
+   * container since stage 10 (§3.12), so the deprecated `resources` read
+   * delegates to it on the caller's scope.
+   */
+  readonly resources?: () => ProjectResourcesReader | undefined;
 }) =>
   defineService(RuntimeLeaseV1, {
     describe: defineMethod({
@@ -102,8 +110,15 @@ export const leaseService = ({
     }),
     resources: defineMethod({
       ...methods.resources,
-      execute: (_input, call) =>
-        service.projects.resources(scoped(call, 'projectId')),
+      execute: async (_input, call) => {
+        const projectId = scoped(call, 'projectId');
+        const reader = resources();
+        if (reader === undefined) return service.projects.resources(projectId);
+        const outcome = await reader.project(call);
+        return outcome.status === 'ready'
+          ? { status: 'ready' as const, container: outcome.value }
+          : { status: outcome.status };
+      },
     }),
     git: defineMethod({
       ...methods.git,

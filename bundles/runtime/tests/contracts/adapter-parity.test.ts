@@ -121,10 +121,24 @@ void test('the runtime providers answer the stage-1 adapter transcript', {
 }, async () => {
   const driver = runtimeDriver();
   try {
-    const replayed = transcriptOf(await runScenario(driver));
-    const golden = await readTranscript();
+    // terminal/v1 is the `terminal` bundle's since the stage-10 host switch,
+    // not a runtime provider any more; its own tests own that parity.
+    const runtimeSteps = <T extends { readonly steps: readonly unknown[] }>(
+      transcript: T,
+    ): T => ({
+      ...transcript,
+      steps: transcript.steps.filter(
+        (step) => (step as { contract?: string }).contract !== 'terminal/v1',
+      ),
+    });
+    const replayed = runtimeSteps(transcriptOf(await runScenario(driver)));
+    const golden = runtimeSteps(await readTranscript());
     for (const [index, step] of golden.steps.entries())
-      assert.deepEqual(replayed.steps[index], step, step.label);
+      assert.deepEqual(
+        replayed.steps[index],
+        step,
+        (step as { label: string }).label,
+      );
     assert.deepEqual(replayed, golden);
   } finally {
     await driver.dispose();

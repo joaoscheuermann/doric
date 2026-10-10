@@ -18,6 +18,7 @@ import {
   type ProjectTree,
   type PromptAcceptResult,
   type RewindResult,
+  type Terminal,
   type Thread,
 } from '../../contracts/model.js';
 import type { RuntimeOwner } from '../../contracts/runtime.js';
@@ -29,8 +30,6 @@ import {
 } from '../provisional/file-changes.js';
 import { projectChanges, readProjectFile } from '../provisional/files.js';
 import { threadGit } from '../provisional/git-status.js';
-import { readSandboxResources } from '../provisional/resources.js';
-import { createTerminalRegistry } from '../provisional/terminals.js';
 import { queuedPrompt, storageQueueError } from '../store/queue.js';
 import type {
   ProjectStore,
@@ -82,6 +81,11 @@ export interface WorkspaceServiceOptions {
   readonly publisher: WorkspacePublisher;
   readonly redactor: Redactor;
   readonly bindings: Bindings;
+  /**
+   * The Project's terminal sessions, which the `terminal` bundle owns since
+   * the stage-10 host switch; none without one.
+   */
+  readonly terminals?: (projectId: string) => Promise<readonly Terminal[]>;
 }
 
 /**
@@ -103,6 +107,7 @@ export const createWorkspaceService = ({
   publisher,
   redactor,
   bindings,
+  terminals: sessions = async () => [],
 }: WorkspaceServiceOptions): WorkspaceService => {
   const { log } = ports;
   const runtimes = new Map<string, ProjectRuntime>();
@@ -161,9 +166,7 @@ export const createWorkspaceService = ({
       log.error('Project owner release failed', { projectId: id });
     });
   };
-  const terminals = createTerminalRegistry(publisher, redactor.latest);
   const runner = createThreadRunner({
-    terminals,
     threads,
     publisher,
     log,
@@ -676,10 +679,16 @@ export const createWorkspaceService = ({
       ? outcome.value
       : { status: outcome.status };
   };
+  /*
+   * The container reading is the `resources` bundle's (stage 10 §3.12);
+   * without one the Project still answers its lease state, with a container
+   * that offers no reading, as a provider without stats does.
+   */
   const resources = async (id: string): Promise<ProjectResources> => {
-    const outcome = await withLease(id, (sandbox) =>
-      readSandboxResources(sandbox),
-    );
+    const outcome = await withLease(id, async () => ({
+      status: 'unavailable' as const,
+      at: new Date().toISOString(),
+    }));
     return outcome.status === 'ready'
       ? { status: 'ready', container: outcome.value }
       : { status: outcome.status };
@@ -743,12 +752,7 @@ export const createWorkspaceService = ({
       }
       break;
     }
-    await Promise.all([
-      runner.threadsClosing(id, [...runtime.threads.keys()]),
-      terminals.close([...runtime.threads.keys()]).catch(() => {
-        log.error('Terminal cleanup failed', { projectId: id });
-      }),
-    ]);
+    await runner.threadsClosing(id, [...runtime.threads.keys()]);
     if ((await releaseLease(runtime)) !== undefined)
       log.error('Project sandbox release failed', { projectId: id });
     await releaseOwner(id);
@@ -768,47 +772,6 @@ export const createWorkspaceService = ({
       : { project, thread };
   };
   const service: WorkspaceService = {
-    terminals: {
-      list: terminals.list,
-      snapshot: terminals.snapshot,
-      input: terminals.input,
-      resize: terminals.resize,
-      stop: terminals.stop,
-      create: async (threadId, cols, rows) => {
-        const record = await threads.record(threadId);
-        if (record === undefined || isTerminal(record.state)) return undefined;
-        const project = await projectFor(record.projectId);
-        if (project === undefined) return undefined;
-        return exclusive(record.projectId, async () => {
-          const thread = project.threads.get(threadId);
-          const sandbox = project.lease?.sandbox;
-          if (
-            project.closing ||
-            thread === undefined ||
-            thread.closing ||
-            sandbox === undefined
-          )
-            return undefined;
-          // The terminal stream redacts with the list read here.
-          await redactor.current();
-          const started = await terminals.start({
-            sandbox,
-            projectId: record.projectId,
-            threadId,
-            origin: 'user',
-            input: {
-              command: 'bash',
-              cwd: thread.thread.cwd,
-              timeoutMs: 0,
-              pty: true,
-            },
-            ...(cols === undefined ? {} : { cols }),
-            ...(rows === undefined ? {} : { rows }),
-          });
-          return started.terminal;
-        });
-      },
-    },
     projects: {
       create: (name) =>
         exclusive('creation', async () => {
@@ -1108,8 +1071,7 @@ export const createWorkspaceService = ({
                 (item) => item.active !== undefined || item.jobs.length > 0,
               )
               .map((item) => item.thread.cwd),
-            ...terminals
-              .list(record.projectId)
+            ...(await sessions(record.projectId))
               .filter(
                 (item) =>
                   item.state !== 'exited' &&

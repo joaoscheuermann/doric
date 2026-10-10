@@ -661,7 +661,9 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
 names `core`, enables `postgres`, `core`, `files`, `git`, `threads`,
-`runtime`, `direct`, `models-adapter` and `sandbox-adapter`, and chooses
+`terminal`, `usage`, `resources`, `runtime`, `direct`, `openai`,
+`openrouter`, `codex`, `docker`, `notifications`, `layout`, `settings`,
+`chat` and `history`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`), and always adds
 the embedded provisional `host-config` bundle, which owns the configuration's
 `settings/v1` space and provides `host-config/v1`, and the embedded
@@ -683,7 +685,7 @@ mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
 and for each prompt; `Bundles loaded`
-reports the activated installed bundles (nine in the shipped composition; the
+reports the activated installed bundles (19 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, the startup stages run as `bootstrap`,
 `sandbox_pool`, `bundle_load`, `database_client` (connects the client through
@@ -700,8 +702,8 @@ Migration stage 4 ("Processos de geração") implements the approved
 multi-process scope of HC-003 for the host. The Doric process is the kernel: it
 runs the foundation, the core, every embedded bundle and the platform (catalog,
 diagnostics, dispatcher, generation manager). The installed other bundles
-(`files`, `git`, `threads` and, from stage 5, `runtime`, `direct`,
-`models-adapter` and `sandbox-adapter`) activate in one Node `child_process.fork` per bundle
+(`files`, `git`, `threads`, from stage 5 `runtime` and `direct`, and from
+stage 10 the feature, provider and sandbox bundles) activate in one Node `child_process.fork` per bundle
 generation, through `startKernel` and the runner of `packages/bundle`, and the
 two processes call each other's services through one RPC envelope; the tools
 of those bundles execute in the generation process. Each prompt holds a lease
@@ -739,9 +741,11 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 the event. `/bundles/direct` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession`, and keeps its history as the opaque
 `direct.history/v1` state (`messages` and `meta`). The core provides
-`models/v1`; the provisional `models-adapter` registers the `openai`,
-`openrouter` and `codex` `models.provider/v1` kinds and the provisional
-`sandbox-adapter` provides `sandbox/v1`, both until stage 10. The kernel
+`models/v1`; since stage 10 the `openai`, `openrouter` and `codex` bundles
+register their `models.provider/v1` kinds and `docker` (or `firecracker`,
+selected with `DORIC_SANDBOX_PROVIDER`) provides `sandbox/v1`; the stage-5
+provisional `models-adapter` and `sandbox-adapter` bundles are no longer
+composed. The kernel
 refuses to boot, at `bundle_load`, when `runtime/v1`, `executor/v1`,
 `sandbox/v1`, `models/v1` or `host-config/v1` has no active provider or
 `transport` is not active; when a structural provider is lost after boot (its

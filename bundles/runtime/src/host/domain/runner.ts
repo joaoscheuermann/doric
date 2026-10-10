@@ -19,7 +19,6 @@ import {
 } from '../../contracts/model.js';
 import type { InterruptResult } from '../../contracts/threads.js';
 import { cwdRepoHint, threadGit } from '../provisional/git-status.js';
-import type { TerminalRegistry } from '../provisional/terminals.js';
 import {
   queuedPrompt,
   queuedPrompts,
@@ -51,7 +50,6 @@ import type { WorkspacePublisher } from './types.js';
  */
 
 export interface RunnerContext {
-  readonly terminals: TerminalRegistry;
   readonly threads: ThreadStore;
   readonly publisher: WorkspacePublisher;
   readonly log: Log;
@@ -66,7 +64,8 @@ export interface RunnerContext {
   readonly checkStorage?: () => Promise<void>;
   /**
    * runtime.hooks/v1 onThreadsClosingHook, awaited where the terminals of
-   * closing Threads close; it resolves even when a handler fails.
+   * closing Threads close: the `terminal` bundle owns the sessions (stage 10)
+   * and closes them in its handler. It resolves even when a handler fails.
    */
   readonly threadsClosing?: (input: {
     readonly projectId: string;
@@ -425,39 +424,6 @@ export const createThreadRunner = (context: RunnerContext) => {
           const host: Host = {
             threads: coordinate(project, thread, active.job),
             workspace: workspace(project, thread, active.job),
-            terminals: {
-              run: async (input) => {
-                active.controller.signal.throwIfAborted();
-                if (project.closing || thread.closing)
-                  throw new Error('Thread is inactive.');
-                // The terminal stream redacts with the list read here.
-                await context.redactor.current();
-                const started = await context.terminals.start({
-                  sandbox: lease.sandbox,
-                  projectId: project.project.id,
-                  threadId: thread.thread.id,
-                  origin: 'agent',
-                  input,
-                  ...(input.background
-                    ? {}
-                    : { signal: active.controller.signal }),
-                });
-                if (!input.background) return started.result;
-                void started.result.then(
-                  (result) =>
-                    terminalResult(project, thread, {
-                      terminalId: result.terminalId,
-                      promptId: active.job.id,
-                      text: `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`,
-                    }),
-                  () => failTerminalResult(project, thread),
-                );
-                return {
-                  terminalId: started.terminal.id,
-                  background: true as const,
-                };
-              },
-            },
           };
           text = await execute(project, thread, active, lease.sandbox, host);
           active.controller.signal.throwIfAborted();
@@ -846,13 +812,6 @@ export const createThreadRunner = (context: RunnerContext) => {
         project.project.id,
         targets.map(({ thread }) => thread.id),
       ),
-      context.terminals
-        .close(targets.map(({ thread }) => thread.id))
-        .catch(() => {
-          context.log.error('Terminal cleanup failed', {
-            projectId: project.project.id,
-          });
-        }),
       settled.length === 0
         ? undefined
         : Promise.race([
@@ -940,14 +899,7 @@ export const createThreadRunner = (context: RunnerContext) => {
         .then(async () => {
           // The aborted run settles here, writing its own pause before the
           // Thread is written back as ready.
-          await Promise.all([
-            threadsClosing(project.project.id, [thread.thread.id]),
-            context.terminals.close([thread.thread.id]).catch(() => {
-              context.log.error('Terminal cleanup failed', {
-                threadId: thread.thread.id,
-              });
-            }),
-          ]);
+          await threadsClosing(project.project.id, [thread.thread.id]);
           await task;
           await exclusive(project.project.id, () => state(thread, 'ready'));
         })
