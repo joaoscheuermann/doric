@@ -128,6 +128,11 @@ export interface RunnerOptions {
     entry: SerializedCatalogEntry,
     principal: Principal,
   ) => Promise<void>;
+  /** Runs once the generation's whole phase has activated (D10-6). */
+  readonly afterPhase?: (
+    entry: SerializedCatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
   readonly now?: () => number;
 }
 
@@ -456,6 +461,21 @@ export const runGeneration = async (options: RunnerOptions): Promise<void> => {
     ...(options.afterActivate === undefined
       ? {}
       : { afterActivate: options.afterActivate }),
+    ...(options.afterPhase === undefined
+      ? {}
+      : {
+          afterPhase: async (entry, principal) => {
+            // Refusals of these registrations are collected by `settle` too.
+            const end = processLink.activating(entry.id);
+
+            try {
+              await options.afterPhase?.(entry, principal);
+              await processLink.settle(entry.id);
+            } finally {
+              end();
+            }
+          },
+        }),
     settle: (entry) => processLink.settle(entry.id),
     log,
     ...(options.now === undefined ? {} : { now: options.now }),

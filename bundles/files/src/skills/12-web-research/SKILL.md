@@ -3,6 +3,7 @@ name: web-research
 description: 'Finds and inspects current or externally hosted information through a search-open-find workflow. Use when the goal depends on facts or documentation not present in the workspace or supplied context.'
 allowed-tools:
   - web
+order: 1200
 ---
 
 # Web Research

@@ -18,12 +18,12 @@ import {
   type CSSProperties,
   createElement,
   StrictMode,
-  useCallback,
   useEffect,
-  useState,
+  useSyncExternalStore,
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
+import { ProjectPanel } from '../components/organisms/project-panel.js';
 import {
   ProjectSidebar,
   type SidebarActions,
@@ -39,20 +39,13 @@ import { ConversationTerminals } from '../components/templates/conversation-term
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { threadPath } from '../domain/thread-tree.js';
-import { useProjectRefresh } from '../hooks/use-project-refresh.js';
+import { useRegionItems } from '../hooks/use-region-items.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
-import { ProjectFilesSidebar } from '../provisional/files/components/project-files-sidebar.js';
-import { joinPath } from '../provisional/files/domain/files.js';
-import type { ProjectChange } from '../provisional/files/domain/project-files.js';
-import { useProjectFiles } from '../provisional/files/hooks/use-project-files.js';
-import { ProvisionalPortals } from '../provisional/index.js';
-import { ManualTerminalTabs } from '../provisional/terminals/components/manual-terminal-tabs.js';
-import type { Terminal } from '../provisional/terminals/domain/terminals.js';
-import { useTerminals } from '../provisional/terminals/hooks/use-terminals.js';
 import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
-import { workspaceTabsStore } from '../stores/workspace-tabs.js';
+import { bottomStore } from '../stores/bottom.js';
+import { panelStore } from '../stores/panel.js';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -68,7 +61,6 @@ const Region = ({ name }: { readonly name: string }) =>
 
 function Workspace() {
   const workspace = useWorkspace();
-  const terminals = useTerminals(workspace.projects);
   const tabOwner =
     workspace.selectedThreadId ??
     (workspace.selectedProjectId
@@ -76,10 +68,22 @@ function Workspace() {
       : undefined);
   const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
-  // The sandbox panel starts open and keeps the reader's choice.
-  const [filesOpen, setFilesOpen] = useState(true);
-  const [filesView, setFilesView] = useState<'files' | 'changes'>('files');
-  const toggleFiles = useCallback(() => setFilesOpen((open) => !open), []);
+  // The sandbox panel starts open and keeps the reader's choice
+  // (`layout.panel/v1`).
+  const filesOpen = useSyncExternalStore(
+    panelStore.subscribe,
+    () => panelStore.getState().open,
+  );
+  const panelView = useSyncExternalStore(
+    panelStore.subscribe,
+    () => panelStore.getState().active,
+  );
+  const panel = panelStore.getState();
+  const panelItems = useRegionItems('layout.panel');
+  const bottomVisible = useSyncExternalStore(
+    bottomStore.subscribe,
+    () => bottomStore.getState().visible.size > 0,
+  );
   const model: SidebarModel = {
     draft: workspace.draft,
     editing: workspace.editing,
@@ -110,16 +114,6 @@ function Workspace() {
   const selectedProject = workspace.projects.find(
     (project) => project.id === workspace.selectedProjectId,
   );
-  useProjectRefresh({
-    project: selectedProject,
-    thread: selectedThread,
-    threads: workspace.threadsByProject[selectedProject?.id ?? ''] ?? [],
-    terminals: terminals.items,
-    visible:
-      filesOpen ||
-      selectedThread !== undefined ||
-      tabs.items.some((tab) => tab.kind !== 'terminal'),
-  });
   const selectedThreadPath =
     selectedThread === undefined
       ? []
@@ -127,57 +121,6 @@ function Workspace() {
           workspace.threadsByProject[selectedThread.projectId] ?? [],
           selectedThread.id,
         );
-  // Git totals remain visible in the footer; only the tree pauses with the panel.
-  const files = useProjectFiles({
-    projectId: selectedProject?.id,
-    treeEnabled: filesOpen,
-    cwd: selectedThread?.cwd,
-  });
-  const tabActions = workspaceTabsStore.getState();
-  const selectedTab = tabs.items.find((tab) => tab.id === tabs.selected);
-  const openChange = (repository: string, change: ProjectChange) => {
-    if (!tabOwner || !selectedProject) return;
-    tabActions.open(tabOwner, {
-      kind: 'diff',
-      id: JSON.stringify(['diff', selectedProject.id, repository, change.path]),
-      projectId: selectedProject.id,
-      repository,
-      path: change.path,
-    });
-  };
-  const filesWithTabs = {
-    ...files,
-    selectedPath: selectedTab?.kind === 'file' ? selectedTab.path : undefined,
-    actions: {
-      ...files.actions,
-      openFile: (path: string) => {
-        if (!tabOwner || !selectedProject) return;
-        tabActions.open(tabOwner, {
-          kind: 'file',
-          id: `file:${path}`,
-          path,
-          projectId: selectedProject.id,
-        });
-      },
-    },
-  };
-  const openTerminal = (terminal: Terminal) => {
-    const thread = workspace.threadsByProject[terminal.projectId]?.find(
-      (item) => item.id === terminal.threadId,
-    );
-    if (thread) actions.selectThread(thread);
-    if (terminal.origin === 'user')
-      tabActions.manual(terminal.threadId, terminal.id);
-    else
-      tabActions.open(terminal.threadId, {
-        kind: 'terminal',
-        id: `terminal:${terminal.id}`,
-        terminalId: terminal.id,
-      });
-  };
-  const manual = terminals.items.find(
-    (terminal) => terminal.id === tabs.manualId,
-  );
   const openSettings = () => {
     void layoutServices()
       .use(CommandsV1)
@@ -194,28 +137,16 @@ function Workspace() {
     >
       <WorkspaceLayout
         files={
-          <ProjectFilesSidebar
-            files={filesWithTabs}
-            onOpenChange={openChange}
-            selectedChangePath={
-              selectedTab?.kind === 'diff'
-                ? joinPath(selectedTab.repository, selectedTab.path)
-                : undefined
-            }
-            onToggle={toggleFiles}
-            project={selectedProject}
-            view={filesView}
-            onViewChange={setFilesView}
+          <ProjectPanel
+            active={panelView}
+            onActiveChange={panel.select}
+            items={panelItems}
           />
         }
         filesOpen={filesOpen}
         fileViewer={
           tabs.items.length === 0 || !tabOwner ? undefined : (
-            <WorkspaceTabs
-              state={tabs}
-              threadId={tabOwner}
-              terminals={terminals.items}
-            />
+            <WorkspaceTabs state={tabs} threadId={tabOwner} />
           )
         }
         footer={
@@ -229,23 +160,18 @@ function Workspace() {
         header={
           <WorkspaceHeader
             actions={<Region name="layout.header" />}
-            filesOpen={filesOpen}
             onSelectProject={actions.selectProject}
             onSelectThread={actions.selectThread}
-            onToggleFiles={toggleFiles}
             path={selectedThreadPath}
             project={selectedProject}
           />
         }
-        onFilesOpenChange={setFilesOpen}
+        onFilesOpenChange={panel.setOpen}
         sidebar={
           <ProjectSidebar
             actions={sidebarActions}
             after={<Region name="layout.sidebar" />}
             model={model}
-            terminals={terminals.items}
-            onOpenTerminal={openTerminal}
-            onStopTerminal={terminals.stop}
           />
         }
         sidebarFooter={<WorkspaceSidebarFooter onOpenSettings={openSettings} />}
@@ -253,15 +179,7 @@ function Workspace() {
       >
         <SidebarInset className="min-h-0">
           <ConversationTerminals
-            terminal={
-              manual && (
-                <ManualTerminalTabs
-                  state={tabs}
-                  threadId={manual.threadId}
-                  terminals={terminals.items}
-                />
-              )
-            }
+            bottom={bottomVisible && <Region name="layout.main.bottom" />}
           >
             <ThreadPane>
               {selectedThread ? (
@@ -287,19 +205,6 @@ function Workspace() {
         onOpenChange={(open) => {
           if (!open) actions.dismissDelete();
         }}
-      />
-      <ProvisionalPortals
-        thread={selectedThread}
-        changes={files.changes}
-        onShowChanges={() => {
-          setFilesView('changes');
-          setFilesOpen(true);
-        }}
-        onNewTerminal={
-          selectedThread
-            ? () => void terminals.create(selectedThread.id)
-            : undefined
-        }
       />
     </SidebarProvider>
   );

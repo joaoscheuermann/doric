@@ -346,3 +346,90 @@ void test('a credential a reference source names is not deleted until the source
     assert.equal(await secrets.delete({ id: second.id }), 'deleted');
   });
 });
+
+// R-2.1 (revised): secrets/v1.watchRedactions, the change notice the
+// terminal's synchronous chunk redaction keeps its snapshot with.
+
+const until = async (check: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 2000;
+
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error('Timed out.');
+    await new Promise((done) => setTimeout(done, 1));
+  }
+};
+
+void test('watchRedactions delivers the current list, then the list after every change', async () => {
+  await withSecrets(
+    async (secrets) => {
+      const lists: (readonly string[])[] = [];
+      const watch = secrets.watchRedactions((list) => {
+        lists.push(list);
+      });
+
+      await until(() => lists.length === 1);
+      assert.deepEqual(lists, [['sk_stored']]);
+
+      const created = await secrets.create({
+        kind: 'API_TOKEN',
+        name: 'b',
+        secret: 'sk_new',
+      });
+
+      assert.deepEqual(lists.at(-1), ['sk_stored', 'sk_new']);
+      await secrets.update({ id: created.id }, { secret: 'sk_rotated' });
+      assert.deepEqual(lists.at(-1), ['sk_stored', 'sk_rotated']);
+      await secrets.delete({ id: '1' });
+      assert.deepEqual(lists.at(-1), ['sk_rotated']);
+      secrets.view().addRedaction('git-token');
+      await until(() => lists.at(-1)?.includes('git-token') === true);
+      assert.deepEqual(lists.at(-1), ['sk_rotated', 'git-token']);
+
+      const count = lists.length;
+
+      watch.dispose();
+      await secrets.create({ kind: 'API_TOKEN', name: 'c', secret: 'sk_c' });
+      assert.equal(lists.length, count);
+    },
+    { rows: [row('1', 'a', { secret: 'sk_stored' })] },
+  );
+});
+
+void test('a write resolves only after every watcher received its list, and a failing watcher does not fail it', async () => {
+  await withSecrets(async (secrets) => {
+    let release: () => void = () => undefined;
+    let received: readonly string[] | undefined;
+    let ready = false;
+
+    secrets.watchRedactions(() => {
+      throw new Error('broken watcher');
+    });
+    secrets.watchRedactions((list) => {
+      if (!ready) {
+        ready = true;
+        return;
+      }
+      received = list;
+      // A remote listener answers a promise; the write waits for it.
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      }) as unknown as undefined;
+    });
+    await until(() => ready);
+
+    let resolved = false;
+    const write = secrets
+      .create({ kind: 'API_TOKEN', name: 'a', secret: 'sk_a' })
+      .then(() => {
+        resolved = true;
+      });
+
+    await until(() => received !== undefined);
+    assert.deepEqual(received, ['sk_a']);
+    await new Promise((done) => setTimeout(done, 10));
+    assert.equal(resolved, false);
+    release();
+    await write;
+    assert.equal(resolved, true);
+  });
+});

@@ -2,6 +2,7 @@
 name: goal-directed-tool-use
 description: 'Keeps tool use centered on the current outcome and completion criteria. Use as the default execution discipline whenever a goal may require external evidence or an observable effect.'
 alwaysAvailable: true
+order: 100
 ---
 
 # Goal-Directed Tool Use

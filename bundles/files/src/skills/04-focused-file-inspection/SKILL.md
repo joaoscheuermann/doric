@@ -3,6 +3,7 @@ name: focused-file-inspection
 description: 'Reads a known local file or a bounded line range through shell commands without dumping unnecessary content. Use after a target path or match location has been established.'
 allowed-tools:
   - terminal
+order: 400
 ---
 
 # Focused File Inspection

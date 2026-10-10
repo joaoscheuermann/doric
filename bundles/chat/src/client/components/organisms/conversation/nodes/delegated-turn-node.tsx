@@ -10,8 +10,19 @@ import {
   type Spread,
 } from 'lexical';
 import { BotIcon } from 'lucide-react';
-import type { JSX } from 'react';
+import {
+  type JSX,
+  useContext,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
 
+import {
+  type ChatBlockElement,
+  DELEGATED_INPUT_BLOCK,
+  type DelegatedInputBlock,
+} from '../../../../../contracts/index.js';
 import {
   blockToggled,
   type Chosen,
@@ -21,9 +32,14 @@ import { DELEGATED_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { DelegatedInput } from '../../../../domain/delegated.js';
 import type { UserTurn } from '../../../../domain/projector.js';
 import { useDelegatedSource } from '../../../../hooks/use-delegated-source.js';
+import {
+  chatViewsRegistry,
+  GENERIC_BLOCK_TAG,
+} from '../../../../services/views.js';
 import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
+import { ChatBlocksContext } from './chat-block-node.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
 type DelegatedBlock = {
@@ -100,6 +116,109 @@ function DelegatedTurn({
   );
 }
 
+/** The element each hosted delegated block shows, by node key (R-9.7). */
+const hostedElements = new Map<NodeKey, ChatBlockElement>();
+
+const noRenderer = (): string => GENERIC_BLOCK_TAG;
+
+/** The element tag a bundle registered for delegated inputs, if any. */
+const useDelegatedRenderer = (): string | undefined => {
+  const tag = useSyncExternalStore(
+    (listener) => chatViewsRegistry()?.subscribe(listener) ?? (() => {}),
+    () =>
+      (chatViewsRegistry()?.rendererFor ?? noRenderer)(DELEGATED_INPUT_BLOCK),
+  );
+  return tag === GENERIC_BLOCK_TAG ? undefined : tag;
+};
+
+/**
+ * R-9.7: hosts the registered element for a delegated input, handing it the
+ * block and the focus, and lending it to the node so the toggle key reaches
+ * it. The node keeps its own DOM, so `data-prompt-id` and the text stay.
+ */
+function HostedDelegated({
+  tag,
+  nodeKey,
+  block,
+  focused,
+}: {
+  readonly tag: string;
+  readonly nodeKey: NodeKey;
+  readonly block: DelegatedInputBlock;
+  readonly focused: boolean;
+}) {
+  const { ui } = useContext(ChatBlocksContext);
+  const frame = useRef<HTMLDivElement>(null);
+  const element = useRef<ChatBlockElement | null>(null);
+  const latest = useRef({ block, focused });
+  latest.current = { block, focused };
+
+  useEffect(() => {
+    const host = frame.current;
+    if (host === null || ui === null) return;
+    let created: ChatBlockElement;
+    try {
+      created = ui.create(tag, {
+        block: latest.current.block,
+      }) as ChatBlockElement;
+    } catch (error) {
+      console.error(
+        `Doric: the chat block <${tag}> could not be created:`,
+        error,
+      );
+      return;
+    }
+    created.focused = latest.current.focused;
+    element.current = created;
+    hostedElements.set(nodeKey, created);
+    host.replaceChildren(created as unknown as Node);
+    return () => {
+      if (hostedElements.get(nodeKey) === created)
+        hostedElements.delete(nodeKey);
+      element.current = null;
+      host.replaceChildren();
+      try {
+        ui.dispose(created);
+      } catch {
+        // An element already disposed needs nothing more.
+      }
+    };
+  }, [tag, ui, nodeKey]);
+
+  useEffect(() => {
+    const current = element.current;
+    if (current === null) return;
+    current.block = block;
+    current.focused = focused;
+  }, [block, focused]);
+
+  return <div ref={frame} />;
+}
+
+/** The registered element when a bundle draws delegated inputs, else chat's own. */
+function DelegatedSurface({
+  nodeKey,
+  block,
+  focused,
+  children,
+}: {
+  readonly nodeKey: NodeKey;
+  readonly block: DelegatedInputBlock;
+  readonly focused: boolean;
+  readonly children: JSX.Element;
+}) {
+  const tag = useDelegatedRenderer();
+  if (tag === undefined) return children;
+  return (
+    <HostedDelegated
+      tag={tag}
+      nodeKey={nodeKey}
+      block={block}
+      focused={focused}
+    />
+  );
+}
+
 /** Another Thread's input is a settled widget; the reader owns its open state. */
 export class DelegatedTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;
@@ -149,20 +268,31 @@ export class DelegatedTurnNode extends DecoratorNode<JSX.Element> {
     return this.__input.text;
   }
   override decorate(editor: LexicalEditor): JSX.Element {
+    const block: DelegatedInputBlock = {
+      type: DELEGATED_INPUT_BLOCK,
+      id: this.__turnKey,
+      data: { promptId: this.__promptId, input: this.__input },
+    };
     return (
       <WidgetFocus nodeKey={this.__key}>
         {(focused) => (
-          <DelegatedTurn
-            input={this.__input}
-            chosen={this.__chosen}
+          <DelegatedSurface
+            nodeKey={this.__key}
+            block={block}
             focused={focused}
-            onChosenChange={(chosen) =>
-              editor.update(() => {
-                const node = $getNodeByKey(this.__key);
-                if ($isDelegatedTurnNode(node)) node.setChosen(chosen);
-              })
-            }
-          />
+          >
+            <DelegatedTurn
+              input={this.__input}
+              chosen={this.__chosen}
+              focused={focused}
+              onChosenChange={(chosen) =>
+                editor.update(() => {
+                  const node = $getNodeByKey(this.__key);
+                  if ($isDelegatedTurnNode(node)) node.setChosen(chosen);
+                })
+              }
+            />
+          </DelegatedSurface>
         )}
       </WidgetFocus>
     );
@@ -171,6 +301,12 @@ export class DelegatedTurnNode extends DecoratorNode<JSX.Element> {
     if (this.__chosen !== chosen) this.getWritable().__chosen = chosen;
   }
   toggle(): void {
+    // A registered element owns its open state (R-9.7).
+    const hosted = hostedElements.get(this.__key);
+    if (hosted !== undefined) {
+      hosted.toggle();
+      return;
+    }
     this.setChosen(blockToggled(this.__chosen, settledOpenness));
   }
   setTurn(turn: UserTurn): void {

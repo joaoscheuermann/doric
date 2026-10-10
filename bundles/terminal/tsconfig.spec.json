@@ -10,9 +10,21 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/api.ts",
+    "src/client/output-watch.ts",
+    "src/client/input-queue.ts",
+    "src/client/domain/**/*.ts",
+    "src/client/store.ts",
+    "tests/**/*.ts"
+  ],
   "references": [
     { "path": "../../packages/bundle/tsconfig.lib.json" },
-    { "path": "../../packages/host/tsconfig.lib.json" }
+    { "path": "../../packages/host/tsconfig.lib.json" },
+    { "path": "../../packages/sandbox/tsconfig.lib.json" },
+    { "path": "../../packages/tool/tsconfig.lib.json" },
+    { "path": "../../packages/docker-sandbox/tsconfig.lib.json" }
   ]
 }

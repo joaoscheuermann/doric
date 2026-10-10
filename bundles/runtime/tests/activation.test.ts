@@ -103,7 +103,16 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(await manifestOf('git')),
     candidate(await manifestOf('threads')),
     candidate(provider('direct', ['executor/v1@1.0.0'])),
-    candidate(provider('sandbox-adapter', ['sandbox/v1@1.0.0'])),
+    candidate(provider('docker', ['sandbox/v1@1.0.0'])),
+    // The window surfaces the stage-10 client parts of files and git require.
+    candidate(
+      provider('desktop-surfaces', [
+        'layout.workspace/v1@1.1.0',
+        'layout.panel/v1@1.0.0',
+        'layout.tabs/v1@1.1.0',
+        'settings.config/v1@1.0.0',
+      ]),
+    ),
     candidate(provider('host-config', ['host-config/v1@1.0.0'])),
     candidate(
       provider('storage-backend', [
@@ -133,7 +142,7 @@ void test('the runtime activates after its providers and before the bundles that
 
   assert.deepEqual(state('runtime')?.reasons, []);
   const position = (id: string) => resolved.order.indexOf(id);
-  for (const before of ['core', 'direct', 'sandbox-adapter', 'host-config'])
+  for (const before of ['core', 'direct', 'docker', 'host-config'])
     assert.ok(position(before) < position('runtime'), before);
   for (const after of ['files', 'git', 'threads'])
     assert.ok(position('runtime') < position(after), after);
@@ -153,7 +162,7 @@ void test('a second provider of runtime/v1 is quarantined without a choice', asy
     candidate(runtime),
     candidate(other),
     candidate(provider('direct', ['executor/v1@1.0.0'])),
-    candidate(provider('sandbox-adapter', ['sandbox/v1@1.0.0'])),
+    candidate(provider('docker', ['sandbox/v1@1.0.0'])),
     candidate(provider('host-config', ['host-config/v1@1.0.0'])),
     candidate(
       provider('storage-backend', [

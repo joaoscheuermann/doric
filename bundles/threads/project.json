@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/threads/tsconfig.json",
+          "tsc -p bundles/threads/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/threads"
         ],
         "parallel": false
@@ -20,17 +21,23 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/threads/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/threads/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/threads/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "rm -rf bundles/threads/dist-tests",
           "tsc -p bundles/threads/tsconfig.spec.json",
-          "node --test bundles/threads/dist-tests/tests/*.test.js"
+          "tsc -p bundles/threads/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/threads/dist-tests/tests/*.test.js bundles/threads/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

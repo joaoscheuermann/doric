@@ -7,6 +7,7 @@ allowed-tools:
   - edit
   - write
   - terminal
+order: 800
 ---
 
 # Multi-File Consistency

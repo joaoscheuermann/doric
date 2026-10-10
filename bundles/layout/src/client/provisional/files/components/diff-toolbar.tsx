@@ -1,13 +1,13 @@
 import { Button } from 'desktop-ui/button';
+import type { DiffControls } from 'desktop-ui/code';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
 import { cn } from 'desktop-ui/utils';
+import { ChangeCounts } from 'desktop-ui/workspace';
 import { FileIcon, TriangleAlertIcon } from 'lucide-react';
 
 import { changeClassName, changeDescription } from '../domain/change-tree.js';
 import { baseName, changeLetter, parentPath } from '../domain/files.js';
 import type { ProjectChange } from '../domain/project-files.js';
-import { ChangeCounts } from './change-counts.js';
-import type { DiffControls } from './diff-editor.js';
 
 /** File identity and opening remain visible at every panel width. */
 export function DiffToolbar({

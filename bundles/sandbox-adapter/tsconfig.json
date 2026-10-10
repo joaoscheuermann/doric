@@ -22,10 +22,10 @@
       "path": "../runtime"
     },
     {
-      "path": "../../packages/firecracker"
+      "path": "../../packages/firecracker-sandbox"
     },
     {
-      "path": "../../packages/docker"
+      "path": "../../packages/docker-sandbox"
     },
     {
       "path": "../../packages/bundle"

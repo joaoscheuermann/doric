@@ -1,6 +1,7 @@
 ---
 name: thread-steering
 description: Redirects or closes direct child threads with the narrowest effective control. Use when delegated work must be corrected or stopped.
+order: 3300
 ---
 
 # Thread Steering

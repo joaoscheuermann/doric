@@ -8,7 +8,8 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
   "references": [
@@ -17,6 +18,19 @@
     },
     {
       "path": "../../packages/host"
+    },
+    {
+      "path": "../../packages/sandbox"
+    },
+    {
+      "path": "../../packages/tool"
+    },
+    {
+      "path": "../../packages/desktop-ui"
+    },
+    {
+      "path": "../../packages/docker-sandbox"
     }
-  ]
+  ],
+  "exclude": ["src/client/**"]
 }

@@ -319,6 +319,22 @@ export interface RuntimeThreads extends RuntimeThreadControls {
   ): Promise<RemoveQueuedResult>;
   usage(id: string, call?: CallArg): Promise<ThreadUsage | undefined>;
   /**
+   * 1.2.0: delivers a background terminal's result to its Thread as a
+   * terminal-sourced prompt. Under the Project lock it does nothing for a
+   * closing Project or Thread; otherwise it enqueues the redacted text. A
+   * failed enqueue logs `Terminal result delivery failed` and closes the
+   * Thread with `terminal_result_failed`.
+   */
+  enqueueTerminalResult(
+    input: TerminalResultInput,
+    call?: CallArg,
+  ): Promise<void>;
+  /** 1.2.0: that same log and close, for a result that never arrived. */
+  failTerminalResult(
+    input: { readonly threadId: string },
+    call?: CallArg,
+  ): Promise<void>;
+  /**
    * The `/threads` namespace as a stream (stage 9 R-STREAM, 1.1.0): one
    * snapshot with the events after `afterSequence`, then gap-free live
    * events and the Thread's lifecycle notices. Remote-callable.
@@ -329,6 +345,22 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     call?: CallArg,
   ): Disposable;
 }
+
+export interface TerminalResultInput {
+  readonly threadId: string;
+  readonly promptId: string;
+  readonly terminalId: string;
+  readonly text: string;
+}
+
+export const terminalResultInputSchema = z
+  .object({
+    threadId: z.string(),
+    promptId: z.string(),
+    terminalId: z.string(),
+    text: z.string(),
+  })
+  .strict();
 
 const threadPrompt = z
   .object({ id: z.string(), promptId: z.string() })
@@ -433,6 +465,11 @@ export const runtimeThreadsMethods = {
   },
   removeQueued: { input: threadPrompt, output: removeQueuedResultSchema },
   usage: { input: z.string(), output: threadUsageSchema.optional() },
+  enqueueTerminalResult: { input: terminalResultInputSchema, output: z.void() },
+  failTerminalResult: {
+    input: z.object({ threadId: z.string() }).strict(),
+    output: z.void(),
+  },
   watchThread: watchMethods.thread,
 } as const;
 

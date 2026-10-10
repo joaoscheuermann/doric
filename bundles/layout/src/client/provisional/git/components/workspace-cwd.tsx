@@ -3,6 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
 import { Separator } from 'desktop-ui/separator';
 import { toast } from 'desktop-ui/sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+import { ChangeCounts, ReadFeedback } from 'desktop-ui/workspace';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -13,8 +14,6 @@ import { useState } from 'react';
 
 import { messageFrom } from '../../../domain/errors.js';
 import type { Thread } from '../../../domain/workspace.js';
-import { ChangeCounts } from '../../files/components/change-counts.js';
-import { ReadFeedback } from '../../files/components/read-feedback.js';
 import { changedLineTotals } from '../../files/domain/change-tree.js';
 import type { ProjectFiles } from '../../files/hooks/use-project-files.js';
 import { gitLine, gitStatusLine } from '../domain/thread-git.js';

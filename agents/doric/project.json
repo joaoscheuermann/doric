@@ -20,11 +20,40 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "nx run-many --target=build --projects=bundle-postgres,bundle-core,bundle-files,bundle-git,bundle-threads,bundle-runtime,bundle-terminal,bundle-direct,bundle-models-adapter,bundle-sandbox-adapter,bundle-transport,bundle-layout,bundle-settings,bundle-chat,bundle-history --parallel=3",
-          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/postgres bundles/core bundles/files bundles/git bundles/threads bundles/runtime bundles/direct bundles/models-adapter bundles/sandbox-adapter bundles/layout bundles/settings bundles/chat bundles/history"
+          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/postgres bundles/core bundles/files bundles/git bundles/threads bundles/runtime bundles/direct bundles/openai bundles/openrouter bundles/codex bundles/docker bundles/firecracker bundles/web bundles/terminal bundles/usage bundles/resources bundles/notifications bundles/layout bundles/settings bundles/chat bundles/history"
         ],
         "parallel": false
-      }
+      },
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": [
+            "bundle-postgres",
+            "bundle-core",
+            "bundle-files",
+            "bundle-git",
+            "bundle-threads",
+            "bundle-runtime",
+            "bundle-direct",
+            "bundle-openai",
+            "bundle-openrouter",
+            "bundle-codex",
+            "bundle-docker",
+            "bundle-firecracker",
+            "bundle-web",
+            "bundle-terminal",
+            "bundle-usage",
+            "bundle-resources",
+            "bundle-notifications",
+            "bundle-layout",
+            "bundle-settings",
+            "bundle-chat",
+            "bundle-history",
+            "bundle-transport"
+          ]
+        }
+      ],
+      "cache": false
     },
     "migrate": {
       "executor": "nx:run-commands",

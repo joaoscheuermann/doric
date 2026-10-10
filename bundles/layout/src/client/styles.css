@@ -1,7 +1,8 @@
 /*
  * The layout bundle's own rules (design §9.4), moved from the renderer's sheet:
  * the Monaco and xterm scrollbar sliders, unlayered as before. The build
- * appends the CSS the client part imports (Monaco's and xterm's) after them.
+ * appends the CSS the client part imports (xterm's) after them; Monaco's CSS
+ * ships once per window in `desktop-ui/theme.css` (WP-10P).
  *
  * No utilities are emitted here: the shell's sheet emits the whole sorted set
  * the in-repo surfaces use, this bundle's included, so the cascade stays the

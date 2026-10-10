@@ -1,6 +1,6 @@
 // Stage 9 window platform contracts (§3.3): `doric.elements/v1` gives an
 // element a child scope of its owner's services, `doric.connection/v1`
-// follows main's status stream, and the client `doric.notifications/v1`
+// follows main's status stream, and (WP-10N) no client `doric.notifications/v1`
 // forwards to main. Real client activation over a fake preload and happy-dom.
 
 import assert from 'node:assert/strict';
@@ -220,7 +220,7 @@ void test('the connection status starts disconnected and listeners hear each cha
   assert.equal(connection.status(), 'disconnected');
 });
 
-void test('a client notification is forwarded to main as exactly a title and a body', async () => {
+void test('a client part finds no client doric.notifications/v1 (WP-10N)', async () => {
   let feature: Services | undefined;
   const bundles: ClientBundle[] = [
     mincoreBundle(),
@@ -232,15 +232,11 @@ void test('a client notification is forwarded to main as exactly a title and a b
     },
   ];
   const { desktop } = await activate(bundles);
-  const notifications = (feature as Services).use(DoricNotificationsV1);
 
-  await notifications.show({ title: 'Prompt finished', body: 'Thread A' });
-  await assert.rejects(
-    async () => notifications.show({ title: 'x' } as never),
-    { code: 'invalid_input' },
+  await assert.rejects(async () =>
+    (feature as Services)
+      .use(DoricNotificationsV1)
+      .show({ title: 'Prompt finished', body: 'Thread A' }),
   );
-
-  assert.deepEqual(desktop.shell('notify'), [
-    { title: 'Prompt finished', body: 'Thread A' },
-  ]);
+  assert.deepEqual(desktop.shell('notify'), []);
 });

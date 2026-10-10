@@ -25,7 +25,13 @@
       "path": "../../packages/llms/tsconfig.lib.json"
     },
     {
-      "path": "../models-adapter"
+      "path": "../codex"
+    },
+    {
+      "path": "../openai"
+    },
+    {
+      "path": "../openrouter"
     }
   ],
   "exclude": ["src/desktop/**", "src/client/**", "tests/client/**"]

@@ -1,0 +1,51 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-firecracker",
+  "projectType": "library",
+  "sourceRoot": "bundles/firecracker/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/firecracker/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/firecracker"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "command": "tsc --build bundles/firecracker/tsconfig.json --emitDeclarationOnly"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p bundles/firecracker/tsconfig.spec.json",
+          "node --test bundles/firecracker/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/firecracker",
+          "biome format --write bundles/firecracker/contracts.published.json"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

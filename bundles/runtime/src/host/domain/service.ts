@@ -171,6 +171,9 @@ export const createWorkspaceService = ({
     bindings,
     executor: ports.executor,
     checkStorage: ports.checkStorage,
+    ...(ports.hooks.threadsClosing === undefined
+      ? {}
+      : { threadsClosing: ports.hooks.threadsClosing }),
     exclusive,
   });
   let disposed = false;
@@ -740,9 +743,12 @@ export const createWorkspaceService = ({
       }
       break;
     }
-    await terminals.close([...runtime.threads.keys()]).catch(() => {
-      log.error('Terminal cleanup failed', { projectId: id });
-    });
+    await Promise.all([
+      runner.threadsClosing(id, [...runtime.threads.keys()]),
+      terminals.close([...runtime.threads.keys()]).catch(() => {
+        log.error('Terminal cleanup failed', { projectId: id });
+      }),
+    ]);
     if ((await releaseLease(runtime)) !== undefined)
       log.error('Project sandbox release failed', { projectId: id });
     await releaseOwner(id);
@@ -750,6 +756,16 @@ export const createWorkspaceService = ({
       if (runtimes.get(id) === runtime) runtimes.delete(id);
       return Promise.resolve();
     });
+  };
+  /** The live runtime of one Thread and its Project, if this process holds it. */
+  const liveThread = async (id: string) => {
+    const record = await threads.record(id);
+    if (record === undefined) return undefined;
+    const project = runtimes.get(record.projectId);
+    const thread = project?.threads.get(id);
+    return project === undefined || thread === undefined
+      ? undefined
+      : { project, thread };
   };
   const service: WorkspaceService = {
     terminals: {
@@ -865,6 +881,7 @@ export const createWorkspaceService = ({
       changes,
       fileDiff,
       resources,
+      withLease,
     },
     threads: {
       queue: async (id) => {
@@ -938,6 +955,68 @@ export const createWorkspaceService = ({
         return exclusive(record.projectId, () =>
           runner.removeQueued(project, thread, promptId),
         );
+      },
+      storedUsage: (id) => threads.usage(id),
+      withThread: async (id, options, task) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        if (isTerminal(record.state)) return { status: 'inactive' };
+        const project =
+          options.resume === true
+            ? await projectFor(record.projectId)
+            : runtimes.get(record.projectId);
+        const live = () => {
+          const thread = project?.threads.get(id);
+          if (
+            project === undefined ||
+            project.closing ||
+            thread === undefined ||
+            thread.closing
+          )
+            return { status: 'inactive' as const };
+          const sandbox = project.lease?.sandbox;
+          if (sandbox === undefined) return { status: 'pending' as const };
+          return { status: 'live' as const, project, thread, sandbox };
+        };
+        const run = async () => {
+          const found = live();
+          if (found.status !== 'live') return found;
+          const { project: owner, thread, sandbox } = found;
+          const value = await task({
+            projectId: owner.project.id,
+            threadId: id,
+            cwd: thread.thread.cwd,
+            sandbox,
+            closing: () => owner.closing || thread.closing,
+            busyCwds: () =>
+              [...owner.threads.values()]
+                .filter(
+                  (item) => item.active !== undefined || item.jobs.length > 0,
+                )
+                .map((item) => item.thread.cwd),
+          });
+          return { status: 'ready' as const, value, owner, thread };
+        };
+        const outcome = options.exclusive
+          ? await exclusive(record.projectId, run)
+          : await run();
+        if (outcome.status !== 'ready') return outcome;
+        if (options.refreshHint === true)
+          await runner.hint(outcome.owner, outcome.thread);
+        return { status: 'ready', value: outcome.value };
+      },
+      terminalResult: async ({ threadId, ...input }) => {
+        const live = await liveThread(threadId);
+        if (live === undefined) return;
+        await runner.terminalResult(live.project, live.thread, input);
+      },
+      failTerminalResult: async (id) => {
+        const live = await liveThread(id);
+        if (live === undefined) {
+          log.error('Terminal result delivery failed', { threadId: id });
+          return;
+        }
+        await runner.failTerminalResult(live.project, live.thread);
       },
       usage: async (id) => {
         const usage = await threads.usage(id);

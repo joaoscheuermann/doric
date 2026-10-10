@@ -27,7 +27,6 @@ import {
 import { remoteContractRecord } from './bridge.js';
 import { provideConnection } from './connection.js';
 import { type ElementRegistry, provideElements } from './elements.js';
-import { provideNotifications } from './notifications.js';
 import { provideClientPlatform, WindowDiagnostics } from './platform.js';
 import type {
   DoricDesktopApi,
@@ -196,7 +195,8 @@ export const activateClientBundles = async (input: {
     tokens: description.tokens,
   });
 
-  // Stage 9 window platform contracts: elements, connection, notifications.
+  // Stage 9 window platform contracts: elements and connection. The client
+  // `doric.notifications/v1` (D9-6) is gone since WP-10N.
   const principals = new Map<string, Principal>();
 
   provideElements(platform, {
@@ -207,8 +207,6 @@ export const activateClientBundles = async (input: {
       : { registry: input.elementRegistry }),
   });
   const connection = provideConnection(platform, desktop);
-
-  provideNotifications(platform, desktop);
 
   // A contract the window's own client parts provide is served here: its
   // desktopMain or host provider stays reachable only through that

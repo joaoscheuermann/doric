@@ -8,6 +8,8 @@ export interface ConfiguredProvider {
   readonly kind: string;
   /** The kind's own values; a `secret` field's value is a credential id. */
   readonly configuration: Readonly<Record<string, string>>;
+  /** The model names the configuration lists for it, when it lists any. */
+  readonly models?: readonly string[];
 }
 
 interface Built {
@@ -39,6 +41,8 @@ export interface ProviderCache {
   ): Promise<void>;
   /** The active set's provider, built again if its record was replaced. */
   resolve(providerId: string): Promise<LanguageModel>;
+  /** The active set's configured providers, in configuration order. */
+  configured(): readonly ConfiguredProvider[];
   /** Drops every provider a removed record built. */
   forget(api: ModelsProvider): void;
 }
@@ -156,6 +160,7 @@ export const createProviderCache = (
 
       return rebuilt.model;
     },
+    configured: () => active?.providers ?? [],
     forget: (api) => {
       for (const set of [active, candidate]) {
         for (const [id, built] of set?.built ?? []) {

@@ -3,7 +3,8 @@
 
 import {
   importHostPart,
-  registerInstalledResources,
+  registerInstalledSkills,
+  registerInstalledTools,
 } from '../loader/activate.js';
 import { readInstalledBundle } from '../loader/discover.js';
 import { createErrorClassRegistry } from '../runtime/envelope/errors.js';
@@ -23,19 +24,21 @@ process.on('SIGTERM', ignore);
 // A dead kernel never leaves an orphan generation.
 process.on('disconnect', () => process.exit(0));
 
-const afterActivate = async (
-  entry: SerializedCatalogEntry,
-  principal: Principal,
-): Promise<void> => {
-  if (entry.source.kind !== 'installed') {
-    return;
-  }
+const installedResources =
+  (register: typeof registerInstalledTools) =>
+  async (
+    entry: SerializedCatalogEntry,
+    principal: Principal,
+  ): Promise<void> => {
+    if (entry.source.kind !== 'installed') {
+      return;
+    }
 
-  const { dir } = entry.source;
-  const installed = await readInstalledBundle(dir);
+    const { dir } = entry.source;
+    const installed = await readInstalledBundle(dir);
 
-  await registerInstalledResources(dir, installed.read?.legacy, principal);
-};
+    await register(dir, installed.read?.legacy, principal);
+  };
 
 await runGeneration({
   transport: parentTransport(),
@@ -45,5 +48,7 @@ await runGeneration({
     entry.source.kind === 'installed'
       ? await importHostPart(entry.source.dir)
       : undefined,
-  afterActivate,
+  afterActivate: installedResources(registerInstalledTools),
+  // Skills once the generation's whole phase has activated (D10-6).
+  afterPhase: installedResources(registerInstalledSkills),
 });

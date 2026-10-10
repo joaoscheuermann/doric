@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 
-import { type Announce, announce } from '../api/announce.js';
+import type { ThreadUpdateInput } from '../../contracts/index.js';
 import { type HistoryFeed, historyFeed } from '../api/history.js';
 import { type ThreadWatch, threadWatch } from '../api/thread-watch.js';
 import { type ChatThreadsApi, threadsApi } from '../api/threads-api.js';
@@ -20,6 +20,7 @@ import {
   withSending,
 } from '../domain/thread-chats.js';
 import type { Thread, ThreadEvent, ThreadUpdate } from '../domain/workspace.js';
+import { chatHooks } from '../services/chat-hooks.js';
 
 const queueListeners = new Map<string, Set<() => void>>();
 /** Observe queue invalidations through the existing Thread watch. */
@@ -89,9 +90,23 @@ export interface ThreadChatsDependencies {
     ChatThreadsApi,
     'history' | 'prompt' | 'rewind' | 'resume'
   >;
-  readonly announce: Announce;
   readonly history: HistoryFeed;
+  /**
+   * R-9.6: told every live event of a held Thread as it is received, and
+   * every `updated` record (`chat.hooks/v1.onThreadUpdateHook`).
+   */
+  readonly observe?: ObserveUpdate;
 }
+
+/** One live update as `onThreadUpdateHook` reports it. */
+export type ObserveUpdate = (input: {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly threadName: string;
+  readonly update:
+    | { readonly kind: 'event'; readonly event: ThreadEvent }
+    | { readonly kind: 'updated'; readonly thread: Thread };
+}) => void;
 
 export const createThreadChatsStore = (
   dependencies: ThreadChatsDependencies,
@@ -148,18 +163,6 @@ export const createThreadChatsStore = (
       applyEffects(effects);
     };
 
-    /**
-     * Shows the native notification one live event of a Thread deserves. It is a
-     * courtesy of the chat and never a failure of the stream: a Thread the surface
-     * no longer holds has no name to wear, and a notice it cannot show changes
-     * nothing about the log or the conversation drawn from it.
-     */
-    const notify = (id: string, event: ThreadEvent): void => {
-      const thread = get().chats.chats.get(id)?.thread;
-      if (thread === undefined) return;
-      dependencies.announce(id, thread.name, event);
-    };
-
     /** Hands the history cache one Thread's events, as one batch. */
     function writeEvents(
       id: string,
@@ -197,13 +200,37 @@ export const createThreadChatsStore = (
       writeEvents(id, batch);
     };
 
+    /** Reports one live update to the observer; never a stream failure. */
+    const observe = (id: string, update: ThreadUpdate): void => {
+      if (dependencies.observe === undefined) return;
+      try {
+        if (update.kind === 'event') {
+          const thread = get().chats.chats.get(id)?.thread;
+          if (thread === undefined) return;
+          dependencies.observe({
+            projectId: thread.projectId,
+            threadId: id,
+            threadName: thread.name,
+            update,
+          });
+        } else if (update.kind === 'updated') {
+          dependencies.observe({
+            projectId: update.thread.projectId,
+            threadId: id,
+            threadName: update.thread.name,
+            update,
+          });
+        }
+      } catch {
+        // An observer is never a failure of the stream.
+      }
+    };
+
     function receive(id: string, update: ThreadUpdate): void {
       if (queueChanged(update))
         for (const listener of queueListeners.get(id) ?? []) listener();
+      observe(id, update);
       if (update.kind === 'event') {
-        // Only a live event is announced: a snapshot replays history the reader has
-        // already seen, and replaying it would notify a completion again.
-        notify(id, update.event);
         queued.set(id, [...(queued.get(id) ?? []), update.event]);
         schedule(id);
         return;
@@ -333,6 +360,12 @@ export type ThreadChatsStore = ReturnType<typeof createThreadChatsStore>;
 export const threadChatsStore: ThreadChatsStore = createThreadChatsStore({
   watch: threadWatch,
   threads: threadsApi,
-  announce,
   history: historyFeed,
+  observe: (input) => {
+    const hooks = chatHooks();
+    if (hooks === undefined) return;
+    void hooks.onThreadUpdateHook
+      .execute(input as ThreadUpdateInput)
+      .catch(() => undefined);
+  },
 });

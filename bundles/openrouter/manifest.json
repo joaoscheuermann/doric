@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "openrouter",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "OpenRouter provider kind with live catalog and structured-output repair.",
+  "provides": ["models.provider/v1@1.1.0"],
+  "requires": ["log/v1@^1.0.0"]
+}

@@ -15,6 +15,9 @@
   "references": [
     {
       "path": "../bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../desktop-reads/tsconfig.lib.json"
     }
   ]
 }

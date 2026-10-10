@@ -3,6 +3,7 @@ name: git-cloning
 description: Clones a Git repository into a deliberate sandbox location and verifies its checked-out identity. Use when a local repository must be created from a remote URL, branch, tag, or commit.
 allowed-tools:
   - git
+order: 2100
 ---
 
 # Git Cloning

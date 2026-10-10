@@ -44,6 +44,8 @@ export interface ContractTool {
 export interface RegisteredTool {
   readonly bundleId: string;
   readonly alwaysAvailable: boolean;
+  /** The global position the registrant gave (1.2.0); absent when unordered. */
+  readonly order?: number;
   readonly tool: ContractTool;
 }
 
@@ -59,7 +61,19 @@ export interface ToolCatalogEntry {
 
 export interface ToolRegistrationOptions {
   readonly alwaysAvailable: boolean;
+  /**
+   * Global position in `list()` (1.2.0), ascending. Entries without it follow
+   * every ordered entry, in registration order.
+   */
+  readonly order?: number;
 }
+
+/** A global order key of tools/v1 and skills/v1: a positive safe integer. */
+export const orderKeySchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(Number.MAX_SAFE_INTEGER);
 
 export interface Tools {
   /** Local. Throws ContractError('duplicate_tool') when the name is taken. */
@@ -68,7 +82,8 @@ export interface Tools {
     options: ToolRegistrationOptions,
   ): Disposable;
   /**
-   * Registration order: bundle activation order, then call order. Tools cross
+   * Sorted by `order` (unordered entries last), then registration order:
+   * bundle activation order, then call order. Tools cross
    * as tool handles and are the registered tool again in their own process;
    * called from another process the result arrives as a promise of the same
    * list, so a remote caller awaits it. The call picks the generation whose
@@ -119,7 +134,12 @@ export const toolsMethods = {
       z.custom<ContractTool>(isContractTool, {
         message: 'Expected a tool bound by its registrant.',
       }),
-      z.object({ alwaysAvailable: z.boolean() }).strict(),
+      z
+        .object({
+          alwaysAvailable: z.boolean(),
+          order: orderKeySchema.optional(),
+        })
+        .strict(),
     ]),
     output: disposableSchema,
   },

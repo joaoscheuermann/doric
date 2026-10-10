@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  cpuPercentBetween,
-  type HostResources,
-  readHostResources,
-} from '../src/kernel.js';
+import type { HostResources } from 'resources/contracts';
+
 import { serve } from './support/host.js';
 
 /*
@@ -70,7 +67,7 @@ void test('answers an unknown route with the default Express page', async (t) =>
 
 void test('validates resource ids per router, and nowhere else', async (t) => {
   const host = await serve({
-    terminals: { snapshot: () => undefined },
+    terminal: { snapshot: () => undefined },
     sandbox: { machine: () => undefined },
   });
   t.after(host.close);
@@ -119,7 +116,7 @@ void test('answers an escaped provider failure without its message', async (t) =
   }
 });
 
-void test('serves the machine reading the host injects', async (t) => {
+void test('serves the host machine reading of resources/v1 without caching', async (t) => {
   const resources: HostResources = {
     at: '2026-01-01T00:00:00.000Z',
     cpuCount: 8,
@@ -129,29 +126,10 @@ void test('serves the machine reading the host injects', async (t) => {
     memoryUsedBytes: 2048,
     uptimeSeconds: 3600,
   };
-  const host = await serve({}, { readHostResources: () => resources });
+  const host = await serve({ resources: { host: () => resources } });
   t.after(host.close);
   const response = await host.request('/resources');
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await response.json(), resources);
-});
-
-void test('reads the busy share of every core between two samples', () => {
-  assert.equal(
-    cpuPercentBetween([{ idle: 100, total: 200 }], [{ idle: 150, total: 300 }]),
-    50,
-  );
-  assert.equal(
-    cpuPercentBetween([{ idle: 0, total: 100 }], [{ idle: 0, total: 100 }]),
-    undefined,
-  );
-});
-
-void test('reads the host machine with no CPU share on the first reading', () => {
-  const first = readHostResources(new Date(0));
-  assert.equal(first.at, new Date(0).toISOString());
-  assert.equal('cpuPercent' in first, false);
-  assert.ok(first.cpuCount > 0);
-  assert.ok(first.memoryUsedBytes <= first.memoryTotalBytes);
 });

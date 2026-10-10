@@ -55,7 +55,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
       const line = (msg: string) =>
         startup(lines).find((entry) => entry.msg === msg);
 
-      assert.equal(line('Bundles loaded')?.bundleCount, 13);
+      assert.equal(line('Bundles loaded')?.bundleCount, 19);
       assert.equal(line('Bundles loaded')?.toolCount, 16);
       assert.deepEqual(line('Sandbox pool configured')?.sandboxResources, {
         cpuCount: 1,

@@ -83,8 +83,31 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
   'secrets/v1': ['list', 'create', 'update', 'delete'],
   // doric:tools:catalog.
   'tools/v1': ['catalog'],
-  // doric:resources:host.
-  'resources/v1': ['host'],
+  // doric:resources:host and the Project container (stage 10 `resources`).
+  'resources/v1': ['host', 'project'],
+  // Stage 10 feature bundles, read with the call scope like the lease reads
+  // they replace: the file panel and tab (`files`), the Changes panel, diff
+  // tab, CWD and branch footer (`git`), the usage footer (`usage`) and the
+  // terminal sessions (`terminal`, never `run`).
+  'files/v1': ['directory', 'tree', 'content'],
+  'git.commands/v1': [
+    'status',
+    'branches',
+    'switchBranch',
+    'changes',
+    'diff',
+    'fileDiff',
+  ],
+  'usage/v1': ['thread'],
+  'terminal/v1': [
+    'list',
+    'create',
+    'snapshot',
+    'input',
+    'resize',
+    'stop',
+    'watchProject',
+  ],
 };
 
 const allowlist: ReadonlyMap<string, ReadonlySet<string>> = new Map(

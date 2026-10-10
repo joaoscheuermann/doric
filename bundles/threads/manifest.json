@@ -2,8 +2,15 @@
   "manifestVersion": 1,
   "id": "threads",
   "version": "1.0.0",
-  "engines": { "doric": "^1.0.0" },
+  "engines": {
+    "doric": "^1.0.0"
+  },
   "description": "Delegation capabilities for creating and steering direct child threads.",
   "provides": [],
-  "requires": ["tools/v1@^1.0.0", "runtime.threads/v1@^1.0.0"]
+  "requires": [
+    "tools/v1@^1.2.0",
+    "runtime.threads/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "navigation/v1@^1.0.0"
+  ]
 }

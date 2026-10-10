@@ -1,8 +1,8 @@
+import { indentation, TreeGuides } from 'desktop-ui/workspace';
 import { MessageSquareIcon } from 'lucide-react';
 
 import { EditableName } from './editable-name.js';
 import { ProjectAvatar } from './project-avatar.js';
-import { indentation, TreeGuides } from './tree-guides.js';
 
 type DraftNameProps = {
   readonly depth?: number;

@@ -2,7 +2,387 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "files",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
-  "contracts": []
+  "contracts": [
+    {
+      "id": "files/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/files/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "content.input": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+          },
+          "content.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "const": "read"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          },
+                          "binary": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "path",
+                          "content",
+                          "truncated",
+                          "binary"
+                        ],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": ["not_found", "not_file", "invalid_path"]
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                },
+                "required": ["status", "value"],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "unavailable", "expired", "missing"]
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "directory.input": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "directory.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "const": "listed"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "entries": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": ["directory", "file"]
+                                },
+                                "size": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": ["name", "path", "type"],
+                              "additionalProperties": {}
+                            }
+                          }
+                        },
+                        "required": ["status", "path", "entries"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "not_found",
+                              "not_directory",
+                              "invalid_path"
+                            ]
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                },
+                "required": ["status", "value"],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "unavailable", "expired", "missing"]
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "tree.input": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "tree.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "const": "listed"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "entries": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          }
+                        },
+                        "required": ["status", "path", "entries"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "not_found",
+                              "not_directory",
+                              "invalid_path"
+                            ]
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                },
+                "required": ["status", "value"],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "unavailable", "expired", "missing"]
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": {}
+              }
+            ],
+            "$defs": {
+              "__schema0": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["directory", "file"]
+                  },
+                  "size": {
+                    "type": "number"
+                  },
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  }
+                },
+                "required": ["name", "path", "type"],
+                "additionalProperties": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "files.sandbox/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/files.sandbox/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "observeTree.input": {
+            "x-doric-local": true
+          },
+          "observeTree.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "files.refresh/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/files.refresh/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          },
+          "request.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "periodic": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "request.output": {}
+        }
+      }
+    },
+    {
+      "id": "files.open-file/v1",
+      "version": "1.0.0",
+      "kind": "command",
+      "environment": "client",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/files.open-file/v1",
+        "x-doric-kind": "command",
+        "$defs": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["projectId", "path"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
 }

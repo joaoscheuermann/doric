@@ -3,6 +3,7 @@ name: git-remote-synchronization
 description: Fetches and pushes Git refs with explicit upstream, divergence, and force-update checks. Use when local and remote repository state must be compared or synchronized safely.
 allowed-tools:
   - git
+order: 2500
 ---
 
 # Git Remote Synchronization

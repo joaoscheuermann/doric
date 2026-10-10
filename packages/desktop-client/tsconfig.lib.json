@@ -15,5 +15,6 @@
     {
       "path": "../bundle/tsconfig.lib.json"
     }
-  ]
+  ],
+  "exclude": ["src/notifications.ts"]
 }

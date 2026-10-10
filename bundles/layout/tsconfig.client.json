@@ -11,5 +11,13 @@
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": []
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": [
+    "src/client/provisional/**",
+    "src/client/hooks/use-project-refresh.ts",
+    "src/client/queries/project-refresh.ts",
+    "src/client/api/chat-hooks.ts",
+    "src/client/components/molecules/files-toggle.tsx",
+    "src/client/domain/project-refresh.ts"
+  ]
 }

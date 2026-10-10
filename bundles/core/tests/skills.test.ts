@@ -23,6 +23,7 @@ interface Declared {
     readonly name: string;
     readonly allowedTools?: readonly string[];
     readonly alwaysAvailable?: boolean;
+    readonly order?: number;
   }[];
 }
 
@@ -42,9 +43,14 @@ const bundle = (id: string, declared: Declared) =>
             body: `Follow ${skill.name}.`,
             allowedTools: [...(skill.allowedTools ?? [])],
           },
-          skill.alwaysAvailable === undefined
+          skill.alwaysAvailable === undefined && skill.order === undefined
             ? undefined
-            : { alwaysAvailable: skill.alwaysAvailable },
+            : {
+                ...(skill.alwaysAvailable === undefined
+                  ? {}
+                  : { alwaysAvailable: skill.alwaysAvailable }),
+                ...(skill.order === undefined ? {} : { order: skill.order }),
+              },
         );
       }
     },
@@ -92,20 +98,66 @@ void test('lists canonical skills in bundle order with their availability flag',
   }
 });
 
-void test('allowed-tools resolve only against tools the same bundle registered', async () => {
+void test('allowed-tools resolve against any registered tool; an unknown one quarantines the bundle', async () => {
   const host = await boot([
     await core(),
     bundle('alpha', { tools: ['a-tool'] }),
     bundle('beta', { skills: [{ name: 'borrows', allowedTools: ['a-tool'] }] }),
+    bundle('gamma', {
+      skills: [{ name: 'dangling', allowedTools: ['a-tool', 'no-tool'] }],
+    }),
   ]);
 
   try {
-    assert.equal(states(host.platform).alpha, 'active');
-    assert.equal(states(host.platform).beta, 'quarantined');
-    assert.deepEqual(reasonCodes(host.platform, 'beta'), [
+    assert.equal(states(host.platform).beta, 'active');
+    assert.equal(states(host.platform).gamma, 'quarantined');
+    assert.deepEqual(reasonCodes(host.platform, 'gamma'), [
       'registration_failed',
     ]);
-    assert.deepEqual(await host.platform.services.use(SkillsV1).list(), []);
+    assert.match(
+      host.platform.diagnostics().bundles.find(({ id }) => id === 'gamma')
+        ?.reasons[0]?.message ?? '',
+      /Skill "dangling" in bundle "gamma" references unavailable tool "no-tool"\./,
+    );
+    assert.deepEqual(
+      (await host.platform.services.use(SkillsV1).list()).map(
+        ({ bundleId, skill }) => `${bundleId}:${skill.name}`,
+      ),
+      ['beta:borrows'],
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('skills list by order key first, unordered ones after in bundle order', async () => {
+  const host = await boot([
+    await core(),
+    bundle('alpha', {
+      skills: [
+        { name: 'a-unordered' },
+        { name: 'a-late', order: 3100 },
+        { name: 'a-early', order: 100 },
+      ],
+    }),
+    bundle('beta', {
+      skills: [{ name: 'b-middle', order: 1200 }, { name: 'b-unordered' }],
+    }),
+  ]);
+
+  try {
+    assert.deepEqual(
+      (await host.platform.services.use(SkillsV1).list()).map(
+        ({ skill, order }) => [skill.name, order],
+      ),
+      [
+        ['a-early', 100],
+        ['b-middle', 1200],
+        ['a-late', 3100],
+        ['a-unordered', undefined],
+        ['b-unordered', undefined],
+      ],
+    );
   } finally {
     await host.close();
   }

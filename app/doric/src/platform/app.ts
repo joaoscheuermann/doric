@@ -331,7 +331,6 @@ export class DesktopPlatform {
           'Window diagnostic',
         ),
       connection: this.connection,
-      notify: (request) => this.notify(request),
     });
     const host = this.host;
 

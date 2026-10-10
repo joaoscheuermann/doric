@@ -5,6 +5,12 @@ import {
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
 import {
+  indentation,
+  rowInteraction,
+  TreeGuides,
+  treeClassName,
+} from 'desktop-ui/workspace';
+import {
   ChevronRightIcon,
   GitBranchIcon,
   GithubIcon,
@@ -14,22 +20,14 @@ import {
 import type { ThreadIconKind } from '../../domain/sidebar.js';
 import type { ThreadLevel } from '../../domain/thread-tree.js';
 import type { Thread } from '../../domain/workspace.js';
-import { TerminalRows } from '../../provisional/terminals/components/terminal-rows.js';
-import {
-  type Terminal,
-  threadTerminals,
-} from '../../provisional/terminals/domain/terminals.js';
+import { useThreadRows } from '../../hooks/use-thread-rows.js';
+import { hasThreadRows } from '../../stores/thread-rows.js';
 import { duration } from '../../utility/duration.js';
 import { DraftName } from './draft-name.js';
 import { EditableName } from './editable-name.js';
+import { ElementHost } from './element-host.js';
 import { ItemContextMenu } from './item-context-menu.js';
 import { RowAddAction } from './row-add-action.js';
-import {
-  indentation,
-  rowInteraction,
-  TreeGuides,
-  treeClassName,
-} from './tree-guides.js';
 
 export type ThreadBranchesActions = {
   readonly beginChild: (thread: Thread) => void;
@@ -44,9 +42,6 @@ export type ThreadBranchesActions = {
 };
 
 type ThreadBranchesProps = {
-  readonly terminals?: readonly Terminal[];
-  readonly onOpenTerminal?: (terminal: Terminal) => void;
-  readonly onStopTerminal?: (id: string) => void;
   readonly actions: ThreadBranchesActions;
   readonly collapsed: ReadonlySet<string>;
   readonly depth: number;
@@ -85,10 +80,9 @@ export function ThreadBranches({
   onExpand,
   onToggle,
   selectedThreadId,
-  terminals = [],
-  onOpenTerminal,
-  onStopTerminal,
 }: ThreadBranchesProps) {
+  // Rows other bundles add under each Thread (`layout.sidebar/v1`).
+  const rows = useThreadRows();
   return (
     <>
       {level.nodes.map((node) => {
@@ -96,8 +90,7 @@ export function ThreadBranches({
         const selected = selectedThreadId === thread.id;
         const running =
           thread.state === 'running' && thread.activePromptId !== undefined;
-        const sessions = threadTerminals(terminals, thread.id);
-        const expandable = node.expandable || sessions.length > 0;
+        const expandable = node.expandable || hasThreadRows(rows, thread.id);
         const expanded = expandable && !collapsed.has(thread.id);
         const Icon = iconByKind[icon(thread)];
         const addChild = () => {
@@ -179,16 +172,16 @@ export function ThreadBranches({
             </ItemContextMenu>
             {expanded && (
               <SidebarMenuSub className={treeClassName}>
-                <TerminalRows
-                  terminals={sessions}
-                  depth={depth + 1}
-                  onOpen={onOpenTerminal}
-                  onStop={onStopTerminal}
-                />
+                {/* Created through ui/v1, so the element gets its owner's
+                    services (WP-10N: the terminal bundle's rows). */}
+                {rows.map((entry) => (
+                  <ElementHost
+                    key={entry.id}
+                    tag={entry.tag}
+                    props={{ 'thread-id': thread.id }}
+                  />
+                ))}
                 <ThreadBranches
-                  terminals={terminals}
-                  onOpenTerminal={onOpenTerminal}
-                  onStopTerminal={onStopTerminal}
                   actions={actions}
                   collapsed={collapsed}
                   depth={depth + 1}

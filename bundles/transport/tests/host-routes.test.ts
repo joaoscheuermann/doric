@@ -558,25 +558,26 @@ const terminal = {
 void test('creates, reads, writes, resizes and stops a terminal session', async (t) => {
   const received: unknown[] = [];
   const host = await serve({
-    terminals: {
+    // terminal/v1 1.1.0 of the `terminal` bundle (stage 10 §4).
+    terminal: {
       list: (id: string) => (id === projectId ? [terminal] : []),
-      create: (input: unknown) => {
-        received.push(['create', input]);
+      create: (id: string, size: unknown) => {
+        received.push(['create', id, size]);
         return terminal;
       },
-      snapshot: (input: { id: string; after: number }) => {
-        received.push(['snapshot', input]);
-        return input.id === terminal.id
+      snapshot: (id: string, after: number) => {
+        received.push(['snapshot', id, after]);
+        return id === terminal.id
           ? { terminal, output: 'ok', offset: 2, truncated: false }
           : undefined;
       },
-      input: (input: { id: string }) => {
-        received.push(['input', input]);
-        return input.id === terminal.id;
+      input: (id: string, data: string) => {
+        received.push(['input', id, data]);
+        return id === terminal.id;
       },
-      resize: (input: { id: string }) => {
-        received.push(['resize', input]);
-        return input.id === terminal.id;
+      resize: (id: string, cols: number, rows: number) => {
+        received.push(['resize', id, cols, rows]);
+        return id === terminal.id;
       },
       stop: (id: string) => {
         received.push(['stop', id]);
@@ -628,17 +629,17 @@ void test('creates, reads, writes, resizes and stops a terminal session', async 
     204,
   );
   assert.deepEqual(received, [
-    ['create', { threadId, cols: 80 }],
-    ['snapshot', { id: 'terminal-1', after: 1 }],
-    ['input', { id: 'terminal-1', data: 'ls\n' }],
-    ['resize', { id: 'terminal-1', cols: 100, rows: 40 }],
+    ['create', threadId, { cols: 80 }],
+    ['snapshot', 'terminal-1', 1],
+    ['input', 'terminal-1', 'ls\n'],
+    ['resize', 'terminal-1', 100, 40],
     ['stop', 'terminal-1'],
   ]);
 });
 
 void test('reports missing terminals and invalid terminal input', async (t) => {
   const host = await serve({
-    terminals: {
+    terminal: {
       create: () => undefined,
       snapshot: () => undefined,
       input: () => false,

@@ -19,11 +19,13 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "codex": "0.0.1",
     "desktop-client": "0.0.1",
     "desktop-ui": "1.0.0",
     "happy-dom": "20.8.9",
     "llms": "0.0.1",
-    "models-adapter": "0.0.1",
+    "openai": "0.0.1",
+    "openrouter": "0.0.1",
     "tool": "0.0.1"
   }
 }

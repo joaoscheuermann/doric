@@ -78,7 +78,6 @@ const storeOver = (cache: HistorySnapshots | undefined) => {
       },
       history,
     }),
-    announce: () => undefined,
     history: createHistoryFeed(history),
   });
   return { store, watch };

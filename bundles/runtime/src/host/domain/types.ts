@@ -1,3 +1,4 @@
+import type { LeaseOutcome, LeaseTask } from '../../contracts/lease.js';
 import type {
   BranchResult,
   CwdResult,
@@ -30,7 +31,15 @@ import type {
   ThreadUsage,
 } from '../../contracts/model.js';
 import type { RuntimeOwner, VmSsh } from '../../contracts/runtime.js';
-import type { InterruptResult } from '../../contracts/threads.js';
+import type {
+  InterruptResult,
+  TerminalResultInput,
+} from '../../contracts/threads.js';
+import type {
+  ThreadTask,
+  ThreadTaskOutcome,
+  WithThreadOptions,
+} from '../../contracts/workspace.js';
 
 /*
  * The domain's own boundaries, moved from agents/doric's workspace types
@@ -90,6 +99,11 @@ export interface WorkspaceService {
       path: string,
     ): Promise<ProjectFileDiff>;
     resources(id: string): Promise<ProjectResources>;
+    /** Runs a task on the Project's current lease, never acquiring one. */
+    withLease<Value>(
+      id: string,
+      task: LeaseTask<Value>,
+    ): Promise<LeaseOutcome<Value>>;
   };
   readonly threads: {
     queue(id: string): Promise<ThreadQueue | undefined>;
@@ -106,6 +120,18 @@ export interface WorkspaceService {
     ): Promise<EditQueueResult>;
     removeQueued(id: string, promptId: string): Promise<RemoveQueuedResult>;
     usage(id: string): Promise<ThreadUsage | undefined>;
+    /** The stored projection, without the capacity fill. */
+    storedUsage(id: string): Promise<ThreadUsage | undefined>;
+    /** Runs a task on one live Thread and its Project's sandbox. */
+    withThread<Value>(
+      id: string,
+      options: WithThreadOptions,
+      task: ThreadTask<Value>,
+    ): Promise<ThreadTaskOutcome<Value>>;
+    /** Enqueues a background terminal's result; see runtime.threads/v1. */
+    terminalResult(input: TerminalResultInput): Promise<void>;
+    /** Logs the failed delivery and closes the Thread. */
+    failTerminalResult(id: string): Promise<void>;
     create(
       projectId: string,
       name: string,

@@ -333,6 +333,63 @@ void test('member changes are classified by direction', () => {
   );
 });
 
+void test('argument tuples and arrays follow the member rule per element', () => {
+  const options = (properties: Record<string, unknown>) => ({
+    type: 'object',
+    properties,
+    additionalProperties: false,
+  });
+  const tuple = (...items: unknown[]) => ({
+    type: 'array',
+    prefixItems: items,
+    minItems: 1,
+    maxItems: items.length,
+  });
+  const flag = { type: 'boolean' };
+  const number = { type: 'number' };
+
+  assert.equal(
+    memberChange(
+      tuple(options({ a: flag })),
+      tuple(options({ a: flag, b: number })),
+      'input',
+    ),
+    'minor',
+  );
+  assert.equal(
+    memberChange(
+      tuple(options({ a: flag })),
+      tuple(options({ a: number })),
+      'input',
+    ),
+    'major',
+  );
+  assert.equal(
+    memberChange(
+      tuple(options({ a: flag })),
+      tuple(options({ a: flag }), flag),
+      'input',
+    ),
+    'major',
+  );
+  assert.equal(
+    memberChange(
+      { type: 'array', items: options({ a: flag }) },
+      { type: 'array', items: options({ a: flag, b: number }) },
+      'output',
+    ),
+    'minor',
+  );
+  assert.equal(
+    memberChange(
+      { type: 'array', items: options({ a: flag }) },
+      { type: 'array', items: options({ a: flag }), minItems: 1 },
+      'output',
+    ),
+    'major',
+  );
+});
+
 void test('the recorder sees provides, hook definitions and only declared uses', async () => {
   const source = manifestV1Schema.parse(
     manifest('rec', {

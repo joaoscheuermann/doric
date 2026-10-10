@@ -4,6 +4,7 @@ description: 'Locates symbols, configuration keys, messages, and exact text insi
 allowed-tools:
   - grep
   - find
+order: 300
 ---
 
 # Content Search

@@ -10,6 +10,25 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "references": [{ "path": "../../packages/bundle/tsconfig.lib.json" }]
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/api/**/*.ts",
+    "src/client/domain/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../../packages/desktop-reads/tsconfig.lib.json"
+    }
+  ]
 }

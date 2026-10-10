@@ -74,26 +74,37 @@ const serve = (overrides: Fakes = {}) =>
           throw new Error('secret provider credentials');
         return { status: 'ready', vmId: 'vm-1', ssh: access };
       },
-      files: () => ({ status: 'ready', path: '', entries: [] }),
-      changes: () => ({ status: 'ready', repositories: [] }),
-      fileDiff: () => ({ status: 'not_found' }),
-      file: ({ path }: { path: string }) => ({
-        status: 'ready',
-        path,
-        content: '',
-        truncated: false,
-        binary: false,
-      }),
-      tree: () => ({ status: 'ready', path: '', entries: [] }),
-      diff: () => ({ status: 'ready', repositories: [] }),
-      resources: () => ({ status: 'pending' }),
-      git: (call: Call) =>
-        scopeOf(call).threadId === threadId
-          ? { status: 'ready', git: { repo: false } }
-          : { status: 'missing' },
-      branches: () => ({ status: 'ready', value: { branches: [] } }),
       ...overrides.lease,
     },
+    // The stage-10 feature bundles (stage 10 §4): each lease read answers
+    // its outcome as `{ status: 'ready', value }` or the lease state.
+    files: {
+      directory: () => ready({ status: 'listed', path: '', entries: [] }),
+      tree: () => ready({ status: 'listed', path: '', entries: [] }),
+      content: ({ path }: { path: string }) =>
+        ready({
+          status: 'read',
+          path,
+          content: '',
+          truncated: false,
+          binary: false,
+        }),
+      ...overrides.files,
+    },
+    git: {
+      changes: () => ready({ status: 'read', repositories: [] }),
+      diff: () => ready({ status: 'read', repositories: [] }),
+      fileDiff: () => ready({ status: 'not_found' }),
+      status: (id: string) =>
+        id === threadId ? ready({ repo: false }) : { status: 'missing' },
+      branches: () => ready({ branches: [] }),
+      ...overrides.git,
+    },
+    resources: {
+      project: () => ({ status: 'pending' }),
+      ...overrides.resources,
+    },
+    usage: { thread: () => undefined, ...overrides.usage },
     threads: {
       queue: () => undefined,
       queuedPrompt: () => undefined,
@@ -114,7 +125,6 @@ const serve = (overrides: Fakes = {}) =>
           ...(parentThreadId ? { parentThreadId } : {}),
         },
       }),
-      usage: () => undefined,
       thread: (id: string) => (id === threadId ? thread : undefined),
       threads: () => ({ items: [] }),
       renameThread: ({ id, name }: ById & { name: string }) =>
@@ -139,8 +149,11 @@ const serve = (overrides: Fakes = {}) =>
       deleteThread: () => 'active',
       ...overrides.threads,
     },
-    terminals: { list: () => [], ...overrides.terminals },
+    terminal: { list: () => [], ...overrides.terminal },
   });
+
+/** A feature read that ran on the Project's lease. */
+const ready = (value: unknown) => ({ status: 'ready', value });
 
 void test('queue editing returns full input and rejects invalid or stale writes', async (t) => {
   const prompt = { promptId, text: 'Full input', editable: true, revision: 7 };
@@ -332,8 +345,8 @@ void test('serves usage without caching and returns missing for an unknown Threa
     reasoningTokens: 0,
   };
   const host = await serve({
-    threads: {
-      usage: (id: string) =>
+    usage: {
+      thread: (id: string) =>
         id === threadId ? { total, threads: [] } : undefined,
     },
   });
@@ -845,11 +858,11 @@ void test('moves a Thread working directory, and reports a refusal as an invalid
 
 void test('serves a Thread Git summary bound to the Thread and reports a missing or inactive Thread', async (t) => {
   const host = await serve({
-    lease: {
-      git: (call: Call) =>
-        scopeOf(call).threadId === threadId
-          ? { status: 'ready', git: { repo: false } }
-          : scopeOf(call).threadId === promptId
+    git: {
+      status: (id: string) =>
+        id === threadId
+          ? ready({ repo: false })
+          : id === promptId
             ? { status: 'inactive' }
             : { status: 'missing' },
     },
@@ -868,9 +881,10 @@ void test('serves a Thread Git summary bound to the Thread and reports a missing
 
 void test('serves pending Git and branch reads while refusing mutations without a lease', async (t) => {
   const host = await serve({
-    lease: {
-      git: () => ({ status: 'pending' }),
+    git: {
+      status: () => ({ status: 'pending' }),
       branches: () => ({ status: 'pending' }),
+      switchBranch: () => ({ status: 'pending' }),
     },
   });
   t.after(host.close);
@@ -893,12 +907,14 @@ void test('serves pending Git and branch reads while refusing mutations without 
 void test('lists branches and reports switch refusals without accepting command options', async (t) => {
   const received: unknown[] = [];
   const host = await serve({
-    lease: {
-      branches: (input: { branch?: string }, call: Call) => {
-        received.push({ input, scope: call.scope });
-        return input.branch === undefined
-          ? { status: 'ready', value: { branches: [] } }
-          : { status: 'refused', message: 'Worktree is busy.' };
+    git: {
+      branches: (id: string) => {
+        received.push({ branches: id });
+        return ready({ branches: [] });
+      },
+      switchBranch: (input: unknown) => {
+        received.push({ switchBranch: input });
+        return { status: 'refused', message: 'Worktree is busy.' };
       },
     },
   });
@@ -916,8 +932,8 @@ void test('lists branches and reports switch refusals without accepting command 
     error: { code: 'branch_refused', message: 'Worktree is busy.' },
   });
   assert.deepEqual(received, [
-    { input: {}, scope: { threadId } },
-    { input: { branch: 'main', cwd: '/workspace' }, scope: { threadId } },
+    { branches: threadId },
+    { switchBranch: { threadId, branch: 'main', cwd: '/workspace' } },
   ]);
   for (const branch of ['', '--discard-changes', 'bad\0name']) {
     assert.equal(
@@ -1072,7 +1088,7 @@ void test('binds every Project file read to the Project and forwards its path', 
   const received: unknown[] = [];
   const record =
     (name: string, answer: unknown) => (input: unknown, call?: Call) => {
-      // `resources` takes no input: its only argument is the Call.
+      // `project` takes no input: its only argument is the Call.
       const hop = (call ?? input) as Call;
       received.push({
         name,
@@ -1082,23 +1098,33 @@ void test('binds every Project file read to the Project and forwards its path', 
       return answer;
     };
   const host = await serve({
-    lease: {
-      files: record('files', { status: 'ready', path: 'src', entries: [] }),
-      tree: record('tree', { status: 'ready', path: '', entries: [] }),
-      file: record('file', {
-        status: 'ready',
-        path: 'a.ts',
-        content: 'x',
-        truncated: false,
-        binary: false,
-      }),
-      diff: record('diff', { status: 'ready', path: 'src', repositories: [] }),
-      changes: record('changes', { status: 'ready', repositories: [] }),
-      fileDiff: record('fileDiff', { status: 'invalid_path' }),
-      resources: record('resources', {
-        status: 'ready',
-        container: { status: 'unavailable', at: 'now' },
-      }),
+    files: {
+      directory: record(
+        'directory',
+        ready({ status: 'listed', path: 'src', entries: [] }),
+      ),
+      tree: record('tree', ready({ status: 'listed', path: '', entries: [] })),
+      content: record(
+        'content',
+        ready({
+          status: 'read',
+          path: 'a.ts',
+          content: 'x',
+          truncated: false,
+          binary: false,
+        }),
+      ),
+    },
+    git: {
+      diff: record(
+        'diff',
+        ready({ status: 'read', path: 'src', repositories: [] }),
+      ),
+      changes: record('changes', ready({ status: 'read', repositories: [] })),
+      fileDiff: record('fileDiff', ready({ status: 'invalid_path' })),
+    },
+    resources: {
+      project: record('project', ready({ status: 'unavailable', at: 'now' })),
     },
   });
   t.after(host.close);
@@ -1141,14 +1167,21 @@ void test('binds every Project file read to the Project and forwards its path', 
   });
   const scope = { projectId };
   assert.deepEqual(received, [
-    { name: 'files', input: { path: 'src' }, scope },
+    { name: 'directory', input: { path: 'src' }, scope },
     { name: 'tree', input: {}, scope },
-    { name: 'file', input: { path: 'a.ts' }, scope },
+    { name: 'content', input: { path: 'a.ts' }, scope },
     { name: 'diff', input: { path: 'src' }, scope },
     { name: 'changes', input: {}, scope },
     { name: 'fileDiff', input: { repository: '.', path: 'a.ts' }, scope },
-    { name: 'resources', input: undefined, scope },
+    { name: 'project', input: undefined, scope },
   ]);
+});
+
+/** Every Project read of the feature bundles answering the same outcome. */
+const everyRead = (answer: () => unknown): Fakes => ({
+  files: { directory: answer, tree: answer, content: answer },
+  git: { diff: answer, changes: answer, fileDiff: answer },
+  resources: { project: answer },
 });
 
 void test('answers the shared lease states on every Project file read', async (t) => {
@@ -1178,17 +1211,7 @@ void test('answers the shared lease states on every Project file read', async (t
   ] as const;
   for (const [status, expected, code, message] of cases) {
     const answer = () => ({ status });
-    const host = await serve({
-      lease: {
-        files: answer,
-        tree: answer,
-        file: answer,
-        diff: answer,
-        changes: answer,
-        fileDiff: answer,
-        resources: answer,
-      },
-    });
+    const host = await serve(everyRead(answer));
     t.after(host.close);
     for (const read of reads) {
       const response = await host.request(`/projects/${projectId}/${read}`);
@@ -1198,17 +1221,7 @@ void test('answers the shared lease states on every Project file read', async (t
     }
   }
   const pending = () => ({ status: 'pending' });
-  const host = await serve({
-    lease: {
-      files: pending,
-      tree: pending,
-      file: pending,
-      diff: pending,
-      changes: pending,
-      fileDiff: pending,
-      resources: pending,
-    },
-  });
+  const host = await serve(everyRead(pending));
   t.after(host.close);
   for (const read of reads) {
     const response = await host.request(`/projects/${projectId}/${read}`);
@@ -1220,13 +1233,15 @@ void test('answers the shared lease states on every Project file read', async (t
 
 void test('answers each Project path refusal with its own message', async (t) => {
   const host = await serve({
-    lease: {
-      files: () => ({ status: 'not_directory' }),
-      tree: () => ({ status: 'not_found' }),
-      file: () => ({ status: 'not_file' }),
-      diff: () => ({ status: 'invalid_path' }),
-      changes: () => ({ status: 'not_found' }),
-      fileDiff: () => ({ status: 'not_found' }),
+    files: {
+      directory: () => ready({ status: 'not_directory' }),
+      tree: () => ready({ status: 'not_found' }),
+      content: () => ready({ status: 'not_file' }),
+    },
+    git: {
+      diff: () => ready({ status: 'invalid_path' }),
+      changes: () => ready({ status: 'not_found' }),
+      fileDiff: () => ready({ status: 'not_found' }),
     },
   });
   t.after(host.close);

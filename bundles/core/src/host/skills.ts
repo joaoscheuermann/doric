@@ -16,11 +16,17 @@ interface Entry {
   readonly registered: RegisteredSkill;
 }
 
+/** Ordered entries first, by key; ties and unordered keep registration order. */
+const byOrder = (left: Entry, right: Entry): number =>
+  (left.registered.order ?? Number.POSITIVE_INFINITY) -
+    (right.registered.order ?? Number.POSITIVE_INFINITY) || 0;
+
 /**
- * The core's `skills/v1`: canonical skill records (decoded by SkillSchema) in
- * bundle order, with unique names and `allowed-tools` resolved only against
- * the tools the same bundle registered, all within one generation view
- * (D4-11): the kernel partition plus one generation.
+ * The core's `skills/v1`: canonical skill records (decoded by SkillSchema)
+ * sorted by the global `order` key, then registration order (which the loader
+ * keeps in bundle order), with unique names and `allowed-tools` resolved
+ * against every tool the caller's tools/v1 list holds (1.1.0, D10-6), all
+ * within one generation view (D4-11): the kernel partition plus one generation.
  */
 export const createSkills = () => {
   const registered: Entry[] = [];
@@ -45,16 +51,15 @@ export const createSkills = () => {
           );
         }
 
-        const local = new Set(
+        const available = new Set(
           services
             .use(ToolsV1)
             .list(call)
-            .filter((entry) => entry.bundleId === bundleId)
             .map((entry) => entry.tool.name),
         );
 
         for (const name of skill.allowedTools) {
-          if (!local.has(name)) {
+          if (!available.has(name)) {
             throw new ContractError(
               'unavailable_tool',
               `Skill "${skill.name}" in bundle "${bundleId}" references unavailable tool "${name}".`,
@@ -67,6 +72,7 @@ export const createSkills = () => {
           registered: Object.freeze({
             bundleId,
             alwaysAvailable: options?.alwaysAvailable ?? false,
+            ...(options?.order === undefined ? {} : { order: options.order }),
             skill,
           }),
         };
@@ -102,6 +108,7 @@ export const createSkills = () => {
 
         return registered
           .filter((entry) => seenBy(entry.generation, view))
+          .sort(byOrder)
           .map((entry) => entry.registered);
       },
     }),

@@ -18,7 +18,10 @@ import {
   SecretsV1,
   type Services,
   type StoredSecret,
+  type StreamListener,
+  type StreamObserver,
   secretsMethods,
+  toStreamObserver,
 } from 'bundle/contracts';
 
 import { type CoreState, once } from '../../shared/state.js';
@@ -57,6 +60,34 @@ export const createSecrets = (state: CoreState) => {
   let cache: SecretsCache | undefined;
   let loading: Promise<SecretsCache> | undefined;
   const sources = new Set<{ readonly source: ReferenceSource }>();
+  const watchers = new Set<StreamObserver<string[]>>();
+
+  /**
+   * Hands one watcher the list as the cache holds it now. A remote listener
+   * answers a promise; neither its rejection nor a throwing listener reaches
+   * the write that changed the list.
+   */
+  const deliver = async (
+    watcher: StreamObserver<string[]>,
+    list: string[],
+  ): Promise<void> => {
+    try {
+      await (watcher.next(list) as unknown);
+    } catch {
+      // A failing listener is that listener's problem.
+    }
+  };
+
+  /** Delivers the current list to every watcher; resolves once all received it. */
+  const changed = async (): Promise<void> => {
+    if (cache === undefined || watchers.size === 0) {
+      return;
+    }
+
+    const list = [...cache.view.redactions()];
+
+    await Promise.all([...watchers].map((watcher) => deliver(watcher, list)));
+  };
 
   const loaded = async (services: Services, call: Call) => {
     if (cache !== undefined) {
@@ -68,7 +99,9 @@ export const createSecrets = (state: CoreState) => {
         .use(SecretsBackendV1)
         .list(call)
         .then((rows) => {
-          cache ??= createSecretsCache(rows);
+          cache ??= createSecretsCache(rows, () => {
+            void changed();
+          });
 
           return cache;
         });
@@ -148,6 +181,7 @@ export const createSecrets = (state: CoreState) => {
 
           await services.use(SecretsBackendV1).put(row(credential), call);
           secrets.save(credential);
+          await changed();
 
           return describe(credential);
         }),
@@ -194,6 +228,7 @@ export const createSecrets = (state: CoreState) => {
 
           await services.use(SecretsBackendV1).put(row(next), call);
           secrets.save(next);
+          await changed();
 
           return describe(next);
         }),
@@ -214,6 +249,7 @@ export const createSecrets = (state: CoreState) => {
           // A deleted credential stops resolving at once.
           if (outcome === 'deleted') {
             secrets.remove(id);
+            await changed();
           }
 
           return outcome;
@@ -249,6 +285,27 @@ export const createSecrets = (state: CoreState) => {
       ...secretsMethods.redactions,
       execute: async (_input, call, services) =>
         (await loaded(services, call)).view.redactions(),
+    }),
+    watchRedactions: defineMethod({
+      ...secretsMethods.watchRedactions,
+      execute: (listener: StreamListener<string[]>, call, services) => {
+        const watcher = toStreamObserver(listener);
+        let open = true;
+
+        watchers.add(watcher);
+        // The first list is the current one, once the credentials are loaded;
+        // a load failure leaves the watcher waiting for the next change.
+        void loaded(services, call).then(
+          (secrets) =>
+            open ? deliver(watcher, [...secrets.view.redactions()]) : undefined,
+          () => undefined,
+        );
+
+        return once(() => {
+          open = false;
+          watchers.delete(watcher);
+        });
+      },
     }),
     registerReferences: defineMethod({
       ...secretsMethods.registerReferences,

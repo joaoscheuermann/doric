@@ -5,6 +5,7 @@ allowed-tools:
   - terminal
   - grep
   - find
+order: 1000
 ---
 
 # Failure Diagnosis

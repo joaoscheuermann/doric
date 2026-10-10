@@ -49,6 +49,8 @@ export interface SecretsCache {
  */
 export const createSecretsCache = (
   rows: readonly StoredSecret[],
+  /** Told after an added redaction changed the list (secrets/v1 1.1.0). */
+  onRedactionAdded?: () => void,
 ): SecretsCache => {
   let cache: readonly Secret[] = rows.map(toSecret);
   const added: string[] = [];
@@ -65,6 +67,7 @@ export const createSecretsCache = (
     addRedaction: (secret: string) => {
       if (secret !== '') {
         added.push(secret);
+        onRedactionAdded?.();
       }
     },
   });

@@ -2,6 +2,7 @@
 name: thread-delegation
 description: Delegates self-contained tasks to direct child threads and continues independent work while children run. Use when a task is self-contained and its result is not needed to finish the current response.
 alwaysAvailable: true
+order: 3100
 ---
 
 # Thread Delegation

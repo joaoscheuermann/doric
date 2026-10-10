@@ -1,9 +1,11 @@
 import { Router } from 'express';
-import type { RuntimeLease, RuntimeThreads, Thread } from 'runtime/contracts';
+import type { Git } from 'git/contracts';
+import type { RuntimeThreads, Thread } from 'runtime/contracts';
+import type { Usage } from 'usage/contracts';
 import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../errors.js';
-import type { LeaseScope } from '../services.js';
+import type { ProjectScope } from '../services.js';
 import { conflict, missing, nameInput, validateId } from './input.js';
 
 /**
@@ -56,16 +58,20 @@ const cwdRefusal: Readonly<
   'not-directory': 'The working directory must be a directory.',
 };
 
-/** Human input cannot supply a privileged origin or delegation correlation. */
+/**
+ * Human input cannot supply a privileged origin or delegation correlation.
+ * The Git and usage reads call the `git` and `usage` bundles (stage 10 §4).
+ */
 export const createThreadsRouter = ({
   threads,
-  lease,
+  git,
+  usage,
 }: {
   readonly threads: RuntimeThreads;
-  readonly lease: (scope: LeaseScope) => RuntimeLease;
+  readonly git: (scope?: ProjectScope) => Git;
+  readonly usage: Usage;
 }): Router => {
   const router = Router();
-  const threadLease = (threadId: string) => lease({ threadId });
   router.use('/:id', validateId('thread'));
   router.get('/:id/queue', async (request, response) => {
     response.set('Cache-Control', 'no-store');
@@ -169,12 +175,12 @@ export const createThreadsRouter = ({
   });
   router.get('/:id/usage', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-    const usage = await threads.usage(request.params.id);
-    if (usage === undefined) {
+    const read = await usage.thread(request.params.id);
+    if (read === undefined) {
       missing(response, 'thread');
       return;
     }
-    response.json(usage);
+    response.json(read);
   });
   router.patch('/:id', async (request, response) => {
     const input = threadInput.safeParse(request.body ?? {});
@@ -358,7 +364,7 @@ export const createThreadsRouter = ({
   });
   router.get('/:id/git', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-    const result = await threadLease(request.params.id).git();
+    const result = await git().status(request.params.id);
     if (result.status === 'missing') {
       missing(response, 'thread');
       return;
@@ -369,13 +375,13 @@ export const createThreadsRouter = ({
       });
       return;
     }
-    response.json(result.git);
+    response.json(result.value);
   });
   router
     .route('/:id/branches')
     .get(async (request, response) => {
       response.set('Cache-Control', 'no-store');
-      const result = await threadLease(request.params.id).branches({});
+      const result = await git().branches(request.params.id);
       if (result.status === 'missing') {
         missing(response, 'thread');
         return;
@@ -409,7 +415,8 @@ export const createThreadsRouter = ({
         );
         return;
       }
-      const result = await threadLease(request.params.id).branches({
+      const result = await git().switchBranch({
+        threadId: request.params.id,
         branch: input.data.branch,
         cwd: input.data.cwd,
       });

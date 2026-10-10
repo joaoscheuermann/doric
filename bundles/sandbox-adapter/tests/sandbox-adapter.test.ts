@@ -9,7 +9,7 @@ import {
   logMethods,
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import type { DockerClient } from 'docker';
+import type { DockerClient } from 'docker-sandbox';
 import { SandboxV1 } from 'runtime/contracts';
 import type {
   SandboxProvider,

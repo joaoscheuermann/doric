@@ -145,6 +145,31 @@ function SidebarProvider({
   );
 }
 
+/**
+ * The sidebar context alone, with no wrapper element and no shortcut: for a
+ * bundle element that draws sidebar rows inside another bundle's sidebar
+ * (its own React root cannot see that provider). It reports the expanded,
+ * non-mobile state the workspace sidebar always has where those rows show.
+ */
+const scopeValue: SidebarContextProps = {
+  state: 'expanded',
+  open: true,
+  setOpen: () => undefined,
+  openMobile: false,
+  setOpenMobile: () => undefined,
+  isMobile: false,
+  toggleSidebar: () => undefined,
+};
+
+function SidebarScope({ children }: { readonly children?: React.ReactNode }) {
+  const outer = React.useContext(SidebarContext);
+  return (
+    <SidebarContext.Provider value={outer ?? scopeValue}>
+      {children}
+    </SidebarContext.Provider>
+  );
+}
+
 function Sidebar({
   side = 'left',
   variant = 'sidebar',
@@ -693,6 +718,7 @@ export {
   SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
+  SidebarScope,
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,

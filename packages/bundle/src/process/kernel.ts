@@ -16,7 +16,8 @@ import {
   type HostPlatform,
   importHostPart,
   readHostCatalog,
-  registerInstalledResources,
+  registerInstalledSkills,
+  registerInstalledTools,
   type StartHostOptions,
 } from '../loader/activate.js';
 import { type EmbeddedBundle, embeddedId } from '../loader/catalog.js';
@@ -392,7 +393,19 @@ export const startKernel = async (
         return;
       }
 
-      await registerInstalledResources(
+      await registerInstalledTools(
+        entry.source.dir,
+        installedById.get(entry.id)?.read?.legacy,
+        principal,
+      );
+    },
+    // Skills once the kernel phase has activated (D10-6).
+    afterPhase: async (entry, principal) => {
+      if (entry.source.kind !== 'installed') {
+        return;
+      }
+
+      await registerInstalledSkills(
         entry.source.dir,
         installedById.get(entry.id)?.read?.legacy,
         principal,

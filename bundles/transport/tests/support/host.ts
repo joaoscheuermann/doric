@@ -15,26 +15,29 @@ import {
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import express from 'express';
+import { FilesV1, filesMethods } from 'files/contracts';
+import { GitCommandsV1, gitMethods } from 'git/contracts';
 import { pino } from 'pino';
+import { ResourcesV1, resourcesMethods } from 'resources/contracts';
 import {
   ConfigurationV1,
   configurationMethods,
   RuntimeLeaseV1,
-  RuntimeTerminalsV1,
   RuntimeThreadsV1,
   RuntimeV1,
   runtimeLeaseMethods,
   runtimeMethods,
-  runtimeTerminalsMethods,
   runtimeThreadsMethods,
   SandboxV1,
   sandboxMethods,
 } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
 import { io as connect } from 'socket.io-client';
+import { TerminalServiceV1, terminalServiceMethods } from 'terminal/contracts';
+import { UsageV1, usageMethods } from 'usage/contracts';
 import type { z } from 'zod';
 
-import { createTransport, type HostResources } from '../../src/kernel.js';
+import { createTransport } from '../../src/kernel.js';
 
 /*
  * The transport as the kernel embeds it: one HTTP server shared by Express
@@ -50,8 +53,15 @@ export type Fake = Readonly<Record<string, FakeMethod>>;
 export interface Fakes {
   readonly runtime?: Fake;
   readonly threads?: Fake;
-  readonly terminals?: Fake;
+  /** runtime.lease/v1: only `ssh` since the stage-10 host switch. */
   readonly lease?: Fake;
+  /** The stage-10 feature bundles the routes call. */
+  readonly files?: Fake;
+  readonly git?: Fake;
+  readonly usage?: Fake;
+  readonly resources?: Fake;
+  /** terminal/v1 1.1.0. */
+  readonly terminal?: Fake;
   readonly sandbox?: Fake;
   readonly tools?: Fake;
   readonly models?: Fake;
@@ -109,15 +119,8 @@ export interface Host {
   close(): Promise<void>;
 }
 
-const unreadHost = (): HostResources => {
-  throw new Error('Unexpected host resources read.');
-};
-
 /** Boots the transport bundle over the fakes and listens on a free port. */
-export const serve = async (
-  fakes: Fakes = {},
-  options: { readonly readHostResources?: () => HostResources } = {},
-): Promise<Host> => {
+export const serve = async (fakes: Fakes = {}): Promise<Host> => {
   const app = express();
   const server = createServer(app);
   const io = new SocketServer(server);
@@ -134,12 +137,16 @@ export const serve = async (
         ...fakes.runtime,
       }),
       fakeService(RuntimeThreadsV1.id, runtimeThreadsMethods, fakes.threads),
-      fakeService(
-        RuntimeTerminalsV1.id,
-        runtimeTerminalsMethods,
-        fakes.terminals,
-      ),
       fakeService(RuntimeLeaseV1.id, runtimeLeaseMethods, fakes.lease),
+      fakeService(FilesV1.id, filesMethods, fakes.files),
+      fakeService(GitCommandsV1.id, gitMethods, fakes.git),
+      fakeService(UsageV1.id, usageMethods, fakes.usage),
+      fakeService(ResourcesV1.id, resourcesMethods, fakes.resources),
+      fakeService(TerminalServiceV1.id, terminalServiceMethods, {
+        // The socket watches each subscribed Project; most cases emit nothing.
+        watchProject: () => ({ dispose: () => undefined }),
+        ...fakes.terminal,
+      }),
       fakeService(SandboxV1.id, sandboxMethods, fakes.sandbox),
       fakeService(ToolsV1.id, toolsMethods, fakes.tools),
       fakeService(ModelsV1.id, modelsMethods, fakes.models),
@@ -155,7 +162,6 @@ export const serve = async (
     app,
     io,
     logger: pino({ enabled: false }),
-    readHostResources: options.readHostResources ?? unreadHost,
   });
   const activate = bundle.host?.activate;
   assert.ok(activate !== undefined);

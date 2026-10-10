@@ -1,3 +1,4 @@
+import { type DiffControls, DiffEditor } from 'desktop-ui/code';
 import {
   Empty,
   EmptyDescription,
@@ -5,6 +6,7 @@ import {
   EmptyTitle,
 } from 'desktop-ui/empty';
 import { Skeleton } from 'desktop-ui/skeleton';
+import { ReadFeedback } from 'desktop-ui/workspace';
 import { useRef } from 'react';
 
 import { messageFrom } from '../../../domain/errors.js';
@@ -12,10 +14,8 @@ import type { WorkspaceTab } from '../../../domain/workspace-tabs.js';
 import { workspaceTabsStore } from '../../../stores/workspace-tabs.js';
 import { fileLanguage, joinPath, sandboxNotice } from '../domain/files.js';
 import { useFileDiff } from '../hooks/use-file-diff.js';
-import { type DiffControls, DiffEditor } from './diff-editor.js';
 import { DiffFooter } from './diff-footer.js';
 import { DiffToolbar } from './diff-toolbar.js';
-import { ReadFeedback } from './read-feedback.js';
 
 /** The placeholder rows a read draws until its comparison arrives. */
 const DIFF_SKELETON_ROWS = Array.from(

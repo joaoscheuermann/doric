@@ -8,7 +8,6 @@ import pino from 'pino';
 import pretty from 'pino-pretty';
 import { ConfigurationV1, RuntimeV1 } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
-import { createTransport } from 'transport/kernel';
 
 import { installBridge } from './lib/bridge/socket.js';
 import {
@@ -20,7 +19,8 @@ import {
 import { createHostConfig } from './lib/bundles/configuration.js';
 import { connectDatabase } from './lib/bundles/database.js';
 import { installHandover } from './lib/bundles/handover.js';
-import { sandboxSettings } from './lib/bundles/sandbox.js';
+import { sandboxComposition, sandboxSettings } from './lib/bundles/sandbox.js';
+import { createHostTransport } from './lib/bundles/transport.js';
 import { createCredentialService } from './lib/credentials/service.js';
 
 const logger = pino(
@@ -44,7 +44,15 @@ const fail = (): never => {
 async function main() {
   const host = process.env.DORIC_HOST ?? '0.0.0.0';
   const port = Number.parseInt(process.env.DORIC_PORT ?? '3000', 10);
-  const sandbox = sandboxSettings(process.env);
+  const paths = bundlePaths(
+    process.env,
+    dirname(fileURLToPath(import.meta.url)),
+  );
+  const { composition, providerName } = await sandboxComposition(
+    process.env,
+    paths.compositionPath,
+  );
+  const sandbox = sandboxSettings(process.env, providerName);
   const sandboxProviderName = sandbox.providerName;
   const startup = logger.child({ component: 'startup' });
 
@@ -61,9 +69,9 @@ async function main() {
   const server = createServer(app);
   const io = new SocketServer(server);
 
-  // The pool itself is built by the `sandbox-adapter` bundle in the
-  // generation process, from the same environment; the kernel keeps the
-  // stage for its log lines.
+  // The pool itself is built by the enabled `docker` or `firecracker` bundle
+  // in the generation process, from the same environment; the kernel keeps
+  // the stage for its log lines.
   startupStage = 'sandbox_pool';
   startup.info({ sandboxProviderName }, 'Configuring sandbox pool');
   startup.info(
@@ -81,12 +89,15 @@ async function main() {
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
   const hostConfig = createHostConfig();
+  const transport = createHostTransport({ app, io, logger });
   const bundles = await startBundles({
-    ...bundlePaths(process.env, dirname(fileURLToPath(import.meta.url))),
-    embedded: [hostConfig.bundle, createTransport({ app, io, logger })],
+    ...paths,
+    composition,
+    embedded: [hostConfig.bundle, transport.bundle],
     logger,
   });
   const { platform } = bundles;
+  transport.bind(platform);
 
   await assertStructural(platform, startup);
   const skills = await platform.services.use(SkillsV1).list();

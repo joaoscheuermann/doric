@@ -7,6 +7,7 @@ import {
   defineService,
   type RegisteredTool,
   type Services,
+  type ToolRegistrationOptions,
   ToolsV1,
   toolsMethods,
 } from 'bundle/contracts';
@@ -18,9 +19,17 @@ interface Entry {
   readonly registered: RegisteredTool;
 }
 
+/** Ordered entries first, by key; ties and unordered keep registration order. */
+const byOrder = (
+  left: { readonly registered: { readonly order?: number } },
+  right: { readonly registered: { readonly order?: number } },
+): number =>
+  (left.registered.order ?? Number.POSITIVE_INFINITY) -
+    (right.registered.order ?? Number.POSITIVE_INFINITY) || 0;
+
 /**
- * The core's `tools/v1`: one ordered registry of bound tools (activation order,
- * then call order) whose names are unique across the bundles one generation
+ * The core's `tools/v1`: one ordered registry of bound tools (the global
+ * `order` key, then activation order, then call order; 1.2.0) whose names are unique across the bundles one generation
  * view sees (D4-11): the kernel partition plus one generation.
  */
 export const createTools = () => {
@@ -32,6 +41,7 @@ export const createTools = () => {
 
     return registered
       .filter((entry) => seenBy(entry.generation, view))
+      .sort(byOrder)
       .map((entry) => entry.registered);
   };
 
@@ -40,7 +50,7 @@ export const createTools = () => {
       input: toolsMethods.register.input,
       output: toolsMethods.register.output,
       execute: (
-        [tool, options]: [ContractTool, { alwaysAvailable: boolean }],
+        [tool, options]: [ContractTool, ToolRegistrationOptions],
         call,
         services,
       ): Disposable => {
@@ -64,6 +74,7 @@ export const createTools = () => {
           registered: Object.freeze({
             bundleId,
             alwaysAvailable: options.alwaysAvailable,
+            ...(options.order === undefined ? {} : { order: options.order }),
             tool,
           }),
         };

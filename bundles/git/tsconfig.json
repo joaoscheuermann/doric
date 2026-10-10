@@ -8,9 +8,11 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
   "references": [
     {
       "path": "../../packages/tool"
@@ -26,6 +28,15 @@
     },
     {
       "path": "../../packages/host"
+    },
+    {
+      "path": "../../packages/desktop-reads"
+    },
+    {
+      "path": "../layout"
+    },
+    {
+      "path": "../../packages/desktop-ui"
     }
   ]
 }

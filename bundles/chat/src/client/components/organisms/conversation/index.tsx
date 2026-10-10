@@ -24,7 +24,6 @@ import {
   $isTextNode,
   configExtension,
   defineExtension,
-  type EditorThemeClasses,
   isHTMLElement,
   ParagraphNode,
   TextNode,
@@ -78,42 +77,7 @@ import { ReadOnlyBlocksPlugin } from './plugins/read-only-blocks.js';
 import { SendPrompt } from './plugins/send-prompt.js';
 import { TableBlocksPlugin } from './plugins/table-blocks.js';
 import { UndeletableBlocksPlugin } from './plugins/undeletable-blocks.js';
-
-/** The theme the example names; its classes wait for a stylesheet of their own. */
-const exampleTheme: EditorThemeClasses = {
-  code: 'editor-code',
-  heading: {
-    h1: 'editor-heading-h1',
-    h2: 'editor-heading-h2',
-    h3: 'editor-heading-h3',
-    h4: 'editor-heading-h4',
-    h5: 'editor-heading-h5',
-    h6: 'editor-heading-h6',
-  },
-  image: 'editor-image',
-  link: 'editor-link',
-  list: {
-    listitem: 'editor-listitem',
-    nested: { listitem: 'editor-nested-listitem' },
-    ol: 'editor-list-ol',
-    ul: 'editor-list-ul',
-  },
-  paragraph: 'editor-paragraph',
-  quote: 'editor-quote',
-  table: 'editor-table',
-  tableCell: 'editor-table-cell',
-  tableCellHeader: 'editor-table-cell-header',
-  tableRow: 'editor-table-row',
-  text: {
-    bold: 'editor-text-bold',
-    code: 'editor-text-code',
-    italic: 'editor-text-italic',
-    overflowed: 'editor-text-overflowed',
-    strikethrough: 'editor-text-strikethrough',
-    underline: 'editor-text-underline',
-    underlineStrikethrough: 'editor-text-underlineStrikethrough',
-  },
-};
+import { conversationTheme } from './theme.js';
 
 const MIN_ALLOWED_FONT_SIZE = 8;
 const MAX_ALLOWED_FONT_SIZE = 72;
@@ -245,7 +209,7 @@ const defineConversationExtension = (
     ],
     name: '@lexical/examples/react-rich',
     namespace: 'react-rich',
-    theme: exampleTheme,
+    theme: conversationTheme,
     nodes: [
       UserTurnNode,
       DelegatedTurnNode,

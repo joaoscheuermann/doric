@@ -18,7 +18,6 @@ import { SettingsExecution } from '../components/organisms/settings-execution.js
 import { SettingsProviderScreen } from '../components/organisms/settings-provider.js';
 import { SettingsProviders } from '../components/organisms/settings-providers.js';
 import { SettingsTools } from '../components/organisms/settings-tools.js';
-import { SettingsVersioning } from '../components/organisms/settings-versioning.js';
 import type { SettingsCrumb } from '../components/templates/settings-surface.js';
 import { SettingsWindow } from '../components/templates/settings-window.js';
 import {
@@ -39,6 +38,7 @@ import { linkHosts, type SectionId, sectionHosts } from '../elements.js';
 import { type Config, useConfig } from '../hooks/use-config.js';
 import { type Credentials, useCredentials } from '../hooks/use-credentials.js';
 import { useProviderKinds } from '../hooks/use-provider-kinds.js';
+import { configBridge } from '../services/settings-config.js';
 
 /** The shape of a section while the host's configuration is still arriving. */
 function SectionSkeleton() {
@@ -112,14 +112,6 @@ function Section({
       return <SettingsExecution draft={draft} onChange={onChange} />;
     case 'tools':
       return <SettingsTools draft={draft} onChange={onChange} />;
-    case 'versioning':
-      return (
-        <SettingsVersioning
-          credentials={credentials.list}
-          draft={draft}
-          onChange={onChange}
-        />
-      );
     case 'credentials':
       return <SettingsCredentials />;
   }
@@ -140,9 +132,8 @@ const useSectionHost = (id: SectionId | undefined): HTMLElement | undefined => {
   const providers = sectionHosts.providers.useHosts();
   const execution = sectionHosts.execution.useHosts();
   const tools = sectionHosts.tools.useHosts();
-  const versioning = sectionHosts.versioning.useHosts();
   const credentials = sectionHosts.credentials.useHosts();
-  const hosts = { providers, execution, tools, versioning, credentials };
+  const hosts = { providers, execution, tools, credentials };
   return id === undefined ? undefined : hosts[id].at(-1)?.element;
 };
 
@@ -183,10 +174,23 @@ export function Settings({ services }: { readonly services: Services }) {
     isSectionId(routeSection) ? routeSection : undefined,
   );
   const links = linkHosts.useHosts();
+  // R-9.8: the section the route shows is named by its own link, so a
+  // section another bundle adds is headed by its label and icon too.
+  const activeLink = links.find(
+    (link) => link.props.path !== undefined && link.props.path === route?.path,
+  );
+  const sectionLabel = activeLink?.props.label ?? current.label;
   // The one icon the section is named by, drawn by the nav, the section heading
   // and the provider page alike, so they never drift.
-  const Icon = sectionIcon(current.icon) ?? AlertCircleIcon;
-  const { draft, flush } = config;
+  const Icon =
+    sectionIcon(activeLink?.props.icon ?? current.icon) ?? AlertCircleIcon;
+  const { draft, flush, setDraft } = config;
+
+  // R-9.8: `settings.config/v1` reads and writes this same draft.
+  useEffect(() => {
+    configBridge.publish({ draft, setDraft });
+  }, [draft, setDraft]);
+  useEffect(() => () => configBridge.publish(undefined), []);
   // A section is where the chain starts over, so a provider page opened under
   // the previous one does not stay half-open behind the new section.
   const shownSection = useRef(current.id);
@@ -199,7 +203,7 @@ export function Settings({ services }: { readonly services: Services }) {
   // name, so the heading says which page this is rather than repeating it.
   const title =
     provider === undefined
-      ? current.label
+      ? sectionLabel
       : provider.index === undefined
         ? 'Add provider'
         : 'Edit provider';
@@ -209,8 +213,8 @@ export function Settings({ services }: { readonly services: Services }) {
   const trail: readonly SettingsCrumb[] = [
     { label: 'Settings' },
     provider === undefined
-      ? { label: current.label }
-      : { label: current.label, onSelect: () => setProvider(undefined) },
+      ? { label: sectionLabel }
+      : { label: sectionLabel, onSelect: () => setProvider(undefined) },
     ...(provider === undefined
       ? []
       : [

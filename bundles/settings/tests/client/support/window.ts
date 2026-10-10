@@ -196,9 +196,18 @@ export const settle = async (milliseconds = 0): Promise<void> => {
 };
 
 /** Boots the core and the settings part at `url`, answering `host` calls. */
+/** Another bundle's client part in the window (a section it adds). */
+export interface ProbeBundle {
+  readonly requires: readonly string[];
+  readonly activate: Activate;
+}
+
+const PROBE_VERSION = '1.0.0';
+
 export const openSettingsWindow = async (input: {
   readonly url?: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
+  readonly probe?: ProbeBundle;
 }): Promise<SettingsWindow> => {
   const window = new Window({
     url: input.url ?? 'doric://app/settings',
@@ -270,10 +279,40 @@ export const openSettingsWindow = async (input: {
           descriptor: settingsDescriptor,
           errors: [],
         },
+        ...(input.probe === undefined
+          ? []
+          : [
+              {
+                id: 'probe',
+                source: {
+                  kind: 'installed' as const,
+                  dir: `probe@${PROBE_VERSION}`,
+                },
+                manifest: {
+                  manifestVersion: 1 as const,
+                  id: 'probe',
+                  version: PROBE_VERSION,
+                  engines: { doric: '^1.0.0' },
+                  provides: [],
+                  requires: [...input.probe.requires],
+                } as unknown as ManifestV1,
+                descriptor: {
+                  descriptorVersion: 1 as const,
+                  bundle: { id: 'probe', version: PROBE_VERSION },
+                  contracts: [],
+                } as unknown as Descriptor,
+                errors: [],
+              },
+            ]),
       ],
       composition: {
         core: 'core',
-        enabled: ['core', 'host', 'settings'],
+        enabled: [
+          'core',
+          'host',
+          'settings',
+          ...(input.probe === undefined ? [] : ['probe']),
+        ],
         providers: {},
       },
       platformVersion: '1.0.0',
@@ -287,6 +326,9 @@ export const openSettingsWindow = async (input: {
     parts: {
       core: { entry: partUrl('core', coreManifest.version) },
       settings: { entry: partUrl('settings', settingsManifest.version) },
+      ...(input.probe === undefined
+        ? {}
+        : { probe: { entry: partUrl('probe', PROBE_VERSION) } }),
     },
     remote: [
       ...(await coreRemote(coreManifest, coreDescriptor)),
@@ -360,6 +402,11 @@ export const openSettingsWindow = async (input: {
   const modules: Record<string, { activate?: Activate }> = {
     [partUrl('core', coreManifest.version)]: core,
     [partUrl('settings', settingsManifest.version)]: settings,
+    ...(input.probe === undefined
+      ? {}
+      : {
+          [partUrl('probe', PROBE_VERSION)]: { activate: input.probe.activate },
+        }),
   };
 
   await bootstrapWindow({

@@ -1,4 +1,7 @@
 import { type Response, Router } from 'express';
+import type { Files } from 'files/contracts';
+import type { Git } from 'git/contracts';
+import type { Resources } from 'resources/contracts';
 import {
   type ProjectLeaseState,
   projectColors,
@@ -9,7 +12,7 @@ import {
 import { z } from 'zod';
 
 import { handleHttpError, sendError } from '../errors.js';
-import type { LeaseScope } from '../services.js';
+import type { LeaseScope, ProjectScope } from '../services.js';
 import {
   conflict,
   missing,
@@ -67,15 +70,25 @@ const leaseResponse = (response: Response, status: string): boolean => {
   return true;
 };
 
-/** Project creation reserves an environment; conversations are created separately. */
+/**
+ * Project creation reserves an environment; conversations are created
+ * separately. The file, Git and resource reads call the `files`, `git` and
+ * `resources` bundles (stage 10 §4), which answer the lease state as data.
+ */
 export const createProjectsRouter = ({
   runtime,
   threads,
   lease,
+  files,
+  git,
+  resources,
 }: {
   readonly runtime: Runtime;
   readonly threads: RuntimeThreads;
   readonly lease: (scope: LeaseScope) => RuntimeLease;
+  readonly files: (scope: ProjectScope) => Files;
+  readonly git: (scope?: ProjectScope) => Git;
+  readonly resources: (scope?: ProjectScope) => Resources;
 }): Router => {
   const router = Router();
   const projectLease = (projectId: string) => lease({ projectId });
@@ -250,11 +263,15 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).files(
+    const outcome = await files({ projectId: request.params.id }).directory(
       pathOf(input.data.path),
     );
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'listed') {
       response.json({ path: result.path, entries: result.entries });
       return;
     }
@@ -276,12 +293,12 @@ export const createProjectsRouter = ({
   });
   router.get('/:id/resources', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-    const result = await projectLease(request.params.id).resources();
-    if (leaseResponse(response, result.status)) return;
+    const result = await resources({ projectId: request.params.id }).project();
     if (result.status === 'ready') {
-      response.json(result.container);
+      response.json(result.value);
       return;
     }
+    if (leaseResponse(response, result.status)) return;
     conflict(response, 'project', 'resources_unavailable');
   });
   router.get('/:id/tree', async (request, response) => {
@@ -296,11 +313,15 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).tree(
+    const outcome = await files({ projectId: request.params.id }).tree(
       pathOf(input.data.path),
     );
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'listed') {
       response.json({ path: result.path, entries: result.entries });
       return;
     }
@@ -332,11 +353,15 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).file({
+    const outcome = await files({ projectId: request.params.id }).content({
       path: input.data,
     });
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'read') {
       response.json({
         path: result.path,
         content: result.content,
@@ -373,11 +398,15 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).diff(
+    const outcome = await git({ projectId: request.params.id }).diff(
       pathOf(input.data.path),
     );
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'read') {
       response.json({
         ...(result.path === undefined ? {} : { path: result.path }),
         repositories: result.repositories,
@@ -412,11 +441,15 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).changes(
+    const outcome = await git({ projectId: request.params.id }).changes(
       pathOf(input.data.path),
     );
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'read') {
       response.json({
         ...(result.path === undefined ? {} : { path: result.path }),
         repositories: result.repositories,
@@ -446,12 +479,16 @@ export const createProjectsRouter = ({
       );
       return;
     }
-    const result = await projectLease(request.params.id).fileDiff({
+    const outcome = await git({ projectId: request.params.id }).fileDiff({
       repository: input.data.repository,
       path: input.data.path,
     });
-    if (leaseResponse(response, result.status)) return;
-    if (result.status === 'ready') {
+    if (outcome.status !== 'ready') {
+      leaseResponse(response, outcome.status);
+      return;
+    }
+    const result = outcome.value;
+    if (result.status === 'read') {
       response.json(result.diff);
       return;
     }

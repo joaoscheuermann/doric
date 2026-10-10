@@ -126,8 +126,20 @@ export interface ActivationOptions {
   readonly diagnostics: DiagnosticsStore;
   /** Loads the part of this environment; undefined when the bundle has none. */
   readonly loadPart: (entry: CatalogEntry) => Promise<Activate | undefined>;
-  /** Runs after a successful `activate` (skills registration on the host). */
+  /** Runs after a successful `activate` (v0 manifest tools on the host). */
   readonly afterActivate?: (
+    entry: CatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
+  /**
+   * Runs once the whole phase has activated, for each still-active bundle in
+   * activation order (skills registration on the host, D10-6), so it sees
+   * every tool of the phase. A rejection quarantines the bundle as an
+   * `afterActivate` rejection would: its registrations are undone, its
+   * cleanup runs, and the active bundles depending on it are quarantined
+   * with `dependency_quarantined`.
+   */
+  readonly afterPhase?: (
     entry: CatalogEntry,
     principal: Principal,
   ) => Promise<void>;
@@ -390,6 +402,109 @@ export const activateEnvironment = async (
     }
   }
 
+  /** Undoes one active bundle: deactivation hook, registrations, cleanup. */
+  const deactivate = async (bundle: ActiveBundle) => {
+    if (bundle.observed && appHooks !== undefined) {
+      try {
+        await appHooks.onDeactivateHook.execute(lifecycle(bundle.entry));
+      } catch (error) {
+        reportPlatform('hook_execute_failed', error, {
+          hook: 'onDeactivateHook',
+          bundleId: bundle.entry.id,
+        });
+      }
+    }
+
+    await bundle.principal.scope.dispose();
+
+    if (bundle.cleanup !== undefined) {
+      try {
+        await bundle.cleanup();
+      } catch (error) {
+        reportPlatform('cleanup_failed', error, {
+          bundleId: bundle.entry.id,
+        });
+      }
+    }
+
+    bundle.principal.close();
+  };
+  const withdraw = async (bundle: ActiveBundle) => {
+    active.splice(active.indexOf(bundle), 1);
+    activeIds.delete(bundle.entry.id);
+    principals.delete(bundle.entry.id);
+    await deactivate(bundle);
+
+    if (bundle.entry.id === hooksProvider) {
+      appHooks = undefined;
+    }
+  };
+  /**
+   * Quarantines an already active bundle, then its active dependents (latest
+   * first), the way the loop would have refused them. In recovery the later
+   * bundles become inactive, as the loop leaves them.
+   */
+  const revoke = async (
+    bundle: ActiveBundle,
+    code: QuarantineCode,
+    message: string,
+  ) => {
+    const position = active.indexOf(bundle);
+    const later = active.slice(position + 1);
+
+    await withdraw(bundle);
+    fail(bundle.entry, code, message);
+
+    if (diagnostics.mode === 'recovery') {
+      for (const other of later.reverse()) {
+        await withdraw(other);
+        diagnostics.setState(other.entry.id, 'inactive');
+      }
+
+      return;
+    }
+
+    for (const other of later.reverse()) {
+      if (!active.includes(other)) {
+        continue;
+      }
+
+      const missing = other.entry.dependencies.filter(
+        (dependency) => !activeIds.has(dependency),
+      );
+
+      if (missing.length > 0) {
+        await revoke(
+          other,
+          'dependency_quarantined',
+          `depends on a bundle that is not active: ${missing.join(', ')}`,
+        );
+      }
+    }
+  };
+
+  const isRecovery = () => diagnostics.mode === 'recovery';
+
+  if (options.afterPhase !== undefined && !isRecovery()) {
+    for (const bundle of [...active]) {
+      // A revocation may have withdrawn it or entered recovery meanwhile.
+      if (!active.includes(bundle) || isRecovery()) {
+        continue;
+      }
+
+      try {
+        await options.afterPhase(bundle.entry, bundle.principal);
+        await options.settle?.(bundle.entry, bundle.principal);
+      } catch (error) {
+        await revoke(
+          bundle,
+          codeOf(error, 'registration_failed'),
+          messageOf(error),
+        );
+      }
+    }
+  }
+
   let stopping: Promise<void> | undefined;
 
   return {
@@ -400,30 +515,7 @@ export const activateEnvironment = async (
     stop: () => {
       stopping ??= (async () => {
         for (const bundle of [...active].reverse()) {
-          if (bundle.observed && appHooks !== undefined) {
-            try {
-              await appHooks.onDeactivateHook.execute(lifecycle(bundle.entry));
-            } catch (error) {
-              reportPlatform('hook_execute_failed', error, {
-                hook: 'onDeactivateHook',
-                bundleId: bundle.entry.id,
-              });
-            }
-          }
-
-          await bundle.principal.scope.dispose();
-
-          if (bundle.cleanup !== undefined) {
-            try {
-              await bundle.cleanup();
-            } catch (error) {
-              reportPlatform('cleanup_failed', error, {
-                bundleId: bundle.entry.id,
-              });
-            }
-          }
-
-          bundle.principal.close();
+          await deactivate(bundle);
           diagnostics.setState(bundle.entry.id, 'inactive');
         }
       })();

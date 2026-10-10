@@ -15,11 +15,15 @@
   "dependencies": {
     "bundle": "0.0.1",
     "express": "^5.2.1",
+    "files": "0.0.1",
+    "git": "0.0.1",
     "pino": "^10.3.1",
     "resources": "0.0.1",
     "runtime": "0.0.1",
     "socket.io": "^4.8.3",
+    "terminal": "0.0.1",
     "tslib": "^2.3.0",
+    "usage": "0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

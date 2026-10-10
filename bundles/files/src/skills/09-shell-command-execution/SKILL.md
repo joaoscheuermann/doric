@@ -3,6 +3,7 @@ name: shell-command-execution
 description: 'Runs bounded, non-interactive shell commands and interprets compact terminal results correctly. Use for builds, tests, formatters, package scripts, version control inspection, and local transformations.'
 allowed-tools:
   - terminal
+order: 900
 ---
 
 # Shell Command Execution

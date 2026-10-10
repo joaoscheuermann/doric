@@ -794,9 +794,9 @@ export const platformContracts = Object.freeze({
       get: { input: noInput, output: z.record(z.string(), z.string()) },
     },
   },
-  // D9-6 (transitional, stage 9): the client form forwards to main.
+  // WP-10N: desktopMain only again; the notifications bundle decides there.
   'doric.notifications/v1': {
-    environments: ['desktopMain', 'client'],
+    environments: ['desktopMain'],
     methods: { show: { input: notificationRequestSchema, output: z.void() } },
   },
   'doric.elements/v1': {

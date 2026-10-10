@@ -153,6 +153,14 @@ export const threadsService = ({
       ...methods.usage,
       execute: (id) => service.threads.usage(id),
     }),
+    enqueueTerminalResult: defineMethod({
+      ...methods.enqueueTerminalResult,
+      execute: (input) => service.threads.terminalResult(input),
+    }),
+    failTerminalResult: defineMethod({
+      ...methods.failTerminalResult,
+      execute: ({ threadId }) => service.threads.failTerminalResult(threadId),
+    }),
     watchThread: defineMethod({
       ...methods.watchThread,
       execute: ([input, listener]) => watches.thread(input, listener),

@@ -5,6 +5,7 @@ allowed-tools:
   - terminal
   - grep
   - find
+order: 1100
 ---
 
 # Change Validation

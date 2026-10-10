@@ -1,13 +1,14 @@
 import type {
   Project,
   RuntimeListener,
-  Terminal,
-  TerminalOutput,
   Thread,
   ThreadEvent,
 } from 'runtime/contracts';
 import type { Server, Socket } from 'socket.io';
+import type { TerminalOutput, TerminalSession } from 'terminal/contracts';
 import { z } from 'zod';
+
+import type { TerminalFeed } from './terminal-feed.js';
 
 const threadAuth = z.object({
   threadId: z.uuid(),
@@ -44,14 +45,16 @@ export interface WorkspaceReads {
   project(projectId: string): Promise<Project | undefined>;
   /** `runtime.threads/v1.projectThreads`. */
   projectThreads(projectId: string): Promise<readonly Thread[]>;
-  /** `runtime.terminals/v1.list`. */
-  terminals(projectId: string): Promise<readonly Terminal[]>;
+  /** `terminal/v1.list`. */
+  terminals(projectId: string): Promise<readonly TerminalSession[]>;
 }
 
 /** Subscribe before reading durable data, then deduplicate replay against live events. */
 export const createWorkspaceSocket = (
   io: Server,
   reads: WorkspaceReads,
+  /** The live terminal notices, from the `terminal` bundle (stage 10 §4). */
+  terminals: TerminalFeed,
 ): RuntimeListener => {
   const threadSubscriptions: Subscribers = new Map();
   const projectSubscriptions: Subscribers = new Map();
@@ -80,6 +83,7 @@ export const createWorkspaceSocket = (
   projectNamespace.on('connection', (socket) => {
     const { projectId } = projectAuth.parse(socket.handshake.auth);
     const subscription = subscribe(projectSubscriptions, projectId, socket, 0);
+    watchTerminals(projectId);
     void replayProject(socket, subscription, projectId);
   });
 
@@ -143,8 +147,45 @@ export const createWorkspaceSocket = (
       fail(socket);
     }
   }
+  // One terminal stream per subscribed Project, opened before its snapshot is
+  // read (subscribe first, then read) and closed with its last socket.
+  const terminalStreams = new Map<string, { dispose(): void }>();
+  const watchTerminals = (projectId: string) => {
+    if (terminalStreams.has(projectId)) return;
+    terminalStreams.set(
+      projectId,
+      terminals.watch(projectId, (item) => {
+        switch (item.kind) {
+          case 'updated':
+            publisher.terminalUpdated(item.terminal);
+            return;
+          case 'output':
+            publisher.terminalOutput(item.output);
+            return;
+          case 'removed':
+            publisher.terminalRemoved({
+              projectId: item.projectId,
+              threadId: item.threadId,
+              terminalId: item.terminalId,
+            });
+            return;
+          default:
+            // The stream's own snapshot: the socket reads its own.
+            return;
+        }
+      }),
+    );
+  };
+  projectNamespace.on('connection', (socket) => {
+    socket.on('disconnect', () => {
+      const { projectId } = projectAuth.parse(socket.handshake.auth);
+      if (projectSubscriptions.has(projectId)) return;
+      terminalStreams.get(projectId)?.dispose();
+      terminalStreams.delete(projectId);
+    });
+  });
   const publisher = {
-    terminalUpdated(value: Terminal) {
+    terminalUpdated(value: TerminalSession) {
       notify(projectSubscriptions, value.projectId, 'terminal:updated', value);
     },
     terminalOutput(value: TerminalOutput) {
@@ -188,7 +229,8 @@ export const createWorkspaceSocket = (
       notify(projectSubscriptions, projectId, 'project:deleted', { projectId });
     },
   };
-  // One runtime/v1 notice is one WorkspacePublisher callback of before.
+  // One runtime/v1 notice is one WorkspacePublisher callback of before;
+  // since the stage-10 host switch the terminal ones come from terminal/v1.
   return (notice) => {
     switch (notice.kind) {
       case 'event':
@@ -206,18 +248,8 @@ export const createWorkspaceSocket = (
       case 'projectDeleted':
         publisher.projectDeleted(notice.projectId);
         return;
-      case 'terminalUpdated':
-        publisher.terminalUpdated(notice.value);
-        return;
-      case 'terminalOutput':
-        publisher.terminalOutput(notice.value);
-        return;
-      case 'terminalRemoved':
-        publisher.terminalRemoved({
-          projectId: notice.projectId,
-          threadId: notice.threadId,
-          terminalId: notice.terminalId,
-        });
+      default:
+        // Terminal notices come from terminal/v1 (watchTerminals above).
         return;
     }
   };

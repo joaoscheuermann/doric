@@ -27,6 +27,16 @@ steering or closing children. Skills live in `src/skills/<name>/SKILL.md` and
 are registered in lexical folder order; `thread-delegation` is marked
 `alwaysAvailable` in its frontmatter.
 
+## Client part
+
+`src/client` draws another Thread's input in a conversation (a delegated
+instruction or result) as `<threads-delegated-turn>`, registered as chat's
+renderer for `chat.delegated-input/v1` when `chat.views/v1` is available. It
+shows `Instruction from:` or `Result from:`, the sender (its name from
+`layout.workspace/v1` when the tree knows it, as a link to its conversation,
+else its short id), `Status: …` and the text through chat's
+`<chat-readonly-markdown>`. An instruction starts open and a result closed.
+
 ## Change the bundle
 
 1. Update a tool in `src/host/tools/<name>.ts` or add a skill at

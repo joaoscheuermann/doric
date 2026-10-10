@@ -21,16 +21,21 @@ const whoami = (name: string) =>
 
 const registering = (
   id: string,
-  tools: readonly { readonly name: string; readonly always: boolean }[],
+  tools: readonly {
+    readonly name: string;
+    readonly always: boolean;
+    readonly order?: number;
+  }[],
   options: { readonly fail?: boolean } = {},
 ) =>
   probe(id, {
     requires: usesTools,
     activate: ({ services }) => {
-      for (const { name, always } of tools) {
-        services
-          .use(ToolsV1)
-          .register(whoami(name), { alwaysAvailable: always });
+      for (const { name, always, order } of tools) {
+        services.use(ToolsV1).register(whoami(name), {
+          alwaysAvailable: always,
+          ...(order === undefined ? {} : { order }),
+        });
       }
 
       if (options.fail === true) throw new Error(`${id} failed`);
@@ -64,6 +69,61 @@ void test('lists tools in bundle activation order, then registration order', asy
     ]);
   } finally {
     await host.close();
+  }
+});
+
+void test('order keys place tools globally across bundles; unordered tools follow in registration order', async () => {
+  // The Q1 shape: a later bundle's tool lands between an earlier bundle's.
+  const host = await boot([
+    await core(),
+    registering('files', [
+      { name: 'cwd', always: true, order: 100 },
+      { name: 'tree', always: true, order: 600 },
+      { name: 'unordered-f', always: true },
+    ]),
+    registering('terminal', [
+      { name: 'terminal', always: true, order: 500 },
+      { name: 'unordered-t', always: true },
+    ]),
+    registering('web', [{ name: 'web', always: true, order: 700 }]),
+  ]);
+
+  try {
+    const tools = host.platform.services.use(ToolsV1);
+
+    assert.deepEqual(
+      tools.list().map(({ tool, order }) => [tool.name, order]),
+      [
+        ['cwd', 100],
+        ['terminal', 500],
+        ['tree', 600],
+        ['web', 700],
+        ['unordered-f', undefined],
+        ['unordered-t', undefined],
+      ],
+    );
+    assert.deepEqual(
+      (await tools.catalog()).map(({ name }) => name),
+      ['cwd', 'terminal', 'tree', 'web', 'unordered-f', 'unordered-t'],
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('an order key that is not a positive integer is refused', async () => {
+  for (const order of [0, -5, 2.5]) {
+    const host = await boot([
+      await core(),
+      registering('alpha', [{ name: 'a-one', always: true, order }]),
+    ]);
+
+    try {
+      assert.equal(states(host.platform).alpha, 'quarantined');
+      assert.deepEqual(host.platform.services.use(ToolsV1).list(), []);
+    } finally {
+      await host.close();
+    }
   }
 });
 

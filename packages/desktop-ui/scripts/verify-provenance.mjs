@@ -45,6 +45,14 @@ const patches = {
       'export { Toaster };',
     ],
   ],
+  // WP-10N: `SidebarScope`, the context alone for another bundle's element.
+  'components/sidebar.tsx': [
+    [
+      "/**\n * The sidebar context alone, with no wrapper element and no shortcut: for a\n * bundle element that draws sidebar rows inside another bundle's sidebar\n * (its own React root cannot see that provider). It reports the expanded,\n * non-mobile state the workspace sidebar always has where those rows show.\n */\nconst scopeValue: SidebarContextProps = {\n  state: 'expanded',\n  open: true,\n  setOpen: () => undefined,\n  openMobile: false,\n  setOpenMobile: () => undefined,\n  isMobile: false,\n  toggleSidebar: () => undefined,\n};\n\nfunction SidebarScope({ children }: { readonly children?: React.ReactNode }) {\n  const outer = React.useContext(SidebarContext);\n  return (\n    <SidebarContext.Provider value={outer ?? scopeValue}>\n      {children}\n    </SidebarContext.Provider>\n  );\n}\n\n",
+      '',
+    ],
+    ['  SidebarRail,\n  SidebarScope,', '  SidebarRail,'],
+  ],
 };
 
 /** A vendored file's text as the renderer wrote it. */

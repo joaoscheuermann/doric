@@ -5,6 +5,8 @@ export interface KindEntry {
   readonly api: ModelsProvider;
   readonly kind: ModelKindDescriptor;
   readonly advertised: boolean;
+  /** Whether its providers report context capacity (`catalogCapacity()`). */
+  readonly catalogCapacity: boolean;
 }
 
 interface Slot {
@@ -20,6 +22,18 @@ export interface KindRegistry {
   /** The first registered kind with this id, advertised or not. */
   find(id: string): Promise<KindEntry | undefined>;
 }
+
+/**
+ * A record's `catalogCapacity()` (models.provider/v1 1.1.0); a provider that
+ * fails to answer reports none rather than losing its kind.
+ */
+const capacityOf = async (api: ModelsProvider): Promise<boolean> => {
+  try {
+    return (await api.catalogCapacity()) === true;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * The `models.provider/v1` records in registration order. Each record's
@@ -41,8 +55,13 @@ export const createKindRegistry = (
     add: (api) => {
       const slot: Slot = {
         api,
-        read: Promise.all([api.kind(), api.advertised()]).then(
-          ([kind, advertised]) => ({ api, kind, advertised }),
+        read: Promise.all([api.kind(), api.advertised(), capacityOf(api)]).then(
+          ([kind, advertised, catalogCapacity]) => ({
+            api,
+            kind,
+            advertised,
+            catalogCapacity,
+          }),
           () => undefined,
         ),
       };

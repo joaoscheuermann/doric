@@ -19,6 +19,18 @@
       "path": "../resources"
     },
     {
+      "path": "../files"
+    },
+    {
+      "path": "../git"
+    },
+    {
+      "path": "../terminal"
+    },
+    {
+      "path": "../usage"
+    },
+    {
       "path": "../../packages/bundle"
     },
     {

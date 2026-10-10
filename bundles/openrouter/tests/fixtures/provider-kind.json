@@ -1,0 +1,45 @@
+{
+  "id": "openrouter",
+  "label": "OpenRouter",
+  "description": "OpenRouter Chat Completions with curated model profiles, live capability discovery, and structured-output repair.",
+  "fields": [
+    {
+      "key": "endpoint",
+      "label": "Endpoint",
+      "kind": "url",
+      "required": false,
+      "advanced": true,
+      "description": "Overrides the base URL requests are sent to.",
+      "placeholder": "https://openrouter.ai/api/v1"
+    },
+    {
+      "key": "token",
+      "label": "Token",
+      "kind": "secret",
+      "required": true,
+      "description": "Names the stored API_TOKEN credential this provider authenticates with."
+    },
+    {
+      "key": "maxStructuredOutputRepairs",
+      "label": "Structured output repairs",
+      "kind": "number",
+      "required": false,
+      "advanced": true,
+      "description": "How many corrected attempts a rejected structured response gets.",
+      "placeholder": "2"
+    },
+    {
+      "key": "modelsUrl",
+      "label": "Models URL",
+      "kind": "url",
+      "required": false,
+      "advanced": true,
+      "description": "Where this provider lists the models it serves and what each one accepts.",
+      "placeholder": "https://openrouter.ai/api/v1/models"
+    }
+  ],
+  "lists": [
+    "models",
+    "reasonings"
+  ]
+}

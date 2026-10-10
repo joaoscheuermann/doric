@@ -2,16 +2,16 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "chat",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "contracts": [
     {
       "id": "chat.hooks/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "hooks",
       "environment": "client",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/chat.hooks/v1",
@@ -84,6 +84,10 @@
             },
             "required": ["projectId"],
             "additionalProperties": false,
+            "x-doric-hook-kind": "observe"
+          },
+          "onThreadUpdateHook.input": {
+            "x-doric-local": true,
             "x-doric-hook-kind": "observe"
           },
           "onUnmountHook.input": {

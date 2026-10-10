@@ -1,0 +1,122 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "resources",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "resources/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/resources/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "host.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "host.output": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "cpuCount": {
+                "type": "number"
+              },
+              "cpuPercent": {
+                "type": "number"
+              },
+              "loadAverage": {
+                "type": "number"
+              },
+              "memoryTotalBytes": {
+                "type": "number"
+              },
+              "memoryUsedBytes": {
+                "type": "number"
+              },
+              "uptimeSeconds": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "at",
+              "cpuCount",
+              "memoryTotalBytes",
+              "memoryUsedBytes",
+              "uptimeSeconds"
+            ],
+            "additionalProperties": false
+          },
+          "project.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "project.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "value": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": ["ready", "unavailable"]
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "cpuPercent": {
+                        "type": "number"
+                      },
+                      "cpuCount": {
+                        "type": "number"
+                      },
+                      "memoryUsedBytes": {
+                        "type": "number"
+                      },
+                      "memoryLimitBytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["status", "at"],
+                    "additionalProperties": {}
+                  }
+                },
+                "required": ["status", "value"],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "unavailable", "expired", "missing"]
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

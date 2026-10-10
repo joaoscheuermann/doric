@@ -22,7 +22,13 @@
       "path": "../../packages/tool"
     },
     {
-      "path": "../models-adapter"
+      "path": "../codex"
+    },
+    {
+      "path": "../openai"
+    },
+    {
+      "path": "../openrouter"
     },
     {
       "path": "../../packages/llms"

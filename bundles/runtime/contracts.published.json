@@ -2,7 +2,7 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "runtime",
-    "version": "1.2.0"
+    "version": "2.0.0"
   },
   "contracts": [
     {
@@ -726,7 +726,7 @@
     },
     {
       "id": "runtime.hooks/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "hooks",
       "environment": "host",
       "cardinality": "one",
@@ -755,6 +755,23 @@
               }
             },
             "required": ["projectId"],
+            "additionalProperties": false,
+            "x-doric-hook-kind": "observe"
+          },
+          "onThreadsClosingHook.input": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string"
+              },
+              "threadIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["projectId", "threadIds"],
             "additionalProperties": false,
             "x-doric-hook-kind": "observe"
           }
@@ -1859,7 +1876,7 @@
     },
     {
       "id": "runtime.threads/v1",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -2084,6 +2101,26 @@
               }
             ]
           },
+          "enqueueTerminalResult.input": {
+            "type": "object",
+            "properties": {
+              "threadId": {
+                "type": "string"
+              },
+              "promptId": {
+                "type": "string"
+              },
+              "terminalId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["threadId", "promptId", "terminalId", "text"],
+            "additionalProperties": false
+          },
+          "enqueueTerminalResult.output": {},
           "events.input": {
             "type": "array",
             "prefixItems": [
@@ -2147,6 +2184,17 @@
             "required": ["events"],
             "additionalProperties": {}
           },
+          "failTerminalResult.input": {
+            "type": "object",
+            "properties": {
+              "threadId": {
+                "type": "string"
+              }
+            },
+            "required": ["threadId"],
+            "additionalProperties": false
+          },
+          "failTerminalResult.output": {},
           "get.input": {
             "type": "string"
           },
@@ -4677,11 +4725,11 @@
     },
     {
       "id": "runtime.workspace/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/runtime.workspace/v1",
@@ -4727,17 +4775,183 @@
                 "additionalProperties": {}
               }
             ]
+          },
+          "withThread.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "exclusive": {
+                    "type": "boolean"
+                  },
+                  "resume": {
+                    "type": "boolean"
+                  },
+                  "refreshHint": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["exclusive"],
+                "additionalProperties": false
+              },
+              {
+                "x-doric-local": "callback"
+              }
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "withThread.output": {
+            "x-doric-local": "object"
+          }
+        }
+      }
+    },
+    {
+      "id": "runtime.usage/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/runtime.usage/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "read.input": {
+            "type": "string"
+          },
+          "read.output": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "providerId": {
+                    "type": "string"
+                  },
+                  "contextWindowSource": {
+                    "type": "string",
+                    "const": "catalog"
+                  },
+                  "contextWindow": {
+                    "type": "number"
+                  },
+                  "inputTokens": {
+                    "type": "number"
+                  }
+                },
+                "required": ["model"],
+                "additionalProperties": {}
+              },
+              "total": {
+                "type": "object",
+                "properties": {
+                  "calls": {
+                    "type": "number"
+                  },
+                  "unpricedCalls": {
+                    "type": "number"
+                  },
+                  "cost": {
+                    "type": "number"
+                  },
+                  "inputTokens": {
+                    "type": "number"
+                  },
+                  "outputTokens": {
+                    "type": "number"
+                  },
+                  "cachedInputTokens": {
+                    "type": "number"
+                  },
+                  "reasoningTokens": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "calls",
+                  "unpricedCalls",
+                  "cost",
+                  "inputTokens",
+                  "outputTokens",
+                  "cachedInputTokens",
+                  "reasoningTokens"
+                ],
+                "additionalProperties": {}
+              },
+              "threads": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "calls": {
+                      "type": "number"
+                    },
+                    "unpricedCalls": {
+                      "type": "number"
+                    },
+                    "cost": {
+                      "type": "number"
+                    },
+                    "inputTokens": {
+                      "type": "number"
+                    },
+                    "outputTokens": {
+                      "type": "number"
+                    },
+                    "cachedInputTokens": {
+                      "type": "number"
+                    },
+                    "reasoningTokens": {
+                      "type": "number"
+                    },
+                    "threadId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "parentThreadId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "calls",
+                    "unpricedCalls",
+                    "cost",
+                    "inputTokens",
+                    "outputTokens",
+                    "cachedInputTokens",
+                    "reasoningTokens",
+                    "threadId",
+                    "name"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "required": ["total", "threads"],
+            "additionalProperties": {}
           }
         }
       }
     },
     {
       "id": "runtime.lease/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/runtime.lease/v1",
@@ -5705,6 +5919,12 @@
               }
             }
           },
+          "withLease.input": {
+            "x-doric-local": "callback"
+          },
+          "withLease.output": {
+            "x-doric-local": "object"
+          },
           "writeFile.input": {
             "type": "array",
             "prefixItems": [
@@ -6224,94 +6444,6 @@
           },
           "watchProject.output": {
             "x-doric-local": "disposable"
-          }
-        }
-      }
-    },
-    {
-      "id": "terminal/v1",
-      "version": "1.0.0",
-      "kind": "service",
-      "environment": "host",
-      "cardinality": "one",
-      "local": false,
-      "schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "doric:contract/terminal/v1",
-        "x-doric-kind": "service",
-        "$defs": {
-          "run.input": {
-            "type": "object",
-            "properties": {
-              "command": {
-                "type": "string"
-              },
-              "cwd": {
-                "type": "string"
-              },
-              "timeoutMs": {
-                "type": "number"
-              },
-              "background": {
-                "type": "boolean"
-              },
-              "pty": {
-                "type": "boolean"
-              }
-            },
-            "required": ["command", "cwd", "timeoutMs"],
-            "additionalProperties": false
-          },
-          "run.output": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "terminalId": {
-                    "type": "string"
-                  },
-                  "background": {
-                    "type": "boolean",
-                    "const": true
-                  }
-                },
-                "required": ["terminalId", "background"],
-                "additionalProperties": {}
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "terminalId": {
-                    "type": "string"
-                  },
-                  "stdout": {
-                    "type": "string"
-                  },
-                  "stderr": {
-                    "type": "string"
-                  },
-                  "exitCode": {
-                    "type": "number"
-                  },
-                  "durationMs": {
-                    "type": "number"
-                  },
-                  "reason": {
-                    "type": "string",
-                    "enum": ["exited", "timeout", "terminated", "failed"]
-                  }
-                },
-                "required": [
-                  "terminalId",
-                  "stdout",
-                  "stderr",
-                  "exitCode",
-                  "durationMs",
-                  "reason"
-                ],
-                "additionalProperties": {}
-              }
-            ]
           }
         }
       }

@@ -4,6 +4,7 @@ description: 'Maps an unfamiliar workspace and locates plausible files or direct
 allowed-tools:
   - tree
   - find
+order: 200
 ---
 
 # Workspace Discovery

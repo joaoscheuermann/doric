@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { RuntimeTerminals } from 'runtime/contracts';
+import type { TerminalService } from 'terminal/contracts';
 import { z } from 'zod';
 
 import { sendError } from '../errors.js';
@@ -10,8 +10,11 @@ const size = z
     rows: z.number().int().min(1).max(1000),
   })
   .strict();
-/** Ephemeral terminal data is never cached or stored in conversation events. */
-export const createTerminalsRouter = (terminals: RuntimeTerminals): Router => {
+/**
+ * Ephemeral terminal data is never cached or stored in conversation events.
+ * The sessions are the `terminal` bundle's (`terminal/v1` 1.1.0, stage 10 §4).
+ */
+export const createTerminalsRouter = (terminals: TerminalService): Router => {
   const router = Router();
   router.use((_request, response, next) => {
     response.set('Cache-Control', 'no-store');
@@ -31,8 +34,7 @@ export const createTerminalsRouter = (terminals: RuntimeTerminals): Router => {
       );
       return;
     }
-    const terminal = await terminals.create({
-      threadId: request.params.id,
+    const terminal = await terminals.create(request.params.id, {
       ...(input.data.cols === undefined ? {} : { cols: input.data.cols }),
       ...(input.data.rows === undefined ? {} : { rows: input.data.rows }),
     });
@@ -59,10 +61,7 @@ export const createTerminalsRouter = (terminals: RuntimeTerminals): Router => {
       sendError(response, 422, 'invalid_cursor', 'Invalid output cursor.');
       return;
     }
-    const result = await terminals.snapshot({
-      id: request.params.id,
-      after: after.data,
-    });
+    const result = await terminals.snapshot(request.params.id, after.data);
     if (result === undefined) {
       sendError(
         response,
@@ -83,9 +82,7 @@ export const createTerminalsRouter = (terminals: RuntimeTerminals): Router => {
       sendError(response, 422, 'invalid_input', 'Invalid terminal input.');
       return;
     }
-    if (
-      !(await terminals.input({ id: request.params.id, data: input.data.data }))
-    ) {
+    if (!(await terminals.input(request.params.id, input.data.data))) {
       sendError(
         response,
         404,
@@ -103,11 +100,11 @@ export const createTerminalsRouter = (terminals: RuntimeTerminals): Router => {
       return;
     }
     if (
-      !(await terminals.resize({
-        id: request.params.id,
-        cols: input.data.cols,
-        rows: input.data.rows,
-      }))
+      !(await terminals.resize(
+        request.params.id,
+        input.data.cols,
+        input.data.rows,
+      ))
     ) {
       sendError(
         response,

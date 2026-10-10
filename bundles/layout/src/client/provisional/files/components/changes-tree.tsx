@@ -6,21 +6,21 @@ import {
   SidebarMenuSub,
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
-import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
-
 import {
+  ChangeCounts,
+  FileTree,
   indentation,
   rowInteraction,
   treeClassName,
-} from '../../../components/molecules/tree-guides.js';
+} from 'desktop-ui/workspace';
+import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+
 import {
   type ChangeRepository,
   changeDirectoryKey,
   changesTreeView,
 } from '../domain/change-tree.js';
 import type { ProjectChange } from '../domain/project-files.js';
-import { ChangeCounts } from './change-counts.js';
-import { FileTree } from './file-tree.js';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {

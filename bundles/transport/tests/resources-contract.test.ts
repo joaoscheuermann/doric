@@ -2,91 +2,100 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
+import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import express from 'express';
 import { pino } from 'pino';
-import { ResourcesV1 } from 'resources/contracts';
+import {
+  type HostResources,
+  ResourcesV1,
+  resourcesMethods,
+} from 'resources/contracts';
 import { Server as SocketServer } from 'socket.io';
 
-import { createTransport, type HostResources } from '../src/kernel.js';
+import { createTransport, transportRequires } from '../src/kernel.js';
 
 /*
- * resources/v1 (stage 9 WP-H): the kernel-embedded transport provides the
- * `GET /resources` reading as a contract, so a desktop window reads the host
- * machine over the bridge. The route and the contract share one reader.
+ * The transport's own contracts after the stage-10 host switch: it provides
+ * none (`resources/v1` is the `resources` bundle's), and the feature
+ * contracts its routes call stay out of its `requires`, so a composition
+ * without one of those bundles, or with one disabled, keeps the structural
+ * transport. The routes reach them through the `features` services the
+ * kernel passes, the platform's, as the desktop bridge does.
  */
 
-const reading = (cpuPercent?: number): HostResources => ({
+const reading: HostResources = {
   at: '2026-01-01T00:00:00.000Z',
   cpuCount: 8,
-  ...(cpuPercent === undefined ? {} : { cpuPercent }),
   loadAverage: 1.5,
   memoryTotalBytes: 4096,
   memoryUsedBytes: 2048,
   uptimeSeconds: 3600,
-});
-
-const activateTransport = async (read: () => HostResources) => {
-  const app = express();
-  const server = createServer(app);
-  const io = new SocketServer(server);
-  const bundle = createTransport({
-    app,
-    io,
-    logger: pino({ enabled: false }),
-    readHostResources: read,
-  });
-  const services = createTestServices({ bundle: { id: 'transport' } });
-  const cleanup = await bundle.host?.activate({ services: services.services });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  assert.ok(address !== null && typeof address === 'object');
-  return {
-    bundle,
-    resources: services.services.use(ResourcesV1),
-    route: async () =>
-      (
-        await fetch(`http://127.0.0.1:${String(address.port)}/resources`)
-      ).json(),
-    close: async () => {
-      if (typeof cleanup === 'function') await cleanup();
-      await services.dispose();
-      await io.close();
-    },
-  };
 };
 
-void test('the transport declares resources/v1 as its only, remote-callable contract', () => {
+void test('the transport provides no contract and requires no feature contract', () => {
   const bundle = createTransport({
     app: express(),
     io: new SocketServer(),
     logger: pino({ enabled: false }),
   });
-  assert.deepEqual(bundle.manifest.provides, ['resources/v1@1.0.0']);
-  assert.deepEqual(bundle.descriptor.contracts, [
-    {
-      id: 'resources/v1',
-      version: '1.0.0',
-      kind: 'service',
-      environment: 'host',
-      cardinality: 'one',
-      local: false,
-      schema: 'schemas/resources/v1.json',
-    },
-  ]);
+  assert.deepEqual(bundle.manifest.provides, []);
+  assert.deepEqual(bundle.descriptor.contracts, []);
+  for (const feature of [
+    'files/v1',
+    'git.commands/v1',
+    'usage/v1',
+    'resources/v1',
+    'terminal/v1',
+  ])
+    assert.ok(
+      !transportRequires.some((entry) => entry.startsWith(`${feature}@`)),
+      feature,
+    );
 });
 
-void test('resources/v1.host() answers what GET /resources answers, from one CPU sample', async (t) => {
-  const readings = [reading(), reading(25)];
-  let reads = 0;
-  const host = await activateTransport(() => {
-    const value = readings[reads] ?? reading(50);
-    reads += 1;
-    return value;
+void test('the feature routes call the services the kernel passes as features', async (t) => {
+  const app = express();
+  const server = createServer(app);
+  const io = new SocketServer(server);
+  // The platform side, the only one that provides resources/v1 here.
+  const platform = createTestServices({
+    bundle: { id: 'platform' },
+    provide: [
+      defineService(ResourcesV1.id, {
+        host: defineMethod({
+          ...resourcesMethods.host,
+          execute: async () => reading,
+        }),
+        project: defineMethod({
+          ...resourcesMethods.project,
+          execute: async () => ({ status: 'pending' as const }),
+        }),
+      }),
+    ],
   });
-  t.after(host.close);
-  // The first reading of the process has no CPU percent, whoever asks first.
-  assert.deepEqual(await host.resources.host(), reading());
-  assert.deepEqual(await host.route(), reading(25));
-  assert.equal(reads, 2);
+  const own = createTestServices({ bundle: { id: 'transport' } });
+  const bundle = createTransport({
+    app,
+    io,
+    logger: pino({ enabled: false }),
+    features: () => platform.services,
+  });
+  const cleanup = await bundle.host?.activate({ services: own.services });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === 'object');
+  t.after(async () => {
+    if (typeof cleanup === 'function') await cleanup();
+    await own.dispose();
+    await platform.dispose();
+    await io.close();
+  });
+
+  const response = await fetch(
+    `http://127.0.0.1:${String(address.port)}/resources`,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), reading);
 });

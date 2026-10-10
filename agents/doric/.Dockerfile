@@ -52,8 +52,14 @@ RUN npm ci --ignore-scripts \
       bundles/runtime/tsconfig.json \
       bundles/terminal/tsconfig.json \
       bundles/direct/tsconfig.json \
-      bundles/models-adapter/tsconfig.json \
-      bundles/sandbox-adapter/tsconfig.json \
+      bundles/openai/tsconfig.json \
+      bundles/openrouter/tsconfig.json \
+      bundles/codex/tsconfig.json \
+      bundles/docker/tsconfig.json \
+      bundles/firecracker/tsconfig.json \
+      bundles/web/tsconfig.json \
+      bundles/usage/tsconfig.json \
+      bundles/notifications/tsconfig.json \
       bundles/transport/tsconfig.json \
       bundles/resources/tsconfig.json \
       bundles/layout/tsconfig.json \
@@ -62,12 +68,14 @@ RUN npm ci --ignore-scripts \
       --force \
  && npx tsc -p bundles/settings/tsconfig.json \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for bundle in postgres core files git threads runtime direct models-adapter sandbox-adapter layout settings chat history; do \
+ && for bundle in postgres core files git threads runtime direct openai openrouter codex docker firecracker web terminal usage resources notifications layout settings chat history; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
       bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
-      bundles/runtime bundles/direct bundles/models-adapter bundles/sandbox-adapter \
+      bundles/runtime bundles/direct bundles/openai bundles/openrouter \
+      bundles/codex bundles/docker bundles/firecracker bundles/web \
+      bundles/terminal bundles/usage bundles/resources bundles/notifications \
       bundles/layout bundles/settings bundles/chat bundles/history \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \

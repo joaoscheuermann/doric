@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
+  type Composition,
   compositionOverridesPath,
   type EmbeddedBundle,
   type KernelPlatform,
@@ -37,6 +38,12 @@ export class BundleRecoveryError extends Error {
 export interface StartBundlesOptions {
   readonly bundlesPath: string;
   readonly compositionPath: string;
+  /**
+   * The composition to boot in place of the file at `compositionPath`, such
+   * as the shipped one with the sandbox bundle `DORIC_SANDBOX_PROVIDER` names
+   * (D10-9); its overrides still live beside `compositionPath`.
+   */
+  readonly composition?: Composition | { readonly path: string };
   /**
    * The composition overrides the splash recovery actions persist (HR-6);
    * default `composition.overrides.json` beside the composition.
@@ -157,6 +164,7 @@ export const assertStructural = async (
 export const startBundles = async ({
   bundlesPath,
   compositionPath,
+  composition = { path: compositionPath },
   compositionOverridesPath: overridesPath = compositionOverridesPath(
     compositionPath,
   ),
@@ -167,7 +175,7 @@ export const startBundles = async ({
 }: StartBundlesOptions): Promise<Bundles> => {
   const platform = await startKernel({
     bundlesPath,
-    composition: { path: compositionPath },
+    composition,
     compositionOverrides: overridesPath,
     embedded,
     log: platformLog(logger.child({ component: 'platform' })),

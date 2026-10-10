@@ -263,13 +263,26 @@ describe('the desktop-ui stylesheet', () => {
   });
 
   test('carries the faces, the tokens, the chrome bar rule and component utilities', () => {
-    assert.equal(theme.match(/@font-face/g)?.length, 12);
+    // The twelve app faces, and the codicon face Monaco's stylesheet brings.
+    assert.equal(theme.match(/@font-face/g)?.length, 13);
+    assert.match(theme, /font-family:\s*["']?codicon/);
     assert.match(
       theme,
       /\.chrome-bar\s*\{\s*height:\s*var\(--doric-titlebar-height\)/,
     );
     assert.match(theme, /--doric-safe-right/);
     assert.match(theme, /\.bg-secondary\b/);
+  });
+
+  test('carries the editor stylesheet and serves its worker beside the files', () => {
+    assert.match(theme, /\.monaco-editor\b/);
+    assert.ok(existsSync(join(folder, 'workers', 'editor.worker.js')));
+    assert.equal(
+      readdirSync(folder)
+        .filter((name) => name.endsWith('.css'))
+        .join(),
+      'theme.css',
+    );
   });
 
   test('ships the tokens and every license next to the files', () => {

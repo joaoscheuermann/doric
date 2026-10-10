@@ -8,8 +8,8 @@ import {
   createDockerClient,
   type DockerClient,
   discardWorkspace,
-} from 'docker';
-import { createFirecrackerClient } from 'firecracker';
+} from 'docker-sandbox';
+import { createFirecrackerClient } from 'firecracker-sandbox';
 import { SandboxV1, sandboxMethods } from 'runtime/contracts';
 import { createSandbox, type SandboxProvider } from 'sandbox';
 import { createSandpool, type Sandpool } from 'sandpool';

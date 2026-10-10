@@ -5,6 +5,7 @@ allowed-tools:
   - grep
   - terminal
   - web
+order: 1300
 ---
 
 # Evidence-Grounded Synthesis

@@ -7,7 +7,7 @@
       "path": "./packages/jsonl"
     },
     {
-      "path": "./packages/docker"
+      "path": "./packages/desktop-reads"
     },
     {
       "path": "./packages/sandbox"
@@ -50,9 +50,6 @@
     },
     {
       "path": "./packages/sandpool"
-    },
-    {
-      "path": "./packages/firecracker"
     },
     {
       "path": "./bundles/git"
@@ -112,6 +109,12 @@
       "path": "./bundles/history"
     },
     {
+      "path": "./bundles/notifications"
+    },
+    {
+      "path": "./bundles/usage"
+    },
+    {
       "path": "./bundles/resources"
     },
     {
@@ -119,6 +122,30 @@
     },
     {
       "path": "./bundles/layout"
+    },
+    {
+      "path": "./packages/firecracker-sandbox"
+    },
+    {
+      "path": "./packages/docker-sandbox"
+    },
+    {
+      "path": "./bundles/openrouter"
+    },
+    {
+      "path": "./bundles/openai"
+    },
+    {
+      "path": "./bundles/codex"
+    },
+    {
+      "path": "./bundles/web"
+    },
+    {
+      "path": "./bundles/firecracker"
+    },
+    {
+      "path": "./bundles/docker"
     }
   ]
 }

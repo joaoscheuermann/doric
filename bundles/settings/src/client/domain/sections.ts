@@ -9,12 +9,7 @@ export type SectionIconName =
   | 'key-round';
 
 export interface SettingsSectionEntry {
-  readonly id:
-    | 'providers'
-    | 'execution'
-    | 'tools'
-    | 'versioning'
-    | 'credentials';
+  readonly id: 'providers' | 'execution' | 'tools' | 'credentials';
   readonly label: string;
   readonly icon: SectionIconName;
   readonly order: number;
@@ -52,14 +47,7 @@ export const sections = [
     description:
       'Configuration for the tools the loaded bundles expose, each describing the fields it reads.',
   },
-  {
-    id: 'versioning',
-    label: 'Versioning',
-    icon: 'git-branch',
-    order: 40,
-    description:
-      'Which stored credentials the agent commits and pushes with inside a Project.',
-  },
+  // Versioning (order 40) is the git bundle's `/settings/git` section (WP-10N).
   {
     id: 'credentials',
     label: 'Credentials',

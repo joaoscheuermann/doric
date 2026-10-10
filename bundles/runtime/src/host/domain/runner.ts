@@ -64,6 +64,14 @@ export interface RunnerContext {
     readonly promptId: string;
   }) => Executor;
   readonly checkStorage?: () => Promise<void>;
+  /**
+   * runtime.hooks/v1 onThreadsClosingHook, awaited where the terminals of
+   * closing Threads close; it resolves even when a handler fails.
+   */
+  readonly threadsClosing?: (input: {
+    readonly projectId: string;
+    readonly threadIds: readonly string[];
+  }) => Promise<void>;
   readonly exclusive: <Value>(
     id: string,
     operation: () => Promise<Value>,
@@ -256,6 +264,53 @@ export const createThreadRunner = (context: RunnerContext) => {
    * tools that reach the runtime contracts (design 57 §4.4, §4.10). The
    * binding is released once the run settled, as the adapter's was.
    */
+  /**
+   * Logs a background terminal result that could not be delivered and closes
+   * its Thread, as the runner always did (runtime.threads/v1 1.2.0).
+   */
+  const failTerminalResult = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+  ) => {
+    context.log.error('Terminal result delivery failed', {
+      threadId: thread.thread.id,
+    });
+    await exclusive(project.project.id, () =>
+      close(project, [thread], 'terminal_result_failed'),
+    );
+  };
+  /**
+   * Enqueues a background terminal's result as a terminal-sourced prompt,
+   * under the Project lock, unless the Project or the Thread is closing; a
+   * failed enqueue is a failed delivery.
+   */
+  const terminalResult = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    input: {
+      readonly terminalId: string;
+      readonly promptId: string;
+      readonly text: string;
+    },
+  ): Promise<void> =>
+    exclusive(project.project.id, async () => {
+      if (project.closing || thread.closing) return;
+      await enqueue(
+        project,
+        thread,
+        String(eventJson(input.text, await context.redactor.current())),
+        {
+          kind: 'terminal',
+          terminalId: input.terminalId,
+          promptId: input.promptId,
+        },
+      );
+    }).catch(() => failTerminalResult(project, thread));
+  /** runtime.hooks/v1 onThreadsClosingHook, awaited; it never fails a close. */
+  const threadsClosing = async (projectId: string, threadIds: string[]) => {
+    if (threadIds.length === 0) return;
+    await context.threadsClosing?.({ projectId, threadIds });
+  };
   const execute = async (
     project: ProjectRuntime,
     thread: ThreadRuntime,
@@ -388,33 +443,15 @@ export const createThreadRunner = (context: RunnerContext) => {
                     : { signal: active.controller.signal }),
                 });
                 if (!input.background) return started.result;
-                void started.result
-                  .then((result) =>
-                    exclusive(project.project.id, async () => {
-                      if (project.closing || thread.closing) return;
-                      const text = `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
-                      await enqueue(
-                        project,
-                        thread,
-                        String(
-                          eventJson(text, await context.redactor.current()),
-                        ),
-                        {
-                          kind: 'terminal',
-                          terminalId: result.terminalId,
-                          promptId: active.job.id,
-                        },
-                      );
+                void started.result.then(
+                  (result) =>
+                    terminalResult(project, thread, {
+                      terminalId: result.terminalId,
+                      promptId: active.job.id,
+                      text: `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`,
                     }),
-                  )
-                  .catch(async () => {
-                    context.log.error('Terminal result delivery failed', {
-                      threadId: thread.thread.id,
-                    });
-                    await exclusive(project.project.id, () =>
-                      close(project, [thread], 'terminal_result_failed'),
-                    );
-                  });
+                  () => failTerminalResult(project, thread),
+                );
                 return {
                   terminalId: started.terminal.id,
                   background: true as const,
@@ -805,6 +842,10 @@ export const createThreadRunner = (context: RunnerContext) => {
     );
     let bound: ReturnType<typeof setTimeout> | undefined;
     await Promise.all([
+      threadsClosing(
+        project.project.id,
+        targets.map(({ thread }) => thread.id),
+      ),
       context.terminals
         .close(targets.map(({ thread }) => thread.id))
         .catch(() => {
@@ -899,11 +940,14 @@ export const createThreadRunner = (context: RunnerContext) => {
         .then(async () => {
           // The aborted run settles here, writing its own pause before the
           // Thread is written back as ready.
-          await context.terminals.close([thread.thread.id]).catch(() => {
-            context.log.error('Terminal cleanup failed', {
-              threadId: thread.thread.id,
-            });
-          });
+          await Promise.all([
+            threadsClosing(project.project.id, [thread.thread.id]),
+            context.terminals.close([thread.thread.id]).catch(() => {
+              context.log.error('Terminal cleanup failed', {
+                threadId: thread.thread.id,
+              });
+            }),
+          ]);
           await task;
           await exclusive(project.project.id, () => state(thread, 'ready'));
         })
@@ -1191,5 +1235,9 @@ export const createThreadRunner = (context: RunnerContext) => {
     setCwd,
     resetCwd,
     git,
+    hint,
+    terminalResult,
+    failTerminalResult,
+    threadsClosing,
   };
 };

@@ -3,6 +3,7 @@ name: git-commit-preparation
 description: Prepares and creates a focused Git commit from verified changes. Use when repository changes must be reviewed, selectively staged, validated, committed, and confirmed without absorbing unrelated work.
 allowed-tools:
   - git
+order: 2200
 ---
 
 # Git Commit Preparation

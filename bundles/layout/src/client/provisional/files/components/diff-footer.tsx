@@ -1,4 +1,5 @@
 import { Button } from 'desktop-ui/button';
+import type { DiffControls } from 'desktop-ui/code';
 import { ToggleGroup, ToggleGroupItem } from 'desktop-ui/toggle-group';
 import {
   ArrowDownIcon,
@@ -6,8 +7,6 @@ import {
   Columns2Icon,
   Rows2Icon,
 } from 'lucide-react';
-
-import type { DiffControls } from './diff-editor.js';
 
 /** The path gives way to controls when the reading column is narrow. */
 export function DiffFooter({

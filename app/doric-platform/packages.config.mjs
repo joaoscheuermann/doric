@@ -58,6 +58,13 @@ export const desktopUi = {
   /** `fonts.css` names the faces relative to its source folder. */
   fontsUrlPrefix: '../../assets/fonts/',
   tokens: 'packages/desktop-ui/dist/tokens.json',
+  /** Module workers, each served at `file` inside the desktop-ui folder. */
+  workers: [
+    {
+      source: 'src/code/editor.worker.ts',
+      file: 'workers/editor.worker.js',
+    },
+  ],
 };
 
 export const schemas = 'packages/bundle/dist/schemas';

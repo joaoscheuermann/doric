@@ -1,0 +1,21 @@
+{
+  "name": "openrouter",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./host": {
+      "@org/source": "./src/host/index.ts",
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js",
+      "default": "./dist/host/index.js"
+    }
+  },
+  "dependencies": {
+    "bundle": "0.0.1",
+    "llms": "0.0.1",
+    "pino": "^10.3.1",
+    "tslib": "^2.3.0"
+  }
+}

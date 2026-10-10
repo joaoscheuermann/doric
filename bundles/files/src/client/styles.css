@@ -1,0 +1,20 @@
+/*
+ * The files bundle's utilities: the classes its elements use, over the
+ * platform theme, which the window loads once. No rules of its own.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities);
+@reference 'desktop-ui/tailwind.css';
+@source './';
+/*
+ * The shared components' classes too, so this sheet's utilities are always the
+ * whole sorted set the window uses (as the settings and chat sheets do).
+ */
+@source '../../../../packages/desktop-ui/src';
+/*
+ * WP-10N: and the stage-9 window bundles' classes, so a later sheet never
+ * re-emits a shared class (`inline-flex`) after their responsive variants
+ * (`md:hidden` in the settings window's bar).
+ */
+@source '../../../layout/src/client';
+@source '../../../chat/src/client';
+@source '../../../settings/src/client';

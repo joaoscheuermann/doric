@@ -380,6 +380,13 @@ const buildGroup = async (group) => {
     mainFields: group.kind === 'contracts' ? [] : ['browser', 'module', 'main'],
     jsx: 'automatic',
     plugins: [platformExternals, cjsEntry],
+    // Monaco's stylesheets name the codicon face; it ships beside the files.
+    ...(group.kind === 'desktop-ui'
+      ? {
+          loader: { '.ttf': 'file' },
+          assetNames: 'assets/[name]-[hash]',
+        }
+      : {}),
   });
   const emitted = new Set(
     Object.keys(result.metafile.outputs).map((path) =>
@@ -387,7 +394,76 @@ const buildGroup = async (group) => {
     ),
   );
   await copyLicenses(group, result.metafile);
+  if (group.kind === 'desktop-ui') {
+    await collectDesktopUiStyles(outdir, emitted, group.entries);
+    await buildDesktopUiWorkers(outdir);
+  }
   return emitted;
+};
+
+/**
+ * The CSS desktop-ui's JS imports (Monaco's, through `desktop-ui/code`). The
+ * split build emits it per chunk, overlapping, as files no window links; those
+ * are dropped, and one unsplit pass over every entry collects each stylesheet
+ * once, in import order, to be appended to `theme.css`, which every window
+ * loads once. The fonts it names are written beside the files.
+ */
+let desktopUiImportedCss = '';
+const collectDesktopUiStyles = async (outdir, emitted, entries) => {
+  for (const file of [...emitted].filter((name) => name.endsWith('.css'))) {
+    await rm(join(outdir, file), { force: true });
+    emitted.delete(file);
+  }
+  const result = await esbuild.build({
+    ...common,
+    splitting: false,
+    write: false,
+    metafile: false,
+    stdin: {
+      contents: entries
+        .map((entry) => `import ${JSON.stringify(entry.source)};`)
+        .join('\n'),
+      resolveDir: workspace,
+      loader: 'ts',
+    },
+    outdir,
+    entryNames: 'styles',
+    platform: 'browser',
+    mainFields: ['browser', 'module', 'main'],
+    jsx: 'automatic',
+    plugins: [platformExternals],
+    loader: { '.ttf': 'file' },
+    assetNames: 'assets/[name]-[hash]',
+  });
+  for (const file of result.outputFiles) {
+    if (file.path.endsWith('.css')) {
+      desktopUiImportedCss = file.text;
+    } else if (!file.path.endsWith('.js')) {
+      await mkdir(dirname(file.path), { recursive: true });
+      await writeFile(file.path, file.contents);
+    }
+  }
+};
+
+/** Module workers desktop-ui starts by URL: self-contained, nothing external. */
+const buildDesktopUiWorkers = async (outdir) => {
+  for (const worker of desktopUi.workers) {
+    await esbuild.build({
+      bundle: true,
+      format: 'esm',
+      write: true,
+      minify: mode === 'production',
+      legalComments: 'none',
+      logLevel: 'warning',
+      absWorkingDir: workspace,
+      target: 'es2022',
+      platform: 'browser',
+      conditions: [mode, 'module'],
+      define: { 'process.env.NODE_ENV': JSON.stringify(mode) },
+      entryPoints: [join(workspace, desktopUi.root, worker.source)],
+      outfile: join(outdir, worker.file),
+    });
+  }
 };
 
 const buildTheme = async () => {
@@ -406,9 +482,13 @@ const buildTheme = async () => {
         : [{ ...compiler.root, negated: false }]),
     ...compiler.sources,
   ];
-  const css = compiler
+  const tailwind = compiler
     .build(new Scanner({ sources }).scan())
     .replaceAll(desktopUi.fontsUrlPrefix, 'fonts/');
+  const css =
+    desktopUiImportedCss === ''
+      ? tailwind
+      : `${tailwind.replace(/\n*$/, '\n')}${desktopUiImportedCss}`;
   const target = join(platformOut, folder(desktopUi.package, PLATFORM_VERSION));
   await writeFile(join(target, 'theme.css'), css);
   await cp(join(workspace, desktopUi.fonts), join(target, 'fonts'), {

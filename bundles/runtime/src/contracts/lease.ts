@@ -1,4 +1,5 @@
-import { type CallArg, ref } from 'bundle/contracts';
+import { type CallArg, functionSchema, ref } from 'bundle/contracts';
+import type { Sandbox } from 'sandbox';
 import { z } from 'zod';
 
 import {
@@ -23,6 +24,7 @@ import {
   type ThreadGitResult,
   threadGitResultSchema,
 } from './model.js';
+import { LOCAL_KEY } from './runtime.js';
 
 /*
  * runtime.lease/v1: the sandbox operations the stage-1 tools use on the
@@ -78,6 +80,20 @@ export const leaseDescriptionSchema: z.ZodType<
   root: z.string(),
 });
 
+/**
+ * What a lease-dependent operation answers (1.1.0): the task's value, or why
+ * the Project's lease could not run it. `unavailable` also covers a Project
+ * whose closing started, or whose lease dropped, while the task ran.
+ */
+export type LeaseOutcome<T> =
+  | { readonly status: 'ready'; readonly value: T }
+  | {
+      readonly status: 'pending' | 'unavailable' | 'expired' | 'missing';
+    };
+
+/** The task `withLease` runs on the leased sandbox. */
+export type LeaseTask<T> = (sandbox: Sandbox) => Promise<T>;
+
 export interface RuntimeLease {
   /** The leased sandbox's identity and workspace root. */
   describe(call?: CallArg): Promise<LeaseDescription>;
@@ -112,11 +128,38 @@ export interface RuntimeLease {
     input: { readonly branch?: string; readonly cwd?: string },
     call?: CallArg,
   ): Promise<BranchResult>;
+  /**
+   * 1.1.0, local only: runs `task` on the sandbox the Project of
+   * `call.scope.projectId` holds now, never acquiring one. The outcome
+   * follows the lease reads above: `missing` (no Project), `expired` (a
+   * terminal Project without a runtime), `unavailable` (no runtime, closing,
+   * or closing or lease loss during the task) and `pending` (no lease yet).
+   */
+  withLease<T>(task: LeaseTask<T>, call?: CallArg): Promise<LeaseOutcome<T>>;
 }
 
 /** The refusal of a lease read whose call names neither Project nor Thread. */
 export const leaseScopeMessage =
   'runtime.lease/v1 needs a Project or Thread scope.';
+
+const isObject = (value: unknown): value is object =>
+  typeof value === 'object' && value !== null;
+
+/** A `withLease` answer; its value is whatever the local task returned. */
+export const leaseOutcomeSchema = z
+  .custom<LeaseOutcome<unknown>>(
+    (value) =>
+      isObject(value) &&
+      ['ready', 'pending', 'unavailable', 'expired', 'missing'].includes(
+        (value as { status?: unknown }).status as string,
+      ),
+    { message: 'Expected a lease outcome.' },
+  )
+  .meta({ [LOCAL_KEY]: 'object' });
+
+export const leaseTaskSchema = functionSchema<LeaseTask<unknown>>().meta({
+  [LOCAL_KEY]: 'callback',
+});
 
 const optionalPath = z.object({ path: z.string().optional() }).strict();
 
@@ -146,6 +189,7 @@ export const runtimeLeaseMethods = {
       .strict(),
     output: branchResultSchema,
   },
+  withLease: { input: leaseTaskSchema, output: leaseOutcomeSchema },
 } as const;
 
 export const RuntimeLeaseV1 = ref<RuntimeLease>('runtime.lease/v1');

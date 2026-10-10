@@ -10,7 +10,16 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/api/**/*.ts",
+    "src/client/domain/**/*.ts",
+    "src/client/changes/store.ts",
+    "src/client/commands.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [],
   "references": [
     {
       "path": "../../packages/bundle/tsconfig.lib.json"
@@ -25,7 +34,13 @@
       "path": "../../packages/host/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/desktop-reads/tsconfig.lib.json"
+    },
+    {
       "path": "../runtime"
+    },
+    {
+      "path": "../layout"
     }
   ]
 }

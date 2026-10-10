@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
 
-import type { Call, NotificationRequest } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
 import { ConnectionRelay } from '../src/connection/relay';
@@ -113,7 +113,6 @@ let workspace: WindowEntry;
 let window: ReturnType<typeof fakeContents>;
 let hostConnected: boolean;
 let relay: ConnectionRelay;
-let notified: NotificationRequest[];
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -154,7 +153,6 @@ beforeEach(() => {
   records = new ServiceDirectory();
   hostConnected = false;
   relay = new ConnectionRelay();
-  notified = [];
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -252,9 +250,6 @@ beforeEach(() => {
     dispatchCommand: async () => undefined,
     diagnostic: () => undefined,
     connection: relay,
-    notify: (request) => {
-      notified.push(request);
-    },
   });
 });
 
@@ -496,10 +491,10 @@ describe('desktop IPC dispatcher', () => {
     ]);
   });
 
-  test('a window notification reaches main with exactly a title and a body', async () => {
+  test('a window can no longer show a native notification itself (WP-10N)', async () => {
     await describeWindow();
 
-    const shown = await dispatcher.handle(event(window.contents), {
+    const refused = await dispatcher.handle(event(window.contents), {
       op: 'call',
       envelope: envelope({
         bundleId: null,
@@ -508,22 +503,7 @@ describe('desktop IPC dispatcher', () => {
         input: { title: 'Thread finished', body: 'Done.' },
       }),
     });
-    const refused = await dispatcher.handle(event(window.contents), {
-      op: 'call',
-      envelope: envelope({
-        id: 'w-2',
-        bundleId: null,
-        contract: 'doric.shell/v1',
-        method: 'notify',
-        input: { title: 'Thread finished' },
-      }),
-    });
 
-    assert.deepEqual(shown, { ok: true, output: undefined });
-    assert.equal(
-      (refused as { error?: { code: string } }).error?.code,
-      'invalid_input',
-    );
-    assert.deepEqual(notified, [{ title: 'Thread finished', body: 'Done.' }]);
+    assert.equal((refused as { ok: boolean }).ok, false);
   });
 });

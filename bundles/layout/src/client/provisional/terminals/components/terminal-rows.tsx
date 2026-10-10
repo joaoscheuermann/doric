@@ -1,12 +1,9 @@
 import { Button } from 'desktop-ui/button';
 import { SidebarMenuSubButton, SidebarMenuSubItem } from 'desktop-ui/sidebar';
+import { indentation, TreeGuides } from 'desktop-ui/workspace';
 import { SquareIcon, TerminalIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import {
-  indentation,
-  TreeGuides,
-} from '../../../components/molecules/tree-guides.js';
 import { type Terminal, terminalLabel } from '../domain/terminals.js';
 
 export function TerminalRows({

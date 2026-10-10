@@ -2,12 +2,12 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "models-adapter",
-    "version": "0.0.0"
+    "version": "0.1.0"
   },
   "contracts": [
     {
       "id": "models.provider/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "many",
@@ -109,6 +109,15 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "catalogCapacity.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "catalogCapacity.output": {
+            "type": "boolean"
           },
           "create.input": {
             "type": "object",

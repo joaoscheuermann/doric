@@ -1,6 +1,6 @@
 // The settings bundle's elements (design §6.2-§6.3). `<settings-page>` owns the
 // one React root of the settings window; `<settings-link>` (a
-// `settings.sections` region item) and the five section elements (the child
+// `settings.sections` region item) and the four section elements (the child
 // routes of `/settings`) are portal hosts that root renders into, so the nav,
 // the sections and the provider page share one draft and one save.
 
@@ -25,7 +25,6 @@ export const sectionIds = [
   'providers',
   'execution',
   'tools',
-  'versioning',
   'credentials',
 ] as const;
 
@@ -35,6 +34,5 @@ export const sectionHosts = {
   providers: portalHosts<Record<string, never>>([]),
   execution: portalHosts<Record<string, never>>([]),
   tools: portalHosts<Record<string, never>>([]),
-  versioning: portalHosts<Record<string, never>>([]),
   credentials: portalHosts<Record<string, never>>([]),
 } as const satisfies Record<SectionId, unknown>;

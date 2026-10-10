@@ -26,7 +26,6 @@ export {
   matchesChord,
   parseAccelerator,
 } from './keybindings.js';
-export { provideNotifications } from './notifications.js';
 export { provideClientPlatform, WindowDiagnostics } from './platform.js';
 export * from './protocol.js';
 export { insertBundleStyles } from './styles.js';

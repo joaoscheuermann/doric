@@ -4,11 +4,11 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import type { Composition } from 'bundle';
 import { SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
 import { Server as SocketServer } from 'socket.io';
-import { createTransport } from 'transport/kernel';
 
 import {
   assertStructural,
@@ -19,6 +19,8 @@ import {
   watchStructural,
 } from '../src/lib/bundles/boot.js';
 import { createHostConfig } from '../src/lib/bundles/configuration.js';
+import { sandboxComposition } from '../src/lib/bundles/sandbox.js';
+import { createHostTransport } from '../src/lib/bundles/transport.js';
 
 // Build doric first: these tests boot the bundles the host stages in
 // dist/bundles with the composition it ships, through the real loader, and
@@ -62,6 +64,8 @@ const boot = async (
   options: {
     readonly bundles?: string;
     readonly composition?: string;
+    /** The composition the host derived, in place of the file. */
+    readonly derived?: Composition | { readonly path: string };
     readonly logger?: pino.Logger;
   } = {},
 ): Promise<Host> => {
@@ -69,15 +73,18 @@ const boot = async (
   const server = createServer(app);
   const io = new SocketServer(server);
   const logger = options.logger ?? pino({ enabled: false });
+  const transport = createHostTransport({ app, io, logger });
   const bundles = await startBundles({
     bundlesPath: options.bundles ?? bundlesPath,
     compositionPath: options.composition ?? compositionPath,
-    embedded: [createHostConfig().bundle, createTransport({ app, io, logger })],
+    ...(options.derived === undefined ? {} : { composition: options.derived }),
+    embedded: [createHostConfig().bundle, transport.bundle],
     logger,
   }).catch(async (error: unknown) => {
     await io.close();
     throw error;
   });
+  transport.bind(bundles.platform);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address !== null && typeof address === 'object');
@@ -173,18 +180,60 @@ void test('skills and tools keep their canonical records and availability flags'
   });
 });
 
+void test('every first-party tool and skill carries an ascending global order key', async () => {
+  // D10-5: the model-visible order no longer depends on which bundle owns a
+  // tool or skill, so moving one between bundles keeps the request body.
+  await withHost(async (host) => {
+    const tools = host.platform.services.use(ToolsV1).list();
+    const skills = await host.platform.services.use(SkillsV1).list();
+
+    for (const entries of [
+      tools.map(({ order }) => order),
+      skills.map(({ order }) => order),
+    ]) {
+      assert.ok(entries.every((order) => order !== undefined));
+      assert.deepEqual(
+        entries,
+        [...entries].sort((left = 0, right = 0) => left - right),
+      );
+    }
+
+    assert.deepEqual(
+      tools
+        .filter(({ tool }) => ['terminal', 'web'].includes(tool.name))
+        .map(({ order }) => order),
+      [500, 700],
+    );
+    assert.equal(
+      skills.find(({ skill }) => skill.name === 'web-research')?.order,
+      1200,
+    );
+  });
+});
+
 void test('the catalog and diagnostics list every bundle active, the foundation and the core first, and no tool bundle moves', async () => {
   await withHost(async (host) => {
     const diagnostics = host.platform.diagnostics();
 
     assert.equal(host.platform.mode, 'normal');
-    // The installed bundles: the `postgres` foundation is one of them, and the
+    // The installed bundles: the `postgres` foundation is one of them, the
     // stage-9 desktop bundles (`layout`, `settings`, `chat`, `history`), which
-    // have no host part.
-    assert.equal(host.bundleCount, 13);
+    // have no host part, and since the stage-10 host switch the provider-kind
+    // bundles, the `docker` sandbox and the `terminal`, `usage` and
+    // `resources` features, and since the desktop switch (WP-10N) the
+    // `notifications` bundle, which has no host part. No bundle is
+    // quarantined.
+    assert.equal(host.bundleCount, 19);
+    // `firecracker` is staged beside `docker` but not enabled (D10-9).
+    assert.equal(
+      diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
+      'disabled',
+    );
     assert.deepEqual(
       Object.fromEntries(
-        diagnostics.bundles.map(({ id, state, phase }) => [id, [state, phase]]),
+        diagnostics.bundles
+          .filter(({ state }) => state !== 'disabled')
+          .map(({ id, state, phase }) => [id, [state, phase]]),
       ),
       {
         postgres: ['active', 'foundation'],
@@ -192,10 +241,16 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         files: ['active', 'others'],
         git: ['active', 'others'],
         threads: ['active', 'others'],
+        terminal: ['active', 'others'],
+        usage: ['active', 'others'],
+        resources: ['active', 'others'],
         runtime: ['active', 'others'],
         direct: ['active', 'others'],
-        'models-adapter': ['active', 'others'],
-        'sandbox-adapter': ['active', 'others'],
+        openai: ['active', 'others'],
+        openrouter: ['active', 'others'],
+        codex: ['active', 'others'],
+        docker: ['active', 'others'],
+        notifications: ['active', 'others'],
         layout: ['active', 'others'],
         settings: ['active', 'others'],
         chat: ['active', 'others'],
@@ -215,9 +270,12 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // A provider activates before what requires it.
     for (const [provider, consumer] of [
       ['direct', 'runtime'],
-      ['sandbox-adapter', 'runtime'],
+      ['docker', 'runtime'],
       ['runtime', 'files'],
       ['runtime', 'threads'],
+      ['runtime', 'terminal'],
+      ['runtime', 'usage'],
+      ['runtime', 'resources'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),
@@ -225,6 +283,49 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       );
     await assertStructural(host.platform, pino({ enabled: false }));
   });
+});
+
+void test("the tools of moved bundles keep their names and positions: terminal is the terminal bundle's", async () => {
+  await withHost(async (host) => {
+    const owners = Object.fromEntries(
+      host.platform.services
+        .use(ToolsV1)
+        .list()
+        .map(({ tool, bundleId }) => [tool.name, bundleId]),
+    );
+
+    assert.equal(owners.terminal, 'terminal');
+    assert.equal(owners.cwd, 'files');
+    assert.equal(owners.web, 'files');
+  });
+});
+
+void test('DORIC_SANDBOX_PROVIDER=firecracker boots the shipped composition with the firecracker bundle', async () => {
+  const { composition, providerName } = await sandboxComposition(
+    { DORIC_SANDBOX_PROVIDER: 'firecracker' },
+    compositionPath,
+  );
+  const host = await boot({ derived: composition });
+
+  try {
+    assert.equal(providerName, 'firecracker');
+    const states = Object.fromEntries(
+      host.platform.diagnostics().bundles.map(({ id, state }) => [id, state]),
+    );
+
+    assert.equal(states.firecracker, 'active');
+    assert.equal(states.docker, 'disabled');
+    const sandbox = host.platform
+      .catalog()
+      .contracts.find(({ id }) => id === 'sandbox/v1');
+    assert.deepEqual(
+      sandbox?.providers.map(({ bundleId }) => bundleId),
+      ['firecracker'],
+    );
+    await assertStructural(host.platform, pino({ enabled: false }));
+  } finally {
+    await host.platform.stop();
+  }
 });
 
 void test('GET /tools answers the pre-migration catalog through the embedded transport', async () => {
@@ -452,7 +553,7 @@ void test('after boot, an activation that leaves no structural provider takes th
     current = {
       ...catalog,
       bundles: catalog.bundles.map((bundle) =>
-        ['runtime', 'direct', 'sandbox-adapter'].includes(bundle.id)
+        ['runtime', 'direct', 'docker'].includes(bundle.id)
           ? { ...bundle, state: 'quarantined' as const }
           : bundle,
       ),

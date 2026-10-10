@@ -6,6 +6,7 @@ allowed-tools:
   - find
   - tree
   - terminal
+order: 500
 ---
 
 # Dependency Tracing

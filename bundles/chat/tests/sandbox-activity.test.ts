@@ -39,7 +39,6 @@ describe('sandbox activity', () => {
         rewind: async () => ({ promptId: 'p' }),
         resume: async () => thread('x', 'x'),
       },
-      announce: () => undefined,
       history: { write: () => undefined },
     });
     store.getState().open(thread('a', 'project-a'));

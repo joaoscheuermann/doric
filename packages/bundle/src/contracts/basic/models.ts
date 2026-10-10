@@ -138,6 +138,18 @@ export interface Models {
   ): Promise<CatalogResult>;
   /** Builds and caches every provider of a configuration; throws when one cannot be built. */
   prepare(configuration: ModelsConfiguration, call?: CallArg): Promise<void>;
+  /**
+   * 1.1.0: a model's context capacity from its provider's live catalog. The
+   * candidates are the configured providers whose kind reports
+   * `catalogCapacity()` and that are `providerId`, or, without one, list
+   * `model`. With exactly one candidate, its cached provider (the one
+   * `resolve` answers) reads `models()`. Answers a finite capacity above 0,
+   * else `undefined`; it never throws.
+   */
+  contextWindow(
+    request: { readonly providerId?: string; readonly model: string },
+    call?: CallArg,
+  ): Promise<number | undefined>;
 }
 
 export const ModelsV1 = ref<Models>('models/v1');
@@ -178,6 +190,12 @@ export const modelsMethods = {
     input: z.record(z.string(), z.unknown()),
     output: z.void(),
   },
+  contextWindow: {
+    input: z
+      .object({ providerId: z.string().optional(), model: z.string() })
+      .strict(),
+    output: z.number().optional(),
+  },
 } as const satisfies MethodSpecs;
 
 /** What `create` receives: the provider's values and, when it has one, its secret. */
@@ -209,6 +227,11 @@ export interface ModelsProvider {
     input: ModelsProviderCreateInput,
     call?: CallArg,
   ): LanguageModel | Promise<LanguageModel>;
+  /**
+   * 1.1.0: whether the built provider's `models()` reports context capacity
+   * (`models/v1.contextWindow`). A provider that fails to answer has none.
+   */
+  catalogCapacity(call?: CallArg): Promise<boolean>;
 }
 
 export const ModelsProviderV1 = ref<ModelsProvider>('models.provider/v1');
@@ -237,4 +260,5 @@ export const modelsProviderMethods = {
       .strict(),
     output: languageModelSchema,
   },
+  catalogCapacity: { input: noInput, output: z.boolean() },
 } as const satisfies MethodSpecs;

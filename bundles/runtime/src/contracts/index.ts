@@ -14,5 +14,6 @@ export * from './sandbox.js';
 export * from './storage.js';
 export * from './terminals.js';
 export * from './threads.js';
+export * from './usage.js';
 export * from './watches.js';
 export * from './workspace.js';

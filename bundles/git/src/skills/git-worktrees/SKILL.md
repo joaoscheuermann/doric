@@ -3,6 +3,7 @@ name: git-worktrees
 description: Creates, inspects, moves, and removes Git linked worktrees while preserving branch ownership and local changes. Use when parallel branches need separate working directories.
 allowed-tools:
   - git
+order: 2600
 ---
 
 # Git Worktrees

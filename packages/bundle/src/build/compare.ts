@@ -45,7 +45,8 @@ const requiredOf = (schema: Json): Set<string> =>
 /**
  * Change level of one member schema. Inputs may gain optional properties
  * (minor); outputs may gain any property (minor); anything else that differs
- * is major. Property schemas are compared recursively with the same rule.
+ * is major. Property, array item and tuple element schemas are compared
+ * recursively with the same rule.
  */
 export const memberChange = (
   before: unknown,
@@ -58,6 +59,37 @@ export const memberChange = (
 
   if (!isObject(before) || !isObject(after)) {
     return 'major';
+  }
+
+  // Arrays and tuples (method inputs are argument tuples): the same rule per
+  // element schema, when everything else is unchanged.
+  if (isObject(before.items) && isObject(after.items)) {
+    const { items: beforeItems, ...beforeRest } = before;
+    const { items: afterItems, ...afterRest } = after;
+
+    return jsonEqual(beforeRest, afterRest)
+      ? memberChange(beforeItems, afterItems, direction)
+      : 'major';
+  }
+
+  if (Array.isArray(before.prefixItems) && Array.isArray(after.prefixItems)) {
+    const { prefixItems: beforeItems, ...beforeRest } = before;
+    const { prefixItems: afterItems, ...afterRest } = after;
+
+    if (
+      !jsonEqual(beforeRest, afterRest) ||
+      beforeItems.length !== afterItems.length
+    ) {
+      return 'major';
+    }
+
+    let level: ChangeLevel = 'none';
+
+    for (const [index, item] of beforeItems.entries()) {
+      level = max(level, memberChange(item, afterItems[index], direction));
+    }
+
+    return level;
   }
 
   const beforeProperties = isObject(before.properties)

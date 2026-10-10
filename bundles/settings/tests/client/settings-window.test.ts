@@ -1,9 +1,12 @@
 // The settings window as the user meets it: opened at `/settings`, the nav
-// of five sections, each section a route, the search, and the save the
+// of its own four sections (Versioning is the git bundle's, WP-10N), each
+// section a route, the search, and the save the
 // window's close waits for.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
+
+import { NavigationV1, RegionsV1, ref, UiV1 } from 'bundle/contracts';
 
 import {
   openSettingsWindow,
@@ -106,7 +109,6 @@ test('a window opened at /settings shows the Providers section and names itself'
     'Providers',
     'Execution',
     'Tools',
-    'Versioning',
     'Credentials',
   ]);
   assert.equal(activeRow(opened), 'Providers');
@@ -173,5 +175,94 @@ test('closing the window within the debounce saves the pending change', async ()
   const sent = saves[0]?.input as
     | { readonly execution: { readonly maxTurns: number } }
     | undefined;
+  assert.equal(sent?.execution.maxTurns, 12);
+});
+
+// R-9.8: a section another bundle adds is a nav row in its order, headed by
+// its own link's label and icon, and edits the window's one autosave draft
+// through settings.config/v1, which the window's close still flushes.
+test('a section another bundle adds is headed by its link and saves through the window draft', async () => {
+  type Draft = { readonly execution: { readonly maxTurns: number } };
+  let config:
+    | {
+        draft(): Draft | undefined;
+        setDraft(update: (draft: Draft) => Draft): void;
+      }
+    | undefined;
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/git',
+    host: host(),
+    probe: {
+      requires: [
+        'ui/v1@^1.0.0',
+        'navigation/v1@^1.0.0',
+        'regions/v1@^1.0.0',
+        'settings.config/v1@^1.0.0',
+      ],
+      activate: ({ services }) => {
+        const ui = services.use(UiV1);
+        ui.define(
+          'probe-section',
+          class extends HTMLElement {
+            connectedCallback() {
+              this.textContent = 'Probe content';
+            }
+          },
+        );
+        services.use(RegionsV1).add('settings.sections', {
+          id: 'git',
+          tag: 'settings-link',
+          order: 45,
+          props: {
+            label: 'Git',
+            path: '/settings/git',
+            icon: 'git-branch',
+            description: 'A section another bundle adds.',
+          },
+        });
+        services.use(NavigationV1).register({
+          path: '/settings/git',
+          parent: '/settings',
+          create: () => ui.create('probe-section'),
+        });
+        config = services.use(
+          ref<NonNullable<typeof config>>('settings.config/v1'),
+        );
+        return () => undefined;
+      },
+    },
+  });
+  await settle(20);
+
+  assert.equal(heading(opened), 'Git');
+  assert.deepEqual(navRows(opened), [
+    'Providers',
+    'Execution',
+    'Tools',
+    'Git',
+    'Credentials',
+  ]);
+  assert.equal(activeRow(opened), 'Git');
+  assert.match(opened.document.body.textContent ?? '', /Probe content/);
+  assert.equal(config?.draft()?.execution.maxTurns, 32);
+
+  config?.setDraft((draft) => ({
+    ...draft,
+    execution: { ...draft.execution, maxTurns: 12 },
+  }));
+  await settle();
+  assert.equal(config?.draft()?.execution.maxTurns, 12);
+  assert.equal(opened.received('host-config/v1.replace').length, 0);
+
+  await opened.requestClose({ phase: 'close', forced: false, deadline: 0 });
+  await opened.requestClose({
+    phase: 'flush',
+    forced: false,
+    deadline: Date.now() + 1_500,
+  });
+
+  const saves = opened.received('host-config/v1.replace');
+  assert.equal(saves.length, 1);
+  const sent = saves[0]?.input as Draft | undefined;
   assert.equal(sent?.execution.maxTurns, 12);
 });

@@ -44,6 +44,10 @@ import {
   RuntimeThreadsV1,
 } from '../../../src/contracts/threads.js';
 import {
+  type RuntimeUsage,
+  RuntimeUsageV1,
+} from '../../../src/contracts/usage.js';
+import {
   type RuntimeWorkspace,
   RuntimeWorkspaceV1,
 } from '../../../src/contracts/workspace.js';
@@ -52,6 +56,7 @@ import type { WorkspaceService } from '../../../src/host/domain/types.js';
 import type { ModelCatalogSource } from '../../../src/host/domain/usage-context.js';
 import { provideRuntime, runtimeStores } from '../../../src/host/index.js';
 import { createPorts } from '../../../src/host/ports.js';
+import { terminalService } from '../../../src/host/services/terminal.js';
 import type {
   ProjectStore,
   ThreadStore,
@@ -331,6 +336,9 @@ export const createHarness = (options: HarnessOptions = {}) => {
     },
     { projects, threads, ports, bindings },
   );
+  // The runtime no longer provides terminal/v1 (stage 10 host switch); its
+  // own cases still run the agent's commands on the provisional registry.
+  definitions.push(terminalService(bindings));
   const consumerSide = createTestServices({
     bundle: { id: 'consumer' },
     provide: definitions,
@@ -339,6 +347,8 @@ export const createHarness = (options: HarnessOptions = {}) => {
   const runtime: Runtime = consumer.use(RuntimeV1);
   const threadsApi: RuntimeThreads = consumer.use(RuntimeThreadsV1);
   const terminals: RuntimeTerminals = consumer.use(RuntimeTerminalsV1);
+  const workspace: RuntimeWorkspace = consumer.use(RuntimeWorkspaceV1);
+  const usage: RuntimeUsage = consumer.use(RuntimeUsageV1);
   const notices: RuntimeNotice[] = [];
   const listeners = new Set<(notice: RuntimeNotice) => void>();
   runtime.watch((notice) => {
@@ -392,6 +402,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
       fileDiff: (id, repository, path) =>
         leaseOf({ projectId: id }).fileDiff({ repository, path }),
       resources: (id) => leaseOf({ projectId: id }).resources(),
+      withLease: (id, task) => leaseOf({ projectId: id }).withLease(task),
     },
     threads: {
       queue: (id) => threadsApi.queue(id),
@@ -401,6 +412,12 @@ export const createHarness = (options: HarnessOptions = {}) => {
         threadsApi.editQueued({ id, promptId, text, revision }),
       removeQueued: (id, promptId) => threadsApi.removeQueued({ id, promptId }),
       usage: (id) => threadsApi.usage(id),
+      storedUsage: (id) => usage.read(id),
+      withThread: (id, options, task) =>
+        workspace.withThread(id, options, task),
+      terminalResult: (input) => threadsApi.enqueueTerminalResult(input),
+      failTerminalResult: (threadId) =>
+        threadsApi.failTerminalResult({ threadId }),
       create: (projectId, name, parentThreadId) =>
         threadsApi.createThread({
           projectId,

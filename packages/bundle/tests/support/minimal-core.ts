@@ -110,11 +110,11 @@ export const createMinimalSkills = () => {
           );
         }
 
+        // skills/v1 1.1.0: any tool the tools/v1 list holds (D10-6).
         const tools = new Set(
           services
             .use(ToolsV1)
             .list()
-            .filter((entry) => entry.bundleId === bundleId)
             .map((entry) => entry.tool.name),
         );
 
@@ -130,6 +130,7 @@ export const createMinimalSkills = () => {
         const entry: RegisteredSkill = {
           bundleId,
           alwaysAvailable: options?.alwaysAvailable ?? false,
+          ...(options?.order === undefined ? {} : { order: options.order }),
           skill,
         };
 

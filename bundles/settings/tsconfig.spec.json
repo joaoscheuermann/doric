@@ -13,6 +13,7 @@
   "include": [
     "src/client/api/settings-api.ts",
     "src/client/domain/*.ts",
+    "src/client/services/*.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],

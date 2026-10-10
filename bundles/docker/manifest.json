@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "docker",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Docker sandbox provider for the Doric agent: one durable-workspace sandbox per Project.",
+  "provides": ["sandbox/v1@1.0.0"],
+  "requires": ["log/v1@^1.0.0"]
+}

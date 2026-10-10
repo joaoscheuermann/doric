@@ -3,6 +3,7 @@ name: git-conflict-resolution
 description: Resolves Git merge, rebase, cherry-pick, or revert conflicts from stage evidence and validates the combined result. Use when Git reports unmerged paths or an operation has stopped for conflicts.
 allowed-tools:
   - git
+order: 2300
 ---
 
 # Git Conflict Resolution

@@ -31,5 +31,11 @@
     {
       "path": "../history"
     }
+  ],
+  "exclude": [
+    "src/client/api/announce.ts",
+    "src/client/domain/notifications.ts",
+    "tests/announce.test.ts",
+    "tests/notifications.test.ts"
   ]
 }

@@ -7,8 +7,6 @@
 import {
   ContractError,
   type JsonObject,
-  type NotificationRequest,
-  notificationRequestSchema,
   toContractError,
 } from 'bundle/contracts';
 import {
@@ -100,8 +98,6 @@ export interface DispatcherDeps {
   readonly diagnostic: (entry: WindowEntry, diagnostic: unknown) => void;
   /** Stage 9: the host connection status every window follows (D9-5). */
   readonly connection: ConnectionSource;
-  /** Stage 9: a native notification of a window (D9-6). */
-  readonly notify: (request: NotificationRequest) => void;
   readonly now?: () => number;
 }
 
@@ -819,10 +815,6 @@ export class Dispatcher {
             entry,
             shellDiagnosticSchema.parse(envelope.input),
           );
-
-          return ok(undefined);
-        case 'notify':
-          this.#deps.notify(notificationRequestSchema.parse(envelope.input));
 
           return ok(undefined);
         default:

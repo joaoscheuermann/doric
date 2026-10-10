@@ -12,7 +12,9 @@ export const resourcesContract = { id: ResourcesV1.id, version: '1.0.0' };
  * desktop window share the one CPU sample the process keeps.
  */
 export const resourcesService = (read: () => HostResources) =>
-  defineService(ResourcesV1, {
+  // By id: `project()` (1.0.0 of the `resources` bundle, §3.12) is not
+  // served here; WP-10L removes this provider when the bundle takes over.
+  defineService(ResourcesV1.id, {
     host: defineMethod({
       ...resourcesMethods.host,
       execute: async () => read(),

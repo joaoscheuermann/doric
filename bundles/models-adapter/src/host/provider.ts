@@ -128,6 +128,12 @@ export const createKindProvider = (
           );
         },
       }),
+      // The runtime filled context capacity from OpenRouter's catalog alone
+      // (usage-context.ts); models/v1.contextWindow keeps that rule.
+      catalogCapacity: defineMethod({
+        ...modelsProviderMethods.catalogCapacity,
+        execute: () => Promise.resolve(kind.id === 'openrouter'),
+      }),
     },
     { cardinality: 'many' },
   );

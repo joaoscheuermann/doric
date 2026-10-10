@@ -9,7 +9,6 @@ import {
   streamItemSchema,
 } from 'bundle/runtime';
 import { createTestServices } from 'bundle/testing';
-import { TerminalV1 } from 'terminal/contracts';
 import type { z } from 'zod';
 
 import {
@@ -32,6 +31,7 @@ import {
   type RuntimeNotice,
   RuntimeTerminalsV1,
   RuntimeThreadsV1,
+  RuntimeUsageV1,
   RuntimeV1,
   RuntimeWorkspaceV1,
   runtimeLeaseMethods,
@@ -83,10 +83,19 @@ const streams: Record<string, readonly string[]> = {
   'runtime.terminals/v1': ['watchProject'],
 };
 
+/** The stage-10 local-only members (R-5.1, R-5.2): a task in, a value out. */
+const localOnly: Record<string, readonly string[]> = {
+  'runtime.workspace/v1': ['withThread'],
+  'runtime.lease/v1': ['withLease'],
+};
+
 void test('the transport-facing contracts carry no process-local member', () => {
   for (const [contract, methods] of Object.entries(serializable))
     for (const [name, spec] of Object.entries(methods))
-      if (!streams[contract]?.includes(name))
+      if (
+        !streams[contract]?.includes(name) &&
+        !localOnly[contract]?.includes(name)
+      )
         for (const io of ['input', 'output'] as const)
           assert.deepEqual(
             markers(spec[io], io),
@@ -121,6 +130,16 @@ void test('the remote watches cross as streams: only a listener and a Disposable
     }
 });
 
+void test('withThread and withLease take a local task and answer a local outcome', () => {
+  for (const spec of [
+    runtimeWorkspaceMethods.withThread,
+    runtimeLeaseMethods.withLease,
+  ]) {
+    assert.deepEqual(markers(spec.input, 'input'), ['callback']);
+    assert.deepEqual(markers(spec.output, 'output'), ['object']);
+  }
+});
+
 void test('local members name the codec that carries them', () => {
   assert.deepEqual(markers(runtimeMethods.watch.input, 'input'), ['callback']);
   assert.deepEqual(markers(runtimeMethods.watch.output, 'output'), [
@@ -153,15 +172,22 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   assert.deepEqual(manifest.provides, [
     // 1.1.0: the generation handover members (57-WP-H); 1.2.0: watchProject.
     `${RuntimeV1.id}@1.2.0`,
-    // 1.1.0: watchThread (stage 9 R-STREAM).
-    `${RuntimeThreadsV1.id}@1.1.0`,
-    `${RuntimeWorkspaceV1.id}@1.0.0`,
-    `${RuntimeLeaseV1.id}@1.0.0`,
+    // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
+    // delivery (stage 10 R-5.3).
+    `${RuntimeThreadsV1.id}@1.2.0`,
+    // 1.1.0: withThread (stage 10 R-5.2).
+    `${RuntimeWorkspaceV1.id}@1.1.0`,
+    // 1.1.0: withLease (stage 10 R-5.1).
+    `${RuntimeLeaseV1.id}@1.1.0`,
     // 1.1.0: watchProject (stage 9 R-STREAM).
     `${RuntimeTerminalsV1.id}@1.1.0`,
-    `${RuntimeHooksV1.id}@1.0.0`,
+    // 1.1.0: onThreadsClosingHook (stage 10 R-5.4).
+    `${RuntimeHooksV1.id}@1.1.0`,
+    // Stage 10 R-5.5: the unfilled usage projection.
+    `${RuntimeUsageV1.id}@1.0.0`,
     `${promptFinishedEvent.type}@1.0.0`,
-    `${TerminalV1.id}@1.0.0`,
+    // terminal/v1 left with the stage-10 host switch: the `terminal` bundle
+    // provides it, and runtime.terminals/v1 delegates to it.
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
     `${projectType.type}@1.1.0`,

@@ -59,6 +59,14 @@ export interface RuntimePorts {
   readonly hooks: {
     projectReady(projectId: string): void;
     projectClosing(projectId: string): void;
+    /**
+     * onThreadsClosingHook (1.1.0), awaited by the runner; a failing handler
+     * never fails the close.
+     */
+    threadsClosing?(input: {
+      readonly projectId: string;
+      readonly threadIds: readonly string[];
+    }): Promise<void>;
   };
   /**
    * This runtime process, the owner it records on the Projects it holds
@@ -127,6 +135,11 @@ export const createPorts = (services: Services): RuntimePorts => {
       },
       projectClosing: (projectId) => {
         observe(hooks.onProjectClosingHook.execute({ projectId }));
+      },
+      threadsClosing: async ({ projectId, threadIds }) => {
+        await hooks.onThreadsClosingHook
+          .execute({ projectId, threadIds: [...threadIds] })
+          .catch(() => undefined);
       },
     },
   };

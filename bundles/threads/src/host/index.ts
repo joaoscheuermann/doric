@@ -23,7 +23,8 @@ export const threadTools = [
 export const activate = ({ services }: HostContext): void => {
   const tools = services.use(ToolsV1);
 
-  for (const tool of threadTools) {
-    tools.register(tool, { alwaysAvailable: true });
+  // Global model-visible positions 1000 … 1600 (D10-5).
+  for (const [index, tool] of threadTools.entries()) {
+    tools.register(tool, { alwaysAvailable: true, order: 1000 + index * 100 });
   }
 };

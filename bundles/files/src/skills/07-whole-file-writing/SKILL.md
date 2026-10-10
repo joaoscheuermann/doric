@@ -5,6 +5,7 @@ allowed-tools:
   - find
   - terminal
   - write
+order: 700
 ---
 
 # Whole-File Writing

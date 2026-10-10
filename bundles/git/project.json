@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/git/tsconfig.json",
+          "tsc -p bundles/git/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/git"
         ],
         "parallel": false
@@ -20,7 +21,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/git/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/git/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/git/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {

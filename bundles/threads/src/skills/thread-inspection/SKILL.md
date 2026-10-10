@@ -1,6 +1,7 @@
 ---
 name: thread-inspection
 description: Observes direct child threads through their durable events without disturbing their execution. Use when checking on delegated work.
+order: 3200
 ---
 
 # Thread Inspection

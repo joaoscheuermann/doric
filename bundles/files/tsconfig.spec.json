@@ -10,14 +10,44 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/api/**/*.ts",
+    "src/client/refresh/**/*.ts",
+    "src/client/stores/**/*.ts",
+    "src/client/commands.ts",
+    "src/client/sandbox-store.ts",
+    "src/client/state.ts",
+    "tests/**/*.ts"
+  ],
   "references": [
-    { "path": "../../packages/bundle/tsconfig.lib.json" },
-    { "path": "../../packages/tool/tsconfig.lib.json" },
-    { "path": "../../packages/sandbox/tsconfig.lib.json" },
-    { "path": "../../packages/sandpool/tsconfig.lib.json" },
-    { "path": "../../packages/host/tsconfig.lib.json" },
-    { "path": "../runtime" },
-    { "path": "../terminal" }
+    {
+      "path": "../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/tool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/sandpool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/host/tsconfig.lib.json"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../terminal"
+    },
+    {
+      "path": "../../packages/desktop-reads/tsconfig.lib.json"
+    },
+    {
+      "path": "../layout"
+    }
   ]
 }

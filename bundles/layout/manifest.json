@@ -1,12 +1,17 @@
 {
   "manifestVersion": 1,
   "id": "layout",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engines": {
     "doric": "^1.0.0"
   },
   "description": "The workspace frame: Projects and Threads, header, side panel, tabs and footers.",
-  "provides": ["layout.tabs/v1@1.0.0", "layout.workspace/v1@1.0.0"],
+  "provides": [
+    "layout.tabs/v1@1.1.0",
+    "layout.workspace/v1@1.1.0",
+    "layout.panel/v1@1.0.0",
+    "layout.sidebar/v1@1.0.0"
+  ],
   "requires": [
     "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",
@@ -14,9 +19,6 @@
     "regions/v1@^1.0.0",
     "commands/v1@^1.0.0",
     "runtime/v1@^1.2.0",
-    "runtime.threads/v1@^1.0.0",
-    "runtime.lease/v1@^1.0.0",
-    "runtime.terminals/v1@^1.1.0",
-    "resources/v1@^1.0.0"
+    "runtime.threads/v1@^1.0.0"
   ]
 }

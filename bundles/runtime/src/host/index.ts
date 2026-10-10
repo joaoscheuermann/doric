@@ -6,6 +6,7 @@ import {
   type Storage,
   StorageV1,
 } from 'bundle/contracts';
+import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 
 import { promptFinishedEvent } from '../contracts/events.js';
 import { type Bindings, createBindings } from './domain/bindings.js';
@@ -15,9 +16,9 @@ import { createWorkspaceService } from './domain/service.js';
 import { createPorts, type RuntimePorts } from './ports.js';
 import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
-import { terminalService } from './services/terminal.js';
 import { terminalsService } from './services/terminals.js';
 import { threadsService } from './services/threads.js';
+import { usageService } from './services/usage.js';
 import { createWatches } from './services/watches.js';
 import { workspaceService } from './services/workspace.js';
 import {
@@ -42,12 +43,19 @@ export const provideRuntime = (
     threads,
     ports,
     bindings = createBindings(),
+    terminal = () => undefined,
   }: {
     readonly projects: ProjectStore;
     readonly threads: ThreadStore;
     readonly ports: RuntimePorts;
     /** The prompt bindings; a test passes its own to observe them. */
     readonly bindings?: Bindings;
+    /**
+     * The `terminal` bundle's `terminal/v1` while one is active: it owns the
+     * terminal sessions since the stage-10 host switch, so the runtime's
+     * terminal reads delegate to it; without one, the provisional registry.
+     */
+    readonly terminal?: () => TerminalService | undefined;
   },
 ): Cleanup => {
   const notices = createNotices(ports.log);
@@ -70,7 +78,9 @@ export const provideRuntime = (
         threads.eventsAfter(threadId, afterSequence),
       project: (projectId) => service.projects.find(projectId),
       projectThreads: (projectId) => threads.listByProject(projectId),
-      terminals: async (projectId) => service.terminals.list(projectId),
+      terminals: async (projectId) =>
+        (await terminal()?.list(projectId)) ??
+        service.terminals.list(projectId),
     },
   });
 
@@ -85,10 +95,10 @@ export const provideRuntime = (
     }),
   );
   services.provide(threadsService({ service, threads, bindings, watches }));
-  services.provide(workspaceService(bindings));
+  services.provide(workspaceService(bindings, service));
+  services.provide(usageService(service));
   services.provide(leaseService({ service, bindings }));
-  services.provide(terminalsService(service, watches));
-  services.provide(terminalService(bindings));
+  services.provide(terminalsService(service, watches, terminal));
 
   // Idempotent: the kernel already called runtime/v1.dispose on a normal stop.
   return () => service.dispose();
@@ -115,9 +125,19 @@ export const activate = ({ services }: HostContext): Cleanup => {
   services.use(EventsV1).register(promptFinishedEvent);
 
   const ports = createPorts(services);
+  // terminal/v1 is the `terminal` bundle's (stage 10 host switch); it
+  // activates after the runtime, whose contracts it requires.
+  let terminal: TerminalService | undefined;
+  services.whenAvailable(TerminalServiceV1, (api) => {
+    terminal = api;
+    return () => {
+      if (terminal === api) terminal = undefined;
+    };
+  });
 
   return provideRuntime(services, {
     ...runtimeStores(storage, ports),
     ports,
+    terminal: () => terminal,
   });
 };

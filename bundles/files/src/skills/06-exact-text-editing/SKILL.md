@@ -5,6 +5,7 @@ allowed-tools:
   - edit
   - grep
   - terminal
+order: 600
 ---
 
 # Exact Text Editing

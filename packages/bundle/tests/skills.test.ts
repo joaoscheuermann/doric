@@ -115,6 +115,37 @@ void test('accepts alwaysAvailable in frontmatter only for v1 bundles', () => {
   assert.throws(() => parseSkillDocument(source, 'skill'));
 });
 
+void test('accepts a positive integer order in frontmatter only for v1 bundles, outside the skill record', () => {
+  const v1 = { frontmatterAvailability: true };
+  const parsed = parseSkillDocument(
+    skillSource('ordered', { order: 1200 }),
+    'skill',
+    v1,
+  );
+
+  assert.equal(parsed.order, 1200);
+  assert.deepEqual(
+    SkillSchema.parse(parsed.skill),
+    SkillSchema.parse(
+      parseSkillDocument(skillSource('ordered'), 'skill', v1).skill,
+    ),
+  );
+  assert.equal(
+    parseSkillDocument(skillSource('plain'), 'skill', v1).order,
+    undefined,
+  );
+  assert.throws(() =>
+    parseSkillDocument(skillSource('ordered', { order: 1200 }), 'skill'),
+  );
+
+  for (const order of [0, -1, 1.5]) {
+    assert.throws(
+      () => parseSkillDocument(skillSource('bad', { order }), 'skill', v1),
+      /Invalid skill/,
+    );
+  }
+});
+
 void test('discovers skills in lexical directory order, skipping folders without SKILL.md', async () => {
   await withRoot(async (root) => {
     const dir = await writeBundle(root, 'b', {

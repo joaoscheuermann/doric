@@ -8,12 +8,26 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../../packages/sandbox"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
       "path": "../../packages/bundle"
+    },
+    {
+      "path": "../../packages/desktop-ui"
+    },
+    {
+      "path": "../../packages/desktop-reads"
     }
-  ]
+  ],
+  "exclude": ["src/client/**"]
 }

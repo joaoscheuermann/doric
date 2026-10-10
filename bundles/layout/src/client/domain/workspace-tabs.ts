@@ -28,7 +28,21 @@ export type WorkspaceTab =
       readonly kind: 'element';
       readonly title: string;
       readonly element: object;
+      readonly props?: Readonly<Record<string, unknown>>;
+      /** `layout.tabs/v1@1.1.0`: the trigger's icon, aria label and tooltip. */
+      readonly icon?: 'file' | 'file-diff' | 'terminal';
+      readonly ariaLabel?: string;
+      readonly tooltip?: string;
     };
+
+/**
+ * Whether a tab reads the Project's sandbox, which keeps the files and Git
+ * refresh going: every tab but a terminal (built in, or an element tab with
+ * the terminal icon).
+ */
+export const readsSandbox = (tab: WorkspaceTab): boolean =>
+  tab.kind !== 'terminal' &&
+  !(tab.kind === 'element' && tab.icon === 'terminal');
 
 export type WorkspaceTabs = {
   readonly items: readonly WorkspaceTab[];

@@ -8,6 +8,8 @@ import {
   functionSchema,
   type MethodSpecs,
   noInput,
+  type StreamListener,
+  streamListener,
 } from './common.js';
 
 // Shapes refined in stages 2/3 before any provider published a baseline
@@ -220,6 +222,16 @@ export interface Secrets {
   ): Promise<Secret | undefined>;
   /** API mínima: the redaction list, as `view().redactions()` of this process. */
   redactions(call?: CallArg): Promise<readonly string[]>;
+  /**
+   * 1.1.0: the complete redaction list (as `redactions()`) on subscribe and
+   * after every change: a credential create, update or delete, or an added
+   * redaction. `create`, `update` and `delete` resolve only after every
+   * listener received the list they produced.
+   */
+  watchRedactions(
+    listener: StreamListener<string[]>,
+    call?: CallArg,
+  ): Disposable;
   /** API mínima, local: references that make `delete` answer `referenced`. */
   registerReferences(source: ReferenceSource): Disposable;
   /** API mínima, local. */
@@ -249,6 +261,10 @@ export const secretsMethods = {
     output: secretSchema.optional(),
   },
   redactions: { input: noInput, output: z.array(z.string()) },
+  watchRedactions: {
+    input: streamListener(z.array(z.string())),
+    output: disposableSchema,
+  },
   registerReferences: {
     input: functionSchema<ReferenceSource>(),
     output: disposableSchema,

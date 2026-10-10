@@ -234,7 +234,10 @@ const registerSkills = async (
       declared.alwaysAvailable ?? parsed.alwaysAvailable ?? false;
 
     try {
-      registry.register(parsed.skill, { alwaysAvailable });
+      registry.register(parsed.skill, {
+        alwaysAvailable,
+        ...(parsed.order === undefined ? {} : { order: parsed.order }),
+      });
     } catch (error) {
       throw failure('registration_failed', error);
     }
@@ -242,16 +245,30 @@ const registerSkills = async (
 };
 
 /**
- * After a successful `activate` of an installed bundle: v0 manifest tools and
- * skills, or the v1 `skills/` directory.
+ * After a successful `activate` of an installed bundle: the v0 manifest
+ * tools. Skills wait for the whole phase (`registerInstalledSkills`).
  */
-export const registerInstalledResources = async (
+export const registerInstalledTools = async (
   dir: string,
   legacy: ReadManifest['legacy'],
   principal: Principal,
 ): Promise<void> => {
   if (legacy !== undefined) {
     await registerLegacyTools(dir, legacy.tools, principal);
+  }
+};
+
+/**
+ * Once every host bundle of the phase has activated (D10-6): v0 manifest
+ * skills or the v1 `skills/` directory, on the bundle's behalf, so
+ * `allowed-tools` resolves against every tool of the phase.
+ */
+export const registerInstalledSkills = async (
+  dir: string,
+  legacy: ReadManifest['legacy'],
+  principal: Principal,
+): Promise<void> => {
+  if (legacy !== undefined) {
     await registerSkills(dir, legacy.skills, false, principal);
 
     return;
@@ -407,24 +424,27 @@ export const startHost = async (
 
     return await importHostPart(entry.source.dir);
   };
-  const afterActivate = async (entry: CatalogEntry, principal: Principal) => {
-    if (entry.source.kind !== 'installed') {
-      return;
-    }
+  const installedResources =
+    (register: typeof registerInstalledTools) =>
+    async (entry: CatalogEntry, principal: Principal) => {
+      if (entry.source.kind !== 'installed') {
+        return;
+      }
 
-    await registerInstalledResources(
-      entry.source.dir,
-      installedById.get(entry.id)?.read?.legacy,
-      principal,
-    );
-  };
+      await register(
+        entry.source.dir,
+        installedById.get(entry.id)?.read?.legacy,
+        principal,
+      );
+    };
   const activation: ActivationResult = await activateEnvironment({
     resolved,
     runtime,
     platform,
     diagnostics,
     loadPart,
-    afterActivate,
+    afterActivate: installedResources(registerInstalledTools),
+    afterPhase: installedResources(registerInstalledSkills),
     log: options.log,
     ...(options.now === undefined ? {} : { now: options.now }),
   });

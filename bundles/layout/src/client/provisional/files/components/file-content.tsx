@@ -1,8 +1,8 @@
+import { CodeView } from 'desktop-ui/code';
 import { ScrollArea } from 'desktop-ui/scroll-area';
 
 import { fileLanguage, truncationNotice } from '../domain/files.js';
 import type { ProjectFileContent } from '../domain/project-files.js';
-import { CodeView } from './code-view.js';
 
 type FileContentProps = {
   readonly file: ProjectFileContent;

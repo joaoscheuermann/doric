@@ -5,18 +5,22 @@ import type {
   Project,
   RuntimeListener,
   RuntimeNotice,
-  Terminal,
   Thread,
   ThreadEvent,
 } from 'runtime/contracts';
 import { io as connect, Manager, type Socket } from 'socket.io-client';
+import type {
+  TerminalSession as Terminal,
+  TerminalWatchItem,
+} from 'terminal/contracts';
 
 import { type Fake, serve as serveHost } from './support/host.js';
 
 /*
  * agents/doric's socket suite, run against the transport bundle: the
  * snapshots read runtime contracts and the live notices arrive through
- * `runtime/v1.watch`. Across processes a notice and a snapshot read's answer
+ * `runtime/v1.watch`, the terminal ones through `terminal/v1.watchProject`
+ * (stage 10 §4). Across processes a notice and a snapshot read's answer
  * travel on the same ordered envelope link (host-stages-crossreview.md §3),
  * and the algorithm tolerates either order anyway: it subscribes before it
  * reads, buffers, then deduplicates; these cases drive both orders.
@@ -78,6 +82,8 @@ interface Reads {
 const serve = async (reads: Reads = {}, runtime: Fake = {}) => {
   const listeners: RuntimeListener[] = [];
   const disposed: RuntimeListener[] = [];
+  type Watch = { projectId: string; listener: unknown; open: boolean };
+  const watches: Watch[] = [];
   const host = await serveHost({
     runtime: {
       project: async () => project,
@@ -100,15 +106,41 @@ const serve = async (reads: Reads = {}, runtime: Fake = {}) => {
         [event(1), event(2)].filter((value) => value.sequence > afterSequence),
       projectThreads: () => reads.projectThreads?.() ?? [thread],
     },
-    terminals: { list: () => reads.terminals?.() ?? [] },
+    terminal: {
+      list: () => reads.terminals?.() ?? [],
+      watchProject: (id: string, listener: unknown) => {
+        const watch: Watch = { projectId: id, listener, open: true };
+        watches.push(watch);
+        return {
+          dispose: () => {
+            watch.open = false;
+          },
+        };
+      },
+    },
   });
   const publish = (notice: RuntimeNotice) => {
     for (const listener of listeners) listener(notice);
+  };
+  const emit = (item: TerminalWatchItem) => {
+    const target =
+      item.kind === 'updated'
+        ? item.terminal.projectId
+        : item.kind === 'output'
+          ? item.output.projectId
+          : item.projectId;
+    for (const watch of watches) {
+      if (!watch.open || watch.projectId !== target) continue;
+      const { listener } = watch;
+      if (typeof listener === 'function') listener(item);
+      else (listener as { next(item: unknown): void }).next(item);
+    }
   };
   return {
     ...host,
     listeners,
     disposed,
+    watches,
     publisher: {
       event: (value: ThreadEvent) => publish({ kind: 'event', value }),
       threadUpdated: (value: Thread) =>
@@ -124,11 +156,11 @@ const serve = async (reads: Reads = {}, runtime: Fake = {}) => {
       projectDeleted: (id: string) =>
         publish({ kind: 'projectDeleted', projectId: id }),
       terminalUpdated: (value: Terminal) =>
-        publish({ kind: 'terminalUpdated', value }),
+        emit({ kind: 'updated', terminal: value }),
       terminalOutput: (data: string, offset: number) =>
-        publish({
-          kind: 'terminalOutput',
-          value: {
+        emit({
+          kind: 'output',
+          output: {
             projectId,
             threadId,
             terminalId: terminal.id,
@@ -137,8 +169,8 @@ const serve = async (reads: Reads = {}, runtime: Fake = {}) => {
           },
         }),
       terminalRemoved: () =>
-        publish({
-          kind: 'terminalRemoved',
+        emit({
+          kind: 'removed',
           projectId,
           threadId,
           terminalId: terminal.id,
@@ -368,6 +400,37 @@ void test('buffers terminal lifecycle notices but never terminal output', async 
     'terminal:removed',
     'terminal:output',
   ]);
+});
+
+void test("watches a Project's terminals while any socket subscribes to it, once", async (t) => {
+  const host = await serve();
+  t.after(host.close);
+  const first = host.connect('/projects', { projectId });
+  const second = host.connect('/projects', { projectId });
+  t.after(() => first.close());
+  t.after(() => second.close());
+  await Promise.all([
+    next(first, 'terminal:snapshot'),
+    next(second, 'terminal:snapshot'),
+  ]);
+  assert.deepEqual(
+    host.watches.map(({ projectId: id, open }) => [id, open]),
+    [[projectId, true]],
+  );
+  // A removal reaches both sockets with the namespace's own shape.
+  const removed = next(second, 'terminal:removed');
+  host.publisher.terminalRemoved();
+  assert.deepEqual(await removed, {
+    projectId,
+    threadId,
+    terminalId: terminal.id,
+  });
+  first.close();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(host.watches[0]?.open, true);
+  second.close();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(host.watches[0]?.open, false);
 });
 
 void test('resnapshots a disconnected client without leaking its buffered notifications', async (t) => {

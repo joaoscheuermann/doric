@@ -14,6 +14,7 @@ import {
   SidebarMenuSubItem,
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
+import { rowInteraction, treeClassName } from 'desktop-ui/workspace';
 import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
@@ -32,7 +33,6 @@ import type {
   ProjectColor,
   Thread,
 } from '../../domain/workspace.js';
-import type { Terminal } from '../../provisional/terminals/domain/terminals.js';
 import { DraftName } from '../molecules/draft-name.js';
 import { EditableName } from '../molecules/editable-name.js';
 import { ItemContextMenu } from '../molecules/item-context-menu.js';
@@ -42,7 +42,6 @@ import {
   ThreadBranches,
   type ThreadBranchesActions,
 } from '../molecules/thread-branches.js';
-import { rowInteraction, treeClassName } from '../molecules/tree-guides.js';
 
 /** The placeholder project rows the sidebar draws while the projects load. */
 const PROJECT_SKELETON_ROWS = Array.from(
@@ -79,23 +78,13 @@ export type SidebarActions = {
 };
 
 type ProjectSidebarProps = {
-  readonly terminals?: readonly Terminal[];
-  readonly onOpenTerminal?: (terminal: Terminal) => void;
-  readonly onStopTerminal?: (id: string) => void;
   readonly actions: SidebarActions;
   readonly model: SidebarModel;
   /** The `layout.sidebar` region, below the tree (stage 9 §5.4). */
   readonly after?: ReactNode;
 };
 
-export function ProjectSidebar({
-  after,
-  actions,
-  model,
-  terminals,
-  onOpenTerminal,
-  onStopTerminal,
-}: ProjectSidebarProps) {
+export function ProjectSidebar({ after, actions, model }: ProjectSidebarProps) {
   // Threads start open and close one row at a time; Projects start closed and
   // open one row at a time. Neither state follows the selection, so opening an
   // item never closes another.
@@ -267,9 +256,6 @@ export function ProjectSidebar({
                             </SidebarMenuSubItem>
                           )}
                         <ThreadBranches
-                          terminals={terminals}
-                          onOpenTerminal={onOpenTerminal}
-                          onStopTerminal={onStopTerminal}
                           actions={threadActions}
                           collapsed={collapsedThreads}
                           depth={1}

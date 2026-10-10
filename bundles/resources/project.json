@@ -9,14 +9,23 @@
       "dependsOn": ["^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
-        "command": "tsc --build bundles/resources/tsconfig.json"
+        "commands": [
+          "tsc --build bundles/resources/tsconfig.json",
+          "tsc -p bundles/resources/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/resources"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/resources/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/resources/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/resources/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -25,8 +34,20 @@
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "rm -rf bundles/resources/dist-tests",
           "tsc -p bundles/resources/tsconfig.spec.json",
           "node --test bundles/resources/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/resources",
+          "biome format --write bundles/resources/contracts.published.json"
         ],
         "parallel": false
       }

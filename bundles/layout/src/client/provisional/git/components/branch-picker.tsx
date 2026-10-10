@@ -9,6 +9,7 @@ import {
 import { Input } from 'desktop-ui/input';
 import { ScrollArea } from 'desktop-ui/scroll-area';
 import { Skeleton } from 'desktop-ui/skeleton';
+import { ReadFeedback } from 'desktop-ui/workspace';
 import {
   CheckIcon,
   GitBranchIcon,
@@ -18,7 +19,6 @@ import {
 
 import { messageFrom } from '../../../domain/errors.js';
 import type { Thread } from '../../../domain/workspace.js';
-import { ReadFeedback } from '../../files/components/read-feedback.js';
 import { useBranches } from '../hooks/use-branches.js';
 
 export function BranchPicker({

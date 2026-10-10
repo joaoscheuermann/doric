@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import type { Descriptor, EmbeddedBundle, ManifestV1 } from 'bundle';
 import { type Models, ModelsV1, SecretsV1 } from 'bundle/contracts';
+import { createActivate as createCodex } from 'codex/host';
 import {
   type HttpRequest,
   type HttpResponse,
@@ -12,12 +13,14 @@ import {
   providerKind,
   providerKinds,
 } from 'llms';
-import { createActivate as createAdapter } from 'models-adapter/host';
+import { createActivate as createOpenAi } from 'openai/host';
+import { createActivate as createOpenRouter } from 'openrouter/host';
 
 import { readModelProperties } from '../src/contracts/index.js';
 import { type Booted, boot, core } from './support/host.js';
 
-// D-M: models/v1 over the provisional models adapter (design 57 §6), with the
+// D-M: models/v1 over the provider bundles `openai`, `openrouter` and `codex`
+// (design 57 §6, stage 10 §3.1-3.3), with the
 // cases of the host's provider generation and model catalog tests.
 
 const readJson = async (path: string): Promise<unknown> =>
@@ -46,15 +49,25 @@ const fakeTransport = (
   return { requests, transport };
 };
 
-const adapter = async (transport: HttpTransport): Promise<EmbeddedBundle> => ({
-  manifest: (await readJson(
-    'bundles/models-adapter/dist/manifest.json',
-  )) as ManifestV1,
-  descriptor: (await readJson(
-    'bundles/models-adapter/dist/contracts.json',
-  )) as Descriptor,
-  host: { activate: createAdapter({ transport: () => transport }) },
-});
+/** The three provider-kind bundles, over one transport. */
+const providers = async (transport: HttpTransport): Promise<EmbeddedBundle[]> =>
+  Promise.all(
+    (
+      [
+        ['codex', createCodex],
+        ['openai', createOpenAi],
+        ['openrouter', createOpenRouter],
+      ] as const
+    ).map(async ([id, create]) => ({
+      manifest: (await readJson(
+        `bundles/${id}/dist/manifest.json`,
+      )) as ManifestV1,
+      descriptor: (await readJson(
+        `bundles/${id}/dist/contracts.json`,
+      )) as Descriptor,
+      host: { activate: create({ transport: () => transport }) },
+    })),
+  );
 
 interface World {
   readonly host: Booted;
@@ -70,8 +83,8 @@ const withModels = async (
   answer?: (request: HttpRequest) => HttpResponse,
 ) => {
   const { requests, transport } = fakeTransport(answer);
-  const host = await boot([await core(), await adapter(transport)], {
-    enabled: ['models-adapter'],
+  const host = await boot([await core(), ...(await providers(transport))], {
+    enabled: ['codex', 'openai', 'openrouter'],
   });
   const secrets = host.platform.services.use(SecretsV1);
 
@@ -448,4 +461,119 @@ void test('the catalog fill writes each listed model as the catalog describes it
     },
     execution: { maxTurns: 10 },
   });
+});
+
+// R-6.3: models/v1.contextWindow, the context capacity fill moved from the
+// runtime's usage-context.ts onto the live, cached providers.
+
+const router = (id: string, token: string, listed: readonly string[]) => ({
+  id,
+  kind: 'openrouter',
+  configuration: { endpoint: `https://${id}.example.test/api/v1`, token },
+  models: listed.map((name) => ({ name })),
+});
+
+const listedSnapshot = (
+  revision: number,
+  providers: readonly Record<string, unknown>[],
+) => ({
+  configuration: {
+    providers,
+    models: { execution: { providerId: 'router', model: 'measured' } },
+    execution: { maxTurns: 10 },
+  },
+  revision,
+  updatedAt: '2026-10-09T00:00:00.000Z',
+});
+
+const catalogAnswer =
+  (models: readonly Record<string, unknown>[], status = 200) =>
+  (): HttpResponse => ({
+    status,
+    headers: {},
+    body: JSON.stringify({ data: models }),
+  });
+
+void test('contextWindow reads the one capacity provider that lists the model, from its cached catalog', async () => {
+  await withModels(
+    async ({ models, token, requests }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(
+        listedSnapshot(1, [
+          { ...openai('direct', id), models: [{ name: 'measured' }] },
+          router('router', id, ['measured']),
+        ]),
+      );
+
+      assert.equal(await models.contextWindow({ model: 'measured' }), 200000);
+      assert.equal(
+        await models.contextWindow({ providerId: 'router', model: 'measured' }),
+        200000,
+      );
+      // The usage footer polls: the live provider's catalog is read once.
+      assert.equal(requests.length, 1);
+      // A kind without catalog capacity is never a candidate.
+      assert.equal(
+        await models.contextWindow({ providerId: 'direct', model: 'measured' }),
+        undefined,
+      );
+      // Unlisted model without a provider id: no candidate.
+      assert.equal(await models.contextWindow({ model: 'other' }), undefined);
+    },
+    catalogAnswer([{ id: 'measured', context_length: 200000 }]),
+  );
+});
+
+void test('contextWindow is unknown when the candidates are ambiguous', async () => {
+  await withModels(
+    async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(
+        listedSnapshot(1, [
+          router('one', id, ['measured']),
+          router('two', id, ['measured']),
+        ]),
+      );
+
+      assert.equal(
+        await models.contextWindow({ model: 'measured' }),
+        undefined,
+      );
+      // Naming the provider resolves the ambiguity.
+      assert.equal(
+        await models.contextWindow({ providerId: 'two', model: 'measured' }),
+        200000,
+      );
+    },
+    catalogAnswer([{ id: 'measured', context_length: 200000 }]),
+  );
+});
+
+void test('contextWindow never throws: a failed catalog, a missing or invalid capacity, or no configuration leave it unknown', async () => {
+  await withModels(async ({ models }) => {
+    assert.equal(await models.contextWindow({ model: 'measured' }), undefined);
+  });
+  await withModels(
+    async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
+      assert.equal(await models.contextWindow({ model: 'm' }), undefined);
+    },
+    catalogAnswer([], 500),
+  );
+  for (const answer of [
+    [{ id: 'other', context_length: 200000 }],
+    [{ id: 'm', context_length: 0 }],
+    [{ id: 'm' }],
+  ]) {
+    await withModels(async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
+      assert.equal(await models.contextWindow({ model: 'm' }), undefined);
+    }, catalogAnswer(answer));
+  }
 });

@@ -22,7 +22,8 @@ export type LeasedSandbox = Pick<
  * forwards to `sandbox` and the working directory to `host.workspace`.
  */
 const providers = (sandbox: LeasedSandbox, host: Host) => [
-  defineService(RuntimeWorkspaceV1, {
+  // By id: the stage-1 methods only; withThread (1.1.0) has no fake here.
+  defineService(RuntimeWorkspaceV1.id, {
     cwd: defineMethod({
       input: runtimeWorkspaceMethods.cwd.input,
       output: runtimeWorkspaceMethods.cwd.output,

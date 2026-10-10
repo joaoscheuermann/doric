@@ -1,5 +1,5 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
-// at `/settings`, its five sections as child routes, the nav as the
+// at `/settings`, its own four sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
 // `settings.sections` region, and the footer execution picker in
 // `layout.footer`.
 
@@ -15,6 +15,7 @@ import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
 import { linkHosts, sectionHosts } from './elements.js';
 import { clearSettingsQueryClient } from './queries/client.js';
+import { createSettingsConfig } from './services/settings-config.js';
 import {
   ExecutionPickerElement,
   SettingsPageElement,
@@ -22,6 +23,8 @@ import {
 
 export function activate({ services }: ClientContext): () => void {
   initSettingsApi(services);
+  // R-9.8: the window's autosave draft for sections other bundles draw.
+  services.provide(createSettingsConfig());
 
   const ui = services.use(UiV1);
   const navigation = services.use(NavigationV1);

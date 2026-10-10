@@ -31,7 +31,10 @@ const stageOne: Record<
     interrupt: runtimeThreadsMethods.interrupt,
     terminate: runtimeThreadsMethods.terminate,
   },
-  'runtime.workspace/v1': runtimeWorkspaceMethods,
+  'runtime.workspace/v1': {
+    cwd: runtimeWorkspaceMethods.cwd,
+    setCwd: runtimeWorkspaceMethods.setCwd,
+  },
   'runtime.lease/v1': {
     describe: runtimeLeaseMethods.describe,
     exec: runtimeLeaseMethods.exec,

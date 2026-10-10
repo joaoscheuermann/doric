@@ -2,16 +2,16 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "layout",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "contracts": [
     {
       "id": "layout.tabs/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "client",
       "cardinality": "one",
-      "local": false,
+      "local": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "doric:contract/layout.tabs/v1",
@@ -23,12 +23,25 @@
               "id": {
                 "type": "string",
                 "minLength": 1
+              },
+              "threadId": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": ["id"],
             "additionalProperties": false
           },
           "close.output": {},
+          "current.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "current.output": {
+            "x-doric-local": true
+          },
           "focus.input": {
             "type": "object",
             "properties": {
@@ -61,18 +74,34 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "icon": {
+                "type": "string",
+                "enum": ["file", "file-diff", "terminal"]
+              },
+              "ariaLabel": {
+                "type": "string"
+              },
+              "tooltip": {
+                "type": "string"
               }
             },
             "required": ["id", "title", "tag"],
             "additionalProperties": false
           },
-          "open.output": {}
+          "open.output": {},
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          }
         }
       }
     },
     {
       "id": "layout.workspace/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "client",
       "cardinality": "one",
@@ -82,6 +111,15 @@
         "$id": "doric:contract/layout.workspace/v1",
         "x-doric-kind": "service",
         "$defs": {
+          "connected.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "connected.output": {
+            "type": "boolean"
+          },
           "selectedThread.input": {
             "type": "array",
             "prefixItems": [],
@@ -91,6 +129,30 @@
           "selectedThread.output": {
             "x-doric-local": true
           },
+          "selection.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "selection.output": {
+            "x-doric-local": true
+          },
+          "setBottomVisible.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "setBottomVisible.output": {},
           "subscribe.input": {
             "x-doric-local": true
           },
@@ -102,6 +164,84 @@
           },
           "thread.output": {
             "x-doric-local": true
+          },
+          "threads.input": {
+            "type": "string"
+          },
+          "threads.output": {
+            "x-doric-local": true
+          }
+        }
+      }
+    },
+    {
+      "id": "layout.panel/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/layout.panel/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "active.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "active.output": {
+            "type": "string"
+          },
+          "isOpen.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "isOpen.output": {
+            "type": "boolean"
+          },
+          "show.input": {
+            "type": "string",
+            "minLength": 1
+          },
+          "show.output": {},
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          },
+          "toggle.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "toggle.output": {}
+        }
+      }
+    },
+    {
+      "id": "layout.sidebar/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "client",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/layout.sidebar/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "addThreadRows.input": {
+            "x-doric-local": true
+          },
+          "addThreadRows.output": {
+            "x-doric-local": "disposable"
           }
         }
       }

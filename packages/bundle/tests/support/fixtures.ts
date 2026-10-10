@@ -22,6 +22,9 @@ export const contractsUrl = pathToFileURL(
 
 /** File URL of the compiled minimal core module. */
 export const minimalCoreUrl = pathToFileURL(join(here, 'minimal-core.js')).href;
+export const skilledProviderUrl = pathToFileURL(
+  join(here, 'skilled-provider.js'),
+).href;
 
 export const withRoot = async <T>(
   run: (root: string) => Promise<T>,
@@ -138,13 +141,14 @@ export const skillSource = (
   options: {
     readonly allowedTools?: readonly string[];
     readonly alwaysAvailable?: boolean;
+    readonly order?: number;
     readonly body?: string;
   } = {},
 ) => `---
 name: ${name}
 description: ${name} description
 allowed-tools: [${(options.allowedTools ?? []).join(', ')}]
-${options.alwaysAvailable === undefined ? '' : `alwaysAvailable: ${options.alwaysAvailable}\n`}---
+${options.alwaysAvailable === undefined ? '' : `alwaysAvailable: ${options.alwaysAvailable}\n`}${options.order === undefined ? '' : `order: ${options.order}\n`}---
 
 ${options.body ?? `# ${name}\n\nFollow this procedure.`}
 `;

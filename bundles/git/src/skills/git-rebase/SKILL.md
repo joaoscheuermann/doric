@@ -3,6 +3,7 @@ name: git-rebase
 description: Rebases a local Git branch onto an explicit base with preflight checks and recoverable conflict handling. Use when local commits must be replayed onto updated history without losing work.
 allowed-tools:
   - git
+order: 2400
 ---
 
 # Git Rebase

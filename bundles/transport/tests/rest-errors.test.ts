@@ -79,7 +79,6 @@ const threadCases = (): Case[] => [
       ['PATCH', `/threads/${id}`, 'renameThread', { name: 'Name' }],
       ['POST', `/threads/${id}/terminate`, 'terminateThread'],
       ['GET', `/threads/${id}/queue`, 'queue'],
-      ['GET', `/threads/${id}/usage`, 'usage'],
       ['GET', `/threads/${id}/events`, 'threadEvents'],
     ] as const
   ).map(([method, path, member, body]) => ({
@@ -90,6 +89,13 @@ const threadCases = (): Case[] => [
     body,
     expected: restErrors.thread(undefined),
   })),
+  {
+    name: 'usage/v1 thread undefined',
+    fakes: { usage: { thread: answering(undefined) } },
+    method: 'GET',
+    path: `/threads/${id}/usage`,
+    expected: restErrors.thread(undefined),
+  },
   ...(
     [
       { status: 'missing' },
@@ -203,37 +209,37 @@ const leaseAndTerminalCases = (): Case[] => [
     ] as const
   ).map((result) => ({
     name: `branches (switch) ${JSON.stringify(result)}`,
-    fakes: { lease: { branches: answering(result) } },
+    fakes: { git: { switchBranch: answering(result) } },
     method: 'POST',
     path: `/threads/${id}/branches`,
     body: { branch: 'main', cwd: '/workspace' },
     expected: restErrors.switchBranch(result),
   })),
   {
-    name: 'terminals.create undefined',
-    fakes: { terminals: { create: answering(undefined) } },
+    name: 'terminal/v1 create undefined',
+    fakes: { terminal: { create: answering(undefined) } },
     method: 'POST',
     path: `/threads/${id}/terminals`,
     expected: restErrors.createTerminal(undefined),
   },
   {
-    name: 'terminals.snapshot undefined',
-    fakes: { terminals: { snapshot: answering(undefined) } },
+    name: 'terminal/v1 snapshot undefined',
+    fakes: { terminal: { snapshot: answering(undefined) } },
     method: 'GET',
     path: '/terminals/terminal-1',
     expected: restErrors.terminalSnapshot(undefined),
   },
   {
-    name: 'terminals.input false',
-    fakes: { terminals: { input: answering(false) } },
+    name: 'terminal/v1 input false',
+    fakes: { terminal: { input: answering(false) } },
     method: 'POST',
     path: '/terminals/terminal-1/input',
     body: { data: 'ls\n' },
     expected: restErrors.terminalWrite(false),
   },
   {
-    name: 'terminals.resize false',
-    fakes: { terminals: { resize: answering(false) } },
+    name: 'terminal/v1 resize false',
+    fakes: { terminal: { resize: answering(false) } },
     method: 'POST',
     path: '/terminals/terminal-1/resize',
     body: { cols: 80, rows: 24 },

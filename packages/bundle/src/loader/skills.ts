@@ -5,6 +5,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
 
+import { orderKeySchema } from '../contracts/basic/tools.js';
 import type { SkillSchemaInput } from '../contracts/skill.js';
 
 const nameSchema = z.string().trim().min(1);
@@ -26,19 +27,28 @@ const skillFields = {
 /** Frontmatter accepted by manifest v0 bundles (unknown keys rejected). */
 const skillMetadataV0Schema = z.object(skillFields).strict();
 
-/** Frontmatter of v1 bundles: `alwaysAvailable` moved into SKILL.md. */
+/**
+ * Frontmatter of v1 bundles: `alwaysAvailable` moved into SKILL.md, and the
+ * global `order` key of skills/v1 1.1.0 (D10-5).
+ */
 const skillMetadataV1Schema = z
-  .object({ ...skillFields, alwaysAvailable: z.boolean().optional() })
+  .object({
+    ...skillFields,
+    alwaysAvailable: z.boolean().optional(),
+    order: orderKeySchema.optional(),
+  })
   .strict();
 
 export interface ParsedSkill {
   readonly skill: SkillSchemaInput;
   /** From v1 frontmatter; undefined when the file does not say. */
   readonly alwaysAvailable?: boolean;
+  /** From v1 frontmatter; undefined when the file does not say. */
+  readonly order?: number;
 }
 
 export interface SkillParseOptions {
-  /** v1 bundles may set `alwaysAvailable` in the frontmatter. */
+  /** v1 bundles may set `alwaysAvailable` and `order` in the frontmatter. */
   readonly frontmatterAvailability: boolean;
 }
 
@@ -81,15 +91,20 @@ export const parseSkillDocument = (
     const schema = options.frontmatterAvailability
       ? skillMetadataV1Schema
       : skillMetadataV0Schema;
-    const { alwaysAvailable, ...skill } = schema.parse({
+    const { alwaysAvailable, order, ...skill } = schema.parse({
       ...fields,
       allowedTools,
       body,
-    }) as SkillSchemaInput & { readonly alwaysAvailable?: boolean };
+    }) as SkillSchemaInput & {
+      readonly alwaysAvailable?: boolean;
+      readonly order?: number;
+    };
 
-    return alwaysAvailable === undefined
-      ? { skill }
-      : { skill, alwaysAvailable };
+    return {
+      skill,
+      ...(alwaysAvailable === undefined ? {} : { alwaysAvailable }),
+      ...(order === undefined ? {} : { order }),
+    };
   } catch (cause) {
     throw withCause(`Invalid ${context}.`, cause);
   }

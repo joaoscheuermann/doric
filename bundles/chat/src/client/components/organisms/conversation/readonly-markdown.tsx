@@ -7,7 +7,7 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
-import { $getRoot } from 'lexical';
+import { $getRoot, type EditorThemeClasses } from 'lexical';
 
 import { $appendMarkdown } from './nodes/markdown-blocks.js';
 
@@ -15,12 +15,28 @@ import { $appendMarkdown } from './nodes/markdown-blocks.js';
 export function ReadonlyMarkdown({ text }: { readonly text: string }) {
   const [, context] = useLexicalComposerContext();
   return (
+    <ReadonlyMarkdownView text={text} theme={context.getTheme() ?? undefined} />
+  );
+}
+
+/**
+ * The same detail with an explicit theme, for a host with no conversation
+ * editor around it (`<chat-readonly-markdown>`, R-9.9).
+ */
+export function ReadonlyMarkdownView({
+  text,
+  theme,
+}: {
+  readonly text: string;
+  readonly theme?: EditorThemeClasses;
+}) {
+  return (
     <LexicalComposer
       key={text}
       initialConfig={{
         namespace: 'delegated-markdown',
         editable: false,
-        theme: context.getTheme() ?? undefined,
+        theme,
         nodes: [
           CodeNode,
           HeadingNode,

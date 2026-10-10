@@ -73,6 +73,10 @@ it compares:
   (`export { Toaster, toast }`). Every `toast` call in a window then reaches the
   store that the window's `Toaster` reads, whichever platform chunk loaded it
   (stage 8, S8-21).
+- `sidebar.tsx`: also defines and exports `SidebarScope`, the sidebar context
+  without the wrapper element or the shortcut, for a bundle element that draws
+  sidebar rows inside the layout's sidebar from its own React root (stage 10,
+  WP-10N).
 
 ## Fonts
 

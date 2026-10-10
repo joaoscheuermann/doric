@@ -8,7 +8,8 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
   "references": [
@@ -19,10 +20,23 @@
       "path": "../runtime"
     },
     {
+      "path": "../../packages/desktop-ui"
+    },
+    {
       "path": "../../packages/bundle"
     },
     {
       "path": "../../packages/host"
+    },
+    {
+      "path": "../../packages/desktop-client"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../chat"
     }
-  ]
+  ],
+  "exclude": ["src/client/**"]
 }

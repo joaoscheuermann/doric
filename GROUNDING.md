@@ -171,8 +171,8 @@ gone, and the Thread history snapshot is the `history` bundle's
 `history.snapshots/v1` cache in desktopMain. The renderer keeps the
 Threads it has read for each Project, so every open Project row renders its own
 subtree while live updates continue to follow the selected Project alone. A
-prompt that finishes is announced to the operating system: the renderer's Thread
-chat store reads the terminal event — `prompt.finished`, the one a client
+prompt that finishes is announced to the operating system: the `notifications`
+bundle (desktopMain, since stage 10) reads the terminal event — `prompt.finished`, the one a client
 acknowledges prompt completion by — into the Thread's name and the outcome
 beside a bounded preview of the answer, unless the reader is already looking at
 that Thread in a focused window, and the main process draws that as a native
@@ -726,7 +726,12 @@ out of the kernel; decisions D-S5-01 to D-S7-01 are indexed in
 queues, leases, recovery and the prompt runner through `runtime/v1`,
 `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`,
 `runtime.terminals/v1` and `runtime.hooks/v1`, and provisionally `terminal/v1`
-until the `terminal` bundle is extracted. It persists Projects, Threads and
+until the `terminal` bundle is extracted. Stage 10 adds the local
+`runtime.lease/v1.withLease` and `runtime.workspace/v1.withThread`, the
+terminal result delivery on `runtime.threads/v1`, `onThreadsClosingHook` and
+the unfilled `runtime.usage/v1.read`; the core adds
+`models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
+`secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.history/v1` documents and each Thread's events in the
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
@@ -801,9 +806,9 @@ client part provides `ui/v1`, `navigation/v1` (routes are URL paths matched on
 `pathname`), `regions/v1`, `commands/v1` and the outlet, region, not-found and
 unavailable elements. `layout` registers `/` with the workspace frame, its
 `layout.sidebar`, `layout.header` and `layout.footer` regions,
-`layout.tabs/v1` and `layout.workspace/v1`, and keeps the files, changes,
+`layout.tabs/v1` and `layout.workspace/v1`, and kept the files, changes,
 terminals, usage, resources, working-directory and branch UI under
-`src/client/provisional/` until stage 10; `chat` registers
+`src/client/provisional/` until stage 10 moved them to their bundles; `chat` registers
 `/projects/:projectId/threads/:threadId` (child of `/`) with `<chat-view>`, its
 composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1` and
 `chat.hooks/v1`; `settings` registers `/settings` with sections as child routes
@@ -816,6 +821,16 @@ is converted once into a path and removed. The shell's stylesheet keeps only the
 window-wide rules and the sorted utility set; each UI bundle ships its own
 `client/styles.css`. The visible text, roles, layout and quirks of the stage-8
 renderer are unchanged.
+Stage 10 (WP-10P) adds minor versions for the feature bundles, with no visible
+change: `layout.workspace/v1@1.1.0` (selection, a Project's Threads, the
+connection, the `layout.main.bottom` split), `layout.tabs/v1@1.1.0` (trigger
+icon, aria label and tooltip, closing in a named owner, the current tab), the
+new `layout.panel/v1` (the Project panel over `layout.panel` region items, with
+`layout.panel.header` and `layout.panel.footer`) and `layout.sidebar/v1` (rows
+under each Thread), `chat.hooks/v1@1.1.0.onThreadUpdateHook`, a
+`chat.delegated-input/v1` renderer slot and `<chat-readonly-markdown>`, and
+`settings.config/v1` (the settings window's one autosave draft). The layout
+imports the shared widgets from `desktop-ui/workspace` and `desktop-ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
@@ -837,6 +852,45 @@ validation; their values reach tools through `settings/v1` in a later stage.
 Providers transmit only their supported tool fields and use `inputSchema` as
 function parameters. Model-generated graph nodes use tool metadata rather than
 executable tools or arbitrary tool input schemas.
+
+Stage 10 ("Funcionalidades e sandbox", WP-10L host switch and WP-10N desktop
+switch) moves each feature into its own bundle. The composition enables
+`openai`, `openrouter` and `codex` (provider kinds come from their
+`models.provider/v1` registrations; codex is resolvable but not advertised by
+`GET /providers/kinds`), `docker` as the one `sandbox/v1` provider
+(`firecracker` is staged; with no `DORIC_COMPOSITION`,
+`DORIC_SANDBOX_PROVIDER=firecracker` boots the shipped composition with
+`firecracker` in its place; the libraries are `docker-sandbox` and
+`firecracker-sandbox`), `terminal`, `usage`, `resources` and `notifications`.
+`files` (`files/v1`), `git` (`git.commands/v1`), `terminal` (`terminal/v1`),
+`usage` (`usage/v1`) and `resources` (`resources/v1`) read the sandbox over
+`runtime.lease/v1.withLease` and never acquire a lease; the `terminal` bundle
+owns the `terminal` tool and closes a closing Thread's sessions through
+`onThreadsClosingHook`. Tools and skills keep one global model-visible order
+(`order` on `tools/v1` and `skills/v1`), and `allowed-tools` resolve against
+the whole `tools/v1` catalog after activation. The `web` tool and the
+`web-research` skill still register from `files` until the duplicate skill
+directory can be deleted. On the desktop, the layout draws no feature UI of
+its own: the Files view and the panel toggles are `files` region items, the
+Changes view, the footer's working directory and branch, the comparison tab
+and the Versioning settings section (`/settings/git`, which replaces
+`/settings/versioning`; the window still opens at `/settings`) are `git`'s,
+the "New terminal" button, the sidebar terminal rows (`layout.sidebar/v1`
+rows created through `ui/v1`) and the manual terminals of the
+`layout.main.bottom` split are `terminal`'s, the footer's context and cost
+are `usage`'s, and the resource monitor stays in the Project panel's footer
+(`layout.panel.footer`) as `resources`'. The file tab keeps its own footer,
+and diffs open as tabs. Prompt-completion notifications are decided in the
+`notifications` bundle's desktopMain part from chat's `onThreadUpdateHook`
+observations (the Thread name, the shown Thread and the window focus sampled
+in the window at receive time), and shown by main's
+`doric.notifications/v1`, again a desktopMain-only contract; chat's own
+announcement, the client form of `doric.notifications/v1` and the
+`doric.shell/v1.notify` call are gone. Feature bundle stylesheets also scan
+the stage-9 window bundles' sources, so a shared class never lands after a
+responsive variant of another sheet, and `desktop-ui/sidebar` exports
+`SidebarScope`, the sidebar context alone, for an element that draws sidebar
+rows from its own React root.
 
 `packages/host` owns the `Host` capability facade the runtime's runner builds
 for every prompt. It is types only and no longer a cross-package API: only
@@ -1104,8 +1158,12 @@ host assets; the Doric runtime image and Compose profiles default it on and
 include those assets. Remote authentication remains runtime-provided and must
 never be placed in model-visible tool arguments.
 
-`packages/docker` and `packages/firecracker` depend inward on Sandbox and expose
-providers. Docker is Doric's default; `DORIC_SANDBOX_PROVIDER=firecracker`
+`packages/docker-sandbox` and `packages/firecracker-sandbox` (npm
+`docker-sandbox` and `firecracker-sandbox`, renamed in stage 10 to free the
+bundle IDs) depend inward on Sandbox and expose providers. The `docker` and
+`firecracker` bundles each provide `sandbox/v1` over one of them, with the VM
+registry from `sandbox` (`createVmRegistry`); only one is enabled per
+composition. Docker is Doric's default; `DORIC_SANDBOX_PROVIDER=firecracker`
 selects the direct Linux x86_64 Firecracker/KVM boundary. Firecracker has no
 Docker dependency or socket access. Firecracker resolves anonymous public
 Linux/amd64 OCI images directly with skopeo and umoci, converts validated

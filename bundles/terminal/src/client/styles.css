@@ -1,0 +1,35 @@
+/*
+ * The terminal bundle's utilities: the classes its elements use, over the
+ * platform theme, which the window loads once.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities);
+@reference 'desktop-ui/tailwind.css';
+@source './';
+/*
+ * The shared components' classes too, so this sheet's utilities are always the
+ * whole sorted set the window uses (as the files, settings and chat sheets do).
+ */
+@source '../../../../packages/desktop-ui/src';
+
+/* Match ScrollArea's 10px lane, 1px padding and transparent left border.
+ * The scope outranks xterm's injected hover/active background shorthand so it
+ * cannot reset the clip and paint over the thumb's transparent inset.
+ * (Moved from the layout's styles with the terminal view.) */
+[data-slot='terminal-view']
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-left-width: 2px;
+  border-radius: 9999px;
+}
+/*
+ * WP-10N: and the stage-9 window bundles' classes, so a later sheet never
+ * re-emits a shared class (`inline-flex`) after their responsive variants
+ * (`md:hidden` in the settings window's bar).
+ */
+@source '../../../layout/src/client';
+@source '../../../chat/src/client';
+@source '../../../settings/src/client';

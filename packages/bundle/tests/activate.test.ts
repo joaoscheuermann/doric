@@ -15,6 +15,7 @@ import {
   defineService,
   HooksV1,
   type HostContext,
+  SkillsV1,
   ToolsV1,
 } from '../src/contracts/index.js';
 import type { HostPlatform } from '../src/index.js';
@@ -24,6 +25,7 @@ import {
   embedded,
   manifest,
   minimalCoreUrl,
+  skilledProviderUrl,
   skillSource,
   withRoot,
   writeBundle,
@@ -490,7 +492,7 @@ void test('skill failures quarantine the bundle with the matching reason', async
       descriptor: descriptorFor(manifest('foreign')),
       files: {
         'skills/x/SKILL.md': skillSource('foreign-skill', {
-          allowedTools: ['good-tool'],
+          allowedTools: ['missing-tool'],
         }),
       },
     });
@@ -522,6 +524,110 @@ void test('skill failures quarantine the bundle with the matching reason', async
     });
 
     assert.deepEqual(reasonCodes(platform, 'skilled'), ['missing_dependency']);
+
+    await platform.stop();
+  });
+});
+
+void test('skills register after the whole phase, so allowed-tools may name a tool of a later bundle', async () => {
+  await withRoot(async (root) => {
+    await writeBundle(root, 'mincore', diskCore);
+    await writeBundle(root, 'aaa-skills', {
+      manifest: manifest('aaa-skills'),
+      descriptor: descriptorFor(manifest('aaa-skills')),
+      files: {
+        'skills/borrow/SKILL.md': skillSource('borrow', {
+          allowedTools: ['late-tool'],
+        }),
+      },
+    });
+
+    const { platform } = await start({
+      bundlesPath: root,
+      composition: { enabled: ['mincore', 'aaa-skills', 'zzz-tools'] },
+      embedded: [toolBundle('zzz-tools', ['late-tool'])],
+    });
+
+    assert.equal(states(platform)['aaa-skills'], 'active');
+    assert.deepEqual(await skillNames(platform), ['aaa-skills:borrow:false']);
+
+    await platform.stop();
+  });
+});
+
+void test('the SKILL.md order key reaches skills/v1 with the registration', async () => {
+  await withRoot(async (root) => {
+    await writeBundle(root, 'mincore', diskCore);
+    await writeBundle(root, 'skilled', {
+      manifest: manifest('skilled'),
+      descriptor: descriptorFor(manifest('skilled')),
+      files: {
+        'skills/a/SKILL.md': skillSource('ordered', { order: 1200 }),
+        'skills/b/SKILL.md': skillSource('unordered'),
+      },
+    });
+
+    const { platform } = await start({
+      bundlesPath: root,
+      composition: { enabled: ['mincore', 'skilled'] },
+    });
+
+    assert.deepEqual(
+      (await platform.services.use(SkillsV1).list()).map(({ skill, order }) => [
+        skill.name,
+        order,
+      ]),
+      [
+        ['ordered', 1200],
+        ['unordered', undefined],
+      ],
+    );
+
+    await platform.stop();
+  });
+});
+
+void test('a skill refused after the phase quarantines its active bundle, withdraws its tools and quarantines its dependents', async () => {
+  await withRoot(async (root) => {
+    await writeBundle(root, 'mincore', diskCore);
+    await writeBundle(root, 'prov', {
+      manifest: manifest('prov', {
+        requires: usesTools,
+        provides: ['prov.api/v1@1.0.0'],
+      }),
+      descriptor: descriptorFor(
+        manifest('prov', { provides: ['prov.api/v1@1.0.0'] }),
+      ),
+      host: `export { activate } from ${JSON.stringify(skilledProviderUrl)};\n`,
+      files: {
+        'skills/x/SKILL.md': skillSource('needs-missing', {
+          allowedTools: ['prov-tool', 'missing-tool'],
+        }),
+      },
+    });
+
+    const { platform } = await start({
+      bundlesPath: root,
+      composition: { enabled: ['mincore', 'prov', 'user'] },
+      embedded: [
+        embedded(
+          manifest('user', { requires: ['prov.api/v1@^1.0.0'] }),
+          () => undefined,
+        ),
+      ],
+    });
+
+    assert.equal(platform.mode, 'normal');
+    assert.equal(states(platform).prov, 'quarantined');
+    assert.deepEqual(reasonCodes(platform, 'prov'), ['registration_failed']);
+    assert.match(
+      platform.diagnostics().bundles.find(({ id }) => id === 'prov')?.reasons[0]
+        ?.message ?? '',
+      /Skill "needs-missing" in bundle "prov" references unavailable tool "missing-tool"\./,
+    );
+    assert.deepEqual(reasonCodes(platform, 'user'), ['dependency_quarantined']);
+    assert.deepEqual(toolNames(platform), []);
+    assert.deepEqual(await skillNames(platform), []);
 
     await platform.stop();
   });

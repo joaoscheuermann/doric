@@ -2,7 +2,7 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "core",
-    "version": "1.5.0"
+    "version": "1.7.0"
   },
   "contracts": [
     {
@@ -131,7 +131,7 @@
     },
     {
       "id": "tools/v1",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -191,7 +191,7 @@
     },
     {
       "id": "skills/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -217,6 +217,11 @@
                 },
                 "alwaysAvailable": {
                   "type": "boolean"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 },
                 "skill": {
                   "type": "object",
@@ -295,6 +300,11 @@
                 "properties": {
                   "alwaysAvailable": {
                     "type": "boolean"
+                  },
+                  "order": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 },
                 "additionalProperties": false
@@ -737,7 +747,7 @@
     },
     {
       "id": "secrets/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -1078,6 +1088,18 @@
           },
           "view.output": {
             "x-doric-local": true
+          },
+          "watchRedactions.input": {
+            "x-doric-local": "callback",
+            "x-doric-stream": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "watchRedactions.output": {
+            "x-doric-local": "disposable"
           }
         }
       }
@@ -1206,7 +1228,7 @@
     },
     {
       "id": "models/v1",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
@@ -1299,6 +1321,22 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "contextWindow.input": {
+            "type": "object",
+            "properties": {
+              "providerId": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": ["model"],
+            "additionalProperties": false
+          },
+          "contextWindow.output": {
+            "type": "number"
           },
           "kind.input": {
             "type": "array",

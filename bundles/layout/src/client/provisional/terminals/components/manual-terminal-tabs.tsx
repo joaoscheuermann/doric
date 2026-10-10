@@ -1,8 +1,8 @@
 import { Button } from 'desktop-ui/button';
 import { Tabs, TabsContent } from 'desktop-ui/tabs';
+import { TabStrip } from 'desktop-ui/workspace';
 import { TerminalIcon, XIcon } from 'lucide-react';
 
-import { TabStrip } from '../../../components/molecules/tab-strip.js';
 import type { WorkspaceTabs } from '../../../domain/workspace-tabs.js';
 import { workspaceTabsStore } from '../../../stores/workspace-tabs.js';
 import type { Terminal } from '../domain/terminals.js';

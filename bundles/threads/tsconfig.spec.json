@@ -10,7 +10,13 @@
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/domain/**/*.ts",
+    "tests/*.ts",
+    "tests/support/**/*.ts"
+  ],
   "references": [
     {
       "path": "../../packages/bundle/tsconfig.lib.json"
@@ -24,5 +30,6 @@
     {
       "path": "../runtime"
     }
-  ]
+  ],
+  "exclude": []
 }

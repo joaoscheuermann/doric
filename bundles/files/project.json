@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/files/tsconfig.json",
+          "tsc -p bundles/files/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/files"
         ],
         "parallel": false
@@ -20,7 +21,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/files/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/files/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/files/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -29,6 +34,7 @@
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "rm -rf bundles/files/dist-tests",
           "tsc -p bundles/files/tsconfig.spec.json",
           "node --test bundles/files/dist-tests/tests/*.test.js"
         ],

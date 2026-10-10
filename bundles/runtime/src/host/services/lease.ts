@@ -114,4 +114,9 @@ export const leaseService = ({
       execute: ({ branch, cwd }, call) =>
         service.threads.branches(scoped(call, 'threadId'), branch, cwd),
     }),
+    withLease: defineMethod({
+      ...methods.withLease,
+      execute: async (task, call) =>
+        service.projects.withLease(scoped(call, 'projectId'), task),
+    }),
   });

@@ -11,6 +11,7 @@ import {
   type Services,
 } from 'bundle/contracts';
 
+import { contextWindow } from './capacity.js';
 import { type ConfiguredProvider, createProviderCache } from './providers.js';
 import { createKindRegistry } from './registry.js';
 
@@ -62,10 +63,19 @@ const preparedOf = (
         throw new Error('A configured provider is invalid.');
       }
 
+      const models = Array.isArray(provider.models)
+        ? provider.models.flatMap((model: unknown) =>
+            isRecord(model) && typeof model.name === 'string'
+              ? [model.name]
+              : [],
+          )
+        : undefined;
+
       return {
         id: provider.id,
         kind: provider.kind,
         configuration: provider.configuration as Record<string, string>,
+        ...(models === undefined ? {} : { models }),
       };
     }),
     revision: stored ? (input.revision as number) : undefined,
@@ -149,6 +159,10 @@ export const createModels = (services: Services) => {
 
         await cache.prepare(providers, revision);
       },
+    }),
+    contextWindow: defineMethod({
+      ...modelsMethods.contextWindow,
+      execute: (request) => contextWindow(registry, cache, request),
     }),
   });
 };

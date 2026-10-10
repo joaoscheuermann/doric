@@ -464,3 +464,103 @@ test('while the selected Thread runs, the composer pauses its active prompt', as
     .map((envelope) => envelope.input);
   assert.deepEqual(paused, [{ id: threadId, promptId }]);
 });
+
+// R-9.7 and R-9.9: another Thread's input. Chat draws it itself until a
+// bundle registers a renderer for `chat.delegated-input/v1`; then the turn
+// hosts that element, handing it the block, and the element can show the
+// text with `<chat-readonly-markdown>`.
+
+const parentThreadId = '44444444-4444-4444-8444-444444444444';
+
+const delegatedExchange = [
+  event(1, {
+    type: 'prompt.accepted',
+    text: 'Fix the parser first.',
+    source: { kind: 'parent', threadId: parentThreadId },
+  }),
+];
+
+const turnOf = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector(`[data-prompt-id="${promptId}"]`);
+
+test('a delegated instruction is drawn by chat while no bundle renders it', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await settle();
+  await deliver(opened, delegatedExchange);
+
+  const turn = turnOf(opened);
+  assert.match(turn?.textContent ?? '', /Instruction from:/);
+  assert.equal(
+    turn?.querySelector('.editor-paragraph')?.textContent,
+    'Fix the parser first.',
+  );
+});
+
+test('a registered renderer draws the delegated input with the read-only Markdown element', async () => {
+  const blocks: unknown[] = [];
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    probe: {
+      requires: ['chat.views/v1@^1.0.0', 'ui/v1@^1.0.0'],
+      activate: ({ services }: ClientContext) => {
+        const ui = services.use(UiV1);
+        const Base = globalThis.HTMLElement;
+        ui.define(
+          'probe-delegated',
+          class extends Base {
+            #block: unknown;
+            focused = false;
+            chosen = true;
+            toggle() {
+              this.chosen = !this.chosen;
+            }
+            get block() {
+              return this.#block;
+            }
+            set block(value: unknown) {
+              this.#block = value;
+              blocks.push(value);
+              const input = (
+                value as { data: { input: { text: string } } } | undefined
+              )?.data.input;
+              if (input === undefined || this.childElementCount > 0) return;
+              this.append(
+                ui.create('chat-readonly-markdown', {
+                  text: input.text,
+                }) as Node,
+              );
+            }
+          },
+        );
+        services.use(ChatViewsV1).registerRenderer({
+          blockType: 'chat.delegated-input/v1',
+          elementTag: 'probe-delegated',
+        });
+      },
+    },
+  });
+  await settle();
+  await deliver(opened, delegatedExchange);
+
+  const turn = turnOf(opened);
+  assert.notEqual(turn?.querySelector('probe-delegated'), null);
+  assert.doesNotMatch(turn?.textContent ?? '', /Instruction from:/);
+  // The conversation's read-only Markdown, in the conversation's theme.
+  assert.equal(
+    turn?.querySelector('probe-delegated .editor-paragraph')?.textContent,
+    'Fix the parser first.',
+  );
+  assert.deepEqual(blocks.at(-1), {
+    type: 'chat.delegated-input/v1',
+    id: (blocks.at(-1) as { id: string }).id,
+    data: {
+      promptId,
+      input: {
+        kind: 'parent',
+        threadId: parentThreadId,
+        text: 'Fix the parser first.',
+      },
+    },
+  });
+});

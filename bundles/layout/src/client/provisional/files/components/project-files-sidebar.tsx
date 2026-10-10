@@ -6,23 +6,19 @@ import {
   EmptyTitle,
 } from 'desktop-ui/empty';
 import { ScrollArea } from 'desktop-ui/scroll-area';
-import { Separator } from 'desktop-ui/separator';
+import { SidebarMenu } from 'desktop-ui/sidebar';
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-} from 'desktop-ui/sidebar';
-import { Tabs } from 'desktop-ui/tabs';
+  ChangeCounts,
+  FileTree,
+  type FileTreeActions,
+  ReadFeedback,
+  TreeSkeleton,
+} from 'desktop-ui/workspace';
 import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 
-import { FilesToggle } from '../../../components/molecules/files-toggle.js';
-import { TabStrip } from '../../../components/molecules/tab-strip.js';
+import type { PanelBuiltIn } from '../../../components/organisms/project-panel.js';
 import type { Project } from '../../../domain/workspace.js';
-import { moveItem } from '../../../utility/move-item.js';
-import { ResourceMonitor } from '../../resources/components/resource-monitor.js';
 import {
   changeDecorations,
   changedLineTotals,
@@ -31,24 +27,17 @@ import {
 import { emptyDirectoryNotice, sandboxNotice } from '../domain/files.js';
 import type { ProjectChange } from '../domain/project-files.js';
 import type { ProjectFiles } from '../hooks/use-project-files.js';
-import { ChangeCounts } from './change-counts.js';
 import { ChangesTree } from './changes-tree.js';
-import { FileTree, type FileTreeActions } from './file-tree.js';
-import { ReadFeedback } from './read-feedback.js';
-import { TreeSkeleton } from './tree-skeleton.js';
 
-type ProjectFilesSidebarProps = {
+type ProjectFilesContentProps = {
   /**
    * The Project's sandbox, read by the view that also feeds the file viewer, so
    * the two surfaces share one read of the same file.
    */
   readonly files: ProjectFiles;
-  /** Expands or collapses the panel. */
-  readonly onToggle: () => void;
   /** The selected Project, whose sandbox this panel reads. */
   readonly project?: Project;
   readonly view: PanelView;
-  readonly onViewChange: (view: PanelView) => void;
   readonly onOpenChange: (repository: string, change: ProjectChange) => void;
   readonly selectedChangePath?: string;
 };
@@ -57,116 +46,64 @@ type ProjectFilesSidebarProps = {
 export type PanelView = 'files' | 'changes';
 
 /**
- * The sandbox, as a right-hand panel beside the conversation, rooted at the
- * selected Thread's working directory. It is scoped to that directory rather than
- * to the Project as a whole: the tree starts where the Thread works and the
- * changes view looks at the repository that directory sits in. It reads nothing
- * it does not show, and never writes: the whole tree arrives in one read, the
- * changes view lists repositories and their changed paths, and a file is not shown here —
- * selecting one opens the file viewer panel that sits beside this one, so the
- * tree it was opened from stays where it is.
- *
- * The two views are icon-only tabs in the header in place of a title, because
- * they name what the panel is showing and select it among a set. The
- * panel's own toggle closes it, and stays the last control at the corner.
+ * The provisional Files and Changes views of the Project panel (WP-10P): the
+ * built-in entries of the layout's "Project views" strip until the files and
+ * Git bundles own them (10N).
  */
-export function ProjectFilesSidebar({
-  files,
-  onToggle,
-  project,
-  view,
-  onViewChange,
-  onOpenChange,
-  selectedChangePath,
-}: ProjectFilesSidebarProps) {
-  const [order, setOrder] = useState<readonly string[]>(['files', 'changes']);
-
-  return (
-    <Sidebar collapsible="none" className="overflow-hidden">
-      <PanelHeader>
-        <div className="ml-auto flex min-w-0 items-center gap-1 pr-2">
-          <Tabs
-            className="min-w-0 [app-region:no-drag]"
-            value={view}
-            onValueChange={(next) =>
-              onViewChange(next === 'changes' ? 'changes' : 'files')
-            }
-          >
-            <TabStrip
-              label="Project views"
-              selected={view}
-              onMove={(from, to) =>
-                setOrder((current) =>
-                  moveItem(current, current.indexOf(from), current.indexOf(to)),
-                )
-              }
-              items={order.map((id) => ({
-                id,
-                label: id === 'files' ? 'Files' : 'Changes',
-                icon: id === 'files' ? <FilesIcon /> : <FileDiffIcon />,
-                iconOnly: true,
-                badge:
-                  id === 'changes' && files.changes.status === 'ready' ? (
-                    <ChangeCounts
-                      {...changedLineTotals(files.changes.value.repositories)}
-                    />
-                  ) : undefined,
-              }))}
-            />
-          </Tabs>
-          <FilesToggle onToggle={onToggle} open />
-        </div>
-      </PanelHeader>
-      <SidebarContent className="overflow-hidden p-0">
-        <SidebarGroup className="h-full min-h-0 p-0">
-          <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
-            <ReadFeedback
-              error={files.treeError ?? files.changesError}
-              refreshing={files.refreshing}
-              onRetry={files.actions.refresh}
-            />
-            <SandboxGate
-              files={files}
-              project={project}
-              changes={view === 'changes'}
-            >
-              {view === 'files' ? (
-                <FilesView files={files} />
-              ) : (
-                <ChangesView
-                  files={files}
-                  onOpenChange={onOpenChange}
-                  selectedPath={selectedChangePath}
-                />
-              )}
-            </SandboxGate>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <footer
-        data-slot="project-files-footer"
-        className="flex chrome-bar shrink-0 items-center gap-1 border-t bg-sidebar px-2 text-xs"
-      >
-        <ResourceMonitor projectId={project?.id} />
-      </footer>
-    </Sidebar>
-  );
-}
+export const provisionalPanelViews = (
+  files: ProjectFiles,
+): readonly PanelBuiltIn[] => [
+  { id: 'files', label: 'Files', icon: <FilesIcon /> },
+  {
+    id: 'changes',
+    label: 'Changes',
+    icon: <FileDiffIcon />,
+    badge:
+      files.changes.status === 'ready' ? (
+        <ChangeCounts
+          {...changedLineTotals(files.changes.value.repositories)}
+        />
+      ) : undefined,
+  },
+];
 
 /**
- * The panel's header strip: the drag region, its boundary, and the controls it
- * carries — the view tabs and the panel's own toggle, together at the right
- * corner.
+ * The sandbox, rooted at the selected Thread's working directory. It is
+ * scoped to that directory rather than to the Project as a whole: the tree
+ * starts where the Thread works and the changes view looks at the repository
+ * that directory sits in. It reads nothing it does not show, and never
+ * writes: the whole tree arrives in one read, the changes view lists
+ * repositories and their changed paths, and a file is not shown here —
+ * selecting one opens the file viewer panel that sits beside this one, so the
+ * tree it was opened from stays where it is. The frame around it (the view
+ * tabs, the toggle and the footer) is the layout's `ProjectPanel`.
  */
-function PanelHeader({ children }: { readonly children: ReactNode }) {
+export function ProjectFilesContent({
+  files,
+  project,
+  view,
+  onOpenChange,
+  selectedChangePath,
+}: ProjectFilesContentProps) {
   return (
-    <div
-      data-slot="project-files-header"
-      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-2 [app-region:drag]"
-    >
-      <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
-      {children}
-    </div>
+    <>
+      <ReadFeedback
+        error={files.treeError ?? files.changesError}
+        refreshing={files.refreshing}
+        onRetry={files.actions.refresh}
+      />
+      <SandboxGate files={files} project={project} changes={view === 'changes'}>
+        {view === 'files' ? (
+          <FilesView files={files} />
+        ) : (
+          <ChangesView
+            files={files}
+            onOpenChange={onOpenChange}
+            selectedPath={selectedChangePath}
+          />
+        )}
+      </SandboxGate>
+    </>
   );
 }
 

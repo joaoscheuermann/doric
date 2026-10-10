@@ -227,6 +227,11 @@ export const directServices = (options: HarnessOptions) => {
           output: modelsMethods.prepare.output,
           execute: () => undefined,
         }),
+        contextWindow: defineMethod({
+          input: modelsMethods.contextWindow.input,
+          output: modelsMethods.contextWindow.output,
+          execute: () => undefined,
+        }),
       }),
       defineService(ToolsV1.id, {
         register: defineMethod({

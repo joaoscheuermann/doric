@@ -2,10 +2,10 @@ import { Button } from 'desktop-ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
 import { cn } from 'desktop-ui/utils';
+import { ToolbarDivider } from 'desktop-ui/workspace';
 import { CpuIcon, MemoryStickIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { ToolbarDivider } from '../../../components/molecules/toolbar-divider.js';
 import {
   type ContainerResources,
   cpuLabel,

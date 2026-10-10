@@ -1,20 +1,18 @@
 import { Router } from 'express';
-
-import type { HostResources } from '../resources.js';
+import type { Resources } from 'resources/contracts';
 
 /**
- * Reads the machine the host runs on. It holds no lease: an answer is always
- * available, so the monitor can poll it without a Project being involved. The
- * reader is injected so a test can decide what the host reports.
+ * Reads the machine the host runs on, through the `resources` bundle
+ * (`resources/v1.host()`, stage 10 §4). It holds no lease: an answer is
+ * always available, so the monitor can poll it without a Project being
+ * involved.
  */
-export const createResourcesRouter = (
-  readHost: () => HostResources,
-): Router => {
+export const createResourcesRouter = (resources: () => Resources): Router => {
   const router = Router();
 
-  router.get('/', (_request, response) => {
+  router.get('/', async (_request, response) => {
     response.set('Cache-Control', 'no-store');
-    response.json(readHost());
+    response.json(await resources().host());
   });
 
   return router;

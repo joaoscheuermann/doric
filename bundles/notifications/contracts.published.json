@@ -1,0 +1,55 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "notifications",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "notifications.observations/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/notifications.observations/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "report.input": {
+            "type": "object",
+            "properties": {
+              "threadId": {
+                "type": "string"
+              },
+              "threadName": {
+                "type": "string"
+              },
+              "event": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "event": {}
+                },
+                "required": ["type", "event"],
+                "additionalProperties": {}
+              },
+              "shownThreadId": {
+                "type": "string"
+              },
+              "windowFocused": {
+                "type": "boolean"
+              }
+            },
+            "required": ["threadId", "threadName", "event", "windowFocused"],
+            "additionalProperties": false
+          },
+          "report.output": {}
+        }
+      }
+    }
+  ]
+}

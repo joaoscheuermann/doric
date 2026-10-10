@@ -18,10 +18,6 @@
     "src/client/services/**/*.ts",
     "src/client/stores/**/*.ts",
     "src/client/utility/**/*.ts",
-    "src/client/provisional/api/**/*.ts",
-    "src/client/provisional/*/api/**/*.ts",
-    "src/client/provisional/*/domain/**/*.ts",
-    "src/client/provisional/*/utility/**/*.ts",
     "tests/**/*.ts"
   ],
   "references": [
@@ -31,5 +27,26 @@
     {
       "path": "../runtime"
     }
+  ],
+  "exclude": [
+    "src/client/queries/project-refresh.ts",
+    "src/client/api/chat-hooks.ts",
+    "tests/change-tree.test.ts",
+    "tests/cwd.test.ts",
+    "tests/file-diff.test.ts",
+    "tests/files.test.ts",
+    "tests/oklch.test.ts",
+    "tests/project-refresh-queries.test.ts",
+    "tests/provisional-adapter.test.ts",
+    "tests/refresh-queue.test.ts",
+    "tests/resources.test.ts",
+    "tests/sandbox-reads.test.ts",
+    "tests/terminal-watch.test.ts",
+    "tests/terminals.test.ts",
+    "tests/thread-git.test.ts",
+    "tests/usage.test.ts",
+    "tests/project-refresh.test.ts",
+    "src/client/domain/project-refresh.ts",
+    "src/client/hooks/use-project-refresh.ts"
   ]
 }

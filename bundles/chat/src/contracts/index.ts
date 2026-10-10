@@ -9,6 +9,7 @@ import {
   ref,
 } from 'bundle/contracts';
 import type { AnyLexicalExtension, Klass, LexicalNode } from 'lexical';
+import type { Thread, ThreadEvent } from 'runtime/contracts';
 import { z } from 'zod';
 
 /** One persisted event of a Thread, as the conversation receives it. */
@@ -103,7 +104,83 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
     kind: 'observe',
     input: z.object({ projectId: z.string() }).strict(),
   }),
+  /**
+   * 1.1.0 (R-9.6): every live event of a held Thread as it is received
+   * (before the 100 ms flush; never a snapshot or history), and every
+   * `updated` record. Chat does not await it.
+   */
+  onThreadUpdateHook: defineHook({
+    kind: 'observe',
+    input: z
+      .object({
+        projectId: z.string(),
+        threadId: z.string(),
+        threadName: z.string(),
+        update: z.custom<ThreadUpdateNotice>(
+          (value) =>
+            typeof value === 'object' &&
+            value !== null &&
+            ((value as { kind?: unknown }).kind === 'event' ||
+              (value as { kind?: unknown }).kind === 'updated'),
+          { message: 'Expected an event or an updated record.' },
+        ),
+      })
+      .strict(),
+  }),
 });
+
+/** What `onThreadUpdateHook` reports for one Thread. */
+export type ThreadUpdateNotice =
+  | { readonly kind: 'event'; readonly event: ThreadEvent }
+  | { readonly kind: 'updated'; readonly thread: Thread };
+
+export interface ThreadUpdateInput {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly threadName: string;
+  readonly update: ThreadUpdateNotice;
+}
+
+/**
+ * R-9.7: the block type of another Thread's input in this one (a delegated
+ * instruction or result). Its renderer's element implements
+ * `ChatBlockElement`; without a renderer, chat draws it itself.
+ */
+export const DELEGATED_INPUT_BLOCK = 'chat.delegated-input/v1';
+
+/** The other Thread's input, as the conversation shows it. */
+export interface DelegatedInput {
+  readonly kind: 'parent' | 'result';
+  readonly threadId: string;
+  /** The child's terminal status, when the host recorded one. */
+  readonly status?: string;
+  /** The sender's own words, with the host's envelope removed. */
+  readonly text: string;
+}
+
+/** The `block` a delegated-input element receives. */
+export interface DelegatedInputBlock {
+  readonly type: typeof DELEGATED_INPUT_BLOCK;
+  /** The turn's key in the conversation. */
+  readonly id: string;
+  readonly data: {
+    readonly promptId: string;
+    readonly input: DelegatedInput;
+  };
+}
+
+/**
+ * The protocol of an element that draws a collapsible block inside the
+ * conversation (R-9.7). Chat sets `block` and `focused`, calls `toggle()` for
+ * the conversation's toggle key, and reads `chosen` (whether the reader opened
+ * it).
+ */
+export interface ChatBlockElement {
+  block: unknown;
+  focused: boolean;
+  toggle(): void;
+  readonly chosen: boolean;
+}
 
 /** The one DOM intent a card emits; chat runs `commands.execute(command, input)`. */
 export const CHAT_INTENT_EVENT = 'chat:intent';

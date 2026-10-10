@@ -1,8 +1,8 @@
 import { Button } from 'desktop-ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+import { ToolbarDivider } from 'desktop-ui/workspace';
 
-import { ToolbarDivider } from '../../../components/molecules/toolbar-divider.js';
 import type { Thread } from '../../../domain/workspace.js';
 import { contextLabel, costLabel } from '../domain/usage.js';
 import { useThreadUsage } from '../hooks/use-thread-usage.js';
