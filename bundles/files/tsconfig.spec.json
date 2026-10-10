@@ -21,7 +21,6 @@
     "src/client/state.ts",
     "tests/**/*.ts"
   ],
-  "exclude": ["src/host/tools/web.ts", "tests/web.test.ts"],
   "references": [
     {
       "path": "../../packages/bundle/tsconfig.lib.json"

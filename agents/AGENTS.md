@@ -16,8 +16,9 @@ this file only adds local conventions for agent packages.
 - Extract a helper only when it removes real duplication or names a meaningful
   concern.
 - Reuse the host's shared helpers rather than writing a second version:
-  `redactSecrets` (`credentials/redact.ts`), `createMutationQueue`
-  (`workspace/runtime.ts`) and `teardownSocket` (`workspace/socket-teardown.ts`).
+  `redactSecrets` (`lib/credentials/redact.ts`); the mutation queue is the
+  runtime bundle's `createMutationQueue`
+  (`bundles/runtime/src/host/domain/runtime.ts`).
 
 ## Default Agent Pattern
 

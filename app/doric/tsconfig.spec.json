@@ -18,13 +18,6 @@
   ],
   "exclude": [
     "src/platform/generation/runner-bootstrap.ts",
-    "src/platform/generation/runner-entry.ts",
-    "src/connection/ipc.ts",
-    "tests/config-boundary.test.ts",
-    "tests/project-events.test.ts",
-    "tests/terminal-events.test.ts",
-    "tests/thread-events.test.ts",
-    "tests/thread-history.test.ts",
-    "tests/workspace-boundary.test.ts"
+    "src/platform/generation/runner-entry.ts"
   ]
 }

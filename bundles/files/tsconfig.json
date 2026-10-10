@@ -44,5 +44,5 @@
       "path": "../../packages/desktop-reads"
     }
   ],
-  "exclude": ["src/client/**", "src/host/tools/web.ts"]
+  "exclude": ["src/client/**"]
 }

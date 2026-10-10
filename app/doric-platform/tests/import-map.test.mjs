@@ -113,10 +113,10 @@ describe('the platform import map', () => {
     assert.equal(imports['desktop-ui/'], `${prefix}desktop-ui@1.0.0/`);
   });
 
-  test('maps every Lexical specifier the renderer imports', () => {
-    const renderer = join(workspace, 'app/doric-renderer/src');
+  test('maps every Lexical specifier the client bundles import', () => {
+    const clients = join(workspace, 'bundles/chat/src/client');
     const used = new Set(
-      filesUnder(renderer)
+      filesUnder(clients)
         .filter((path) => /\.tsx?$/.test(path))
         .flatMap((path) => bareImports(readFileSync(path, 'utf8')))
         .filter(
@@ -128,11 +128,11 @@ describe('the platform import map', () => {
     for (const specifier of used) {
       assert.ok(
         specifier in imports,
-        `renderer import ${specifier} is not mapped`,
+        `client import ${specifier} is not mapped`,
       );
     }
     const dependencies = Object.keys(
-      manifest(join(workspace, 'app/doric-renderer/package.json')).dependencies,
+      manifest(join(workspace, 'bundles/chat/package.json')).dependencies,
     ).filter((name) => name === 'lexical' || name.startsWith('@lexical/'));
     for (const name of dependencies) {
       // Some packages (`@lexical/react`) export subpaths only, no root.

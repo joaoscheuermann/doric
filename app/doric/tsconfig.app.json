@@ -11,11 +11,7 @@
     "**/*.test.ts",
     "src/splash-page/**",
     "src/platform/generation/runner-bootstrap.ts",
-    "src/platform/generation/runner-entry.ts",
-    "src/workspace/**",
-    "src/notifications.ts",
-    "src/connection/ipc.ts",
-    "src/app/api/terminals.ts"
+    "src/platform/generation/runner-entry.ts"
   ],
   "include": ["src/**/*.ts"],
   "references": [

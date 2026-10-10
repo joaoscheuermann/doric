@@ -11,9 +11,5 @@
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": []
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": [
-    "src/client/api/announce.ts",
-    "src/client/domain/notifications.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

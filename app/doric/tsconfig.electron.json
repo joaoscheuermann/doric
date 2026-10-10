@@ -18,7 +18,6 @@
     "tests-electron/**/*.ts"
   ],
   "exclude": [
-    "src/connection/ipc.ts",
     "src/platform/generation/runner-bootstrap.ts",
     "src/platform/generation/runner-entry.ts"
   ]

@@ -73,7 +73,6 @@ RUN npm ci --ignore-scripts \
  && for bundle in postgres core files git threads runtime direct openai openrouter codex docker firecracker web terminal usage resources notifications layout settings chat history; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
- && rm -rf bundles/files/dist/skills/12-web-research \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
       bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
       bundles/runtime bundles/direct bundles/openai bundles/openrouter \

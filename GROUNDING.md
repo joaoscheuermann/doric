@@ -744,8 +744,7 @@ receives the runtime's `PromptSession`, and keeps its history as the opaque
 `models/v1`; since stage 10 the `openai`, `openrouter` and `codex` bundles
 register their `models.provider/v1` kinds and `docker` (or `firecracker`,
 selected with `DORIC_SANDBOX_PROVIDER`) provides `sandbox/v1`; the stage-5
-provisional `models-adapter` and `sandbox-adapter` bundles are no longer
-composed. The kernel
+provisional `models-adapter` and `sandbox-adapter` bundles have been removed. The kernel
 refuses to boot, at `bundle_load`, when `runtime/v1`, `executor/v1`,
 `sandbox/v1`, `models/v1` or `host-config/v1` has no active provider or
 `transport` is not active; when a structural provider is lost after boot (its
@@ -873,8 +872,8 @@ owns the `terminal` tool and closes a closing Thread's sessions through
 `onThreadsClosingHook`. Tools and skills keep one global model-visible order
 (`order` on `tools/v1` and `skills/v1`), and `allowed-tools` resolve against
 the whole `tools/v1` catalog after activation. The `web` bundle owns the
-`web` tool (700) and the `web-research` skill (1200); `files` no longer
-compiles its old `web` source nor ships its `12-web-research` skill. On the desktop, the layout draws no feature UI of
+`web` tool (700) and the `web-research` skill (1200); the old `web`
+source and `12-web-research` skill have been removed from `files`. On the desktop, the layout draws no feature UI of
 its own: the Files view and the panel toggles are `files` region items, the
 Changes view, the footer's working directory and branch, the comparison tab
 and the Versioning settings section (`/settings/git`, which replaces

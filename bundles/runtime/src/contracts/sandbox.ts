@@ -9,8 +9,8 @@ import { LOCAL_KEY } from './runtime.js';
  * revised). Only `acquire` is local: it returns the live, process-local
  * lease, marked `object`. `describe`, `discard`, `machines` and `machine` are
  * asynchronous and serializable, so the kernel transport reaches the
- * generation-resident provider. Cardinality `one`; the provisional
- * `sandbox-adapter` provides it until stage 10.
+ * generation-resident provider. Cardinality `one`; the `docker` or
+ * `firecracker` bundle provides it.
  */
 
 export interface RunningMachine {

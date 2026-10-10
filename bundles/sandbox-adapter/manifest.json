@@ -1,9 +1,0 @@
-{
-  "manifestVersion": 1,
-  "id": "sandbox-adapter",
-  "version": "0.0.0",
-  "engines": { "doric": "^1.0.0" },
-  "description": "Provisional sandbox/v1 provider over the Docker or Firecracker sandbox pool, until the stage-10 provider bundles.",
-  "provides": ["sandbox/v1@1.0.0"],
-  "requires": ["log/v1@^1.0.0"]
-}
