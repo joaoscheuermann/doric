@@ -6,14 +6,12 @@ import { tool as edit } from './tools/edit.js';
 import { tool as find } from './tools/find.js';
 import { tool as grep } from './tools/grep.js';
 import { tool as tree } from './tools/tree.js';
-import { createTool as createWebTool } from './tools/web.js';
 import { tool as write } from './tools/write.js';
 
 /**
  * Registers the workspace tools at their global model-visible positions
- * (D10-5); `terminal` (500) is the `terminal` bundle's. `web` (700) and the
- * `web-research` skill stay here until their sources are deleted, because
- * the `web` bundle's copies would collide with them (one name per catalog).
+ * (D10-5); `terminal` (500) is the `terminal` bundle's, and `web` (700) and
+ * the `web-research` skill are the `web` bundle's (stage 10 host switch).
  * It also provides `files/v1`, the sandbox reads of the file panel and the
  * file tab.
  */
@@ -28,6 +26,5 @@ export const activate = ({ services }: HostContext): void => {
   tools.register(find, { alwaysAvailable: true, order: 300 });
   tools.register(grep, { alwaysAvailable: true, order: 400 });
   tools.register(tree, { alwaysAvailable: true, order: 600 });
-  tools.register(createWebTool(), { alwaysAvailable: true, order: 700 });
   tools.register(write, { alwaysAvailable: true, order: 800 });
 };

@@ -872,9 +872,9 @@ switch) moves each feature into its own bundle. The composition enables
 owns the `terminal` tool and closes a closing Thread's sessions through
 `onThreadsClosingHook`. Tools and skills keep one global model-visible order
 (`order` on `tools/v1` and `skills/v1`), and `allowed-tools` resolve against
-the whole `tools/v1` catalog after activation. The `web` tool and the
-`web-research` skill still register from `files` until the duplicate skill
-directory can be deleted. On the desktop, the layout draws no feature UI of
+the whole `tools/v1` catalog after activation. The `web` bundle owns the
+`web` tool (700) and the `web-research` skill (1200); `files` no longer
+compiles its old `web` source nor ships its `12-web-research` skill. On the desktop, the layout draws no feature UI of
 its own: the Files view and the panel toggles are `files` region items, the
 Changes view, the footer's working directory and branch, the comparison tab
 and the Versioning settings section (`/settings/git`, which replaces

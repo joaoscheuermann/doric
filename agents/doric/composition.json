@@ -4,6 +4,7 @@
     "postgres",
     "core",
     "files",
+    "web",
     "git",
     "threads",
     "terminal",

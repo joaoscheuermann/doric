@@ -25,7 +25,8 @@ const sandbox = (execs: SandboxExecInput[]): Sandbox =>
   }) as unknown as Sandbox;
 
 void describe('files activation', () => {
-  // `terminal` is the `terminal` bundle's (500, stage 10 host switch); the
+  // `terminal` (500) and `web` (700) moved to their own bundles (stage 10
+  // host switch); the
   // catalog orders every tool by its key.
   void test('registers the workspace tools in their model-visible order, always available', async () => {
     const tools = await activatedTools(sandbox([]), fakeHost());
@@ -38,7 +39,6 @@ void describe('files activation', () => {
         ['find', true],
         ['grep', true],
         ['tree', true],
-        ['web', true],
         ['write', true],
       ],
     );

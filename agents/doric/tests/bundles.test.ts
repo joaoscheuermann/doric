@@ -221,9 +221,9 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // have no host part, and since the stage-10 host switch the provider-kind
     // bundles, the `docker` sandbox and the `terminal`, `usage` and
     // `resources` features, and since the desktop switch (WP-10N) the
-    // `notifications` bundle, which has no host part. No bundle is
+    // `notifications` bundle, which has no host part, and the `web` bundle. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 19);
+    assert.equal(host.bundleCount, 20);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -239,6 +239,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         postgres: ['active', 'foundation'],
         core: ['active', 'core'],
         files: ['active', 'others'],
+        web: ['active', 'others'],
         git: ['active', 'others'],
         threads: ['active', 'others'],
         terminal: ['active', 'others'],
@@ -285,7 +286,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
   });
 });
 
-void test("the tools of moved bundles keep their names and positions: terminal is the terminal bundle's", async () => {
+void test("the tools of moved bundles keep their names and positions: terminal and web are their bundles'", async () => {
   await withHost(async (host) => {
     const owners = Object.fromEntries(
       host.platform.services
@@ -296,7 +297,7 @@ void test("the tools of moved bundles keep their names and positions: terminal i
 
     assert.equal(owners.terminal, 'terminal');
     assert.equal(owners.cwd, 'files');
-    assert.equal(owners.web, 'files');
+    assert.equal(owners.web, 'web');
   });
 });
 

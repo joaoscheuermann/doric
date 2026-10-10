@@ -35,6 +35,8 @@ RUN npm install --global npm@11.13.0
 # baseline, and `stage` copies each bundle's whole `dist` (`desktop/`,
 # `client/` and `contracts/` included, which the host distributes to the
 # desktop) into `agents/doric/dist/bundles/<id>`.
+# The `web-research` skill is the `web` bundle's; the copy left in `files`
+# is removed from its dist until the source is deleted.
 # A failing bundle build stops the image build here rather than at boot. The
 # Prisma client is generated into the `postgres` bundle, which owns the schema;
 # the Doric config only points at it.
@@ -71,6 +73,7 @@ RUN npm ci --ignore-scripts \
  && for bundle in postgres core files git threads runtime direct openai openrouter codex docker firecracker web terminal usage resources notifications layout settings chat history; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
+ && rm -rf bundles/files/dist/skills/12-web-research \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
       bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
       bundles/runtime bundles/direct bundles/openai bundles/openrouter \

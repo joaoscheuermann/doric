@@ -12,7 +12,8 @@
         "commands": [
           "tsc --build bundles/files/tsconfig.json",
           "tsc -p bundles/files/tsconfig.client.json",
-          "node packages/bundle/dist/build/cli.js build bundles/files"
+          "node packages/bundle/dist/build/cli.js build bundles/files",
+          "node -e \"require('node:fs').rmSync('bundles/files/dist/skills/12-web-research', { recursive: true, force: true })\""
         ],
         "parallel": false
       }
