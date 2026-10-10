@@ -1,3 +1,4 @@
+import { isShellSender } from '../platform/bridge/sender';
 import {
   type Configuration,
   type ConfigurationInput,
@@ -56,14 +57,12 @@ const projectColors = [
 ] as const;
 
 /**
- * The renderer may send IPC only from an exact URL the main process itself
- * loaded. The allow-list is the whole rule: a sender is accepted when its URL is
- * one of those strings, and never by prefix, origin or wildcard.
+ * The renderer may send IPC only from a page of the `doric://app` origin,
+ * whatever its path: every window loads the technical shell there [S8-1].
+ * `file:` and `http:` pages are refused.
  */
-export const senderIsAllowed = (
-  senderUrl: string | undefined,
-  allowedUrls: readonly string[],
-): boolean => senderUrl !== undefined && allowedUrls.includes(senderUrl);
+export const senderIsAllowed = (senderUrl: string | undefined): boolean =>
+  isShellSender(senderUrl);
 
 export const name = (value: unknown): string => {
   if (typeof value !== 'string' || value.includes('\0')) {

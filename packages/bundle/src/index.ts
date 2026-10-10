@@ -2,6 +2,7 @@
 
 export {
   BuildError,
+  type BuildOptions,
   type BuildResult,
   buildBundle,
   runCli,
@@ -54,8 +55,29 @@ export {
   type InstalledBundle,
   readInstalledBundle,
 } from './loader/discover.js';
+export {
+  type DistributionInput,
+  distributionFiles,
+  distributionFor,
+  distributionParts,
+} from './loader/distribution.js';
 export type { LogSink, PlatformLog } from './loader/log.js';
-export { catalogSnapshot } from './loader/platform.js';
+export {
+  applyCompositionOverrides,
+  type CompositionOverrides,
+  clearCompositionOverrides,
+  compositionOverridesPath,
+  compositionOverridesSchema,
+  readCompositionOverrides,
+  writeCompositionOverrides,
+} from './loader/overrides.js';
+export {
+  type CatalogCompositionProvider,
+  type CatalogDistributionProvider,
+  catalogSnapshot,
+  providePlatformServices,
+  statesOf,
+} from './loader/platform.js';
 export {
   CompositionError,
   readComposition,
@@ -76,6 +98,7 @@ export {
   type GenerationLease,
   type GenerationManager,
   type GenerationSummary,
+  type KernelDistributionSource,
   type KernelPlatform,
   type LostGeneration,
   type PublishResult,

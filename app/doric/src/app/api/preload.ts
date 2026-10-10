@@ -13,6 +13,7 @@ import {
 import type { QueuedPrompt, ThreadQueue } from '../../workspace/queue';
 import type { ThreadHistory } from '../../workspace/thread-history';
 import type { ThreadUsage } from '../../workspace/usage';
+import { createDesktopApi, type MetaDocument } from './desktop';
 import { terminals } from './terminals';
 
 type Project = {
@@ -408,6 +409,12 @@ const threadIdOf = (update: ThreadUpdate): string | undefined => {
   }
 };
 
+/** The platform API; the preload runs before the shell document parses. */
+const desktop = createDesktopApi(
+  ipcRenderer,
+  () => (globalThis as { document?: MetaDocument }).document,
+);
+
 const threadListeners = new Map<string, (update: ThreadUpdate) => void>();
 ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
   const threadId = threadIdOf(update);
@@ -415,6 +422,7 @@ ipcRenderer.on(threadUpdateChannel, (_event, update: ThreadUpdate) => {
 });
 
 contextBridge.exposeInMainWorld('doric', {
+  desktop: desktop.api,
   terminals,
   connection: {
     status: connection.status,
@@ -515,20 +523,12 @@ contextBridge.exposeInMainWorld('doric', {
     // Opens the settings window, or focuses it when it is already open.
     open: () => ipcRenderer.invoke('doric:settings:open') as Promise<void>,
     /**
-     * Settles a change still waiting on the save debounce, answering the main
-     * process's held-back close. The subscription returns its own unsubscribe.
+     * Settles a change still waiting on the save debounce before the window
+     * closes: the listener runs in the flush phase of the close protocol,
+     * which main bounds. The subscription returns its own unsubscribe.
      */
-    onFlush: (listener: () => void | Promise<void>) => {
-      const handler = (): void => {
-        void Promise.resolve(listener()).then(() =>
-          ipcRenderer.invoke('doric:settings:flushed'),
-        );
-      };
-      ipcRenderer.on('doric:settings:flush', handler);
-      return () => {
-        ipcRenderer.removeListener('doric:settings:flush', handler);
-      };
-    },
+    onFlush: (listener: () => void | Promise<void>) =>
+      desktop.onFlush(listener),
   },
   threads: {
     queue: (id: string) => invoke<ThreadQueue>('doric:threads:queue', id),

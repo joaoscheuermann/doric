@@ -40,7 +40,7 @@ import {
   WindowHooksV1,
 } from '../../contracts/platform.js';
 import type { JsonObject } from '../../contracts/types.js';
-import { LOCAL_KEY, memberSchema } from '../json-schema.js';
+import { LOCAL_KEY, memberSchema, streamItemSchema } from '../json-schema.js';
 import type { Principal } from '../principal.js';
 import type { DisposalScope } from '../scope.js';
 import { type SchemaValidators, validatorSchema } from './validators.js';
@@ -1002,6 +1002,17 @@ export const documentPlan = (
 
   if (!markerKinds(input, inputKinds) || !markerKinds(output, outputKinds)) {
     return { refused: label };
+  }
+
+  // [S8-20] A stream method returns its Disposable synchronously, like any
+  // registration: the subscription is acknowledged later.
+  if (
+    streamItemSchema(input) !== undefined &&
+    typeof output === 'object' &&
+    output !== null &&
+    (output as Record<string, unknown>)[LOCAL_KEY] === 'disposable'
+  ) {
+    return { input: inputKinds, optimistic: true, output: disposableOut };
   }
 
   return {

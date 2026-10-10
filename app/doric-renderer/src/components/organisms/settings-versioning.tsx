@@ -3,7 +3,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from '@/components/ui/field';
+} from 'desktop-ui/field';
 import {
   Select,
   SelectContent,
@@ -11,7 +11,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from 'desktop-ui/select';
+
 import {
   type Configuration,
   type Credential,

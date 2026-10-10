@@ -1,3 +1,10 @@
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from 'desktop-ui/empty';
+import { Skeleton } from 'desktop-ui/skeleton';
 import { useRef } from 'react';
 
 import {
@@ -7,13 +14,6 @@ import {
 import { DiffFooter } from '@/components/molecules/diff-footer';
 import { DiffToolbar } from '@/components/molecules/diff-toolbar';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
 import { fileLanguage, joinPath, sandboxNotice } from '@/domain/files';
 import { messageFrom } from '@/domain/workspace';
 import type { WorkspaceTab } from '@/domain/workspace-tabs';

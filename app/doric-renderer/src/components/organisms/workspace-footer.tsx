@@ -1,3 +1,4 @@
+import { Button } from 'desktop-ui/button';
 import { PauseIcon, SettingsIcon } from 'lucide-react';
 import { useStore } from 'zustand/react';
 
@@ -6,7 +7,6 @@ import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
 import { ExecutionPicker } from '@/components/organisms/execution-picker';
 import { ThreadUsage } from '@/components/organisms/thread-usage';
 import { WorkspaceCwd } from '@/components/organisms/workspace-cwd';
-import { Button } from '@/components/ui/button';
 import { connectionLabel } from '@/domain/connection';
 import { composerAction } from '@/domain/queue';
 import type { Thread } from '@/domain/workspace';

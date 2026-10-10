@@ -1,13 +1,9 @@
-import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
-
-import { ProviderModelsEditor } from '@/components/molecules/provider-models-editor';
-import { ProviderModelPicker } from '@/components/organisms/provider-model-picker';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+} from 'desktop-ui/collapsible';
 import {
   Combobox,
   ComboboxContent,
@@ -15,14 +11,14 @@ import {
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
-} from '@/components/ui/combobox';
+} from 'desktop-ui/combobox';
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from 'desktop-ui/field';
+import { Input } from 'desktop-ui/input';
 import {
   Select,
   SelectContent,
@@ -30,7 +26,11 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from 'desktop-ui/select';
+import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
+
+import { ProviderModelsEditor } from '@/components/molecules/provider-models-editor';
+import { ProviderModelPicker } from '@/components/organisms/provider-model-picker';
 import {
   type Credential,
   credentialLabel,

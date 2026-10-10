@@ -4,8 +4,8 @@ import {
   type EventDefinition,
 } from 'bundle/contracts';
 
-import { collidesIn, seenBy, type View } from '../partition.js';
-import { once } from '../state.js';
+import { collidesIn, seenBy, type View } from '../../shared/partition.js';
+import { once } from '../../shared/state.js';
 
 /** One registered event type and the bundle that owns it. */
 export interface EventEntry {

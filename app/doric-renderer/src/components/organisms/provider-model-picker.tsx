@@ -1,15 +1,15 @@
-import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
-import { useState } from 'react';
-
-import { ProviderModelsTable } from '@/components/molecules/provider-models-table';
-import { Button } from '@/components/ui/button';
+import { Button } from 'desktop-ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from 'desktop-ui/collapsible';
+import { Field, FieldDescription, FieldLabel } from 'desktop-ui/field';
+import { Input } from 'desktop-ui/input';
+import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
+import { useState } from 'react';
+
+import { ProviderModelsTable } from '@/components/molecules/provider-models-table';
 import {
   addModel,
   type ProviderDraft,

@@ -1,3 +1,12 @@
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from 'desktop-ui/empty';
+import { SidebarInset, SidebarProvider } from 'desktop-ui/sidebar';
+import { Toaster } from 'desktop-ui/sonner';
+import { TooltipProvider } from 'desktop-ui/tooltip';
 import { type CSSProperties, useCallback, useState } from 'react';
 
 import { DeleteDialog } from '@/components/molecules/delete-dialog';
@@ -21,15 +30,6 @@ import { WorkspaceTabs } from '@/components/organisms/workspace-tabs';
 import { ConversationTerminals } from '@/components/templates/conversation-terminals';
 import { ThreadPane } from '@/components/templates/thread-pane';
 import { WorkspaceLayout } from '@/components/templates/workspace-layout';
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from '@/components/ui/empty';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { Toaster } from '@/components/ui/sonner';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { joinPath } from '@/domain/files';
 import type { Terminal } from '@/domain/terminals';
 import { threadPath } from '@/domain/thread-tree';

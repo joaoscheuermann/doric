@@ -14,9 +14,13 @@ import {
 } from 'bundle/contracts';
 import { checkBatchLimits, parseStreamId } from 'storage';
 
-import { describeIssues } from '../issues.js';
-import { type View, viewOf } from '../partition.js';
-import { assertDefinitionOwner, type CoreState, PLATFORM } from '../state.js';
+import { describeIssues } from '../../shared/issues.js';
+import { type View, viewOf } from '../../shared/partition.js';
+import {
+  assertDefinitionOwner,
+  type CoreState,
+  PLATFORM,
+} from '../../shared/state.js';
 import { createTypeRegistry, type TypeEntry } from './registry.js';
 import { assertIndexes, fingerprintOf } from './validate.js';
 

@@ -1,3 +1,11 @@
+import { Badge } from 'desktop-ui/badge';
+import {
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+} from 'desktop-ui/sidebar';
+import { cn } from 'desktop-ui/utils';
 import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
 
 import { ChangeCounts } from '@/components/molecules/change-counts';
@@ -7,20 +15,12 @@ import {
   rowInteraction,
   treeClassName,
 } from '@/components/molecules/tree-guides';
-import { Badge } from '@/components/ui/badge';
-import {
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-} from '@/components/ui/sidebar';
 import {
   type ChangeRepository,
   changeDirectoryKey,
   changesTreeView,
 } from '@/domain/change-tree';
 import type { ProjectChange } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {

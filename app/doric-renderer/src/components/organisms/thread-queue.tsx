@@ -1,4 +1,9 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Separator } from 'desktop-ui/separator';
+import { cn } from 'desktop-ui/utils';
 import type { NodeKey } from 'lexical';
 import {
   type KeyboardEvent,
@@ -11,14 +16,6 @@ import { useStore } from 'zustand/react';
 
 import { PromptAuthor } from '@/components/molecules/prompt-author';
 import { EDIT_QUEUE_PROMPT_COMMAND } from '@/components/organisms/conversation/commands';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import {
   type QueueItem,
   queueAuthor,
@@ -30,7 +27,6 @@ import { useQueueCaret } from '@/hooks/use-queue-caret';
 import { useThreadQueue } from '@/hooks/use-thread-queue';
 import { queueEditStore } from '@/stores/queue-edit';
 import { threadChatsStore } from '@/stores/thread-chats';
-import { cn } from '@/utility/utils';
 
 function Details({
   item,

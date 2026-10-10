@@ -6,6 +6,12 @@
   "tags": [],
   "// targets": "to see all targets run: nx show project doric-renderer --web",
   "targets": {
+    "build": {
+      "dependsOn": ["^build", "desktop-client:build", "desktop-ui:build"]
+    },
+    "serve": {
+      "dependsOn": ["desktop-client:build", "desktop-ui:build"]
+    },
     "test": {
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist-tests"],

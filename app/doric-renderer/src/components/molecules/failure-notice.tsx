@@ -8,11 +8,11 @@
  * a warning in the theme's own warning tone.
  */
 
+import { Marker, MarkerContent, MarkerIcon } from 'desktop-ui/marker';
+import { cn } from 'desktop-ui/utils';
 import { CircleAlertIcon, TriangleAlertIcon } from 'lucide-react';
 
-import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { type PromptFailure, resumeExhausted } from '@/domain/prompt-lifecycle';
-import { cn } from '@/utility/utils';
 
 export function FailureNotice({
   failure,

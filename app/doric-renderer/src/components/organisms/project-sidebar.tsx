@@ -1,3 +1,19 @@
+import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSkeleton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+} from 'desktop-ui/sidebar';
+import { cn } from 'desktop-ui/utils';
 import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 
@@ -14,21 +30,6 @@ import {
   rowInteraction,
   treeClassName,
 } from '@/components/molecules/tree-guides';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupAction,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-} from '@/components/ui/sidebar';
 import {
   isProjectOpen,
   type OpenProjects,
@@ -45,7 +46,6 @@ import type {
   ProjectColor,
   Thread,
 } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
 
 /** The placeholder project rows the sidebar draws while the projects load. */
 const PROJECT_SKELETON_ROWS = Array.from(

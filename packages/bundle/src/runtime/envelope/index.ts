@@ -18,10 +18,13 @@ export {
 } from './link.js';
 export { createTransportPair, type TransportPair } from './memory.js';
 export {
+  type AppLifecycleHook,
+  appLifecycleHooks,
   type CallMessage,
   type CancelMessage,
   type ControlMessage,
   controlKinds,
+  type EndMessage,
   type EnvelopeMessage,
   type EventMessage,
   type InvokeMessage,

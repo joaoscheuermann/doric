@@ -1,3 +1,6 @@
+import { Button } from 'desktop-ui/button';
+import { Separator } from 'desktop-ui/separator';
+import { useSidebar } from 'desktop-ui/sidebar';
 import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -6,9 +9,6 @@ import {
 
 import { FilesToggle } from '@/components/molecules/files-toggle';
 import { ThreadBreadcrumb } from '@/components/molecules/thread-breadcrumb';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { useSidebar } from '@/components/ui/sidebar';
 import type { Project, Thread } from '@/domain/workspace';
 
 type WorkspaceHeaderProps = {

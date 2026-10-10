@@ -20,7 +20,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/core/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/core/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/core/tsconfig.parts.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -30,7 +34,7 @@
       "options": {
         "commands": [
           "tsc -p bundles/core/tsconfig.spec.json",
-          "node --test bundles/core/dist-tests/tests/*.test.js"
+          "node --test bundles/core/dist-tests/tests/*.test.js bundles/core/dist-tests/tests/desktop/*.test.js"
         ],
         "parallel": false
       }

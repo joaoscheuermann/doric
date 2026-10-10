@@ -1,11 +1,12 @@
-import { ChoicePicker } from '@/components/molecules/choice-picker';
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+} from 'desktop-ui/field';
+import { Input } from 'desktop-ui/input';
+
+import { ChoicePicker } from '@/components/molecules/choice-picker';
 import {
   type Configuration,
   effortLabel,

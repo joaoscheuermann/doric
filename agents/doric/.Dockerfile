@@ -29,9 +29,12 @@ RUN npm install --global npm@11.13.0
 # builds avoid coupling the container build to the Nx task graph, and the Doric
 # entrypoint is placed at the path expected by its package metadata. Each
 # bundle is compiled to its own `dist`; the bundle build CLI then validates its
-# manifest and skills, dry-activates its host part to write the contract
-# descriptor and JSON Schemas, and checks them against the committed baseline,
-# and `stage` copies each bundle's `dist` into `agents/doric/dist/bundles/<id>`.
+# manifest and skills, builds its desktop and client parts with esbuild (a root
+# devDependency, so `npm ci` installs it), dry-activates its parts to write the
+# contract descriptor and JSON Schemas, and checks them against the committed
+# baseline, and `stage` copies each bundle's whole `dist` (`desktop/`,
+# `client/` and `contracts/` included, which the host distributes to the
+# desktop) into `agents/doric/dist/bundles/<id>`.
 # A failing bundle build stops the image build here rather than at boot. The
 # Prisma client is generated into the `postgres` bundle, which owns the schema;
 # the Doric config only points at it.

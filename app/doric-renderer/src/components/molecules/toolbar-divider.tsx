@@ -1,4 +1,4 @@
-import { Separator } from '@/components/ui/separator';
+import { Separator } from 'desktop-ui/separator';
 
 /**
  * The vertical rule between the controls of a horizontal bar. It is shorter than

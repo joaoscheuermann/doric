@@ -1,12 +1,8 @@
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
 import { useState } from 'react';
 
 import { ChoiceList } from '@/components/molecules/choice-list';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 type EffortPickerProps = {
   readonly ariaLabel: string;

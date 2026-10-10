@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   disposableSchema,
   type MethodSpec,
+  streamItemOf,
 } from '../contracts/basic/common.js';
 import type {
   Cardinality,
@@ -46,6 +47,43 @@ export const LOCAL_KEY = 'x-doric-local';
 export const localCodecKinds = ['callback', 'disposable', 'object'] as const;
 
 export type LocalCodecKind = (typeof localCodecKinds)[number];
+
+/** The key under which a stream listener's JSON Schema records its item schema. */
+export const STREAM_KEY = 'x-doric-stream';
+
+/**
+ * The item schema of a stream method from its input member schema: the
+ * `x-doric-stream` of a listener among the tuple items, else undefined
+ * (not a stream method).
+ */
+export const streamItemSchema = (input: unknown): JsonObject | undefined => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const record = input as Record<string, unknown>;
+  const item = record[STREAM_KEY];
+
+  if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+    return item as JsonObject;
+  }
+
+  const items = record.prefixItems;
+
+  if (!Array.isArray(items)) {
+    return undefined;
+  }
+
+  for (const entry of items) {
+    const found = streamItemSchema(entry);
+
+    if (found !== undefined) {
+      return found;
+    }
+  }
+
+  return undefined;
+};
 
 /** Marker of a member whose local values have no codec. */
 export const localMarker: JsonObject = Object.freeze({ [LOCAL_KEY]: true });
@@ -137,6 +175,12 @@ export const memberSchema = (
         }
 
         json[LOCAL_KEY] = localKindOf(zodSchema) ?? true;
+
+        const item = streamItemOf(zodSchema);
+
+        if (item !== undefined) {
+          json[STREAM_KEY] = memberSchema(item, 'output').schema;
+        }
 
         return;
       }

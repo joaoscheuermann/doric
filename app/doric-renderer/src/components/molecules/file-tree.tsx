@@ -1,3 +1,12 @@
+import { Badge } from 'desktop-ui/badge';
+import {
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+} from 'desktop-ui/sidebar';
+import { cn } from 'desktop-ui/utils';
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
 
 import {
@@ -6,18 +15,9 @@ import {
   TreeGuides,
   treeClassName,
 } from '@/components/molecules/tree-guides';
-import { Badge } from '@/components/ui/badge';
-import {
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-} from '@/components/ui/sidebar';
 import { type ChangeDecoration, changeClassName } from '@/domain/change-tree';
 import { changeLetter, emptyDirectoryNotice } from '@/domain/files';
 import type { ProjectTreeNode } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
 
 export type FileTreeActions = {
   readonly open: (path: string) => void;

@@ -1,5 +1,15 @@
 import { Command as CommandPrimitive } from 'cmdk';
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from 'desktop-ui/command';
+import { Input } from 'desktop-ui/input';
+import { ScrollArea } from 'desktop-ui/scroll-area';
+import { Skeleton } from 'desktop-ui/skeleton';
+import {
   CheckIcon,
   GitBranchIcon,
   LoaderCircleIcon,
@@ -7,16 +17,6 @@ import {
 } from 'lucide-react';
 
 import { ReadFeedback } from '@/components/molecules/read-feedback';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
 import { messageFrom, type Thread } from '@/domain/workspace';
 import { useBranches } from '@/hooks/use-branches';
 

@@ -1,15 +1,11 @@
+import { Button } from 'desktop-ui/button';
+import { Input } from 'desktop-ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Separator } from 'desktop-ui/separator';
 import { ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { useState } from 'react';
 
 import { ChoiceList } from '@/components/molecules/choice-list';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import { type ModelGroup, searchModelGroups } from '@/domain/config';
 
 /** Reasoning stays visible even when the selected model cannot use it. */

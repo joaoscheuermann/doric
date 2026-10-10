@@ -80,7 +80,12 @@ export interface ReleaseMessage {
   readonly handle: string;
 }
 
-/** Reserved for the bridge and streaming consumers; not handled in stage 4. */
+/**
+ * Opens a stream (a `streamListener` method) across the desktop bridge or the
+ * main <-> window IPC; the input carries no listener [S8-20]. The process
+ * link between the kernel and a generation does not serve it: there the
+ * listener crosses with the callback codec.
+ */
 export interface SubscribeMessage extends WireCall {
   readonly kind: 'subscribe';
   readonly id: string;
@@ -89,18 +94,44 @@ export interface SubscribeMessage extends WireCall {
   readonly input: unknown;
 }
 
-/** Reserved for the bridge and streaming consumers; not handled in stage 4. */
+/** One stream item: `values` is `[item]` [S8-20]. */
 export interface EventMessage {
   readonly kind: 'event';
   readonly id: string;
   readonly values: readonly unknown[];
 }
 
-/** Reserved for the bridge and streaming consumers; not handled in stage 4. */
+/** The subscriber disposed its stream [S8-20]. */
 export interface UnsubscribeMessage {
   readonly kind: 'unsubscribe';
   readonly id: string;
 }
+
+/**
+ * The stream ended [S8-20]: by the provider (no error), by a failure, or by
+ * the loss of the bridge (`disconnected`).
+ */
+export interface EndMessage {
+  readonly kind: 'end';
+  readonly id: string;
+  readonly error?: WireError;
+}
+
+/** The app lifecycle hooks the desktop main process runs in a generation. */
+export type AppLifecycleHook =
+  | 'onAppReadyHook'
+  | 'onAppActivateHook'
+  | 'onBeforeQuitHook'
+  | 'onGenerationReadyHook'
+  | 'onConnectionChangedHook';
+
+export const appLifecycleHooks: readonly AppLifecycleHook[] = Object.freeze([
+  'onAppReadyHook',
+  'onAppActivateHook',
+  'onBeforeQuitHook',
+  'onGenerationReadyHook',
+  'onConnectionChangedHook',
+]);
 
 export type EnvelopeMessage =
   | CallMessage
@@ -110,7 +141,8 @@ export type EnvelopeMessage =
   | ReleaseMessage
   | SubscribeMessage
   | EventMessage
-  | UnsubscribeMessage;
+  | UnsubscribeMessage
+  | EndMessage;
 
 /** How a thrown value crosses the envelope (see `errors.ts`). */
 export interface WireError {
@@ -193,6 +225,26 @@ export type ControlMessage =
       readonly fields: Readonly<Record<string, unknown>>;
       readonly message: string;
     }
+  /** Desktop main -> desktopMain generation: run one app lifecycle hook. */
+  | {
+      readonly kind: 'lifecycle';
+      readonly id: string;
+      readonly hook: AppLifecycleHook;
+      readonly input: unknown;
+    }
+  /** Its answer: the hook's output (a `Decision` for `onBeforeQuitHook`). */
+  | {
+      readonly kind: 'lifecycle-result';
+      readonly id: string;
+      readonly ok: true;
+      readonly output: unknown;
+    }
+  | {
+      readonly kind: 'lifecycle-result';
+      readonly id: string;
+      readonly ok: false;
+      readonly error: WireError;
+    }
   | { readonly kind: 'stop' }
   | { readonly kind: 'stopped' };
 
@@ -206,6 +258,8 @@ export const controlKinds: ReadonlySet<string> = new Set([
   'diagnostics',
   'catalog',
   'platform-log',
+  'lifecycle',
+  'lifecycle-result',
   'stop',
   'stopped',
 ]);
@@ -340,6 +394,11 @@ export const wireMessageSchema: z.ZodType<WireMessage> = z.discriminatedUnion(
       values: z.array(z.unknown()),
     }),
     z.object({ kind: z.literal('unsubscribe'), id: idSchema }),
+    z.object({
+      kind: z.literal('end'),
+      id: idSchema,
+      error: wireErrorSchema.optional(),
+    }),
     z.object({ kind: z.literal('init'), init: z.unknown() }),
     z.object({ kind: z.literal('ready'), order: z.array(z.string()) }),
     z.object({
@@ -360,6 +419,27 @@ export const wireMessageSchema: z.ZodType<WireMessage> = z.discriminatedUnion(
       fields: z.record(z.string(), z.unknown()),
       message: z.string(),
     }),
+    z.object({
+      kind: z.literal('lifecycle'),
+      id: idSchema,
+      hook: z.enum([
+        'onAppReadyHook',
+        'onAppActivateHook',
+        'onBeforeQuitHook',
+        'onGenerationReadyHook',
+        'onConnectionChangedHook',
+      ]),
+      input: z.unknown(),
+    }),
+    z
+      .object({
+        kind: z.literal('lifecycle-result'),
+        id: idSchema,
+        ok: z.boolean(),
+        output: z.unknown().optional(),
+        error: wireErrorSchema.optional(),
+      })
+      .refine((message) => message.ok || message.error !== undefined),
     z.object({ kind: z.literal('stop') }),
     z.object({ kind: z.literal('stopped') }),
   ],

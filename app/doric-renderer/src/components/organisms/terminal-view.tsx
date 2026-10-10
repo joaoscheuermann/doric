@@ -2,10 +2,10 @@ import '@xterm/xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
+import { Button } from 'desktop-ui/button';
 import { XIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import {
   type Terminal as TerminalSession,
   unseenOutput,

@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests/electron",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/electron/tsconfig.electron.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "src/connection/**/*.ts",
+    "src/platform/**/*.ts",
+    "src/app/api/desktop.ts",
+    "src/notifications.ts",
+    "src/workspace/validation.ts",
+    "src/workspace/api.ts",
+    "src/workspace/config.ts",
+    "tests/support/**/*.ts",
+    "tests-electron/**/*.ts"
+  ],
+  "exclude": [
+    "src/platform/generation/runner-bootstrap.ts",
+    "src/platform/generation/runner-entry.ts"
+  ]
+}

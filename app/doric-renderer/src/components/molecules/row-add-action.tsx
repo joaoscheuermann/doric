@@ -1,6 +1,6 @@
+import { SidebarMenuAction, SidebarMenuBadge } from 'desktop-ui/sidebar';
 import { PlusIcon } from 'lucide-react';
 
-import { SidebarMenuAction, SidebarMenuBadge } from '@/components/ui/sidebar';
 import { useExecutionTime } from '@/hooks/use-execution-time';
 
 type RowAddActionProps = {

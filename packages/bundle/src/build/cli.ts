@@ -42,14 +42,25 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
-/** Parts recorded at build time; client parts need a DOM-capable recorder. */
+/**
+ * Parts recorded at build time. A client part is recorded only while its
+ * `activate` stays DOM-free (stage 8); stage 9 brings a DOM-capable recorder.
+ */
 const parts: readonly {
   readonly path: string;
   readonly environment: Environment;
 }[] = [
   { path: 'host/index.js', environment: 'host' },
   { path: 'desktop/index.js', environment: 'desktopMain' },
+  { path: 'client/index.js', environment: 'client' },
 ];
+
+const domGlobals =
+  /\b(document|window|customElements|HTMLElement|localStorage)\b/;
+
+/** Whether a failure comes from touching a DOM global that Node lacks. */
+const touchedDom = (error: unknown): error is ReferenceError =>
+  error instanceof ReferenceError && domGlobals.test(error.message);
 
 export interface BuildResult {
   readonly manifest: ManifestV1;
@@ -57,13 +68,21 @@ export interface BuildResult {
   readonly documents: ReadonlyMap<string, JsonObject>;
 }
 
+export interface BuildOptions {
+  /** How the desktop and client parts are built (default production). */
+  readonly mode?: 'production' | 'development';
+}
+
 /**
  * `build <bundleDir>` (after tsc): validates the v1 manifest, copies skills,
- * dry-activates the parts, writes JSON Schemas, `contracts.json`, the dist
- * manifest and package.json, then runs the semver check against
- * `contracts.published.json` when it exists.
+ * builds the desktop and client parts, dry-activates the parts, writes JSON
+ * Schemas, `contracts.json`, the dist manifest and package.json, then runs
+ * the semver check against `contracts.published.json` when it exists.
  */
-export const buildBundle = async (bundleDir: string): Promise<BuildResult> => {
+export const buildBundle = async (
+  bundleDir: string,
+  options: BuildOptions = {},
+): Promise<BuildResult> => {
   const root = resolve(bundleDir);
   const dist = join(root, 'dist');
   const manifestPath = join(root, 'manifest.json');
@@ -109,6 +128,20 @@ export const buildBundle = async (bundleDir: string): Promise<BuildResult> => {
     await copyFile(join(source, path), join(dist, path));
   }
 
+  // Loaded on demand: esbuild and Tailwind are build-time tools the host
+  // runtime never needs.
+  const { buildParts, PartBuildError } = await import('./parts.js');
+
+  try {
+    await buildParts({ bundleDir: root, mode: options.mode ?? 'production' });
+  } catch (error) {
+    if (error instanceof PartBuildError) {
+      throw new BuildError(error.message);
+    }
+
+    throw error;
+  }
+
   const recorded: RecordedContract[] = [];
 
   for (const part of parts) {
@@ -118,9 +151,21 @@ export const buildBundle = async (bundleDir: string): Promise<BuildResult> => {
       continue;
     }
 
-    const loaded = (await import(pathToFileURL(path).href)) as {
-      readonly activate?: unknown;
-    };
+    let loaded: { readonly activate?: unknown };
+
+    try {
+      loaded = (await import(pathToFileURL(path).href)) as {
+        readonly activate?: unknown;
+      };
+    } catch (error) {
+      if (part.environment === 'client' && touchedDom(error)) {
+        throw new BuildError(
+          `Loading ${part.path} failed: the client part touched the DOM (${error.message}); the stage-8 recorder records only DOM-free client parts.`,
+        );
+      }
+
+      throw error;
+    }
 
     if (typeof loaded.activate !== 'function') {
       throw new BuildError(
@@ -137,6 +182,12 @@ export const buildBundle = async (bundleDir: string): Promise<BuildResult> => {
         })),
       );
     } catch (error) {
+      if (part.environment === 'client' && touchedDom(error)) {
+        throw new BuildError(
+          `Dry activation of ${part.path} failed: the client part touched the DOM during activate (${error instanceof Error ? error.message : String(error)}); the stage-8 recorder records only DOM-free client activation.`,
+        );
+      }
+
       throw new BuildError(
         `Dry activation of ${part.path} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -271,13 +322,19 @@ export const stageBundles = async (
 };
 
 const usage =
-  'Usage: cli.js build <bundleDir> | baseline <bundleDir> | stage <dest> <bundleDir...>';
+  'Usage: cli.js build [--development] <bundleDir> | baseline <bundleDir> | stage <dest> <bundleDir...>';
 
 export const runCli = async (args: readonly string[]): Promise<void> => {
   const [command, ...rest] = args;
 
   if (command === 'build' && rest.length === 1) {
     await buildBundle(rest[0] as string);
+  } else if (
+    command === 'build' &&
+    rest.length === 2 &&
+    rest[0] === '--development'
+  ) {
+    await buildBundle(rest[1] as string, { mode: 'development' });
   } else if (command === 'baseline' && rest.length === 1) {
     await writeBaseline(rest[0] as string);
   } else if (command === 'stage' && rest.length >= 2) {

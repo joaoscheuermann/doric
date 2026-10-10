@@ -9,7 +9,7 @@ import {
   ToolsV1,
 } from 'bundle/contracts';
 
-import { collidesIn, seenBy, viewOf } from './partition.js';
+import { collidesIn, seenBy, viewOf } from '../shared/partition.js';
 
 interface Entry {
   readonly generation: number;

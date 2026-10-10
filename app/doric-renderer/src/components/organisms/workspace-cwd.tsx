@@ -1,3 +1,7 @@
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Separator } from 'desktop-ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -10,18 +14,6 @@ import { toast } from 'sonner';
 import { ChangeCounts } from '@/components/molecules/change-counts';
 import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { BranchPicker } from '@/components/organisms/branch-picker';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { changedLineTotals } from '@/domain/change-tree';
 import { gitLine, gitStatusLine } from '@/domain/thread-git';
 import { messageFrom, type Thread } from '@/domain/workspace';

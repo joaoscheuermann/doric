@@ -1,3 +1,5 @@
+import { Button } from 'desktop-ui/button';
+import { cn } from 'desktop-ui/utils';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -13,7 +15,6 @@ import type { JSX } from 'react';
 import { CollapsibleBlock } from '@/components/molecules/collapsible-block';
 import { WidgetFocus } from '@/components/molecules/widget-focus';
 import { ReadonlyMarkdown } from '@/components/organisms/conversation/readonly-markdown';
-import { Button } from '@/components/ui/button';
 import {
   blockToggled,
   type Chosen,
@@ -23,7 +24,6 @@ import { DELEGATED_TURN_BLOCK } from '@/domain/conversation-nodes';
 import type { DelegatedInput } from '@/domain/delegated';
 import type { UserTurn } from '@/domain/projector';
 import { useDelegatedSource } from '@/hooks/use-delegated-source';
-import { cn } from '@/utility/utils';
 
 import { CONVERSATION_FONT_CLASS } from './conversation-font';
 

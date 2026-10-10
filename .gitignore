@@ -65,3 +65,6 @@ Thumbs.db
 /models/skillrouter-embedding/.venv/
 /models/skillrouter-embedding/.ruff_cache/
 /models/skillrouter-embedding/skillrouter-export-*/
+
+# Host composition overrides written by the splash recovery actions (HR-6)
+composition.overrides.json

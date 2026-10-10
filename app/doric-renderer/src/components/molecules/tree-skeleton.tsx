@@ -1,5 +1,6 @@
+import { Skeleton } from 'desktop-ui/skeleton';
+
 import { indentation, TreeGuides } from '@/components/molecules/tree-guides';
-import { Skeleton } from '@/components/ui/skeleton';
 
 const rows = [
   { id: 'root', depth: 0, folder: true, width: 'w-24' },

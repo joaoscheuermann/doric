@@ -14,6 +14,26 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
+import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import { Button } from 'desktop-ui/button';
+import { FieldGroup } from 'desktop-ui/field';
+import { Input } from 'desktop-ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from 'desktop-ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from 'desktop-ui/table';
 import {
   AlertCircleIcon,
   ArrowUpDownIcon,
@@ -28,26 +48,6 @@ import {
 import { useMemo, useState } from 'react';
 
 import { RowActions } from '@/components/molecules/row-actions';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { FieldGroup } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   type Configuration,
   type Credential,

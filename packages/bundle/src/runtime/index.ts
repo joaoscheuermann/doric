@@ -1,6 +1,15 @@
 // Internal browser-safe runtime shared by the host loader, the desktopMain
 // process and the client windows. Bundles never import it.
 
+// The envelope and the runner are browser-safe; the desktop main process
+// plays the kernel role over them (stage 8, WP-8F), and provides `doric.*`
+// services, which bundles cannot (`bundle/contracts` keeps these internal).
+export { definePlatformService } from '../contracts/define.js';
+export {
+  type PlatformContractId,
+  type PlatformContractSpec,
+  platformContracts,
+} from '../contracts/platform.js';
 export {
   ActivationFailure,
   type ActivationOptions,
@@ -61,6 +70,20 @@ export {
   isTupleSchema,
   normalizeArguments,
 } from './dispatch.js';
+export {
+  candidatesFromDistribution,
+  compositionFromDistribution,
+  type DistributionArtifact,
+  type DistributionBundle,
+  type DistributionCatalog,
+  type DistributionFile,
+  type DistributionParts,
+  distributedSource,
+  distributionArtifactSchema,
+  distributionCatalogSchema,
+  distributionFileSchema,
+} from './distribution.js';
+export * from './envelope/index.js';
 export { createHooksFacade } from './facades.js';
 export {
   type ContractDocument,
@@ -76,7 +99,9 @@ export {
   memberSchema,
   type RecordedContract,
   type SchemaDirection,
+  STREAM_KEY,
   schemaPath,
+  streamItemSchema,
 } from './json-schema.js';
 export { LayeredDirectory } from './layered-directory.js';
 export {
@@ -96,6 +121,15 @@ export {
   v0BundleId,
 } from './manifest.js';
 export {
+  type BundleStates,
+  type CatalogCompositionProvider,
+  type CatalogDistributionProvider,
+  catalogSnapshot,
+  type LogSink,
+  providePlatformServices,
+  statesOf,
+} from './platform-providers.js';
+export {
   type ContractCatalogView,
   type DeclaredProvide,
   emptyCatalogView,
@@ -103,6 +137,14 @@ export {
   type PrincipalOptions,
   type ServiceRuntime,
 } from './principal.js';
+export {
+  AnnouncingDirectory,
+  type GenerationInit,
+  generationInitSchema,
+  type RunnerOptions,
+  runGeneration,
+  type SerializedCatalogEntry,
+} from './runner.js';
 export {
   DisposalScope,
   inertDisposable,

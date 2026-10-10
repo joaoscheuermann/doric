@@ -160,11 +160,22 @@ void test('every basic and platform method has a stated way across the envelope'
       addKeybinding: 'crosses',
       setContext: 'crosses',
     },
-    'doric.catalog/v1': { get: 'crosses' },
+    'doric.catalog/v1': {
+      get: 'crosses',
+      distribution: 'crosses',
+      artifact: 'crosses',
+      watch: 'optimistic via callback+disposable',
+      disable: 'crosses',
+      resetComposition: 'crosses',
+    },
     'doric.diagnostics/v1': { get: 'crosses', report: 'oneway' },
     'doric.bundle/v1': { describe: 'crosses' },
     'doric.log/v1': { write: 'oneway' },
-    'doric.windows/v1': { open: 'crosses', focusOrOpen: 'crosses' },
+    'doric.windows/v1': {
+      open: 'crosses',
+      focusOrOpen: 'crosses',
+      lastPath: 'crosses',
+    },
     'doric.menus/v1': {
       setSkeleton: 'crosses',
       add: 'crosses',
@@ -177,6 +188,7 @@ void test('every basic and platform method has a stated way across the envelope'
       hold: 'optimistic via disposable',
     },
     'doric.tokens/v1': { get: 'crosses' },
+    'doric.notifications/v1': { show: 'crosses' },
   };
   const actual = Object.fromEntries(
     Object.entries({

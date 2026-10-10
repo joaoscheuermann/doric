@@ -25,12 +25,12 @@ import { createHopCall } from 'bundle/runtime';
 import { z } from 'zod';
 
 import { createEvents } from '../src/host/events/facade.js';
-import { createHooks } from '../src/host/hooks.js';
 import { createSettings } from '../src/host/settings/facade.js';
 import { createSkills } from '../src/host/skills.js';
-import { createCoreState } from '../src/host/state.js';
 import { createStorage } from '../src/host/storage/facade.js';
 import { createTools } from '../src/host/tools.js';
+import { createHooks } from '../src/shared/hooks.js';
+import { createCoreState } from '../src/shared/state.js';
 
 type Method = (input: unknown, call: Call, services: Services) => unknown;
 

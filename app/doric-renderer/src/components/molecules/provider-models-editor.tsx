@@ -1,9 +1,9 @@
+import { Button } from 'desktop-ui/button';
+import { Field, FieldDescription, FieldLabel } from 'desktop-ui/field';
+import { Input } from 'desktop-ui/input';
+import { Toggle } from 'desktop-ui/toggle';
 import { PlusIcon, TrashIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Toggle } from '@/components/ui/toggle';
 import {
   addModel,
   effortLabel,

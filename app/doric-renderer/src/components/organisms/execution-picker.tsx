@@ -1,6 +1,7 @@
+import { Input } from 'desktop-ui/input';
+
 import { EffortPicker } from '@/components/molecules/effort-picker';
 import { ModelPicker } from '@/components/molecules/model-picker';
-import { Input } from '@/components/ui/input';
 import {
   effortLabel,
   modelChoiceKey,

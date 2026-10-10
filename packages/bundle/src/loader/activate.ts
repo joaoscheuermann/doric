@@ -35,6 +35,10 @@ import { PLATFORM_VERSION } from '../runtime/version.js';
 import { buildCatalog, type EmbeddedBundle, embeddedId } from './catalog.js';
 import { discoverBundles, type InstalledBundle } from './discover.js';
 import type { LogSink } from './log.js';
+import {
+  applyCompositionOverrides,
+  readCompositionOverrides,
+} from './overrides.js';
 import { catalogSnapshot, providePlatformServices } from './platform.js';
 import { readComposition } from './read.js';
 import {
@@ -48,6 +52,11 @@ export interface StartHostOptions {
   /** Root whose immediate subdirectories are installed bundles. */
   readonly bundlesPath: string;
   readonly composition: Composition | { readonly path: string };
+  /**
+   * The host's composition overrides file (HR-6): its disabled bundles leave
+   * `enabled` in every catalog read, at boot and at each publication.
+   */
+  readonly compositionOverrides?: string;
   readonly embedded?: readonly EmbeddedBundle[];
   /** The platform's own log. */
   readonly log: PlatformLog;
@@ -270,7 +279,10 @@ const placeholderComposition: Composition = Object.freeze({
  * an unreadable composition forces recovery.
  */
 export const readHostCatalog = async (
-  options: Pick<StartHostOptions, 'bundlesPath' | 'composition' | 'embedded'>,
+  options: Pick<
+    StartHostOptions,
+    'bundlesPath' | 'composition' | 'compositionOverrides' | 'embedded'
+  >,
   generation: number,
 ): Promise<{
   readonly installed: readonly InstalledBundle[];
@@ -295,6 +307,17 @@ export const readHostCatalog = async (
         : compositionSchema.parse(options.composition);
   } catch (error) {
     recovery = { reason: `invalid composition: ${messageOf(error)}` };
+  }
+
+  if (recovery === undefined && options.compositionOverrides !== undefined) {
+    try {
+      composition = applyCompositionOverrides(
+        composition,
+        await readCompositionOverrides(options.compositionOverrides),
+      );
+    } catch (error) {
+      issues.push(messageOf(error));
+    }
   }
 
   const resolved: ResolvedEnvironment = buildCatalog({

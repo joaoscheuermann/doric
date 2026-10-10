@@ -2,7 +2,7 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "core",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "contracts": [
     {
@@ -1516,6 +1516,525 @@
             "required": ["generation"],
             "additionalProperties": false,
             "x-doric-indexes": []
+          }
+        }
+      }
+    },
+    {
+      "id": "hooks/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/hooks/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "define.input": {
+            "x-doric-local": true
+          },
+          "define.output": {
+            "x-doric-local": "disposable"
+          },
+          "execute.input": {
+            "x-doric-local": true
+          },
+          "execute.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          },
+          "whenDefined.input": {
+            "x-doric-local": true
+          },
+          "whenDefined.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "log/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/log/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "debug.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "debug.output": {},
+          "error.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "error.output": {},
+          "info.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "info.output": {},
+          "warn.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "warn.output": {}
+        }
+      }
+    },
+    {
+      "id": "settings/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/settings/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "entry.input": {
+            "x-doric-local": true
+          },
+          "entry.output": {
+            "type": "object",
+            "properties": {
+              "value": {},
+              "revision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "version": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "value",
+              "revision",
+              "version",
+              "updatedAt",
+              "generation"
+            ],
+            "additionalProperties": false
+          },
+          "get.input": {
+            "x-doric-local": true
+          },
+          "get.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          },
+          "set.input": {
+            "x-doric-local": true
+          },
+          "set.output": {
+            "type": "object",
+            "properties": {
+              "value": {},
+              "revision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "version": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "value",
+              "revision",
+              "version",
+              "updatedAt",
+              "generation"
+            ],
+            "additionalProperties": false
+          },
+          "subscribe.input": {
+            "x-doric-local": true
+          },
+          "subscribe.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "commands/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/commands/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "execute.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ref"
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "id"]
+                  }
+                ]
+              },
+              {}
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "execute.output": {},
+          "register.input": {
+            "x-doric-local": true
+          },
+          "register.output": {
+            "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "windows/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/windows/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "open.input": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "appearance": {
+                "type": "object",
+                "properties": {
+                  "size": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "number"
+                      },
+                      "height": {
+                        "type": "number"
+                      },
+                      "minWidth": {
+                        "type": "number"
+                      },
+                      "minHeight": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["width", "height"],
+                    "additionalProperties": false
+                  },
+                  "titleBar": {
+                    "default": "integrated",
+                    "type": "string",
+                    "enum": ["native", "integrated", "none"]
+                  },
+                  "background": {
+                    "default": "window",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["key", "path"],
+            "additionalProperties": false
+          },
+          "open.output": {}
+        }
+      }
+    },
+    {
+      "id": "menus/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/menus/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "addItem.input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "when": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "focus": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "order": {
+                "type": "number"
+              }
+            },
+            "required": ["id", "location", "command", "label"],
+            "additionalProperties": false
+          },
+          "addItem.output": {},
+          "addKeybinding.input": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "when": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "focus": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["command", "key"],
+            "additionalProperties": false
+          },
+          "addKeybinding.output": {},
+          "setContext.input": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "enum": ["path", "focus"]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["key", "value"],
+            "additionalProperties": false
+          },
+          "setContext.output": {}
+        }
+      }
+    },
+    {
+      "id": "core.hooks/v1",
+      "version": "1.0.0",
+      "kind": "hooks",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/core.hooks/v1",
+        "x-doric-kind": "hooks",
+        "$defs": {
+          "onBeforeOpenWindowHook.input": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "appearance": {
+                "type": "object",
+                "properties": {
+                  "size": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "number"
+                      },
+                      "height": {
+                        "type": "number"
+                      },
+                      "minWidth": {
+                        "type": "number"
+                      },
+                      "minHeight": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["width", "height"],
+                    "additionalProperties": false
+                  },
+                  "titleBar": {
+                    "default": "integrated",
+                    "type": "string",
+                    "enum": ["native", "integrated", "none"]
+                  },
+                  "background": {
+                    "default": "window",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["key", "path"],
+            "additionalProperties": false,
+            "x-doric-hook-kind": "transform"
+          }
+        }
+      }
+    },
+    {
+      "id": "core.open-settings/v1",
+      "version": "1.0.0",
+      "kind": "command",
+      "environment": "desktopMain",
+      "cardinality": "one",
+      "local": false,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/core.open-settings/v1",
+        "x-doric-kind": "command",
+        "$defs": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
           }
         }
       }

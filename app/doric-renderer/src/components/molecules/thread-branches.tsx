@@ -1,4 +1,10 @@
 import {
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from 'desktop-ui/sidebar';
+import { cn } from 'desktop-ui/utils';
+import {
   ChevronRightIcon,
   GitBranchIcon,
   GithubIcon,
@@ -16,17 +22,11 @@ import {
   TreeGuides,
   treeClassName,
 } from '@/components/molecules/tree-guides';
-import {
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from '@/components/ui/sidebar';
 import type { ThreadIconKind } from '@/domain/sidebar';
 import { type Terminal, threadTerminals } from '@/domain/terminals';
 import type { ThreadLevel } from '@/domain/thread-tree';
 import type { Thread } from '@/domain/workspace';
 import { duration } from '@/utility/duration';
-import { cn } from '@/utility/utils';
 
 export type ThreadBranchesActions = {
   readonly beginChild: (thread: Thread) => void;

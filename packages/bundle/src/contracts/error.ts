@@ -43,6 +43,10 @@ export const contractErrorCodes = [
   'credential_storage_unavailable',
   'credential_key_required',
   'credential_unreadable',
+  // desktop platform (stage 8)
+  'not_found',
+  'disconnected',
+  'unknown_command',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

@@ -1,3 +1,5 @@
+import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import { Skeleton } from 'desktop-ui/skeleton';
 import {
   AlertCircleIcon,
   GitBranchIcon,
@@ -20,8 +22,6 @@ import type {
   SettingsNavItem,
 } from '@/components/templates/settings-surface';
 import { SettingsWindow } from '@/components/templates/settings-window';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   applyProviderDraft,
   type Configuration,

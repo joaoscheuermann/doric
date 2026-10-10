@@ -116,7 +116,8 @@ reusable agent loop remains in `packages/agent`.
 
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
 main process is paired with the React renderer in `app/doric-renderer`; the
-renderer owns the Tailwind CSS and shadcn/ui surface, using Radix primitives.
+renderer owns the Tailwind CSS surface, using the shadcn/ui components and Radix
+primitives of `packages/desktop-ui`.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
 The conversation footer shows OpenRouter context usage without a text
@@ -223,7 +224,7 @@ The title navigates independently of the toggle. Opening reveals the recorded
 status and read-only Markdown. Mouse and keyboard share the node's open state,
 which survives transcript updates.
 The packaged CSP permits fonts from `self`
-only, and the faces vendored under `src/assets/fonts` are the only ones the
+only, and the faces vendored by `packages/desktop-ui` under `assets/fonts` are the only ones the
 renderer wears: Noto Sans for the app's own surfaces, and IBM Plex Mono for the
 conversation body alone. The sidebar
 tree follows the selected Project's live
@@ -753,6 +754,40 @@ migrate deploy`, verifies the copy, records the `runtime.migration/v1` marker
 and deletes the legacy rows, keeps `storageGeneration`, is idempotent and
 cannot be reversed in place, so operators back up the database first; the
 empty legacy tables are dropped by a later migration.
+
+Migration stage 8 ("Plataforma desktop") moves the desktop onto the bundle
+platform; decisions S8-1 to S8-23 are recorded in `implementation-decisions.md`.
+Every window loads only `doric://app/<path>`, a privileged standard scheme whose
+handler serves the shell, the platform files under `/platform/`, verified bundle
+artifacts from the local cache and their schemas, and answers 404, never the
+shell, for missing files; sender checks compare protocol `doric:` and host `app`
+(S8-1). In development the windows still open through `doric://app` and the
+handler forwards the shell and its assets to the renderer dev server
+(`http://localhost:4200`, overridden by `DORIC_RENDERER_DEV_URL`). Before any
+window, a splash downloads the host's `doric.catalog/v1.distribution()` over the
+host bridge Socket.IO namespace `/doric/bridge`, verifies each artifact's
+SHA-256 and shows the recovery surface for quarantined bundles, unreachable
+hosts and windows not ready within 30 seconds. Its "Disable" and "Return to
+default composition" actions call the host's `doric.catalog/v1.disable` and
+`resetComposition` (HR-6), which write or delete `composition.overrides.json`
+(`{ "disabled": [...] }`) beside the active composition, never in the product
+database, and publish a new generation; every host catalog read leaves the
+disabled bundles out of `enabled`, and the core cannot be disabled. The main runs one Electron `utilityProcess`
+per desktop generation, executing the core's `desktopMain` part, which opens
+the `workspace` window at the last path the main stored for that key
+(`doric/windows.json`, paths only, no bounds) and defines the menu skeleton
+without a Settings item or `Cmd+,`. One dispatcher routes window calls by
+contract to the window, the `desktopMain` generation or the host; the legacy
+Project, Thread, settings and terminal IPC channels remain beside it and answer
+`Doric backend is unavailable.` in last-good-core mode. The renderer is the
+shell's legacy React tree, still bundled by webpack, which picks the workspace
+or the settings surface by path; the shared platform packages are
+`packages/desktop-ui` (tokens, theme, fonts and shadcn/ui components),
+`packages/desktop-client` (the window client) and `app/doric-platform` (the
+platform files and import map). The CSP adds `worker-src 'self'` and the import
+map's script hash. The renderer's local storage, including the selected Thread,
+migrates once from the packaged `file://` origin to `doric://app`; development
+profiles do not migrate.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its

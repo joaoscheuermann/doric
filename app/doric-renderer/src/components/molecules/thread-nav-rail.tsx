@@ -8,17 +8,14 @@
  * the reader scrolls again.
  */
 
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Separator } from 'desktop-ui/separator';
+import { cn } from 'desktop-ui/utils';
 import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import {
   AGENT_NAME,
   type AuthorRole,
@@ -29,7 +26,6 @@ import type { ThreadMarker } from '@/domain/thread-nav';
 import { markerEmphasis } from '@/domain/thread-nav';
 import { useDelegatedSource } from '@/hooks/use-delegated-source';
 import { useThreadNav } from '@/hooks/use-thread-nav';
-import { cn } from '@/utility/utils';
 
 import { ReaderAvatar } from './reader-avatar';
 

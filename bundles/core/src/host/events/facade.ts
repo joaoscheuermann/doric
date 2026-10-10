@@ -10,10 +10,14 @@ import {
   threadEventsStream,
 } from 'bundle/contracts';
 
-import { describeIssues } from '../issues.js';
-import { viewOf } from '../partition.js';
-import { redactJson } from '../redact.js';
-import { assertDefinitionOwner, type CoreState, PLATFORM } from '../state.js';
+import { describeIssues } from '../../shared/issues.js';
+import { viewOf } from '../../shared/partition.js';
+import { redactJson } from '../../shared/redact.js';
+import {
+  assertDefinitionOwner,
+  type CoreState,
+  PLATFORM,
+} from '../../shared/state.js';
 import { createEventRegistry } from './registry.js';
 
 /**

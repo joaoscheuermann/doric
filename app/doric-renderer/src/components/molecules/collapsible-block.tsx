@@ -1,18 +1,18 @@
-import { ChevronRightIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
-
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+} from 'desktop-ui/collapsible';
+import { cn } from 'desktop-ui/utils';
+import { ChevronRightIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
+
 import {
   blockOpen,
   blockToggled,
   type Chosen,
   type Openness,
 } from '@/domain/collapsible';
-import { cn } from '@/utility/utils';
 
 type CollapsibleBlockProps = {
   /** The header line, which shimmers while the work is in progress. */

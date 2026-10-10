@@ -1,5 +1,6 @@
+import { ScrollArea } from 'desktop-ui/scroll-area';
+
 import { CodeView } from '@/components/molecules/code-view';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { fileLanguage, truncationNotice } from '@/domain/files';
 import type { ProjectFileContent } from '@/domain/workspace';
 

@@ -1,3 +1,20 @@
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from 'desktop-ui/empty';
+import { ScrollArea } from 'desktop-ui/scroll-area';
+import { Separator } from 'desktop-ui/separator';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarMenu,
+} from 'desktop-ui/sidebar';
+import { Tabs } from 'desktop-ui/tabs';
 import { FileDiffIcon, FilesIcon, FolderIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
@@ -12,23 +29,6 @@ import { ReadFeedback } from '@/components/molecules/read-feedback';
 import { TabStrip } from '@/components/molecules/tab-strip';
 import { TreeSkeleton } from '@/components/molecules/tree-skeleton';
 import { ResourceMonitor } from '@/components/organisms/resource-monitor';
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-} from '@/components/ui/sidebar';
-import { Tabs } from '@/components/ui/tabs';
 import {
   changeDecorations,
   changedLineTotals,

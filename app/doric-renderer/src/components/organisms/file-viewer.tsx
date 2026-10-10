@@ -1,17 +1,17 @@
-import { AlertCircleIcon, FileIcon, XIcon } from 'lucide-react';
-
-import { FileBreadcrumb } from '@/components/molecules/file-breadcrumb';
-import { FileContent } from '@/components/molecules/file-content';
-import { Button } from '@/components/ui/button';
+import { Button } from 'desktop-ui/button';
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from '@/components/ui/empty';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+} from 'desktop-ui/empty';
+import { Separator } from 'desktop-ui/separator';
+import { Skeleton } from 'desktop-ui/skeleton';
+import { AlertCircleIcon, FileIcon, XIcon } from 'lucide-react';
+
+import { FileBreadcrumb } from '@/components/molecules/file-breadcrumb';
+import { FileContent } from '@/components/molecules/file-content';
 import { baseName, sandboxNotice } from '@/domain/files';
 import type { ProjectFileContent } from '@/domain/workspace';
 import type { ReadState } from '@/hooks/use-project-files';

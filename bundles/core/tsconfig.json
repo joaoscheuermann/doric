@@ -27,5 +27,6 @@
     {
       "path": "../../packages/llms"
     }
-  ]
+  ],
+  "exclude": ["src/desktop/**", "src/client/**"]
 }

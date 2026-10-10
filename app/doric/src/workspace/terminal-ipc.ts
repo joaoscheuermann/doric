@@ -25,8 +25,8 @@ export const terminalDimension = (value: unknown): number => {
 
 /** Registers only semantic terminal controls for trusted application windows. */
 export const registerTerminalHandlers = (
-  allowedUrls: readonly string[],
   events: TerminalEventService,
+  available: () => boolean = () => true,
 ): void => {
   const writes = new Map<string, Promise<void>>();
   const handle = (
@@ -35,8 +35,10 @@ export const registerTerminalHandlers = (
   ) => {
     ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       try {
-        if (!senderIsAllowed(event.senderFrame?.url, allowedUrls))
+        if (!senderIsAllowed(event.senderFrame?.url))
           throw new WorkspaceError('The request source is not allowed.');
+        if (!available())
+          throw new WorkspaceError('Doric backend is unavailable.');
         return { ok: true, value: await operation(...args) };
       } catch (error) {
         return {
@@ -78,7 +80,7 @@ export const registerTerminalHandlers = (
     operation: (target: Electron.WebContents, id: string) => void,
   ) => {
     ipcMain.on(channel, (event, id: unknown) => {
-      if (!senderIsAllowed(event.senderFrame?.url, allowedUrls)) return;
+      if (!senderIsAllowed(event.senderFrame?.url)) return;
       try {
         operation(event.sender, identifier(id));
       } catch {

@@ -1,7 +1,3 @@
-import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
-import type { ReactNode } from 'react';
-
-import { ProjectColorMenu } from '@/components/molecules/project-color-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -9,7 +5,11 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
+} from 'desktop-ui/context-menu';
+import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import type { ReactNode } from 'react';
+
+import { ProjectColorMenu } from '@/components/molecules/project-color-menu';
 import type { ProjectColor } from '@/domain/workspace';
 
 type ItemContextMenuProps = {

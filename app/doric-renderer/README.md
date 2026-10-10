@@ -176,9 +176,9 @@ its own rather than in the workspace window. The status line's settings button
 calls `window.doric.settings.open()`, which opens that window or focuses it when
 it is already open, so the surface is reachable whether or not a Project or
 Thread is selected and never borrows the workspace window's conversation,
-sidebar or Thread. The window loads `settings.html`/`settings.tsx`, a second
-webpack entry that mounts the settings view alone and shares the same sandboxed
-preload boundary.
+sidebar or Thread. The window loads the same shell page as the workspace at
+`/settings`; the shell's legacy mount (`src/legacy/mount.tsx`) mounts the
+settings view alone for that path, behind the same sandboxed preload boundary.
 
 It shows only what the host actually stores: the providers Doric may call, the
 provider and model execution runs on, its reasoning effort, the turn limit one
@@ -311,9 +311,9 @@ npx nx run doric-renderer:test
 npx nx build doric-renderer
 ```
 
-Add or inspect components through the project-aware shadcn CLI:
+The shadcn components live in `packages/desktop-ui`; add or inspect them
+there, as `packages/desktop-ui/PROVENANCE.md` describes:
 
 ```console
-npx shadcn@latest info --json -c app/doric-renderer
-npx shadcn@latest add COMPONENT -c app/doric-renderer
+npx shadcn@4.21.0 add COMPONENT -c packages/desktop-ui
 ```

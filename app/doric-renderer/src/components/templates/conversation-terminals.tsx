@@ -1,10 +1,9 @@
-import type { ReactNode } from 'react';
-
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from '@/components/ui/resizable';
+} from 'desktop-ui/resizable';
+import type { ReactNode } from 'react';
 
 export function ConversationTerminals({
   children,

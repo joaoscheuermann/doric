@@ -1,6 +1,3 @@
-import type { LucideIcon } from 'lucide-react';
-import { Fragment, type ReactNode } from 'react';
-
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -8,8 +5,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Separator } from '@/components/ui/separator';
+} from 'desktop-ui/breadcrumb';
+import { Separator } from 'desktop-ui/separator';
 import {
   Sidebar,
   SidebarContent,
@@ -20,7 +17,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from 'desktop-ui/sidebar';
+import type { LucideIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 
 /** One section the shell offers, named by the caller that owns the sections. */
 export type SettingsNavItem = {

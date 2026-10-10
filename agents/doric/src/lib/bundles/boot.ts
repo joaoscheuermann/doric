@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
+  compositionOverridesPath,
   type EmbeddedBundle,
   type KernelPlatform,
   type LogSink,
@@ -10,6 +12,8 @@ import {
 import type { CatalogSnapshot } from 'bundle/contracts';
 import type { Logger } from 'pino';
 import { ToolErrorObject } from 'tool';
+
+import { createCatalogDistribution } from '../bridge/catalog.js';
 
 export interface Bundles {
   readonly platform: KernelPlatform;
@@ -33,11 +37,21 @@ export class BundleRecoveryError extends Error {
 export interface StartBundlesOptions {
   readonly bundlesPath: string;
   readonly compositionPath: string;
+  /**
+   * The composition overrides the splash recovery actions persist (HR-6);
+   * default `composition.overrides.json` beside the composition.
+   */
+  readonly compositionOverridesPath?: string;
   /** The kernel-embedded bundles: `host-config` and `transport`. */
   readonly embedded?: readonly EmbeddedBundle[];
   readonly logger: Logger;
   /** Test seam: the generation runner the kernel forks. */
   readonly runnerPath?: string;
+  /**
+   * Random per host process [S8-22]: with the host generation, it names the
+   * generation the desktop downloads through `doric.catalog/v1.distribution`.
+   */
+  readonly hostBoot?: string;
 }
 
 /**
@@ -143,17 +157,23 @@ export const assertStructural = async (
 export const startBundles = async ({
   bundlesPath,
   compositionPath,
+  compositionOverridesPath: overridesPath = compositionOverridesPath(
+    compositionPath,
+  ),
   embedded = [],
   logger,
   runnerPath,
+  hostBoot = randomUUID(),
 }: StartBundlesOptions): Promise<Bundles> => {
   const platform = await startKernel({
     bundlesPath,
     composition: { path: compositionPath },
+    compositionOverrides: overridesPath,
     embedded,
     log: platformLog(logger.child({ component: 'platform' })),
     sink: pinoSink(logger.child({ component: 'bundles' })),
     errorClasses: [ToolErrorObject],
+    distribution: (source) => createCatalogDistribution({ source, hostBoot }),
     ...(runnerPath === undefined ? {} : { runnerPath }),
   });
 

@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { disposableSchema, type MethodSpecs } from './basic/common.js';
+import {
+  disposableSchema,
+  type MethodSpecs,
+  type StreamListener,
+  streamListener,
+} from './basic/common.js';
 import type { Keybinding, MenuItem } from './basic/menus.js';
 import { keybindingSchema, menuItemSchema } from './basic/menus.js';
 import {
@@ -13,6 +18,7 @@ import type { CallArg, Caller, CallScope } from './call.js';
 import type { Disposable } from './context.js';
 import { defineHook, definePlatformHooks, ref } from './define.js';
 import type { Environment } from './ids.js';
+import type { JsonObject } from './types.js';
 
 // Platform hooks ------------------------------------------------------------
 
@@ -211,6 +217,117 @@ export const catalogSnapshotSchema: z.ZodType<CatalogSnapshot> = z
   })
   .strict();
 
+/** One file of a bundle the host distributes to the desktop. */
+export interface DistributionFile {
+  /** Relative to the bundle's dist directory, with `/` separators. */
+  readonly path: string;
+  /** Lowercase hex SHA-256 of the file bytes. */
+  readonly sha256: string;
+  readonly size: number;
+}
+
+/** The built parts a distributed bundle ships, as paths of its files. */
+export interface DistributionParts {
+  readonly desktopMain?: string;
+  readonly client?: string;
+  readonly clientStyles?: string;
+  readonly contracts?: string;
+}
+
+/** One bundle of a host generation, as the desktop receives it. */
+export interface DistributionBundle {
+  readonly id: string;
+  readonly version: string;
+  /** The bundle's state in the host environment. */
+  readonly state: BundleState;
+  /** The host-side quarantine reasons. */
+  readonly reasons: readonly QuarantineReason[];
+  readonly manifest?: CatalogManifest;
+  /** `dist/contracts.json` as JSON; the desktop validates it on resolution. */
+  readonly descriptor?: JsonObject;
+  /** desktop/**, client/**, contracts/**.js, schemas/**, manifest.json, contracts.json. */
+  readonly files: readonly DistributionFile[];
+  readonly parts: DistributionParts;
+}
+
+/** `doric.catalog/v1.distribution()`: what the desktop needs of a host generation. */
+export interface DistributionCatalog {
+  /** The host generation (restarts at 1 with every host process). */
+  readonly generation: number;
+  /** Random per host process: with `generation`, identifies a host generation. */
+  readonly hostBoot: string;
+  /** The host platform version (informative). */
+  readonly platformVersion: string;
+  readonly composition: CatalogComposition;
+  /** The storage backend's identity, once the host resolved it. */
+  readonly storage?: StorageIdentity;
+  /** The host environment snapshot (`doric.catalog/v1.get()`). */
+  readonly host: CatalogSnapshot;
+  readonly bundles: readonly DistributionBundle[];
+}
+
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+
+export const distributionFileSchema = z
+  .object({
+    path: z.string().min(1),
+    sha256: sha256Schema,
+    size: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const distributionCatalogSchema: z.ZodType<DistributionCatalog> = z
+  .object({
+    generation: z.number().int(),
+    hostBoot: z.string().min(1),
+    platformVersion: z.string(),
+    composition: compositionShape,
+    storage: storageIdentitySchema.optional(),
+    host: catalogSnapshotSchema,
+    bundles: z.array(
+      z
+        .object({
+          id: z.string(),
+          version: z.string(),
+          state: stateSchema,
+          reasons: z.array(quarantineReasonSchema),
+          manifest: catalogManifestSchema.optional(),
+          descriptor: z.record(z.string(), z.unknown()).optional(),
+          files: z.array(distributionFileSchema),
+          parts: z
+            .object({
+              desktopMain: z.string().optional(),
+              client: z.string().optional(),
+              clientStyles: z.string().optional(),
+              contracts: z.string().optional(),
+            })
+            .strict(),
+        })
+        .strict(),
+    ),
+  })
+  .strict() as z.ZodType<DistributionCatalog>;
+
+/** `doric.catalog/v1.artifact()`: one distributed file by hash. */
+export interface DistributionArtifact {
+  readonly sha256: string;
+  /** The file bytes, base64 (keeps the envelope JSON). */
+  readonly base64: string;
+}
+
+export const distributionArtifactSchema = z
+  .object({ sha256: sha256Schema, base64: z.string() })
+  .strict();
+
+/** An item of `doric.catalog/v1.watch()`: a host generation was published. */
+export interface CatalogChange {
+  readonly generation: number;
+}
+
+export const catalogChangeSchema = z
+  .object({ generation: z.number().int() })
+  .strict();
+
 export interface DiagnosticError {
   readonly at: string;
   readonly bundleId: string;
@@ -377,6 +494,28 @@ const ownerSchema = z
 
 export interface DoricCatalog {
   get(call?: CallArg): CatalogSnapshot;
+  /** API mínima [S8-9] (host only): the generation the desktop resolves. */
+  distribution(call?: CallArg): Promise<DistributionCatalog>;
+  /** API mínima [S8-9] (host only): a file listed in a retained generation. */
+  artifact(
+    request: { readonly sha256: string },
+    call?: CallArg,
+  ): Promise<DistributionArtifact>;
+  /** API mínima [S8-9] (host only): one item per published generation. */
+  watch(listener: StreamListener<CatalogChange>, call?: CallArg): Disposable;
+  /**
+   * Recovery (host only, HR-6): leaves a bundle out of `enabled` through the
+   * host's composition overrides and publishes a new generation.
+   */
+  disable(
+    request: { readonly bundleId: string },
+    call?: CallArg,
+  ): Promise<void>;
+  /**
+   * Recovery (host only, HR-6): clears the composition overrides, returning
+   * to the composition as written, and publishes a new generation.
+   */
+  resetComposition(call?: CallArg): Promise<void>;
 }
 
 export interface DoricDiagnostics {
@@ -397,6 +536,8 @@ export interface DoricLog {
 export interface DoricWindows {
   open(request: OpenWindowRequest, call?: CallArg): Promise<void>;
   focusOrOpen(key: string, call?: CallArg): Promise<void>;
+  /** API mínima [S8-6]: the last path main stored for a key, or null. */
+  lastPath(key: string, call?: CallArg): Promise<string | null>;
 }
 
 export interface DoricMenus {
@@ -426,6 +567,20 @@ export interface DoricCache {
 
 export interface DoricTokens {
   get(call?: CallArg): Promise<Readonly<Record<string, string>>>;
+}
+
+/** One native notification (decision 81). */
+export interface NotificationRequest {
+  readonly title: string;
+  readonly body: string;
+}
+
+export const notificationRequestSchema = z
+  .object({ title: z.string(), body: z.string() })
+  .strict();
+
+export interface DoricNotifications {
+  show(request: NotificationRequest, call?: CallArg): Promise<void>;
 }
 
 /** One execution a generation keeps running (a prompt of a Thread). */
@@ -481,6 +636,9 @@ export const DoricWindowsV1 = ref<DoricWindows>('doric.windows/v1');
 export const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 export const DoricCacheV1 = ref<DoricCache>('doric.cache/v1');
 export const DoricTokensV1 = ref<DoricTokens>('doric.tokens/v1');
+export const DoricNotificationsV1 = ref<DoricNotifications>(
+  'doric.notifications/v1',
+);
 export const DoricGenerationV1 = ref<DoricGeneration>('doric.generation/v1');
 
 const noInput = z.tuple([]);
@@ -492,12 +650,29 @@ export interface PlatformContractSpec {
 
 /** Method specifications of the `doric.*` services, by contract ID. */
 export const platformContracts = Object.freeze({
+  // [S8-7] desktopMain and client have their own catalog and diagnostics.
   'doric.catalog/v1': {
-    environments: ['host'],
-    methods: { get: { input: noInput, output: catalogSnapshotSchema } },
+    environments: ['host', 'desktopMain', 'client'],
+    methods: {
+      get: { input: noInput, output: catalogSnapshotSchema },
+      distribution: { input: noInput, output: distributionCatalogSchema },
+      artifact: {
+        input: z.object({ sha256: sha256Schema }).strict(),
+        output: distributionArtifactSchema,
+      },
+      watch: {
+        input: z.tuple([streamListener(catalogChangeSchema)]),
+        output: disposableSchema,
+      },
+      disable: {
+        input: z.object({ bundleId: z.string().min(1) }).strict(),
+        output: z.void(),
+      },
+      resetComposition: { input: noInput, output: z.void() },
+    },
   },
   'doric.diagnostics/v1': {
-    environments: ['host'],
+    environments: ['host', 'desktopMain', 'client'],
     methods: {
       get: { input: noInput, output: diagnosticsSchema },
       report: { input: diagnosticReportSchema, output: z.void() },
@@ -516,6 +691,7 @@ export const platformContracts = Object.freeze({
     methods: {
       open: { input: openWindowRequestSchema, output: z.void() },
       focusOrOpen: { input: z.string(), output: z.void() },
+      lastPath: { input: z.string(), output: z.union([z.string(), z.null()]) },
     },
   },
   'doric.menus/v1': {
@@ -561,6 +737,10 @@ export const platformContracts = Object.freeze({
     methods: {
       get: { input: noInput, output: z.record(z.string(), z.string()) },
     },
+  },
+  'doric.notifications/v1': {
+    environments: ['desktopMain'],
+    methods: { show: { input: notificationRequestSchema, output: z.void() } },
   },
 } satisfies Record<string, PlatformContractSpec>);
 

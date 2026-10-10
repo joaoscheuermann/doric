@@ -1,18 +1,11 @@
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+import { cn } from 'desktop-ui/utils';
 import { CpuIcon, MemoryStickIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   type ContainerResources,
   cpuLabel,
@@ -27,7 +20,6 @@ import {
   useHostResources,
   useProjectResources,
 } from '@/hooks/use-resources';
-import { cn } from '@/utility/utils';
 
 /**
  * The footer's resource monitor: one control for the selected Project's sandbox

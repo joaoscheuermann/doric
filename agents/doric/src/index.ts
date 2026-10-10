@@ -10,6 +10,7 @@ import { ConfigurationV1, RuntimeV1 } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
 import { createTransport } from 'transport/kernel';
 
+import { installBridge } from './lib/bridge/socket.js';
 import {
   assertStructural,
   bundlePaths,
@@ -144,6 +145,13 @@ async function main() {
   const structural = watchStructural(platform, startup, () => {
     logger.flush();
     process.exit(1);
+  });
+  // The desktop's bridge to the kernel (HR-1): distribution, artifacts and
+  // generation changes of `doric.catalog/v1`, and desktop diagnostics.
+  installBridge({
+    io,
+    platform,
+    log: logger.child({ component: 'bridge' }),
   });
   startup.info(
     { socketNamespaces: ['/status', '/projects', '/threads'] },

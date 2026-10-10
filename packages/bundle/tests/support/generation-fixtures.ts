@@ -220,6 +220,7 @@ export const bootKernel = async (
     readonly startAttempts?: number;
     readonly stopTimeoutMs?: number;
     readonly embedded?: readonly EmbeddedBundle[];
+    readonly compositionOverrides?: string;
   } = {},
 ): Promise<Kernel> => {
   const bundlesPath = join(root, 'bundles');

@@ -1,6 +1,7 @@
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import type { MethodSpec } from '../contracts/basic/common.js';
 import { basicContracts } from '../contracts/basic/index.js';
 import {
   StorageBackendV1,
@@ -19,14 +20,21 @@ import {
 } from '../loader/activate.js';
 import { type EmbeddedBundle, embeddedId } from '../loader/catalog.js';
 import type { InstalledBundle } from '../loader/discover.js';
-import { providePlatformServices } from '../loader/platform.js';
+import {
+  type BundleStates,
+  type CatalogDistributionProvider,
+  providePlatformServices,
+  statesOf,
+} from '../loader/platform.js';
+import { readComposition } from '../loader/read.js';
 import {
   type ActivationResult,
   activateEnvironment,
   catalogView,
 } from '../runtime/activation.js';
 import { createHopCall } from '../runtime/call.js';
-import type { CatalogEntry } from '../runtime/catalog.js';
+import type { CatalogEntry, ResolvedEnvironment } from '../runtime/catalog.js';
+import { compositionSchema } from '../runtime/composition.js';
 import { DiagnosticsStore } from '../runtime/diagnostics.js';
 import { ServiceDirectory } from '../runtime/directory.js';
 import { createErrorClassRegistry } from '../runtime/envelope/errors.js';
@@ -38,6 +46,7 @@ import type { GenerationInit } from '../runtime/runner.js';
 import { createPrincipal } from '../runtime/services.js';
 import { PLATFORM_VERSION } from '../runtime/version.js';
 import { ajvValidators } from './ajv.js';
+import { createCompositionActions } from './composition-actions.js';
 import {
   type GenerationManager,
   HostGenerations,
@@ -69,12 +78,44 @@ export interface StartKernelOptions extends StartHostOptions {
   readonly stopTimeoutMs?: number;
   /** Test seam: how a generation process is created (default: fork). */
   readonly spawn?: (init: GenerationInit) => SpawnedGeneration;
+  /**
+   * The host's distribution members of `doric.catalog/v1` (HR-2..HR-4),
+   * built over the kernel's generations; absent, the kernel serves `get` only.
+   */
+  readonly distribution?: (
+    source: KernelDistributionSource,
+  ) => CatalogDistributionProvider;
+}
+
+/** What a distribution provider reads of the kernel's generations. */
+export interface KernelDistributionSource {
+  /**
+   * The published catalog an operation of generation N sees (its own when
+   * live, else the active one; 0 = the active one) and its live states.
+   */
+  generation(generation: number): {
+    readonly generation: number;
+    readonly resolved: ResolvedEnvironment;
+    readonly states: BundleStates;
+  };
+  /** The generations whose processes are still retained (not stopped). */
+  retained(): readonly number[];
+  /** The storage identity, once resolved. */
+  storage(): StorageIdentity | undefined;
+  /** Fired after a generation became active (boot, publish, respawn). */
+  onActive(listener: (generation: number) => void): () => void;
 }
 
 export interface KernelPlatform extends HostPlatform {
   readonly generations: GenerationManager;
   /** Kernel-internal doric principal pinned to generation N (its view). */
   view(generation: number): Services;
+  /**
+   * The method specification of the active provider of a contract in the
+   * active view, or undefined: what a boundary needs to spread an input
+   * tuple and tell a stream method apart (the host bridge, HR-1).
+   */
+  methodSpec(contractId: string, method: string): MethodSpec | undefined;
 }
 
 /** Platform providers the generation process answers itself. */
@@ -260,9 +301,44 @@ export const startKernel = async (
     ...(now === undefined ? {} : { now }),
   });
 
+  const distributionSource: KernelDistributionSource = {
+    generation: (generation) => {
+      const live = manager.liveFor(generation);
+
+      return {
+        generation: live?.generation ?? resolved.generation,
+        resolved: live?.resolved ?? resolved,
+        states: statesOf(manager.diagnosticsOf(live)),
+      };
+    },
+    retained: () =>
+      manager
+        .describe()
+        .filter(({ state }) => state !== 'stopped')
+        .map(({ generation }) => generation),
+    storage: () => (storage === undefined ? undefined : { ...storage }),
+    onActive: (listener) => manager.onActive(listener),
+  };
+  const distribution = options.distribution?.(distributionSource);
+  const overridesPath = options.compositionOverrides;
+  const composition =
+    overridesPath === undefined
+      ? undefined
+      : createCompositionActions({
+          path: overridesPath,
+          composition: async () =>
+            'path' in options.composition
+              ? await readComposition(options.composition.path)
+              : compositionSchema.parse(options.composition),
+          publish: () => manager.publish(),
+          log: options.log,
+        });
+
   providePlatformServices(platform, {
     snapshot: (call) =>
       manager.catalogOf(manager.liveFor(generationOf(call)), resolved),
+    ...(distribution === undefined ? {} : { distribution }),
+    ...(composition === undefined ? {} : { composition }),
     diagnostics,
     diagnosticsFor: (call) =>
       manager.diagnosticsOf(manager.liveFor(generationOf(call))),
@@ -393,6 +469,13 @@ export const startKernel = async (
       }
     },
     diagnostics: () => manager.diagnosticsOf(manager.liveFor(0)),
+    methodSpec: (contractId, method) => {
+      const record = activeView.active(contractId);
+
+      return record !== undefined && Object.hasOwn(record.methods, method)
+        ? record.methods[method]
+        : undefined;
+    },
     view: (generation) => {
       const directory = manager.viewOf(generation);
 

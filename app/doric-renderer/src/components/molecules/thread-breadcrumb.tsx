@@ -1,7 +1,3 @@
-import { MessageSquareIcon } from 'lucide-react';
-import { Fragment, type ReactNode } from 'react';
-
-import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -9,7 +5,11 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+} from 'desktop-ui/breadcrumb';
+import { MessageSquareIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
+
+import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import type { Project, Thread } from '@/domain/workspace';
 
 type ThreadBreadcrumbProps = {

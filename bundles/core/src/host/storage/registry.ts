@@ -4,8 +4,8 @@ import {
   type StorageTypeDefinition,
 } from 'bundle/contracts';
 
-import { collidesIn, seenBy, type View } from '../partition.js';
-import { once } from '../state.js';
+import { collidesIn, seenBy, type View } from '../../shared/partition.js';
+import { once } from '../../shared/state.js';
 
 /** One defined type: its definition, owner and deferred backend declaration. */
 export interface TypeEntry {

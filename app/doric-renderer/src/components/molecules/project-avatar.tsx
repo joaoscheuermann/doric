@@ -1,5 +1,6 @@
+import { cn } from 'desktop-ui/utils';
+
 import { type ProjectColor, projectColorSwatch } from '@/domain/workspace';
-import { cn } from '@/utility/utils';
 
 type ProjectAvatarProps = {
   readonly className?: string;

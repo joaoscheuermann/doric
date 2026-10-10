@@ -18,10 +18,17 @@ import {
   settingsGenerationType,
   settingsType,
 } from '../../contracts/storage.js';
-import { describeIssues } from '../issues.js';
-import { viewOf } from '../partition.js';
-import { assertDefinitionOwner, type CoreState, once } from '../state.js';
-import { createSpaceRegistry, type SpaceEntry } from './registry.js';
+import { describeIssues } from '../../shared/issues.js';
+import { viewOf } from '../../shared/partition.js';
+import {
+  createSpaceRegistry,
+  type SpaceEntry,
+} from '../../shared/settings-registry.js';
+import {
+  assertDefinitionOwner,
+  type CoreState,
+  once,
+} from '../../shared/state.js';
 
 /** What a `core.settings/v1` document holds. */
 interface StoredSpace {

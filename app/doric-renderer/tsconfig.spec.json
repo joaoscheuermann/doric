@@ -44,6 +44,7 @@
     "src/utility/oklch.ts",
     "src/utility/reasoning-text.ts",
     "src/utility/relative-time.ts",
+    "src/legacy/root.ts",
     "tests/**/*.ts"
   ]
 }

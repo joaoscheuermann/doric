@@ -11,6 +11,7 @@ import {
   type SettingsDefinition,
   type StorageTypeDefinition,
 } from '../define.js';
+import type { ContractError } from '../error.js';
 
 /** One method of a platform specification: what a provider must accept and return. */
 export interface MethodSpec {
@@ -64,3 +65,54 @@ export const commandDefinitionSchema = z.custom<CommandDefinition>(
 );
 
 export const noInput = z.tuple([]);
+
+// Stream methods ------------------------------------------------------------
+
+/** What a stream method delivers: items, then at most one end. */
+export interface StreamObserver<T> {
+  next(item: T): void;
+  /** The stream ended: without an error when the provider closed it. */
+  end?(error?: ContractError): void;
+}
+
+/** A stream listener: a bare function is treated as `{ next }`. */
+export type StreamListener<T> = ((item: T) => void) | StreamObserver<T>;
+
+const streamItems = new WeakMap<z.ZodType, z.ZodType>();
+
+const isStreamListener = (value: unknown): boolean =>
+  typeof value === 'function' ||
+  (typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { next?: unknown }).next === 'function' &&
+    ((value as { end?: unknown }).end === undefined ||
+      typeof (value as { end?: unknown }).end === 'function'));
+
+/**
+ * The listener argument of a stream method (a callback-codec local value).
+ * Its JSON Schema records the item schema under `x-doric-stream`, so a
+ * descriptor tells stream methods apart and a boundary can validate items.
+ */
+export const streamListener = <T extends z.ZodType>(
+  item: T,
+): z.ZodType<StreamListener<z.output<T>>> => {
+  const schema = z
+    .custom<StreamListener<z.output<T>>>(isStreamListener, {
+      message: 'Expected a stream listener.',
+    })
+    .meta({ 'x-doric-local': 'callback' });
+
+  streamItems.set(schema, item);
+
+  return schema;
+};
+
+/** The item schema of a `streamListener` schema, else undefined. */
+export const streamItemOf = (schema: z.ZodType): z.ZodType | undefined =>
+  streamItems.get(schema);
+
+/** A listener as an observer (a function becomes `{ next }`). */
+export const toStreamObserver = <T>(
+  listener: StreamListener<T>,
+): StreamObserver<T> =>
+  typeof listener === 'function' ? { next: listener } : listener;

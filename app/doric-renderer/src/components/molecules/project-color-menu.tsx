@@ -1,4 +1,3 @@
-import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import {
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
@@ -6,7 +5,9 @@ import {
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-} from '@/components/ui/context-menu';
+} from 'desktop-ui/context-menu';
+
+import { ProjectAvatar } from '@/components/molecules/project-avatar';
 import { type ProjectColor, projectColors } from '@/domain/workspace';
 
 type ProjectColorMenuProps = {

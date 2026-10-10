@@ -1,7 +1,6 @@
+import { Button } from 'desktop-ui/button';
+import { cn } from 'desktop-ui/utils';
 import { CheckIcon } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import { cn } from '@/utility/utils';
 
 type ChoiceListProps = {
   readonly choices: readonly {

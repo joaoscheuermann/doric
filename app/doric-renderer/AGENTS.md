@@ -9,7 +9,6 @@ renderer.
 ```
 src/
   components/
-    ui/          the vendored shadcn primitives (a vendor boundary, see below)
     molecules/   a few atoms composed into one small unit
     organisms/   one functional section of the app, with its own data
     templates/   arrangement only: layout and regions, no app state
@@ -24,8 +23,9 @@ src/
 Where a new file goes, in order:
 
 1. Does it render? Then it is a component, and its level decides the folder.
-   - One element with no composition and no behaviour: it belongs in
-     `components/ui`, which is the atom layer.
+   - One element with no composition and no behaviour: it is a shared
+     primitive of `packages/desktop-ui` (the atom layer), imported as
+     `desktop-ui/<name>`.
    - A few atoms composed into one thing a person uses as a unit: `molecules`.
    - A section that fetches or subscribes to something: `organisms`.
    - Nothing but arrangement — a layout, a region, a slot taking `ReactNode`:
@@ -39,15 +39,12 @@ Where a new file goes, in order:
 5. Otherwise it is `utility`: a helper stated in terms of nothing but its
    arguments, such as `cn`.
 
-Two boundaries inside `components` matter and are easy to break:
+Two boundaries around `components` matter and are easy to break:
 
-- `components/ui` is a **vendor boundary**, not a claim that every file in it is
-  one atom: `sidebar`, `field`, `tabs`, `context-menu`, `alert-dialog`, `sheet`,
-  `tooltip` and `resizable` are shadcn _families_ with providers, context and
-  composition. Read the folder as "written by the CLI, edited only through it",
-  so do not move, rename or reorganise it. Its aliases (`utils`, `lib`, `hooks`,
-  `ui`) in `components.json` are part of that contract and must keep resolving to
-  paths that exist.
+- The shadcn primitives live in `packages/desktop-ui`, a **vendor boundary**
+  with its own `components.json` and provenance record
+  (`packages/desktop-ui/PROVENANCE.md`); the renderer imports them as
+  `desktop-ui/<name>` and never copies or edits them here.
 - A `template` must not know a `view`, and a `molecule` must not know an
   `organism`. Data enters from above, through props or a hook.
 
@@ -87,8 +84,7 @@ contract change are two moves, so that one of them can be reviewed on its own.
 - Anything crossing a folder is imported through the `@/` alias
   (`@/domain/workspace`, `@/components/molecules/inline-name`).
 - Only imports inside one folder stay relative (`./use-thread-chat`).
-- `cn` lives in `@/utility/utils`, which is also what `components.json` points
-  the shadcn CLI at.
+- `cn` is imported from `desktop-ui/utils`.
 
 ## The IPC boundary
 
@@ -107,10 +103,12 @@ its own, accumulates what arrives, and treats its own copy as a view, while
 ## Styling
 
 Tailwind and the shadcn surface belong here, not in `app/doric`. Prose and
-machine-facing surfaces use the fonts vendored under `src/assets/fonts`, because
-the packaged CSP allows fonts from `self` only. Rules that Tailwind's optimizer
-mis-parses, such as a Custom Highlight pseudo-element, belong in the shell
-(`src/index.html`).
+machine-facing surfaces use the fonts desktop-ui vendors and its `theme.css`
+declares, because the packaged CSP allows fonts from `self` only. The window
+loads that `theme.css` (preflight, faces, tokens, theme mapping) before
+`src/styles.css`, which references the theme and holds only the renderer's own
+rules. Rules that Tailwind's optimizer mis-parses, such as a Custom Highlight
+pseudo-element, belong in the shell page (`src/shell.html`).
 
 All footer text, including nested controls, must use `font-weight: 400`, never 500. Use a semantic `footer` element or a `data-slot` ending in `-footer` so
 the shared rule in `src/styles.css` applies. Do not override or weaken that rule

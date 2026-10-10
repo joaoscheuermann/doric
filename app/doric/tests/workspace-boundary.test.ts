@@ -97,19 +97,28 @@ test('the Electron adapter reads, resumes and removes items from the selected Th
 });
 
 describe('workspace IPC origin', () => {
-  const allowedUrls = [
-    'http://localhost:4200/',
-    'http://localhost:4200/settings.html',
-  ];
+  test('accepts any doric://app path and refuses other origins and file URLs', () => {
+    for (const url of [
+      'doric://app/',
+      'doric://app/settings',
+      'doric://app/settings/providers',
+      'doric://app/projects/p1/threads/t1',
+    ]) {
+      assert.equal(senderIsAllowed(url), true, url);
+    }
 
-  test('accepts only the exact allowed window URLs', () => {
-    assert.equal(senderIsAllowed(allowedUrls[0], allowedUrls), true);
-    assert.equal(senderIsAllowed(allowedUrls[1], allowedUrls), true);
-    assert.equal(
-      senderIsAllowed('http://localhost:4200/other', allowedUrls),
-      false,
-    );
-    assert.equal(senderIsAllowed(undefined, allowedUrls), false);
+    for (const url of [
+      'file:///Applications/Doric.app/doric-renderer/index.html',
+      'http://localhost:4200/',
+      'http://localhost:4200/settings.html',
+      'doric://other/',
+      'doric:app',
+      'not a url',
+    ]) {
+      assert.equal(senderIsAllowed(url), false, url);
+    }
+
+    assert.equal(senderIsAllowed(undefined), false);
   });
 });
 

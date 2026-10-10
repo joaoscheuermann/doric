@@ -6,8 +6,7 @@ import {
 
 /**
  * Runs before the core opens a window, so a bundle can adjust the request.
- * The core defines it from its desktop part, which arrives in stage 8; until
- * then the contract is published so consumers can be written against it.
+ * The core defines it from its desktop part; handlers cannot change the key.
  */
 export const onBeforeOpenWindowHook = defineHook({
   kind: 'transform',

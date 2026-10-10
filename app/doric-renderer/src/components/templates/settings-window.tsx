@@ -1,3 +1,7 @@
+import { Button } from 'desktop-ui/button';
+import { Separator } from 'desktop-ui/separator';
+import { SidebarProvider } from 'desktop-ui/sidebar';
+import { cn } from 'desktop-ui/utils';
 import { ArrowLeftIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -7,10 +11,6 @@ import {
   type SettingsNavItem,
   SettingsSurface,
 } from '@/components/templates/settings-surface';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { SidebarProvider } from '@/components/ui/sidebar';
-import { cn } from '@/utility/utils';
 
 type SettingsWindowProps = {
   readonly activeId: string;

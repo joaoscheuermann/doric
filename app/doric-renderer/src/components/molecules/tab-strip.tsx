@@ -7,14 +7,14 @@ import {
   horizontalListSortingStrategy,
   SortableContext,
 } from '@dnd-kit/sortable';
+import { Button } from 'desktop-ui/button';
+import { ScrollArea, ScrollBar } from 'desktop-ui/scroll-area';
+import { TabsList, TabsTrigger } from 'desktop-ui/tabs';
+import { cn } from 'desktop-ui/utils';
 import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSortableTab, useTabStrip } from '@/hooks/use-tab-strip';
-import { cn } from '@/utility/utils';
 
 export type StripTab = {
   readonly id: string;

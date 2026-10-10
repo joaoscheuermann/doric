@@ -21,7 +21,7 @@ import {
   secretsMethods,
 } from 'bundle/contracts';
 
-import { type CoreState, once } from '../state.js';
+import { type CoreState, once } from '../../shared/state.js';
 import { createSecretsCache, describe, type SecretsCache } from './cache.js';
 
 const missing = (id: string): ContractError =>

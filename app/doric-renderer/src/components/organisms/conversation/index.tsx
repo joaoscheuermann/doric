@@ -16,6 +16,7 @@ import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionCompose
 import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import { ScrollArea } from 'desktop-ui/scroll-area';
 import {
   $getRoot,
   $isTextNode,
@@ -55,7 +56,6 @@ import { ReadOnlyBlocksPlugin } from '@/components/organisms/conversation/plugin
 import { SendPrompt } from '@/components/organisms/conversation/plugins/send-prompt';
 import { TableBlocksPlugin } from '@/components/organisms/conversation/plugins/table-blocks';
 import { UndeletableBlocksPlugin } from '@/components/organisms/conversation/plugins/undeletable-blocks';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   isReadOnlyBlock,
   isUndeletableBlock,

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Tabs, TabsContent } from 'desktop-ui/tabs';
 import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
 
 import { ReadFeedback } from '@/components/molecules/read-feedback';
@@ -6,7 +7,6 @@ import { TabStrip } from '@/components/molecules/tab-strip';
 import { FileDiffViewer } from '@/components/organisms/file-diff-viewer';
 import { FileBody } from '@/components/organisms/file-viewer';
 import { TerminalView } from '@/components/organisms/terminal-view';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { baseName, fileReadState } from '@/domain/files';
 import { pendingReadInterval, sandboxReadRetry } from '@/domain/sandbox-reads';
 import type { Terminal } from '@/domain/terminals';

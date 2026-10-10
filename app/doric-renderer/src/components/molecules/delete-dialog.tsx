@@ -7,7 +7,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from 'desktop-ui/alert-dialog';
+
 import type { Entity } from '@/domain/workspace';
 
 type DeleteDialogProps = {

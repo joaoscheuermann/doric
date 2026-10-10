@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { eventJson, redactJson } from '../src/host/redact.js';
+import { eventJson, redactJson } from '../src/shared/redact.js';
 
 // The redaction rule of events/v1 and log/v1. The first cases are copied
 // verbatim from agents/doric/tests/event-json.test.ts, so the kernel copy and

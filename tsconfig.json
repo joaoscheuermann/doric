@@ -101,6 +101,12 @@
     },
     {
       "path": "./bundles/direct"
+    },
+    {
+      "path": "./packages/desktop-client"
+    },
+    {
+      "path": "./packages/desktop-ui"
     }
   ]
 }

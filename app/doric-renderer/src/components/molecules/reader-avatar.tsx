@@ -1,5 +1,6 @@
+import { cn } from 'desktop-ui/utils';
+
 import { identiconSvg } from '@/utility/identicon';
-import { cn } from '@/utility/utils';
 
 /**
  * The frame the reader's identicon is drawn in: a compact circle the name beside

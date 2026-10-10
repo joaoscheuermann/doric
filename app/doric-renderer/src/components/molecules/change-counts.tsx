@@ -1,4 +1,4 @@
-import { cn } from '@/utility/utils';
+import { cn } from 'desktop-ui/utils';
 
 /** Shared Git totals; an empty comparison uses the same muted style everywhere. */
 export function ChangeCounts({

@@ -8,10 +8,10 @@
  * row reads the same wherever it is drawn.
  */
 
+import { Button } from 'desktop-ui/button';
+import { Marker, MarkerContent } from 'desktop-ui/marker';
 import { RotateCcwIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Marker, MarkerContent } from '@/components/ui/marker';
 import {
   type LifecycleEvent,
   lifecycleMarker,

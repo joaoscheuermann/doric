@@ -1,3 +1,11 @@
+import { Button } from 'desktop-ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from 'desktop-ui/collapsible';
+import { Separator } from 'desktop-ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
@@ -6,18 +14,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   costLabel,
   type ThreadUsage,

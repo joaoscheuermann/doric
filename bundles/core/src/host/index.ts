@@ -1,18 +1,21 @@
 import { type HostContext, StorageV1 } from 'bundle/contracts';
 
 import { settingsGenerationType, settingsType } from '../contracts/storage.js';
+import { createHooks, type HooksOptions } from '../shared/hooks.js';
+import { createLog } from '../shared/log.js';
+import { createCoreState } from '../shared/state.js';
 import { createEvents } from './events/facade.js';
-import { createHooks, type HooksOptions } from './hooks.js';
-import { createLog } from './log.js';
 import { createModels } from './models/index.js';
 import { createSecrets } from './secrets/facade.js';
 import { createSettings } from './settings/facade.js';
 import { createSkills } from './skills.js';
-import { createCoreState } from './state.js';
 import { createStorage } from './storage/facade.js';
 import { createTools } from './tools.js';
 
-export { DEFAULT_HOOK_DEADLINE_MS, type HooksOptions } from './hooks.js';
+export {
+  DEFAULT_HOOK_DEADLINE_MS,
+  type HooksOptions,
+} from '../shared/hooks.js';
 
 export interface CoreOptions {
   readonly hooks?: HooksOptions;

@@ -7,9 +7,9 @@ export const openSettingsInput = z
   .strict();
 
 /**
- * Opens the settings window. The command's definition arrives with the core's
- * desktop part in stage 8, structurally identical to this reference, so
- * consumers never change their import.
+ * Opens the settings window. The definition is `openSettings` in the core's
+ * desktop part; this reference has its exact type, which the part checks at
+ * compile time, so the contracts never import the part.
  */
 export const OpenSettingsCommandV1 = ref<
   CommandDefinition<'core.open-settings/v1', typeof openSettingsInput>

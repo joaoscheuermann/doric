@@ -1,16 +1,9 @@
+import { Button } from 'desktop-ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+
 import { CostBreakdown } from '@/components/molecules/cost-breakdown';
 import { ToolbarDivider } from '@/components/molecules/toolbar-divider';
-import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { contextLabel, costLabel } from '@/domain/usage';
 import type { Thread } from '@/domain/workspace';
 import { useThreadUsage } from '@/hooks/use-thread-usage';
