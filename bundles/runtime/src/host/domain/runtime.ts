@@ -46,9 +46,16 @@ export interface ThreadRuntime {
     readonly controller: AbortController;
     finished?: boolean;
     reported?: boolean;
+    /** Resolves once the run has recorded how it ended (or failed to). */
+    settled?: Promise<void>;
   };
   task?: Promise<void>;
   ending?: Promise<void>;
+  /**
+   * Set by termination; resolves once the Thread is written as cancelling, so
+   * an aborted run finishes its prompt only after that write.
+   */
+  leaving?: Promise<void>;
   storagePending?: () => Promise<void>;
 }
 

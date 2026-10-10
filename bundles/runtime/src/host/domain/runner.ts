@@ -71,6 +71,9 @@ export interface RunnerContext {
 }
 
 /** Owns independent prompt loops. Only queue/state mutations use the project lock. */
+/** How long termination waits for an aborted run to record its end. */
+const settleBoundMs = 1000;
+
 export const createThreadRunner = (context: RunnerContext) => {
   const { exclusive, threads: store, publisher } = context;
   const publish = async (
@@ -329,10 +332,15 @@ export const createThreadRunner = (context: RunnerContext) => {
         await context.checkStorage?.();
         const job = thread.jobs.shift();
         if (job === undefined) return undefined;
+        let settle!: () => void;
         const active = {
           job,
           controller: new AbortController(),
           finished: false,
+          settled: new Promise<void>((resolve) => {
+            settle = resolve;
+          }),
+          settle: () => settle(),
         };
         thread.active = active;
         await state(thread, 'running', job.id);
@@ -353,91 +361,104 @@ export const createThreadRunner = (context: RunnerContext) => {
       let text = '';
       let paused = false;
       try {
-        const lease = project.lease;
+        try {
+          const lease = project.lease;
 
-        if (lease === undefined)
-          throw new Error('Project sandbox lease is unavailable.');
+          if (lease === undefined)
+            throw new Error('Project sandbox lease is unavailable.');
 
-        const host: Host = {
-          threads: coordinate(project, thread, active.job),
-          workspace: workspace(project, thread, active.job),
-          terminals: {
-            run: async (input) => {
-              active.controller.signal.throwIfAborted();
-              if (project.closing || thread.closing)
-                throw new Error('Thread is inactive.');
-              // The terminal stream redacts with the list read here.
-              await context.redactor.current();
-              const started = await context.terminals.start({
-                sandbox: lease.sandbox,
-                projectId: project.project.id,
-                threadId: thread.thread.id,
-                origin: 'agent',
-                input,
-                ...(input.background
-                  ? {}
-                  : { signal: active.controller.signal }),
-              });
-              if (!input.background) return started.result;
-              void started.result
-                .then((result) =>
-                  exclusive(project.project.id, async () => {
-                    if (project.closing || thread.closing) return;
-                    const text = `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
-                    await enqueue(
-                      project,
-                      thread,
-                      String(eventJson(text, await context.redactor.current())),
-                      {
-                        kind: 'terminal',
-                        terminalId: result.terminalId,
-                        promptId: active.job.id,
-                      },
-                    );
-                  }),
-                )
-                .catch(async () => {
-                  context.log.error('Terminal result delivery failed', {
-                    threadId: thread.thread.id,
-                  });
-                  await exclusive(project.project.id, () =>
-                    close(project, [thread], 'terminal_result_failed'),
-                  );
+          const host: Host = {
+            threads: coordinate(project, thread, active.job),
+            workspace: workspace(project, thread, active.job),
+            terminals: {
+              run: async (input) => {
+                active.controller.signal.throwIfAborted();
+                if (project.closing || thread.closing)
+                  throw new Error('Thread is inactive.');
+                // The terminal stream redacts with the list read here.
+                await context.redactor.current();
+                const started = await context.terminals.start({
+                  sandbox: lease.sandbox,
+                  projectId: project.project.id,
+                  threadId: thread.thread.id,
+                  origin: 'agent',
+                  input,
+                  ...(input.background
+                    ? {}
+                    : { signal: active.controller.signal }),
                 });
-              return {
-                terminalId: started.terminal.id,
-                background: true as const,
-              };
+                if (!input.background) return started.result;
+                void started.result
+                  .then((result) =>
+                    exclusive(project.project.id, async () => {
+                      if (project.closing || thread.closing) return;
+                      const text = `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${active.job.id}\nCommand: ${input.command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
+                      await enqueue(
+                        project,
+                        thread,
+                        String(
+                          eventJson(text, await context.redactor.current()),
+                        ),
+                        {
+                          kind: 'terminal',
+                          terminalId: result.terminalId,
+                          promptId: active.job.id,
+                        },
+                      );
+                    }),
+                  )
+                  .catch(async () => {
+                    context.log.error('Terminal result delivery failed', {
+                      threadId: thread.thread.id,
+                    });
+                    await exclusive(project.project.id, () =>
+                      close(project, [thread], 'terminal_result_failed'),
+                    );
+                  });
+                return {
+                  terminalId: started.terminal.id,
+                  background: true as const,
+                };
+              },
             },
-          },
-        };
-        text = await execute(project, thread, active, lease.sandbox, host);
-        active.controller.signal.throwIfAborted();
-      } catch (error) {
-        if (storageFull(error)) throw error;
-        if (error instanceof ThreadPersistenceError) throw error;
-        const reason = thread.pausing;
-        if (reason !== undefined) {
-          // A deliberate abort pauses the prompt: it stays unfinished, so the
-          // host takes it up again — at the next boot for a stop, when the
-          // reader asks for one the reader made — and no result is written.
-          paused = true;
-          thread.pausing = undefined;
-          await publish(thread, active.job, { type: 'prompt.paused', reason });
-        } else {
-          status = active.controller.signal.aborted ? 'cancelled' : 'failed';
-          text =
-            status === 'cancelled'
-              ? 'The prompt was cancelled.'
-              : 'The prompt failed.';
-          await publish(thread, active.job, {
-            type: status === 'cancelled' ? 'agent.cancelled' : 'agent.failed',
-            error,
-          });
+          };
+          text = await execute(project, thread, active, lease.sandbox, host);
+          active.controller.signal.throwIfAborted();
+        } catch (error) {
+          if (storageFull(error)) throw error;
+          if (error instanceof ThreadPersistenceError) throw error;
+          const reason = thread.pausing;
+          if (reason !== undefined) {
+            // A deliberate abort pauses the prompt: it stays unfinished, so the
+            // host takes it up again — at the next boot for a stop, when the
+            // reader asks for one the reader made — and no result is written.
+            paused = true;
+            thread.pausing = undefined;
+            await publish(thread, active.job, {
+              type: 'prompt.paused',
+              reason,
+            });
+          } else {
+            status = active.controller.signal.aborted ? 'cancelled' : 'failed';
+            text =
+              status === 'cancelled'
+                ? 'The prompt was cancelled.'
+                : 'The prompt failed.';
+            await publish(thread, active.job, {
+              type: status === 'cancelled' ? 'agent.cancelled' : 'agent.failed',
+              error,
+            });
+          }
         }
+      } finally {
+        active.settle();
       }
       active.finished = true;
-      if (!paused) await finishJob(project, thread, active.job, status, text);
+      if (!paused) {
+        // A terminated Thread leaves its prompt before the prompt finishes.
+        await thread.leaving;
+        await finishJob(project, thread, active.job, status, text);
+      }
       await exclusive(project.project.id, async () => {
         thread.active = undefined;
         if (!thread.closing && !project.closing) await state(thread, 'ready');
@@ -768,17 +789,38 @@ export const createThreadRunner = (context: RunnerContext) => {
     failure?: string,
   ) => {
     const targets = values.filter((thread) => !thread.closing);
+    const left = new Map<ThreadRuntime, () => void>();
     for (const thread of targets) {
       thread.closing = true;
+      thread.leaving = new Promise<void>((resolve) => {
+        left.set(thread, resolve);
+      });
       thread.active?.controller.abort();
     }
-    await context.terminals
-      .close(targets.map(({ thread }) => thread.id))
-      .catch(() => {
-        context.log.error('Terminal cleanup failed', {
-          projectId: project.project.id,
-        });
-      });
+    // The aborted runs record their own cancellation before the Thread leaves
+    // its prompt, whatever the abort's latency to the executor (bounded, so a
+    // run that ignores its abort cannot hold the project).
+    const settled = targets.flatMap(({ active }) =>
+      active?.settled === undefined || active.finished ? [] : [active.settled],
+    );
+    let bound: ReturnType<typeof setTimeout> | undefined;
+    await Promise.all([
+      context.terminals
+        .close(targets.map(({ thread }) => thread.id))
+        .catch(() => {
+          context.log.error('Terminal cleanup failed', {
+            projectId: project.project.id,
+          });
+        }),
+      settled.length === 0
+        ? undefined
+        : Promise.race([
+            Promise.all(settled),
+            new Promise((resolve) => {
+              bound = setTimeout(resolve, settleBoundMs);
+            }),
+          ]).finally(() => clearTimeout(bound)),
+    ]);
     for (const thread of targets) {
       thread.thread = { ...thread.thread, state: 'cancelling' };
       await state(thread, 'cancelling').catch(() => {
@@ -786,6 +828,7 @@ export const createThreadRunner = (context: RunnerContext) => {
           threadId: thread.thread.id,
         });
       });
+      left.get(thread)?.();
       const pending = thread.jobs.splice(0);
       const task = thread.task;
       thread.ending = Promise.resolve()
