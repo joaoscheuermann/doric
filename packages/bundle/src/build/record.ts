@@ -166,6 +166,20 @@ export const recordActivation = async (options: {
         throw new RecordingError('provide expects a service definition.');
       }
 
+      // One bundle may serve several records of a `many` contract (one per
+      // provider kind); the descriptor lists the contract once.
+      if (
+        definition.cardinality === 'many' &&
+        recorded.some(
+          (entry) =>
+            entry.kind === 'service' &&
+            entry.id === definition.id &&
+            entry.cardinality === 'many',
+        )
+      ) {
+        return inert;
+      }
+
       recorded.push({
         id: definition.id,
         environment,

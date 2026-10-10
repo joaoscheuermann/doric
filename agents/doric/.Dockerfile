@@ -48,18 +48,21 @@ RUN npm ci --ignore-scripts \
       bundles/threads/tsconfig.json \
       bundles/runtime/tsconfig.json \
       bundles/terminal/tsconfig.json \
+      bundles/direct/tsconfig.json \
+      bundles/models-adapter/tsconfig.json \
+      bundles/sandbox-adapter/tsconfig.json \
+      bundles/transport/tsconfig.json \
       --force \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for bundle in postgres core files git threads; do \
+ && for bundle in postgres core files git threads runtime direct models-adapter sandbox-adapter; do \
       node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
     done \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
       bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
+      bundles/runtime bundles/direct bundles/models-adapter bundles/sandbox-adapter \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
- && mv agents/doric/dist/lib \
-       agents/doric/dist/routes \
-       agents/doric/dist/src/
+ && mv agents/doric/dist/lib agents/doric/dist/src/
 
 # Migration only needs the compiled workspace.
 FROM ${BASE_IMAGE} AS agent-runtime

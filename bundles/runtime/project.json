@@ -9,7 +9,11 @@
       "dependsOn": ["^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
-        "command": "tsc --build bundles/runtime/tsconfig.json"
+        "commands": [
+          "tsc --build bundles/runtime/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/runtime"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
@@ -21,12 +25,23 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p bundles/runtime/tsconfig.spec.json",
-          "node --test bundles/runtime/dist-tests/tests/*.test.js"
+          "node --test 'bundles/runtime/dist-tests/tests/**/*.test.js'"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/runtime",
+          "biome format --write bundles/runtime/contracts.published.json"
         ],
         "parallel": false
       }

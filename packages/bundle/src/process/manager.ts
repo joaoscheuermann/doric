@@ -26,7 +26,11 @@ import type {
   ControlMessage,
   RemoteProviderDescriptor,
 } from '../runtime/envelope/messages.js';
-import { registerRemote } from '../runtime/envelope/remote.js';
+import {
+  announcedKey,
+  matchesTarget,
+  registerRemote,
+} from '../runtime/envelope/remote.js';
 import type { SchemaValidators } from '../runtime/envelope/validators.js';
 import { LayeredDirectory } from '../runtime/layered-directory.js';
 import type { Principal } from '../runtime/principal.js';
@@ -145,7 +149,16 @@ interface Live {
   failure?: string;
   stopping: boolean;
   exited?: Promise<void>;
+  /**
+   * The kernel providers this process knows, by `contract\0bundle\0key`, as the
+   * descriptor JSON last sent (init, then `provide`/`unprovide` controls).
+   */
+  announced?: Map<string, string>;
+  /** Set once the process announced `ready`. */
+  ready?: boolean;
 }
+
+const providerKey = announcedKey;
 
 const isExecution = (hold: Hold): hold is ExecutionRef => 'promptId' in hold;
 
@@ -187,8 +200,144 @@ export class HostGenerations implements GenerationManager {
   #publishing: Promise<PublishResult> | undefined;
   #kernelSignature: string | undefined;
 
+  #syncScheduled = false;
+
   constructor(deps: ManagerDependencies) {
     this.#deps = deps;
+    // Kernel providers registered or removed after a generation started are
+    // announced to it (G-1 follow-up of stage 4): a batch per microtask.
+    deps.kernelDirectory.observe({
+      added: (record) => {
+        if (record.origin !== 'remote') {
+          this.#scheduleKernelSync();
+        }
+      },
+      removed: (record) => {
+        if (record.origin !== 'remote') {
+          this.#scheduleKernelSync();
+        }
+      },
+    });
+  }
+
+  #scheduleKernelSync(): void {
+    if (this.#syncScheduled) {
+      return;
+    }
+
+    this.#syncScheduled = true;
+    queueMicrotask(() => {
+      this.#syncScheduled = false;
+
+      for (const live of this.#lives.values()) {
+        this.#syncKernelProviders(live);
+      }
+    });
+  }
+
+  /** Sends a ready process the kernel providers it does not know yet. */
+  #syncKernelProviders(live: Live): void {
+    const { link, announced } = live;
+
+    if (
+      link === undefined ||
+      announced === undefined ||
+      live.ready !== true ||
+      live.state === 'stopped' ||
+      link.closeReason !== undefined
+    ) {
+      return;
+    }
+
+    const current = new Map<string, RemoteProviderDescriptor>();
+
+    for (const descriptor of this.#deps.kernelProviders()) {
+      current.set(providerKey(descriptor), descriptor);
+    }
+
+    try {
+      for (const [key, descriptor] of current) {
+        const text = JSON.stringify(descriptor);
+
+        if (announced.get(key) !== text) {
+          link.sendControl({ kind: 'provide', descriptor });
+          announced.set(key, text);
+        }
+      }
+
+      for (const key of [...announced.keys()]) {
+        if (!current.has(key)) {
+          const [contractId, bundleId, record] = key.split('\u0000') as [
+            string,
+            string,
+            string,
+          ];
+
+          link.sendControl({
+            kind: 'unprovide',
+            contractId,
+            bundleId,
+            ...(record === '' ? {} : { key: record }),
+          });
+          announced.delete(key);
+        }
+      }
+    } catch {
+      // The process is gone; its close is handled on its own.
+    }
+  }
+
+  /** Whether generation bundles of `live` provide `contractId`. */
+  #generationProvides(live: Live, contractId: string): boolean {
+    const contract = live.resolved.contracts.find(
+      ({ id }) => id === contractId,
+    );
+
+    return (
+      contract?.providers.some(({ bundleId }) =>
+        live.generationOrder.includes(bundleId),
+      ) ?? false
+    );
+  }
+
+  /**
+   * G-11: while no generation is active (a respawn window), a kernel call to
+   * a contract the generation provides waits for the next activation instead
+   * of answering `unavailable`; abortable by its call signal.
+   */
+  awaitProvider(
+    contractId: string,
+    signal: AbortSignal | undefined,
+  ): Promise<void> | undefined {
+    const latest = this.#latest;
+
+    if (
+      this.#active !== undefined ||
+      this.#stopping !== undefined ||
+      latest === undefined ||
+      !this.#generationProvides(latest, contractId)
+    ) {
+      return undefined;
+    }
+
+    if (signal?.aborted === true) {
+      return Promise.reject(signal.reason);
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const wake = () => {
+        signal?.removeEventListener('abort', abort);
+        this.#waiting.delete(wake);
+        resolve();
+      };
+      const abort = () => {
+        this.#waiting.delete(wake);
+        reject(signal?.reason);
+      };
+
+      this.#waiting.add(wake);
+      signal?.addEventListener('abort', abort, { once: true });
+    });
   }
 
   /** The generation an operation sees: its own when live, else the active one. */
@@ -545,8 +694,18 @@ export class HostGenerations implements GenerationManager {
     live.controller = controller;
     live.child = undefined;
     live.stopping = false;
+    live.ready = false;
 
     const kernelEntries = new Set(deps.kernelActive);
+    const kernelProviders = deps.kernelProviders();
+
+    live.announced = new Map(
+      kernelProviders.map((descriptor) => [
+        providerKey(descriptor),
+        JSON.stringify(descriptor),
+      ]),
+    );
+
     const init: GenerationInit = {
       environment: deps.environment,
       generation: live.generation,
@@ -557,7 +716,7 @@ export class HostGenerations implements GenerationManager {
       order: live.generationOrder,
       contracts: live.resolved.contracts,
       preActive: [...kernelEntries],
-      kernelProviders: deps.kernelProviders(),
+      kernelProviders,
       hooksProvider: 'remote',
       catalog: this.catalogOf(live, live.resolved),
     };
@@ -586,14 +745,10 @@ export class HostGenerations implements GenerationManager {
       incarnation: live.incarnation,
       validators: deps.validators,
       errors: deps.errors,
-      resolve: ({ contract, provider }) =>
+      resolve: ({ contract, ...target }) =>
         deps.kernelDirectory
           .providers(contract)
-          .find(
-            (record: ProviderRecord) =>
-              record.origin !== 'remote' &&
-              (provider === undefined || record.bundleId === provider),
-          ),
+          .find((record: ProviderRecord) => matchesTarget(record, target)),
       principalOf: deps.principalOf,
       report: (entry) => deps.kernelDiagnostics.report(entry),
       generationSignal: controller.signal,
@@ -632,12 +787,15 @@ export class HostGenerations implements GenerationManager {
         switch (message.kind) {
           case 'ready':
             ready = true;
+            live.ready = true;
+            // Kernel providers registered while it started.
+            this.#syncKernelProviders(live);
             resolve(undefined);
 
             return;
           case 'provide': {
             const { descriptor } = message;
-            const key = `${descriptor.contractId}\u0000${descriptor.bundleId}`;
+            const key = announcedKey(descriptor);
 
             try {
               withdraw.get(key)?.();
@@ -654,7 +812,7 @@ export class HostGenerations implements GenerationManager {
             return;
           }
           case 'unprovide': {
-            const key = `${message.contractId}\u0000${message.bundleId}`;
+            const key = announcedKey(message);
 
             withdraw.get(key)?.();
             withdraw.delete(key);
@@ -684,20 +842,30 @@ export class HostGenerations implements GenerationManager {
 
   #activate(live: Live, why: 'boot' | 'publish' | 'respawn'): void {
     const previous = this.#active;
+    const replaced = previous !== undefined && previous !== live;
 
     live.state = 'active';
     live.failure = undefined;
     this.#active = live;
     this.#latest = live;
-    this.#deps.activeView.setOverlay(live.records);
-    this.#pushCatalogs();
 
-    if (previous !== undefined && previous !== live) {
+    if (replaced) {
       previous.state = previous.state === 'failed' ? 'stopped' : 'draining';
-      this.#maybeStop(previous);
     }
 
+    // A draining generation's providers stay active for the subscribers that
+    // hold them (the transport's watch, G-1) until that generation stops.
+    this.#deps.activeView.setOverlay(live.records, {
+      retain: replaced && previous.state === 'draining',
+    });
+    this.#pushCatalogs();
+    // Listeners run before the drain check, so a call they start on the
+    // draining generation (runtime/v1.drain) keeps it alive.
     this.#announceActive(live.generation);
+
+    if (replaced) {
+      this.#maybeStop(previous);
+    }
 
     if (why !== 'boot') {
       void this.#generationReady(live.generation);
@@ -816,6 +984,7 @@ export class HostGenerations implements GenerationManager {
 
     if (!wasActive) {
       live.state = 'stopped';
+      this.#deps.activeView.release(live.records);
 
       return;
     }
@@ -867,6 +1036,7 @@ export class HostGenerations implements GenerationManager {
 
     if (link === undefined || link.closeReason !== undefined) {
       live.state = live.state === 'failed' ? 'failed' : 'stopped';
+      this.#deps.activeView.release(live.records);
 
       return;
     }
@@ -892,6 +1062,7 @@ export class HostGenerations implements GenerationManager {
     clearTimeout(timer);
     await exited;
     live.state = 'stopped';
+    this.#deps.activeView.release(live.records);
   }
 
   stop(): Promise<void> {

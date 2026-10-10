@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { CatalogResult } from 'bundle/contracts';
 import { type ProviderKind, providerKinds } from 'llms';
-import { pino } from 'pino';
+import type { BoundTool } from 'tool';
 
-import {
-  createGeneration,
-  type Generation,
-  providerFor,
-} from '../src/lib/config/generation.js';
 import {
   type ConfigInput,
   ConfigInputSchema,
@@ -16,14 +12,9 @@ import {
   defaultConfig,
   providerCredentials,
 } from '../src/lib/config/schema.js';
-import {
-  ConfigCredentialError,
-  createConfigService,
-} from '../src/lib/config/service.js';
+import { createConfigService } from '../src/lib/config/service.js';
 import type { Credential } from '../src/lib/credentials/kind.js';
-import type { CredentialService } from '../src/lib/credentials/service.js';
-import { eventJson } from '../src/lib/events/serialization.js';
-import { credentialResolver } from './helpers/workspace.js';
+import { credentialResolver } from './helpers/credentials.js';
 
 /** The credential the seeded baseline provider authenticates with. */
 const providerCredential: Credential = {
@@ -357,7 +348,7 @@ void test('names the credential each provider secret field carries', () => {
 });
 
 void test('rejects a provider that references a credential of the wrong kind', async () => {
-  const harness = await configHarness({
+  const harness = configHarness({
     credentials: [providerCredential, gitCredential],
   });
   const invalid = withProvider({
@@ -368,21 +359,39 @@ void test('rejects a provider that references a credential of the wrong kind', a
     },
   }) as ConfigInput;
 
-  await assert.rejects(harness.service.replace(invalid), ConfigCredentialError);
+  assert.deepEqual(await harness.service.replace(invalid), {
+    status: 'invalid',
+    message:
+      'Provider openrouter token must reference a API_TOKEN credential, not a GIT one.',
+  });
   assert.deepEqual(harness.writes, []);
 });
 
 void test('rejects a configuration that references an unstored credential', async () => {
-  const harness = await configHarness({ credentials: [providerCredential] });
+  const harness = configHarness({ credentials: [providerCredential] });
   const invalid = structuredClone(defaultConfig);
   invalid.gitCredentialId = gitCredential.id;
 
-  await assert.rejects(harness.service.replace(invalid), ConfigCredentialError);
+  assert.deepEqual(await harness.service.replace(invalid), {
+    status: 'invalid',
+    message: 'The Git identity references a credential that is not stored.',
+  });
   assert.deepEqual(harness.writes, []);
 });
 
+void test('answers a body the schema refuses as the invalid configuration it always was', async () => {
+  const harness = configHarness();
+
+  assert.deepEqual(
+    await harness.service.replace({ ...defaultConfig, unknown: true }),
+    { status: 'invalid', message: 'The Doric configuration is invalid.' },
+  );
+  assert.deepEqual(harness.writes, []);
+  assert.deepEqual(harness.prepared, []);
+});
+
 void test('accepts a Git identity and a GitHub token of the right kinds', async () => {
-  const harness = await configHarness({
+  const harness = configHarness({
     credentials: [providerCredential, gitCredential],
   });
   const github: Credential = {
@@ -393,167 +402,212 @@ void test('accepts a Git identity and a GitHub token of the right kinds', async 
   };
   harness.store([providerCredential, gitCredential, github]);
 
-  const snapshot = await harness.service.replace({
+  const result = await harness.service.replace({
     ...structuredClone(defaultConfig),
     gitCredentialId: gitCredential.id,
     githubCredentialId: github.id,
   });
 
-  assert.deepEqual(snapshot.configuration.gitCredentialId, gitCredential.id);
-  assert.deepEqual(snapshot.configuration.githubCredentialId, github.id);
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(
+    result.config.configuration.gitCredentialId,
+    gitCredential.id,
+  );
+  assert.deepEqual(result.config.configuration.githubCredentialId, github.id);
   assert.deepEqual(harness.writes, [defaultConfig.models.execution.model]);
 });
 
-void test('builds every configured provider through the kind it names', async () => {
+void test('refuses a configuration a bundled tool cannot read, before anything is built', async () => {
+  const tool = {
+    name: 'web',
+    settings: [{ key: 'endpoint', label: 'Endpoint', required: true }],
+  } as unknown as BoundTool;
+  const harness = configHarness({ tools: [tool] });
+
+  assert.deepEqual(await harness.service.replace(configured('needs-tool')), {
+    status: 'invalid',
+    message: 'Tool web requires a endpoint value.',
+  });
+  assert.deepEqual(harness.writes, []);
+  assert.deepEqual(harness.prepared, []);
+
+  const accepted = await harness.service.replace({
+    ...configured('tool-set'),
+    tools: { web: { endpoint: 'https://search.example.test' } },
+  });
+  assert.equal(accepted.status, 'replaced');
+});
+
+void test('fills the listed models from the catalog models/v1 reads for their kind', async () => {
+  const read: { kind: string; configuration: Record<string, string> }[] = [];
+  const harness = configHarness({
+    catalog: async (input) => {
+      read.push(input);
+      return {
+        status: 'read',
+        models: [
+          {
+            id: 'listed/model',
+            reasonings: ['low', 'high'],
+            defaultEffort: 'high',
+          },
+        ],
+      } as unknown as CatalogResult;
+    },
+  });
   const configuration: ConfigInput = {
     ...structuredClone(defaultConfig),
     providers: [
       {
-        id: 'local',
-        kind: 'openai',
-        configuration: {},
-        models: [{ name: 'local-model', reasonings: [] }],
-      },
-      {
-        id: 'proxy',
-        kind: 'openai',
-        configuration: {},
-        models: [{ name: 'proxy-model', reasonings: ['low'] }],
+        ...providerOf(),
+        models: [{ name: 'listed/model', reasonings: [] }],
       },
     ],
     models: {
-      execution: {
-        providerId: 'local',
-        model: 'local-model',
-        effort: 'low',
-      },
+      execution: { providerId: 'openrouter', model: 'listed/model' },
     },
   };
-  const generation = await createGeneration({
-    snapshot: snapshot(configuration, 1),
-    credentials: credentialResolver(() => [providerCredential]),
-    logger: pino({ enabled: false }),
-  });
 
-  // The factory each provider names is what answers, not one hard-coded kind.
-  assert.equal(providerFor(generation, 'local').metadata.id, 'local');
-  assert.equal(providerFor(generation, 'proxy').metadata.id, 'proxy');
-  assert.throws(() => providerFor(generation, 'missing'));
+  const result = await harness.service.replace(configuration);
+
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(read, [
+    { kind: 'openrouter', configuration: providerOf().configuration },
+  ]);
+  assert.deepEqual(result.config.configuration.providers[0]?.models, [
+    {
+      name: 'listed/model',
+      reasonings: ['low', 'high'],
+      defaultEffort: 'high',
+    },
+  ]);
+  assert.deepEqual(result.config.configuration.models.execution, {
+    providerId: 'openrouter',
+    model: 'listed/model',
+    effort: 'high',
+  });
 });
 
-void test('redacts every stored secret from event values', async () => {
-  const generation = await createGeneration({
-    snapshot: snapshot(defaultConfig, 1),
-    credentials: credentialResolver(() => [providerCredential]),
-    logger: pino({ enabled: false }),
-  });
-  const unconfigured = await createGeneration({
-    snapshot: snapshot(defaultConfig, 1),
-    credentials: credentialResolver(),
-    logger: pino({ enabled: false }),
-  });
+void test('builds the candidate providers before storing, then activates the stored revision', async () => {
+  const harness = configHarness();
 
-  const secret = providerCredential.secret;
+  const result = await harness.service.replace(configured('next'));
 
-  assert.ok(secret !== undefined);
-
-  assert.equal(generation.redactions().includes(secret), true);
-  assert.equal(unconfigured.redactions().includes(secret), false);
-  assert.deepEqual(
-    eventJson({ output: providerCredential.secret }, generation.redactions()),
-    { output: '[REDACTED]' },
-  );
-});
-
-void test('redacts a secret the credentials learned after the generation was built', async () => {
-  const rotated = 'ghp_rotated_later';
-  const credentials: CredentialService = credentialResolver();
-  const generation = await createGeneration({
-    snapshot: snapshot(defaultConfig, 1),
-    credentials,
-    logger: pino({ enabled: false }),
-  });
-
-  assert.equal(generation.redactions().includes(rotated), false);
-
-  credentials.register(rotated);
-
-  assert.equal(generation.redactions().includes(rotated), true);
-  assert.deepEqual(eventJson({ output: rotated }, generation.redactions()), {
-    output: '[REDACTED]',
-  });
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(harness.prepared, [
+    { model: 'next', revision: undefined },
+    { model: 'next', revision: 2 },
+  ]);
+  assert.deepEqual(await harness.service.current(), result.config);
 });
 
 void test('serializes concurrent replacements in request order', async () => {
-  const harness = await configHarness({ blockedBuild: 'first' });
-  const first = configured('first');
-  const second = configured('second');
-  const firstWrite = harness.service.replace(first);
-  const secondWrite = harness.service.replace(second);
-  await Promise.resolve();
+  const harness = configHarness({ blockedBuild: 'first' });
+  const firstWrite = harness.service.replace(configured('first'));
+  const secondWrite = harness.service.replace(configured('second'));
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(harness.writes, []);
 
   harness.releaseBuild();
   await Promise.all([firstWrite, secondWrite]);
   assert.deepEqual(harness.writes, ['first', 'second']);
   assert.equal(
-    harness.service.current().snapshot.configuration.models.execution.model,
+    (await harness.service.current()).configuration.models.execution.model,
     'second',
   );
 });
 
-void test('keeps the active generation and accepts later replacements after a build failure', async () => {
-  const harness = await configHarness({ failedBuild: 'broken-build' });
+void test('keeps the active configuration and accepts later replacements after a build failure', async () => {
+  const harness = configHarness({ failedBuild: 'broken-build' });
 
-  await assert.rejects(harness.service.replace(configured('broken-build')));
+  assert.deepEqual(await harness.service.replace(configured('broken-build')), {
+    status: 'rejected',
+  });
   assert.deepEqual(harness.writes, []);
   assert.equal(
-    harness.service.current().snapshot.configuration.models.execution.model,
+    (await harness.service.current()).configuration.models.execution.model,
     defaultConfig.models.execution.model,
   );
 
-  await harness.service.replace(configured('recovered'));
+  assert.equal(
+    (await harness.service.replace(configured('recovered'))).status,
+    'replaced',
+  );
   assert.deepEqual(harness.writes, ['recovered']);
   assert.equal(
-    harness.service.current().snapshot.configuration.models.execution.model,
+    (await harness.service.current()).configuration.models.execution.model,
     'recovered',
   );
 });
 
-void test('keeps the active generation when persistent replacement fails', async () => {
-  const harness = await configHarness({ failedWrite: 'broken-store' });
-  const original = harness.service.current();
+void test('keeps the active configuration when persistent replacement fails', async () => {
+  const harness = configHarness({ failedWrite: 'broken-store' });
+  const original = await harness.service.current();
 
-  await assert.rejects(harness.service.replace(configured('broken-store')));
+  assert.deepEqual(await harness.service.replace(configured('broken-store')), {
+    status: 'rejected',
+  });
   assert.deepEqual(harness.writes, []);
-  assert.equal(
-    harness.service.current().snapshot.configuration.models.execution.model,
-    defaultConfig.models.execution.model,
-  );
-  const snapshot = await harness.service.replace(configured('recovered'));
-  assert.equal(snapshot.configuration.models.execution.model, 'recovered');
-  assert.deepEqual(harness.service.current().snapshot, snapshot);
-  assert.equal(
-    original.snapshot.configuration.models.execution.model,
-    defaultConfig.models.execution.model,
-  );
+  assert.deepEqual(await harness.service.current(), original);
+
+  const result = await harness.service.replace(configured('recovered'));
+  assert.ok(result.status === 'replaced');
+  assert.equal(result.config.configuration.models.execution.model, 'recovered');
+  assert.deepEqual(await harness.service.current(), result.config);
+});
+
+void test('loads the stored configuration once, and again after a failed load', async () => {
+  let loads = 0;
+  let fail = true;
+  const service = createConfigService({
+    store: {
+      load: async () => {
+        loads += 1;
+        if (fail) throw new Error('database unavailable');
+        return snapshot(defaultConfig, 1);
+      },
+      replace: async () => {
+        throw new Error('unexpected write');
+      },
+    },
+    credentials: async () => credentialResolver(),
+    tools: () => [],
+    models: {
+      catalog: async () => ({ status: 'absent' }),
+      prepare: async () => undefined,
+    },
+  });
+
+  await assert.rejects(service.current(), /database unavailable/);
+  fail = false;
+  assert.deepEqual(await service.current(), snapshot(defaultConfig, 1));
+  assert.deepEqual(await service.current(), snapshot(defaultConfig, 1));
+  assert.equal(loads, 2);
 });
 
 interface ConfigHarnessOptions {
   readonly credentials?: readonly Credential[];
+  readonly tools?: readonly BoundTool[];
+  readonly catalog?: (input: {
+    kind: string;
+    configuration: Record<string, string>;
+  }) => Promise<CatalogResult>;
   readonly blockedBuild?: string;
   readonly failedBuild?: string;
   readonly failedWrite?: string;
 }
 
-const configHarness = async ({
+const configHarness = ({
   credentials = [providerCredential],
+  tools = [],
+  catalog = async () => ({ status: 'absent' }),
   blockedBuild,
   failedBuild,
   failedWrite,
 }: ConfigHarnessOptions = {}) => {
   let revision = 1;
   const writes: string[] = [];
+  const prepared: { model: string; revision: number | undefined }[] = [];
   let releaseBuild: () => void = () => undefined;
   const buildGate = new Promise<void>((resolve) => {
     releaseBuild = resolve;
@@ -568,29 +622,28 @@ const configHarness = async ({
       return snapshot(configuration, ++revision);
     },
   };
-  const build = async ({ snapshot: current }: { snapshot: DoricConfig }) => {
-    const model = current.configuration.models.execution.model;
+  /** `models/v1.prepare`: a bare configuration, or a stored snapshot. */
+  const prepare = async (input: Readonly<Record<string, unknown>>) => {
+    const stored =
+      typeof input.revision === 'number'
+        ? (input as unknown as DoricConfig)
+        : undefined;
+    const configuration = (stored?.configuration ?? input) as ConfigInput;
+    const model = configuration.models.execution.model;
     if (model === blockedBuild) await buildGate;
-    if (model === failedBuild) throw new Error('generation unavailable');
-    return {
-      snapshot: current,
-      providers: new Map(),
-      redactions: () => [],
-    } satisfies Generation;
+    if (model === failedBuild) throw new Error('providers unavailable');
+    prepared.push({ model, revision: stored?.revision });
   };
-  const service = await createConfigService({
+  const service = createConfigService({
     store,
-    credentials: credentialResolver(() => stored),
-    catalog: () => ({ skills: [], tools: [] }),
-    logger: pino({ enabled: false }),
-    buildGeneration: build,
-    // The catalog reader has its own cases; this harness is about the store and
-    // the service, so it must never reach an endpoint.
-    readModels: (configuration) => Promise.resolve(configuration),
+    credentials: async () => credentialResolver(() => stored),
+    tools: () => tools,
+    models: { catalog, prepare },
   });
   return {
     service,
     writes,
+    prepared,
     releaseBuild,
     store: (next: readonly Credential[]) => {
       stored = next;

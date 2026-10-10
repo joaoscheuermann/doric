@@ -23,12 +23,50 @@ export type { RemoteProviderDescriptor } from './messages.js';
 const isPlatformSpec = (id: string): id is keyof typeof platformContracts =>
   Object.hasOwn(platformContracts, id);
 
+const recordKeys = new WeakMap<ProviderRecord, string>();
+let nextRecordKey = 0;
+
+/**
+ * The stable key of a local provider record in this process: one bundle may
+ * register several records of a `many` contract, and the other process names
+ * the one it calls by this key.
+ */
+export const recordKey = (record: ProviderRecord): string => {
+  let key = recordKeys.get(record);
+
+  if (key === undefined) {
+    nextRecordKey += 1;
+    key = String(nextRecordKey);
+    recordKeys.set(record, key);
+  }
+
+  return key;
+};
+
+/** The local record a call names: by key when it has one, else by bundle. */
+export const matchesTarget = (
+  record: ProviderRecord,
+  target: { readonly provider?: string; readonly record?: string },
+): boolean =>
+  record.origin !== 'remote' &&
+  (target.provider === undefined || record.bundleId === target.provider) &&
+  (target.record === undefined || recordKeys.get(record) === target.record);
+
+/** How a process keys the providers it announced or registered remotely. */
+export const announcedKey = (descriptor: {
+  readonly contractId: string;
+  readonly bundleId: string;
+  readonly key?: string;
+}): string =>
+  `${descriptor.contractId}\u0000${descriptor.bundleId}\u0000${descriptor.key ?? ''}`;
+
 /** The descriptor another process needs to call a local provider record. */
 export const describeRecord = (
   record: ProviderRecord,
 ): RemoteProviderDescriptor => ({
   contractId: record.contractId,
   bundleId: record.bundleId,
+  key: recordKey(record),
   version: record.version,
   contractVersion: record.contractVersion,
   environment: record.environment,
@@ -145,6 +183,7 @@ export const remoteRecord = (
             ? prepared
             : encodeValue(prepared, plan.input, context),
         provider: descriptor.bundleId,
+        ...(descriptor.key === undefined ? {} : { record: descriptor.key }),
       };
 
       if (plan.oneway === true) {

@@ -160,6 +160,9 @@ export const startKernel = async (
     operationGeneration: 0,
     generationSignal: controller.signal,
     report: (entry) => diagnostics.report(entry),
+    // G-11: kernel calls wait for the next active generation during a respawn.
+    awaitProvider: (contractId, signal) =>
+      manager.awaitProvider(contractId, signal),
     ...(now === undefined ? {} : { now }),
   };
   const platform = createPrincipal(runtime, {

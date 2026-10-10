@@ -4,6 +4,7 @@ import { settingsGenerationType, settingsType } from '../contracts/storage.js';
 import { createEvents } from './events/facade.js';
 import { createHooks, type HooksOptions } from './hooks.js';
 import { createLog } from './log.js';
+import { createModels } from './models/index.js';
 import { createSecrets } from './secrets/facade.js';
 import { createSettings } from './settings/facade.js';
 import { createSkills } from './skills.js';
@@ -41,6 +42,7 @@ export const createActivate =
     services.provide(createSecrets(state));
     services.provide(createEvents(state));
     services.provide(createSettings(state));
+    services.provide(createModels(services));
 
     // The core's own types, through whichever storage/v1 is active.
     const storage = services.use(StorageV1);
@@ -51,6 +53,6 @@ export const createActivate =
 
 /**
  * Provides the default basic services of the host: hooks, log, tools,
- * skills, storage, secrets, events and settings.
+ * skills, storage, secrets, events, settings and models.
  */
 export const activate = createActivate();

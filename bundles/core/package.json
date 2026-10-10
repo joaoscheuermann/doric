@@ -19,6 +19,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "llms": "0.0.1",
+    "models-adapter": "0.0.1",
     "tool": "0.0.1"
   }
 }

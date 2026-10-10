@@ -536,16 +536,17 @@ The thread delegation tools act only on direct children in the same Project,
 reached through the per-prompt host facade; each child has its own history, not
 an automatic copy of its parent's history.
 
-Within `agents/doric/src/lib`, Direct owns `agents/direct/executor.ts` and
-`agents/direct/prompts/system.ts`; the former one-module-per-coordination-tool
-set now ships in `/bundles/threads`. The system prompt file exports only one
-constant literal template string; dynamic bundle skills are appended by the
-executor, not encoded as arrays of prompt lines. Shared lifecycle and control
-live in `workspace`: `runner.ts` builds the prompt-scoped host facade, and
-configuration, HTTP composition/errors, and event transport/safe serialization
-live in `config`, `http`, and `events` respectively. The database
-client and VM registry remain `database.ts` and `vms.ts` at the lib root.
-This organization does not change bundle ownership or runtime behavior.
+The Direct executor and its system prompt live in `/bundles/direct`; the
+former one-module-per-coordination-tool set ships in `/bundles/threads`. The
+system prompt file exports only one constant literal template string; dynamic
+bundle skills are appended by the executor, not encoded as arrays of prompt
+lines. Project and Thread lifecycle, queues, the prompt runner and the
+prompt-scoped host facade live in `/bundles/runtime`; REST routes, Socket.IO
+namespaces, HTTP errors and safe event serialization live in
+`/bundles/transport`. `agents/doric/src` keeps only the kernel: boot, the
+embedded `host-config` bundle and the `PUT /config` pipeline
+(`lib/config/service.ts`), the database connection, the sandbox log settings
+and the generation handover wiring.
 
 ### Current Runtime
 
@@ -594,9 +595,10 @@ replaces the foreign keys that used to protect referenced credentials and
 assumes, as the credential cache already did, one host process per database.
 `events/v1` appends a registered event's envelope `{ projectId, threadId,
 promptId, type, event }`, redacted and made storable, to
-`runtime.thread.events/<threadId>`; no shipped bundle registers an event yet, so
-nothing reaches that stream and REST and Socket.IO still serve the Thread event
-table. `/bundles/files` (the former `/bundles/core`) owns the built-in `cwd`,
+`runtime.thread.events/<threadId>`. The `runtime` registers only
+`runtime.prompt-finished/v1` and writes the Thread events it owns to that
+stream directly, in the same commit as the Thread document; REST and Socket.IO
+serve the stream. `/bundles/files` (the former `/bundles/core`) owns the built-in `cwd`,
 `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
 working directory and moves it, and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
@@ -609,10 +611,10 @@ Git behavior, bounds stdout and stderr, and exposes no dedicated credential
 input. `/bundles/threads` owns the delegation tools `thread-spawn`,
 `thread-list`, `thread-get`, `thread-events`, `thread-send`,
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
-inspection, and steering skills. `/bundles/runtime` and `/bundles/terminal`
-exist only as the contracts packages `runtime/contracts`
-(`runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`) and
-`terminal/contracts` (`terminal/v1`); they have no manifest and are not staged.
+inspection, and steering skills. `/bundles/terminal`
+exists only as the contracts package `terminal/contracts` (`terminal/v1`); it
+has no manifest and is not staged. Migration stages 5 to 7 are described
+below.
 
 `/bundles/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
@@ -631,10 +633,12 @@ without a database round trip and leaves the low-storage policy to the caller.
 Its `secrets.backend/v1` keeps the `credential` table, which no other table
 references, sealing each secret in the AES-256-GCM envelope under
 `DORIC_CREDENTIAL_KEY` and reading existing envelopes without rewriting them.
-The provisional local contract `postgres.database/v1` (`connect`, `client`) and
-the `postgres/prisma` subpath give the kernel's Project, Thread, event and usage
-stores that same client and its generated types; those tables and their SQL
-are unchanged until the runtime moves to `storage/v1`. `packages/storage` (npm
+The provisional local contract `postgres.database/v1` keeps `connect`, which
+the kernel calls at `database_client` and which refuses a database that still
+holds legacy Project, Thread or event rows without the stage-7 migration
+marker; `client` and the `postgres/prisma` subpath remain only for the frozen
+stage-7 test oracle and leave with the later migration that drops the empty
+legacy tables. `packages/storage` (npm
 `storage`) is the protocol package for `storage.backend/v1`: the index-key
 encoding (`null` < `false` < `true` < numbers < strings, strings bytewise in
 UTF-8, ties by document id), query cursors, stream ids and batch limits, the
@@ -650,10 +654,12 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `bundle_load` stage, Doric reads the installed bundles below
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
-names `core`, enables `postgres`, `core`, `files`, `git` and `threads`, and
-chooses `postgres` for `storage.backend/v1` and `secrets.backend/v1`), and always
-adds the embedded `host-adapter` bundle and the embedded provisional
-`host-config` bundle, which owns the configuration's `settings/v1` space. A
+names `core`, enables `postgres`, `core`, `files`, `git`, `threads`,
+`runtime`, `direct`, `models-adapter` and `sandbox-adapter`, and chooses
+`postgres` for `storage.backend/v1` and `secrets.backend/v1`), and always adds
+the embedded provisional `host-config` bundle, which owns the configuration's
+`settings/v1` space and provides `host-config/v1`, and the embedded
+`transport` bundle. A
 composition that chooses no backend for either contract puts the host in
 recovery, because the core requires them. The loader activates the foundation,
 then the core, then the others in dependency order with lexical tie-break,
@@ -671,7 +677,7 @@ mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
 and for each prompt; `Bundles loaded`
-reports the activated installed bundles (five in the shipped composition; the
+reports the activated installed bundles (nine in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, the startup stages run as `bootstrap`,
 `sandbox_pool`, `bundle_load`, `database_client` (connects the client through
@@ -679,14 +685,17 @@ activation opens no database, the startup stages run as `bootstrap`,
 an unreachable database still fails here), `credential_activation` (loads the
 credentials through `secrets/v1`, so a missing or malformed key or an
 unreadable envelope still fails here), `configuration_activation`,
-`workspace_reconciliation`, `network_binding` and `ready`. At shutdown the
-database disconnects inside the platform's stop, after the workspace service
-is disposed and before the sandbox pool is.
+`workspace_reconciliation`, `network_binding` and `ready`; the bundles hear
+`onHostReadyHook` before the listener binds. At shutdown the
+kernel closes the server and sockets, calls `runtime/v1.dispose()`, and then
+stops the platform, which deactivates the generation (and its sandbox pool)
+and disconnects the database.
 Migration stage 4 ("Processos de geração") implements the approved
 multi-process scope of HC-003 for the host. The Doric process is the kernel: it
 runs the foundation, the core, every embedded bundle and the platform (catalog,
 diagnostics, dispatcher, generation manager). The installed other bundles
-(`files`, `git`, `threads`) activate in one Node `child_process.fork` per bundle
+(`files`, `git`, `threads` and, from stage 5, `runtime`, `direct`,
+`models-adapter` and `sandbox-adapter`) activate in one Node `child_process.fork` per bundle
 generation, through `startKernel` and the runner of `packages/bundle`, and the
 two processes call each other's services through one RPC envelope; the tools
 of those bundles execute in the generation process. Each prompt holds a lease
@@ -702,8 +711,48 @@ resume with the boot's attempt budget and order once the respawned process
 (same generation number, next incarnation) or the active generation is ready.
 After three failed starts the generation's bundles are quarantined with
 `generation_failed` and the host keeps serving with an empty tool catalog.
-There is no external trigger for a new generation in stage 4, and no Prisma
-schema change.
+There is no external trigger for a new generation, and stage 4 changed no
+Prisma schema.
+
+Migration stages 5 to 7 ("Runtime", "Executor" and "Dados") move the domain
+out of the kernel; decisions D-S5-01 to D-S7-01 are indexed in
+`implementation-decisions.md`. `/bundles/runtime` owns Projects, Threads,
+queues, leases, recovery and the prompt runner through `runtime/v1`,
+`runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`,
+`runtime.terminals/v1` and `runtime.hooks/v1`, and provisionally `terminal/v1`
+until the `terminal` bundle is extracted. It persists Projects, Threads and
+histories as `runtime.project/v1`, `runtime.thread/v1` and
+`runtime.history/v1` documents and each Thread's events in the
+`runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
+`pending` queue projection and the usage aggregate into the same commit as
+the event. `/bundles/direct` provides the local `executor/v1`, whose `run`
+receives the runtime's `PromptSession`, and keeps its history as the opaque
+`direct.history/v1` state (`messages` and `meta`). The core provides
+`models/v1`; the provisional `models-adapter` registers the `openai`,
+`openrouter` and `codex` `models.provider/v1` kinds and the provisional
+`sandbox-adapter` provides `sandbox/v1`, both until stage 10. The kernel
+refuses to boot, at `bundle_load`, when `runtime/v1`, `executor/v1`,
+`sandbox/v1`, `models/v1` or `host-config/v1` has no active provider or
+`transport` is not active; when a structural provider is lost after boot (its
+generation exhausted its respawns) the kernel logs `Bundle recovery mode` and
+exits with code 1, as the process used to die. A kernel-internal `publish()`
+hands Projects over between generations: each Project records its owning
+generation and incarnation, the draining generation finishes the prompts it
+runs and releases each idle Project (closing its live terminals), and the new
+generation adopts it; Projects of a dead owner get the `host_restarted`
+recovery. The sandbox-pool and `llms` debug lines are now written by the
+generation through `log/v1` with a `bundleId`; the kernel still writes `Doric
+starting`, `Sandbox pool configured` and `Doric listening {sandboxProvider}`.
+The `GET /resources` CPU sample runs in the transport (the kernel process) and
+the `web` tool's `fetch` runs in the generation process, both on the host
+machine as before. Stage 4's asynchronous `RemoteTool` check no longer runs
+during prompts, since `direct` binds the local tools. Stage 7 is the first
+lossless data migration of Projects, Threads, histories and events into the
+runtime's documents and streams: it runs in one transaction under `prisma
+migrate deploy`, verifies the copy, records the `runtime.migration/v1` marker
+and deletes the legacy rows, keeps `storageGeneration`, is idempotent and
+cannot be reversed in place, so operators back up the database first; the
+empty legacy tables are dropped by a later migration.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
@@ -726,9 +775,9 @@ Providers transmit only their supported tool fields and use `inputSchema` as
 function parameters. Model-generated graph nodes use tool metadata rather than
 executable tools or arbitrary tool input schemas.
 
-`packages/host` publicly owns the `Host` capability facade the runner builds
-for every prompt. It is types only, and the host implements it in the
-composition root. A `Host` is prompt-scoped; it closes over the calling
+`packages/host` owns the `Host` capability facade the runtime's runner builds
+for every prompt. It is types only and no longer a cross-package API: only
+`/bundles/runtime` uses it internally, until stage 10. A `Host` is prompt-scoped; it closes over the calling
 prompt's Project and Thread, so `host.threads.*` reaches only that prompt's
 direct children and stops when the prompt ends, and `host.workspace.*` reports
 and moves only that prompt's own Thread's working directory. Today's
@@ -738,11 +787,10 @@ without exposing other Threads' sessions. Background process ownership
 survives completion of its originating prompt; future namespaces (`config`,
 `vms`, `providers`) are added only for a concrete need, never as a state dump,
 a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch. Bundle
-tools no longer receive it as an argument: the embedded `host-adapter` bundle
-(`agents/doric/src/lib/bundles/adapter.ts`) provides `runtime.threads/v1`,
-`runtime.workspace/v1`, `runtime.lease/v1` and `terminal/v1` by forwarding
-each call one to one to the `Host` and sandbox the runner built for the
-prompt named by the call's scope, while that prompt runs; an ended prompt's
+tools no longer receive it as an argument: `/bundles/runtime` provides
+`runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1` and
+`terminal/v1` by forwarding each call one to one to the `Host` and sandbox the
+runner built for the prompt named by the call's scope, while that prompt runs; an ended prompt's
 calls fail with `Thread control is no longer active.`, Host failures reach the
 tool unchanged, `runtime.lease/v1` forwards no abort signal, and a prompt
 without live terminals answers `unavailable`, which keeps the terminal tool's
@@ -1121,8 +1169,10 @@ Production uses one adapter-pg Prisma client per process and never applies
 migrations implicitly during HTTP startup. PostgreSQL stores the singleton
 configuration as the `settings/v1` space `host-config.configuration/v1` (one
 `core.settings/v1` document of the generic storage tables), the credential
-store, Project names, colors and configuration snapshots, Thread names,
-parentage and provider-ready message history, and ordered JSONB Thread events.
+store and, as `runtime` documents and streams of the generic storage tables,
+Project names, colors and configuration snapshots, Thread names, parentage,
+the Direct executor's provider-ready message history, and ordered Thread
+events.
 The generic-storage migration converts the former `doric_configuration`,
 `provider_configuration` and `model_configuration` rows losslessly into that
 document, keeping the configuration revision and update time so the next

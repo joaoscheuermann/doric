@@ -38,6 +38,18 @@
     },
     {
       "path": "../../packages/storage/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/core"
+    },
+    {
+      "path": "../../bundles/runtime"
+    },
+    {
+      "path": "../../bundles/transport"
+    },
+    {
+      "path": "../../packages/tool/tsconfig.lib.json"
     }
   ]
 }

@@ -1,0 +1,162 @@
+/*
+ * Moved from agents/doric (events/serialization.ts and credentials/redact.ts,
+ * design 57 §11.4): the redaction every persistence path applies.
+ */
+
+/** The one marker a redacted secret leaves in its place. */
+const redactionMarker = '[REDACTED]';
+
+/**
+ * Replaces every literal occurrence of each secret with the redaction marker.
+ * Empty secrets are ignored, because an empty needle would otherwise redact
+ * between every character. Secrets are applied in order, so a later secret may
+ * also match text an earlier replacement introduced.
+ */
+export const redactSecrets = (
+  text: string,
+  secrets: readonly string[],
+): string =>
+  secrets.reduce(
+    (redacted, secret) =>
+      secret === '' ? redacted : redacted.split(secret).join(redactionMarker),
+    text,
+  );
+
+const marker = (name: string, detail?: string): string =>
+  detail === undefined ? `[${name}]` : `[${name}: ${detail}]`;
+
+/**
+ * Whether a value is a plain record: an object literal, or one built with no
+ * prototype. Only such a value is JSON `{}` when it holds no property; anything
+ * else that exposes none is marked instead, because its contents are not the
+ * model's to read.
+ */
+const isPlainRecord = (value: object): boolean => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+/** Converts arbitrary agent events into redacted, cycle-safe JSON values. */
+export const eventJson = (
+  value: unknown,
+  credentials: readonly string[],
+): unknown => {
+  const seen = new WeakMap<object, string>();
+
+  const redact = (text: string): string => redactSecrets(text, credentials);
+
+  const visit = (current: unknown, path: string): unknown => {
+    if (current === null || typeof current === 'boolean') {
+      return current;
+    }
+
+    if (typeof current === 'string') {
+      return redact(current);
+    }
+
+    if (typeof current === 'number') {
+      if (Number.isNaN(current)) {
+        return marker('NaN');
+      }
+
+      if (current === Number.POSITIVE_INFINITY) {
+        return marker('Infinity');
+      }
+
+      if (current === Number.NEGATIVE_INFINITY) {
+        return marker('-Infinity');
+      }
+
+      return current;
+    }
+
+    if (typeof current === 'undefined') {
+      return marker('Undefined');
+    }
+
+    if (typeof current === 'bigint') {
+      return marker('BigInt', String(current));
+    }
+
+    if (typeof current === 'symbol') {
+      return marker('Symbol', redact(current.description ?? ''));
+    }
+
+    if (typeof current === 'function') {
+      return marker('Function', redact(current.name || 'anonymous'));
+    }
+
+    const previous = seen.get(current);
+
+    if (previous !== undefined) {
+      return marker('Circular', previous);
+    }
+
+    seen.set(current, path);
+
+    if (current instanceof Date) {
+      return Number.isNaN(current.getTime())
+        ? marker('Invalid Date')
+        : current.toISOString();
+    }
+
+    if (current instanceof RegExp) {
+      return marker('RegExp', redact(String(current)));
+    }
+
+    if (ArrayBuffer.isView(current)) {
+      return Array.from(
+        new Uint8Array(current.buffer, current.byteOffset, current.byteLength),
+      );
+    }
+
+    if (current instanceof ArrayBuffer) {
+      return Array.from(new Uint8Array(current));
+    }
+
+    if (Array.isArray(current)) {
+      return current.map((entry, index) => visit(entry, `${path}[${index}]`));
+    }
+
+    const names = new Set(Object.getOwnPropertyNames(current));
+
+    if (current instanceof Error) {
+      names.add('name');
+
+      names.add('message');
+
+      names.add('stack');
+
+      names.add('cause');
+    }
+
+    // A plain record with no own property is the empty object, and JSON spells
+    // it `{}`; the marker is for a value whose properties are not the model's to
+    // read, such as a Map, a Set, or a class instance keeping its state private.
+    if (names.size === 0 && !isPlainRecord(current)) {
+      return marker(
+        current.constructor?.name ?? 'Object',
+        // The marker deliberately describes opaque instances by their string form.
+        redact(String(current)),
+      );
+    }
+
+    return Object.fromEntries(
+      [...names].flatMap<[string, unknown]>((name) => {
+        let entry: unknown;
+
+        try {
+          entry = Reflect.get(current, name);
+        } catch {
+          entry = marker('Unserializable property');
+        }
+
+        return entry === undefined
+          ? []
+          : [[redact(name), visit(entry, `${path}.${name}`)]];
+      }),
+    );
+  };
+
+  return visit(value, '$');
+};

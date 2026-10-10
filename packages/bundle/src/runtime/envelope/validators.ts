@@ -98,7 +98,12 @@ export const documentMethodSpecs = (
 
     methods[name] = Object.freeze({
       input: memberSpec(validators, input),
-      output: memberSpec(validators, output),
+      // JSON Schema cannot say whether an output may be `undefined` (an
+      // optional zod output publishes its inner schema), and the providing
+      // process already validated the result against its own zod schema, so
+      // an `undefined` result is the provider's answer, not a malformed one:
+      // `project(id)` of a missing Project, for example.
+      output: memberSpec(validators, output).optional(),
     });
   }
 

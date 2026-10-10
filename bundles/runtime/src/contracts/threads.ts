@@ -1,6 +1,36 @@
 import { type CallArg, ref } from 'bundle/contracts';
 import { z } from 'zod';
 
+import {
+  type CwdResult,
+  cwdResultSchema,
+  type DeleteResult,
+  deleteResultSchema,
+  type EditQueueResult,
+  editQueueResultSchema,
+  type Page,
+  type PromptAcceptResult,
+  type QueuedPrompt,
+  queuedPromptSchema,
+  type RemoveQueuedResult,
+  type ResumeResult,
+  type RewindResult,
+  removeQueuedResultSchema,
+  resumeResultSchema,
+  rewindResultSchema,
+  type Thread,
+  type ThreadCreateResult,
+  type ThreadEvent,
+  type ThreadQueue,
+  type ThreadUsage,
+  threadCreateResultSchema,
+  threadEventSchema,
+  threadPageRecordsSchema,
+  threadQueueSchema,
+  threadSchema,
+  threadUsageSchema,
+} from './model.js';
+
 /*
  * Each schema is annotated with its interface so a provider returns the
  * interface it already has; the runtime value stays a loose zod object.
@@ -158,9 +188,11 @@ export const interruptResultSchema = z.enum([
 /**
  * The controls a running parent prompt has over its direct children. A
  * provider binds every method to `call.scope` (the calling prompt) and to
- * direct children of its Thread in the same Project.
+ * direct children of its Thread in the same Project; once the prompt's
+ * binding ended every method rejects with
+ * `Error('Thread control is no longer active.')`.
  */
-export interface RuntimeThreads {
+export interface RuntimeThreadControls {
   spawn(prompt: string, call?: CallArg): Promise<SpawnedThread>;
   list(limit: number, cursor?: string, call?: CallArg): Promise<ThreadPage>;
   /** The child's state and, when a prompt has finished, its result. */
@@ -180,6 +212,116 @@ export interface RuntimeThreads {
   ): Promise<InterruptResult>;
   terminate(threadId: string, call?: CallArg): Promise<ThreadView>;
 }
+
+/** The whole log after a cursor, with the Thread's last sequence. */
+export interface ThreadEventLog {
+  readonly events: readonly ThreadEvent[];
+  readonly lastSequence: number;
+}
+
+/**
+ * The stage-1 controls plus the WorkspaceService.threads operations (design 57
+ * §2.3, API mínima). The user-facing methods ignore `call.scope`.
+ */
+export interface RuntimeThreads extends RuntimeThreadControls {
+  createThread(
+    input: {
+      readonly projectId: string;
+      readonly name: string;
+      readonly parentThreadId?: string;
+    },
+    call?: CallArg,
+  ): Promise<ThreadCreateResult>;
+  /** service.threads.find: with the in-memory storage-pause overlay. */
+  thread(id: string, call?: CallArg): Promise<Thread | undefined>;
+  /** The stored record, without the overlay (the Socket.IO snapshot read). */
+  storedThread(id: string, call?: CallArg): Promise<Thread | undefined>;
+  threads(
+    input: {
+      readonly projectId: string;
+      readonly limit: number;
+      readonly cursor?: string;
+      readonly parentThreadId?: string;
+    },
+    call?: CallArg,
+  ): Promise<Page<Thread> | undefined>;
+  /** Every Thread of a Project, createdAt then id ascending. */
+  projectThreads(projectId: string, call?: CallArg): Promise<readonly Thread[]>;
+  renameThread(
+    input: { readonly id: string; readonly name: string },
+    call?: CallArg,
+  ): Promise<Thread | undefined>;
+  setThreadCwd(
+    input: { readonly id: string; readonly cwd: string },
+    call?: CallArg,
+  ): Promise<CwdResult>;
+  prompt(
+    input: { readonly id: string; readonly prompt: string },
+    call?: CallArg,
+  ): Promise<PromptAcceptResult>;
+  resume(
+    input: { readonly id: string; readonly promptId: string },
+    call?: CallArg,
+  ): Promise<ResumeResult>;
+  rewind(
+    input: {
+      readonly id: string;
+      readonly promptId: string;
+      readonly prompt: string;
+    },
+    call?: CallArg,
+  ): Promise<RewindResult>;
+  /** service.threads.events: the whole log after the cursor. */
+  threadEvents(
+    input: { readonly id: string; readonly afterSequence: number },
+    call?: CallArg,
+  ): Promise<ThreadEventLog | undefined>;
+  /** The stored events after the cursor, with no record check (replay). */
+  storedEventsAfter(
+    input: { readonly id: string; readonly afterSequence: number },
+    call?: CallArg,
+  ): Promise<readonly ThreadEvent[]>;
+  /** The reader stop: `promptId` is accepted and ignored, as today. */
+  pause(
+    input: { readonly id: string; readonly promptId: string },
+    call?: CallArg,
+  ): Promise<InterruptResult>;
+  terminateThread(id: string, call?: CallArg): Promise<Thread | undefined>;
+  deleteThread(id: string, call?: CallArg): Promise<DeleteResult>;
+  queue(id: string, call?: CallArg): Promise<ThreadQueue | undefined>;
+  resumeQueue(id: string, call?: CallArg): Promise<ResumeResult>;
+  queuedPrompt(
+    input: { readonly id: string; readonly promptId: string },
+    call?: CallArg,
+  ): Promise<QueuedPrompt | undefined>;
+  editQueued(
+    input: {
+      readonly id: string;
+      readonly promptId: string;
+      readonly text: string;
+      readonly revision: number;
+    },
+    call?: CallArg,
+  ): Promise<EditQueueResult>;
+  removeQueued(
+    input: { readonly id: string; readonly promptId: string },
+    call?: CallArg,
+  ): Promise<RemoveQueuedResult>;
+  usage(id: string, call?: CallArg): Promise<ThreadUsage | undefined>;
+}
+
+const threadPrompt = z
+  .object({ id: z.string(), promptId: z.string() })
+  .strict();
+const afterSequence = z
+  .object({ id: z.string(), afterSequence: z.number() })
+  .strict();
+
+export const threadEventLogSchema: z.ZodType<ThreadEventLog, ThreadEventLog> =
+  z.looseObject({
+    events: z.array(threadEventSchema),
+    lastSequence: z.number(),
+  });
 
 export const runtimeThreadsMethods = {
   spawn: { input: z.string(), output: spawnedThreadSchema },
@@ -201,6 +343,76 @@ export const runtimeThreadsMethods = {
     output: interruptResultSchema,
   },
   terminate: { input: z.string(), output: threadViewSchema },
+  createThread: {
+    input: z
+      .object({
+        projectId: z.string(),
+        name: z.string(),
+        parentThreadId: z.string().optional(),
+      })
+      .strict(),
+    output: threadCreateResultSchema,
+  },
+  thread: { input: z.string(), output: threadSchema.optional() },
+  storedThread: { input: z.string(), output: threadSchema.optional() },
+  threads: {
+    input: z
+      .object({
+        projectId: z.string(),
+        limit: z.number(),
+        cursor: z.string().optional(),
+        parentThreadId: z.string().optional(),
+      })
+      .strict(),
+    output: threadPageRecordsSchema.optional(),
+  },
+  projectThreads: { input: z.string(), output: z.array(threadSchema) },
+  renameThread: {
+    input: z.object({ id: z.string(), name: z.string() }).strict(),
+    output: threadSchema.optional(),
+  },
+  setThreadCwd: {
+    input: z.object({ id: z.string(), cwd: z.string() }).strict(),
+    output: cwdResultSchema,
+  },
+  prompt: {
+    input: z.object({ id: z.string(), prompt: z.string() }).strict(),
+    output: promptResultSchema,
+  },
+  resume: { input: threadPrompt, output: resumeResultSchema },
+  rewind: {
+    input: z
+      .object({ id: z.string(), promptId: z.string(), prompt: z.string() })
+      .strict(),
+    output: rewindResultSchema,
+  },
+  threadEvents: {
+    input: afterSequence,
+    output: threadEventLogSchema.optional(),
+  },
+  storedEventsAfter: {
+    input: afterSequence,
+    output: z.array(threadEventSchema),
+  },
+  pause: { input: threadPrompt, output: interruptResultSchema },
+  terminateThread: { input: z.string(), output: threadSchema.optional() },
+  deleteThread: { input: z.string(), output: deleteResultSchema },
+  queue: { input: z.string(), output: threadQueueSchema.optional() },
+  resumeQueue: { input: z.string(), output: resumeResultSchema },
+  queuedPrompt: { input: threadPrompt, output: queuedPromptSchema.optional() },
+  editQueued: {
+    input: z
+      .object({
+        id: z.string(),
+        promptId: z.string(),
+        text: z.string(),
+        revision: z.number(),
+      })
+      .strict(),
+    output: editQueueResultSchema,
+  },
+  removeQueued: { input: threadPrompt, output: removeQueuedResultSchema },
+  usage: { input: z.string(), output: threadUsageSchema.optional() },
 } as const;
 
 export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');

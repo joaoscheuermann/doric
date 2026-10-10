@@ -1,20 +1,16 @@
 import type { HostPlatform } from 'bundle';
 import { PostgresDatabaseV1 } from 'postgres/contracts';
-import type { Database } from 'postgres/prisma';
 
 /**
- * Opens the process's one PostgreSQL client through the `postgres` bundle. As
- * before, connecting opens no connection: a missing URL fails here, at the
- * host's `database_client` stage, while an unreachable or unmigrated database
- * fails at the first query, in `credential_activation`. The kernel stores
- * share this client until their data moves to `storage/v1`.
+ * Connects the process's one PostgreSQL client through the `postgres` bundle,
+ * at the host's `database_client` stage. A missing URL fails here, and so
+ * does a database that holds legacy Project and Thread rows the stage-7
+ * migration has not moved (X-14). An unreachable database still fails at the
+ * first query, in `credential_activation`. No kernel code reads the client:
+ * every record goes through `storage/v1` and `secrets/v1` (G-13).
  */
 export const connectDatabase = async (
   platform: HostPlatform,
-): Promise<Database> => {
-  const database = platform.services.use(PostgresDatabaseV1);
-
-  await database.connect();
-
-  return database.client();
+): Promise<void> => {
+  await platform.services.use(PostgresDatabaseV1).connect();
 };

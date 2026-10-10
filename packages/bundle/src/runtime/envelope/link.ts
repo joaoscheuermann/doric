@@ -56,6 +56,8 @@ export interface ResolveTarget {
   readonly contract: string;
   readonly method: string;
   readonly provider?: string;
+  /** The record key the sender resolved, for a bundle with several records. */
+  readonly record?: string;
 }
 
 export interface ProcessLinkOptions {
@@ -313,6 +315,7 @@ export class ProcessLink implements CodecHost {
       readonly method: string;
       readonly input: unknown;
       readonly provider?: string;
+      readonly record?: string;
     },
     call: Call,
   ): Promise<unknown> {
@@ -329,6 +332,7 @@ export class ProcessLink implements CodecHost {
       readonly method: string;
       readonly input: unknown;
       readonly provider?: string;
+      readonly record?: string;
     },
     call: Call,
   ): void {
@@ -357,6 +361,7 @@ export class ProcessLink implements CodecHost {
       readonly method: string;
       readonly input: unknown;
       readonly provider?: string;
+      readonly record?: string;
     },
     call: Call,
     exported: readonly string[],
@@ -734,6 +739,7 @@ export class ProcessLink implements CodecHost {
         ...(message.provider === undefined
           ? {}
           : { provider: message.provider }),
+        ...(message.record === undefined ? {} : { record: message.record }),
       });
 
       if (record === undefined) {

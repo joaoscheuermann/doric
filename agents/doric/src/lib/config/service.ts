@@ -1,16 +1,16 @@
-import type { Logger } from 'pino';
+import type { CatalogResult, Models } from 'bundle/contracts';
+import { readModelProperties } from 'core/contracts';
+import type { ConfigReplaceResult } from 'runtime/contracts';
+import type { BoundTool } from 'tool';
 
 import type { CredentialKind } from '../credentials/kind.js';
 import type { CredentialService } from '../credentials/service.js';
-import { createMutationQueue } from '../workspace/runtime.js';
 import {
-  type Catalog,
-  createGeneration,
-  type Generation,
-} from './generation.js';
-import { readModelProperties } from './models.js';
-import type { ConfigInput, DoricConfig } from './schema.js';
-import { providerCredentials } from './schema.js';
+  type ConfigInput,
+  ConfigInputSchema,
+  type DoricConfig,
+  providerCredentials,
+} from './schema.js';
 import type { ConfigStore } from './store.js';
 import { requireToolConfigs } from './tool-config.js';
 
@@ -37,75 +37,131 @@ export class ConfigToolError extends Error {
   }
 }
 
+/** What `host-config/v1` answers: the active snapshot and the PUT /config pipeline. */
 export interface ConfigService {
-  current(): Generation;
-  /** The tools and skills of the active bundle generation. */
-  catalog(): Catalog;
-  replace(config: ConfigInput): Promise<DoricConfig>;
+  /** The active configuration, loaded from the store on first use. */
+  current(): Promise<DoricConfig>;
+  /** The PUT /config pipeline, serialized, over the request body as received. */
+  replace(input: unknown): Promise<ConfigReplaceResult>;
 }
 
-interface ConfigServiceOptions {
+export interface ConfigServiceOptions {
   readonly store: ConfigStore;
-  readonly credentials: CredentialService;
-  /** Reads the active bundle generation's tools and skills. */
-  readonly catalog: () => Catalog;
-  readonly logger: Logger;
-  readonly buildGeneration?: typeof createGeneration;
-  /**
-   * Reads what each provider's model catalog says about the models it lists, and
-   * returns the configuration to store. Injected so a test never reaches a real
-   * endpoint; the default is the host's own reader.
-   */
-  readonly readModels?: (configuration: ConfigInput) => Promise<ConfigInput>;
+  /** The loaded credential service (`credential_activation`). */
+  readonly credentials: () => Promise<CredentialService>;
+  /** The tools of the active bundle generation (`tools/v1.list`). */
+  readonly tools: () => readonly BoundTool[];
+  /** `models/v1`: catalog reads and the provider builds of a configuration. */
+  readonly models: Pick<Models, 'catalog' | 'prepare'>;
 }
 
-/** Initializes and serializes atomic configuration-generation replacements. */
-export const createConfigService = async ({
+const invalidMessage = 'The Doric configuration is invalid.';
+
+/** One serialized lane: a rejected operation does not block the next one. */
+const serialQueue = () => {
+  let tail: Promise<unknown> = Promise.resolve();
+
+  return <Value>(operation: () => Promise<Value>): Promise<Value> => {
+    const run = tail.then(operation, operation);
+
+    tail = run.catch(() => undefined);
+
+    return run;
+  };
+};
+
+/**
+ * The configuration owner's service (design 57 §2.9, X-6). It answers the
+ * stored snapshot and runs every replacement in request order: the
+ * credential rule, the catalog fill (`models/v1.catalog`), the tool-field
+ * rule, the candidate providers (`models/v1.prepare`), the store write, and
+ * the activation of the stored revision's providers. Any failure after the
+ * caller-input rules keeps the active configuration and answers `rejected`.
+ */
+export const createConfigService = ({
   store,
   credentials,
-  catalog,
-  logger,
-  buildGeneration = createGeneration,
-  readModels,
-}: ConfigServiceOptions): Promise<ConfigService> => {
-  const models =
-    readModels ??
-    ((configuration: ConfigInput) =>
-      readModelProperties(configuration, { credentials, logger }));
-  let active = await buildGeneration({
-    snapshot: await store.load(),
-    credentials,
-    logger,
-  });
-  const mutations = createMutationQueue();
+  tools,
+  models,
+}: ConfigServiceOptions): ConfigService => {
+  let active: DoricConfig | undefined;
+  let loading: Promise<DoricConfig> | undefined;
+  const mutations = serialQueue();
+
+  const load = (): Promise<DoricConfig> => {
+    if (active !== undefined) return Promise.resolve(active);
+
+    loading ??= store.load().then(
+      (snapshot) => {
+        active ??= snapshot;
+
+        return active;
+      },
+      (error: unknown) => {
+        loading = undefined;
+        throw error;
+      },
+    );
+
+    return loading;
+  };
+
+  const readCatalog = (provider: {
+    readonly kind: string;
+    readonly configuration: Readonly<Record<string, string>>;
+  }): Promise<CatalogResult> =>
+    models.catalog({
+      kind: provider.kind,
+      configuration: { ...provider.configuration },
+    });
 
   return {
-    current: () => active,
-    catalog,
-    // One fixed key serializes every replacement; the queue releases in a
-    // finally, so a rejected replacement does not block later requests.
-    replace: (config) =>
-      mutations('replace', async () => {
-        requireCredentials(config, credentials);
-        const filled = await models(config);
+    current: load,
+    replace: (input) => {
+      const parsed = ConfigInputSchema.safeParse(input);
+
+      if (!parsed.success)
+        return Promise.resolve({ status: 'invalid', message: invalidMessage });
+
+      // One lane serializes every replacement in request order.
+      return mutations(async (): Promise<ConfigReplaceResult> => {
         try {
-          requireToolConfigs(filled, catalog().tools);
+          const config = parsed.data;
+
+          await load();
+          requireCredentials(config, await credentials());
+          const filled = await readModelProperties(config, readCatalog);
+
+          try {
+            requireToolConfigs(filled, tools());
+          } catch (error) {
+            throw new ConfigToolError(
+              error instanceof Error
+                ? error.message
+                : 'A tool configuration is invalid.',
+            );
+          }
+
+          // The candidate providers are built before anything is stored, so
+          // a configuration that cannot be activated is never stored.
+          await models.prepare({ ...filled });
+          const snapshot = await store.replace(filled);
+
+          await models.prepare({ ...snapshot });
+          active = snapshot;
+
+          return { status: 'replaced', config: snapshot };
         } catch (error) {
-          throw new ConfigToolError(
-            error instanceof Error
-              ? error.message
-              : 'A tool configuration is invalid.',
-          );
+          if (
+            error instanceof ConfigCredentialError ||
+            error instanceof ConfigToolError
+          )
+            return { status: 'invalid', message: error.message };
+
+          return { status: 'rejected' };
         }
-        const candidate = await buildGeneration({
-          snapshot: { configuration: filled, revision: 0, updatedAt: '' },
-          credentials,
-          logger,
-        });
-        const snapshot = await store.replace(filled);
-        active = { ...candidate, snapshot };
-        return snapshot;
-      }),
+      });
+    },
   };
 };
 

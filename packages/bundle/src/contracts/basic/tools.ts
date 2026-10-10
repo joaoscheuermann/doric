@@ -58,8 +58,11 @@ export interface Tools {
     options: ToolRegistrationOptions,
   ): Disposable;
   /**
-   * Local. Registration order: bundle activation order, then call order. The
-   * call picks the generation whose tools are listed (D4-11).
+   * Registration order: bundle activation order, then call order. Tools cross
+   * as tool handles and are the registered tool again in their own process;
+   * called from another process the result arrives as a promise of the same
+   * list, so a remote caller awaits it. The call picks the generation whose
+   * tools are listed (D4-11).
    */
   list(call?: CallArg): readonly RegisteredTool[];
 }

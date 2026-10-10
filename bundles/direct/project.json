@@ -1,0 +1,51 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-direct",
+  "projectType": "library",
+  "sourceRoot": "bundles/direct/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/direct/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/direct"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "command": "tsc --build bundles/direct/tsconfig.json --emitDeclarationOnly"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p bundles/direct/tsconfig.spec.json",
+          "node --test bundles/direct/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "contracts-baseline": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js baseline bundles/direct",
+          "biome format --write bundles/direct/contracts.published.json"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

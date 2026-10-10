@@ -21,7 +21,9 @@ import {
   type CredentialService,
   createCredentialService,
 } from '../../src/lib/credentials/service.js';
-import { bundlesPath } from './bundles.js';
+
+/** The built bundles the host stages in `dist/bundles`. */
+export const bundlesPath = 'agents/doric/dist/bundles';
 
 /** 32 zero bytes, base64. A fixed test key, never a deployed one. */
 export const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';

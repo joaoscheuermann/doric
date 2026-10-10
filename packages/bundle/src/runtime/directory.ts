@@ -45,6 +45,19 @@ export interface Directory {
 export class ServiceDirectory implements Directory {
   readonly #providers = new Map<string, ProviderRecord[]>();
   readonly #listeners = new Map<string, Set<ProviderListener>>();
+  readonly #observers = new Set<ProviderListener>();
+
+  /**
+   * Observes every registration and removal, whatever the contract, after the
+   * contract's own subscribers.
+   */
+  observe(listener: ProviderListener): () => void {
+    this.#observers.add(listener);
+
+    return () => {
+      this.#observers.delete(listener);
+    };
+  }
 
   /** Registers a provider; returns its unregister function. */
   register(record: ProviderRecord): () => void {
@@ -65,6 +78,10 @@ export class ServiceDirectory implements Directory {
       ...(this.#listeners.get(record.contractId) ?? []),
     ]) {
       listener.added(record);
+    }
+
+    for (const observer of [...this.#observers]) {
+      observer.added(record);
     }
 
     let registered = true;
@@ -90,6 +107,10 @@ export class ServiceDirectory implements Directory {
         ...(this.#listeners.get(record.contractId) ?? []),
       ]) {
         listener.removed(record);
+      }
+
+      for (const observer of [...this.#observers]) {
+        observer.removed(record);
       }
     };
   }

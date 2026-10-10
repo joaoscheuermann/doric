@@ -35,6 +35,11 @@ export interface CallMessage extends WireCall {
   readonly input: unknown;
   /** Bundle of the provider record the sender resolved (pinned or `many`). */
   readonly provider?: string;
+  /**
+   * The resolved record's key (`RemoteProviderDescriptor.key`), which tells
+   * apart the records one bundle provides for a `many` contract.
+   */
+  readonly record?: string;
   /** No result is sent back (fire-and-forget methods such as `log/v1`). */
   readonly oneway?: true;
 }
@@ -147,6 +152,12 @@ export type WireOwnProperty =
 export interface RemoteProviderDescriptor {
   readonly contractId: string;
   readonly bundleId: string;
+  /**
+   * The record's identity in the announcing process: one bundle may provide
+   * several records of a `many` contract (`models.provider/v1`), and each is
+   * announced, called and withdrawn on its own.
+   */
+  readonly key?: string;
   /** Version of the providing bundle. */
   readonly version: string;
   readonly contractVersion: string;
@@ -171,6 +182,8 @@ export type ControlMessage =
       readonly kind: 'unprovide';
       readonly contractId: string;
       readonly bundleId: string;
+      /** The withdrawn record's key, when it was announced with one. */
+      readonly key?: string;
     }
   | { readonly kind: 'diagnostics'; readonly snapshot: Diagnostics }
   | { readonly kind: 'catalog'; readonly snapshot: CatalogSnapshot }
@@ -262,6 +275,7 @@ export const remoteProviderDescriptorSchema: z.ZodType<RemoteProviderDescriptor>
   z.object({
     contractId: z.string(),
     bundleId: z.string(),
+    key: z.string().optional(),
     version: z.string(),
     contractVersion: z.string(),
     environment: z.enum(['host', 'desktopMain', 'client']),
@@ -289,6 +303,7 @@ export const wireMessageSchema: z.ZodType<WireMessage> = z.discriminatedUnion(
       method: z.string(),
       input: z.unknown(),
       provider: z.string().optional(),
+      record: z.string().optional(),
       oneway: z.literal(true).optional(),
       ...wireCallShape,
     }),
@@ -335,6 +350,7 @@ export const wireMessageSchema: z.ZodType<WireMessage> = z.discriminatedUnion(
       kind: z.literal('unprovide'),
       contractId: z.string(),
       bundleId: z.string(),
+      key: z.string().optional(),
     }),
     z.object({ kind: z.literal('diagnostics'), snapshot: diagnosticsSchema }),
     z.object({ kind: z.literal('catalog'), snapshot: catalogSnapshotSchema }),

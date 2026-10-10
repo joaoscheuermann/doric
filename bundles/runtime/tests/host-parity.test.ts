@@ -12,7 +12,7 @@ import {
   type InterruptResult,
   type LeaseExecInput,
   type PromptResult,
-  type RuntimeThreads,
+  type RuntimeThreadControls,
   RuntimeThreadsV1,
   type RuntimeWorkspace,
   runtimeThreadsMethods,
@@ -57,7 +57,7 @@ const parity = {
   threads:
     same<
       Equal<
-        Controls<RuntimeThreads>,
+        Controls<RuntimeThreadControls>,
         { readonly [K in keyof host.ThreadControl]: host.ThreadControl[K] }
       >
     >(),
@@ -101,33 +101,26 @@ void test('a stored Thread record with keys outside ThreadView travels unchanged
     },
   };
   const unused = () => Promise.reject(new Error('not used'));
+  const methods = Object.fromEntries(
+    Object.entries(runtimeThreadsMethods).map(([name, spec]) => [
+      name,
+      defineMethod({ ...spec, execute: unused } as never),
+    ]),
+  );
   const harness = createTestServices({
     bundle: { id: 'consumer' },
     provide: [
       defineService(RuntimeThreadsV1, {
-        spawn: defineMethod({
-          ...runtimeThreadsMethods.spawn,
-          execute: unused,
-        }),
-        list: defineMethod({ ...runtimeThreadsMethods.list, execute: unused }),
+        ...methods,
         get: defineMethod({
           ...runtimeThreadsMethods.get,
           execute: async () => ({ thread: record, result: record.result }),
-        }),
-        events: defineMethod({
-          ...runtimeThreadsMethods.events,
-          execute: unused,
-        }),
-        send: defineMethod({ ...runtimeThreadsMethods.send, execute: unused }),
-        interrupt: defineMethod({
-          ...runtimeThreadsMethods.interrupt,
-          execute: unused,
         }),
         terminate: defineMethod({
           ...runtimeThreadsMethods.terminate,
           execute: async () => record,
         }),
-      }),
+      } as never),
     ],
   });
   const threads = harness.services.use(RuntimeThreadsV1);

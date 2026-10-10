@@ -17,7 +17,8 @@ import { activate } from '../../src/host/index.js';
  * one to one exactly as the host adapter does, and a recording `tools/v1`.
  */
 const providers = (control: ThreadControl, registered: ContractTool[]) => [
-  defineService(RuntimeThreadsV1, {
+  // Stage-1 controls only: the user-facing methods have no fake here.
+  defineService(RuntimeThreadsV1.id, {
     spawn: defineMethod({
       input: runtimeThreadsMethods.spawn.input,
       output: runtimeThreadsMethods.spawn.output,

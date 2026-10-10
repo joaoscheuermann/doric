@@ -381,6 +381,45 @@ void test('the recorder sees provides, hook definitions and only declared uses',
   );
 });
 
+void test('several records of a many contract from one bundle are one recorded contract', async () => {
+  const source = manifestV1Schema.parse(
+    manifest('rec', {
+      provides: ['rec.kinds/v1@1.0.0', 'rec.single/v1@1.0.0'],
+    }),
+  );
+  const method = defineMethod({
+    input: z.tuple([]),
+    output: z.string(),
+    execute: () => 'kind',
+  });
+  const recorded = await recordActivation({
+    manifest: source,
+    environment: 'host',
+    activate: ({ services }: HostContext) => {
+      for (let index = 0; index < 3; index += 1) {
+        services.provide(
+          defineService(
+            'rec.kinds/v1',
+            { kind: method },
+            { cardinality: 'many' },
+          ),
+        );
+      }
+
+      services.provide(defineService('rec.single/v1', { kind: method }));
+      services.provide(defineService('rec.single/v1', { kind: method }));
+    },
+  });
+
+  assert.deepEqual(
+    recorded.map(({ id, cardinality }) => `${id}:${cardinality}`),
+    ['rec.kinds/v1:many', 'rec.single/v1:one', 'rec.single/v1:one'],
+  );
+  assert.deepEqual(checkRecording(source, recorded), [
+    'rec.single/v1 is recorded more than once in host.',
+  ]);
+});
+
 void test('the recorder refuses hooks.use of a hooks contract outside requires', async () => {
   const OtherHooksV1 = defineHooks('other.hooks/v1', {
     onY: defineHook({ kind: 'observe', input: z.object({}).strict() }),

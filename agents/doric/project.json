@@ -20,8 +20,8 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "nx run-many --target=build --projects=bundle-postgres,bundle-core,bundle-files,bundle-git,bundle-threads,bundle-runtime,bundle-terminal --parallel=3",
-          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/postgres bundles/core bundles/files bundles/git bundles/threads"
+          "nx run-many --target=build --projects=bundle-postgres,bundle-core,bundle-files,bundle-git,bundle-threads,bundle-runtime,bundle-terminal,bundle-direct,bundle-models-adapter,bundle-sandbox-adapter,bundle-transport --parallel=3",
+          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/postgres bundles/core bundles/files bundles/git bundles/threads bundles/runtime bundles/direct bundles/models-adapter bundles/sandbox-adapter"
         ],
         "parallel": false
       }

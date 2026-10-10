@@ -13,13 +13,19 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/bundle"
-    },
-    {
       "path": "../../packages/storage"
     },
     {
+      "path": "../../packages/bundle"
+    },
+    {
       "path": "../../packages/tool"
+    },
+    {
+      "path": "../models-adapter"
+    },
+    {
+      "path": "../../packages/llms"
     }
   ]
 }

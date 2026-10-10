@@ -6,8 +6,8 @@ import test from 'node:test';
 import { Prisma } from 'postgres/prisma';
 
 import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
-import { createProjectStore } from '../src/lib/workspace/projects.js';
-import { createThreadStore } from '../src/lib/workspace/threads.js';
+import { createProjectStore } from './helpers/legacy/projects.js';
+import { createThreadStore } from './helpers/legacy/threads.js';
 import {
   migrationDirectory,
   persistenceFixture,
@@ -886,6 +886,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20261006000000_thread_queue_pause',
     '20261008000000_consolidate_providers',
     '20261009000000_generic_storage',
+    '20261010000000_runtime_documents',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -1616,7 +1617,9 @@ void test('converts a configured provider of the old shape without losing its da
 
     // The current store reads today's schema. Finish the remaining migrations
     // before using it to verify that the converted data is still readable;
-    // the configuration tables are checked before the last one replaces them.
+    // the configuration tables are checked before the generic storage one
+    // replaces them. This schema skips the Project and Thread name columns, so
+    // the stage-7 move of Projects and Threads, which needs them, is not applied.
     const generic = '20261009000000_generic_storage';
     const migrate = async (migration: string) =>
       resources.migrate(
@@ -1628,8 +1631,7 @@ void test('converts a configured provider of the old shape without losing its da
     for (const migration of (await readdir(migrationDirectory)).sort()) {
       if (
         migration <= '20260927000000_provider_models_and_identity' ||
-        migration === generic ||
-        migration === 'migration_lock.toml'
+        migration >= generic
       )
         continue;
       await migrate(migration);

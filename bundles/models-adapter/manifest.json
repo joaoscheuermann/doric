@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "models-adapter",
+  "version": "0.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Provisional models.provider/v1 providers over the llms kinds (openai, openrouter, codex), until the stage-10 provider bundles.",
+  "provides": ["models.provider/v1@1.0.0"],
+  "requires": ["log/v1@^1.0.0"]
+}

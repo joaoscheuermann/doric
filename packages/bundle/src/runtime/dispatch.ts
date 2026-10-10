@@ -135,6 +135,20 @@ export const dispatch = (
   const record = target.pinned ?? runtime.directory.active(contractId);
 
   if (record === undefined || !runtime.directory.isActive(record)) {
+    const last = args.at(-1);
+    const waiting =
+      target.pinned === undefined
+        ? runtime.awaitProvider?.(
+            contractId,
+            isCall(last) || isCallOptions(last) ? last.signal : undefined,
+          )
+        : undefined;
+
+    if (waiting !== undefined) {
+      // No generation is active yet: the call runs once one is (G-11).
+      return waiting.then(() => dispatch(principal, target, method, args));
+    }
+
     throw new ContractError(
       'unavailable',
       `No active provider of "${contractId}".`,

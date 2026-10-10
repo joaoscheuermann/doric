@@ -1,0 +1,304 @@
+{
+  "descriptorVersion": 1,
+  "bundle": {
+    "id": "direct",
+    "version": "1.0.0"
+  },
+  "contracts": [
+    {
+      "id": "executor/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/executor/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "checkpoint.input": {
+            "type": "object",
+            "properties": {
+              "history": {
+                "x-doric-local": "object"
+              },
+              "promptId": {
+                "type": "string"
+              }
+            },
+            "required": ["history", "promptId"],
+            "additionalProperties": false
+          },
+          "checkpoint.output": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "type": "string"
+              },
+              "parts": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["format", "parts"],
+            "additionalProperties": {}
+          },
+          "formats.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "formats.output": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rewind.input": {
+            "type": "object",
+            "properties": {
+              "history": {
+                "x-doric-local": "object"
+              },
+              "promptId": {
+                "type": "string"
+              },
+              "removedPromptIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["history", "promptId", "removedPromptIds"],
+            "additionalProperties": false
+          },
+          "rewind.output": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "type": "string"
+              },
+              "parts": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["format", "parts"],
+            "additionalProperties": {}
+          },
+          "run.input": {
+            "type": "object",
+            "properties": {
+              "thread": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "parentThreadId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "ready",
+                      "running",
+                      "cancelling",
+                      "cancelled",
+                      "failed"
+                    ]
+                  },
+                  "lastSequence": {
+                    "type": "number"
+                  },
+                  "queuePaused": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "cwdRepo": {
+                    "type": "string",
+                    "enum": ["git", "github"]
+                  },
+                  "activePromptId": {
+                    "type": "string"
+                  },
+                  "executionStartedAt": {
+                    "type": "string"
+                  },
+                  "lastExecutionMs": {
+                    "type": "number"
+                  },
+                  "errorCode": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "startedAt": {
+                    "type": "string"
+                  },
+                  "finishedAt": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "promptId": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["status", "text", "promptId", "at"],
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "projectId",
+                  "name",
+                  "state",
+                  "lastSequence",
+                  "cwd",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "additionalProperties": {}
+              },
+              "job": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "user"
+                          }
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "terminal"
+                          },
+                          "terminalId": {
+                            "type": "string"
+                          },
+                          "promptId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["kind", "terminalId", "promptId"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "parent"
+                          },
+                          "threadId": {
+                            "type": "string"
+                          },
+                          "promptId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["kind", "threadId", "promptId"],
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "result"
+                          },
+                          "threadId": {
+                            "type": "string"
+                          },
+                          "promptId": {
+                            "type": "string"
+                          },
+                          "requestPromptId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "threadId",
+                          "promptId",
+                          "requestPromptId"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                },
+                "required": ["id", "prompt", "source"],
+                "additionalProperties": {}
+              },
+              "session": {
+                "x-doric-local": "object"
+              }
+            },
+            "required": ["thread", "job", "session"],
+            "additionalProperties": false
+          },
+          "run.output": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["text"],
+            "additionalProperties": {}
+          }
+        }
+      }
+    }
+  ]
+}

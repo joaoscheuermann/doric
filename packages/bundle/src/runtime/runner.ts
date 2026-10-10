@@ -42,7 +42,12 @@ import {
   type RemoteProviderDescriptor,
   remoteProviderDescriptorSchema,
 } from './envelope/messages.js';
-import { describeRecord, registerRemote } from './envelope/remote.js';
+import {
+  announcedKey,
+  describeRecord,
+  matchesTarget,
+  registerRemote,
+} from './envelope/remote.js';
 import type { SchemaValidators } from './envelope/validators.js';
 import type { Principal, ServiceRuntime } from './principal.js';
 import { createPrincipal } from './services.js';
@@ -147,7 +152,9 @@ export class AnnouncingDirectory implements Directory {
       return unregister;
     }
 
-    this.#announce({ kind: 'provide', descriptor: describeRecord(record) });
+    const descriptor = describeRecord(record);
+
+    this.#announce({ kind: 'provide', descriptor });
 
     let registered = true;
 
@@ -160,6 +167,7 @@ export class AnnouncingDirectory implements Directory {
           kind: 'unprovide',
           contractId: record.contractId,
           bundleId: record.bundleId,
+          ...(descriptor.key === undefined ? {} : { key: descriptor.key }),
         });
       }
     };
@@ -318,14 +326,8 @@ export const runGeneration = async (options: RunnerOptions): Promise<void> => {
     incarnation: init.incarnation,
     validators: options.validators,
     errors: options.errors,
-    resolve: ({ contract, provider }) =>
-      inner
-        .providers(contract)
-        .find(
-          (record) =>
-            record.origin !== 'remote' &&
-            (provider === undefined || record.bundleId === provider),
-        ),
+    resolve: ({ contract, ...target }) =>
+      inner.providers(contract).find((record) => matchesTarget(record, target)),
     principalOf: (bundleId) => principals.get(bundleId),
     report,
     generationSignal: controller.signal,
@@ -374,9 +376,32 @@ export const runGeneration = async (options: RunnerOptions): Promise<void> => {
     }),
   );
 
-  // Every other kernel provider, in the order the kernel listed them.
+  // Every other kernel provider, in the order the kernel listed them; the
+  // kernel announces later ones with `provide` and `unprovide` controls.
+  const kernelRecords = new Map<string, () => void>();
+  const provideKernel = (descriptor: RemoteProviderDescriptor) => {
+    const key = announcedKey(descriptor);
+
+    kernelRecords.get(key)?.();
+    kernelRecords.delete(key);
+
+    try {
+      kernelRecords.set(
+        key,
+        registerRemote(processLink, directory, descriptor),
+      );
+    } catch (error) {
+      report({
+        bundleId: descriptor.bundleId,
+        kind: 'registration_failed',
+        message: error instanceof Error ? error.message : String(error),
+        details: { contract: descriptor.contractId },
+      });
+    }
+  };
+
   for (const descriptor of init.kernelProviders) {
-    registerRemote(processLink, directory, descriptor);
+    provideKernel(descriptor);
   }
 
   let stopRequested: (() => void) | undefined;
@@ -387,6 +412,13 @@ export const runGeneration = async (options: RunnerOptions): Promise<void> => {
   processLink.onControl((message) => {
     if (message.kind === 'catalog') {
       catalog = message.snapshot;
+    } else if (message.kind === 'provide') {
+      provideKernel(message.descriptor);
+    } else if (message.kind === 'unprovide') {
+      const key = announcedKey(message);
+
+      kernelRecords.get(key)?.();
+      kernelRecords.delete(key);
     } else if (message.kind === 'stop') {
       stopRequested?.();
     }

@@ -1,6 +1,16 @@
 {
   "core": "core",
-  "enabled": ["postgres", "core", "files", "git", "threads"],
+  "enabled": [
+    "postgres",
+    "core",
+    "files",
+    "git",
+    "threads",
+    "runtime",
+    "direct",
+    "models-adapter",
+    "sandbox-adapter"
+  ],
   "providers": {
     "storage.backend/v1": "postgres",
     "secrets.backend/v1": "postgres"

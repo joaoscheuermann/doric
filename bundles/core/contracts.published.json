@@ -2,7 +2,7 @@
   "descriptorVersion": 1,
   "bundle": {
     "id": "core",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "contracts": [
     {
@@ -1170,6 +1170,289 @@
           },
           "subscribe.output": {
             "x-doric-local": "disposable"
+          }
+        }
+      }
+    },
+    {
+      "id": "models/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "doric:contract/models/v1",
+        "x-doric-kind": "service",
+        "$defs": {
+          "catalog.input": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "configuration": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["kind", "configuration"],
+            "additionalProperties": false
+          },
+          "catalog.output": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "read"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "reasonings": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "parameters": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "defaultEffort": {
+                          "type": "string"
+                        },
+                        "mandatory": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "reasonings",
+                        "parameters",
+                        "mandatory"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  }
+                },
+                "required": ["status", "models"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["absent", "failed"]
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "kind.input": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "kind.output": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": ["text", "url", "number", "enum", "secret"]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "placeholder": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "advanced": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["key", "label", "kind", "required"],
+                  "additionalProperties": false
+                }
+              },
+              "lists": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["models", "reasonings"]
+                }
+              }
+            },
+            "required": ["id", "label", "description", "fields", "lists"],
+            "additionalProperties": false
+          },
+          "kinds.input": {
+            "type": "array",
+            "prefixItems": [],
+            "minItems": 0,
+            "maxItems": 0
+          },
+          "kinds.output": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": ["text", "url", "number", "enum", "secret"]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "placeholder": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "advanced": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["key", "label", "kind", "required"],
+                    "additionalProperties": false
+                  }
+                },
+                "lists": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["models", "reasonings"]
+                  }
+                }
+              },
+              "required": ["id", "label", "description", "fields", "lists"],
+              "additionalProperties": false
+            }
+          },
+          "prepare.input": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "prepare.output": {},
+          "resolve.input": {
+            "type": "object",
+            "properties": {
+              "providerId": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              }
+            },
+            "required": ["providerId", "model"],
+            "additionalProperties": false
+          },
+          "resolve.output": {
+            "type": "object",
+            "properties": {
+              "providerId": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "languageModel": {
+                "x-doric-local": "object"
+              }
+            },
+            "required": ["providerId", "model", "languageModel"],
+            "additionalProperties": false
           }
         }
       }

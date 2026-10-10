@@ -34,7 +34,8 @@ const providers = (sandbox: LeasedSandbox, host: Host) => [
       execute: (path) => host.workspace.setCwd(path),
     }),
   }),
-  defineService(RuntimeLeaseV1, {
+  // Stage-1 methods only: the lease reads have no fake here.
+  defineService(RuntimeLeaseV1.id, {
     describe: defineMethod({
       input: runtimeLeaseMethods.describe.input,
       output: runtimeLeaseMethods.describe.output,

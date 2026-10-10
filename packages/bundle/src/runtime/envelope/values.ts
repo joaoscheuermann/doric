@@ -856,7 +856,8 @@ const basicPlans: Readonly<
   'log/v1': { debug: oneway, info: oneway, warn: oneway, error: oneway },
   'tools/v1': {
     register: { input: kinds('tool'), optimistic: true, output: disposableOut },
-    list: { refused: 'tools/v1 list' },
+    // Tools cross as tool handles; back home they are the registered tool.
+    list: { output: kinds('tool') },
   },
   'settings/v1': {
     register: {
@@ -931,8 +932,6 @@ const basicPlans: Readonly<
       },
     },
   },
-  'models/v1': { resolve: { refused: 'models/v1 resolve' } },
-  'models.provider/v1': { create: { refused: 'models.provider/v1 create' } },
 };
 
 const platformOneway: ReadonlySet<string> = new Set([
@@ -958,7 +957,12 @@ const defaultPlan = (
     return { optimistic: true, output: disposableOut };
   }
 
-  return { refused: label };
+  // Local values with a codec marker (`models/v1`) cross by their marker.
+  return documentPlan(
+    label,
+    memberSchema(spec.input, 'input').schema,
+    memberSchema(spec.output, 'output').schema,
+  );
 };
 
 const markerKinds = (schema: unknown, found: Set<LocalKind>): boolean => {

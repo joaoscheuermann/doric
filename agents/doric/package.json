@@ -22,6 +22,7 @@
     "agent": "0.0.1",
     "bundle": "0.0.1",
     "config": "0.0.1",
+    "core": "0.0.1",
     "cors": "^2.8.6",
     "docker": "0.0.1",
     "express": "^5.2.1",
@@ -40,6 +41,7 @@
     "socket.io": "^4.8.3",
     "terminal": "0.0.1",
     "tool": "0.0.1",
+    "transport": "0.0.1",
     "tslib": "^2.3.0",
     "typescript": "~5.9.2"
   },

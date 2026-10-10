@@ -35,6 +35,15 @@ export interface ServiceRuntime {
   /** Records a failure against a bundle in diagnostics. */
   readonly report: (entry: DiagnosticReport) => void;
   readonly now?: () => number;
+  /**
+   * The kernel's respawn window (G-11): a promise that settles once a provider
+   * of `contractId` may be active again, or undefined when there is nothing
+   * to wait for and the call answers `unavailable` now.
+   */
+  readonly awaitProvider?: (
+    contractId: string,
+    signal: AbortSignal | undefined,
+  ) => Promise<void> | undefined;
 }
 
 export interface DeclaredProvide {

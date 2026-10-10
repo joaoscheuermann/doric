@@ -61,6 +61,12 @@
     },
     {
       "path": "../../packages/storage/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/core"
+    },
+    {
+      "path": "../../bundles/transport"
     }
   ]
 }

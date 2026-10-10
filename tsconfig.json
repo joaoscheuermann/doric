@@ -89,6 +89,18 @@
     },
     {
       "path": "./packages/storage"
+    },
+    {
+      "path": "./bundles/sandbox-adapter"
+    },
+    {
+      "path": "./bundles/transport"
+    },
+    {
+      "path": "./bundles/models-adapter"
+    },
+    {
+      "path": "./bundles/direct"
     }
   ]
 }

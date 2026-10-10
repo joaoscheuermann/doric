@@ -1,0 +1,153 @@
+import { defineMethod, defineService } from 'bundle/contracts';
+
+import {
+  runtimeThreadsMethods as methods,
+  RuntimeThreadsV1,
+} from '../../contracts/threads.js';
+import type { Bindings } from '../domain/bindings.js';
+import type { WorkspaceService } from '../domain/types.js';
+import type { ThreadStore } from '../store/types.js';
+
+/*
+ * runtime.threads/v1 (design 57 §2.3): the stage-1 child controls, bound to
+ * the calling prompt as the stage-1 adapter bound them, plus the
+ * WorkspaceService.threads operations, which ignore `call.scope`.
+ */
+export const threadsService = ({
+  service,
+  threads,
+  bindings,
+}: {
+  readonly service: WorkspaceService;
+  readonly threads: ThreadStore;
+  readonly bindings: Bindings;
+}) =>
+  defineService(RuntimeThreadsV1, {
+    spawn: defineMethod({
+      ...methods.spawn,
+      execute: (prompt, call) =>
+        bindings.bound(call).host.threads.spawn(prompt),
+    }),
+    list: defineMethod({
+      ...methods.list,
+      execute: ([limit, cursor], call) =>
+        bindings.bound(call).host.threads.list(limit, cursor),
+    }),
+    get: defineMethod({
+      ...methods.get,
+      execute: (threadId, call) =>
+        bindings.bound(call).host.threads.get(threadId),
+    }),
+    events: defineMethod({
+      ...methods.events,
+      execute: ([threadId, afterSequence, limit], call) =>
+        bindings
+          .bound(call)
+          .host.threads.events(threadId, afterSequence, limit),
+    }),
+    send: defineMethod({
+      ...methods.send,
+      execute: ([threadId, prompt], call) =>
+        bindings.bound(call).host.threads.send(threadId, prompt),
+    }),
+    interrupt: defineMethod({
+      ...methods.interrupt,
+      execute: ([threadId, promptId], call) =>
+        bindings.bound(call).host.threads.interrupt(threadId, promptId),
+    }),
+    terminate: defineMethod({
+      ...methods.terminate,
+      execute: (threadId, call) =>
+        bindings.bound(call).host.threads.terminate(threadId),
+    }),
+    createThread: defineMethod({
+      ...methods.createThread,
+      execute: ({ projectId, name, parentThreadId }) =>
+        service.threads.create(projectId, name, parentThreadId),
+    }),
+    thread: defineMethod({
+      ...methods.thread,
+      execute: (id) => service.threads.find(id),
+    }),
+    storedThread: defineMethod({
+      ...methods.storedThread,
+      execute: (id) => threads.record(id),
+    }),
+    threads: defineMethod({
+      ...methods.threads,
+      execute: ({ projectId, limit, cursor, parentThreadId }) =>
+        service.threads.list(projectId, limit, cursor, parentThreadId),
+    }),
+    projectThreads: defineMethod({
+      ...methods.projectThreads,
+      execute: (projectId) => threads.listByProject(projectId),
+    }),
+    renameThread: defineMethod({
+      ...methods.renameThread,
+      execute: ({ id, name }) => service.threads.rename(id, name),
+    }),
+    setThreadCwd: defineMethod({
+      ...methods.setThreadCwd,
+      execute: ({ id, cwd }) => service.threads.setCwd(id, cwd),
+    }),
+    prompt: defineMethod({
+      ...methods.prompt,
+      execute: ({ id, prompt }) => service.threads.prompt(id, prompt),
+    }),
+    resume: defineMethod({
+      ...methods.resume,
+      execute: ({ id, promptId }) => service.threads.resume(id, promptId),
+    }),
+    rewind: defineMethod({
+      ...methods.rewind,
+      execute: ({ id, promptId, prompt }) =>
+        service.threads.rewind(id, promptId, prompt),
+    }),
+    threadEvents: defineMethod({
+      ...methods.threadEvents,
+      execute: ({ id, afterSequence }) =>
+        service.threads.events(id, afterSequence),
+    }),
+    storedEventsAfter: defineMethod({
+      ...methods.storedEventsAfter,
+      execute: ({ id, afterSequence }) =>
+        threads.eventsAfter(id, afterSequence),
+    }),
+    pause: defineMethod({
+      ...methods.pause,
+      execute: ({ id, promptId }) => service.threads.interrupt(id, promptId),
+    }),
+    terminateThread: defineMethod({
+      ...methods.terminateThread,
+      execute: (id) => service.threads.terminate(id),
+    }),
+    deleteThread: defineMethod({
+      ...methods.deleteThread,
+      execute: (id) => service.threads.delete(id),
+    }),
+    queue: defineMethod({
+      ...methods.queue,
+      execute: (id) => service.threads.queue(id),
+    }),
+    resumeQueue: defineMethod({
+      ...methods.resumeQueue,
+      execute: (id) => service.threads.resumeQueue(id),
+    }),
+    queuedPrompt: defineMethod({
+      ...methods.queuedPrompt,
+      execute: ({ id, promptId }) => service.threads.queuedPrompt(id, promptId),
+    }),
+    editQueued: defineMethod({
+      ...methods.editQueued,
+      execute: ({ id, promptId, text, revision }) =>
+        service.threads.editQueued(id, promptId, text, revision),
+    }),
+    removeQueued: defineMethod({
+      ...methods.removeQueued,
+      execute: ({ id, promptId }) => service.threads.removeQueued(id, promptId),
+    }),
+    usage: defineMethod({
+      ...methods.usage,
+      execute: (id) => service.threads.usage(id),
+    }),
+  });

@@ -19,6 +19,7 @@ export const basicProvider = (
   specs: MethodSpecs,
   fakes: Readonly<Record<string, FakeMethod>> = {},
   omit: readonly string[] = [],
+  options?: { readonly cardinality: 'many' },
 ) =>
   defineService(
     id,
@@ -45,4 +46,5 @@ export const basicProvider = (
           }),
         ]),
     ),
+    options,
   );

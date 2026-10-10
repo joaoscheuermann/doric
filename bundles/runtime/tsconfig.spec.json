@@ -20,6 +20,18 @@
     },
     {
       "path": "../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/sandpool/tsconfig.lib.json"
+    },
+    {
+      "path": "../terminal"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../postgres"
     }
   ]
 }

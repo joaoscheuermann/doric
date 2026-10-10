@@ -41,7 +41,14 @@ export {
   wireErrorSchema,
   wireMessageSchema,
 } from './messages.js';
-export { describeRecord, registerRemote, remoteRecord } from './remote.js';
+export {
+  announcedKey,
+  describeRecord,
+  matchesTarget,
+  recordKey,
+  registerRemote,
+  remoteRecord,
+} from './remote.js';
 export {
   documentMethodSpecs,
   memberSpec,

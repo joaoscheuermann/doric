@@ -20,6 +20,12 @@
     },
     {
       "path": "../../packages/tool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/llms/tsconfig.lib.json"
+    },
+    {
+      "path": "../models-adapter"
     }
   ]
 }

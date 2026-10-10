@@ -1,17 +1,30 @@
 import type { EmbeddedBundle } from 'bundle';
 import {
+  defineMethod,
+  defineService,
   defineSettings,
   type HostContext,
+  ModelsV1,
+  type RegisteredTool,
   SecretsV1,
   type SecretsView,
   SettingsV1,
+  ToolsV1,
 } from 'bundle/contracts';
+import { ConfigurationV1, configurationMethods } from 'runtime/contracts';
+import { type BoundTool, isBoundTool } from 'tool';
 
 import {
   type ConfigInput,
   ConfigInputSchema,
   providerCredentials,
 } from '../config/schema.js';
+import { createConfigService } from '../config/service.js';
+import { createConfigStore } from '../config/store.js';
+import {
+  type CredentialService,
+  createCredentialService,
+} from '../credentials/service.js';
 
 /** The settings space that holds the Doric configuration. */
 export const configurationSettingsId = 'host-config.configuration/v1';
@@ -59,11 +72,24 @@ const defineConfigurationSettings = (view: () => SecretsView | undefined) =>
     schema: configurationSchema(view),
   });
 
+/** The tools a registry lists, as the `tool` package's bound factories. */
+export const boundTools = (
+  tools: readonly RegisteredTool[],
+): readonly BoundTool[] =>
+  tools.map(({ tool }) => {
+    if (!isBoundTool(tool))
+      throw new TypeError(
+        `Tool "${tool.name}" was not defined with defineTool.`,
+      );
+    return tool;
+  });
+
 /**
- * The provisional owner of the configuration space until stage 10, when its
- * parts move to their owners. It registers the space, follows every write to
- * it, and names the credentials the stored configuration references, so
- * `secrets/v1` refuses to delete them.
+ * The provisional owner of the configuration until stage 10, when its parts
+ * move to their owners. It registers the settings space, follows every write
+ * to it, and names the credentials the stored configuration references, so
+ * `secrets/v1` refuses to delete them. It also provides `host-config/v1`
+ * (X-6): the active configuration and the PUT /config pipeline.
  */
 export interface HostConfig {
   /** Embedded bundle `host-config`, always enabled outside the composition. */
@@ -90,11 +116,13 @@ export const createHostConfig = (): HostConfig => {
     }
   });
 
+  const track = (configuration: ConfigInput) => {
+    latest = configuration;
+  };
+
   return {
     definition,
-    track: (configuration) => {
-      latest = configuration;
-    },
+    track,
     bundle: {
       manifest: {
         manifestVersion: 1,
@@ -103,8 +131,16 @@ export const createHostConfig = (): HostConfig => {
         engines: { doric: '^1.0.0' },
         description:
           'Provisional owner of the Doric configuration settings space.',
-        provides: [`${configurationSettingsId}@${contractVersion}`],
-        requires: ['settings/v1@^1.0.0', 'secrets/v1@^1.0.0'],
+        provides: [
+          `${configurationSettingsId}@${contractVersion}`,
+          `${ConfigurationV1.id}@${contractVersion}`,
+        ],
+        requires: [
+          'settings/v1@^1.0.0',
+          'secrets/v1@^1.0.0',
+          'models/v1@^1.0.0',
+          'tools/v1@^1.0.0',
+        ],
       },
       descriptor: {
         descriptorVersion: 1,
@@ -118,6 +154,15 @@ export const createHostConfig = (): HostConfig => {
             cardinality: 'one',
             local: false,
             schema: `schemas/${configurationSettingsId}.json`,
+          },
+          {
+            id: ConfigurationV1.id,
+            version: contractVersion,
+            kind: 'service',
+            environment: 'host',
+            cardinality: 'one',
+            local: false,
+            schema: `schemas/${ConfigurationV1.id}.json`,
           },
         ],
       },
@@ -133,6 +178,38 @@ export const createHostConfig = (): HostConfig => {
           });
           secrets.registerReferences(() =>
             latest === undefined ? [] : referencedCredentialIds(latest),
+          );
+
+          let credentials: Promise<CredentialService> | undefined;
+          const service = createConfigService({
+            store: createConfigStore({ settings, definition, track }),
+            // Loading the list fails while the credentials cannot be read,
+            // so a later call tries again.
+            credentials: () => {
+              credentials ??= createCredentialService({ secrets }).catch(
+                (error: unknown) => {
+                  credentials = undefined;
+                  throw error;
+                },
+              );
+
+              return credentials;
+            },
+            tools: () => boundTools(services.use(ToolsV1).list()),
+            models: services.use(ModelsV1),
+          });
+
+          services.provide(
+            defineService(ConfigurationV1.id, {
+              current: defineMethod({
+                ...configurationMethods.current,
+                execute: () => service.current(),
+              }),
+              replace: defineMethod({
+                ...configurationMethods.replace,
+                execute: (input: unknown) => service.replace(input),
+              }),
+            }),
           );
         },
       },

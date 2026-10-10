@@ -200,9 +200,12 @@ void test('an event is registered once, by the bundle its namespace names, witho
 });
 
 // E-6: before stage 5, REST and Socket.IO read only `thread_event`, so an event
-// appended through events/v1 would be durable but invisible. No bundle the
-// host ships may provide an event contract until the runtime reads the stream.
-void test('no bundle of the shipped host composition provides an event contract', async () => {
+// appended through events/v1 would be durable but invisible. From stage 5 the
+// runtime owns the Thread streams and writes its one event contract
+// (`runtime.prompt-finished/v1`, X-7) itself; an append by another bundle
+// would still bypass the runtime aggregate (G-7), so no other bundle the host
+// ships may provide one through stage 7.
+void test('no bundle of the shipped host composition but the runtime provides an event contract', async () => {
   const composition = JSON.parse(
     await readFile('agents/doric/composition.json', 'utf8'),
   ) as { readonly enabled: readonly string[] };
@@ -215,6 +218,10 @@ void test('no bundle of the shipped host composition provides an event contract'
       .filter(({ kind }) => kind === 'event')
       .map((contract) => contract.id);
 
-    assert.deepEqual(events, [], `bundle ${id} provides events`);
+    assert.deepEqual(
+      events,
+      id === 'runtime' ? ['runtime.prompt-finished/v1'] : [],
+      `bundle ${id} provides events`,
+    );
   }
 });

@@ -78,7 +78,7 @@ void test('every basic and platform method has a stated way across the envelope'
     },
     'tools/v1': {
       register: 'optimistic via disposable+tool',
-      list: 'refused',
+      list: 'crosses via tool',
     },
     'skills/v1': { register: 'optimistic via disposable', list: 'crosses' },
     'settings/v1': {
@@ -131,11 +131,18 @@ void test('every basic and platform method has a stated way across the envelope'
       register: 'optimistic via definition+disposable',
       append: 'crosses via definition',
     },
-    'models/v1': { resolve: 'refused' },
+    'models/v1': {
+      resolve: 'crosses via object',
+      kinds: 'crosses',
+      kind: 'crosses',
+      catalog: 'crosses',
+      prepare: 'crosses',
+    },
     'models.provider/v1': {
       kind: 'crosses',
-      listModels: 'crosses',
-      create: 'refused',
+      advertised: 'crosses',
+      catalog: 'crosses',
+      create: 'crosses via callback+object',
     },
     'commands/v1': { register: 'refused', execute: 'crosses' },
     'ui/v1': { define: 'refused', create: 'refused', dispose: 'refused' },
