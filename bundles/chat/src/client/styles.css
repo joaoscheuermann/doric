@@ -8,6 +8,13 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 @reference 'desktop-ui/tailwind.css';
 @source './';
+/*
+ * The shared components' classes too, so this sheet's utilities are always the
+ * whole sorted set the window uses: a class both this sheet and the platform
+ * theme emit (`*:w-full` on a field over a trigger's `w-fit`) keeps the order
+ * one compiled stylesheet gives it, instead of losing to a later plain utility.
+ */
+@source '../../../../packages/desktop-ui/src';
 
 @layer base {
   [contenteditable='true'][data-placeholder]:empty::before,

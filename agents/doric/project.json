@@ -49,7 +49,7 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build", "build-bundles"],
+      "dependsOn": ["^build", "build"],
       "cache": false,
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
