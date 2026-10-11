@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { join, relative, sep } from 'node:path';
 import test from 'node:test';
 
-import { distributionCatalogSchema, ToolsV1 } from 'bundle/contracts';
+import { distributionCatalogSchema, ModelsV1, ToolsV1 } from 'bundle/contracts';
 import { PLATFORM_VERSION } from 'bundle/runtime';
 import express from 'express';
 import pino from 'pino';
@@ -516,6 +516,35 @@ void test('a desktop caller reaches only the allowlisted host methods (HR-10)', 
     assert.deepEqual(
       await output(host.desktop, 'runtime.terminals/v1', 'list', randomUUID()),
       [],
+    );
+  });
+});
+
+void test('the settings provider reads reach models/v1 over the bridge, the kind lookup included', {
+  timeout: 60_000,
+}, async () => {
+  await withHost(async (host) => {
+    const models = host.platform.services.use(ModelsV1);
+    const kinds = (await output(
+      host.desktop,
+      'models/v1',
+      'kinds',
+      [],
+    )) as readonly { id: string }[];
+    assert.ok(kinds.length > 0);
+    assert.deepEqual(kinds, await models.kinds());
+    // The settings client checks a draft against its kind's fields before
+    // reading the catalog; every advertised kind answers its descriptor.
+    for (const { id } of kinds) {
+      assert.deepEqual(
+        await output(host.desktop, 'models/v1', 'kind', [id]),
+        await models.kind(id),
+        id,
+      );
+    }
+    assert.equal(
+      await output(host.desktop, 'models/v1', 'kind', ['no-such-kind']),
+      undefined,
     );
   });
 });

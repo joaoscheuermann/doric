@@ -77,8 +77,10 @@ const allowed: Readonly<Record<string, readonly string[]>> = {
   ],
   // doric:config:get / update.
   'host-config/v1': ['current', 'replace'],
-  // doric:providers:kinds / models.
-  'models/v1': ['kinds', 'catalog'],
+  // doric:providers:kinds / models. The settings client validates a draft
+  // against its kind's fields (`kind`, internal kinds included) before the
+  // catalog read, as `POST /providers/models` did on the host.
+  'models/v1': ['kinds', 'kind', 'catalog'],
   // doric:credentials:*; never `resolve`, `resolveByKind` or `redactions`.
   'secrets/v1': ['list', 'create', 'update', 'delete'],
   // doric:tools:catalog.
