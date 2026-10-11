@@ -1,7 +1,11 @@
 import { createDatabase, type Database } from '../prisma.js';
 import type { Environment } from './options.js';
 
-/** Logged before the host's fatal `database_client` stage (design 57 §10.2). */
+/**
+ * Thrown from `connect()` so the host fails at its `database_client` stage
+ * (design 57 §10.2). The host's fatal record carries only the stage, as it
+ * did before the bundle migration, so this text is not logged.
+ */
 export const unmigratedReason =
   'Legacy Project and Thread data has not been migrated; run prisma migrate deploy.';
 
