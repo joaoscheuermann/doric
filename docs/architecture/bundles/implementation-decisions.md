@@ -989,3 +989,8 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Notificações [D9-6 encerrada].** `notifications` entra na composição; o `announce` do chat, o provedor cliente de `doric.notifications/v1`, o método `doric.shell/v1.notify` e o seu caso no despachante saem; `doric.notifications/v1` volta a `environments: ['desktopMain']`.
 - **Versioning [G-15].** O `settings` deixa de ter a seção `versioning`; a seção é o item do `git` (ordem 40, mesmo rótulo, ícone e descrição) em `/settings/git`. Invisível: a janela abre em `/settings` e lembra a última seção por janela.
 - **Harness.** `$S/e2e-stage10` com uma cópia do checkout (`app-10n`) cujo `host-bridge.ts` lê `DORIC_E2E_HOST_URL` (só na cópia, como em `app-10p`). Resultado: 21/21 API, 18/18 UI, `compare.mjs baseline stage10n` sem diferenças.
+
+## Encerramento da migração
+
+- **Exceções ao 1:1 aprovadas pelo usuário (2026-10-11).** (1) O schema passou a storage genérico, com migração de dados verificada e irreversível; (2) o splash fecha quando a janela fica pronta, com timeout e telas de recuperação, em vez de sondar `/vms`; (3) a instalação externa de bundles (etapa 11) fica fora do escopo, por não existir na implementação atual.
+- **Validação final no HEAD.** Gate E2E de API (21/21), UI via CDP (18/18) e etapa 9 (8/8) sem diferenças contra o baseline; sondas de terminal e interrupt idênticas; suíte com PostgreSQL e sandbox verde; imagem Docker `docker-runtime` buildando.
