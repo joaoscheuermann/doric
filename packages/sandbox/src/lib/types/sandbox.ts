@@ -186,6 +186,17 @@ export interface Sandbox {
   ssh(): Promise<SandboxSshAccess | undefined>;
 }
 
+/**
+ * The part of a sandbox the workspace visibility helpers read: its root and a
+ * plain command execution whose text output they parse. A full `Sandbox`
+ * satisfies it, and so does a contract-backed lease that carries no bytes.
+ */
+export type SandboxReader = Pick<Sandbox, 'root'> & {
+  exec(
+    input: SandboxExecInput,
+  ): Promise<Pick<SandboxExecResult, 'exitCode' | 'stdout' | 'stderr'>>;
+};
+
 export interface SandboxSession extends Sandbox {
   dispose(): Promise<void>;
 }

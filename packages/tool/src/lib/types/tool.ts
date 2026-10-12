@@ -1,5 +1,9 @@
-import type { Host } from 'host';
-import type { Sandbox } from 'sandbox';
+import type {
+  Call,
+  ContractTool,
+  Registrable,
+  Services,
+} from 'bundle/contracts';
 import type { z } from 'zod';
 
 import type { ToolDefinitionSchema } from '../schemas/definition.js';
@@ -74,6 +78,14 @@ export type ToolHandler<Input extends ToolInput, Output extends ToolOutput> = (
   payload: z.output<Input>,
 ) => Promise<z.output<Output>>;
 
+/**
+ * The result of validating one payload against a tool's input schema, in the
+ * process that owns the tool. `data` is the parsed payload the tool executes.
+ */
+export type ToolPayloadCheck =
+  | { readonly success: true; readonly data: unknown }
+  | { readonly success: false; readonly issues: readonly ToolIssue[] };
+
 export interface Tool<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
@@ -84,16 +96,23 @@ export interface Tool<
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly execute: ToolHandler<Input, Output>;
+  /**
+   * Exact payload validation. When it is absent, `input` validates the payload.
+   * A tool that runs in another process checks asynchronously.
+   */
+  readonly check?: (
+    payload: unknown,
+  ) => ToolPayloadCheck | Promise<ToolPayloadCheck>;
 }
 
-export type ToolFactoryHandler<
-  Input extends ToolInput,
-  Output extends ToolOutput,
-> = (
-  sandbox: Sandbox,
-  host: Host,
+/**
+ * What a tool runs: the validated payload, the prompt `Call` it was invoked
+ * through, and the services of the bundle that registered it.
+ */
+export type ToolExecute<Input extends ToolInput, Output extends ToolOutput> = (
   payload: z.output<Input>,
-  config: ToolConfig,
+  call: Call,
+  services: Services,
 ) => z.input<Output> | Promise<z.input<Output>>;
 
 export interface DefineToolOptions<
@@ -104,27 +123,53 @@ export interface DefineToolOptions<
   readonly description?: string;
   readonly input: Input;
   readonly output: Output;
-  readonly execute: ToolFactoryHandler<Input, Output>;
+  readonly execute: ToolExecute<Input, Output>;
   readonly strict?: boolean;
   /**
    * The configuration fields this tool reads. A host aggregates them into the
-   * settings surface and validates the persisted values against them; the values
-   * arrive at `execute` as its fourth argument.
+   * settings surface and validates the persisted values against them; the
+   * values themselves are read through `settings/v1` once it exists.
    */
   readonly settings?: readonly ConfigField[];
 }
 
-export interface ToolFactory<
+/**
+ * A tool bound to the services of the bundle that registered it. It is what
+ * `tools/v1` stores, and `toTool(call)` turns it into the agent-loop `Tool`
+ * for one prompt.
+ */
+export interface BoundTool<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
-> {
-  (sandbox: Sandbox, host: Host, config?: ToolConfig): Tool<Input, Output>;
+> extends ContractTool {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
+  execute(payload: z.output<Input>, call: Call): Promise<z.output<Output>>;
+  /** Validates a payload against `input` without executing the tool. */
+  check(payload: unknown): ToolPayloadCheck;
+  /** The agent-loop tool whose executions run under `call`. */
+  toTool(call: Call): Tool<Input, Output>;
+}
+
+/**
+ * An inspectable, unbound tool: what a bundle registers with `tools/v1`, which
+ * binds it to the registering bundle's services.
+ */
+export interface ToolDefinitionObject<
+  Input extends ToolInput = ToolInput,
+  Output extends ToolOutput = ToolOutput,
+> extends Registrable<BoundTool<Input, Output>> {
+  readonly name: string;
+  readonly description?: string;
+  readonly input: Input;
+  readonly output: Output;
+  readonly definition: ToolDefinition;
+  readonly settings: readonly ConfigField[];
+  bind(services: Services): BoundTool<Input, Output>;
 }
 
 export interface ToolStorage {
@@ -132,7 +177,11 @@ export interface ToolStorage {
 
   calls(turn: ToolTurn): readonly ToolCall[];
 
-  validate(call: ToolCall | ToolCallRequest): ToolCall;
+  /**
+   * Parses and validates one call without executing it. The result is
+   * asynchronous only when the tool's `check` is.
+   */
+  validate(call: ToolCall | ToolCallRequest): ToolCall | Promise<ToolCall>;
 
   get(name: string): Tool | undefined;
 

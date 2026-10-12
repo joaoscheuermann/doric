@@ -29,9 +29,13 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({
-      query: 'authentication architecture',
-    });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({
+        query: 'authentication architecture',
+      });
 
     assert.deepEqual(
       output.results.map((result) => result.conceptId),
@@ -72,10 +76,14 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({
-      query: 'users',
-      bundle: 'project',
-    });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({
+        query: 'users',
+        bundle: 'project',
+      });
 
     assert.deepEqual(output.results[0], {
       bundle: 'project',
@@ -118,7 +126,11 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({ query: 'searchable' });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({ query: 'searchable' });
 
     assert.deepEqual(
       output.results.map((result) => result.conceptId),
@@ -139,10 +151,14 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({
-      query: 'private',
-      bundle: '../skills',
-    });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({
+        query: 'private',
+        bundle: '../skills',
+      });
 
     assert.match(output.error ?? '', /Invalid bundle name/u);
 
@@ -173,7 +189,11 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({ query: 'needle' });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({ query: 'needle' });
 
     assert.equal(output.total, 0);
 
@@ -184,9 +204,13 @@ void describe('OKF search tool', () => {
 
     const missing = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(missingFake.session, { threads: {} } as never).execute({
-      query: 'anything',
-    });
+      sandbox: missingFake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({
+        query: 'anything',
+      });
 
     assert.match(missing.error ?? '', /bundle root not found/u);
 
@@ -214,10 +238,14 @@ void describe('OKF search tool', () => {
 
     const output = await createTool({
       workspaceRoot: WORKSPACE_ROOT,
-    })(fake.session, { threads: {} } as never).execute({
-      query: 'needle',
-      limit: 1,
-    });
+      sandbox: fake.session,
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never)
+      .execute({
+        query: 'needle',
+        limit: 1,
+      });
 
     assert.equal(output.results.length, 1);
 

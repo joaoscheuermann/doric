@@ -1,0 +1,14 @@
+{
+  "name": "@org/doric-platform",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "bundle": "0.0.1",
+    "desktop-ui": "1.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/node": "4.3.3",
+    "esbuild": "0.28.2"
+  }
+}

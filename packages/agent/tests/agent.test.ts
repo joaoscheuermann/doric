@@ -101,11 +101,13 @@ void test('rejects an invalid tool-call batch before any handler executes', asyn
         name,
         input: z.object({ value: z.string() }),
         output: z.string(),
-        execute: (_sandbox, _host, { value }) => {
+        execute: ({ value }) => {
           executions += 1;
           return value;
         },
-      })(undefined as never, undefined as never),
+      })
+        .bind(undefined as never)
+        .toTool(undefined as never),
     ),
   );
   const repairs: number[] = [];

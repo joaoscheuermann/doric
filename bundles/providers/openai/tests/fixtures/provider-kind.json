@@ -1,0 +1,27 @@
+{
+  "id": "openai",
+  "label": "OpenAI",
+  "description": "Any endpoint that answers the OpenAI Responses API, under its own identity.",
+  "fields": [
+    {
+      "key": "endpoint",
+      "label": "Endpoint",
+      "kind": "url",
+      "required": false,
+      "advanced": true,
+      "description": "Overrides the base URL requests are sent to.",
+      "placeholder": "https://api.openai.com/v1"
+    },
+    {
+      "key": "token",
+      "label": "Token",
+      "kind": "secret",
+      "required": false,
+      "description": "Names the stored API_TOKEN credential to authenticate with. Absent leaves the auth header off, which a compatible endpoint may accept."
+    }
+  ],
+  "lists": [
+    "models",
+    "reasonings"
+  ]
+}

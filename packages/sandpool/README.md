@@ -7,7 +7,7 @@ remaining independent of Docker and Firecracker.
 ## Use
 
 ```ts
-import { createDockerClient } from 'docker';
+import { createDockerClient } from 'docker-sandbox';
 import pino from 'pino';
 import { createSandbox } from 'sandbox';
 import { createSandpool } from 'sandpool';

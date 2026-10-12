@@ -4,12 +4,36 @@
   "projectType": "library",
   "sourceRoot": "packages/bundle/src",
   "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build packages/bundle/tsconfig.lib.json",
+          "node packages/bundle/dist/build/platform-schemas.js"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^typecheck"],
+      "options": {
+        "commands": [
+          "tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly",
+          "tsc -p packages/bundle/tsconfig.browser.json"
+        ],
+        "parallel": false
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "tsc -p packages/bundle/tsconfig.browser.json",
           "tsc -p packages/bundle/tsconfig.spec.json",
           "node --test packages/bundle/dist-tests/tests/*.test.js"
         ],

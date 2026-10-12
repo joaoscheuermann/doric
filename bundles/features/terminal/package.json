@@ -1,0 +1,37 @@
+{
+  "name": "terminal",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./host": {
+      "@org/source": "./src/host/index.ts",
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js",
+      "default": "./dist/host/index.js"
+    },
+    "./contracts": {
+      "@org/source": "./src/contracts/index.ts",
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "default": "./dist/contracts/index.js"
+    }
+  },
+  "dependencies": {
+    "bundle": "0.0.1",
+    "sandbox": "0.0.1",
+    "tool": "0.0.1",
+    "tslib": "^2.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "desktop-ui": "1.0.0",
+    "docker-sandbox": "0.0.1",
+    "lucide-react": "^0.544.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

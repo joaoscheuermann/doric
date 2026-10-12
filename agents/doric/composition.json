@@ -1,0 +1,49 @@
+{
+  "core": "core",
+  "enabled": [
+    "transport",
+    "postgres",
+    "core",
+    "host-config",
+    "files",
+    "web",
+    "git",
+    "threads",
+    "terminal",
+    "usage",
+    "resources",
+    "runtime",
+    "direct",
+    "openai",
+    "openrouter",
+    "codex",
+    "docker",
+    "notifications",
+    "layout",
+    "settings",
+    "chat",
+    "history"
+  ],
+  "providers": {
+    "storage.backend/v1": "postgres",
+    "secrets.backend/v1": "postgres"
+  },
+  "resident": ["host-config", "transport"],
+  "required": {
+    "contracts": [
+      "runtime/v1",
+      "executor/v1",
+      "sandbox/v1",
+      "models/v1",
+      "host-config/v1"
+    ],
+    "bundles": ["transport"]
+  },
+  "alternatives": {
+    "sandbox": {
+      "env": "DORIC_SANDBOX_PROVIDER",
+      "default": "docker",
+      "options": ["docker", "firecracker"]
+    }
+  }
+}

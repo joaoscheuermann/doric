@@ -6,10 +6,10 @@ Git, file, diff, SSH, and lifecycle helpers.
 
 ## Use
 
-Choose a provider such as `docker` or `firecracker` and inject it:
+Choose a provider such as `docker-sandbox` or `firecracker-sandbox` and inject it:
 
 ```ts
-import { createDockerClient } from 'docker';
+import { createDockerClient } from 'docker-sandbox';
 import { createSandbox } from 'sandbox';
 
 const sandbox = await createSandbox({
@@ -53,8 +53,8 @@ provider's egress path and therefore requires DNS configuration; SSH defaults
 to a loopback bind and key-only root access.
 
 Providers remain responsible for enforcing resource and network policy. See
-the [`docker`](../docker/README.md) and
-[`firecracker`](../firecracker/README.md) READMEs for host prerequisites and
+the [`docker-sandbox`](../docker-sandbox/README.md) and
+[`firecracker-sandbox`](../firecracker-sandbox/README.md) READMEs for host prerequisites and
 provider-specific behavior.
 
 ## Implement a provider

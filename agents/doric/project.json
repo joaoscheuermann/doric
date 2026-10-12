@@ -6,7 +6,7 @@
   "targets": {
     "build": {
       "executor": "@nx/js:tsc",
-      "dependsOn": ["prisma-generate", "^build", "build-bundles"],
+      "dependsOn": ["^build", "build-bundles"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "outputPath": "agents/doric/dist",
@@ -19,15 +19,42 @@
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
-        "command": "nx run-many --target=build --projects=bundle-core,bundle-git,bundle-threads --parallel=3"
-      }
-    },
-    "prisma-generate": {
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/src/generated/prisma"],
-      "options": {
-        "command": "prisma generate --config agents/doric/prisma.config.ts"
-      }
+        "commands": [
+          "node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/usage bundles/features/resources bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config"
+        ],
+        "parallel": false
+      },
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": [
+            "bundle-postgres",
+            "bundle-core",
+            "bundle-files",
+            "bundle-git",
+            "bundle-threads",
+            "bundle-runtime",
+            "bundle-direct",
+            "bundle-openai",
+            "bundle-openrouter",
+            "bundle-codex",
+            "bundle-docker",
+            "bundle-firecracker",
+            "bundle-web",
+            "bundle-terminal",
+            "bundle-usage",
+            "bundle-resources",
+            "bundle-notifications",
+            "bundle-layout",
+            "bundle-settings",
+            "bundle-chat",
+            "bundle-history",
+            "bundle-transport",
+            "bundle-host-config"
+          ]
+        }
+      ],
+      "cache": false
     },
     "migrate": {
       "executor": "nx:run-commands",
@@ -52,7 +79,7 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["prisma-generate", "^build", "build-bundles"],
+      "dependsOn": ["^build", "build"],
       "cache": false,
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

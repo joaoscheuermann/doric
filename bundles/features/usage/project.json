@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-usage",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/usage/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/usage/tsconfig.json",
+          "tsc -p bundles/features/usage/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/usage"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/usage/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/usage/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/usage/dist-tests",
+          "tsc -p bundles/features/usage/tsconfig.spec.json",
+          "node --test bundles/features/usage/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

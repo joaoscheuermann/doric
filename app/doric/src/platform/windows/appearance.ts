@@ -1,0 +1,96 @@
+// A window's visual intent (window-appearance.md) as Electron constructor
+// options, plus the chrome and safe area its shell applies.
+
+import type { windowAppearanceSchema } from 'bundle/contracts';
+import type { WindowChrome } from 'desktop-client/protocol';
+import type { z } from 'zod';
+
+import type { WindowTokens } from '../tokens';
+
+export type ParsedAppearance = z.output<typeof windowAppearanceSchema>;
+
+/** Electron's default size, used when an appearance names none. */
+export const PLATFORM_DEFAULT_SIZE = { width: 800, height: 600 } as const;
+/** No window is created smaller than this. */
+export const FIXED_MINIMUM = { width: 320, height: 240 } as const;
+
+export interface WorkArea {
+  readonly width: number;
+  readonly height: number;
+}
+
+const clamp = (value: number, minimum: number, maximum: number): number =>
+  Math.max(minimum, Math.min(value, maximum));
+
+/** The constructor options of a window with this appearance. */
+export const nativeOptions = (
+  appearance: ParsedAppearance,
+  tokens: WindowTokens,
+  platform: NodeJS.Platform,
+  workArea: WorkArea,
+  preload: string,
+): Electron.BrowserWindowConstructorOptions => {
+  const size = appearance.size ?? PLATFORM_DEFAULT_SIZE;
+  const options: Electron.BrowserWindowConstructorOptions = {
+    width: clamp(
+      size.width,
+      FIXED_MINIMUM.width,
+      Math.max(workArea.width, FIXED_MINIMUM.width),
+    ),
+    height: clamp(
+      size.height,
+      FIXED_MINIMUM.height,
+      Math.max(workArea.height, FIXED_MINIMUM.height),
+    ),
+    ...('minWidth' in size && size.minWidth !== undefined
+      ? { minWidth: size.minWidth }
+      : {}),
+    ...('minHeight' in size && size.minHeight !== undefined
+      ? { minHeight: size.minHeight }
+      : {}),
+    show: false,
+    // The app is dark only (nativeTheme.themeSource = 'dark').
+    backgroundColor: tokens.color(appearance.background, true),
+    ...(appearance.titleBar === 'integrated' && platform === 'darwin'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          trafficLightPosition: {
+            x: tokens.trafficLightInsetX,
+            y: (tokens.titlebarHeight - tokens.trafficLightSize) / 2,
+          },
+        }
+      : {}),
+    ...(appearance.titleBar === 'none' ? { frame: false } : {}),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload,
+      sandbox: true,
+    },
+  };
+
+  return options;
+};
+
+/** Whether the window buttons are kept visible after construction. */
+export const keepsWindowButtons = (
+  appearance: ParsedAppearance,
+  platform: NodeJS.Platform,
+): boolean => appearance.titleBar === 'integrated' && platform === 'darwin';
+
+/**
+ * The chrome a window's shell applies [S8-5]: in stage 8 the safe area is
+ * the reserved width on every platform and in fullscreen, as today's
+ * renderer reserves `pl-20` unconditionally.
+ */
+export const chromeFor = (
+  titleBar: ParsedAppearance['titleBar'],
+  tokens: WindowTokens,
+): WindowChrome => ({
+  titleBar,
+  height: tokens.titlebarHeight,
+  safeArea:
+    titleBar === 'none'
+      ? { top: 0, left: 0, right: 0 }
+      : { top: 0, left: tokens.reservedWidth, right: 0 },
+});

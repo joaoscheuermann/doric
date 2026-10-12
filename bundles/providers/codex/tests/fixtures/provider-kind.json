@@ -1,0 +1,43 @@
+{
+  "id": "codex",
+  "label": "Codex",
+  "description": "The ChatGPT Codex Responses backend, authenticated with a Codex authorization value.",
+  "fields": [
+    {
+      "key": "endpoint",
+      "label": "Endpoint",
+      "kind": "url",
+      "required": false,
+      "advanced": true,
+      "description": "Overrides the base URL requests are sent to.",
+      "placeholder": "https://chatgpt.com/backend-api/codex"
+    },
+    {
+      "key": "token",
+      "label": "Token",
+      "kind": "secret",
+      "required": true,
+      "description": "Names the stored API_TOKEN credential that carries the Codex authorization value."
+    },
+    {
+      "key": "chatGptAccountId",
+      "label": "ChatGPT account ID",
+      "kind": "text",
+      "required": false,
+      "description": "The account id sent as ChatGPT-Account-ID beside the authorization value."
+    },
+    {
+      "key": "fedramp",
+      "label": "FedRAMP",
+      "kind": "enum",
+      "required": false,
+      "description": "Sends X-OpenAI-Fedramp for a FedRAMP ChatGPT account.",
+      "placeholder": "false",
+      "options": [
+        "true",
+        "false"
+      ]
+    }
+  ],
+  "lists": []
+}

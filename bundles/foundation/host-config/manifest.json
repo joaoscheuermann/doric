@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "host-config",
+  "version": "0.0.1",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Owner of the Doric configuration settings space.",
+  "provides": ["host-config.configuration/v1@1.0.0", "host-config/v1@1.0.0"],
+  "requires": [
+    "hooks/v1@^1.0.0",
+    "settings/v1@^1.0.0",
+    "secrets/v1@^1.0.0",
+    "models/v1@^1.0.0",
+    "tools/v1@^1.0.0"
+  ],
+  "desktopScope": { "host-config/v1": ["projectId", "threadId", "promptId"] }
+}

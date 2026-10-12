@@ -12,11 +12,7 @@
     ],
     "rootDir": "src",
     "module": "esnext",
-    "moduleResolution": "bundler",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "moduleResolution": "bundler"
   },
   "exclude": [
     "out-tsc",
@@ -30,5 +26,13 @@
     "src/**/*.spec.jsx",
     "src/**/*.test.jsx"
   ],
-  "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/bootstrap.ts"],
+  "references": [
+    {
+      "path": "../../packages/desktop-client/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/desktop-ui/tsconfig.lib.json"
+    }
+  ]
 }

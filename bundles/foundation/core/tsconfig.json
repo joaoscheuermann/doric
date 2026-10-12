@@ -1,0 +1,44 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/storage"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/tool"
+    },
+    {
+      "path": "../../providers/codex"
+    },
+    {
+      "path": "../../providers/openai"
+    },
+    {
+      "path": "../../providers/openrouter"
+    },
+    {
+      "path": "../../../packages/llms"
+    },
+    {
+      "path": "../../../packages/desktop-ui"
+    },
+    {
+      "path": "../../../packages/desktop-client"
+    }
+  ],
+  "exclude": ["src/desktop/**", "src/client/**"]
+}

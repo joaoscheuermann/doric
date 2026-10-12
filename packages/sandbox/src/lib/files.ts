@@ -11,7 +11,7 @@ import type {
   SandboxTreeResult,
   WorkspacePathKind,
 } from './types/files.js';
-import type { Sandbox } from './types/sandbox.js';
+import type { SandboxReader } from './types/sandbox.js';
 
 /**
  * The one implementation of the workspace visibility rules: root confinement,
@@ -127,7 +127,7 @@ interface IgnoreMatcher {
 
 /** Lists one workspace directory level, with sizes for its files. */
 export const listSandboxDirectory = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   input: SandboxListInput = {},
 ): Promise<SandboxListResult> => {
   const listing = await listVisible(sandbox, input, false);
@@ -153,7 +153,7 @@ export const listSandboxDirectory = async (
 
 /** Lists a workspace directory recursively, so each directory carries children. */
 export const listSandboxTree = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   input: SandboxListInput = {},
 ): Promise<SandboxTreeResult> => {
   const listing = await listVisible(sandbox, input, true);
@@ -175,7 +175,7 @@ export const listSandboxTree = async (
  * files and for directories beyond the bounded prune argument budget.
  */
 const listVisible = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   input: SandboxListInput,
   deep: boolean,
 ): Promise<
@@ -234,7 +234,7 @@ const listVisible = async (
  * nested repository's files are never listed twice.
  */
 export const listSandboxRepos = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
 ): Promise<SandboxReposResult> => {
   const kind = await pathKind(sandbox, sandbox.root, sandbox.root);
 
@@ -269,7 +269,7 @@ export const listSandboxRepos = async (
  * repositories found inside it.
  */
 const repositoryRoots = (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   markers: readonly string[],
 ): readonly SandboxRepo[] => {
   const roots = [
@@ -295,7 +295,7 @@ const under = (root: string, path: string): boolean =>
 
 /** Reports what a workspace-relative path is, without reading its content. */
 export const workspacePathKind = (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   value = '',
 ): Promise<WorkspacePathKind | 'escaped'> => {
   const resolved = resolve(sandbox.root, value);
@@ -309,7 +309,7 @@ export const workspacePathKind = (
 
 /** The resolved root plus the exclude patterns every listing shares. */
 const listable = (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   input: SandboxListInput,
 ):
   | {
@@ -333,7 +333,7 @@ const listable = (
 };
 
 const entryResult = (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   entry: Entry,
   sizes: ReadonlyMap<string, number>,
 ): SandboxEntry => {
@@ -349,7 +349,7 @@ const entryResult = (
 
 /** Groups the flat visible entries into the directory tree the tool renders. */
 const tree = (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   root: string,
   entries: readonly Entry[],
 ): readonly SandboxTreeNode[] => {
@@ -429,7 +429,7 @@ interface Scan {
  * for the root kind, then `D` and `F` records for the entries below it.
  */
 const entryDump = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   root: string,
   deep: boolean,
   pruned: readonly string[],
@@ -469,7 +469,7 @@ const entryDump = async (
 
 /** Byte sizes for the named files, measured in one command per batch. */
 const fileSizes = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   files: readonly string[],
 ): Promise<ReadonlyMap<string, number>> => {
   const sizes = new Map<string, number>();
@@ -525,7 +525,7 @@ const ancestorDirs = (
  * stream simply names each file's rules once per source.
  */
 const ignoreDump = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   root: string,
   dirs: readonly string[],
   deep: boolean,
@@ -825,7 +825,7 @@ const relative = (workspaceRoot: string, fullPath: string): string => {
 };
 
 const pathKind = async (
-  sandbox: Sandbox,
+  sandbox: SandboxReader,
   workspaceRoot: string,
   value: string,
 ): Promise<WorkspacePathKind> => {

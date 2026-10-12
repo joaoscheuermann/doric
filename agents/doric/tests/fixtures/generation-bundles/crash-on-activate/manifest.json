@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "crash-on-activate",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Ends its generation process while it activates.",
+  "provides": [],
+  "requires": []
+}

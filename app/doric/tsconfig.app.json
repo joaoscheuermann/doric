@@ -6,6 +6,23 @@
     "tsBuildInfoFile": "../../dist/out-tsc/doric.tsbuildinfo",
     "types": ["node"]
   },
-  "exclude": ["**/*.spec.ts", "**/*.test.ts"],
-  "include": ["**/*.ts"]
+  "exclude": [
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "src/splash-page/**",
+    "src/platform/generation/runner-bootstrap.ts",
+    "src/platform/generation/runner-entry.ts"
+  ],
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/desktop-client/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/desktop-ui/tsconfig.lib.json"
+    }
+  ]
 }

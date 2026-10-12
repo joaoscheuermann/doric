@@ -1,0 +1,32 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "docker-sandbox",
+  "projectType": "library",
+  "sourceRoot": "packages/docker-sandbox/src",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p packages/docker-sandbox/tsconfig.spec.json",
+          "node --test packages/docker-sandbox/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-e2e"],
+      "options": {
+        "commands": [
+          "tsc -p packages/docker-sandbox/tsconfig.e2e.json",
+          "node --test packages/docker-sandbox/dist-e2e/tests/*.e2e.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": []
+}

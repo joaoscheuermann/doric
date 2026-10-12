@@ -15,17 +15,21 @@ src/lib/
 ├── agents/direct/
 │   ├── executor.ts
 │   └── prompts/system.ts
+├── bundles/
+│   ├── adapter.ts
+│   ├── boot.ts
+│   ├── configuration.ts
+│   └── database.ts
 ├── config/
 │   ├── schema.ts
 │   ├── service.ts
 │   ├── store.ts
+│   ├── order.ts
 │   └── generation.ts
 ├── credentials/
 │   ├── kind.ts
 │   ├── resolve.ts
-│   ├── secret.ts
-│   ├── service.ts
-│   └── store.ts
+│   └── service.ts
 ├── workspace/
 │   ├── types.ts
 │   ├── service.ts
@@ -41,20 +45,52 @@ src/lib/
 ├── events/
 │   ├── socket.ts
 │   └── serialization.ts
-├── database.ts
 └── vms.ts
 ```
 
 The Direct system prompt is one exported literal template string; the executor
-appends bundle skills in their declared order. The thread delegation tools
-(`thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
-`thread-interrupt`, `thread-terminate`) ship in the `/bundles/threads` bundle and
-reach the host only through the per-prompt `Host` facade's `threads` namespace,
-whose contract lives in `packages/host`. Shared lifecycle and authorization
-remain in `workspace`: `runner.ts` builds the prompt-scoped facade, and every
-tool call acts only on the calling prompt's direct children in the same Project.
-Sandbox tools still belong to their existing bundles. HTTP routes and generated
-Prisma code remain in `src/routes` and `src/generated`, outside `lib`.
+appends bundle skills in bundle order. The host boots its bundles through the
+`bundle` loader: it reads the installed bundles below `DORIC_BUNDLES_PATH`
+(default: the staged `agents/doric/dist/bundles`) and the composition at
+`DORIC_COMPOSITION` (default: [`composition.json`](composition.json), which
+names `core` as the core, enables `postgres`, `core`, `files`, `git` and
+`threads`, and chooses `postgres` for `storage.backend/v1` and
+`secrets.backend/v1`). The `postgres` foundation bundle owns the Prisma schema,
+the migrations and the process's one PostgreSQL client. The `core` bundle
+provides `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,
+`secrets/v1`, `storage/v1` and `events/v1`; every other bundle registers its tools with `tools/v1`, and the loader registers each
+bundle's `skills/*/SKILL.md` with `skills/v1`, in lexical folder order. The
+executor binds every registered tool and appends every registered skill on
+each prompt.
+
+The thread delegation tools (`thread-spawn`, `thread-list`, `thread-get`,
+`thread-events`, `thread-send`, `thread-interrupt`, `thread-terminate`) ship in
+the `/bundles/features/threads` bundle and reach the host only through
+`runtime.threads/v1`; the `files` and `git` tools reach the Thread's working
+directory and the Project sandbox through `runtime.workspace/v1` and
+`runtime.lease/v1`, and the `terminal` tool reaches tracked terminals through
+`terminal/v1`. The `runtime` bundle provides those contracts by forwarding each
+call to the per-prompt `Host` facade (its types live in
+`bundles/runtime/runtime/src/contracts/tool-host`), bound to the calling prompt's scope
+only while that prompt runs. Lifecycle and authorization stay in `runtime`: its
+runner builds the prompt-scoped facade, and every tool call acts only on the
+calling prompt's direct children in the same Project. The REST and Socket.IO
+routes are in the `transport` bundle, which registers them on the kernel's
+listeners through `doric.network/v1`; `agents/doric` keeps no route.
+
+Activating the bundles opens no database. The `postgres` bundle connects its
+client in its `onHostStartHook` (stage `database_client`), so a missing URL or an
+unreachable database fails there. Credentials are read through `secrets/v1`,
+loaded by the `core` bundle at `credential_activation`, and the configuration is
+one `settings/v1` space, `host-config.configuration/v1`, owned by the `host-config`
+bundle, which is resident in the kernel process. That bundle also names the
+credentials the configuration references, so deleting one is refused.
+
+A bundle that fails validation or activation is quarantined, logged as
+`Bundle quarantined` with its reasons, and the others keep serving. A core that
+cannot activate puts the host in recovery mode; until the desktop recovery
+surface exists, startup then fails at the `bundle_load` stage after logging
+`Bundle recovery mode` with every bundle's state and reasons.
 
 ## Lifecycle
 
@@ -434,9 +470,9 @@ the tag is published or `DORIC_SANDBOX_IMAGE` is pointed at a public image.
 Two traps break the image build or the deployed catalog:
 
 - every bundle must also appear in `agents/doric/.Dockerfile`: its `tsc --build`
-  list and the resource copies. The Direct host loads whatever the image puts in
-  `agents/doric/dist/bundles`, so a bundle missing there is silently absent at
-  runtime;
+  list, the bundle `build` loop and the `stage` list. The Direct host loads
+  whatever the image stages in `agents/doric/dist/bundles`, so a bundle missing
+  there is absent at runtime (and its composition entry is reported missing);
 - `package-lock.json` must be generated with the npm major the build image runs
   (`node:22-bookworm-slim` ships npm 10). A lock rewritten by a newer local npm
   fails `npm ci` with `Missing: <package> from lock file`; regenerate it with
@@ -473,14 +509,19 @@ protocols instead of silently changing endpoints or deleting configuration.
 ## Persistence and security
 
 PostgreSQL stores Projects, Threads, messages, configuration snapshots, and
-Thread events. Apply migrations separately with `npx nx run doric:migrate`;
-startup does not apply them. The migration history starts with the clean
+Thread events. The schema and migrations live in the `postgres` bundle
+(`bundles/foundation/postgres/prisma`); `agents/doric/prisma.config.ts` points at them, so
+apply migrations separately with `npx nx run doric:migrate` as before; startup
+does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and
 immutable-tree trigger. The following incremental migration adds and backfills
 Project and Thread names, the next adds the per-turn provider-history
 checkpoints that rewind truncates, then the Project color, the nullable
 GitHub identity and token columns, and last the credential store that replaces
-them. It does not convert Session data.
+them. It does not convert Session data. The generic-storage migration converts
+the configuration tables into the `host-config.configuration/v1` settings
+document, keeping its revision and update time, verifies the conversion, and
+then drops those tables; it cannot be reversed, so back up the database first.
 
 Use an empty database. A database with the old schema or migration history
 must be explicitly recreated by its operator before deployment. Neither the

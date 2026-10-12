@@ -13,16 +13,13 @@
   "include": ["src/**/*.ts", "tests/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/host/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/bundle/tsconfig.lib.json"
     },
     {
       "path": "../../packages/config/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/docker/tsconfig.lib.json"
+      "path": "../../packages/docker-sandbox/tsconfig.lib.json"
     },
     {
       "path": "../../packages/sandbox/tsconfig.lib.json"
@@ -32,6 +29,24 @@
     },
     {
       "path": "../../packages/llms/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/foundation/postgres"
+    },
+    {
+      "path": "../../packages/storage/tsconfig.lib.json"
+    },
+    {
+      "path": "../../bundles/foundation/core"
+    },
+    {
+      "path": "../../bundles/runtime/runtime"
+    },
+    {
+      "path": "../../bundles/foundation/transport"
+    },
+    {
+      "path": "../../packages/tool/tsconfig.lib.json"
     }
   ]
 }

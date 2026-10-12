@@ -59,10 +59,10 @@ export const createConnectionMonitor = (
   };
 };
 
-/** Monitors the status namespace on the process-long shared connection. */
+/** Monitors the generic host bridge on the process-long shared connection. */
 export const createConnectionService = (
   manager: Manager,
 ): ConnectionMonitor => {
-  const socket = manager.socket('/status');
+  const socket = manager.socket('/doric/bridge');
   return createConnectionMonitor(socket, () => socket.disconnect());
 };

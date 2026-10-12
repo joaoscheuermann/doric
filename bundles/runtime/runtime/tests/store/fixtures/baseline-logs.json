@@ -1,0 +1,325 @@
+{
+ "source": "e2e/snapshots/baseline (api and ui transcripts), events grouped per scenario and thread",
+ "logs": [
+  {
+   "scenario": "13-replay",
+   "thread": "<thread:rewind>",
+   "entries": [
+    {
+     "sequence": 6,
+     "promptId": "<prompt:first>",
+     "type": "text.delta",
+     "event": {
+      "delta": "Hello from the ",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 7,
+     "promptId": "<prompt:first>",
+     "type": "text.delta",
+     "event": {
+      "delta": "fake model. The",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 8,
+     "promptId": "<prompt:first>",
+     "type": "text.delta",
+     "event": {
+      "delta": " answer is 42.",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 9,
+     "promptId": "<prompt:first>",
+     "type": "usage",
+     "event": {
+      "type": "usage",
+      "usage": {
+       "cachedInputTokens": 200,
+       "cost": {
+        "amount": 0.0004,
+        "unit": "credits"
+       },
+       "inputTokens": 1200,
+       "outputTokens": 40,
+       "reasoningTokens": 10,
+       "totalTokens": 1240
+      }
+     }
+    },
+    {
+     "sequence": 10,
+     "promptId": "<prompt:first>",
+     "type": "response.finished",
+     "event": {
+      "finish": {
+       "finishReason": "stop",
+       "reasoning": {
+        "text": ""
+       },
+       "text": "Hello from the fake model. The answer is 42.",
+       "toolCalls": [],
+       "usage": {
+        "cachedInputTokens": 200,
+        "cost": {
+         "amount": 0.0004,
+         "unit": "credits"
+        },
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "reasoningTokens": 10,
+        "totalTokens": 1240
+       }
+      },
+      "type": "response.finished"
+     }
+    },
+    {
+     "sequence": 11,
+     "promptId": "<prompt:first>",
+     "type": "agent.finished",
+     "event": {
+      "response": {
+       "finish": {
+        "finishReason": "stop",
+        "reasoning": "[Circular: $.response.reasoning]",
+        "text": "Hello from the fake model. The answer is 42.",
+        "toolCalls": [],
+        "usage": "[Circular: $.response.usage]"
+       },
+       "finishReason": "stop",
+       "reasoning": {
+        "text": ""
+       },
+       "text": "Hello from the fake model. The answer is 42.",
+       "usage": {
+        "cachedInputTokens": 200,
+        "cost": {
+         "amount": 0.0004,
+         "unit": "credits"
+        },
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "reasoningTokens": 10,
+        "totalTokens": 1240
+       }
+      },
+      "type": "agent.finished"
+     }
+    },
+    {
+     "sequence": 12,
+     "promptId": "<prompt:first>",
+     "type": "prompt.finished",
+     "event": {
+      "source": {
+       "kind": "user"
+      },
+      "status": "completed",
+      "text": "Hello from the fake model. The answer is 42.",
+      "type": "prompt.finished"
+     }
+    },
+    {
+     "sequence": 13,
+     "promptId": "<prompt:first>",
+     "type": "queue.updated",
+     "event": {
+      "type": "queue.updated"
+     }
+    },
+    {
+     "sequence": 30,
+     "promptId": "<prompt:second>",
+     "type": "history.truncated",
+     "event": {
+      "afterSequence": 13,
+      "type": "history.truncated"
+     }
+    },
+    {
+     "sequence": 31,
+     "promptId": "<prompt:replacement>",
+     "type": "prompt.accepted",
+     "event": {
+      "queued": false,
+      "source": {
+       "kind": "user"
+      },
+      "text": "[[plain]] Replacement prompt",
+      "type": "prompt.accepted"
+     }
+    },
+    {
+     "sequence": 32,
+     "promptId": "<prompt:replacement>",
+     "type": "queue.updated",
+     "event": {
+      "type": "queue.updated"
+     }
+    },
+    {
+     "sequence": 33,
+     "promptId": "<prompt:replacement>",
+     "type": "prompt.started",
+     "event": {
+      "type": "prompt.started"
+     }
+    },
+    {
+     "sequence": 34,
+     "promptId": "<prompt:replacement>",
+     "type": "agent.started",
+     "event": {
+      "input": "# User request\n\n[[plain]] Replacement prompt",
+      "model": "deepseek/fake-chat",
+      "type": "agent.started"
+     }
+    },
+    {
+     "sequence": 35,
+     "promptId": "<prompt:replacement>",
+     "type": "response.started",
+     "event": {
+      "contextWindow": 128000,
+      "model": "deepseek/fake-chat",
+      "provider": "openrouter",
+      "providerId": "openrouter",
+      "type": "response.started"
+     }
+    },
+    {
+     "sequence": 36,
+     "promptId": "<prompt:replacement>",
+     "type": "text.delta",
+     "event": {
+      "delta": "Hello from the ",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 37,
+     "promptId": "<prompt:replacement>",
+     "type": "text.delta",
+     "event": {
+      "delta": "fake model. The",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 38,
+     "promptId": "<prompt:replacement>",
+     "type": "text.delta",
+     "event": {
+      "delta": " answer is 42.",
+      "type": "text.delta"
+     }
+    },
+    {
+     "sequence": 39,
+     "promptId": "<prompt:replacement>",
+     "type": "usage",
+     "event": {
+      "type": "usage",
+      "usage": {
+       "cachedInputTokens": 200,
+       "cost": {
+        "amount": 0.0004,
+        "unit": "credits"
+       },
+       "inputTokens": 1200,
+       "outputTokens": 40,
+       "reasoningTokens": 10,
+       "totalTokens": 1240
+      }
+     }
+    },
+    {
+     "sequence": 40,
+     "promptId": "<prompt:replacement>",
+     "type": "response.finished",
+     "event": {
+      "finish": {
+       "finishReason": "stop",
+       "reasoning": {
+        "text": ""
+       },
+       "text": "Hello from the fake model. The answer is 42.",
+       "toolCalls": [],
+       "usage": {
+        "cachedInputTokens": 200,
+        "cost": {
+         "amount": 0.0004,
+         "unit": "credits"
+        },
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "reasoningTokens": 10,
+        "totalTokens": 1240
+       }
+      },
+      "type": "response.finished"
+     }
+    },
+    {
+     "sequence": 41,
+     "promptId": "<prompt:replacement>",
+     "type": "agent.finished",
+     "event": {
+      "response": {
+       "finish": {
+        "finishReason": "stop",
+        "reasoning": "[Circular: $.response.reasoning]",
+        "text": "Hello from the fake model. The answer is 42.",
+        "toolCalls": [],
+        "usage": "[Circular: $.response.usage]"
+       },
+       "finishReason": "stop",
+       "reasoning": {
+        "text": ""
+       },
+       "text": "Hello from the fake model. The answer is 42.",
+       "usage": {
+        "cachedInputTokens": 200,
+        "cost": {
+         "amount": 0.0004,
+         "unit": "credits"
+        },
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "reasoningTokens": 10,
+        "totalTokens": 1240
+       }
+      },
+      "type": "agent.finished"
+     }
+    },
+    {
+     "sequence": 42,
+     "promptId": "<prompt:replacement>",
+     "type": "prompt.finished",
+     "event": {
+      "source": {
+       "kind": "user"
+      },
+      "status": "completed",
+      "text": "Hello from the fake model. The answer is 42.",
+      "type": "prompt.finished"
+     }
+    },
+    {
+     "sequence": 43,
+     "promptId": "<prompt:replacement>",
+     "type": "queue.updated",
+     "event": {
+      "type": "queue.updated"
+     }
+    }
+   ]
+  }
+ ]
+}

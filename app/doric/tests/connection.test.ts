@@ -2,12 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  bindConnectionStatus,
-  type ConnectionTarget,
-  connectionStatusChannel,
-  createConnectionState,
-} from '../src/connection/ipc';
-import {
   type ConnectionSocket,
   type ConnectionStatus,
   createConnectionMonitor,
@@ -32,47 +26,6 @@ class FakeSocket implements ConnectionSocket {
   emit(event: SocketEvent): void {
     this.connected = event === 'connect';
     this.listeners.get(event)?.forEach((listener) => void listener());
-  }
-}
-
-class FakeTarget implements ConnectionTarget {
-  readonly messages: Array<{
-    readonly channel: string;
-    readonly status: ConnectionStatus;
-  }> = [];
-  private readonly listeners = new Map<string, Set<() => void>>();
-  private destroyed = false;
-
-  on(event: 'did-finish-load', listener: () => void): void {
-    this.add(event, listener);
-  }
-
-  once(event: 'destroyed', listener: () => void): void {
-    this.add(event, listener);
-  }
-
-  off(event: 'did-finish-load' | 'destroyed', listener: () => void): void {
-    this.listeners.get(event)?.delete(listener);
-  }
-
-  isDestroyed(): boolean {
-    return this.destroyed;
-  }
-
-  send(channel: string, status: ConnectionStatus): void {
-    this.messages.push({ channel, status });
-  }
-
-  emit(event: 'did-finish-load' | 'destroyed'): void {
-    if (event === 'destroyed') this.destroyed = true;
-    this.listeners.get(event)?.forEach((listener) => void listener());
-    if (event === 'destroyed') this.listeners.delete(event);
-  }
-
-  private add(event: string, listener: () => void): void {
-    const listeners = this.listeners.get(event) ?? new Set();
-    listeners.add(listener);
-    this.listeners.set(event, listeners);
   }
 }
 
@@ -134,53 +87,5 @@ describe('connection monitor', () => {
     assert.equal(monitor.status(), 'disconnected');
     assert.deepEqual(statuses, ['disconnected']);
     assert.equal(closes(), 1);
-  });
-});
-
-describe('connection renderer state', () => {
-  test('keeps a deduplicated snapshot and supports unsubscribe', () => {
-    const state = createConnectionState();
-    const statuses: ConnectionStatus[] = [];
-    const unsubscribe = state.subscribe((status) => statuses.push(status));
-
-    state.update('connected');
-    state.update('connected');
-    unsubscribe();
-    state.update('disconnected');
-
-    assert.equal(state.status(), 'disconnected');
-    assert.deepEqual(statuses, ['connected']);
-  });
-});
-
-describe('connection window binding', () => {
-  test('sends the current snapshot only after loading finishes', () => {
-    const { socket, monitor } = setup();
-    const target = new FakeTarget();
-    bindConnectionStatus(target, monitor);
-
-    socket.emit('connect');
-    assert.deepEqual(target.messages, []);
-
-    target.emit('did-finish-load');
-    assert.deepEqual(target.messages, [
-      { channel: connectionStatusChannel, status: 'connected' },
-    ]);
-  });
-
-  test('forwards changes after load and cleans up when destroyed', () => {
-    const { socket, monitor } = setup();
-    const target = new FakeTarget();
-    bindConnectionStatus(target, monitor);
-    target.emit('did-finish-load');
-
-    socket.emit('connect');
-    target.emit('destroyed');
-    socket.emit('disconnect');
-
-    assert.deepEqual(target.messages, [
-      { channel: connectionStatusChannel, status: 'disconnected' },
-      { channel: connectionStatusChannel, status: 'connected' },
-    ]);
   });
 });

@@ -1,0 +1,35 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
+  "references": [
+    {
+      "path": "../../../packages/desktop-ui"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../../foundation/host-config"
+    },
+    {
+      "path": "../../../packages/desktop-client"
+    },
+    {
+      "path": "../../foundation/core"
+    }
+  ]
+}

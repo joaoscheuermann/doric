@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { posix as path } from 'node:path';
 
-import type { Sandbox } from 'sandbox';
 import { defineTool, isRecord } from 'tool';
 import * as YAML from 'yaml';
 import { z } from 'zod';
@@ -71,7 +70,7 @@ export type OkfSearchOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-type Options = OkfToolOptions & { readonly sandbox: Sandbox };
+type Options = OkfToolOptions;
 
 type Concept = Omit<OkfSearchResult, 'contentTruncated' | 'score'> & {
   readonly sourceTruncated: boolean;
@@ -93,8 +92,7 @@ export const createTool = (options: OkfToolOptions) =>
     description,
     input,
     output,
-    execute: (sandbox, _host, input): Promise<OkfSearchOutput> =>
-      execute({ ...options, sandbox }, input),
+    execute: (input): Promise<OkfSearchOutput> => execute(options, input),
   });
 
 const execute = async (

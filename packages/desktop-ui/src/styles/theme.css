@@ -1,0 +1,23 @@
+/*
+ * The stylesheet every window loads once: the preflight, the faces, the tokens
+ * and the utilities the shared components use. Bundles reference
+ * `tailwind.css` and never extend the theme.
+ */
+@layer theme, base, components, utilities;
+
+@import './tailwind.css';
+@import 'tailwindcss/preflight.css' layer(base);
+@import './fonts.css';
+@import './tokens.css';
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '../components';
+@source '../chrome-bar.tsx';
+
+/*
+ * Every chrome bar is the window's titlebar height: a 28px control plus four of
+ * air on each side (`2.25rem`), stated once by the tokens.
+ */
+.chrome-bar {
+  height: var(--doric-titlebar-height);
+}

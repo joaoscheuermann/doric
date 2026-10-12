@@ -1,0 +1,73 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+  color: var(--foreground);
+  overflow: auto;
+}
+
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 380px;
+  padding: 16px;
+  text-align: center;
+}
+
+/* verbatim from the former startup/splash.ts */
+.splash-title {
+  font:
+    600 32px / 1.2 system-ui,
+    sans-serif;
+}
+
+.splash-status {
+  font: 400 12px / 1.4 var(--font-sans);
+  color: var(--muted-foreground);
+  margin-top: 8px;
+}
+
+.splash-details {
+  font: 400 12px / 1.4 var(--font-sans);
+  color: var(--muted-foreground);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.splash-details ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.splash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.splash-actions button {
+  font: 400 12px / 1.4 var(--font-sans);
+  color: var(--foreground);
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+}
+
+.splash-status[hidden],
+.splash-details[hidden],
+.splash-actions[hidden] {
+  display: none;
+}

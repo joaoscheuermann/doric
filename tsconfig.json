@@ -7,7 +7,7 @@
       "path": "./packages/jsonl"
     },
     {
-      "path": "./packages/docker"
+      "path": "./packages/desktop-reads"
     },
     {
       "path": "./packages/sandbox"
@@ -46,16 +46,13 @@
       "path": "./packages/tool"
     },
     {
-      "path": "./bundles/core"
+      "path": "./bundles/foundation/core"
     },
     {
       "path": "./packages/sandpool"
     },
     {
-      "path": "./packages/firecracker"
-    },
-    {
-      "path": "./bundles/git"
+      "path": "./bundles/features/git"
     },
     {
       "path": "./packages/state-machine"
@@ -70,10 +67,79 @@
       "path": "./app/doric"
     },
     {
-      "path": "./bundles/threads"
+      "path": "./bundles/features/threads"
     },
     {
-      "path": "./packages/host"
+      "path": "./bundles/features/files"
+    },
+    {
+      "path": "./bundles/runtime/runtime"
+    },
+    {
+      "path": "./bundles/features/terminal"
+    },
+    {
+      "path": "./bundles/foundation/postgres"
+    },
+    {
+      "path": "./packages/storage"
+    },
+    {
+      "path": "./bundles/foundation/transport"
+    },
+    {
+      "path": "./bundles/runtime/direct"
+    },
+    {
+      "path": "./packages/desktop-client"
+    },
+    {
+      "path": "./packages/desktop-ui"
+    },
+    {
+      "path": "./bundles/desktop/history"
+    },
+    {
+      "path": "./bundles/desktop/notifications"
+    },
+    {
+      "path": "./bundles/features/usage"
+    },
+    {
+      "path": "./bundles/features/resources"
+    },
+    {
+      "path": "./bundles/desktop/chat"
+    },
+    {
+      "path": "./bundles/desktop/layout"
+    },
+    {
+      "path": "./packages/firecracker-sandbox"
+    },
+    {
+      "path": "./packages/docker-sandbox"
+    },
+    {
+      "path": "./bundles/providers/openrouter"
+    },
+    {
+      "path": "./bundles/providers/openai"
+    },
+    {
+      "path": "./bundles/providers/codex"
+    },
+    {
+      "path": "./bundles/features/web"
+    },
+    {
+      "path": "./bundles/sandboxes/firecracker"
+    },
+    {
+      "path": "./bundles/sandboxes/docker"
+    },
+    {
+      "path": "./bundles/foundation/host-config"
     }
   ]
 }

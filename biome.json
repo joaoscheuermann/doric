@@ -20,7 +20,8 @@
       "!!scripts/**/evidence",
       "!!doric.config.json",
       "!!package-lock.json",
-      "!!app/doric-renderer/src/components/ui"
+      "!!packages/desktop-ui/src/components",
+      "!!packages/desktop-ui/src/styles/tokens.css"
     ]
   },
   "formatter": {

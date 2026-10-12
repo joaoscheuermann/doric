@@ -36,8 +36,11 @@ jobs:
       # Cache node_modules
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+
+      # Keep npm's lockfile resolution aligned with the Docker builder.
+      - run: npm install --global npm@11.13.0
 
       - run: npm ci
 

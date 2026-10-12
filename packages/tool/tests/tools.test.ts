@@ -1,22 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Host } from 'host';
-import type { Sandbox } from 'sandbox';
+import { bindRegistrant } from 'bundle/contracts';
+import { createTestServices } from 'bundle/testing';
 import { z } from 'zod';
 
 import {
   createToolStorage,
   defineTool,
+  isBoundTool,
   type ToolCall,
+  type ToolDefinitionObject,
   ToolDefinitionSchema,
   ToolErrorObject,
+  type ToolInput,
   ToolMetadataSchema,
+  type ToolOutput,
 } from '../src/index.js';
 
-const sandbox = { id: 'sandbox', root: '/workspace' } as Sandbox;
-// Binding tests never call the facade; it only has to exist.
-const host = { threads: {}, workspace: {} } as unknown as Host;
+const harness = createTestServices({ bundle: { id: 'tools-test' } });
+const { services } = harness;
+const call = harness.call({ projectId: 'p', threadId: 't', promptId: 'q' });
+
+/** The agent-loop tool of a definition bound to the test bundle's services. */
+const toolOf = <I extends ToolInput, O extends ToolOutput>(
+  definition: ToolDefinitionObject<I, O>,
+) => definition.bind(services).toTool(call);
 
 void test('exports a JSON-Schema-compatible tool definition schema', () => {
   const value = {
@@ -62,10 +71,10 @@ void test('infers typed payloads from Zod schemas at compile time', async () => 
       query: z.string(),
       limit: z.number().optional(),
     }),
-    execute(received, host, payload) {
-      assert.equal(received, sandbox);
+    execute(payload, received, bound) {
+      assert.equal(received, call);
 
-      assert.deepEqual(Object.keys(host), ['threads', 'workspace']);
+      assert.equal(bound, services);
 
       expectString(payload.query);
 
@@ -79,7 +88,7 @@ void test('infers typed payloads from Zod schemas at compile time', async () => 
       return { query: payload.query, limit: payload.limit };
     },
   });
-  const tool = factory(sandbox, host);
+  const tool = toolOf(factory);
 
   assert.deepEqual(await tool.execute({ query: 'doric' }), {
     query: 'doric',
@@ -87,14 +96,16 @@ void test('infers typed payloads from Zod schemas at compile time', async () => 
   });
 });
 
-void test('exposes metadata before binding and binds the supplied sandbox', async () => {
+void test('exposes metadata before binding and binds the registrant services', async () => {
   const factory = defineTool({
     name: 'search',
     description: 'Search indexed context.',
     input: z.object({ query: z.string(), limit: z.number().int().min(1) }),
     output: z.string(),
-    execute: (received, _host, { query, limit }) => {
-      assert.equal(received, sandbox);
+    execute: ({ query, limit }, received, bound) => {
+      assert.equal(received, call);
+
+      assert.equal(bound, services);
 
       return `${query}:${limit}`;
     },
@@ -129,10 +140,19 @@ void test('exposes metadata before binding and binds the supplied sandbox', asyn
 
   assert.equal(factory.definition.outputSchema.type, 'string');
 
-  assert.equal(
-    await factory(sandbox, host).execute({ query: 'x', limit: 2 }),
-    'x:2',
-  );
+  assert.deepEqual(factory.settings, []);
+
+  assert.equal(await toolOf(factory).execute({ query: 'x', limit: 2 }), 'x:2');
+
+  const bound = factory[bindRegistrant](services);
+
+  assert.equal(isBoundTool(bound), true);
+
+  assert.equal(isBoundTool(factory), false);
+
+  assert.equal(bound.definition, factory.definition);
+
+  assert.equal(await bound.execute({ query: 'y', limit: 3 }, call), 'y:3');
 });
 
 void test('allows non-strict definitions when requested', () => {
@@ -141,7 +161,7 @@ void test('allows non-strict definitions when requested', () => {
     input: z.object({ value: z.string() }),
     output: z.string(),
     strict: false,
-    execute: (_sandbox, _host, { value }) => value,
+    execute: ({ value }) => value,
   });
 
   assert.equal(tool.definition.strict, false);
@@ -201,14 +221,14 @@ void test('preserves definition order and rejects duplicate names', () => {
   });
 
   assert.deepEqual(
-    createToolStorage([first(sandbox, host), second(sandbox, host)])
+    createToolStorage([toolOf(first), toolOf(second)])
       .definitions()
       .map((definition) => definition.name),
     ['first', 'second'],
   );
 
   assert.throws(
-    () => createToolStorage([first(sandbox, host), first(sandbox, host)]),
+    () => createToolStorage([toolOf(first), toolOf(first)]),
     (error: unknown) =>
       error instanceof ToolErrorObject && error.data.code === 'duplicate_tool',
   );
@@ -234,14 +254,16 @@ void test('parses provider tool-call arguments into payloads', () => {
 
 void test('validates payloads before execution and supports async handlers', async () => {
   const storage = createToolStorage([
-    defineTool({
-      name: 'add',
-      input: z.object({ left: z.number(), right: z.number() }),
-      output: z.number(),
-      async execute(_sandbox, _host, { left, right }) {
-        return left + right;
-      },
-    })(sandbox, host),
+    toolOf(
+      defineTool({
+        name: 'add',
+        input: z.object({ left: z.number(), right: z.number() }),
+        output: z.number(),
+        async execute({ left, right }) {
+          return left + right;
+        },
+      }),
+    ),
   ]);
 
   assert.equal(
@@ -270,16 +292,18 @@ void test('validates calls without executing handlers', () => {
   let executions = 0;
 
   const storage = createToolStorage([
-    defineTool({
-      name: 'lookup',
-      input: z.object({ query: z.string() }),
-      output: z.string(),
-      execute(_sandbox, _host, { query }) {
-        executions += 1;
+    toolOf(
+      defineTool({
+        name: 'lookup',
+        input: z.object({ query: z.string() }),
+        output: z.string(),
+        execute({ query }) {
+          executions += 1;
 
-        return query;
-      },
-    })(sandbox, host),
+          return query;
+        },
+      }),
+    ),
   ]);
 
   assert.deepEqual(
@@ -301,14 +325,16 @@ void test('validates calls without executing handlers', () => {
 
 void test('throws typed errors for unknown tools invalid JSON and handler failures', async () => {
   const storage = createToolStorage([
-    defineTool({
-      name: 'explode',
-      input: z.object({ value: z.string() }),
-      output: z.string(),
-      execute() {
-        throw new Error('boom');
-      },
-    })(sandbox, host),
+    toolOf(
+      defineTool({
+        name: 'explode',
+        input: z.object({ value: z.string() }),
+        output: z.string(),
+        execute() {
+          throw new Error('boom');
+        },
+      }),
+    ),
   ]);
 
   await assert.rejects(
@@ -343,12 +369,14 @@ void test('throws typed errors for unknown tools invalid JSON and handler failur
 });
 
 void test('validates handler output without exposing the rejected value', async () => {
-  const tool = defineTool({
-    name: 'lookup',
-    input: z.object({ query: z.string() }),
-    output: z.object({ results: z.array(z.string()) }).strict(),
-    execute: () => ({ results: [42] }) as unknown as { results: string[] },
-  })(sandbox, host);
+  const tool = toolOf(
+    defineTool({
+      name: 'lookup',
+      input: z.object({ query: z.string() }),
+      output: z.object({ results: z.array(z.string()) }).strict(),
+      execute: () => ({ results: [42] }) as unknown as { results: string[] },
+    }),
+  );
 
   await assert.rejects(tool.execute({ query: 'doric' }), (error: unknown) => {
     assert.ok(error instanceof ToolErrorObject);

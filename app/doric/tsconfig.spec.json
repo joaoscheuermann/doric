@@ -12,13 +12,12 @@
   },
   "include": [
     "src/connection/**/*.ts",
-    "src/startup/splash.ts",
-    "src/workspace/api.ts",
-    "src/workspace/config.ts",
-    "src/workspace/events.ts",
-    "src/workspace/project-events.ts",
-    "src/workspace/thread-history.ts",
-    "src/workspace/validation.ts",
+    "src/platform/**/*.ts",
+    "src/app/api/desktop.ts",
     "tests/**/*.ts"
+  ],
+  "exclude": [
+    "src/platform/generation/runner-bootstrap.ts",
+    "src/platform/generation/runner-entry.ts"
   ]
 }

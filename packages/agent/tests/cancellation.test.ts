@@ -47,7 +47,9 @@ const setup = (
           await hooks.tool?.();
           return name;
         },
-      })(undefined as never, undefined as never),
+      })
+        .bind(undefined as never)
+        .toTool(undefined as never),
     ),
   );
   const agent = createAgent({

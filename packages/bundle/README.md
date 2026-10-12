@@ -1,71 +1,130 @@
 # bundle
 
-`bundle` discovers and validates executable Doric bundles. It turns strict
-manifests, compiled tool factories, and Markdown skills into the canonical
-catalog consumed by the Direct host.
+`bundle` is the Doric bundle platform package. It holds the contract API that
+bundles are written against, the service runtime shared by every environment,
+and the Node loader and build tooling of the host.
 
-## Load bundles
+| Entry              | Audience                      | Contents                                                                                                                 |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `bundle/contracts` | Bundle authors (browser-safe) | `define*`, `ref`, `Call`, `ContractError`, `Services`, the basic contract refs (`HooksV1`, `ToolsV1`, ...) and `doric.*` |
+| `bundle/runtime`   | Platform only (browser-safe)  | Service directory, dispatcher, call propagation, manifest/composition/descriptor schemas, resolver, activation loop      |
+| `bundle`           | Host (Node)                   | `startHost`, discovery, catalog, build CLI and testing helpers                                                           |
+| `bundle/testing`   | Bundle unit tests             | `createTestServices`                                                                                                     |
+| `bundle/schemas/*` | Anyone                        | Generated JSON Schemas of the manifest, composition, descriptor and platform contracts                                   |
+
+`bundle/contracts` and `bundle/runtime` import only relative modules and
+`zod`; `tsconfig.browser.json` typechecks them without Node types.
+
+## Writing a bundle
 
 ```ts
-import { loadBundles } from 'bundle';
+import {
+  defineMethod,
+  defineService,
+  type HostContext,
+  ToolsV1,
+} from 'bundle/contracts';
+import { z } from 'zod';
 
-const bundles = await loadBundles('agents/doric/dist/bundles');
+export const greeter = defineService('greeter.api/v1', {
+  greet: defineMethod({
+    input: z.object({ name: z.string() }).strict(),
+    output: z.object({ text: z.string() }).strict(),
+    execute: ({ name }, call) => ({
+      text: `${name} from ${call.caller.bundleId}`,
+    }),
+  }),
+});
 
-for (const bundle of bundles) {
-  console.log(bundle.name, bundle.tools.length, bundle.skills.length);
-}
+export const activate = ({ services }: HostContext) => {
+  services.provide(greeter);
+};
 ```
 
-Only immediate child directories are loaded, in lexical order. Bundle, tool,
-and skill names must be globally unique.
-
-## Bundle layout
-
-Each child directory needs a `manifest.json`:
+`manifest.json` (v1) declares identity, platform range and contracts:
 
 ```json
 {
-  "name": "example",
-  "description": "Example capabilities.",
-  "tools": [{ "path": "tools/read.js", "alwaysAvailable": true }],
-  "skills": [
-    {
-      "path": "skills/inspect/SKILL.md",
-      "alwaysAvailable": false
-    }
-  ]
+  "manifestVersion": 1,
+  "id": "greeter",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "provides": ["greeter.api/v1@1.0.0"],
+  "requires": ["tools/v1@^1.0.0"]
 }
 ```
 
-Tool paths must match `tools/<name>.js`. Each module must default-export a
-compatible `ToolFactory`. Runtime TypeScript is rejected.
+Parts live at `host/index.js`, `desktop/index.js` and `client/index.js`;
+skills at `skills/*/SKILL.md` (discovered in lexical directory order, with an
+optional `alwaysAvailable` frontmatter flag). A manifest without
+`manifestVersion` is read as v0 and converted in memory (`core` becomes
+`files`, version `0.0.0`).
 
-Skill paths must match `skills/<name>/SKILL.md`, with YAML frontmatter followed
-by a non-empty Markdown body:
+## Booting the host
 
-```markdown
----
-name: inspect
-description: Inspect the workspace before making a change.
-allowed-tools:
-  - read
----
+```ts
+import { startHost } from 'bundle';
 
-# Inspect
+const platform = await startHost({
+  bundlesPath: 'agents/doric/dist/bundles',
+  composition: { path: 'agents/doric/composition.json' },
+  log: platformLog,
+  sink: logSink,
+});
 
-Use the read tool to gather the smallest necessary context.
+await platform.ready();
 ```
 
-An `allowed-tools` entry must resolve to a tool in the same bundle.
-`SkillSchema` is also exported for consumers that need the canonical,
-JSON-Schema-compatible `SkillRecord` representation.
+`startHost` resolves the catalog (foundation, core, others; per-environment
+`requires`; quarantine with reasons), activates each bundle with its own
+services and disposal scope, and reports `mode: 'recovery'` when the core or a
+chosen foundation provider cannot activate. `catalog()`, `diagnostics()` and the
+`doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1` and `doric.log/v1`
+services expose the result.
 
-Invalid manifests, paths, modules, frontmatter, duplicate names, and missing
-local tool references fail loading with contextual errors.
+`platform.storageIdentity()` asks the active `storage.backend/v1` provider for
+the host's `{ hostId, storageGeneration }` (or answers `undefined` without
+one). A resolved identity is kept and published as `catalog().storage`; a
+failure is not kept, so the next call asks again. The host calls it once the
+database is reachable.
+
+## Basic contracts
+
+`bundle/contracts` defines each basic contract's interface, its `ref`
+(`StorageV1`, `SecretsV1`, ...) and its method table (`storageMethods`,
+`secretsMethods`, ...). A provider must implement exactly that table with the
+same schemas, or `provide` fails with `contract_mismatch`. The tables are also
+published under `bundle/schemas/contracts/`.
+
+| Contract                           | Notes                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage/v1`, `storage.backend/v1` | Documents with revisions (`expect` revision 0 = must not exist), indexed queries (at most 1000 per page), streams with protocol `createdAt` and truncation marks, atomic commits (expect → delete → put → dropStreams → truncate → append), a commit feed, blobs, `health()` measurements and the backend's `identity()`                        |
+| `secrets/v1`, `secrets.backend/v1` | Credentials by kind with the one field rule (`credentialFieldsSatisfied`, `credentialFieldsMessage`), `resolveByKind(kind, { exclude }?)`, `redactions()`, and the local `view()` and `registerReferences(source)`; the backend stores plaintext across the contract                                                                            |
+| `settings/v1`                      | Spaces with `get`, `entry` (`value`, `revision`, `version`, `updatedAt`, `generation`), `set` with `expectedRevision`, and `subscribe`                                                                                                                                                                                                          |
+| `events/v1`                        | `register`, `sink` and `append`; the owner's `sink` names the scope keys and the stream of each row (`{key}` placeholders), so the platform knows no Thread log: the runtime's sink is `runtime.thread.events/{threadId}` with `{ projectId, threadId, promptId }`, and its stored envelope is `runtime/contracts`' `threadEventEnvelopeSchema` |
+
+Every contract documents its error codes beside it; they are listed in
+`contractErrorCodes`.
+
+## Build tooling
+
+```console
+node packages/bundle/dist/build/cli.js build <bundleDir>
+node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
+```
+
+`build` runs after `tsc`: it validates the manifest, copies skills, dry-activates
+the host and desktop parts to compute each contract's environment and
+cardinality, writes `dist/contracts.json` and `dist/schemas/<contract>.json`
+(JSON Schema 2020-12). There is no semver check against a published
+baseline yet: `contracts.published.json` files and the `baseline` command were
+removed until publishing exists (stage 11), and a leftover file is ignored.
+`stage` copies each `dist` into `<dest>/<id>`.
 
 ## Development
 
 ```console
-npx nx build bundle
-npx nx test bundle
+npx nx run bundle:build
+npx nx run bundle:typecheck
+npx nx run bundle:test
 ```

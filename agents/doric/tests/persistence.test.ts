@@ -3,24 +3,21 @@ import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { Prisma } from '../src/generated/prisma/client.js';
-import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
-import { createConfigStore } from '../src/lib/config/store.js';
-import { createCredentialService } from '../src/lib/credentials/service.js';
-import { createCredentialStore } from '../src/lib/credentials/store.js';
-import { createProjectStore } from '../src/lib/workspace/projects.js';
-import { createThreadStore } from '../src/lib/workspace/threads.js';
+import { type ConfigInput, defaultConfig } from 'host-config/testing';
+import { Prisma } from 'postgres/prisma';
+
+import { createProjectStore } from './helpers/legacy/projects.js';
+import { createThreadStore } from './helpers/legacy/threads.js';
 import {
   migrationDirectory,
   persistenceFixture,
 } from './helpers/persistence-fixture.js';
+import { kernelOver } from './helpers/platform.js';
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const promptId = randomUUID();
 const gitCredentialId = '00000000-0000-4000-8000-000000000003';
 const githubCredentialId = '00000000-0000-4000-8000-000000000004';
-/** 32 zero bytes, base64. A fixed test key, never a deployed one. */
-const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 integrationTest(
   'keeps execution timing through rename and returns the completed duration after reopening',
@@ -888,6 +885,9 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20261005000000_thread_usage',
     '20261006000000_thread_queue_pause',
     '20261008000000_consolidate_providers',
+    '20261009000000_generic_storage',
+    '20261010000000_runtime_documents',
+    '20261012000000_registered_credential_kinds',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -1199,7 +1199,7 @@ void test('carries configured GitHub data and every provider into the credential
         secret: string | null;
       }[]
     >`SELECT kind, name, username, email, secret FROM credential
-        ORDER BY kind, name`;
+        ORDER BY kind, name COLLATE "C"`;
     assert.deepEqual(credentials, [
       {
         kind: 'API_TOKEN',
@@ -1291,13 +1291,15 @@ void test('leaves an unconfigured GitHub block unconfigured', {
       credentials.map(({ kind, name, secret }) => ({ kind, name, secret })),
       [{ kind: 'API_TOKEN', name: 'OPENROUTER_API_KEY', secret: '' }],
     );
-    const configuration =
-      await resources.database.doricConfiguration.findUniqueOrThrow({
-        where: { id: 1 },
-        select: { gitCredentialId: true, githubCredentialId: true },
-      });
-    assert.equal(configuration.gitCredentialId, null);
-    assert.equal(configuration.githubCredentialId, null);
+    const [configuration] = await resources.database.$queryRaw<
+      {
+        git_credential_id: string | null;
+        github_credential_id: string | null;
+      }[]
+    >`SELECT git_credential_id, github_credential_id FROM doric_configuration
+        WHERE id = 1`;
+    assert.equal(configuration?.git_credential_id, null);
+    assert.equal(configuration?.github_credential_id, null);
   } finally {
     await resources.close();
   }
@@ -1313,10 +1315,16 @@ integrationTest(
       tables.map(({ tablename }) => tablename),
       [
         'credential',
-        'doric_configuration',
-        'model_configuration',
         'project',
-        'provider_configuration',
+        'storage_blob',
+        'storage_commit',
+        'storage_document',
+        'storage_index_entry',
+        'storage_meta',
+        'storage_stream',
+        'storage_stream_entry',
+        'storage_truncation',
+        'storage_type',
         'thread',
         'thread_event',
       ],
@@ -1325,9 +1333,11 @@ integrationTest(
     assert.equal(await database.thread.count(), 0);
     assert.equal(await database.threadEvent.count(), 0);
     assert.deepEqual((await configs.load()).configuration, defaultConfig);
+    // The configuration is still one singleton: its settings space.
     await assert.rejects(database.$executeRaw`
-      INSERT INTO doric_configuration (id, revision, generation, max_turns, updated_at)
-      SELECT 2, revision, generation, max_turns, updated_at FROM doric_configuration WHERE id = 1`);
+      INSERT INTO storage_document (type, id, revision, value)
+      SELECT type, id, revision, value FROM storage_document
+      WHERE type = 'core.settings/v1' AND id = 'host-config.configuration/v1'`);
   },
 );
 
@@ -1360,12 +1370,9 @@ integrationTest(
       secret: 'sk_live_value',
     });
 
-    await assert.rejects(
-      createCredentialService({
-        store: createCredentialStore(database),
-        environment: {},
-      }),
-    );
+    await assert.rejects(kernelOver(database, {}), {
+      code: 'credential_key_required',
+    });
   },
 );
 
@@ -1509,19 +1516,22 @@ integrationTest(
 integrationTest(
   'carries a provider row the old host built into its kind',
   async ({ database, configs }) => {
-    const [provider] = await database.providerConfiguration.findMany();
+    const [stored] = await database.$queryRaw<{ providers: unknown }[]>`
+      SELECT value->'value'->'providers' AS providers FROM storage_document
+      WHERE type = 'core.settings/v1' AND id = 'host-config.configuration/v1'`;
 
-    assert.deepEqual(provider, {
-      configurationId: 1,
-      id: 'openrouter',
-      kind: 'openrouter',
-      fieldValues: {
-        endpoint: 'https://openrouter.ai/api/v1',
+    assert.deepEqual(stored?.providers, [
+      {
+        id: 'openrouter',
+        kind: 'openrouter',
+        configuration: {
+          endpoint: 'https://openrouter.ai/api/v1',
+          // The credential reference is the row's own, untouched.
+          token: '00000000-0000-4000-8000-000000000002',
+        },
+        models: [],
       },
-      // The credential reference is the row's own, untouched.
-      credentialId: '00000000-0000-4000-8000-000000000002',
-      models: [],
-    });
+    ]);
     assert.deepEqual((await configs.load()).configuration, defaultConfig);
   },
 );
@@ -1607,38 +1617,51 @@ void test('converts a configured provider of the old shape without losing its da
     ]);
 
     // The current store reads today's schema. Finish the remaining migrations
-    // before using it to verify that the converted data is still readable.
-    for (const migration of (await readdir(migrationDirectory)).sort()) {
-      if (
-        migration <= '20260927000000_provider_models_and_identity' ||
-        migration === 'migration_lock.toml'
-      )
-        continue;
-      await resources.migrate(
+    // before using it to verify that the converted data is still readable;
+    // the configuration tables are checked before the generic storage one
+    // replaces them. This schema skips the Project and Thread name columns, so
+    // the stage-7 move of Projects and Threads, which needs them, is not applied.
+    const generic = '20261009000000_generic_storage';
+    const migrate = async (migration: string) =>
+      resources.migrate(
         await readFile(
           `${migrationDirectory}/${migration}/migration.sql`,
           'utf8',
         ),
       );
+    for (const migration of (await readdir(migrationDirectory)).sort()) {
+      if (
+        migration <= '20260927000000_provider_models_and_identity' ||
+        migration >= generic
+      )
+        continue;
+      await migrate(migration);
     }
-    const configuration =
-      await resources.database.doricConfiguration.findUniqueOrThrow({
-        where: { id: 1 },
-      });
-    assert.equal(configuration.gitCredentialId, gitCredentialId);
-    assert.equal(configuration.githubCredentialId, githubCredentialId);
-    assert.equal(configuration.maxTurns, 100);
-    assert.equal(
-      (await resources.database.modelConfiguration.findFirstOrThrow()).model,
-      'stealth/space-bunny-alpha',
-    );
+    const [configuration] = await resources.database.$queryRaw<
+      {
+        git_credential_id: string;
+        github_credential_id: string;
+        max_turns: number;
+        model: string;
+      }[]
+    >`SELECT c.git_credential_id::text AS git_credential_id,
+             c.github_credential_id::text AS github_credential_id,
+             c.max_turns, m.model
+        FROM doric_configuration c
+        JOIN model_configuration m ON m.configuration_id = c.id`;
+    assert.equal(configuration?.git_credential_id, gitCredentialId);
+    assert.equal(configuration?.github_credential_id, githubCredentialId);
+    assert.equal(configuration?.max_turns, 100);
+    assert.equal(configuration?.model, 'stealth/space-bunny-alpha');
     await assert.rejects(
       resources.database.$queryRaw`SELECT base_url FROM provider_configuration`,
     );
+    await migrate(generic);
 
     // What `GET /config` answers afterwards: the mapped provider, and the
     // execution model, choices, and turn limit the operator had.
-    const loaded = await createConfigStore(resources.database).load();
+    const kernel = await kernelOver(resources.database);
+    const loaded = await kernel.configs.load().finally(() => kernel.close());
     assert.deepEqual(loaded.configuration.providers, [
       {
         id: 'openrouter',
@@ -1683,14 +1706,24 @@ async function fixture() {
   assert.ok(connectionString);
   const resources = await persistenceFixture(connectionString);
   const { database } = resources;
-  return {
-    ...resources,
-    configs: createConfigStore(database),
-    credentials: await createCredentialService({
-      store: createCredentialStore(database),
-      environment: { DORIC_CREDENTIAL_KEY: credentialKey },
-    }),
-    projects: createProjectStore(database),
-    threads: createThreadStore(database),
-  };
+  try {
+    const kernel = await kernelOver(database);
+    return {
+      ...resources,
+      configs: kernel.configs,
+      credentials: kernel.credentials,
+      projects: createProjectStore(database),
+      threads: createThreadStore(database),
+      close: async () => {
+        try {
+          await kernel.close();
+        } finally {
+          await resources.close();
+        }
+      },
+    };
+  } catch (error) {
+    await resources.close();
+    throw error;
+  }
 }
