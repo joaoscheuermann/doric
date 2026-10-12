@@ -393,3 +393,181 @@ void test('an input the hook schema rejects fails the owner, not a handler', asy
     await host.close();
   }
 });
+
+/** A sequence step (awaited, no deadline) and a reverse sequence of `owner`. */
+const SequenceHooksV1 = defineHooks('owner.sequence/v1', {
+  onStepHook: defineHook({
+    kind: 'sequence',
+    input: z.object({ label: z.string() }).strict(),
+  }),
+  onUnwindHook: defineHook({
+    kind: 'sequence',
+    order: 'reverse',
+    input: z.object({}).strict(),
+  }),
+});
+
+const SequenceRunV1 = ref<{
+  step(label: string, call?: CallArg): Promise<void>;
+  unwind(call?: CallArg): Promise<void>;
+}>('owner.run2/v1');
+
+const sequenceOwner = () => {
+  let handle: HookHandle<typeof SequenceHooksV1> | undefined;
+
+  return probe('owner-sequence', {
+    requires: usesHooks,
+    provides: [
+      ['owner.sequence/v1', 'hooks'],
+      ['owner.run2/v1', 'service'],
+    ],
+    activate: ({ services }) => {
+      handle = services.use(HooksV1).define(SequenceHooksV1);
+      services.provide(
+        defineService('owner.run2/v1', {
+          step: defineMethod({
+            input: z.string(),
+            output: z.void(),
+            execute: async (label) => {
+              await handle?.onStepHook.execute({ label });
+            },
+          }),
+          unwind: defineMethod({
+            input: z.tuple([]),
+            output: z.void(),
+            execute: async () => {
+              await handle?.onUnwindHook.execute({});
+            },
+          }),
+        }),
+      );
+    },
+  });
+};
+
+const sequenceListener = (
+  id: string,
+  register: (hooks: ReturnType<typeof sequenceRegistrar>) => void,
+) =>
+  probe(id, {
+    requires: [...usesHooks, 'owner.sequence/v1@^1.0.0'],
+    activate: ({ services }) => register(sequenceRegistrar(services)),
+  });
+
+const sequenceRegistrar = (services: Services) =>
+  services.use(HooksV1).use(SequenceHooksV1);
+
+void test('sequence handlers run one at a time, in catalog order, each awaited', async () => {
+  const seen: string[] = [];
+  const host = await boot([
+    await core(),
+    sequenceOwner(),
+    sequenceListener('zzz', (hooks) =>
+      hooks.onStepHook(() => {
+        seen.push('zzz');
+      }),
+    ),
+    sequenceListener('aaa', (hooks) =>
+      hooks.onStepHook(async () => {
+        seen.push('aaa-start');
+        await new Promise((done) => setTimeout(done, 10));
+        seen.push('aaa-end');
+      }),
+    ),
+  ]);
+
+  try {
+    await host.platform.services.use(SequenceRunV1).step('go');
+
+    assert.deepEqual(seen, ['aaa-start', 'aaa-end', 'zzz']);
+  } finally {
+    await host.close();
+  }
+});
+
+void test('a failing sequence handler rejects the execution, and the later handlers do not run', async () => {
+  const seen: string[] = [];
+  const host = await boot([
+    await core(),
+    sequenceOwner(),
+    sequenceListener('aaa', (hooks) =>
+      hooks.onStepHook(() => {
+        throw new Error('the step broke');
+      }),
+    ),
+    sequenceListener('zzz', (hooks) =>
+      hooks.onStepHook(() => {
+        seen.push('zzz');
+      }),
+    ),
+  ]);
+
+  try {
+    await assert.rejects(
+      host.platform.services.use(SequenceRunV1).step('go'),
+      /the step broke/,
+    );
+    assert.deepEqual(seen, []);
+    // A sequence failure is the owner's to handle, not a diagnostic.
+    assert.equal(
+      errorKinds(host.platform).includes('aaa:hook_handler_failed'),
+      false,
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('a sequence handler has no deadline: the observe deadline does not cut it off', async () => {
+  const seen: string[] = [];
+  const host = await boot([
+    await core({ hooks: { deadlineMs: 20 } }),
+    sequenceOwner(),
+    sequenceListener('slow', (hooks) =>
+      hooks.onStepHook(async () => {
+        await new Promise((done) => setTimeout(done, 80));
+        seen.push('slow');
+      }),
+    ),
+  ]);
+
+  try {
+    await host.platform.services.use(SequenceRunV1).step('go');
+
+    assert.deepEqual(seen, ['slow']);
+    assert.equal(
+      errorKinds(host.platform).some((kind) =>
+        kind.endsWith('hook_handler_timeout'),
+      ),
+      false,
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('a reverse sequence runs in reverse catalog order', async () => {
+  const seen: string[] = [];
+  const host = await boot([
+    await core(),
+    sequenceOwner(),
+    sequenceListener('aaa', (hooks) =>
+      hooks.onUnwindHook(() => {
+        seen.push('aaa');
+      }),
+    ),
+    sequenceListener('zzz', (hooks) =>
+      hooks.onUnwindHook(() => {
+        seen.push('zzz');
+      }),
+    ),
+  ]);
+
+  try {
+    await host.platform.services.use(SequenceRunV1).unwind();
+
+    assert.deepEqual(seen, ['zzz', 'aaa']);
+  } finally {
+    await host.close();
+  }
+});

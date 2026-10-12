@@ -8,7 +8,7 @@ import {
   LogV1,
   logMethods,
 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { createMinimalHooks, createTestServices } from 'bundle/testing';
 import type { DockerClient } from 'docker-sandbox';
 import { SandboxV1 } from 'runtime/contracts';
 import type {
@@ -93,6 +93,7 @@ const start = async (options: {
   const harness = createTestServices({
     bundle: { id: 'docker' },
     provide: [
+      createMinimalHooks(),
       defineService(LogV1, {
         debug: level('debug'),
         info: level('info'),

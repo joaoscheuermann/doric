@@ -28,6 +28,7 @@ const forward = (backend: StorageBackend): StorageBackend => ({
   capabilities: () => backend.capabilities(),
   health: () => backend.health(),
   identity: () => backend.identity(),
+  connect: () => backend.connect(),
 });
 
 /**

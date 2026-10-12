@@ -9,6 +9,7 @@ import type {
   EmbeddedBundle,
   GenerationLease,
   KernelPlatform,
+  StartupSink,
 } from '../../src/index.js';
 import { startKernel } from '../../src/index.js';
 import {
@@ -225,6 +226,7 @@ export const bootKernel = async (
     readonly stopTimeoutMs?: number;
     readonly embedded?: readonly EmbeddedBundle[];
     readonly compositionOverrides?: string;
+    readonly startup?: StartupSink;
   } = {},
 ): Promise<Kernel> => {
   const bundlesPath = join(root, 'bundles');

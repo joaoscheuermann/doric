@@ -8,7 +8,7 @@ import {
   LogV1,
   logMethods,
 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { createMinimalHooks, createTestServices } from 'bundle/testing';
 import { SandboxV1 } from 'runtime/contracts';
 import type {
   SandboxProvider,
@@ -91,6 +91,7 @@ const start = async (options: {
   const harness = createTestServices({
     bundle: { id: 'firecracker' },
     provide: [
+      createMinimalHooks(),
       defineService(LogV1, {
         debug: level('debug'),
         info: level('info'),

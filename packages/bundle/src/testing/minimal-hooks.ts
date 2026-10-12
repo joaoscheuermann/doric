@@ -7,7 +7,7 @@ import {
   HooksV1,
   hooksMethods,
 } from '../contracts/basic/hooks.js';
-import type { Call } from '../contracts/call.js';
+import { type Call, generationOf } from '../contracts/call.js';
 import type { Cleanup, Disposable, Services } from '../contracts/context.js';
 import {
   decisionSchema,
@@ -42,6 +42,8 @@ export const disposable = (dispose: () => void): Disposable => {
 interface HandlerEntry {
   readonly bundleId: string;
   readonly seq: number;
+  /** The generation partition of the registering call (0: the kernel's). */
+  readonly generation: number;
   readonly handler: AnyHookHandler;
 }
 
@@ -147,6 +149,7 @@ export const createMinimalHooks = (options: MinimalHooksOptions = {}) => {
         const entry: HandlerEntry = {
           bundleId: call.caller.bundleId,
           seq: seq++,
+          generation: generationOf(call),
           handler,
         };
 
@@ -205,12 +208,20 @@ export const createMinimalHooks = (options: MinimalHooksOptions = {}) => {
         const order = services.use(DoricCatalogV1).get().order;
         const rank = (bundleId: string) =>
           bundleId === 'doric' ? -1 : order.indexOf(bundleId);
-        const handlers = [
-          ...(stateOf(contract.id).handlers.get(hook) ?? []),
-        ].sort(
-          (left, right) =>
-            rank(left.bundleId) - rank(right.bundleId) || left.seq - right.seq,
-        );
+        // As the core's hooks/v1: a generation's call sees the kernel's
+        // handlers and its own; a kernel call sees the active generation's.
+        const pinned = generationOf(call);
+        const view =
+          pinned === 0 ? services.use(DoricCatalogV1).get().generation : pinned;
+        const handlers = (stateOf(contract.id).handlers.get(hook) ?? [])
+          .filter(
+            (entry) => entry.generation === 0 || entry.generation === view,
+          )
+          .sort(
+            (left, right) =>
+              rank(left.bundleId) - rank(right.bundleId) ||
+              left.seq - right.seq,
+          );
         const report = (bundleId: string, kind: string, message: string) =>
           services.use(DoricDiagnosticsV1).report({
             bundleId,
@@ -219,12 +230,35 @@ export const createMinimalHooks = (options: MinimalHooksOptions = {}) => {
             details: { contract: contract.id, hook },
           });
 
+        // A sequence step: awaited handler by handler, no deadline, and a
+        // failure rejects the execution (as the core's hooks/v1 does).
+        if (definition.kind === 'sequence') {
+          const ordered =
+            definition.order === 'reverse' ? [...handlers].reverse() : handlers;
+
+          for (const entry of ordered) {
+            await entry.handler(value, call);
+          }
+
+          return undefined;
+        }
+
         for (const entry of handlers) {
           let timer: ReturnType<typeof setTimeout> | undefined;
+          // As the core's hooks/v1: an observe hook may give each owner its
+          // own view of the input, or skip the owner.
+          const delivered =
+            definition.kind === 'observe' && definition.forOwner !== undefined
+              ? definition.forOwner(value, entry.bundleId)
+              : value;
+
+          if (delivered === undefined) {
+            continue;
+          }
 
           try {
             const result = await Promise.race([
-              Promise.resolve(entry.handler(value, call)),
+              Promise.resolve(entry.handler(delivered, call)),
               new Promise<typeof timeout>((resolve) => {
                 timer = setTimeout(() => resolve(timeout), deadline);
               }),

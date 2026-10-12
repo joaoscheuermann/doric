@@ -10,6 +10,7 @@ import { createSandbox, createVmRegistry, type SandboxProvider } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
 import { logV1Logger } from './logger.js';
+import { logSandboxPool } from './start.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -112,5 +113,10 @@ export const activateFirecrackerSandbox =
       }),
     );
 
-    return () => pool.dispose();
+    const start = logSandboxPool(services, options.environment ?? process.env);
+
+    return () => {
+      start.dispose();
+      return pool.dispose();
+    };
   };

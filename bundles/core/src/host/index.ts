@@ -6,6 +6,7 @@ import { createLog } from '../shared/log.js';
 import { createCoreState } from '../shared/state.js';
 import { createEvents } from './events/facade.js';
 import { createModels } from './models/index.js';
+import { activateCredentials } from './secrets/activation.js';
 import { createSecrets } from './secrets/facade.js';
 import { createSettings } from './settings/facade.js';
 import { createSkills } from './skills.js';
@@ -52,6 +53,9 @@ export const createActivate =
 
     storage.defineType(settingsType);
     storage.defineType(settingsGenerationType);
+
+    // The start step: storage connection, then the stored credentials.
+    activateCredentials(services);
   };
 
 /**

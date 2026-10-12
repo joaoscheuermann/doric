@@ -639,5 +639,10 @@ export const memoryStorageBackend = (
           return { ...store.identity };
         }),
     }),
+    // Nothing to open: the store lives in this process.
+    connect: defineMethod({
+      ...methods.connect,
+      execute: () => later(() => undefined),
+    }),
   });
 };

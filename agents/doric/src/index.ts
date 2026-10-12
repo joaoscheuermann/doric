@@ -2,11 +2,10 @@ import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ModelsV1, SecretsV1, SkillsV1, ToolsV1 } from 'bundle/contracts';
+import { SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
 import pretty from 'pino-pretty';
-import { ConfigurationV1, RuntimeV1 } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
 
 import { installBridge } from './lib/bridge/socket.js';
@@ -18,10 +17,7 @@ import {
   watchStructural,
 } from './lib/bundles/boot.js';
 import { createHostConfig } from './lib/bundles/configuration.js';
-import { connectDatabase } from './lib/bundles/database.js';
-import { installHandover } from './lib/bundles/handover.js';
 import { createHostTransport } from './lib/bundles/transport.js';
-import { createCredentialService } from './lib/credentials/service.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -33,7 +29,29 @@ const logger = pino(
     },
   ]),
 );
+const startup = logger.child({ component: 'startup' });
 let startupStage = 'bootstrap';
+
+/**
+ * The host's startup record for `doric.startup/v1`: a bundle names the stage a
+ * failure is reported at, and logs its flat lines through this process's log.
+ */
+const startupRecord = {
+  stage: (name: string) => {
+    startupStage = name;
+  },
+  log: ({
+    level,
+    fields,
+    message,
+  }: {
+    readonly level: 'debug' | 'info' | 'warn' | 'error';
+    readonly fields: Readonly<Record<string, unknown>>;
+    readonly message: string;
+  }) => {
+    startup[level](fields, message);
+  },
+};
 
 const fail = (): never => {
   logger.fatal({ stage: startupStage }, 'Doric failed to start');
@@ -52,20 +70,14 @@ async function main() {
     process.env,
     paths.compositionPath,
   );
-  const startup = logger.child({ component: 'startup' });
 
   startup.info({ host, port, alternatives }, 'Doric starting');
   const app = express();
   const server = createServer(app);
   const io = new SocketServer(server);
 
-  // The pool itself is built by the enabled sandbox bundle in the generation
-  // process, from its own environment; the kernel names only the chosen
-  // alternatives. Its settings are logged by that bundle (BWP-6).
-  startupStage = 'sandbox_pool';
-  startup.info({ alternatives }, 'Configuring sandbox pool');
-  startup.info({ alternatives }, 'Sandbox pool configured');
-
+  // The enabled bundles build their own pools in the generation process, from
+  // their own environment, and log them at their start steps.
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
   const hostConfig = createHostConfig();
@@ -75,6 +87,7 @@ async function main() {
     composition,
     embedded: [hostConfig.bundle, transport.bundle],
     logger,
+    startup: startupRecord,
   });
   const { platform } = bundles;
   transport.bind(platform);
@@ -89,50 +102,12 @@ async function main() {
     },
     'Bundles loaded',
   );
-  // Bundle activation opens no database, so the client is connected here,
-  // through the `postgres` bundle; a missing URL, or legacy rows the stage-7
-  // migration has not moved, fail at this stage.
-  startupStage = 'database_client';
-  startup.info('Initializing PostgreSQL client');
-  await connectDatabase(platform);
-  startup.info('PostgreSQL client initialized');
-  startupStage = 'credential_activation';
-  startup.info('Activating stored credentials');
-  await createCredentialService({ secrets: platform.services.use(SecretsV1) });
-  // The storage identity is the first query of the storage backend, so it is
-  // read in this stage, where the first database round trip always failed.
-  await platform.storageIdentity();
-  startupStage = 'configuration_activation';
-  startup.info('Activating Doric configuration');
-  const snapshot = await platform.services.use(ConfigurationV1).current();
-  // The providers of the stored configuration are built before any prompt
-  // can resolve one, as the host built its first generation here.
-  await platform.services.use(ModelsV1).prepare({ ...snapshot });
-  startup.info(
-    {
-      configRevision: snapshot.revision,
-      providerCount: snapshot.configuration.providers.length,
-      executionModel: snapshot.configuration.models.execution,
-      maxTurns: snapshot.configuration.execution.maxTurns,
-    },
-    'Doric configuration activated',
-  );
-  // The runtime reconciles, resumes the prompts a host interruption left
-  // unfinished and schedules the Project sandboxes, logging each step.
-  startupStage = 'workspace_reconciliation';
-  startup.info('Reconciling persisted projects and threads');
-  const runtime = platform.services.use(RuntimeV1);
-  const { interruptedThreads, interruptedProjects } = await runtime.recover();
-  const interrupted = { interruptedThreads, interruptedProjects };
+  // The bundles' start steps run in activation order, each at its own stage;
+  // the storage identity is read after them.
+  await platform.start();
 
-  // From here a switch or a respawn hands the Projects over between the
-  // runtimes of two generation processes.
-  const handover = installHandover({
-    generations: platform.generations,
-    view: (generation) => platform.view(generation),
-    services: platform.services,
-    log: startup,
-  });
+  // From here a switch or a respawn is handed over between generation
+  // processes by the bundles' own generation hooks.
   const structural = watchStructural(
     platform,
     startup,
@@ -149,10 +124,6 @@ async function main() {
     platform,
     log: logger.child({ component: 'bridge' }),
   });
-  startup.info(
-    { socketNamespaces: ['/status', '/projects', '/threads'] },
-    'Network interfaces configured',
-  );
 
   // The bundles hear that the host is ready before it accepts any request.
   await platform.ready();
@@ -163,7 +134,7 @@ async function main() {
     server.once('error', reject);
     server.listen(port, host, resolve);
   });
-  startup.info({ host, port, alternatives, interrupted }, 'Doric listening');
+  startup.info({ host, port, alternatives }, 'Doric listening');
   startupStage = 'ready';
 
   let closing = false;
@@ -176,12 +147,11 @@ async function main() {
     );
     await io.close();
     await closed;
-    // Running prompts are suspended while their tool bundles are active.
-    await runtime.dispose();
-    handover();
-    // Reverse deactivation: the transport, the generation (the sandbox pool
-    // after the runtime), the core, and `postgres` last, which disconnects
-    // the database.
+    // The stop steps run in reverse activation order, while the other bundles
+    // are still active.
+    await platform.shutdown();
+    // Reverse deactivation: the transport, the generations, the core, and the
+    // storage last.
     await platform.stop();
   };
   process.once('SIGINT', () => void close());

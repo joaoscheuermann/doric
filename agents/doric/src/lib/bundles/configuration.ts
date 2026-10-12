@@ -1,8 +1,11 @@
 import { contractDocument, type EmbeddedBundle } from 'bundle';
 import {
+  AppHooksV1,
+  DoricStartupV1,
   defineMethod,
   defineService,
   defineSettings,
+  HooksV1,
   type HostContext,
   ModelsV1,
   type RegisteredTool,
@@ -136,6 +139,7 @@ export const createHostConfig = (): HostConfig => {
           `${ConfigurationV1.id}@${contractVersion}`,
         ],
         requires: [
+          'hooks/v1@^1.0.0',
           'settings/v1@^1.0.0',
           'secrets/v1@^1.0.0',
           'models/v1@^1.0.0',
@@ -221,6 +225,42 @@ export const createHostConfig = (): HostConfig => {
               }),
             }),
           );
+
+          // The start step (M3): the stored configuration is read and its
+          // providers are built before any prompt can resolve one.
+          const start = services
+            .use(HooksV1)
+            .use(AppHooksV1)
+            .onHostStartHook(async (_input, call) => {
+              const startup = services.use(DoricStartupV1);
+
+              await startup.stage('configuration_activation');
+              await startup.log(
+                {
+                  level: 'info',
+                  fields: {},
+                  message: 'Activating Doric configuration',
+                },
+                call,
+              );
+              const snapshot = await service.current();
+              await services.use(ModelsV1).prepare({ ...snapshot }, call);
+              await startup.log(
+                {
+                  level: 'info',
+                  fields: {
+                    configRevision: snapshot.revision,
+                    providerCount: snapshot.configuration.providers.length,
+                    executionModel: snapshot.configuration.models.execution,
+                    maxTurns: snapshot.configuration.execution.maxTurns,
+                  },
+                  message: 'Doric configuration activated',
+                },
+                call,
+              );
+            });
+
+          return () => start.dispose();
         },
       },
     },

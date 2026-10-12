@@ -25,6 +25,7 @@ import {
   type EventDefinition,
   type HookDefinition,
   type HookKind,
+  type HookOrder,
   type HooksContract,
   isHooksContract,
   type SettingsDefinition,
@@ -65,7 +66,14 @@ export type WireValue =
       readonly $doric: 'hooks';
       readonly id: string;
       readonly hooks: Readonly<
-        Record<string, { readonly kind: HookKind; readonly input: JsonObject }>
+        Record<
+          string,
+          {
+            readonly kind: HookKind;
+            readonly input: JsonObject;
+            readonly order?: HookOrder;
+          }
+        >
       >;
     }
   | {
@@ -186,7 +194,11 @@ const hooksWire = (contract: HooksContract): WireValue => ({
   hooks: Object.fromEntries(
     Object.entries(contract.hooks).map(([name, hook]) => [
       name,
-      { kind: hook.kind, input: memberSchema(hook.input, 'input').schema },
+      {
+        kind: hook.kind,
+        input: memberSchema(hook.input, 'input').schema,
+        ...(hook.order === undefined ? {} : { order: hook.order }),
+      },
     ]),
   ),
 });
@@ -502,6 +514,7 @@ const hooksMirror = (
       hooks[name] = defineHook({
         kind: hook.kind,
         input: mirrorSchema(host, hook.input),
+        ...(hook.order === undefined ? {} : { order: hook.order }),
       });
     }
 

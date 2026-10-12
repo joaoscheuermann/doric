@@ -13,7 +13,7 @@ import {
   ToolsV1,
   toolsMethods,
 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { createMinimalHooks, createTestServices } from 'bundle/testing';
 import express from 'express';
 import { FilesV1, filesMethods } from 'files/contracts';
 import { GitCommandsV1, gitMethods } from 'git/contracts';
@@ -131,6 +131,8 @@ export const serve = async (fakes: Fakes = {}): Promise<Host> => {
   const services = createTestServices({
     bundle: { id: 'transport' },
     provide: [
+      // The host always has hooks/v1 (the core); the transport's start step needs it.
+      createMinimalHooks(),
       fakeService(RuntimeV1.id, runtimeMethods, {
         // The transport subscribes on activation; most cases publish nothing.
         watch: () => ({ dispose: () => undefined }),

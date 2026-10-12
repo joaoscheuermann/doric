@@ -40,10 +40,92 @@ const activation = z
   })
   .strict();
 
+const generationOwnerSchema = z
+  .object({ generation: z.number().int(), incarnation: z.number().int() })
+  .strict();
+
+const generationEntrySchema = generationOwnerSchema
+  .extend({
+    state: z.enum(['starting', 'active', 'draining', 'stopped', 'failed']),
+  })
+  .strict();
+
+/** A generation change as the kernel reports it to each live generation. */
+const generationChangeSchema = z
+  .object({
+    event: z.enum(['activated', 'draining', 'lost', 'stopped']),
+    generation: z.number().int(),
+    incarnation: z.number().int(),
+    /** The receiving generation process. */
+    self: generationOwnerSchema,
+    /** The live generations (active or draining) after the change. */
+    live: z.array(generationEntrySchema),
+    /** `lost` only: the work holds the lost generation kept, by owner. */
+    holds: z
+      .array(
+        z
+          .object({
+            bundleId: z.string(),
+            key: z.string(),
+            label: z.string().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+const peerSignalSchema = z
+  .object({
+    topic: z.string().min(1).max(128),
+    payload: z.unknown(),
+    from: generationOwnerSchema.extend({ bundleId: z.string() }).strict(),
+    self: generationOwnerSchema,
+    live: z.array(generationEntrySchema),
+  })
+  .strict();
+
 /** Lifecycle hooks the platform defines in the active hooks/v1 of each environment. */
 export const AppHooksV1 = definePlatformHooks('doric.app.hooks/v1', {
   onActivateHook: defineHook({ kind: 'observe', input: activation }),
   onDeactivateHook: defineHook({ kind: 'observe', input: activation }),
+  /** Host start, before the host listens: activation order, awaited, failure fatal. */
+  onHostStartHook: defineHook({ kind: 'sequence', input: empty }),
+  /** Host stop, after the HTTP and socket close: reverse activation order, awaited. */
+  onHostStopHook: defineHook({
+    kind: 'sequence',
+    order: 'reverse',
+    input: empty,
+  }),
+  /**
+   * Each live generation hears every change of the generation set; the
+   * handlers of that generation run, so a bundle reacts in its own process.
+   */
+  /**
+   * Each handler gets only its own bundle's `holds`: a hold names work of the
+   * bundle that took it, and other bundles must not learn its key or label.
+   */
+  onGenerationChangedHook: defineHook({
+    kind: 'observe',
+    input: generationChangeSchema,
+    forOwner: (change, bundleId) =>
+      change.holds === undefined
+        ? change
+        : {
+            ...change,
+            holds: change.holds.filter((hold) => hold.bundleId === bundleId),
+          },
+  }),
+  /**
+   * A bundle's `doric.generation/v1.signal`, delivered to the other live
+   * generations of the same bundle only: a handler of another bundle skips it.
+   */
+  onPeerSignalHook: defineHook({
+    kind: 'observe',
+    input: peerSignalSchema,
+    forOwner: (signal, bundleId) =>
+      signal.from.bundleId === bundleId ? signal : undefined,
+  }),
   onHostReadyHook: defineHook({ kind: 'observe', input: empty }),
   onAppReadyHook: defineHook({ kind: 'observe', input: empty }),
   onAppActivateHook: defineHook({ kind: 'observe', input: empty }),
@@ -663,13 +745,46 @@ export const generationDescriptionSchema = z
   })
   .strict();
 
+/** A signal from a bundle's generation to the same bundle in the other live generations. */
+export interface PeerSignal {
+  readonly topic: string;
+  readonly payload?: unknown;
+}
+
+export const peerSignalSchemaInput = z
+  .object({
+    topic: z.string().min(1).max(128),
+    payload: z.unknown().optional(),
+  })
+  .strict();
+
 /**
  * API mínima: the bundle generation of the caller's operation. A work hold
- * keeps that generation alive (draining) until it is disposed.
+ * keeps that generation alive (draining) until it is disposed; a signal
+ * reaches the other live generations through `onPeerSignalHook`.
  */
 export interface DoricGeneration {
   describe(call?: CallArg): Promise<GenerationDescription>;
   hold(work: WorkHold, call?: CallArg): Disposable;
+  signal(signal: PeerSignal, call?: CallArg): Promise<void>;
+}
+
+export const startupLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
+
+/**
+ * The host's startup record (host only): the stage a failure is reported at,
+ * and the flat log lines of the startup sequence.
+ */
+export interface DoricStartup {
+  stage(name: string, call?: CallArg): Promise<void>;
+  log(
+    record: {
+      readonly level: 'debug' | 'info' | 'warn' | 'error';
+      readonly fields: Readonly<Record<string, unknown>>;
+      readonly message: string;
+    },
+    call?: CallArg,
+  ): Promise<void>;
 }
 
 export const DoricCatalogV1 = ref<DoricCatalog>('doric.catalog/v1');
@@ -684,6 +799,7 @@ export const DoricNotificationsV1 = ref<DoricNotifications>(
   'doric.notifications/v1',
 );
 export const DoricGenerationV1 = ref<DoricGeneration>('doric.generation/v1');
+export const DoricStartupV1 = ref<DoricStartup>('doric.startup/v1');
 export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
 export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
 
@@ -784,6 +900,23 @@ export const platformContracts = Object.freeze({
     methods: {
       describe: { input: noInput, output: generationDescriptionSchema },
       hold: { input: workHoldSchema, output: disposableSchema },
+      signal: { input: peerSignalSchemaInput, output: z.void() },
+    },
+  },
+  'doric.startup/v1': {
+    environments: ['host'],
+    methods: {
+      stage: { input: z.string().min(1).max(64), output: z.void() },
+      log: {
+        input: z
+          .object({
+            level: startupLevelSchema,
+            fields: z.record(z.string(), z.unknown()),
+            message: z.string(),
+          })
+          .strict(),
+        output: z.void(),
+      },
     },
   },
   'doric.tokens/v1': {

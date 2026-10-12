@@ -84,6 +84,7 @@ export { ajvValidators } from './process/ajv.js';
 export {
   defaultRunnerPath,
   forkGeneration,
+  type GenerationChange,
   type GenerationLease,
   type GenerationManager,
   type GenerationSummary,
@@ -93,6 +94,7 @@ export {
   type PublishResult,
   type SpawnedGeneration,
   type StartKernelOptions,
+  type StartupSink,
   startKernel,
   type WorkHoldRef,
 } from './process/kernel.js';

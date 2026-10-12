@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { defineMethod, defineService } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { createMinimalHooks, createTestServices } from 'bundle/testing';
 import express from 'express';
 import { pino } from 'pino';
 import {
@@ -74,7 +74,10 @@ void test('the feature routes call the services the kernel passes as features', 
       }),
     ],
   });
-  const own = createTestServices({ bundle: { id: 'transport' } });
+  const own = createTestServices({
+    bundle: { id: 'transport' },
+    provide: [createMinimalHooks()],
+  });
   const bundle = createTransport({
     app,
     io,

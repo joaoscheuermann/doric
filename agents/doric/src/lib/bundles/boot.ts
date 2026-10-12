@@ -12,6 +12,7 @@ import {
   type LogSink,
   type PlatformLog,
   readComposition,
+  type StartupSink,
   selectAlternatives,
   startKernel,
   type Variables,
@@ -66,6 +67,8 @@ export interface StartBundlesOptions {
    * generation the desktop downloads through `doric.catalog/v1.distribution`.
    */
   readonly hostBoot?: string;
+  /** The host's startup record: the stages and log lines of `doric.startup/v1`. */
+  readonly startup?: StartupSink;
 }
 
 /**
@@ -249,6 +252,7 @@ export const startBundles = async ({
   logger,
   runnerPath,
   hostBoot = randomUUID(),
+  startup,
 }: StartBundlesOptions): Promise<Bundles> => {
   const platform = await startKernel({
     bundlesPath,
@@ -260,6 +264,7 @@ export const startBundles = async ({
     errorClasses: [ToolErrorObject],
     distribution: (source) => createCatalogDistribution({ source, hostBoot }),
     ...(runnerPath === undefined ? {} : { runnerPath }),
+    ...(startup === undefined ? {} : { startup }),
   });
 
   if (platform.mode === 'recovery') {

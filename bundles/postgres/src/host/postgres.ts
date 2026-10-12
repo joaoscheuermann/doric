@@ -5,6 +5,7 @@ import { createDatabaseHandle } from './database.js';
 import { databaseService } from './database-service.js';
 import type { PostgresOptions } from './options.js';
 import { secretsBackend } from './secrets/backend.js';
+import { connectDatabase } from './start.js';
 import { storageBackend } from './storage/backend.js';
 
 /** The three services of the bundle over one lazily created client. */
@@ -32,6 +33,7 @@ export const createPostgres = (options: PostgresOptions = {}): Postgres => {
       environment,
       ...(options.limits === undefined ? {} : { limits: options.limits }),
       ...(options.statfs === undefined ? {} : { statfs: options.statfs }),
+      connect: (services) => connectDatabase(handle, services),
     }),
     secrets: secretsBackend(handle.client, environment),
     database: databaseService(handle),

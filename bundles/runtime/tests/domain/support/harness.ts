@@ -354,7 +354,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
   const threads: ThreadStore = overridable(real.threads);
   const definitions: AnyServiceDefinition[] = [];
   const bindings = createBindings();
-  const cleanup = provideRuntime(
+  const { cleanup } = provideRuntime(
     {
       provide: (definition) => {
         definitions.push(definition);

@@ -13,6 +13,12 @@ import { type Bindings, createBindings } from './domain/bindings.js';
 import { createNotices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
 import { createWorkspaceService } from './domain/service.js';
+import { installHandover } from './handover.js';
+import {
+  createLifecycle,
+  installStartStop,
+  type RuntimeLifecycle,
+} from './lifecycle.js';
 import { type ProjectResourcesReader, ResourcesV1 } from './peers.js';
 import { createPorts, type RuntimePorts } from './ports.js';
 import { leaseService } from './services/lease.js';
@@ -32,9 +38,15 @@ import {
 
 /*
  * The `runtime` bundle's host part (design 57 §4.2): wiring only. Activation
- * does no data work; reconcile and resume run in `runtime/v1.recover()`, which
- * the kernel calls once every bundle is active.
+ * does no data work; the reconcile and resume run in the start step
+ * (lifecycle.ts), once every bundle is active.
  */
+
+/** What `provideRuntime` made: its cleanup and the lifecycle the hooks drive. */
+export interface RuntimeProvision {
+  readonly cleanup: Cleanup;
+  readonly lifecycle: RuntimeLifecycle;
+}
 
 /** The runtime's providers over its stores and ports. */
 export const provideRuntime = (
@@ -64,7 +76,7 @@ export const provideRuntime = (
      */
     readonly resources?: () => ProjectResourcesReader | undefined;
   },
-): Cleanup => {
+): RuntimeProvision => {
   const notices = createNotices(ports.log);
   const redactor = createRedactor(ports.storedRedactions);
   const service = createWorkspaceService({
@@ -90,24 +102,25 @@ export const provideRuntime = (
     },
   });
 
-  services.provide(
-    runtimeService({
-      service,
-      notices,
-      projects,
-      threads,
-      log: ports.log,
-      watches,
-    }),
-  );
+  const lifecycle = createLifecycle({
+    service,
+    threads,
+    projects,
+    log: ports.log,
+  });
+
+  services.provide(runtimeService({ service, notices, watches, lifecycle }));
   services.provide(threadsService({ service, threads, bindings, watches }));
   services.provide(workspaceService(bindings, service));
   services.provide(usageService(service));
   services.provide(leaseService({ service, bindings, resources }));
   services.provide(terminalSessionsService(watches, terminal));
 
-  // Idempotent: the kernel already called runtime/v1.dispose on a normal stop.
-  return () => service.dispose();
+  // Idempotent: the stop step already disposed it on a normal stop.
+  return {
+    cleanup: () => service.dispose(),
+    lifecycle,
+  };
 };
 
 /** The runtime's stores over storage/v1, rewinding through executor/v1. */
@@ -154,14 +167,19 @@ export const activate = ({ services }: HostContext): Cleanup => {
     };
   });
 
-  const cleanup = provideRuntime(services, {
+  const { cleanup, lifecycle } = provideRuntime(services, {
     ...runtimeStores(storage, ports),
     ports,
     terminal: () => terminal,
     resources: () => resources,
   });
+  // The start and stop steps, and the handover between generation processes.
+  const steps = installStartStop({ services, lifecycle });
+  const handover = installHandover({ services, lifecycle, log: ports.log });
 
   return () => {
+    handover.dispose();
+    steps.dispose();
     sink.dispose();
     return cleanup();
   };

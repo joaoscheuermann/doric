@@ -16,8 +16,10 @@ import {
   DoricDiagnosticsV1,
   DoricGenerationV1,
   DoricLogV1,
+  DoricStartupV1,
   type GenerationDescription,
   type LogRecord,
+  type PeerSignal,
   platformContracts,
   type WorkHold,
 } from '../contracts/platform.js';
@@ -164,6 +166,16 @@ export const providePlatformServices = (
     readonly generation?: {
       describe(call: Call): GenerationDescription;
       hold(work: WorkHold, call: Call): Disposable;
+      signal(signal: PeerSignal, call: Call): void | Promise<void>;
+    };
+    /** The host's `doric.startup/v1` record (absent outside the host kernel). */
+    readonly startup?: {
+      stage(name: string): void;
+      log(record: {
+        readonly level: 'debug' | 'info' | 'warn' | 'error';
+        readonly fields: Readonly<Record<string, unknown>>;
+        readonly message: string;
+      }): void;
     };
   },
 ): void => {
@@ -275,6 +287,40 @@ export const providePlatformServices = (
             const held = generation.hold(work, call);
 
             return toDisposable(() => held.dispose());
+          },
+        }),
+        signal: defineMethod({
+          input: methods.signal.input,
+          output: methods.signal.output,
+          execute: (peer: PeerSignal, call) => generation.signal(peer, call),
+        }),
+      }),
+    );
+  }
+
+  const { startup } = options;
+
+  if (startup !== undefined) {
+    const methods = specs['doric.startup/v1'].methods;
+
+    services.provide(
+      definePlatformService(DoricStartupV1, {
+        stage: defineMethod({
+          input: methods.stage.input,
+          output: methods.stage.output,
+          execute: (name: string) => {
+            startup.stage(name);
+          },
+        }),
+        log: defineMethod({
+          input: methods.log.input,
+          output: methods.log.output,
+          execute: (record: {
+            readonly level: 'debug' | 'info' | 'warn' | 'error';
+            readonly fields: Readonly<Record<string, unknown>>;
+            readonly message: string;
+          }) => {
+            startup.log(record);
           },
         }),
       }),

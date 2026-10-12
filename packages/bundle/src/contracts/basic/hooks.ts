@@ -19,7 +19,9 @@ import {
 // biome-ignore lint/suspicious/noConfusingVoidType: `void` lets an observe handler end on any call whose result is discarded, which `undefined` would reject
 type ObserveOutput = void;
 
-export type HookOutput<H extends HookDefinition> = H['kind'] extends 'observe'
+export type HookOutput<H extends HookDefinition> = H['kind'] extends
+  | 'observe'
+  | 'sequence'
   ? ObserveOutput
   : H['kind'] extends 'transform'
     ? z.output<H['input']>

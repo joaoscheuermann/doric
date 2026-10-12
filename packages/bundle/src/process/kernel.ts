@@ -58,6 +58,7 @@ import { childTransport } from './node-transport.js';
 import { partitionCatalog, withOrder } from './partition.js';
 
 export type {
+  GenerationChange,
   GenerationLease,
   GenerationManager,
   GenerationSummary,
@@ -66,6 +67,23 @@ export type {
   SpawnedGeneration,
   WorkHoldRef,
 } from './manager.js';
+
+const silentStartup: StartupSink = {
+  stage: () => undefined,
+  log: () => undefined,
+};
+
+/** The host's startup record: where a failure is reported, and its log lines. */
+export interface StartupSink {
+  /** Sets the stage a startup failure is reported at. */
+  stage(name: string): void;
+  /** One flat startup log line. */
+  log(record: {
+    readonly level: 'debug' | 'info' | 'warn' | 'error';
+    readonly fields: Readonly<Record<string, unknown>>;
+    readonly message: string;
+  }): void;
+}
 
 export interface StartKernelOptions extends StartHostOptions {
   /** Default: the compiled `runner-main.js` next to this module. */
@@ -80,6 +98,8 @@ export interface StartKernelOptions extends StartHostOptions {
   readonly stopTimeoutMs?: number;
   /** Test seam: how a generation process is created (default: fork). */
   readonly spawn?: (init: GenerationInit) => SpawnedGeneration;
+  /** The host's `doric.startup/v1` record (default: none). */
+  readonly startup?: StartupSink;
   /**
    * The host's distribution members of `doric.catalog/v1` (HR-2..HR-4),
    * built over the kernel's generations; absent, the kernel serves `get` only.
@@ -112,6 +132,17 @@ export interface KernelDistributionSource {
 
 export interface KernelPlatform extends HostPlatform {
   readonly generations: GenerationManager;
+  /**
+   * Runs `AppHooksV1.onHostStartHook` in activation order, each handler
+   * awaited; a failing handler rejects, and the host fails at its stage. Then
+   * the storage identity is read (a failure is not kept). Once per host.
+   */
+  start(): Promise<void>;
+  /**
+   * Runs `AppHooksV1.onHostStopHook` in reverse activation order, before
+   * `stop`; a failing handler is reported, and the stop goes on.
+   */
+  shutdown(): Promise<void>;
   /** Kernel-internal doric principal pinned to generation N (its view). */
   view(generation: number): Services;
   /**
@@ -360,7 +391,13 @@ export const startKernel = async (
           key: work.key,
           ...(work.label === undefined ? {} : { label: work.label }),
         }),
+      // The sender is the calling generation; its bundle is the caller.
+      signal: (peer, call) =>
+        manager.signalFrom(generationOf(call), call.caller.bundleId, peer),
     },
+    // Without a host record the startup lines are dropped; the start steps
+    // still run, and a failing one still fails `start`.
+    startup: options.startup ?? silentStartup,
   });
 
   const installedById = new Map<string, InstalledBundle>();
@@ -442,7 +479,39 @@ export const startKernel = async (
     await manager.boot(raw);
   }
 
+  const storageIdentity = async () => {
+    if (
+      identity === undefined &&
+      kernelDirectory.active(StorageBackendV1.id) === undefined
+    ) {
+      return undefined;
+    }
+
+    identity ??= platform.services
+      .use(StorageBackendV1)
+      .identity()
+      .then((resolvedIdentity) => {
+        storage = resolvedIdentity;
+
+        return resolvedIdentity;
+      });
+
+    const pending = identity;
+
+    try {
+      return await pending;
+    } catch (error) {
+      if (identity === pending) {
+        identity = undefined;
+      }
+
+      throw error;
+    }
+  };
+
   const views = new Map<number, Principal>();
+  let started: Promise<void> | undefined;
+  let shutdownHooks: Promise<void> | undefined;
   let readied: Promise<void> | undefined;
   let stopping: Promise<void> | undefined;
   let identity: Promise<StorageIdentity> | undefined;
@@ -464,35 +533,7 @@ export const startKernel = async (
         callOptions.deadline,
       ),
     catalog: () => manager.catalogOf(manager.liveFor(0), resolved),
-    storageIdentity: async () => {
-      if (
-        identity === undefined &&
-        kernelDirectory.active(StorageBackendV1.id) === undefined
-      ) {
-        return undefined;
-      }
-
-      identity ??= platform.services
-        .use(StorageBackendV1)
-        .identity()
-        .then((resolvedIdentity) => {
-          storage = resolvedIdentity;
-
-          return resolvedIdentity;
-        });
-
-      const pending = identity;
-
-      try {
-        return await pending;
-      } catch (error) {
-        if (identity === pending) {
-          identity = undefined;
-        }
-
-        throw error;
-      }
-    },
+    storageIdentity,
     diagnostics: () => manager.diagnosticsOf(manager.liveFor(0)),
     methodSpec: (contractId, method) => {
       const record = activeView.active(contractId);
@@ -537,6 +578,41 @@ export const startKernel = async (
       }
 
       return principal.services;
+    },
+    start: () => {
+      started ??= (async () => {
+        const hooks = activation.appHooks();
+
+        if (diagnostics.mode !== 'recovery' && hooks !== undefined) {
+          await hooks.onHostStartHook.execute({}, platformCall(0));
+        }
+
+        await storageIdentity();
+      })();
+
+      return started;
+    },
+    shutdown: () => {
+      shutdownHooks ??= (async () => {
+        const hooks = activation.appHooks();
+
+        if (diagnostics.mode === 'recovery' || hooks === undefined) {
+          return;
+        }
+
+        try {
+          await hooks.onHostStopHook.execute({}, platformCall(0));
+        } catch (error) {
+          diagnostics.report({
+            bundleId: platform.bundleId,
+            kind: 'hook_execute_failed',
+            message: messageOf(error),
+            details: { hook: 'onHostStopHook' },
+          });
+        }
+      })();
+
+      return shutdownHooks;
     },
     ready: () => {
       readied ??= (async () => {

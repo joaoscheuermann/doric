@@ -402,14 +402,44 @@ export const createHooks = (options: HooksOptions = {}) => {
             : deadlineMs;
         const details = { contract: contract.id, hook };
 
+        // A sequence step is the owner's own work: each handler is awaited
+        // without a deadline, and the first failure rejects the execution.
+        const sequence = async (): Promise<unknown> => {
+          const ordered =
+            definition.order === 'reverse' ? [...handlers].reverse() : handlers;
+
+          for (const entry of ordered) {
+            await entry.handler(parsed.data, call);
+          }
+
+          return undefined;
+        };
+
         const chain = async (): Promise<unknown> => {
+          if (definition.kind === 'sequence') {
+            return await sequence();
+          }
+
           let value: unknown = parsed.data;
 
           for (const entry of handlers) {
             let result: unknown;
+            // An observe hook may give each owner a narrower view of its input,
+            // or skip the owner when the payload is not for it.
+            const delivered =
+              definition.kind === 'observe' && definition.forOwner !== undefined
+                ? definition.forOwner(value, entry.bundleId)
+                : value;
+
+            if (delivered === undefined) {
+              continue;
+            }
 
             try {
-              result = await bounded(() => entry.handler(value, call), limit);
+              result = await bounded(
+                () => entry.handler(delivered, call),
+                limit,
+              );
             } catch (error) {
               report(
                 services,

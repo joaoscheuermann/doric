@@ -9,6 +9,7 @@ import type {
   Diagnostics,
   GenerationDescription,
   GenerationState,
+  PeerSignal,
 } from '../contracts/platform.js';
 import { catalogSnapshot, statesOf } from '../loader/platform.js';
 import type { PlatformLog } from '../runtime/activation.js';
@@ -72,6 +73,18 @@ export interface LostGeneration {
   readonly incarnation: number;
   /** The work holds the generation kept, by owner bundle. */
   readonly holds: readonly WorkHoldRef[];
+}
+
+/**
+ * A change of the generation set, delivered to every live generation as
+ * `AppHooksV1.onGenerationChangedHook` (`activated`, `draining`, `lost`,
+ * `stopped`). `holds` is set for `lost` only.
+ */
+export interface GenerationChange {
+  readonly event: 'activated' | 'draining' | 'lost' | 'stopped';
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly holds?: readonly WorkHoldRef[];
 }
 
 export type PublishResult =
@@ -597,7 +610,7 @@ export class HostGenerations implements GenerationManager {
     const outcome = await this.#start(resolved, 1);
 
     if (outcome.live !== undefined) {
-      this.#activate(outcome.live, 'boot');
+      await this.#activate(outcome.live, 'boot');
     } else {
       this.#activateFailed(outcome.failed as Live, 'boot');
     }
@@ -645,7 +658,7 @@ export class HostGenerations implements GenerationManager {
       return { status: 'failed', reason };
     }
 
-    this.#activate(outcome.live, 'publish');
+    await this.#activate(outcome.live, 'publish');
 
     return { status: 'published', generation };
   }
@@ -861,9 +874,13 @@ export class HostGenerations implements GenerationManager {
     });
   }
 
-  #activate(live: Live, why: 'boot' | 'publish' | 'respawn'): void {
+  async #activate(
+    live: Live,
+    why: 'boot' | 'publish' | 'respawn',
+  ): Promise<void> {
     const previous = this.#active;
     const replaced = previous !== undefined && previous !== live;
+    let draining = false;
 
     live.state = 'active';
     live.failure = undefined;
@@ -871,6 +888,7 @@ export class HostGenerations implements GenerationManager {
     this.#latest = live;
 
     if (replaced) {
+      draining = previous.state !== 'failed';
       previous.state = previous.state === 'failed' ? 'stopped' : 'draining';
     }
 
@@ -881,14 +899,29 @@ export class HostGenerations implements GenerationManager {
     });
     this.#pushCatalogs();
     // Listeners run before the drain check, so a call they start on the
-    // draining generation (runtime/v1.drain) keeps it alive.
+    // draining generation keeps it alive.
     this.#announceActive(live.generation);
+
+    if (replaced && draining) {
+      // The draining generation hears of it first, and takes its own work
+      // hold in that hook; only then may the drain check run.
+      await this.#notify({
+        event: 'draining',
+        generation: previous.generation,
+        incarnation: previous.incarnation,
+      });
+    }
 
     if (replaced) {
       this.#maybeStop(previous);
     }
 
     if (why !== 'boot') {
+      await this.#notify({
+        event: 'activated',
+        generation: live.generation,
+        incarnation: live.incarnation,
+      });
       void this.#generationReady(live.generation);
     }
   }
@@ -1002,6 +1035,15 @@ export class HostGenerations implements GenerationManager {
       message: `Generation ${live.generation} (incarnation ${live.incarnation}) exited (${describeExit(reason)}).`,
       details: { generation: live.generation, incarnation: live.incarnation },
     });
+    void this.#notify(
+      {
+        event: 'lost',
+        generation: live.generation,
+        incarnation: live.incarnation,
+        holds,
+      },
+      live,
+    );
 
     if (!wasActive) {
       live.state = 'stopped';
@@ -1026,7 +1068,7 @@ export class HostGenerations implements GenerationManager {
     }
 
     if (outcome.live !== undefined) {
-      this.#activate(outcome.live, 'respawn');
+      await this.#activate(outcome.live, 'respawn');
     } else if (this.#active === undefined) {
       this.#activateFailed(live, 'respawn');
     } else {
@@ -1084,6 +1126,153 @@ export class HostGenerations implements GenerationManager {
     await exited;
     live.state = 'stopped';
     this.#deps.activeView.release(live.records);
+
+    // A stop the host asked for (shutdown) is not announced: nothing hands over.
+    if (this.#stopping === undefined) {
+      await this.#notify(
+        {
+          event: 'stopped',
+          generation: live.generation,
+          incarnation: live.incarnation,
+        },
+        live,
+      );
+    }
+  }
+
+  /** The live generations (active or draining), but `exclude`. */
+  #liveExcept(exclude?: Live): Live[] {
+    return [...this.#lives.values()].filter(
+      (live) =>
+        (live.state === 'active' || live.state === 'draining') &&
+        live !== exclude,
+    );
+  }
+
+  /**
+   * Hears each live generation of a change, in its own process: the handlers
+   * of that generation run (the hook is observed per generation). Failures are
+   * reported, never thrown into the kernel's transitions.
+   */
+  async #notify(change: GenerationChange, subject?: Live): Promise<void> {
+    if (this.#stopping !== undefined) {
+      return;
+    }
+
+    const hooks = this.#deps.appHooks();
+
+    if (hooks === undefined) {
+      return;
+    }
+
+    // The generation that was lost or stopped is no longer live to hear of it.
+    const receivers = this.#liveExcept(
+      change.event === 'lost' || change.event === 'stopped'
+        ? subject
+        : undefined,
+    );
+    const entries = receivers.map(({ generation, incarnation, state }) => ({
+      generation,
+      incarnation,
+      state,
+    }));
+
+    await Promise.all(
+      receivers.map(async (receiver) => {
+        try {
+          await hooks.onGenerationChangedHook.execute(
+            {
+              event: change.event,
+              generation: change.generation,
+              incarnation: change.incarnation,
+              self: {
+                generation: receiver.generation,
+                incarnation: receiver.incarnation,
+              },
+              live: entries,
+              ...(change.holds === undefined
+                ? {}
+                : { holds: [...change.holds] }),
+            },
+            this.#deps.platformCall(receiver.generation),
+          );
+        } catch (error) {
+          this.#deps.kernelDiagnostics.report({
+            bundleId: this.#deps.platform.bundleId,
+            kind: 'hook_execute_failed',
+            message: messageOf(error),
+            details: {
+              hook: 'onGenerationChangedHook',
+              generation: receiver.generation,
+            },
+          });
+        }
+      }),
+    );
+  }
+
+  /**
+   * `doric.generation/v1.signal` from generation `from`: the signal reaches
+   * `onPeerSignalHook` in every other live generation, with the sender named.
+   */
+  async signalFrom(
+    from: number,
+    bundleId: string,
+    peer: PeerSignal,
+  ): Promise<void> {
+    const sender = this.liveFor(from);
+
+    if (sender === undefined || this.#stopping !== undefined) {
+      return;
+    }
+
+    const hooks = this.#deps.appHooks();
+
+    if (hooks === undefined) {
+      return;
+    }
+
+    const entries = this.#liveExcept().map(
+      ({ generation, incarnation, state }) => ({
+        generation,
+        incarnation,
+        state,
+      }),
+    );
+
+    await Promise.all(
+      this.#liveExcept(sender).map(async (receiver) => {
+        try {
+          await hooks.onPeerSignalHook.execute(
+            {
+              topic: peer.topic,
+              payload: peer.payload,
+              from: {
+                bundleId,
+                generation: sender.generation,
+                incarnation: sender.incarnation,
+              },
+              self: {
+                generation: receiver.generation,
+                incarnation: receiver.incarnation,
+              },
+              live: entries,
+            },
+            this.#deps.platformCall(receiver.generation),
+          );
+        } catch (error) {
+          this.#deps.kernelDiagnostics.report({
+            bundleId: this.#deps.platform.bundleId,
+            kind: 'hook_execute_failed',
+            message: messageOf(error),
+            details: {
+              hook: 'onPeerSignalHook',
+              generation: receiver.generation,
+            },
+          });
+        }
+      }),
+    );
   }
 
   stop(): Promise<void> {

@@ -1,5 +1,8 @@
 import type { EmbeddedBundle } from 'bundle';
 import {
+  AppHooksV1,
+  DoricStartupV1,
+  HooksV1,
   type HostContext,
   ModelsV1,
   SecretsV1,
@@ -71,6 +74,7 @@ const version = '0.0.0';
  * be able to leave the composition without it.
  */
 export const transportRequires = [
+  'hooks/v1@^1.0.0',
   'runtime/v1@^1.0.0',
   'runtime.threads/v1@^1.0.0',
   'runtime.lease/v1@^1.0.0',
@@ -154,7 +158,25 @@ export const createTransport = (options: TransportOptions): EmbeddedBundle => ({
 
       registerHttpRoutes(options.app, transport);
 
+      // The namespaces the host listens on, logged before it binds.
+      const network = services
+        .use(HooksV1)
+        .use(AppHooksV1)
+        .onHostStartHook(async (_input, call) => {
+          await services.use(DoricStartupV1).log(
+            {
+              level: 'info',
+              fields: {
+                socketNamespaces: ['/status', '/projects', '/threads'],
+              },
+              message: 'Network interfaces configured',
+            },
+            call,
+          );
+        });
+
       return () => {
+        network.dispose();
         following.dispose();
         watching.dispose();
       };

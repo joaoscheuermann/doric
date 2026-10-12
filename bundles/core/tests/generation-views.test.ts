@@ -107,6 +107,7 @@ const world = (
     },
     [StorageBackendV1.id]: {
       declareType: async () => undefined,
+      connect: async () => undefined,
       capabilities: async () => ({
         maxBatchOperations: 100,
         maxEventsPerAppend: 100,

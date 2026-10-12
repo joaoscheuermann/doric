@@ -128,6 +128,7 @@ void test('every basic and platform method has a stated way across the envelope'
       capabilities: 'crosses',
       health: 'crosses',
       identity: 'crosses',
+      connect: 'crosses',
     },
     'events/v1': {
       register: 'optimistic via definition+disposable',
@@ -197,7 +198,9 @@ void test('every basic and platform method has a stated way across the envelope'
     'doric.generation/v1': {
       describe: 'crosses',
       hold: 'optimistic via disposable',
+      signal: 'crosses',
     },
+    'doric.startup/v1': { stage: 'crosses', log: 'crosses' },
     'doric.tokens/v1': { get: 'crosses' },
     'doric.notifications/v1': { show: 'crosses' },
     // Client-only (stage 9): elements and callbacks stay in the window.

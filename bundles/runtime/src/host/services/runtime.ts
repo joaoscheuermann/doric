@@ -1,14 +1,9 @@
-import { defineMethod, defineService, type Log } from 'bundle/contracts';
+import { defineMethod, defineService } from 'bundle/contracts';
 
-import {
-  type Handover,
-  type RecoverySummary,
-  RuntimeV1,
-  runtimeMethods,
-} from '../../contracts/runtime.js';
+import { RuntimeV1, runtimeMethods } from '../../contracts/runtime.js';
 import type { Notices } from '../domain/notices.js';
 import type { WorkspaceService } from '../domain/types.js';
-import type { ProjectStore, ThreadStore } from '../store/types.js';
+import type { RuntimeLifecycle } from '../lifecycle.js';
 import type { Watches } from './watches.js';
 
 /*
@@ -18,86 +13,34 @@ import type { Watches } from './watches.js';
 export const runtimeService = ({
   service,
   notices,
-  projects,
-  threads,
-  log,
   watches,
+  lifecycle,
 }: {
   readonly service: WorkspaceService;
   readonly notices: Notices;
-  readonly projects: ProjectStore;
-  readonly threads: ThreadStore;
-  readonly log: Log;
   readonly watches: Watches;
-}) => {
-  let recovery: Promise<RecoverySummary> | undefined;
-  let disposal: Promise<void> | undefined;
-  /** Adoptions run one at a time, after the recovery. */
-  let adoptions: Promise<void> = Promise.resolve();
-  /**
-   * Today's boot sequence (agents/doric index.ts), once per runtime process.
-   * The Projects a live process in the handover owns are left out (57-WP-H).
-   */
-  const recover = async (handover?: Handover): Promise<RecoverySummary> => {
-    const include = await service.handover.begin(handover?.live ?? []);
-    const interruptedThreads = await threads.reconcile(include);
-    const interruptedProjects = await projects.reconcile(include);
-    log.info('Project and thread reconciliation complete', {
-      interruptedThreads,
-      interruptedProjects,
-    });
-    // Work the reader asked for and a host interruption left unfinished is
-    // work this boot owes them, so every such prompt is taken up before the
-    // host starts serving new ones.
-    const resumedPrompts = await service.resumeInterrupted(include);
-    log.info('Interrupted prompts resumed', { resumedPrompts });
-    await service.recoverProjects(include);
-    log.info('Project sandbox recovery scheduled');
-    return { interruptedThreads, interruptedProjects, resumedPrompts };
-  };
-
-  return defineService(RuntimeV1, {
+  readonly lifecycle: RuntimeLifecycle;
+}) =>
+  defineService(RuntimeV1, {
     recover: defineMethod({
       ...runtimeMethods.recover,
-      execute: () => {
-        // A second call answers the first summary without doing the work again.
-        recovery ??= recover();
-        return recovery;
-      },
+      execute: () => lifecycle.recover(),
     }),
     recoverWith: defineMethod({
       ...runtimeMethods.recoverWith,
-      execute: (handover) => {
-        recovery ??= recover(handover);
-        return recovery;
-      },
+      execute: (handover) => lifecycle.recoverWith(handover),
     }),
     adopt: defineMethod({
       ...runtimeMethods.adopt,
-      execute: (handover) => {
-        const pending = recovery;
-        adoptions = adoptions
-          .then(async () => {
-            // Standby is decided by the recovery; adopting waits for it.
-            await pending?.catch(() => undefined);
-            await service.handover.adopt(handover.live);
-          })
-          .catch((error: unknown) => {
-            log.error('Project adoption failed', { err: error });
-          });
-        return adoptions;
-      },
+      execute: (handover) => lifecycle.adopt(handover),
     }),
     drain: defineMethod({
       ...runtimeMethods.drain,
-      execute: (released) => service.handover.drain(released),
+      execute: (released) => lifecycle.drain(released),
     }),
     dispose: defineMethod({
       ...runtimeMethods.dispose,
-      execute: () => {
-        disposal ??= service.dispose();
-        return disposal;
-      },
+      execute: () => lifecycle.dispose(),
     }),
     createProject: defineMethod({
       ...runtimeMethods.createProject,
@@ -141,4 +84,3 @@ export const runtimeService = ({
       execute: ([input, listener]) => watches.project(input, listener),
     }),
   });
-};

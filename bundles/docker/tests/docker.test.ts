@@ -8,7 +8,7 @@ import {
   LogV1,
   logMethods,
 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { createMinimalHooks, createTestServices } from 'bundle/testing';
 import { SandboxV1 } from 'runtime/contracts';
 
 import { activateDockerSandbox } from '../src/host/sandbox.js';
@@ -22,6 +22,7 @@ void test('keeps a Project workspace across sandboxes on Docker until it is disc
   const harness = createTestServices({
     bundle: { id: 'docker' },
     provide: [
+      createMinimalHooks(),
       defineService(LogV1, {
         debug: silent,
         info: silent,

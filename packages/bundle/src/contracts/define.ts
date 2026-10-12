@@ -60,7 +60,14 @@ const assertBundleContractId = (id: unknown, what: string): void => {
 
 // Hooks ---------------------------------------------------------------------
 
-export type HookKind = 'observe' | 'transform' | 'decide';
+/**
+ * `sequence` hooks run their handlers one after another and await each: a
+ * handler's failure rejects the execution (no deadline), so the owner can fail
+ * the step it guards. `order` says which way the catalog order runs.
+ */
+export type HookKind = 'observe' | 'transform' | 'decide' | 'sequence';
+
+export type HookOrder = 'activation' | 'reverse';
 
 export type Decision =
   | { readonly allow: true }
@@ -77,7 +84,17 @@ export interface HookDefinition<
 > {
   readonly kind: K;
   readonly input: I;
+  /** Only for `sequence` hooks: the default is `activation`. */
+  readonly order?: HookOrder;
+  /**
+   * Only for `observe` hooks: the input one handler owned by `bundleId`
+   * receives, or `undefined` to skip that handler. Used where a payload names
+   * work or peers that belong to one bundle, so other bundles never see it.
+   */
+  readonly forOwner?: HookOwnerView<z.output<I>>;
 }
+
+export type HookOwnerView<T> = (input: T, bundleId: string) => T | undefined;
 
 export const defineHook = <
   K extends HookKind,
@@ -85,12 +102,31 @@ export const defineHook = <
 >(definition: {
   readonly kind: K;
   readonly input: I;
+  readonly order?: HookOrder;
+  readonly forOwner?: HookOwnerView<z.output<I>>;
 }): HookDefinition<K, I> => {
-  if (!['observe', 'transform', 'decide'].includes(definition.kind)) {
+  if (
+    !['observe', 'transform', 'decide', 'sequence'].includes(definition.kind)
+  ) {
     throw new TypeError(`Invalid hook kind "${String(definition.kind)}".`);
   }
 
-  return brand('hook', { kind: definition.kind, input: definition.input });
+  if (definition.order !== undefined && definition.kind !== 'sequence') {
+    throw new TypeError('Only a sequence hook takes an order.');
+  }
+
+  if (definition.forOwner !== undefined && definition.kind !== 'observe') {
+    throw new TypeError('Only an observe hook takes forOwner.');
+  }
+
+  return brand('hook', {
+    kind: definition.kind,
+    input: definition.input,
+    ...(definition.order === undefined ? {} : { order: definition.order }),
+    ...(definition.forOwner === undefined
+      ? {}
+      : { forOwner: definition.forOwner }),
+  });
 };
 
 export interface HooksContract<

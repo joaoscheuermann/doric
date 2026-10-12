@@ -1,6 +1,7 @@
 import {
   defineMethod,
   defineService,
+  type Services,
   StorageBackendV1,
   type StorageCapabilities,
   storageBackendMethods,
@@ -22,6 +23,8 @@ export interface StorageBackendOptions {
   readonly environment: Environment;
   readonly limits?: Partial<StorageCapabilities>;
   readonly statfs?: (path: string) => Promise<DiskMeasurement>;
+  /** `connect`: the start step of this backend (see `../start.ts`). */
+  readonly connect?: (services: Pick<Services, 'use'>) => Promise<void>;
 }
 
 /**
@@ -88,6 +91,13 @@ export const storageBackend = (
     identity: defineMethod({
       ...methods.identity,
       execute: () => on(identity),
+    }),
+    connect: defineMethod({
+      ...methods.connect,
+      execute: (_input, _call, services) =>
+        options.connect === undefined
+          ? Promise.resolve()
+          : options.connect(services),
     }),
   });
 };

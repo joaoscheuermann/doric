@@ -33,12 +33,13 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
     try {
       const lines = await host.lines();
 
+      // Each bundle logs its own start step, in activation order (BWP-6): the
+      // transport names its socket namespaces, the sandbox its pool, and the
+      // runtime its workspace. The kernel no longer logs those.
       assert.deepEqual(
         startup(lines).map(({ msg }) => msg),
         [
           'Doric starting',
-          'Configuring sandbox pool',
-          'Sandbox pool configured',
           'Loading bundles',
           'Bundles loaded',
           'Initializing PostgreSQL client',
@@ -46,8 +47,11 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
           'Activating stored credentials',
           'Activating Doric configuration',
           'Doric configuration activated',
-          'Reconciling persisted projects and threads',
           'Network interfaces configured',
+          'Configuring sandbox pool',
+          'Sandbox pool configured',
+          'Reconciling persisted projects and threads',
+          'Workspace reconciled',
           'Binding HTTP listener',
           'Doric listening',
         ],
@@ -57,15 +61,17 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
 
       assert.equal(line('Bundles loaded')?.bundleCount, 20);
       assert.equal(line('Bundles loaded')?.toolCount, 16);
-      // The kernel names the chosen sandbox alternative only; the pool's own
-      // settings are the sandbox bundle's to log (BWP-6, parity exception).
-      assert.deepEqual(line('Sandbox pool configured')?.alternatives, {
-        sandbox: 'docker',
-      });
-      assert.deepEqual(line('Doric listening')?.interrupted, {
-        interruptedThreads: 0,
-        interruptedProjects: 0,
-      });
+      assert.equal(
+        line('Sandbox pool configured')?.sandboxProviderName,
+        'docker',
+      );
+      assert.equal(line('Sandbox pool configured')?.networkMode, 'egress');
+      assert.deepEqual(
+        line('Network interfaces configured')?.socketNamespaces,
+        ['/status', '/projects', '/threads'],
+      );
+      assert.equal(line('Workspace reconciled')?.interruptedThreads, 0);
+      assert.equal(line('Workspace reconciled')?.interruptedProjects, 0);
       // The chosen sandbox option is logged as the alternatives it belongs to.
       assert.deepEqual(line('Doric starting')?.alternatives, {
         sandbox: 'docker',
@@ -74,7 +80,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
         sandbox: 'docker',
       });
       // The runtime logs its own recovery steps through log/v1, between
-      // reconciliation and the network interfaces.
+      // reconciliation and the workspace it found.
       const recovery = lines
         .filter(({ msg }) =>
           [
@@ -82,7 +88,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
             'Project and thread reconciliation complete',
             'Interrupted prompts resumed',
             'Project sandbox recovery scheduled',
-            'Network interfaces configured',
+            'Workspace reconciled',
           ].includes(msg ?? ''),
         )
         .map(({ msg }) => msg);
@@ -91,7 +97,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
         'Project and thread reconciliation complete',
         'Interrupted prompts resumed',
         'Project sandbox recovery scheduled',
-        'Network interfaces configured',
+        'Workspace reconciled',
       ]);
 
       const config = await host.request('/config');

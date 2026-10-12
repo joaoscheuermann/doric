@@ -296,6 +296,11 @@ export interface StorageBackend {
   health(call?: CallArg): Promise<StorageHealth>;
   /** The reserved metadata record; created by the first call. */
   identity(call?: CallArg): Promise<StorageIdentity>;
+  /**
+   * Opens the backend's connection once, at the host's start (the core's start
+   * step calls it first); a failure fails the host's start.
+   */
+  connect(call?: CallArg): Promise<void>;
 }
 
 export const StorageBackendV1 = ref<StorageBackend>('storage.backend/v1');
@@ -316,4 +321,5 @@ export const storageBackendMethods = {
   capabilities: { input: noInput, output: storageCapabilitiesSchema },
   health: { input: noInput, output: storageHealthSchema },
   identity: { input: noInput, output: storageIdentitySchema },
+  connect: { input: noInput, output: z.void() },
 } as const satisfies MethodSpecs;
