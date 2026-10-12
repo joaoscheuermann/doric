@@ -127,8 +127,6 @@ export {
   distributionArtifactSchema,
   distributionCatalogSchema,
   distributionFileSchema,
-  type ExecutionRef,
-  executionRefSchema,
   type GenerationDescription,
   type GenerationState,
   generationDescriptionSchema,
@@ -141,6 +139,8 @@ export {
   type QuarantineReason,
   quarantineCodes,
   WindowHooksV1,
+  type WorkHold,
+  workHoldSchema,
 } from './platform.js';
 export {
   bindRegistrant,

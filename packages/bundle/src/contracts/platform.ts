@@ -625,18 +625,20 @@ export interface DoricConnection {
   ): Disposable;
 }
 
-/** One execution a generation keeps running (a prompt of a Thread). */
-export interface ExecutionRef {
-  readonly projectId: string;
-  readonly threadId: string;
-  readonly promptId: string;
+/**
+ * A unit of work a generation keeps running until it is disposed. The owner
+ * is the calling bundle (`call.caller.bundleId`), never part of the input; the
+ * key is opaque to the platform.
+ */
+export interface WorkHold {
+  readonly key: string;
+  readonly label?: string;
 }
 
-export const executionRefSchema = z
+export const workHoldSchema = z
   .object({
-    projectId: z.string(),
-    threadId: z.string(),
-    promptId: z.string(),
+    key: z.string().min(1).max(256),
+    label: z.string().max(256).optional(),
   })
   .strict();
 
@@ -662,12 +664,12 @@ export const generationDescriptionSchema = z
   .strict();
 
 /**
- * API mínima: the bundle generation of the caller's operation. A hold keeps
- * that generation alive (draining) until it is disposed.
+ * API mínima: the bundle generation of the caller's operation. A work hold
+ * keeps that generation alive (draining) until it is disposed.
  */
 export interface DoricGeneration {
   describe(call?: CallArg): Promise<GenerationDescription>;
-  hold(execution: ExecutionRef, call?: CallArg): Disposable;
+  hold(work: WorkHold, call?: CallArg): Disposable;
 }
 
 export const DoricCatalogV1 = ref<DoricCatalog>('doric.catalog/v1');
@@ -781,7 +783,7 @@ export const platformContracts = Object.freeze({
     environments: ['host'],
     methods: {
       describe: { input: noInput, output: generationDescriptionSchema },
-      hold: { input: executionRefSchema, output: disposableSchema },
+      hold: { input: workHoldSchema, output: disposableSchema },
     },
   },
   'doric.tokens/v1': {

@@ -45,10 +45,14 @@ The host part provides these basic contracts from `bundle/contracts`:
   `delete` answers `referenced` while a registered reference source names the
   credential. `view()` is the in-process view (list, redactions,
   `addRedaction`), available once the credentials are loaded.
-- `events/v1` — the owner of a registered event appends it, with a call scope
-  naming the project, Thread and prompt, to `runtime.thread.events/<threadId>`;
-  the body carries `type` and is redacted and made storable first. No shipped
-  bundle registers an event before stage 5 (a test pins it).
+- `events/v1` — the owner of a registered event appends it to the stream of
+  the event sink its provider registered (`sink`: scope keys in row order, and
+  a stream template whose `{key}` placeholders take the call's scope values).
+  The sink's owner must own the stream's family, and the call scope must carry
+  every key of the sink; the body carries `type` and is redacted and made
+  storable first. The core names no Thread log: the runtime registers its sink
+  for `runtime.thread.events/{threadId}`. No shipped bundle other than the
+  runtime registers an event (a test pins it).
 
 `settings.set` and the secrets writes share one queue, which keeps a
 configuration from naming a credential that a concurrent delete removes.

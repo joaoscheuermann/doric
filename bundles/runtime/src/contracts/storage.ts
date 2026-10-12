@@ -1,4 +1,4 @@
-import { defineStorageType, threadEventEnvelopeSchema } from 'bundle/contracts';
+import { defineStorageType } from 'bundle/contracts';
 import { z } from 'zod';
 
 import { inputSourceSchema } from './model.js';
@@ -191,8 +191,22 @@ export const threadEventsStream = (threadId: string): string =>
   `${threadEventsStreamPrefix}${threadId}`;
 
 /**
- * The value of each entry of a Thread's event stream: the stage-2
- * `threadEventEnvelopeSchema`. The sequence and `createdAt` are the protocol
- * entry's.
+ * The value of each entry of a Thread's event stream: the Project, Thread and
+ * prompt it belongs to, its durable `type` and its body. The sequence and
+ * `createdAt` are the protocol entry's, never part of the value. The keys are
+ * the runtime's: the event sink of the runtime names them (see
+ * `threadEventSink`), and the core writes the row in that order.
  */
+export const threadEventEnvelopeSchema = z
+  .object({
+    projectId: z.string(),
+    threadId: z.string(),
+    promptId: z.string(),
+    type: z.string(),
+    event: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+export type ThreadEventEnvelope = z.output<typeof threadEventEnvelopeSchema>;
+
 export const threadStreamEntrySchema = threadEventEnvelopeSchema;

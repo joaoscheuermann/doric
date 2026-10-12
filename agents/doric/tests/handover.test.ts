@@ -110,7 +110,7 @@ const summary = (
   generation: number,
   incarnation: number,
   state: GenerationSummary['state'],
-): GenerationSummary => ({ generation, incarnation, state, executions: 0 });
+): GenerationSummary => ({ generation, incarnation, state, work: 0 });
 
 const turn = () => new Promise((done) => setTimeout(done, 0));
 
@@ -161,7 +161,7 @@ void test('a draining generation that dies has its Projects adopted without it',
   host.activate(2);
   host.calls.length = 0;
 
-  host.lose({ generation: 1, incarnation: 1, executions: [] });
+  host.lose({ generation: 1, incarnation: 1, holds: [] });
   await turn();
   assert.deepEqual(host.calls, [
     {
@@ -178,7 +178,7 @@ void test('a respawned generation recovers with no other process alive and drain
 
   host.set([summary(1, 1, 'active')]);
   // The active generation dies: it respawns, nothing is adopted meanwhile.
-  host.lose({ generation: 1, incarnation: 1, executions: [] });
+  host.lose({ generation: 1, incarnation: 1, holds: [] });
   await turn();
   assert.deepEqual(host.calls, []);
 

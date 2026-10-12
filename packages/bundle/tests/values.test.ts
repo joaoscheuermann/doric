@@ -131,6 +131,7 @@ void test('every basic and platform method has a stated way across the envelope'
     },
     'events/v1': {
       register: 'optimistic via definition+disposable',
+      sink: 'optimistic via disposable',
       append: 'crosses via definition',
     },
     'models/v1': {

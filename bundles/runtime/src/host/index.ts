@@ -8,7 +8,7 @@ import {
 } from 'bundle/contracts';
 import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 
-import { promptFinishedEvent } from '../contracts/events.js';
+import { promptFinishedEvent, threadEventSink } from '../contracts/events.js';
 import { type Bindings, createBindings } from './domain/bindings.js';
 import { createNotices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
@@ -128,7 +128,10 @@ export const runtimeStores = (
 export const activate = ({ services }: HostContext): Cleanup => {
   const storage = services.use(StorageV1);
   for (const type of runtimeStorageTypes) storage.defineType(type);
-  services.use(EventsV1).register(promptFinishedEvent);
+  const events = services.use(EventsV1);
+  events.register(promptFinishedEvent);
+  // The runtime's events land in the Thread logs it owns (see threadEventSink).
+  const sink = events.sink(threadEventSink);
 
   const ports = createPorts(services);
   // terminal/v1 is the `terminal` bundle's (stage 10 host switch); it
@@ -151,10 +154,15 @@ export const activate = ({ services }: HostContext): Cleanup => {
     };
   });
 
-  return provideRuntime(services, {
+  const cleanup = provideRuntime(services, {
     ...runtimeStores(storage, ports),
     ports,
     terminal: () => terminal,
     resources: () => resources,
   });
+
+  return () => {
+    sink.dispose();
+    return cleanup();
+  };
 };

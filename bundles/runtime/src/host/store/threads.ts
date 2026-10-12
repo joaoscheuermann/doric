@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { StreamEntry, ThreadEventEnvelope } from 'bundle/contracts';
+import type { StreamEntry } from 'bundle/contracts';
 import { z } from 'zod';
 
 import type { HistoryPatch, HistoryReader } from '../../contracts/executor.js';
@@ -15,6 +15,7 @@ import {
   type ProjectDocument,
   projectType,
   type ThreadDocument,
+  type ThreadEventEnvelope,
   threadEventsStream,
   threadType,
 } from '../../contracts/storage.js';

@@ -4,18 +4,19 @@ import test from 'node:test';
 
 import {
   defineEvent,
+  type EventSinkSpec,
   type Events,
   EventsV1,
   SecretsV1,
   StorageV1,
-  threadEventEnvelopeSchema,
-  threadEventsStream,
 } from 'bundle/contracts';
 import { z } from 'zod';
 
 import { boot, core, probe } from './support/host.js';
 
-// D-E and E-6: the events/v1 facade (stage 2+3 design §5.5).
+// D-E and E-6: the events/v1 facade (stage 2+3 design §5.5), and its event
+// sink (M5): the provider's owner names where the rows go, and the core
+// writes them without knowing any stream name or scope key of a bundle.
 
 const sent = defineEvent({
   type: 'notify.sent/v1',
@@ -24,8 +25,21 @@ const sent = defineEvent({
 
 const scope = { projectId: 'p-1', threadId: 't-1', promptId: 'q-1' };
 
+/** The sink a bundle registers in the same shape the runtime uses. */
+const sinkSpec: EventSinkSpec = {
+  scopeKeys: ['projectId', 'threadId', 'promptId'],
+  stream: 'notify.thread-events/{threadId}',
+  scopeDescription: 'a project, a Thread and a prompt',
+};
+
 /** A bundle that hands its events/v1 stub to the test. */
-const user = (id: string, options: { readonly register?: boolean } = {}) => {
+const user = (
+  id: string,
+  options: {
+    readonly register?: boolean;
+    readonly sink?: EventSinkSpec;
+  } = {},
+) => {
   let events: Events | undefined;
 
   return {
@@ -38,6 +52,10 @@ const user = (id: string, options: { readonly register?: boolean } = {}) => {
         if (options.register === true) {
           events.register(sent);
         }
+
+        if (options.sink !== undefined) {
+          events.sink(options.sink);
+        }
       },
     }),
     get events(): Events {
@@ -48,18 +66,18 @@ const user = (id: string, options: { readonly register?: boolean } = {}) => {
   };
 };
 
-const readThread = async (
+const readStream = async (
   host: Awaited<ReturnType<typeof boot>>,
-  threadId: string,
+  stream: string,
 ) =>
   await host.platform.services.use(StorageV1).read({
-    stream: threadEventsStream(threadId),
+    stream,
     afterSequence: 0,
     limit: 100,
   });
 
-void test('an appended event lands in the Thread log of its scope, redacted and storable', async () => {
-  const notify = user('notify', { register: true });
+void test('an appended event lands in its sink stream, redacted and storable, byte for byte', async () => {
+  const notify = user('notify', { register: true, sink: sinkSpec });
   const host = await boot([await core(), notify.bundle], {
     memory: {
       secrets: {
@@ -83,7 +101,7 @@ void test('an appended event lands in the Thread log of its scope, redacted and 
       host.platform.call({ scope }),
     );
 
-    const page = await readThread(host, 't-1');
+    const page = await readStream(host, 'notify.thread-events/t-1');
 
     assert.equal(page.lastSequence, 1);
 
@@ -91,24 +109,19 @@ void test('an appended event lands in the Thread log of its scope, redacted and 
 
     assert.ok(entry);
     assert.ok(!Number.isNaN(Date.parse(entry.createdAt)));
-    assert.deepEqual(threadEventEnvelopeSchema.parse(entry.value), {
-      projectId: 'p-1',
-      threadId: 't-1',
-      promptId: 'q-1',
-      type: 'notify.sent/v1',
-      event: {
-        type: 'notify.sent/v1',
-        text: '[REDACTED] then [REDACTED]\uFFFD',
-        detail: { nested: ['[REDACTED]'] },
-      },
-    });
+    // The row as the stage-2 facade stored it: scope keys in sink order, then
+    // the type and the redacted body. Captured from the pre-sink facade.
+    assert.equal(
+      JSON.stringify(entry.value),
+      '{"projectId":"p-1","threadId":"t-1","promptId":"q-1","type":"notify.sent/v1","event":{"type":"notify.sent/v1","text":"[REDACTED] then [REDACTED]�","detail":{"nested":["[REDACTED]"]}}}',
+    );
   } finally {
     await host.close();
   }
 });
 
-void test('an append needs a project, Thread and prompt in its scope', async () => {
-  const notify = user('notify', { register: true });
+void test('an append needs every key of its sink in the call scope', async () => {
+  const notify = user('notify', { register: true, sink: sinkSpec });
   const host = await boot([await core(), notify.bundle]);
 
   try {
@@ -123,14 +136,59 @@ void test('an append needs a project, Thread and prompt in its scope', async () 
       ),
       { code: 'invalid_scope' },
     );
-    assert.equal((await readThread(host, 't-1')).lastSequence, 0);
+    assert.equal(
+      (await readStream(host, 'notify.thread-events/t-1')).lastSequence,
+      0,
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('an append without any sink registered is refused as an invalid scope', async () => {
+  const notify = user('notify', { register: true });
+  const host = await boot([await core(), notify.bundle]);
+
+  try {
+    await assert.rejects(
+      notify.events.append(sent, { text: 'x' }, host.platform.call({ scope })),
+      { code: 'invalid_scope' },
+    );
+  } finally {
+    await host.close();
+  }
+});
+
+void test('the row keeps only the keys its sink names, in the sink order', async () => {
+  const notify = user('notify', {
+    register: true,
+    sink: {
+      scopeKeys: ['promptId', 'threadId'],
+      stream: 'notify.by-thread/{threadId}',
+    },
+  });
+  const host = await boot([await core(), notify.bundle]);
+
+  try {
+    await notify.events.append(
+      sent,
+      { text: 'ok' },
+      host.platform.call({ scope }),
+    );
+
+    const page = await readStream(host, 'notify.by-thread/t-1');
+
+    assert.equal(
+      JSON.stringify(page.entries[0]?.value),
+      '{"promptId":"q-1","threadId":"t-1","type":"notify.sent/v1","event":{"type":"notify.sent/v1","text":"ok"}}',
+    );
   } finally {
     await host.close();
   }
 });
 
 void test('only the owner appends a registered event, and only a valid payload', async () => {
-  const notify = user('notify');
+  const notify = user('notify', { sink: sinkSpec });
   const other = user('other');
   const host = await boot([await core(), notify.bundle, other.bundle]);
   const call = () => host.platform.call({ scope });
@@ -151,10 +209,16 @@ void test('only the owner appends a registered event, and only a valid payload',
         code: 'invalid_input',
       },
     );
-    assert.equal((await readThread(host, 't-1')).lastSequence, 0);
+    assert.equal(
+      (await readStream(host, 'notify.thread-events/t-1')).lastSequence,
+      0,
+    );
 
     await notify.events.append(sent, { text: 'ok' }, call());
-    assert.equal((await readThread(host, 't-1')).lastSequence, 1);
+    assert.equal(
+      (await readStream(host, 'notify.thread-events/t-1')).lastSequence,
+      1,
+    );
   } finally {
     await host.close();
   }
@@ -194,6 +258,86 @@ void test('an event is registered once, by the bundle its namespace names, witho
     assert.throws(() => notify.events.register(sent), {
       code: 'registration_conflict',
     });
+  } finally {
+    await host.close();
+  }
+});
+
+void test('one event sink per events/v1 provider, and only a stream its owner names', async () => {
+  const notify = user('notify');
+  const host = await boot([await core(), notify.bundle]);
+
+  try {
+    assert.throws(
+      () =>
+        notify.events.sink({
+          scopeKeys: ['threadId'],
+          stream: 'other.x/{threadId}',
+        }),
+      { code: 'not_owner' },
+    );
+
+    const registered = notify.events.sink(sinkSpec);
+
+    assert.throws(() => notify.events.sink(sinkSpec), {
+      code: 'registration_conflict',
+    });
+
+    registered.dispose();
+    notify.events.sink(sinkSpec);
+  } finally {
+    await host.close();
+  }
+});
+
+void test('a sink whose owner segment is a placeholder writes only the streams of its owner, row by row', async () => {
+  const xSent = defineEvent({
+    type: 'x.sent/v1',
+    payload: z.object({ text: z.string() }),
+  });
+  // The owner is filled by the call's projectId, so the sample check passes
+  // for the bundle named "x" alone; each row must still name its own owner.
+  const ownerSink: EventSinkSpec = {
+    scopeKeys: ['projectId', 'threadId'],
+    stream: '{projectId}.x/{threadId}',
+  };
+  let events: Events | undefined;
+  const intruder = probe('x', {
+    requires: ['events/v1@^1.0.0'],
+    provides: [['x.sent/v1', 'event']],
+    activate: ({ services }) => {
+      events = services.use(EventsV1);
+      events.register(xSent);
+      events.sink(ownerSink);
+    },
+  });
+  const host = await boot([await core(), intruder]);
+
+  try {
+    assert.ok(events);
+
+    await assert.rejects(
+      events.append(
+        xSent,
+        { text: 'x' },
+        host.platform.call({
+          scope: { projectId: 'runtime', threadId: 't-1' },
+        }),
+      ),
+      { code: 'not_owner' },
+    );
+    assert.equal(
+      (await readStream(host, 'runtime.x/t-1')).lastSequence,
+      0,
+      'a row names no stream of another owner',
+    );
+
+    await events.append(
+      xSent,
+      { text: 'ok' },
+      host.platform.call({ scope: { projectId: 'x', threadId: 't-1' } }),
+    );
+    assert.equal((await readStream(host, 'x.x/t-1')).lastSequence, 1);
   } finally {
     await host.close();
   }

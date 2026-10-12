@@ -58,13 +58,13 @@ import { childTransport } from './node-transport.js';
 import { partitionCatalog, withOrder } from './partition.js';
 
 export type {
-  ExecutionRef,
   GenerationLease,
   GenerationManager,
   GenerationSummary,
   LostGeneration,
   PublishResult,
   SpawnedGeneration,
+  WorkHoldRef,
 } from './manager.js';
 
 export interface StartKernelOptions extends StartHostOptions {
@@ -352,8 +352,14 @@ export const startKernel = async (
     sink: options.sink,
     generation: {
       describe: (call) => manager.describeFor(generationOf(call)),
-      hold: (execution, call) =>
-        manager.holdFor(generationOf(call), { ...execution }),
+      // The owner is the calling bundle: the input never names it.
+      hold: (work, call) =>
+        manager.holdFor(generationOf(call), {
+          type: 'work',
+          bundleId: call.caller.bundleId,
+          key: work.key,
+          ...(work.label === undefined ? {} : { label: work.label }),
+        }),
     },
   });
 

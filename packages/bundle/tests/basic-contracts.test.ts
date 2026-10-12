@@ -9,6 +9,7 @@ import {
   credentialFieldsMessage,
   credentialFieldsSatisfied,
   credentialKinds,
+  eventSinkSpecSchema,
   feedPageSchema,
   isContractError,
   isSecretsView,
@@ -28,8 +29,6 @@ import {
   streamEntrySchema,
   streamPageSchema,
   streamReadSchema,
-  threadEventEnvelopeSchema,
-  threadEventsStream,
 } from '../src/contracts/index.js';
 import { catalogSnapshotSchema } from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
@@ -429,27 +428,41 @@ void test('a settings entry carries its write time and the global generation', a
   );
 });
 
-void test('Thread log entries live in runtime.thread.events/<threadId> with the envelope shape', () => {
-  const envelope = {
-    projectId: 'p1',
-    threadId: 't1',
-    promptId: 'r1',
-    type: 'prompt.finished',
-    event: { status: 'completed' },
+void test('an event sink names its scope keys, unique and within the scope grammar, and every placeholder among them', () => {
+  const sink = {
+    scopeKeys: ['projectId', 'threadId', 'promptId'],
+    stream: 'runtime.thread.events/{threadId}',
+    scopeDescription: 'a project, a Thread and a prompt',
   };
 
-  assert.equal(threadEventsStream('t1'), 'runtime.thread.events/t1');
-  assert.ok(accepts(threadEventEnvelopeSchema)(envelope));
-  // createdAt is the protocol entry's, never part of the value.
+  assert.ok(accepts(eventSinkSpecSchema)(sink));
+  assert.ok(
+    accepts(eventSinkSpecSchema)({ scopeKeys: ['a'], stream: 'x.y/z' }),
+  );
+  // A placeholder that is not a scope key, a repeated key, a key outside the
+  // grammar, an empty key list and an extra field are all refused.
   assert.equal(
-    accepts(threadEventEnvelopeSchema)({
-      ...envelope,
-      createdAt: '2026-10-09T12:00:00.000Z',
+    accepts(eventSinkSpecSchema)({ ...sink, stream: 'runtime.x/{other}' }),
+    false,
+  );
+  assert.equal(
+    accepts(eventSinkSpecSchema)({
+      ...sink,
+      scopeKeys: ['threadId', 'threadId'],
     }),
     false,
   );
   assert.equal(
-    accepts(threadEventEnvelopeSchema)({ ...envelope, promptId: undefined }),
+    accepts(eventSinkSpecSchema)({ ...sink, scopeKeys: ['9lives'] }),
+    false,
+  );
+  assert.equal(accepts(eventSinkSpecSchema)({ ...sink, scopeKeys: [] }), false);
+  assert.equal(accepts(eventSinkSpecSchema)({ ...sink, extra: true }), false);
+  assert.equal(
+    accepts(eventSinkSpecSchema)({
+      ...sink,
+      scopeKeys: Array.from({ length: 17 }, (_, index) => `key${index}`),
+    }),
     false,
   );
 });

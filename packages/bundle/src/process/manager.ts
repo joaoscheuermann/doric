@@ -7,7 +7,6 @@ import type {
   CatalogSnapshot,
   DiagnosticBundle,
   Diagnostics,
-  ExecutionRef,
   GenerationDescription,
   GenerationState,
 } from '../contracts/platform.js';
@@ -43,8 +42,6 @@ import {
   partitionCatalog,
 } from './partition.js';
 
-export type { ExecutionRef } from '../contracts/platform.js';
-
 /** A generation process as the kernel created it. */
 export interface SpawnedGeneration {
   readonly transport: Transport;
@@ -54,7 +51,7 @@ export interface SpawnedGeneration {
 
 export interface GenerationLease {
   readonly generation: number;
-  /** The prompt call, pinned to this generation (caller doric, new trace). */
+  /** A call pinned to this generation (caller doric, new trace). */
   call(options: {
     readonly scope?: CallScope;
     readonly signal?: AbortSignal;
@@ -63,10 +60,18 @@ export interface GenerationLease {
   release(): void;
 }
 
+/** A work hold as the manager keeps it: the bundle that took it, and its key. */
+export interface WorkHoldRef {
+  readonly bundleId: string;
+  readonly key: string;
+  readonly label?: string;
+}
+
 export interface LostGeneration {
   readonly generation: number;
   readonly incarnation: number;
-  readonly executions: readonly ExecutionRef[];
+  /** The work holds the generation kept, by owner bundle. */
+  readonly holds: readonly WorkHoldRef[];
 }
 
 export type PublishResult =
@@ -79,15 +84,13 @@ export interface GenerationSummary {
   readonly incarnation: number;
   readonly state: GenerationState;
   readonly pid?: number;
-  readonly executions: number;
+  /** How many work holds keep the generation alive. */
+  readonly work: number;
 }
 
 export interface GenerationManager {
-  /** Pins one execution to the active generation, waiting (abortably) for one. */
-  acquire(
-    execution: ExecutionRef,
-    signal: AbortSignal,
-  ): Promise<GenerationLease>;
+  /** Pins one work hold to the active generation, waiting (abortably) for one. */
+  acquire(work: WorkHoldRef, signal: AbortSignal): Promise<GenerationLease>;
   /** Re-discovers installed bundles and the composition and switches generation. */
   publish(): Promise<PublishResult>;
   /** Fired synchronously when a generation process exits unexpectedly (before pending calls reject). */
@@ -127,7 +130,13 @@ export interface ManagerDependencies {
   readonly now?: () => number;
 }
 
-type Hold = ExecutionRef | { readonly window: string };
+/**
+ * What a generation holds: a unit of work of a bundle, which keeps the
+ * generation alive, or a window, which does not count toward draining.
+ */
+type Hold =
+  | ({ readonly type: 'work' } & WorkHoldRef)
+  | { readonly type: 'window'; readonly windowKey: string };
 
 interface Live {
   readonly generation: number;
@@ -160,7 +169,19 @@ interface Live {
 
 const providerKey = announcedKey;
 
-const isExecution = (hold: Hold): hold is ExecutionRef => 'promptId' in hold;
+const workRefOf = ({ bundleId, key, label }: WorkHoldRef): WorkHoldRef =>
+  label === undefined ? { bundleId, key } : { bundleId, key, label };
+
+/** The work holds of a generation: the ones that keep it alive and report on loss. */
+const workHoldsOf = (live: Live): WorkHoldRef[] => {
+  const works: WorkHoldRef[] = [];
+
+  for (const hold of live.holds.values()) {
+    if (hold.type === 'work') works.push(workRefOf(hold));
+  }
+
+  return works;
+};
 
 const describeExit = (reason: LinkCloseReason): string =>
   reason.kind === 'exited'
@@ -524,12 +545,12 @@ export class HostGenerations implements GenerationManager {
       incarnation: live.incarnation,
       state: live.state,
       ...(live.spawned?.pid === undefined ? {} : { pid: live.spawned.pid }),
-      executions: [...live.holds.values()].filter(isExecution).length,
+      work: workHoldsOf(live).length,
     }));
   }
 
   async acquire(
-    execution: ExecutionRef,
+    work: WorkHoldRef,
     signal: AbortSignal,
   ): Promise<GenerationLease> {
     while (this.#active === undefined) {
@@ -556,7 +577,7 @@ export class HostGenerations implements GenerationManager {
     }
 
     const live = this.#active;
-    const held = this.#hold(live, { ...execution });
+    const held = this.#hold(live, { type: 'work', ...workRefOf(work) });
 
     return {
       generation: live.generation,
@@ -953,14 +974,14 @@ export class HostGenerations implements GenerationManager {
     }
 
     const wasActive = this.#active === live;
-    const executions = [...live.holds.values()].filter(isExecution);
+    const holds = workHoldsOf(live);
 
     live.holds.clear();
 
     const lost: LostGeneration = {
       generation: live.generation,
       incarnation: live.incarnation,
-      executions,
+      holds,
     };
 
     for (const listener of [...this.#lost]) {
@@ -1016,7 +1037,7 @@ export class HostGenerations implements GenerationManager {
   #maybeStop(live: Live): void {
     if (
       live.state === 'draining' &&
-      live.holds.size === 0 &&
+      workHoldsOf(live).length === 0 &&
       (live.link === undefined || live.link.inFlight === 0)
     ) {
       void this.#stopLive(live);

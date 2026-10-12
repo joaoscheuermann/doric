@@ -2,11 +2,13 @@ import {
   isContractError,
   type Storage,
   type StreamEntry,
-  type ThreadEventEnvelope,
 } from 'bundle/contracts';
 
 import type { ThreadEvent } from '../../contracts/model.js';
-import { threadEventsStream } from '../../contracts/storage.js';
+import {
+  type ThreadEventEnvelope,
+  threadEventsStream,
+} from '../../contracts/storage.js';
 import { checkLimit } from './records.js';
 
 /*

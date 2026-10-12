@@ -16,10 +16,10 @@ import {
   DoricDiagnosticsV1,
   DoricGenerationV1,
   DoricLogV1,
-  type ExecutionRef,
   type GenerationDescription,
   type LogRecord,
   platformContracts,
+  type WorkHold,
 } from '../contracts/platform.js';
 import type { ResolvedEnvironment } from './catalog.js';
 import type { DiagnosticsStore } from './diagnostics.js';
@@ -163,7 +163,7 @@ export const providePlatformServices = (
     /** The kernel's `doric.generation/v1` (absent in a single-process host). */
     readonly generation?: {
       describe(call: Call): GenerationDescription;
-      hold(execution: ExecutionRef, call: Call): Disposable;
+      hold(work: WorkHold, call: Call): Disposable;
     };
   },
 ): void => {
@@ -271,8 +271,8 @@ export const providePlatformServices = (
         hold: defineMethod({
           input: methods.hold.input,
           output: methods.hold.output,
-          execute: (execution: ExecutionRef, call) => {
-            const held = generation.hold(execution, call);
+          execute: (work: WorkHold, call) => {
+            const held = generation.hold(work, call);
 
             return toDisposable(() => held.dispose());
           },

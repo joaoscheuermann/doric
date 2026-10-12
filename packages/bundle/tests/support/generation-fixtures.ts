@@ -27,6 +27,8 @@ import { minimalCore } from './minimal-core.js';
 export const zodUrl = import.meta.resolve('zod');
 
 export interface ProbeOptions {
+  /** The bundle id; it provides `<id>/v1` (default `probe`). */
+  readonly id?: string;
   /** Registers the `probe` tool (tools/v1). */
   readonly tool?: boolean;
   /** Version written in the manifest (a new generation may change it). */
@@ -35,8 +37,8 @@ export interface ProbeOptions {
 
 /**
  * Host part of the `probe` bundle: `probe/v1` answers who and where it runs,
- * holds executions through `doric.generation/v1`, answers `wait` late; the optional `probe` tool
- * reports its process and generation, or blocks until the process dies.
+ * holds work through `doric.generation/v1`, answers `wait` late; the optional `probe`
+ * tool reports its process and generation, or blocks until the process dies.
  */
 export const probeSource = (options: ProbeOptions = {}) => `
 import { z } from ${JSON.stringify(zodUrl)};
@@ -50,7 +52,7 @@ import {
   ToolsV1,
 } from ${JSON.stringify(contractsUrl)};
 
-const ProbeV1 = ref('probe/v1');
+const ProbeV1 = ref(${JSON.stringify(`${probeIdOf(options)}/v1`)});
 const holds = [];
 
 export const activate = ({ services }) => {
@@ -72,7 +74,7 @@ export const activate = ({ services }) => {
           holds.push(
             services
               .use(DoricGenerationV1)
-              .hold({ projectId: 'p', threadId: 't', promptId }, call),
+              .hold({ key: 'p/t/' + promptId }, call),
           );
 
           return null;
@@ -139,10 +141,12 @@ ${
 }};
 `;
 
+const probeIdOf = (options: ProbeOptions): string => options.id ?? 'probe';
+
 const probeManifest = (options: ProbeOptions) =>
-  manifest('probe', {
+  manifest(probeIdOf(options), {
     ...(options.version === undefined ? {} : { version: options.version }),
-    provides: ['probe/v1@1.0.0'],
+    provides: [`${probeIdOf(options)}/v1@1.0.0`],
     requires: options.tool === true ? ['tools/v1@^1.0.0'] : [],
   });
 
@@ -153,7 +157,7 @@ export const writeProbe = async (
 ): Promise<string> => {
   const source = probeManifest(options);
 
-  return await writeBundle(join(root, 'bundles'), 'probe', {
+  return await writeBundle(join(root, 'bundles'), probeIdOf(options), {
     manifest: source,
     descriptor: descriptorFor(source),
     host: probeSource(options),
@@ -281,10 +285,9 @@ export const eventually = async (
   }
 };
 
-export const execution = (promptId: string) => ({
-  projectId: 'project',
-  threadId: 'thread',
-  promptId,
+/** The work hold of one prompt: its key is opaque to the platform. */
+export const workOf = (promptId: string) => ({
+  key: `project/thread/${promptId}`,
 });
 
 export const acquire = (
@@ -292,6 +295,6 @@ export const acquire = (
   promptId: string,
 ): Promise<GenerationLease> =>
   platform.generations.acquire(
-    execution(promptId),
+    { bundleId: 'doric', ...workOf(promptId) },
     new AbortController().signal,
   );

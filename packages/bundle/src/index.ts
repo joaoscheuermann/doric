@@ -83,7 +83,6 @@ export {
 export { ajvValidators } from './process/ajv.js';
 export {
   defaultRunnerPath,
-  type ExecutionRef,
   forkGeneration,
   type GenerationLease,
   type GenerationManager,
@@ -95,6 +94,7 @@ export {
   type SpawnedGeneration,
   type StartKernelOptions,
   startKernel,
+  type WorkHoldRef,
 } from './process/kernel.js';
 export { childTransport, parentTransport } from './process/node-transport.js';
 export {

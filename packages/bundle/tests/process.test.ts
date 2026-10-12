@@ -24,6 +24,7 @@ import {
   type KernelPlatform,
   startHost,
 } from '../src/index.js';
+import { HostGenerations } from '../src/process/manager.js';
 import {
   captureLog,
   captureSink,
@@ -66,6 +67,7 @@ interface Probe {
 }
 
 const ProbeV1 = ref<Probe>('probe/v1');
+const OtherV1 = ref<Probe>('other/v1');
 
 const states = (diagnostics: Diagnostics | CatalogSnapshot) =>
   Object.fromEntries(diagnostics.bundles.map(({ id, state }) => [id, state]));
@@ -78,6 +80,21 @@ const pidOf = (platform: KernelPlatform, generation: number): number => {
   assert.equal(typeof pid, 'number');
 
   return pid as number;
+};
+
+/**
+ * The host's own generation manager. The kernel takes work holds only (its
+ * `doric.generation/v1` hold is always work), so window holds are taken here.
+ */
+const managerOf = (platform: KernelPlatform): HostGenerations => {
+  const manager = platform.generations;
+
+  assert.ok(
+    manager instanceof HostGenerations,
+    'the kernel runs the host generations',
+  );
+
+  return manager;
 };
 
 const probeTool = (platform: KernelPlatform) => {
@@ -171,11 +188,11 @@ void test('a killed generation is reported lost before its pending calls reject,
     try {
       const order: string[] = [];
       const lease = await acquire(platform, 'prompt-a');
-      let lostExecutions: unknown;
+      let lostHolds: unknown;
 
       platform.generations.onLost((lost) => {
         order.push('lost');
-        lostExecutions = lost;
+        lostHolds = lost;
       });
 
       const call = lease.call({});
@@ -203,12 +220,10 @@ void test('a killed generation is reported lost before its pending calls reject,
       assert.deepEqual(order, ['lost', 'rejected']);
       assert.ok(error instanceof ContractError);
       assert.equal((error as ContractError).code, 'generation_lost');
-      assert.deepEqual(lostExecutions, {
+      assert.deepEqual(lostHolds, {
         generation: 1,
         incarnation: 1,
-        executions: [
-          { projectId: 'project', threadId: 'thread', promptId: 'prompt-a' },
-        ],
+        holds: [{ bundleId: 'doric', key: 'project/thread/prompt-a' }],
       });
 
       assert.equal(await activated, 1);
@@ -219,8 +234,8 @@ void test('a killed generation is reported lost before its pending calls reject,
       assert.equal(respawned?.incarnation, 2);
       assert.equal(respawned?.state, 'active');
       assert.notEqual(respawned?.pid, firstPid);
-      // The lost execution no longer holds the generation; releasing is a no-op.
-      assert.equal(respawned?.executions, 0);
+      // The lost work hold no longer keeps the generation; releasing is a no-op.
+      assert.equal(respawned?.work, 0);
       lease.release();
 
       const result = (await probeTool(platform).execute(
@@ -233,6 +248,47 @@ void test('a killed generation is reported lost before its pending calls reject,
         (await platform.view(1).use(ProbeV1).describe()).generation.incarnation,
         2,
       );
+    } finally {
+      await platform.stop();
+    }
+  });
+});
+
+void test('work holds taken through doric.generation/v1 by two bundles are reported per bundle when their generation is lost', async () => {
+  await withRoot(async (root) => {
+    await writeProbe(root);
+    await writeProbe(root, { id: 'other' });
+
+    const { platform } = await bootKernel(root, ['probe', 'other']);
+
+    try {
+      const firstPid = pidOf(platform, 1);
+      let lostHolds: unknown;
+
+      platform.generations.onLost((lost) => {
+        lostHolds = lost;
+      });
+
+      await platform.view(1).use(ProbeV1).hold('prompt-b');
+      await platform.view(1).use(OtherV1).hold('prompt-x');
+      // A window hold is not work: it is neither counted nor reported on loss.
+      managerOf(platform).holdFor(1, { type: 'window', windowKey: 'main' });
+      await eventually(
+        () => platform.generations.describe()[0]?.work === 2,
+        'both work holds are counted, the window hold is not',
+      );
+
+      process.kill(firstPid, 'SIGKILL');
+      await eventually(() => lostHolds !== undefined, 'the loss is reported');
+
+      assert.deepEqual(lostHolds, {
+        generation: 1,
+        incarnation: 1,
+        holds: [
+          { bundleId: 'probe', key: 'p/t/prompt-b' },
+          { bundleId: 'other', key: 'p/t/prompt-x' },
+        ],
+      });
     } finally {
       await platform.stop();
     }
@@ -275,7 +331,7 @@ void test('a generation that keeps crashing at start is failed, its bundles quar
         ),
       );
 
-      // Executions still acquire a (kernel-only) view.
+      // Work holds still acquire a (kernel-only) view.
       const lease = await acquire(platform, 'prompt-b');
 
       assert.equal(lease.generation, 1);
@@ -296,11 +352,11 @@ void test('a published generation replaces the active one, which drains until it
       const firstPid = pidOf(platform, 1);
       const lease = await acquire(platform, 'prompt-a');
 
-      // A hold taken inside generation 1 through doric.generation/v1.
+      // A work hold taken inside generation 1 through doric.generation/v1.
       await platform.view(1).use(ProbeV1).hold('prompt-b');
       await eventually(
-        () => platform.generations.describe()[0]?.executions === 2,
-        'both holds of generation 1 are counted',
+        () => platform.generations.describe()[0]?.work === 2,
+        'both work holds of generation 1 are counted',
       );
 
       await writeProbe(root, { version: '1.1.0' });
@@ -333,7 +389,7 @@ void test('a published generation replaces the active one, which drains until it
       assert.equal(two.bundle.generation, 2);
       assert.notEqual(two.pid, firstPid);
 
-      // A new execution lands on generation 2.
+      // A new work hold lands on generation 2.
       const next = await acquire(platform, 'prompt-c');
 
       assert.equal(next.generation, 2);
@@ -355,6 +411,80 @@ void test('a published generation replaces the active one, which drains until it
   });
 });
 
+void test('a window hold alone is not work: it is not counted and does not keep a draining generation alive', async () => {
+  await withRoot(async (root) => {
+    await writeProbe(root);
+
+    const { platform } = await bootKernel(root, ['probe']);
+
+    try {
+      const firstPid = pidOf(platform, 1);
+      const window = managerOf(platform).holdFor(1, {
+        type: 'window',
+        windowKey: 'main',
+      });
+
+      assert.equal(platform.generations.describe()[0]?.work, 0);
+
+      await writeProbe(root, { version: '1.1.0' });
+      assert.deepEqual(await platform.generations.publish(), {
+        status: 'published',
+        generation: 2,
+      });
+
+      await eventually(
+        () => platform.generations.describe()[0]?.state === 'stopped',
+        'generation 1 stops although its window hold remains',
+      );
+      await eventually(() => !alive(firstPid), 'generation 1 process exits');
+
+      window.dispose();
+    } finally {
+      await platform.stop();
+    }
+  });
+});
+
+void test('a draining generation stops when its work holds end, while a window hold remains', async () => {
+  await withRoot(async (root) => {
+    await writeProbe(root);
+
+    const { platform } = await bootKernel(root, ['probe']);
+
+    try {
+      const firstPid = pidOf(platform, 1);
+      const lease = await acquire(platform, 'prompt-a');
+      const window = managerOf(platform).holdFor(1, {
+        type: 'window',
+        windowKey: 'main',
+      });
+
+      assert.equal(platform.generations.describe()[0]?.work, 1);
+
+      await writeProbe(root, { version: '1.1.0' });
+      assert.deepEqual(await platform.generations.publish(), {
+        status: 'published',
+        generation: 2,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(platform.generations.describe()[0]?.state, 'draining');
+      assert.ok(alive(firstPid), 'the work hold keeps generation 1');
+
+      lease.release();
+      await eventually(
+        () => platform.generations.describe()[0]?.state === 'stopped',
+        'generation 1 stops once its work hold ends',
+      );
+      await eventually(() => !alive(firstPid), 'generation 1 process exits');
+
+      window.dispose();
+    } finally {
+      await platform.stop();
+    }
+  });
+});
+
 void test('a draining generation without holds stops only after its calls in flight answer', async () => {
   await withRoot(async (root) => {
     await writeProbe(root);
@@ -363,7 +493,7 @@ void test('a draining generation without holds stops only after its calls in fli
 
     try {
       const firstPid = pidOf(platform, 1);
-      // A call into generation 1 without any execution lease.
+      // A call into generation 1 without any work hold.
       const answer = platform.view(1).use(ProbeV1).wait(600);
 
       await new Promise((resolve) => setTimeout(resolve, 50));
