@@ -131,7 +131,7 @@ PostgreSQL com JSONB primeiro, porque já é o backend atual. O segundo backend 
 
 ### Schemas e versionamento dos tipos
 
-O schema de cada tipo é escrito em zod na definição do tipo; o JSON Schema canônico é gerado dele no build e publicado no catálogo. Os schemas seguem a política de [versionamento semântico](./versioning.md), e a verificação de semver compara os JSON Schemas gerados. Uma major nova de um tipo exige migração explícita registrada pelo bundle dono.
+O schema de cada tipo é escrito em zod na definição do tipo; o JSON Schema canônico é gerado dele no build e publicado no catálogo. Os schemas seguem a política de [versionamento semântico](./versioning.md), e a verificação de semver, suspensa até a etapa 11, vai comparar os JSON Schemas gerados. Uma major nova de um tipo exige migração explícita registrada pelo bundle dono.
 
 ## Divisão do histórico
 

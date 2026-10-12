@@ -30,24 +30,40 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["build", "^build"],
+      "dependsOn": [
+        "build",
+        "^build",
+        {
+          "projects": [
+            "bundle-postgres",
+            "bundle-files",
+            "bundle-web",
+            "bundle-git",
+            "bundle-threads",
+            "bundle-terminal",
+            "bundle-usage",
+            "bundle-resources",
+            "bundle-runtime",
+            "bundle-direct",
+            "bundle-openai",
+            "bundle-openrouter",
+            "bundle-codex",
+            "bundle-docker",
+            "bundle-notifications",
+            "bundle-layout",
+            "bundle-settings",
+            "bundle-chat",
+            "bundle-history"
+          ],
+          "target": "build"
+        }
+      ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p bundles/core/tsconfig.spec.json",
           "tsc -p bundles/core/tsconfig.client-spec.json",
           "node --test bundles/core/dist-tests/tests/*.test.js bundles/core/dist-tests/tests/desktop/*.test.js bundles/core/dist-tests/tests/client/*.test.js"
-        ],
-        "parallel": false
-      }
-    },
-    "contracts-baseline": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "commands": [
-          "node packages/bundle/dist/build/cli.js baseline bundles/core",
-          "biome format --write bundles/core/contracts.published.json"
         ],
         "parallel": false
       }

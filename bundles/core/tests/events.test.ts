@@ -211,10 +211,14 @@ void test('no bundle of the shipped host composition but the runtime provides an
   ) as { readonly enabled: readonly string[] };
 
   for (const id of composition.enabled) {
-    const published = JSON.parse(
-      await readFile(`bundles/${id}/contracts.published.json`, 'utf8'),
+    // The descriptor the build of each shipped bundle writes; the build no
+    // longer keeps a committed copy (contracts.published.json is gone). The
+    // core test target builds every enabled bundle first (dependsOn in
+    // bundles/core/project.json), so these files exist when this runs.
+    const built = JSON.parse(
+      await readFile(`bundles/${id}/dist/contracts.json`, 'utf8'),
     ) as { readonly contracts: readonly { id: string; kind: string }[] };
-    const events = published.contracts
+    const events = built.contracts
       .filter(({ kind }) => kind === 'event')
       .map((contract) => contract.id);
 

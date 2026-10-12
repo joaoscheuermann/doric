@@ -43,17 +43,6 @@
         "parallel": false
       }
     },
-    "contracts-baseline": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "commands": [
-          "node packages/bundle/dist/build/cli.js baseline bundles/postgres",
-          "biome format --write bundles/postgres/contracts.published.json"
-        ],
-        "parallel": false
-      }
-    },
     "migrate": {
       "executor": "nx:run-commands",
       "options": {

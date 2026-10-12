@@ -31,10 +31,9 @@ RUN npm install --global npm@11.13.0
 # bundle is compiled to its own `dist`; the bundle build CLI then validates its
 # manifest and skills, builds its desktop and client parts with esbuild (a root
 # devDependency, so `npm ci` installs it), dry-activates its parts to write the
-# contract descriptor and JSON Schemas, and checks them against the committed
-# baseline, and `stage` copies each bundle's whole `dist` (`desktop/`,
-# `client/` and `contracts/` included, which the host distributes to the
-# desktop) into `agents/doric/dist/bundles/<id>`.
+# contract descriptor and JSON Schemas, and `stage` copies each bundle's whole
+# `dist` (`desktop/`, `client/` and `contracts/` included, which the host
+# distributes to the desktop) into `agents/doric/dist/bundles/<id>`.
 # The `web-research` skill is the `web` bundle's; the copy left in `files`
 # is removed from its dist until the source is deleted.
 # A failing bundle build stops the image build here rather than at boot. The

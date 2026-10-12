@@ -56,7 +56,7 @@ A decisão registrada em 2026-10-08 é: JSON Schema 2020-12 é o formato canôni
 - o JSON Schema de cada contrato é gerado do zod no build do bundle e publicado no catálogo do host;
 - nenhum bundle escreve JSON Schema à mão;
 - a convenção de pasta `schemas/*.json` ("JSON Schemas referenciados pelo código") desaparece da lista de convenções do bundle, e com ela todos os `$ref` para arquivos de schema;
-- o JSON Schema gerado é o que atravessa processos e máquinas, o que o catálogo publica e o que a verificação de semver compara (veja [versionamento semântico](./versioning.md)).
+- o JSON Schema gerado é o que atravessa processos e máquinas, o que o catálogo publica e o que a verificação de semver vai comparar quando voltar, suspensa até a publicação (etapa 11) (veja [versionamento semântico](./versioning.md)).
 
 O mesmo vale para o próprio manifesto: na proposta, o manifesto v1 é validado por um JSON Schema publicado em `doric://app/schemas/bundle-manifest/v1.json`, gerado a partir do schema zod de `packages/bundle` (veja [manifesto v1](./manifest.md)). Hoje `packages/bundle/src/lib/load.ts` valida só o formato atual, que passa a ser o manifesto v0, com zod em modo `strict`.
 
@@ -386,7 +386,7 @@ await services.use(GitCommandsV1).switchBranch({ projectId, to }, call);
 - O consumidor usa a referência: `services.use(GitCommandsV1)` devolve um stub tipado por `typeof gitCommands`. Cada método do stub aceita como último argumento opcional um `call` pai ou `{ signal, deadline }`; veja a [propagação de `call`](#propagação-de-call).
 - Qualquer serviço fornecido no `desktopMain` ou no `host` é alcançável pela ponte por uma parte `client` que o declara em `requires` ou o consome com `whenAvailable`, como `windows/v1`, `menus/v1` e o `git.commands/v1` acima. Entre processos, a validação usa o JSON Schema gerado da definição e publicado no catálogo.
 - Um método cujo schema usa `z.custom` (funções, classes, elementos), como em `chat.views/v1`, só funciona no mesmo processo; o dispatcher recusa a chamada que atravessaria processos.
-- Outro bundle que fornece o mesmo contrato escreve a própria definição com o mesmo ID, ou com a referência no lugar do ID (`defineService(GitCommandsV1, { ... })`), o que faz o compilador conferir os métodos contra o tipo. A checagem de semver compara os JSON Schemas gerados com a versão publicada.
+- Outro bundle que fornece o mesmo contrato escreve a própria definição com o mesmo ID, ou com a referência no lugar do ID (`defineService(GitCommandsV1, { ... })`), o que faz o compilador conferir os métodos contra o tipo. A checagem de semver, suspensa até a etapa 11, vai comparar os JSON Schemas gerados com a versão publicada.
 
 Os serviços básicos seguem a mesma regra. `bundle/contracts` exporta as referências (`HooksV1`, `StorageV1`, `UiV1` e as demais), com os tipos dos contratos; o core escreve as definições com `execute` e as fornece, e outro bundle pode fornecer as suas no lugar:
 
@@ -545,7 +545,7 @@ services.use(StorageV1).defineType(threadType);
 ## O que não muda
 
 - O formato do manifesto não muda: `provides` e `requires` continuam listando IDs de contrato; veja [manifesto v1](./manifest.md).
-- Os IDs com major (`/vN`) e a política de versionamento não mudam. A verificação de build de semver compara os JSON Schemas gerados do zod; veja [versionamento semântico](./versioning.md).
+- Os IDs com major (`/vN`) e a política de versionamento não mudam. A verificação de build de semver, suspensa até a etapa 11, vai comparar os JSON Schemas gerados do zod; veja [versionamento semântico](./versioning.md).
 
 ## Relações
 
@@ -557,7 +557,7 @@ services.use(StorageV1).defineType(threadType);
 - [Eventos e nodes](./events-and-nodes.md): explica os eventos duráveis definidos com `defineEvent`.
 - [Menus nativos e atalhos](./menus-and-keybindings.md): despacha os comandos definidos com `defineCommand`.
 - [Armazenamento genérico e histórico](./storage.md): consome os tipos e índices declarados com `defineStorageType`.
-- [Versionamento semântico](./versioning.md): compara os JSON Schemas gerados do zod para validar as versões dos contratos.
+- [Versionamento semântico](./versioning.md): compara os JSON Schemas gerados do zod para validar as versões dos contratos, mas a checagem está suspensa até a etapa 11.
 - [Navegação e rotas](./navigation.md): define `navigation/v1`, contrato básico em `bundle/contracts`, com rotas por path de URL (`register({ path, create, parent? })`), sem ID versionado nem schema de parâmetros.
 - [Composição e distribuição](./composition-and-distribution.md): escolhe o provedor de cada contrato substituível em `providers`, por ambiente.
 - [Bundle core e quarentena](./core.md): ativa depois da fundação, fornece os serviços básicos por padrão e recebe os bundles cujo registro de contrato falha ou conflita.

@@ -71,7 +71,6 @@ the same definitions.
 npx nx build bundle-core
 npx nx typecheck bundle-core
 npx nx test bundle-core
-npx nx run bundle-core:contracts-baseline   # after an intended contract change
 ```
 
 To rebuild and stage every bundle used by the Direct host:

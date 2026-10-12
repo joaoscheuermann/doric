@@ -40,17 +40,6 @@
         ],
         "parallel": false
       }
-    },
-    "contracts-baseline": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "commands": [
-          "node packages/bundle/dist/build/cli.js baseline bundles/files",
-          "biome format --write bundles/files/contracts.published.json"
-        ],
-        "parallel": false
-      }
     }
   },
   "tags": ["type:bundle"]

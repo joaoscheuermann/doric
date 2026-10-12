@@ -34,17 +34,6 @@
         ],
         "parallel": false
       }
-    },
-    "contracts-baseline": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "commands": [
-          "node packages/bundle/dist/build/cli.js baseline bundles/codex",
-          "biome format --write bundles/codex/contracts.published.json"
-        ],
-        "parallel": false
-      }
     }
   },
   "tags": ["type:bundle"]

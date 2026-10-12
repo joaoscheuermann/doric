@@ -36,7 +36,6 @@ npx nx build bundle-postgres
 npx nx typecheck bundle-postgres
 DORIC_TEST_DATABASE_URL=postgresql://... npx nx test bundle-postgres
 npx nx run bundle-postgres:migrate
-npx nx run bundle-postgres:contracts-baseline   # after an intended contract change
 ```
 
 The PostgreSQL suites skip without `DORIC_TEST_DATABASE_URL`.

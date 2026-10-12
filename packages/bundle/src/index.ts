@@ -7,17 +7,7 @@ export {
   buildBundle,
   runCli,
   stageBundles,
-  writeBaseline,
 } from './build/cli.js';
-export {
-  type Baseline,
-  baselineSchema,
-  type CompareInput,
-  type CompareResult,
-  compareWithBaseline,
-  documentChange,
-  memberChange,
-} from './build/compare.js';
 export {
   platformSchemaDocuments,
   writePlatformSchemas,

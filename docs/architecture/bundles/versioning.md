@@ -4,7 +4,11 @@
 
 ## Resumo
 
-A plataforma, cada bundle e cada contrato têm sua própria versão semver. O ID de um contrato carrega a sua major no sufixo `/vN`, então majors diferentes são contratos diferentes e podem ser fornecidos ao mesmo tempo, enquanto minors e patches da mesma major são intercambiáveis. Consumidores pedem faixas em `requires`, e um bundle cuja faixa não é atendida entra em quarentena com o motivo. Uma verificação de build compara os JSON Schemas gerados do zod com a versão publicada e recusa uma versão menor do que a mudança exige.
+A plataforma, cada bundle e cada contrato têm sua própria versão semver. O ID de um contrato carrega a sua major no sufixo `/vN`, então majors diferentes são contratos diferentes e podem ser fornecidos ao mesmo tempo, enquanto minors e patches da mesma major são intercambiáveis. Consumidores pedem faixas em `requires`, e um bundle cuja faixa não é atendida entra em quarentena com o motivo. A verificação de build que compara os JSON Schemas gerados do zod com a versão publicada e recusa uma versão menor do que a mudança exige está suspensa; a seção [estado atual da verificação](#estado-atual-da-verificação) explica quando ela volta.
+
+## Estado atual da verificação
+
+Até existir publicação de bundles (etapa 11), não há `contracts.published.json` commitado: os arquivos foram removidos, o comando `baseline` do CLI de build e os alvos `contracts-baseline` do Nx também. O build gera `dist/contracts.json` e os JSON Schemas, mas não compara nada com uma versão anterior, e um arquivo `contracts.published.json` deixado no bundle é ignorado. Quando a publicação existir, a verificação volta comparando com o registro publicado, não com um arquivo commitado no repositório. As regras desta página (tabela de mudanças, major no ID e faixas) continuam sendo a referência para escolher a versão; só a checagem automática está suspensa.
 
 ## O que tem versão
 
@@ -47,7 +51,7 @@ Em settings, a migração de uma major nova é registrada junto da definição f
 - Consumidores tratam códigos de erro desconhecidos como erro genérico do contrato, por isso um código novo é minor. O código é o `code` do erro com que o método rejeita a Promise.
 - O produtor de um evento valida a escrita com o schema fechado da sua versão (o `payload` em zod do `defineEvent`, com `.strict()`). O leitor valida pela major e ignora campos de uma minor mais nova que ele não conhece. Eventos gravados nunca são reescritos; um upcaster `v1 → v2` converte na leitura.
 - A versão do bundle segue a maior mudança entre seus contratos: major se algum contrato fornecido muda de major ou some, minor se um contrato ou contribuição aparece ou recebe minor, patch nos outros casos.
-- Uma verificação de build compara `provides` e os JSON Schemas dos contratos com a versão publicada e recusa uma versão menor do que a mudança exige. Os JSON Schemas comparados são os gerados do zod no build, os mesmos publicados no catálogo; nenhum bundle escreve JSON Schema à mão.
+- Os JSON Schemas dos contratos são os gerados do zod no build, os mesmos publicados no catálogo; nenhum bundle escreve JSON Schema à mão. Até a publicação existir, o build não recusa uma versão menor do que a mudança exige (ver [estado atual da verificação](#estado-atual-da-verificação)).
 - A plataforma muda de major quando um pacote compartilhado muda de major (por exemplo, React 20) ou quando a ponte ou o loader quebram compatibilidade. Por isso `engines.doric` basta para cobrir os pacotes compartilhados. Os pacotes compartilhados estão em [pacotes compartilhados](./platform-packages.md).
 - Um contrato descontinuado é fornecido junto com a major nova até ser removido; o diagnóstico lista os consumidores de cada contrato, então mostra quem ainda usa a major antiga.
 
@@ -154,11 +158,11 @@ O manifesto de `git` lista em `provides` a `v2` na versão `2.0.0`, a `v1` na ve
 }
 ```
 
-A verificação de build compara o JSON Schema gerado de `gitCommandsV1` com o publicado e confirma que a `v1` não mudou de forma incompatível.
+Quando a verificação de build voltar (etapa 11), ela compara o JSON Schema gerado de `gitCommandsV1` com o registro publicado e confirma que a `v1` não mudou de forma incompatível. Até lá a comparação está suspensa, como explica a seção [estado atual da verificação](#estado-atual-da-verificação).
 
 ## Relações
 
-- [Contratos e a família define\*](./contracts.md): define os contratos versionados e gera os JSON Schemas que a verificação de build compara.
+- [Contratos e a família define\*](./contracts.md): define os contratos versionados e gera os JSON Schemas que a verificação de build vai comparar quando voltar.
 - [Manifesto v1](./manifest.md): declara `version`, `engines.doric`, `provides` e `requires`, onde as versões e faixas aparecem.
 - [Bundle core e quarentena](./core.md): aplica a quarentena quando uma faixa de `requires` ou `engines.doric` não é atendida e define a ordem de ativação da fundação, do core e dos demais bundles.
 - [Splash e recuperação](./splash-and-recovery.md): mostra os bundles em quarentena e o motivo de versão de cada um.

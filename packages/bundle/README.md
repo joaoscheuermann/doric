@@ -110,15 +110,15 @@ Every contract documents its error codes beside it; they are listed in
 
 ```console
 node packages/bundle/dist/build/cli.js build <bundleDir>
-node packages/bundle/dist/build/cli.js baseline <bundleDir>
 node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
 ```
 
 `build` runs after `tsc`: it validates the manifest, copies skills, dry-activates
 the host and desktop parts to compute each contract's environment and
 cardinality, writes `dist/contracts.json` and `dist/schemas/<contract>.json`
-(JSON Schema 2020-12), and checks the versions against
-`contracts.published.json` when it exists. `baseline` writes that file;
+(JSON Schema 2020-12). There is no semver check against a published
+baseline yet: `contracts.published.json` files and the `baseline` command were
+removed until publishing exists (stage 11), and a leftover file is ignored.
 `stage` copies each `dist` into `<dest>/<id>`.
 
 ## Development

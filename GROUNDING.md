@@ -562,13 +562,13 @@ implemented; the binding choices they made are recorded in
 `docs/architecture/bundles/implementation-decisions.md`. Repository-owned
 bundles live as individual Nx packages immediately below `/bundles`, named by
 their bundle ID (Nx projects `bundle-<id>`); each owns its package metadata, a
-v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist`, a public
-`<id>/contracts` entrypoint and, when it publishes contracts, a committed
-`contracts.published.json` baseline. The bundle build CLI of `packages/bundle`
+v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist` and a public
+`<id>/contracts` entrypoint. The bundle build CLI of `packages/bundle`
 validates the manifest and skills, dry-activates the host part to write the
-contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas, and
-checks them against the baseline; `doric:build-bundles` then stages each
-`dist` into `agents/doric/dist/bundles/<id>`.
+contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas; it
+does not compare them with a committed baseline, which returns with publishing
+(stage 11). `doric:build-bundles` then stages each `dist` into
+`agents/doric/dist/bundles/<id>`.
 
 `/bundles/core` is the composition's core. Its host part provides the basic
 contracts `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,

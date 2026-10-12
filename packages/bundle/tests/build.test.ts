@@ -17,13 +17,11 @@ import {
   buildBundle,
   checkRecording,
   contractDocument,
-  documentChange,
   manifestV1Schema,
-  memberChange,
   platformSchemaDocuments,
   recordActivation,
+  runCli,
   stageBundles,
-  writeBaseline,
 } from '../src/index.js';
 import {
   contractsUrl,
@@ -68,8 +66,6 @@ export const activate = ({ services }) => {
 `;
 
 const getMethod = `get: defineMethod({ input: z.object({ id: z.string() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) })`;
-const listMethod = `list: defineMethod({ input: z.tuple([]), output: z.array(z.string()), execute: () => [] })`;
-const optionalField = `get: defineMethod({ input: z.object({ id: z.string(), deep: z.boolean().optional() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) })`;
 
 const desktopPart = `import { z } from ${JSON.stringify(zodUrl)};
 import { defineMethod, defineService } from ${JSON.stringify(contractsUrl)};
@@ -204,190 +200,47 @@ void test('the build fails on an undeclared use, an unrecorded provide or an inv
   });
 });
 
-void test('the semver check accepts compatible versions and refuses what the change does not allow', async () => {
+void test('the build ignores a leftover contracts.published.json and writes none', async () => {
+  await withRoot(async (root) => {
+    // A baseline claiming a newer bundle version with no contracts: the old
+    // semver check refused the build here; without the check it passes.
+    const leftover = JSON.stringify({
+      descriptorVersion: 1,
+      bundle: { id: 'demo', version: '9.0.0' },
+      contracts: [],
+    });
+    const dir = await writeDemo(root, {
+      files: { 'contracts.published.json': leftover },
+    });
+
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id }) => id),
+      ['demo.api/v1', 'demo.hooks/v1', 'demo.desk/v1'],
+    );
+    assert.equal(
+      await readFile(join(dir, 'contracts.published.json'), 'utf8'),
+      leftover,
+    );
+  });
+
   await withRoot(async (root) => {
     const dir = await writeDemo(root);
 
     await buildBundle(dir);
-    await writeBaseline(dir);
 
-    const baseline = await readFile(
-      join(dir, 'contracts.published.json'),
-      'utf8',
-    );
-
-    // Unchanged: passes.
-    await buildBundle(dir);
-
-    // Each variant is a fresh directory carrying the same baseline, so the
-    // module loader imports its part anew.
-    const variant = (
-      directory: string,
-      options: Parameters<typeof writeDemo>[1],
-    ) =>
-      writeDemo(root, {
-        ...options,
-        directory,
-        files: { 'contracts.published.json': baseline },
-      });
-
-    // A new optional input field is minor: same versions are refused.
-    await assert.rejects(
-      buildBundle(
-        await variant('same-versions', { host: hostPart(optionalField) }),
-      ),
-      /Semver check failed/,
-    );
-
-    // Bumping the contract and the bundle minor passes.
-    await buildBundle(
-      await variant('bumped', {
-        host: hostPart(optionalField),
-        manifest: demoManifest({ version: '1.1.0', api: '1.1.0' }),
-      }),
-    );
-
-    // Removing a method is major inside /v1: always refused.
-    await assert.rejects(
-      buildBundle(
-        await variant('major', {
-          host: hostPart(listMethod),
-          manifest: demoManifest({ version: '2.0.0', api: '1.5.0' }),
-        }),
-      ),
-      /major: new \/v2/,
-    );
+    assert.equal(await exists(join(dir, 'contracts.published.json')), false);
   });
 });
 
-void test('member changes are classified by direction', () => {
-  const object = (properties: Record<string, unknown>, required: string[]) => ({
-    type: 'object',
-    properties,
-    required,
-    additionalProperties: false,
-  });
-  const text = { type: 'string' };
+void test('the CLI has no baseline command; build and stage remain', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root);
 
-  assert.equal(
-    memberChange(
-      object({ a: text }, ['a']),
-      object({ a: text }, ['a']),
-      'input',
-    ),
-    'none',
-  );
-  assert.equal(
-    memberChange(
-      object({ a: text }, ['a']),
-      object({ a: text, b: text }, ['a']),
-      'input',
-    ),
-    'minor',
-  );
-  assert.equal(
-    memberChange(
-      object({ a: text }, ['a']),
-      object({ a: text, b: text }, ['a', 'b']),
-      'input',
-    ),
-    'major',
-  );
-  assert.equal(
-    memberChange(
-      object({ a: text }, ['a']),
-      object({ a: text, b: text }, ['a', 'b']),
-      'output',
-    ),
-    'minor',
-  );
-  assert.equal(
-    memberChange(
-      object({ a: text, b: text }, ['a']),
-      object({ a: text }, ['a']),
-      'output',
-    ),
-    'major',
-  );
-  assert.equal(
-    memberChange(
-      object({ a: text }, ['a']),
-      object({ a: { type: 'number' } }, ['a']),
-      'output',
-    ),
-    'major',
-  );
-  assert.equal(
-    documentChange(
-      { $defs: { 'get.input': text } },
-      { $defs: { 'get.input': text, 'list.input': text } },
-    ),
-    'minor',
-  );
-  assert.equal(
-    documentChange(
-      { 'x-doric-kind': 'service', $defs: {} },
-      { 'x-doric-kind': 'hooks', $defs: {} },
-    ),
-    'major',
-  );
-});
-
-void test('argument tuples and arrays follow the member rule per element', () => {
-  const options = (properties: Record<string, unknown>) => ({
-    type: 'object',
-    properties,
-    additionalProperties: false,
+    await assert.rejects(runCli(['baseline', dir]), /Usage: cli\.js build/);
+    assert.equal(await exists(join(dir, 'contracts.published.json')), false);
   });
-  const tuple = (...items: unknown[]) => ({
-    type: 'array',
-    prefixItems: items,
-    minItems: 1,
-    maxItems: items.length,
-  });
-  const flag = { type: 'boolean' };
-  const number = { type: 'number' };
-
-  assert.equal(
-    memberChange(
-      tuple(options({ a: flag })),
-      tuple(options({ a: flag, b: number })),
-      'input',
-    ),
-    'minor',
-  );
-  assert.equal(
-    memberChange(
-      tuple(options({ a: flag })),
-      tuple(options({ a: number })),
-      'input',
-    ),
-    'major',
-  );
-  assert.equal(
-    memberChange(
-      tuple(options({ a: flag })),
-      tuple(options({ a: flag }), flag),
-      'input',
-    ),
-    'major',
-  );
-  assert.equal(
-    memberChange(
-      { type: 'array', items: options({ a: flag }) },
-      { type: 'array', items: options({ a: flag, b: number }) },
-      'output',
-    ),
-    'minor',
-  );
-  assert.equal(
-    memberChange(
-      { type: 'array', items: options({ a: flag }) },
-      { type: 'array', items: options({ a: flag }), minItems: 1 },
-      'output',
-    ),
-    'major',
-  );
 });
 
 void test('the recorder sees provides, hook definitions and only declared uses', async () => {

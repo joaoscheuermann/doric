@@ -15,7 +15,6 @@ import {
   manifestV1Schema,
   parseContractEntry,
 } from '../runtime/manifest.js';
-import { baselineSchema, compareWithBaseline } from './compare.js';
 import { installDomShim } from './dom-shim.js';
 import { checkRecording, recordActivation } from './record.js';
 import {
@@ -74,8 +73,8 @@ export interface BuildOptions {
 /**
  * `build <bundleDir>` (after tsc): validates the v1 manifest, copies skills,
  * builds the desktop and client parts, dry-activates the parts, writes JSON
- * Schemas, `contracts.json`, the dist manifest and package.json, then runs
- * the semver check against `contracts.published.json` when it exists.
+ * Schemas, `contracts.json` and package.json. The semver check against a
+ * published baseline is not here yet: it returns with publishing (stage 11).
  */
 export const buildBundle = async (
   bundleDir: string,
@@ -246,51 +245,7 @@ export const buildBundle = async (
   await writeFile(join(dist, 'contracts.json'), json(descriptor));
   await writeFile(join(dist, 'package.json'), json({ type: 'module' }));
 
-  const baselinePath = join(root, 'contracts.published.json');
-
-  if (await exists(baselinePath)) {
-    const baseline = baselineSchema.safeParse(await readJson(baselinePath));
-
-    if (!baseline.success) {
-      throw new BuildError(
-        `Invalid baseline "${baselinePath}": ${baseline.error.message}`,
-      );
-    }
-
-    const { errors } = compareWithBaseline({
-      descriptor,
-      documents,
-      baseline: baseline.data,
-    });
-
-    if (errors.length > 0) {
-      throw new BuildError(`Semver check failed:\n${errors.join('\n')}`);
-    }
-  }
-
   return { manifest, descriptor, documents };
-};
-
-/** `baseline <bundleDir>`: writes contracts.published.json from the built dist. */
-export const writeBaseline = async (bundleDir: string): Promise<void> => {
-  const root = resolve(bundleDir);
-  const dist = join(root, 'dist');
-  const descriptor = descriptorSchema.parse(
-    await readJson(join(dist, 'contracts.json')),
-  );
-  const contracts = [];
-
-  for (const entry of descriptor.contracts) {
-    contracts.push({
-      ...entry,
-      schema: await readJson(join(dist, ...entry.schema.split('/'))),
-    });
-  }
-
-  await writeFile(
-    join(root, 'contracts.published.json'),
-    json({ ...descriptor, contracts }),
-  );
 };
 
 /** `stage <dest> <bundleDir...>`: replaces `<dest>/<id>` with each bundle's dist. */
@@ -318,7 +273,7 @@ export const stageBundles = async (
 };
 
 const usage =
-  'Usage: cli.js build [--development] <bundleDir> | baseline <bundleDir> | stage <dest> <bundleDir...>';
+  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...>';
 
 export const runCli = async (args: readonly string[]): Promise<void> => {
   const [command, ...rest] = args;
@@ -331,8 +286,6 @@ export const runCli = async (args: readonly string[]): Promise<void> => {
     rest[0] === '--development'
   ) {
     await buildBundle(rest[1] as string, { mode: 'development' });
-  } else if (command === 'baseline' && rest.length === 1) {
-    await writeBaseline(rest[0] as string);
   } else if (command === 'stage' && rest.length >= 2) {
     await stageBundles(rest[0] as string, rest.slice(1));
   } else {
