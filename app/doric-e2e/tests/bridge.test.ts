@@ -8,8 +8,8 @@ import { after, before, describe, test } from 'node:test';
 
 import { type BrowserWindow, Menu, type MenuItem } from 'electron';
 
-import { coreDistribution } from '../tests/support/core';
-import type { FixtureBundle } from '../tests/support/distribution';
+import { coreDistribution } from '../../doric/tests/support/core';
+import type { FixtureBundle } from '../../doric/tests/support/distribution';
 import {
   type Booted,
   bootPlatform,

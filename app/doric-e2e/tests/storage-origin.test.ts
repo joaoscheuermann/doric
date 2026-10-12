@@ -12,9 +12,9 @@ import { pathToFileURL } from 'node:url';
 
 import { BrowserWindow, protocol } from 'electron';
 
-import { type PlatformLog, silentLog } from '../src/platform/log';
-import { migrateStorageOrigin } from '../src/platform/migration/storage-origin';
-import { DesktopState } from '../src/platform/state';
+import { type PlatformLog, silentLog } from '../../doric/src/platform/log';
+import { migrateStorageOrigin } from '../../doric/src/platform/migration/storage-origin';
+import { DesktopState } from '../../doric/src/platform/state';
 
 const KEY = 'example.note';
 const MARKER = 'exampleMigration';

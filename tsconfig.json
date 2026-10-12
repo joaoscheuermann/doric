@@ -134,6 +134,15 @@
     },
     {
       "path": "./bundles/foundation/host-config"
+    },
+    {
+      "path": "./bundles/desktop/settings"
+    },
+    {
+      "path": "./agents/doric-e2e"
+    },
+    {
+      "path": "./app/doric-e2e"
     }
   ]
 }

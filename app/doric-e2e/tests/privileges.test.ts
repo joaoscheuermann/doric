@@ -14,13 +14,13 @@ import { promisify } from 'node:util';
 
 import { BrowserWindow, protocol } from 'electron';
 
-import { respond } from '../src/platform/protocol/handler';
-import { platformImportMap } from '../src/platform/protocol/import-map';
-import { resourcesFor } from '../src/platform/protocol/resources';
+import { respond } from '../../doric/src/platform/protocol/handler';
+import { platformImportMap } from '../../doric/src/platform/protocol/import-map';
+import { resourcesFor } from '../../doric/src/platform/protocol/resources';
 import {
   createShellRenderer,
   type ShellMode,
-} from '../src/platform/protocol/shell';
+} from '../../doric/src/platform/protocol/shell';
 import { MAIN_DIR, page, until } from './support/harness';
 
 const run = promisify(execFile);
@@ -158,9 +158,7 @@ describe('doric:// privileges', () => {
 
   test('localStorage under doric://app survives a relaunch over the same profile', async () => {
     const userData = join(root, 'profile');
-    const script = resolve(
-      'app/doric/tests-electron/fixtures/storage-main.cjs',
-    );
+    const script = resolve('app/doric-e2e/tests/fixtures/storage-main.cjs');
     const electron = process.execPath;
     const launch = async (mode: 'write' | 'read') =>
       JSON.parse(

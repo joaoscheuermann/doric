@@ -94,18 +94,6 @@
         "parallel": false
       },
       "dependsOn": ["^build"]
-    },
-    "test-electron": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build", "bundle-core:build"],
-      "outputs": ["{projectRoot}/dist-tests/electron"],
-      "options": {
-        "commands": [
-          "tsc -p app/doric/tsconfig.electron.json",
-          "electron app/doric/dist-tests/electron/tests-electron/run.js"
-        ],
-        "parallel": false
-      }
     }
   }
 }

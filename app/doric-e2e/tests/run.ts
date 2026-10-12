@@ -2,7 +2,7 @@
 // `doric` scheme before ready, then runs the `*.test.js` files beside it with
 // node:test in this process, and exits with the number of failures.
 
-import '../src/platform/protocol/privileges';
+import '../../doric/src/platform/protocol/privileges';
 
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

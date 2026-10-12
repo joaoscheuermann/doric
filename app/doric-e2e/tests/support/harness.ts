@@ -12,15 +12,15 @@ import type { DistributionCatalog } from 'bundle/runtime';
 import type { BrowserWindow, WebContents } from 'electron';
 import { Server, type Socket } from 'socket.io';
 
-import { DesktopPlatform } from '../../src/platform/app';
+import { DesktopPlatform } from '../../../doric/src/platform/app';
 import {
   createPlatformLog,
   type PlatformLog,
   silentLog,
-} from '../../src/platform/log';
-import type { NotificationApi } from '../../src/platform/native/notifications';
-import { resourcesFor } from '../../src/platform/protocol/resources';
-import type { Clock } from '../../src/platform/splash/timing';
+} from '../../../doric/src/platform/log';
+import type { NotificationApi } from '../../../doric/src/platform/native/notifications';
+import { resourcesFor } from '../../../doric/src/platform/protocol/resources';
+import type { Clock } from '../../../doric/src/platform/splash/timing';
 
 /** The built main process directory (`nx build doric-app` + its assets). */
 export const MAIN_DIR = resolve('dist/app/doric');
@@ -211,9 +211,7 @@ const fixtureShell = async (directory: string): Promise<string> => {
   await mkdir(root, { recursive: true });
   await writeFile(join(root, 'shell.html'), SHELL);
   await build({
-    entryPoints: [
-      resolve('app/doric/tests-electron/fixtures/shell-bootstrap.mjs'),
-    ],
+    entryPoints: [resolve('app/doric-e2e/tests/fixtures/shell-bootstrap.mjs')],
     outfile: join(root, 'bootstrap.js'),
     bundle: true,
     format: 'esm',

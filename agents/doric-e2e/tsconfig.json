@@ -1,0 +1,23 @@
+{
+  "extends": "../doric/tsconfig.spec.json",
+  "compilerOptions": {
+    "outDir": "dist-tests",
+    "rootDir": "..",
+    "tsBuildInfoFile": "dist-tests/tsconfig.tsbuildinfo"
+  },
+  "include": ["tests/**/*.ts", "../doric/tests/helpers/**/*.ts"],
+  "references": [
+    {
+      "path": "../../bundles/foundation/postgres"
+    },
+    {
+      "path": "../../bundles/foundation/host-config"
+    },
+    {
+      "path": "../doric"
+    },
+    {
+      "path": "../../packages/bundle"
+    }
+  ]
+}

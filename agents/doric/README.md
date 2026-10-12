@@ -577,14 +577,15 @@ process alive while freeing space; a process crash cannot preserve unsaved data.
 
 ## Validation
 
-Run `npx nx run doric:test` for the host suite and `npx nx run agent:test`
-for the reusable loop. `doric:test` also builds the bundled tools.
+Run `npx nx run doric:test` for the host suite, `npx nx run doric-e2e:e2e`
+for the full host workflow, and `npx nx run agent:test` for the reusable loop.
+The host targets build the bundled tools first.
 
-To include persistence and the composed Docker workflow, supply
-`DORIC_TEST_DATABASE_URL` pointing to a dedicated PostgreSQL test instance and
-set `DORIC_TEST_SANDBOX=true`. The tests create isolated schemas and a disposable
-Docker sandbox; only the external LLM is scripted. Without these variables,
-the external-infrastructure cases explicitly skip.
+To include persistence tests, supply `DORIC_TEST_DATABASE_URL` pointing to a
+dedicated PostgreSQL test instance. The e2e target also requires
+`DORIC_TEST_SANDBOX=true`; it creates a disposable database and Docker sandbox,
+and scripts only the external LLM. Without these variables, persistence cases
+in `doric:test` skip and `doric-e2e:e2e` fails before running.
 
 The client workflow tests run with
 `node --test scripts/tests/spawn-agent.test.mjs`.

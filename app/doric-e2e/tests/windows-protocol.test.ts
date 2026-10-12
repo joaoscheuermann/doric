@@ -10,9 +10,9 @@ import { after, before, describe, test } from 'node:test';
 
 import { type BrowserWindow, net } from 'electron';
 
-import { desktopPaths } from '../src/platform/paths';
-import { WindowPaths } from '../src/platform/state';
-import { coreDistribution } from '../tests/support/core';
+import { desktopPaths } from '../../doric/src/platform/paths';
+import { WindowPaths } from '../../doric/src/platform/state';
+import { coreDistribution } from '../../doric/tests/support/core';
 import {
   type Booted,
   bootPlatform,

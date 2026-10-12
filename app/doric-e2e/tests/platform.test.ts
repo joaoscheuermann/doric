@@ -7,7 +7,7 @@ import { after, before, describe, test } from 'node:test';
 
 import { BrowserWindow, Menu, type MenuItem, webContents } from 'electron';
 
-import { coreDistribution } from '../tests/support/core';
+import { coreDistribution } from '../../doric/tests/support/core';
 import {
   type Booted,
   bootPlatform,

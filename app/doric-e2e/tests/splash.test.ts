@@ -8,7 +8,7 @@ import { describe, test } from 'node:test';
 
 import type { WebContents } from 'electron';
 
-import { coreDistribution } from '../tests/support/core';
+import { coreDistribution } from '../../doric/tests/support/core';
 import {
   type Booted,
   bootPlatform,

@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "doric-app-e2e",
+  "projectType": "application",
+  "implicitDependencies": ["doric-app"],
+  "targets": {
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        { "projects": "doric-app", "target": "build" },
+        { "projects": "bundle-core", "target": "build" }
+      ],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p app/doric-e2e/tsconfig.json",
+          "electron app/doric-e2e/dist-tests/doric-e2e/tests/run.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": []
+}

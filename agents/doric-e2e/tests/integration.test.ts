@@ -6,7 +6,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { defaultConfig } from 'host-config/testing';
 import { io } from 'socket.io-client';
 
-import { freshDatabase, startHostProcess } from './helpers/host.js';
+import {
+  freshDatabase,
+  startHostProcess,
+} from '../../doric/tests/helpers/host.js';
 import {
   childPrompt,
   childResult,
@@ -18,9 +21,9 @@ import {
   scriptedEndpoint,
   scriptedModel,
   secondPrompt,
-} from './helpers/integration-provider.js';
-import { cleanupStack } from './helpers/persistence-fixture.js';
-import { inbox } from './helpers/socket-inbox.js';
+} from '../../doric/tests/helpers/integration-provider.js';
+import { cleanupStack } from '../../doric/tests/helpers/persistence-fixture.js';
+import { inbox } from '../../doric/tests/helpers/socket-inbox.js';
 
 // The full host: the compiled kernel with its staged bundles, the runtime and
 // Direct in the generation process, PostgreSQL and a real Docker sandbox.
