@@ -1,0 +1,28 @@
+{
+  "manifestVersion": 1,
+  "id": "files",
+  "version": "1.1.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Core capabilities available to the Doric agent.",
+  "provides": [
+    "files/v1@1.0.0",
+    "files.sandbox/v1@1.0.0",
+    "files.refresh/v1@1.0.0",
+    "files.open-file/v1@1.0.0"
+  ],
+  "requires": [
+    "tools/v1@^1.2.0",
+    "runtime.workspace/v1@^1.0.0",
+    "runtime.lease/v1@^1.1.0",
+    "ui/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "commands/v1@^1.0.0",
+    "hooks/v1@^1.0.0",
+    "layout.workspace/v1@^1.1.0",
+    "layout.panel/v1@^1.0.0",
+    "layout.tabs/v1@^1.1.0"
+  ],
+  "desktopScope": {
+    "files/v1": ["projectId", "threadId", "promptId"]
+  }
+}

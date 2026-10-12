@@ -6,6 +6,7 @@ import {
   streamListener,
 } from '../../contracts/basic/common.js';
 import type { JsonObject } from '../../contracts/types.js';
+import { documentExposure } from '../exposure.js';
 
 /** One JSON Schema validation failure, relative to the validated value. */
 export interface SchemaIssue {
@@ -88,6 +89,7 @@ export const documentMethodSpecs = (
   document: JsonObject,
 ): MethodSpecs => {
   const defs = isObject(document.$defs) ? document.$defs : {};
+  const exposed = documentExposure(document);
   const methods: Record<string, MethodSpec> = {};
 
   for (const key of Object.keys(defs)) {
@@ -113,6 +115,7 @@ export const documentMethodSpecs = (
       // an `undefined` result is the provider's answer, not a malformed one:
       // `project(id)` of a missing Project, for example.
       output: memberSpec(validators, output).optional(),
+      ...(exposed[name] === undefined ? {} : { expose: exposed[name] }),
     });
   }
 

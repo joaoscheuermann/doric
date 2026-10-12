@@ -65,28 +65,26 @@ each prompt.
 
 The thread delegation tools (`thread-spawn`, `thread-list`, `thread-get`,
 `thread-events`, `thread-send`, `thread-interrupt`, `thread-terminate`) ship in
-the `/bundles/threads` bundle and reach the host only through
+the `/bundles/features/threads` bundle and reach the host only through
 `runtime.threads/v1`; the `files` and `git` tools reach the Thread's working
 directory and the Project sandbox through `runtime.workspace/v1` and
 `runtime.lease/v1`, and the `terminal` tool reaches tracked terminals through
-`terminal/v1`. Until the `runtime` and `terminal` bundles exist, the embedded
-`host-adapter` bundle in `src/lib/bundles/adapter.ts` provides those contracts
-by forwarding each call to the per-prompt `Host` facade (`packages/host`) and
-sandbox the runner builds, bound to the calling prompt's scope only while that
-prompt runs. Shared lifecycle and authorization remain in `workspace`:
-`runner.ts` builds the prompt-scoped facade, and every tool call acts only on
-the calling prompt's direct children in the same Project. HTTP routes remain in
-`src/routes`, outside `lib`.
+`terminal/v1`. The `runtime` bundle provides those contracts by forwarding each
+call to the per-prompt `Host` facade (its types live in
+`bundles/runtime/runtime/src/contracts/tool-host`), bound to the calling prompt's scope
+only while that prompt runs. Lifecycle and authorization stay in `runtime`: its
+runner builds the prompt-scoped facade, and every tool call acts only on the
+calling prompt's direct children in the same Project. The REST and Socket.IO
+routes are in the `transport` bundle, which registers them on the kernel's
+listeners through `doric.network/v1`; `agents/doric` keeps no route.
 
-Activating the bundles opens no database. After `bundle_load`, the
-`database_client` stage connects the client through the provisional
-`postgres.database/v1` contract (`src/lib/bundles/database.ts`), and the Project
-and Thread stores keep using it. Credentials are read through `secrets/v1`
-(`credentials/service.ts` adapts it to the host's credential service), and the
-configuration is one `settings/v1` space, `host-config.configuration/v1`, owned
-by the embedded `host-config` bundle in `src/lib/bundles/configuration.ts`. That
-bundle also names the credentials the configuration references, so deleting one
-is refused.
+Activating the bundles opens no database. The `postgres` bundle connects its
+client in its `onHostStartHook` (stage `database_client`), so a missing URL or an
+unreachable database fails there. Credentials are read through `secrets/v1`,
+loaded by the `core` bundle at `credential_activation`, and the configuration is
+one `settings/v1` space, `host-config.configuration/v1`, owned by the `host-config`
+bundle, which is resident in the kernel process. That bundle also names the
+credentials the configuration references, so deleting one is refused.
 
 A bundle that fails validation or activation is quarantined, logged as
 `Bundle quarantined` with its reasons, and the others keep serving. A core that
@@ -512,7 +510,7 @@ protocols instead of silently changing endpoints or deleting configuration.
 
 PostgreSQL stores Projects, Threads, messages, configuration snapshots, and
 Thread events. The schema and migrations live in the `postgres` bundle
-(`bundles/postgres/prisma`); `agents/doric/prisma.config.ts` points at them, so
+(`bundles/foundation/postgres/prisma`); `agents/doric/prisma.config.ts` points at them, so
 apply migrations separately with `npx nx run doric:migrate` as before; startup
 does not apply them. The migration history starts with the clean
 Project/Thread baseline, bootstrap configuration, singleton constraint, and

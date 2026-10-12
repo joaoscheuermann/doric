@@ -3,7 +3,14 @@
 // `doric.shell/v1` contract. Browser-safe: types and zod schemas only; the
 // Electron main process imports it to validate what a window sends.
 
-import type { Cardinality, JsonObject } from 'bundle/contracts';
+import {
+  type Cardinality,
+  callScopeSchema,
+  type JsonObject,
+  type MethodExposure,
+  methodExposures,
+  windowScopeKey,
+} from 'bundle/contracts';
 import {
   LOCAL_KEY,
   type ResolvedEnvironment,
@@ -120,13 +127,15 @@ export const closeAnswerSchema = z.union([
 /**
  * How the window calls one method of a remote contract: the tuple length used
  * to split a trailing call argument (null when the input is not a tuple)
- * [S8-12], whether the method cannot cross (`local_only`) and whether it is a
- * stream [S8-20].
+ * [S8-12], whether the method cannot cross (`local_only`), whether it is a
+ * stream [S8-20] and whether a desktop window may reach it (`expose`, absent
+ * = no), as its provider's document declares.
  */
 export interface RemoteMethodSpec {
   readonly tuple: number | null;
   readonly local: boolean;
   readonly stream: boolean;
+  readonly expose?: MethodExposure;
 }
 
 export const remoteMethodSpecSchema = z
@@ -134,6 +143,7 @@ export const remoteMethodSpecSchema = z
     tuple: z.union([z.number().int().nonnegative(), z.null()]),
     local: z.boolean(),
     stream: z.boolean(),
+    expose: z.enum(methodExposures).optional(),
   })
   .strict();
 
@@ -162,11 +172,12 @@ const hasLocal = (value: unknown): boolean => {
  * method's listener is its last tuple item and its output the Disposable;
  * any other process-local value (a callback, a definition, a Disposable)
  * makes the method local, because only plain JSON and streams cross the
- * desktop bridge.
+ * desktop bridge. `expose` is the method's exposure from its document.
  */
 export const remoteMethodSpecFromSchema = (
   input: JsonObject,
   output: JsonObject,
+  expose?: MethodExposure,
 ): RemoteMethodSpec => {
   const prefix = Array.isArray(input.prefixItems) ? input.prefixItems : null;
   const stream = streamItemSchema(input) !== undefined;
@@ -179,6 +190,7 @@ export const remoteMethodSpecFromSchema = (
     tuple: input.type === 'array' && prefix !== null ? prefix.length : null,
     local: hasLocal(plain) || (!stream && hasLocal(output)),
     stream,
+    ...(expose === undefined ? {} : { expose }),
   };
 };
 
@@ -226,19 +238,18 @@ export interface WindowCatalog {
 // Bridge calls ---------------------------------------------------------------
 
 /**
- * The scope a window sends: exactly the three keys the window could send
- * before the scope became a generic record (`.strict()`, no other key), so a
- * window cannot reach a key the platform never admitted. `windowKey` is not
- * among them, so the dispatcher's own key cannot be impersonated. Values stay
- * unbounded strings, as they were.
+ * The scope a window sends: a bounded opaque record (`callScopeSchema`). Which
+ * keys a contract accepts is the declaration of its provider (`desktopScope`),
+ * checked by main; here `windowKey` is refused in any case, so a window cannot
+ * impersonate the key the dispatcher fills for it.
  */
-const bridgeScopeSchema = z
-  .object({
-    projectId: z.string().optional(),
-    threadId: z.string().optional(),
-    promptId: z.string().optional(),
-  })
-  .strict();
+const bridgeScopeSchema = callScopeSchema.refine(
+  (scope) =>
+    !Object.keys(scope).some(
+      (key) => key.toLowerCase() === windowScopeKey.toLowerCase(),
+    ),
+  { message: `A window may not set the ${windowScopeKey} scope key.` },
+);
 
 export type BridgeScope = z.infer<typeof bridgeScopeSchema>;
 

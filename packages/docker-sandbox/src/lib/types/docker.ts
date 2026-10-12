@@ -97,6 +97,18 @@ export interface ContainerInspect {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+export interface ListContainersInput {
+  /** `key=value` labels; a listed container carries every one of them. */
+  readonly labels: readonly string[];
+}
+
+/** One container as the daemon lists it, stopped containers included. */
+export interface ContainerSummary {
+  readonly id: string;
+  readonly running: boolean;
+  readonly created: number;
+}
+
 export interface DockerStats {
   /**
    * Busy share of the container's own CPU quota, 0..100, so a container using
@@ -177,6 +189,18 @@ export interface DockerClient extends SandboxProvider {
     container: ContainerRef | string,
     options?: DockerRequestOptions,
   ): Promise<void>;
+
+  /** Restarts a container, starting it when it is stopped. */
+  restartContainer(
+    container: ContainerRef | string,
+    options?: DockerRequestOptions,
+  ): Promise<void>;
+
+  /** Lists every container, stopped ones included, that carries all the labels. */
+  listContainers(
+    input: ListContainersInput,
+    options?: DockerRequestOptions,
+  ): Promise<readonly ContainerSummary[]>;
 
   inspectContainer(
     container: ContainerRef | string,

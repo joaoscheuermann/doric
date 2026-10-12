@@ -11,6 +11,7 @@ import {
   type DistributionBundle,
   type DistributionCatalog,
   descriptorSchema,
+  documentExposure,
 } from 'bundle/runtime';
 import {
   type RemoteContract,
@@ -34,6 +35,8 @@ export interface MethodSchemas {
 export interface RoutedContract {
   readonly contract: RemoteContract;
   readonly schemas: Readonly<Record<string, MethodSchemas>>;
+  /** The scope keys a window may send to this contract (`desktopScope` of its provider). */
+  readonly scopeKeys: readonly string[];
 }
 
 /** Everything main keeps per generation for the windows pinned to it. */
@@ -134,11 +137,24 @@ const routedContract = (input: {
     return undefined;
   }
 
+  // A malformed exposure leaves the contract unrouted: default deny.
+  let exposed: ReturnType<typeof documentExposure>;
+
+  try {
+    exposed = documentExposure(document);
+  } catch {
+    return undefined;
+  }
+
   const schemas = methodSchemas(document);
   const methods: Record<string, RemoteMethodSpec> = {};
 
   for (const [name, member] of Object.entries(schemas)) {
-    methods[name] = remoteMethodSpecFromSchema(member.input, member.output);
+    methods[name] = remoteMethodSpecFromSchema(
+      member.input,
+      member.output,
+      exposed[name],
+    );
   }
 
   return {
@@ -152,6 +168,7 @@ const routedContract = (input: {
       methods,
     },
     schemas,
+    scopeKeys: input.bundle.manifest?.desktopScope?.[input.id] ?? [],
   };
 };
 
@@ -301,9 +318,11 @@ export const mayUse = (entry: CatalogEntry, contract: string): boolean => {
     return false;
   }
 
-  return [...manifest.requires, ...manifest.provides].some(
-    (declared) => contractIdOf(declared) === contract,
-  );
+  return [
+    ...manifest.requires,
+    ...manifest.provides,
+    ...(manifest.optional ?? []),
+  ].some((declared) => contractIdOf(declared) === contract);
 };
 
 /** The route a client call takes: desktopMain first, then host. */

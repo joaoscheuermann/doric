@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { migrationMarkerPattern } from 'bundle/contracts';
 import { z } from 'zod';
 
 /** Writes `value` as JSON to `path` through a temporary file and a rename. */
@@ -66,13 +67,19 @@ export interface LastGoodCore {
   readonly bundle: unknown;
 }
 
+/** At most this many migration markers are kept in the state. */
+const MAX_MIGRATIONS = 32;
+
 export interface DesktopStateData {
-  readonly migrations: { readonly selectionOrigin?: true };
+  /** Migration markers that are done: names chosen by the migrating bundle. */
+  readonly migrations: Readonly<Record<string, true>>;
   readonly lastGoodCore?: LastGoodCore;
 }
 
 const stateSchema: z.ZodType<DesktopStateData> = z.object({
-  migrations: z.object({ selectionOrigin: z.literal(true).optional() }),
+  migrations: z
+    .record(z.string().regex(migrationMarkerPattern), z.literal(true))
+    .refine((markers) => Object.keys(markers).length <= MAX_MIGRATIONS),
   lastGoodCore: z
     .object({
       id: z.string(),

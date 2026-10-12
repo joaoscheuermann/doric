@@ -103,11 +103,8 @@ const candidateOf = (
 export const candidatesFromDistribution = (
   catalog: DistributionCatalog,
 ): CatalogCandidate[] => {
-  // The kernel-embedded bundles (`host-config`, `transport`) are always
-  // enabled outside the composition; the host lists them, active and without
-  // a desktop part. They keep that standing on the desktop, so a part that
-  // requires a contract only they provide (`host-config/v1`, `resources/v1`)
-  // resolves as it does on the host instead of seeing a disabled provider.
+  // Embedded host-only providers may be active outside the enabled list.
+  // Preserve that standing when resolving their consumers on the desktop.
   const enabled = new Set(catalog.composition.enabled);
 
   return catalog.bundles.map((bundle) =>

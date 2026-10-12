@@ -4,9 +4,9 @@ import { defineConfig } from 'prisma/config';
 // config keeps every `--config agents/doric/prisma.config.ts` command (the
 // Compose and image `migrate` steps, `nx run doric:migrate`) pointing at them.
 export default defineConfig({
-  schema: '../../bundles/postgres/prisma/schema.prisma',
+  schema: '../../bundles/foundation/postgres/prisma/schema.prisma',
   migrations: {
-    path: '../../bundles/postgres/prisma/migrations',
+    path: '../../bundles/foundation/postgres/prisma/migrations',
   },
   datasource: {
     url:

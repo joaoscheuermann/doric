@@ -6,8 +6,6 @@
 
 import './platform/protocol/privileges';
 
-import { join } from 'node:path';
-
 import { app, BrowserWindow, Notification, nativeTheme } from 'electron';
 
 import { createConnectionManager } from './connection/manager';
@@ -18,7 +16,6 @@ import {
 import { DesktopPlatform } from './platform/app';
 import { HOST_URL } from './platform/bridge/host-bridge';
 import { createPlatformLog } from './platform/log';
-import { migrateSelectionOrigin } from './platform/migration/selection-origin';
 import type { NotificationApi } from './platform/native/notifications';
 
 let connection: ConnectionMonitor | null = null;
@@ -68,15 +65,7 @@ void app.whenReady().then(async () => {
   });
   app.on('before-quit', (event) => platform.lifecycle.beforeQuit(event));
 
-  await platform.start(() =>
-    migrateSelectionOrigin({
-      state: platform.state,
-      packaged: app.isPackaged,
-      legacyPage: join(__dirname, 'assets', 'legacy-origin.html'),
-      blankPath: platform.blankPath(),
-      log,
-    }),
-  );
+  await platform.start();
 });
 
 app.on('window-all-closed', () => {

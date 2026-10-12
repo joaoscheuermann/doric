@@ -1,6 +1,6 @@
 // One desktopMain generation in a utility process (section 13.1). Main plays
 // the kernel role: it sends `init` with its platform providers
-// (`doric.windows|menus|cache|tokens|notifications|log/v1`), keeps the
+// (`doric.windows|menus|cache|migrations|tokens|notifications|log/v1`), keeps the
 // providers the generation announces in a directory of its own, and runs the
 // app lifecycle hooks through the generation's `hooks/v1`.
 
@@ -41,6 +41,7 @@ export const KERNEL_CONTRACTS = [
   'doric.windows/v1',
   'doric.menus/v1',
   'doric.cache/v1',
+  'doric.migrations/v1',
   'doric.tokens/v1',
   'doric.notifications/v1',
   'doric.log/v1',

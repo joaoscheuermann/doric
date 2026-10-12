@@ -1,0 +1,42 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-settings",
+  "projectType": "library",
+  "sourceRoot": "bundles/desktop/settings/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc -p bundles/desktop/settings/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/desktop/settings"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "command": "tsc -p bundles/desktop/settings/tsconfig.json"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/desktop/settings/dist-tests",
+          "tsc -p bundles/desktop/settings/tsconfig.spec.json",
+          "tsc -p bundles/desktop/settings/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/desktop/settings/dist-tests/tests/*.test.js bundles/desktop/settings/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

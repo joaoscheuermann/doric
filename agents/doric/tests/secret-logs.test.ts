@@ -3,14 +3,15 @@ import { createServer, type IncomingMessage } from 'node:http';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { defaultConfig } from '../src/lib/config/schema.js';
+import { defaultConfig } from 'host-config/testing';
+
 import { freshDatabase, startHostProcess } from './helpers/host.js';
 
 // No log line may carry a resolved secret: not the host's own lines, not the
 // platform's, and not a bundle's `log/v1` records. The compiled host runs as
 // an operator runs it, and its whole log file and console are scanned. That a
 // bundle's own careless `log/v1` record is redacted is the core's rule, tested
-// in bundles/core (log-redaction).
+// in bundles/foundation/core (log-redaction).
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const sandboxed = process.env.DORIC_TEST_SANDBOX === 'true';

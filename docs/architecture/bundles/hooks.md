@@ -93,6 +93,17 @@ export const activate = ({ services }: DesktopContext) => {
 
 No client, `hooks.use(WindowHooksV1).onCloseHook(handler)` e `hooks.use(WindowHooksV1).onFlushHook(handler)` registram handlers para a janela do client que chamou: o provedor associa o registro ao `call.scope.windowKey` preenchido pela plataforma. A falha da ativação de um bundle (o `activate` dele) leva à quarentena, descrita em [bundle core e quarentena](./core.md); o `onActivateHook` só observa a ativação, e uma falha num handler desse hook vai ao diagnóstico, como em qualquer hook `observe`. O fechamento de janelas está em [janelas abertas pelo core](./windows.md).
 
+### Hooks de início, parada, geração e sinal de par
+
+A plataforma define quatro hooks a mais em `AppHooksV1` (`doric.app.hooks/v1`). Nenhum deles nomeia um bundle ou um contrato de bundle:
+
+- `onHostStartHook` (`sequence`): roda em ordem de ativação, depois de carregar os bundles e de conferir o bloco `required` da composição, e antes de `onHostReadyHook`. Uma falha é fatal. Cada bundle informa o estágio que executa por `doric.startup/v1`.
+- `onHostStopHook` (`sequence`, ordem reversa): roda depois de fechar o listener e antes de desativar os bundles.
+- `onGenerationChangedHook` (`observe`): recebe `activated`, `draining`, `lost` ou `stopped` em cada geração viva. O campo `holds` chega a cada handler só com as retenções do próprio bundle, por `forOwner`.
+- `onPeerSignalHook`: entrega o `doric.generation/v1.signal(topic, payload)` do bundle ao mesmo bundle nas outras gerações vivas, com o remetente informado.
+
+Quem usa esses hooks decide o que a troca significa. O `runtime`, por exemplo, reage a eles para retomar, liberar e adotar Projects. O kernel não chama nenhum método de bundle pelo nome. Ver [processos e isolamento](./process-isolation.md).
+
 ## Hooks definidos por bundles
 
 | Dono                 | Hook                                          | Tipo                | Regra que continua com o dono                                                              |

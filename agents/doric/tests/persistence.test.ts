@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { type ConfigInput, defaultConfig } from 'host-config/testing';
 import { Prisma } from 'postgres/prisma';
 
-import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
 import { createProjectStore } from './helpers/legacy/projects.js';
 import { createThreadStore } from './helpers/legacy/threads.js';
 import {
@@ -887,6 +887,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20261008000000_consolidate_providers',
     '20261009000000_generic_storage',
     '20261010000000_runtime_documents',
+    '20261012000000_registered_credential_kinds',
     'migration_lock.toml',
   ]);
   assert.deepEqual(

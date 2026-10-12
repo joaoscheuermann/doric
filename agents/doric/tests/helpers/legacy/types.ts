@@ -1,3 +1,4 @@
+import type { DoricConfig } from 'host-config/testing';
 import type { ProviderMessage } from 'llms';
 import type {
   ContainerResources,
@@ -11,7 +12,6 @@ import type {
 } from 'runtime/contracts';
 import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 
-import type { DoricConfig } from '../../../src/lib/config/schema.js';
 import type { ProjectColor } from './colors.js';
 import type { PromptFailure, PromptProgress } from './prompts.js';
 

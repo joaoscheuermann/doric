@@ -11,6 +11,7 @@ import {
   containerFrom,
   containerId,
   containerInspectFrom,
+  containerSummaryFrom,
   createBody,
   defaultConnection,
   dockerStatsFrom,
@@ -154,6 +155,34 @@ export const createDockerClient = (
         },
         [204, 304],
       );
+    },
+
+    async restartContainer(container, control = {}) {
+      await send(
+        {
+          method: 'POST',
+          path: `/containers/${encodeURIComponent(containerId(container))}/restart`,
+          ...control,
+        },
+        204,
+      );
+    },
+
+    async listContainers(input, control = {}) {
+      const raw = await json<Record<string, unknown>[]>(
+        {
+          method: 'GET',
+          path: '/containers/json',
+          query: {
+            all: true,
+            filters: JSON.stringify({ label: input.labels }),
+          },
+          ...control,
+        },
+        200,
+      );
+
+      return raw.map(containerSummaryFrom);
     },
 
     async inspectContainer(container, control = {}) {

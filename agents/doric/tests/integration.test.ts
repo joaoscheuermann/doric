@@ -3,9 +3,9 @@ import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { defaultConfig } from 'host-config/testing';
 import { io } from 'socket.io-client';
 
-import { defaultConfig } from '../src/lib/config/schema.js';
 import { freshDatabase, startHostProcess } from './helpers/host.js';
 import {
   childPrompt,

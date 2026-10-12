@@ -10,9 +10,11 @@ import type {
   HookDefinition,
   StorageIndex,
 } from '../contracts/define.js';
+import type { MethodExposure } from '../contracts/expose.js';
 import type { Environment } from '../contracts/ids.js';
 import type { JsonObject, JsonValue } from '../contracts/types.js';
 import type { DescriptorKind } from './descriptor.js';
+import { documentExposureKey, exposureOf } from './exposure.js';
 
 export type SchemaDirection = 'input' | 'output';
 
@@ -286,6 +288,7 @@ export const contractDocument = (
   contract: RecordedContract,
 ): ContractDocument => {
   const defs: Record<string, JsonObject> = {};
+  const exposed: Record<string, MethodExposure> = {};
   let local = false;
   const member = (
     key: string,
@@ -303,6 +306,11 @@ export const contractDocument = (
     case 'service':
       for (const name of Object.keys(contract.methods).sort()) {
         const method = contract.methods[name] as MethodSpec;
+        const expose = exposureOf(contract.id, name, method);
+
+        if (expose !== undefined) {
+          exposed[name] = expose;
+        }
 
         member(`${name}.input`, method.input, 'input');
         member(`${name}.output`, method.output, 'output');
@@ -344,6 +352,9 @@ export const contractDocument = (
       $schema: JSON_SCHEMA_DIALECT,
       $id: `doric:contract/${contract.id}`,
       'x-doric-kind': kind,
+      ...(Object.keys(exposed).length === 0
+        ? {}
+        : { [documentExposureKey]: exposed }),
       $defs: defs,
     },
     local,

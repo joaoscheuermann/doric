@@ -5,11 +5,7 @@ import test from 'node:test';
 
 import type { CatalogSnapshot } from 'bundle/contracts';
 
-import {
-  defaultRequirement,
-  hostComposition,
-  structuralFault,
-} from '../src/lib/bundles/boot.js';
+import { hostComposition, structuralFault } from '../src/lib/bundles/boot.js';
 
 // The shipped composition enables the sandbox bundle `DORIC_SANDBOX_PROVIDER`
 // names (D10-9). The kernel keeps no sandbox settings: each sandbox bundle reads
@@ -47,10 +43,13 @@ void test('the shipped composition boots docker unless DORIC_SANDBOX_PROVIDER as
   );
 });
 
-void test('the shipped composition requires what the host always required', async () => {
+void test('the shipped composition declares its essential providers', async () => {
   const chosen = await hostComposition({}, shipped);
 
-  assert.deepEqual(chosen.required, defaultRequirement);
+  assert.deepEqual(
+    chosen.required,
+    JSON.parse(await readFile(shipped, 'utf8')).required,
+  );
 });
 
 const withComposition = async (
@@ -121,38 +120,38 @@ void test('an operator composition without alternatives boots as written', async
   );
 });
 
-void test('an operator composition without required keeps the structural requirement', async () => {
+void test('an operator composition without required assumes no product providers', async () => {
   await withComposition({ core: 'core', enabled: ['core'] }, async (path) => {
     const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
 
-    assert.deepEqual(own.required, defaultRequirement);
-    assert.deepEqual(own.required.bundles, ['transport']);
+    assert.deepEqual(own.required, { contracts: [], bundles: [] });
   });
 });
 
-void test('an operator composition without required refuses a host without transport, as HEAD did', async () => {
-  await withComposition({ core: 'core', enabled: ['core'] }, async (path) => {
-    const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
-    // Only the core is active: the structural set is missing, as the host's
-    // boot reported it before `required` was configurable.
-    const catalog = {
-      contracts: [],
-      bundles: [{ id: 'core', state: 'active' }],
-    } as unknown as CatalogSnapshot;
+void test('an operator composition enforces its own essential provider', async () => {
+  await withComposition(
+    { core: 'core', enabled: ['core'], required: { contracts: ['sample/v1'] } },
+    async (path) => {
+      const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
+      const catalog = {
+        contracts: [],
+        bundles: [{ id: 'core', state: 'active' }],
+      } as unknown as CatalogSnapshot;
 
-    assert.equal(
-      structuralFault(catalog, own.required),
-      'structural providers unavailable: runtime/v1, executor/v1, sandbox/v1, models/v1, host-config/v1, transport',
-    );
-  });
+      assert.equal(
+        structuralFault(catalog, own.required),
+        'structural providers unavailable: sample/v1',
+      );
+    },
+  );
 });
 
-void test('an unreadable composition is left to the kernel with the same requirement', async () => {
+void test('an unreadable composition is left to the kernel for validation', async () => {
   await withComposition('{', async (path) => {
     assert.deepEqual(await hostComposition({ DORIC_COMPOSITION: path }, path), {
       composition: { path },
       alternatives: {},
-      required: defaultRequirement,
+      required: { contracts: [], bundles: [] },
     });
   });
 });

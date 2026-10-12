@@ -14,7 +14,7 @@ const tokens = loadWindowTokens(tokensPath);
 const preload = '/app/preload.js';
 const screen = { width: 2560, height: 1440 };
 
-// The core's intents (bundles/core/src/desktop/appearance.ts).
+// The core's intents (bundles/foundation/core/src/desktop/appearance.ts).
 const workspace = windowAppearanceSchema.parse({
   size: { width: 1280, height: 800, minWidth: 960, minHeight: 640 },
   titleBar: 'integrated',

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { type ConfigInput, defaultConfig } from '../src/lib/config/schema.js';
-import { createConfigService } from '../src/lib/config/service.js';
-import type { CredentialCreate } from '../src/lib/credentials/kind.js';
+import type { CredentialCreate } from 'bundle/contracts';
+import {
+  type ConfigInput,
+  createConfigService,
+  defaultConfig,
+} from 'host-config/testing';
+
 import { deferred } from './helpers/credentials.js';
 import { persistenceFixture } from './helpers/persistence-fixture.js';
 import { kernelOver } from './helpers/platform.js';
@@ -14,7 +18,7 @@ import { kernelOver } from './helpers/platform.js';
 // call `host-config/v1`'s replacement pipeline and the credential service
 // directly; the transport maps their outcomes to the same statuses as before
 // (replaced 200, rejected 503, referenced 409, deleted 204, missing 404),
-// which bundles/transport tests the routes for.
+// which bundles/foundation/transport tests the routes for.
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 

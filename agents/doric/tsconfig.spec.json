@@ -31,19 +31,19 @@
       "path": "../../packages/llms/tsconfig.lib.json"
     },
     {
-      "path": "../../bundles/postgres"
+      "path": "../../bundles/foundation/postgres"
     },
     {
       "path": "../../packages/storage/tsconfig.lib.json"
     },
     {
-      "path": "../../bundles/core"
+      "path": "../../bundles/foundation/core"
     },
     {
-      "path": "../../bundles/runtime"
+      "path": "../../bundles/runtime/runtime"
     },
     {
-      "path": "../../bundles/transport"
+      "path": "../../bundles/foundation/transport"
     },
     {
       "path": "../../packages/tool/tsconfig.lib.json"

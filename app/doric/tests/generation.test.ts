@@ -102,6 +102,7 @@ const bootGeneration = async (
       setContext: () => undefined,
     },
     cacheDirectory: async (bundleId) => `/cache/${bundleId}`,
+    migrateStorage: async () => 'none',
     tokens: () => ({ '--background': 'x' }),
     notify: () => undefined,
     log: silentLog,

@@ -12,6 +12,7 @@ import {
   type StorageTypeDefinition,
 } from '../contracts/define.js';
 import { type Environment, isPlatformContract } from '../contracts/ids.js';
+import { misdeclaredExposure } from '../runtime/exposure.js';
 import { type ManifestV1, parseContractEntry } from '../runtime/manifest.js';
 import type { RecordedContract } from './schemas.js';
 
@@ -50,7 +51,10 @@ export const recordActivation = async (options: {
   readonly activate: Activate;
 }): Promise<readonly RecordedContract[]> => {
   const { manifest, environment } = options;
-  const requires = ids(manifest.requires);
+  const requires = new Set([
+    ...ids(manifest.requires),
+    ...(manifest.optional ?? []),
+  ]);
   const provides = ids(manifest.provides);
   const recorded: RecordedContract[] = [];
   const assertUsable = (id: string) => {
@@ -272,6 +276,16 @@ export const checkRecording = (
       errors.push(
         `${contract.id} is ${contract.cardinality}; the platform publishes it as ${spec.cardinality}.`,
       );
+    }
+
+    if (contract.kind === 'service') {
+      const method = misdeclaredExposure(contract.id, contract.methods);
+
+      if (method !== undefined) {
+        errors.push(
+          `${contract.id} ${method} may not be exposed to the desktop: the platform specification decides.`,
+        );
+      }
     }
   }
 

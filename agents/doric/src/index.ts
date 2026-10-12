@@ -16,8 +16,6 @@ import {
   startBundles,
   watchStructural,
 } from './lib/bundles/boot.js';
-import { createHostConfig } from './lib/bundles/configuration.js';
-import { createHostTransport } from './lib/bundles/transport.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -80,17 +78,14 @@ async function main() {
   // their own environment, and log them at their start steps.
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
-  const hostConfig = createHostConfig();
-  const transport = createHostTransport({ app, io, logger });
   const bundles = await startBundles({
     ...paths,
     composition,
-    embedded: [hostConfig.bundle, transport.bundle],
+    network: { http: app, sockets: io },
     logger,
     startup: startupRecord,
   });
   const { platform } = bundles;
-  transport.bind(platform);
 
   await assertStructural(platform, startup, required);
   const skills = await platform.services.use(SkillsV1).list();

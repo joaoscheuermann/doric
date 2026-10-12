@@ -1,6 +1,6 @@
+import type { DoricConfig } from 'host-config/testing';
 import type { Database, Project as StoredProject } from 'postgres/prisma';
 
-import type { DoricConfig } from '../../../src/lib/config/schema.js';
 import { isProjectColor } from './colors.js';
 import {
   before,

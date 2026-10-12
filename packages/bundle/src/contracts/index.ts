@@ -69,6 +69,11 @@ export {
   toContractError,
 } from './error.js';
 export {
+  isMethodExposure,
+  type MethodExposure,
+  methodExposures,
+} from './expose.js';
+export {
   type ContractId,
   contractIdPattern,
   type Environment,
@@ -77,6 +82,11 @@ export {
   isPlatformContract,
   majorOf,
 } from './ids.js';
+export {
+  type DoricNetwork,
+  DoricNetworkV1,
+  type NetworkResources,
+} from './network.js';
 export {
   AppHooksV1,
   type BundleDescription,
@@ -118,6 +128,8 @@ export {
   DoricLogV1,
   type DoricMenus,
   DoricMenusV1,
+  type DoricMigrations,
+  DoricMigrationsV1,
   type DoricNotifications,
   DoricNotificationsV1,
   type DoricStartup,
@@ -134,6 +146,10 @@ export {
   generationDescriptionSchema,
   type LogRecord,
   type MenuSkeleton,
+  type MigrationRequest,
+  type MigrationResult,
+  migrationKeyPattern,
+  migrationMarkerPattern,
   type NotificationRequest,
   notificationRequestSchema,
   type PeerSignal,

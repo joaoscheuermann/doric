@@ -278,6 +278,7 @@ describe('doric.notifications/v1 (broker)', () => {
       },
       menus,
       cacheDirectory: async () => '/cache',
+      migrateStorage: async () => 'none',
       tokens: () => ({}),
       notify: (request) =>
         showNotification(request, {
@@ -347,6 +348,7 @@ describe('doric.windows/v1 focus (broker)', () => {
       },
       menus,
       cacheDirectory: async () => '/cache',
+      migrateStorage: async () => 'none',
       tokens: () => ({}),
       notify: () => undefined,
       log: silentLog,

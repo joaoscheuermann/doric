@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { type Composition, readComposition } from 'bundle';
-import { SkillsV1, ToolsV1 } from 'bundle/contracts';
+import { SecretsV1, SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
 import { Server as SocketServer } from 'socket.io';
@@ -19,8 +19,6 @@ import {
   startBundles,
   watchStructural,
 } from '../src/lib/bundles/boot.js';
-import { createHostConfig } from '../src/lib/bundles/configuration.js';
-import { createHostTransport } from '../src/lib/bundles/transport.js';
 
 // Build doric first: these tests boot the bundles the host stages in
 // dist/bundles with the composition it ships, through the real loader, and
@@ -86,18 +84,16 @@ const boot = async (
   const server = createServer(app);
   const io = new SocketServer(server);
   const logger = options.logger ?? pino({ enabled: false });
-  const transport = createHostTransport({ app, io, logger });
   const bundles = await startBundles({
     bundlesPath: options.bundles ?? bundlesPath,
     compositionPath: options.composition ?? compositionPath,
     ...(options.derived === undefined ? {} : { composition: options.derived }),
-    embedded: [createHostConfig().bundle, transport.bundle],
+    network: { http: app, sockets: io },
     logger,
   }).catch(async (error: unknown) => {
     await io.close();
     throw error;
   });
-  transport.bind(bundles.platform);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address !== null && typeof address === 'object');
@@ -125,6 +121,26 @@ const withHost = async (run: (host: Host) => Promise<void>): Promise<void> => {
     await host.platform.stop();
   }
 };
+
+void test('the default composition registers the GIT kind when the git bundle activates', async () => {
+  await withHost(async (host) => {
+    const kinds = await host.platform.services.use(SecretsV1).kinds();
+
+    assert.deepEqual(
+      kinds.map(({ id }) => id),
+      ['API_TOKEN', 'USERNAME_PASSWORD', 'GIT'],
+    );
+    assert.deepEqual(
+      kinds.find(({ id }) => id === 'GIT'),
+      {
+        id: 'GIT',
+        required: ['username', 'email'],
+        optional: [],
+        label: 'Git identity',
+      },
+    );
+  });
+});
 
 void test('the default composition exposes the pre-migration tools, in order, byte for byte', async () => {
   await withHost(async (host) => {
@@ -236,7 +252,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // `resources` features, and since the desktop switch (WP-10N) the
     // `notifications` bundle, which has no host part, and the `web` bundle. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 20);
+    assert.equal(host.bundleCount, 22);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -342,7 +358,7 @@ void test('DORIC_SANDBOX_PROVIDER=firecracker boots the shipped composition with
   }
 });
 
-void test('GET /tools answers the pre-migration catalog through the embedded transport', async () => {
+void test('GET /tools answers the pre-migration catalog through the installed transport', async () => {
   await withHost(async (host) => {
     const response = await fetch(`${host.url}/tools`);
     const expected = (

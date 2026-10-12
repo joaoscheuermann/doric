@@ -152,5 +152,6 @@ export const toolsMethods = {
   catalog: {
     input: noInput,
     output: z.array(toolCatalogEntrySchema),
+    expose: 'desktop',
   },
 } as const satisfies MethodSpecs;

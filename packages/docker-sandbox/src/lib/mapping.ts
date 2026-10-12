@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import type {
   ContainerInspect,
   ContainerRef,
+  ContainerSummary,
   CreateContainerInput,
   CreateVolumeInput,
   DockerConnection,
@@ -106,6 +107,14 @@ export const containerFrom = (raw: Record<string, unknown>): ContainerRef => ({
         (warning): warning is string => typeof warning === 'string',
       )
     : [],
+});
+
+export const containerSummaryFrom = (
+  raw: Record<string, unknown>,
+): ContainerSummary => ({
+  id: stringField(raw, 'Id'),
+  running: stringValue(raw.State) === 'running',
+  created: numberValue(raw.Created) ?? 0,
 });
 
 export const containerInspectFrom = (
@@ -252,10 +261,10 @@ export const pathWithQuery = (request: DockerTransportRequest): string => {
   return query.length === 0 ? request.path : `${request.path}?${query}`;
 };
 
-const stringValue = (value: unknown): string | undefined =>
+export const stringValue = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-const numberValue = (value: unknown): number | undefined =>
+export const numberValue = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
 const difference = (
@@ -271,7 +280,7 @@ const difference = (
 const clampPercent = (value: number): number =>
   Math.min(100, Math.max(0, value));
 
-const recordValue = (value: unknown): Record<string, unknown> =>
+export const recordValue = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null
     ? (value as Record<string, unknown>)
     : {};

@@ -71,6 +71,7 @@ import { GenerationProcess } from './generation/process';
 import { Lifecycle } from './lifecycle';
 import { createPlatformLog, messageOf, type PlatformLog } from './log';
 import { NativeMenus } from './menus/native-menus';
+import { migrateStorageOrigin } from './migration/storage-origin';
 import { cacheDirectory } from './native/cache';
 import { type NotificationApi, showNotification } from './native/notifications';
 import { desktopPaths } from './paths';
@@ -242,6 +243,10 @@ export class DesktopPlatform {
       },
       log: this.log,
       quit: () => app.quit(),
+      flush: async () => {
+        await this.#windowPaths?.flush();
+        await this.#state?.flush();
+      },
     });
     this.menus = new NativeMenus({
       registry: this.registry,
@@ -302,6 +307,21 @@ export class DesktopPlatform {
       menus: this.menus,
       cacheDirectory: (bundleId) =>
         cacheDirectory(this.#paths.bundleCache, bundleId),
+      migrateStorage: (request) =>
+        migrateStorageOrigin(
+          {
+            state: this.state,
+            packaged: this.options.packaged,
+            legacyPage: join(
+              this.options.mainDir,
+              'assets',
+              'legacy-origin.html',
+            ),
+            blankPath: this.blankPath(),
+            log: this.log,
+          },
+          request,
+        ),
       tokens: () => this.tokens.variables(),
       notify: (request: NotificationRequest) => this.notify(request),
       log: this.log,
@@ -525,18 +545,11 @@ export class DesktopPlatform {
   }
 
   /**
-   * Opens the splash, runs what must happen behind it (the selection origin
-   * migration), then the startup up to `onAppReadyHook`.
+   * Opens the splash, then the startup up to `onAppReadyHook`, where the core
+   * asks for its storage migrations before it opens the primary window.
    */
-  async start(behindSplash?: () => Promise<unknown>): Promise<void> {
+  async start(): Promise<void> {
     this.#openSplash();
-
-    try {
-      await behindSplash?.();
-    } catch (error) {
-      this.log.warn({ error: messageOf(error) }, 'A startup step failed');
-    }
-
     await this.startup.run();
     this.#watch();
   }

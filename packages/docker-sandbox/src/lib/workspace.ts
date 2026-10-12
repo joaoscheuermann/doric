@@ -32,13 +32,29 @@ export const ensureWorkspaceVolume = async (
   return name;
 };
 
+/** Lists every container that serves one durable workspace, stopped ones too. */
+export const workspaceContainers = (
+  client: DockerClient,
+  identity: string,
+  options: DockerRequestOptions = {},
+) =>
+  client.listContainers(
+    { labels: [`doric.sandbox.workspace=${identity}`] },
+    options,
+  );
+
 /**
- * Removes the volume that holds one durable workspace. Removing a volume that
- * is already gone succeeds, so a repeated deletion is safe.
+ * Removes the containers and the volume that hold one durable workspace. A
+ * volume that a container still mounts cannot be removed, so the containers go
+ * first. Removing what is already gone succeeds, so a repeated deletion is safe.
  */
 export const discardWorkspace = async (
   client: DockerClient,
   identity: string,
 ): Promise<void> => {
+  for (const { id } of await workspaceContainers(client, identity)) {
+    await client.removeContainer(id, { force: true, volumes: false });
+  }
+
   await client.removeVolume(workspaceVolume(identity), { force: true });
 };

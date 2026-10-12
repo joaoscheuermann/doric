@@ -39,6 +39,8 @@ export const compositionSchema = z
   .object({
     core: z.string().min(1),
     enabled: z.array(z.string().min(1)).min(1),
+    /** Installed host parts sharing the native host process. */
+    resident: z.array(z.string().regex(bundleIdPattern)).optional(),
     providers: z
       .record(z.string().regex(contractIdPattern), z.string().min(1))
       .default({}),

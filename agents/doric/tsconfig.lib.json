@@ -12,13 +12,13 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../bundles/transport"
+      "path": "../../bundles/foundation/transport"
     },
     {
       "path": "../../packages/tool/tsconfig.lib.json"
     },
     {
-      "path": "../../bundles/terminal"
+      "path": "../../bundles/features/terminal"
     },
     {
       "path": "../../packages/session/tsconfig.lib.json"
@@ -30,10 +30,10 @@
       "path": "../../packages/sandbox/tsconfig.lib.json"
     },
     {
-      "path": "../../bundles/runtime"
+      "path": "../../bundles/runtime/runtime"
     },
     {
-      "path": "../../bundles/postgres"
+      "path": "../../bundles/foundation/postgres"
     },
     {
       "path": "../../packages/oauth/tsconfig.lib.json"
@@ -45,13 +45,16 @@
       "path": "../../packages/llms/tsconfig.lib.json"
     },
     {
+      "path": "../../bundles/foundation/host-config"
+    },
+    {
       "path": "../../packages/firecracker-sandbox/tsconfig.lib.json"
     },
     {
       "path": "../../packages/docker-sandbox/tsconfig.lib.json"
     },
     {
-      "path": "../../bundles/core"
+      "path": "../../bundles/foundation/core"
     },
     {
       "path": "../../packages/config/tsconfig.lib.json"

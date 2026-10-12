@@ -6,21 +6,16 @@ import {
   startHost,
 } from 'bundle';
 import { SecretsV1, SettingsV1 } from 'bundle/contracts';
-import type { Database } from 'postgres/prisma';
-import { postgresEmbedded } from 'postgres/testing';
-
-import {
-  createHostConfig,
-  type HostConfig,
-} from '../../src/lib/bundles/configuration.js';
+import { ConfigurationV1 } from 'host-config/contracts';
+import { createHostConfig, type HostConfig } from 'host-config/kernel';
 import {
   type ConfigStore,
-  createConfigStore,
-} from '../../src/lib/config/store.js';
-import {
   type CredentialService,
+  createConfigStore,
   createCredentialService,
-} from '../../src/lib/credentials/service.js';
+} from 'host-config/testing';
+import type { Database } from 'postgres/prisma';
+import { postgresEmbedded } from 'postgres/testing';
 
 /** The built bundles the host stages in `dist/bundles`. */
 export const bundlesPath = 'agents/doric/dist/bundles';
@@ -85,10 +80,10 @@ export const startPlatform = async ({
     bundlesPath,
     composition: {
       core: 'core',
-      enabled: ['core', id],
+      enabled: ['core', 'host-config', id],
       providers: { 'storage.backend/v1': id, 'secrets.backend/v1': id },
     },
-    embedded: [foundation, hostConfig.bundle, ...embedded],
+    embedded: [foundation, ...embedded],
     log,
     sink,
   });
@@ -99,6 +94,14 @@ export const startPlatform = async ({
     await platform.stop();
     throw new Error(`The test kernel is in recovery: ${reason}`);
   }
+
+  // The git bundle registers the GIT kind when it activates; this kernel
+  // composes without git, so the registration the host would make is made here.
+  platform.services.use(SecretsV1).registerKind({
+    id: 'GIT',
+    required: ['username', 'email'],
+    optional: [],
+  });
 
   return { platform, hostConfig, close: () => platform.stop() };
 };
@@ -121,7 +124,11 @@ export const startKernel = async (options: KernelOptions): Promise<Kernel> => {
       track: hostConfig.track,
     });
 
-    if (options.configuration === true) await configs.load();
+    if (options.configuration === true) {
+      await configs.load();
+      // Prime the installed owner's references as its startup hook does.
+      await platform.services.use(ConfigurationV1).current();
+    }
 
     return { platform, hostConfig, credentials, configs, close };
   } catch (error) {

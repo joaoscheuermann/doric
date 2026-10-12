@@ -46,13 +46,13 @@
       "path": "./packages/tool"
     },
     {
-      "path": "./bundles/core"
+      "path": "./bundles/foundation/core"
     },
     {
       "path": "./packages/sandpool"
     },
     {
-      "path": "./bundles/git"
+      "path": "./bundles/features/git"
     },
     {
       "path": "./packages/state-machine"
@@ -67,28 +67,28 @@
       "path": "./app/doric"
     },
     {
-      "path": "./bundles/threads"
+      "path": "./bundles/features/threads"
     },
     {
-      "path": "./bundles/files"
+      "path": "./bundles/features/files"
     },
     {
-      "path": "./bundles/runtime"
+      "path": "./bundles/runtime/runtime"
     },
     {
-      "path": "./bundles/terminal"
+      "path": "./bundles/features/terminal"
     },
     {
-      "path": "./bundles/postgres"
+      "path": "./bundles/foundation/postgres"
     },
     {
       "path": "./packages/storage"
     },
     {
-      "path": "./bundles/transport"
+      "path": "./bundles/foundation/transport"
     },
     {
-      "path": "./bundles/direct"
+      "path": "./bundles/runtime/direct"
     },
     {
       "path": "./packages/desktop-client"
@@ -97,22 +97,22 @@
       "path": "./packages/desktop-ui"
     },
     {
-      "path": "./bundles/history"
+      "path": "./bundles/desktop/history"
     },
     {
-      "path": "./bundles/notifications"
+      "path": "./bundles/desktop/notifications"
     },
     {
-      "path": "./bundles/usage"
+      "path": "./bundles/features/usage"
     },
     {
-      "path": "./bundles/resources"
+      "path": "./bundles/features/resources"
     },
     {
-      "path": "./bundles/chat"
+      "path": "./bundles/desktop/chat"
     },
     {
-      "path": "./bundles/layout"
+      "path": "./bundles/desktop/layout"
     },
     {
       "path": "./packages/firecracker-sandbox"
@@ -121,22 +121,25 @@
       "path": "./packages/docker-sandbox"
     },
     {
-      "path": "./bundles/openrouter"
+      "path": "./bundles/providers/openrouter"
     },
     {
-      "path": "./bundles/openai"
+      "path": "./bundles/providers/openai"
     },
     {
-      "path": "./bundles/codex"
+      "path": "./bundles/providers/codex"
     },
     {
-      "path": "./bundles/web"
+      "path": "./bundles/features/web"
     },
     {
-      "path": "./bundles/firecracker"
+      "path": "./bundles/sandboxes/firecracker"
     },
     {
-      "path": "./bundles/docker"
+      "path": "./bundles/sandboxes/docker"
+    },
+    {
+      "path": "./bundles/foundation/host-config"
     }
   ]
 }

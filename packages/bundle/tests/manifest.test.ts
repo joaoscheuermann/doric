@@ -77,7 +77,7 @@ void test('accepts bundle IDs that only start with "doric"', () => {
   );
 });
 
-void test('converts a v0 manifest in memory, renaming core to files', () => {
+void test('converts a v0 manifest in memory without assigning a product identity', () => {
   const converted = convertV0({
     name: 'core',
     description: 'Core capabilities.',
@@ -85,7 +85,7 @@ void test('converts a v0 manifest in memory, renaming core to files', () => {
     skills: [{ path: 'skills/a/SKILL.md', alwaysAvailable: false }],
   });
 
-  assert.equal(converted.manifest.id, 'files');
+  assert.equal(converted.manifest.id, 'core');
   assert.equal(converted.manifest.version, '0.0.0');
   assert.deepEqual(converted.manifest.provides, []);
   assert.deepEqual(converted.manifest.requires, ['tools/v1@^1.0.0']);

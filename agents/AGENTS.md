@@ -16,9 +16,13 @@ this file only adds local conventions for agent packages.
 - Extract a helper only when it removes real duplication or names a meaningful
   concern.
 - Reuse the host's shared helpers rather than writing a second version:
-  `redactSecrets` (`lib/credentials/redact.ts`); the mutation queue is the
-  runtime bundle's `createMutationQueue`
-  (`bundles/runtime/src/host/domain/runtime.ts`).
+  `redactSecrets` (`bundles/runtime/runtime/src/host/domain/serialization.ts`) and the
+  mutation queue, `createMutationQueue`
+  (`bundles/runtime/runtime/src/host/domain/runtime.ts`).
+- Keep bundle concepts out of `agents/*`. Projects, Threads, configuration,
+  credentials, sandbox settings and tools belong to bundles under `bundles/`.
+  The `agents/doric` kernel reads the composition, runs the platform, and owns
+  only the native listener and the generic desktop bridge.
 
 ## Default Agent Pattern
 
@@ -55,6 +59,12 @@ When developing an agent, use this order:
 5. Return to `index.ts` and keep only production wiring and startup there.
 
 ## File Shape
+
+`agents/doric` is the host kernel and follows its own shape: `src/index.ts`
+composes the platform and starts the bundles, `src/lib/bundles/boot.ts` reads
+the composition and checks its `required` block, and `src/lib/bridge/` holds the
+generic desktop bridge. Its executor, card and message code belong to bundles,
+so the agent-entrypoint layout below does not apply to it.
 
 - `index.ts` starts the server.
 - The server file should stay minimal: wire config, routes, executor, and

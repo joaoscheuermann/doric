@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-resources",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/resources/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/resources/tsconfig.json",
+          "tsc -p bundles/features/resources/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/resources"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/resources/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/resources/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/resources/dist-tests",
+          "tsc -p bundles/features/resources/tsconfig.spec.json",
+          "node --test bundles/features/resources/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

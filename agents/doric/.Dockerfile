@@ -44,40 +44,41 @@ RUN npm ci --ignore-scripts \
  && npx prisma generate --config agents/doric/prisma.config.ts \
  && npx tsc --build \
       packages/storage/tsconfig.lib.json \
-      bundles/postgres/tsconfig.json \
+      bundles/foundation/postgres/tsconfig.json \
       agents/doric/tsconfig.lib.json \
-      bundles/core/tsconfig.json \
-      bundles/files/tsconfig.json \
-      bundles/git/tsconfig.json \
-      bundles/threads/tsconfig.json \
-      bundles/runtime/tsconfig.json \
-      bundles/terminal/tsconfig.json \
-      bundles/direct/tsconfig.json \
-      bundles/openai/tsconfig.json \
-      bundles/openrouter/tsconfig.json \
-      bundles/codex/tsconfig.json \
-      bundles/docker/tsconfig.json \
-      bundles/firecracker/tsconfig.json \
-      bundles/web/tsconfig.json \
-      bundles/usage/tsconfig.json \
-      bundles/notifications/tsconfig.json \
-      bundles/transport/tsconfig.json \
-      bundles/resources/tsconfig.json \
-      bundles/layout/tsconfig.json \
-      bundles/chat/tsconfig.json \
-      bundles/history/tsconfig.json \
+      bundles/foundation/core/tsconfig.json \
+      bundles/features/files/tsconfig.json \
+      bundles/features/git/tsconfig.json \
+      bundles/features/threads/tsconfig.json \
+      bundles/runtime/runtime/tsconfig.json \
+      bundles/features/terminal/tsconfig.json \
+      bundles/runtime/direct/tsconfig.json \
+      bundles/providers/openai/tsconfig.json \
+      bundles/providers/openrouter/tsconfig.json \
+      bundles/providers/codex/tsconfig.json \
+      bundles/sandboxes/docker/tsconfig.json \
+      bundles/sandboxes/firecracker/tsconfig.json \
+      bundles/features/web/tsconfig.json \
+      bundles/features/usage/tsconfig.json \
+      bundles/desktop/notifications/tsconfig.json \
+      bundles/foundation/transport/tsconfig.json \
+      bundles/foundation/host-config/tsconfig.json \
+      bundles/features/resources/tsconfig.json \
+      bundles/desktop/layout/tsconfig.json \
+      bundles/desktop/chat/tsconfig.json \
+      bundles/desktop/history/tsconfig.json \
       --force \
- && npx tsc -p bundles/settings/tsconfig.json \
+ && npx tsc -p bundles/desktop/settings/tsconfig.json \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for bundle in postgres core files git threads runtime direct openai openrouter codex docker firecracker web terminal usage resources notifications layout settings chat history; do \
-      node packages/bundle/dist/build/cli.js build "bundles/${bundle}" || exit 1; \
+ && for manifest in bundles/*/*/manifest.json; do \
+      node packages/bundle/dist/build/cli.js build "${manifest%/manifest.json}" || exit 1; \
     done \
  && node packages/bundle/dist/build/cli.js stage agents/doric/dist/bundles \
-      bundles/postgres bundles/core bundles/files bundles/git bundles/threads \
-      bundles/runtime bundles/direct bundles/openai bundles/openrouter \
-      bundles/codex bundles/docker bundles/firecracker bundles/web \
-      bundles/terminal bundles/usage bundles/resources bundles/notifications \
-      bundles/layout bundles/settings bundles/chat bundles/history \
+      bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads \
+      bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter \
+      bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
+      bundles/features/terminal bundles/features/usage bundles/features/resources bundles/desktop/notifications \
+      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config \
  && mkdir -p agents/doric/dist/src \
  && mv agents/doric/dist/index.* agents/doric/dist/src/ \
  && mv agents/doric/dist/lib agents/doric/dist/src/

@@ -6,7 +6,10 @@ import { silentLog } from '../src/platform/log';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-const setup = (decide: () => Promise<unknown>) => {
+const setup = (
+  decide: () => Promise<unknown>,
+  flush: () => Promise<void> = async () => undefined,
+) => {
   const runs: { hook: string; input: unknown }[] = [];
   let quits = 0;
   const lifecycle = new Lifecycle({
@@ -18,6 +21,7 @@ const setup = (decide: () => Promise<unknown>) => {
       },
     },
     log: silentLog,
+    flush,
     quit: () => {
       quits += 1;
     },
@@ -34,6 +38,24 @@ const setup = (decide: () => Promise<unknown>) => {
 };
 
 describe('app lifecycle hooks', () => {
+  test('an allowed quit waits until pending desktop state is durable', async () => {
+    let complete: () => void = () => undefined;
+    const saving = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    const { quits, quitEvent } = setup(
+      async () => ({ allow: true }),
+      () => saving,
+    );
+
+    quitEvent();
+    await tick();
+    assert.equal(quits(), 0);
+    complete();
+    await tick();
+    assert.equal(quits(), 1);
+  });
+
   test('a quit waits for onBeforeQuitHook; allow quits for real', async () => {
     const { quits, quitEvent } = setup(async () => ({ allow: true }));
 

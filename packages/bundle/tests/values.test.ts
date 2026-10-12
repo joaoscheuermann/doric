@@ -90,6 +90,8 @@ void test('every basic and platform method has a stated way across the envelope'
       subscribe: 'optimistic via callback+definition+disposable',
     },
     'secrets/v1': {
+      kinds: 'crosses',
+      registerKind: 'optimistic via disposable',
       resolve: 'crosses',
       list: 'crosses',
       describe: 'crosses',
@@ -195,12 +197,14 @@ void test('every basic and platform method has a stated way across the envelope'
       setContext: 'crosses',
     },
     'doric.cache/v1': { directory: 'crosses' },
+    'doric.migrations/v1': { storage: 'crosses' },
     'doric.generation/v1': {
       describe: 'crosses',
       hold: 'optimistic via disposable',
       signal: 'crosses',
     },
     'doric.startup/v1': { stage: 'crosses', log: 'crosses' },
+    'doric.network/v1': { register: 'refused' },
     'doric.tokens/v1': { get: 'crosses' },
     'doric.notifications/v1': { show: 'crosses' },
     // Client-only (stage 9): elements and callbacks stay in the window.

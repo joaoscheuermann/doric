@@ -14,8 +14,6 @@ import { io as connect, type Socket } from 'socket.io-client';
 
 import { installBridge } from '../src/lib/bridge/socket.js';
 import { type Bundles, startBundles } from '../src/lib/bundles/boot.js';
-import { createHostConfig } from '../src/lib/bundles/configuration.js';
-import { createHostTransport } from '../src/lib/bundles/transport.js';
 
 // Build doric first. The host end of the desktop bridge (HR-1), driven as the
 // desktop drives it: envelope messages emitted under their `kind` on
@@ -38,16 +36,14 @@ const boot = async (hostBoot: string): Promise<Host> => {
   const server = createServer(app);
   const io = new SocketServer(server);
   const logger = pino({ enabled: false });
-  const transport = createHostTransport({ app, io, logger });
   const bundles = await startBundles({
     bundlesPath: root,
     compositionPath,
     compositionOverridesPath: join(root, 'composition.overrides.json'),
-    embedded: [createHostConfig().bundle, transport.bundle],
+    network: { http: app, sockets: io },
     logger,
     hostBoot,
   });
-  transport.bind(bundles.platform);
   installBridge({ io, platform: bundles.platform, log: logger });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -249,8 +245,9 @@ void test('the bundles distribute the documents of their host contracts', {
   timeout: 60_000,
 }, async () => {
   // A desktop part routes a host contract by the document its bundle ships;
-  // `host-config` lives in the kernel, without a directory, and `resources/v1`
-  // is the installed `resources` bundle's since the stage-10 host switch.
+  // `host-config` is an installed bundle that runs resident in the kernel, and
+  // `resources/v1` is the installed `resources` bundle's since the stage-10 host
+  // switch.
   await withHost(async (host) => {
     const catalog = distributionCatalogSchema.parse(
       await output(host.desktop, 'doric.catalog/v1', 'distribution', []),
@@ -264,7 +261,9 @@ void test('the bundles distribute the documents of their host contracts', {
         ({ path }) => path === `schemas/${contract}.json`,
       );
       assert.ok(file, `${bundleId} lists schemas/${contract}.json`);
-      if (bundleId === 'host-config') assert.deepEqual(bundle?.parts, {});
+      // Its contracts module is distributed like any installed bundle's.
+      if (bundleId === 'host-config')
+        assert.deepEqual(bundle?.parts, { contracts: 'contracts/index.js' });
 
       const artifact = (await output(
         host.desktop,
@@ -474,7 +473,7 @@ const firstOf = (
     });
   });
 
-void test('a desktop caller reaches only the allowlisted host methods (HR-10)', {
+void test('a desktop caller reaches only the host methods its providers expose (HR-10)', {
   timeout: 60_000,
 }, async () => {
   await withHost(async (host) => {

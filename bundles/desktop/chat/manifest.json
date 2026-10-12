@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "id": "chat",
+  "version": "1.1.0",
+  "engines": {
+    "doric": "^1.0.0"
+  },
+  "description": "The conversation: chat-view, its store, projection, composer and trail.",
+  "provides": [
+    "chat.views/v1@1.0.0",
+    "chat.lexical/v1@1.0.0",
+    "chat.hooks/v1@1.1.0"
+  ],
+  "optional": ["history.snapshots/v1"],
+  "requires": [
+    "hooks/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "navigation/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "commands/v1@^1.0.0",
+    "runtime.threads/v1@^1.0.0"
+  ]
+}

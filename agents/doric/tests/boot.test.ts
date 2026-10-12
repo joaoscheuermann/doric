@@ -59,7 +59,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
       const line = (msg: string) =>
         startup(lines).find((entry) => entry.msg === msg);
 
-      assert.equal(line('Bundles loaded')?.bundleCount, 20);
+      assert.equal(line('Bundles loaded')?.bundleCount, 22);
       assert.equal(line('Bundles loaded')?.toolCount, 16);
       assert.equal(
         line('Sandbox pool configured')?.sandboxProviderName,

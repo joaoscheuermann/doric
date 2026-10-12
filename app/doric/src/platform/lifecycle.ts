@@ -31,6 +31,7 @@ export class Lifecycle {
   readonly #target: LifecycleTarget;
   readonly #log: PlatformLog;
   readonly #quit: () => void;
+  readonly #flush: () => Promise<void>;
   #quitting = false;
   #quitDecided = false;
   #connected: boolean | undefined;
@@ -40,10 +41,13 @@ export class Lifecycle {
     readonly log: PlatformLog;
     /** `app.quit()`. */
     readonly quit: () => void;
+    /** Persists native window paths and state before the process may exit. */
+    readonly flush: () => Promise<void>;
   }) {
     this.#target = input.target;
     this.#log = input.log;
     this.#quit = input.quit;
+    this.#flush = input.flush;
   }
 
   /** True while a quit is being decided or carried out: closes are forced. */
@@ -93,12 +97,25 @@ export class Lifecycle {
           return { allow: true as const };
         },
       )
-      .then((decision) => {
+      .then(async (decision) => {
         if (this.#quitDecided) {
           return;
         }
 
         if (decision.allow) {
+          try {
+            await this.#flush();
+          } catch (error) {
+            this.#log.error(
+              { error: messageOf(error) },
+              'Desktop state could not be saved before quit',
+            );
+          }
+
+          if (this.#quitDecided) {
+            return;
+          }
+
           this.#quitDecided = true;
           this.#quit();
 

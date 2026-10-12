@@ -114,7 +114,7 @@ describe('the platform import map', () => {
   });
 
   test('maps every Lexical specifier the client bundles import', () => {
-    const clients = join(workspace, 'bundles/chat/src/client');
+    const clients = join(workspace, 'bundles/desktop/chat/src/client');
     const used = new Set(
       filesUnder(clients)
         .filter((path) => /\.tsx?$/.test(path))
@@ -132,7 +132,8 @@ describe('the platform import map', () => {
       );
     }
     const dependencies = Object.keys(
-      manifest(join(workspace, 'bundles/chat/package.json')).dependencies,
+      manifest(join(workspace, 'bundles/desktop/chat/package.json'))
+        .dependencies,
     ).filter((name) => name === 'lexical' || name.startsWith('@lexical/'));
     for (const name of dependencies) {
       // Some packages (`@lexical/react`) export subpaths only, no root.

@@ -12,11 +12,16 @@ import {
   type StorageTypeDefinition,
 } from '../define.js';
 import type { ContractError } from '../error.js';
+import type { MethodExposure } from '../expose.js';
 
-/** One method of a platform specification: what a provider must accept and return. */
+/**
+ * One method of a platform specification: what a provider must accept and
+ * return, and whether a desktop window may reach it (`expose`, absent = no).
+ */
 export interface MethodSpec {
   readonly input: z.ZodType;
   readonly output: z.ZodType;
+  readonly expose?: MethodExposure;
 }
 
 export type MethodSpecs = Readonly<Record<string, MethodSpec>>;

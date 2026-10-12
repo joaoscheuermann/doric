@@ -116,6 +116,18 @@ export const catalogSnapshot = (
                 engines: { doric: entry.manifest.engines.doric },
                 provides: [...entry.manifest.provides],
                 requires: [...entry.manifest.requires],
+                ...(entry.manifest.optional === undefined
+                  ? {}
+                  : { optional: [...entry.manifest.optional] }),
+                ...(entry.manifest.desktopScope === undefined
+                  ? {}
+                  : {
+                      desktopScope: Object.fromEntries(
+                        Object.entries(entry.manifest.desktopScope).map(
+                          ([id, keys]) => [id, [...keys]],
+                        ),
+                      ),
+                    }),
                 ...(entry.manifest.description === undefined
                   ? {}
                   : { description: entry.manifest.description }),

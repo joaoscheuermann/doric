@@ -65,6 +65,12 @@ Os logs são gravados em arquivos rotativos no diretório do host e em `userData
 
 Cada etapa da migração entrega a observabilidade do que extrai: a primeira traz o log da plataforma, o log estruturado por `log/v1` (que o core passa a fornecer nessa etapa, junto com `hooks/v1`, `tools/v1` e `skills/v1`), o rastreio no dispatcher e o diagnóstico do catálogo; a segunda acrescenta as métricas de `settings/v1`, `secrets/v1`, `storage/v1` e `events/v1` do core e dos backends do `postgres`; e as seguintes acrescentam as métricas das partes extraídas. As etapas estão em [migração](./migration.md).
 
+## Escopo de log e estágios de startup
+
+- O escopo que um registro de log leva é o mesmo registro de chaves de string limitadas do `call.scope`. A plataforma não interpreta as chaves, então o log não conhece Project, Thread ou prompt. Cada bundle que escreve um campo de domínio o escreve com a sua própria chave.
+- Os estágios de startup são nomeados por quem os executa, por `doric.startup/v1`. O kernel nomeia só os seus (`bootstrap`, `bundle_load`, `network_binding` e `ready`); os demais vêm dos bundles, como `database_client` em `postgres`.
+- As linhas de startup do kernel (`Doric starting` e `Doric listening`) trazem `alternatives`, gerado a partir da composição. As demais linhas vêm dos bundles que as escrevem. As diferenças de conteúdo em relação ao baseline estão em [decisões de implementação](./implementation-decisions.md).
+
 ## Relações
 
 - [Contextos e capacidades](./contexts.md): define o contexto só com `services`, o `call` com `caller` e `scope` que o log acrescenta, a propagação de `call` entre saltos e o contrato `log/v1`.

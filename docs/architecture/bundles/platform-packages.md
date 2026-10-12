@@ -67,7 +67,7 @@ O Tailwind gera CSS a partir das classes encontradas no código-fonte, e cada bu
 Esboço do CSS de um bundle (a sintaxe exata do Tailwind 4 será validada na primeira extração):
 
 ```css
-/* bundles/git/client/styles.css */
+/* bundles/features/git/client/styles.css */
 @reference 'desktop-ui/tailwind.css';
 @import 'tailwindcss/utilities.css' layer(utilities);
 @source '../src';
@@ -89,6 +89,11 @@ O uso dos tokens de janela pelo main e pela área segura está em [aparência na
 ### Variantes de tema
 
 Uma contribuição `theme` é uma variante dos valores dos tokens da plataforma e não redefine a estrutura do tema. Ela pode trocar valores, por exemplo uma variante de alto contraste, mas não cria nem remove tokens. Componentes de qualquer bundle que usam os tokens seguem a variante escolhida. O catálogo de contribuições client, onde `theme` aparece ao lado das outras, está em [UI composta por bundles](./ui-composition.md).
+
+## Pacotes removidos e reduzidos
+
+- `packages/host` foi removido. Os tipos do objeto `Host` por prompt estão em `bundles/runtime/runtime/src/contracts/tool-host`, exportados por `runtime/contracts`.
+- `packages/desktop-reads` e `packages/desktop-ui` mantêm só primitivos genéricos: fila de atualização, utilitários de caminho, componentes de árvore e painel, e tokens. Leituras e UI que nomeiam um conceito de bundle (arquivos, Git, mudanças) passam para o bundle dono: as leituras de arquivos e de Git estão em `bundles/features/files/src/client/reads` e `bundles/features/git/src/client/reads`. Ainda há resíduos de conceito de Git em `packages/desktop-ui/src/code`, a conferir na BWP-11.
 
 ## Relações
 

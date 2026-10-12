@@ -113,7 +113,10 @@ export const principalOptionsFor = (
     version: entry.version,
     provides,
     ownContracts: ids(entry.manifest?.provides),
-    requires: ids(entry.manifest?.requires),
+    requires: new Set([
+      ...ids(entry.manifest?.requires),
+      ...(entry.manifest?.optional ?? []),
+    ]),
     isCore: entry.id === resolved.composition.core,
   };
 };

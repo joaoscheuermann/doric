@@ -322,6 +322,10 @@ void test('mounts a durable workspace volume and labels the container', async ()
         return jsonResponse(201, { Id: 'sandbox-1' });
       }
 
+      if (request.path === '/containers/json') {
+        return jsonResponse(200, []);
+      }
+
       if (request.path === '/volumes/create') {
         return jsonResponse(201, { Name: 'doric-workspace-project-a' });
       }
@@ -479,6 +483,10 @@ void test('removes a workspace volume and tolerates a missing one', async () => 
     request: async (request) => {
       requests.push(request);
 
+      if (request.path === '/containers/json') {
+        return jsonResponse(200, []);
+      }
+
       return {
         status: statuses.shift() ?? 500,
         headers: {},
@@ -492,7 +500,9 @@ void test('removes a workspace volume and tolerates a missing one', async () => 
   await discardWorkspace(client, 'project-a');
 
   assert.deepEqual(
-    requests.map(({ method, path, query }) => [method, path, query]),
+    requests
+      .filter(({ method }) => method === 'DELETE')
+      .map(({ method, path, query }) => [method, path, query]),
     [
       ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
       ['DELETE', '/volumes/doric-workspace-project-a', { force: true }],
@@ -610,6 +620,10 @@ void test('keeps the workspace mount when retrying without a disk quota', async 
           .length === 1
           ? textResponse(500, 'storage-opt size is not supported')
           : jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/containers/json') {
+        return jsonResponse(200, []);
       }
 
       if (request.path === '/volumes/create') {

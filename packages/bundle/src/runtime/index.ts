@@ -92,6 +92,13 @@ export {
   distributionFileSchema,
 } from './distribution.js';
 export * from './envelope/index.js';
+export {
+  documentExposure,
+  documentExposureKey,
+  exposureOf,
+  isDesktopExposed,
+  misdeclaredExposure,
+} from './exposure.js';
 export { createHooksFacade } from './facades.js';
 export {
   type ContractDocument,

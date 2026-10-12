@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  builtinCredentialKinds,
   type CatalogSnapshot,
   type ContractErrorCode,
+  type CredentialKindDefinition,
   commitBatchSchema,
   contractErrorCodes,
   credentialFieldsMessage,
   credentialFieldsSatisfied,
-  credentialKinds,
+  credentialKindDefinitionSchema,
   eventSinkSpecSchema,
   feedPageSchema,
   isContractError,
@@ -287,8 +289,10 @@ void test('resolveByKind takes a kind, optional exclusions and an optional call'
     () => secrets.resolveByKind('API_TOKEN', { claimed: ['c1'] } as never),
     codeOf('invalid_input'),
   );
+  // A malformed kind name is refused here; a well-formed name nothing registers
+  // is the host's `unknown_kind`.
   assert.throws(
-    () => secrets.resolveByKind('SSH_KEY' as never),
+    () => secrets.resolveByKind('api_token' as never),
     codeOf('invalid_input'),
   );
 
@@ -350,9 +354,21 @@ void test('a secrets view must expose list, redactions and addRedaction', async 
   await services.dispose();
 });
 
+// The rules as the registrations state them: the two built-in kinds, and GIT as
+// the git bundle registers it.
+const rules = {
+  API_TOKEN: { id: 'API_TOKEN', required: ['secret'], optional: [] },
+  USERNAME_PASSWORD: {
+    id: 'USERNAME_PASSWORD',
+    required: ['username', 'secret'],
+    optional: [],
+  },
+  GIT: { id: 'GIT', required: ['username', 'email'], optional: [] },
+} satisfies Record<string, CredentialKindDefinition>;
+
 void test('the credential field rule: required fields present, every other field absent', () => {
   const cases: readonly [
-    (typeof credentialKinds)[number],
+    keyof typeof rules,
     Record<string, string>,
     boolean,
   ][] = [
@@ -374,27 +390,50 @@ void test('the credential field rule: required fields present, every other field
 
   for (const [kind, values, expected] of cases) {
     assert.equal(
-      credentialFieldsSatisfied(kind, values),
+      credentialFieldsSatisfied(rules[kind], values),
       expected,
       `${kind} ${JSON.stringify(values)}`,
     );
   }
 
-  assert.deepEqual(credentialKinds, ['API_TOKEN', 'USERNAME_PASSWORD', 'GIT']);
+  assert.deepEqual(
+    builtinCredentialKinds.map(({ id }) => id),
+    ['API_TOKEN', 'USERNAME_PASSWORD'],
+  );
 });
 
 void test('the credential field rule reads as the API rejection message', () => {
   assert.equal(
-    credentialFieldsMessage('API_TOKEN'),
+    credentialFieldsMessage(rules.API_TOKEN),
     'A API_TOKEN credential requires secret and carries no other field.',
   );
   assert.equal(
-    credentialFieldsMessage('USERNAME_PASSWORD'),
+    credentialFieldsMessage(rules.USERNAME_PASSWORD),
     'A USERNAME_PASSWORD credential requires username, secret and carries no other field.',
   );
   assert.equal(
-    credentialFieldsMessage('GIT'),
+    credentialFieldsMessage(rules.GIT),
     'A GIT credential requires username, email and carries no other field.',
+  );
+});
+
+void test('a registered kind names a pattern-shaped id and no field both required and optional', () => {
+  assert.equal(
+    credentialKindDefinitionSchema.safeParse(rules.GIT).success,
+    true,
+  );
+  assert.equal(
+    credentialKindDefinitionSchema.safeParse({
+      id: 'GIT',
+      required: ['username'],
+      optional: ['username'],
+    }).success,
+    false,
+  );
+  assert.equal(
+    credentialKindDefinitionSchema.safeParse({ ...rules.GIT, id: 'git' })
+      .success,
+    false,
   );
 });
 

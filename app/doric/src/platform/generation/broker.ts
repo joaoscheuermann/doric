@@ -9,12 +9,14 @@ import {
   DoricCacheV1,
   DoricLogV1,
   DoricMenusV1,
+  DoricMigrationsV1,
   DoricNotificationsV1,
   DoricTokensV1,
   DoricWindowsV1,
   defineMethod,
   type LogRecord,
   type MenuSkeleton,
+  type MigrationResult,
   type NotificationRequest,
   type OpenWindowRequest,
 } from 'bundle/contracts';
@@ -42,6 +44,11 @@ export interface BrokerDeps {
     'setSkeleton' | 'add' | 'addKeybinding' | 'setContext'
   >;
   readonly cacheDirectory: (bundleId: string) => Promise<string>;
+  /** The one-time storage copy `doric.migrations/v1.storage` asks for. */
+  readonly migrateStorage: (request: {
+    readonly key: string;
+    readonly marker: string;
+  }) => Promise<MigrationResult>;
   readonly tokens: () => Readonly<Record<string, string>>;
   readonly notify: (request: NotificationRequest) => void;
   readonly log: PlatformLog;
@@ -69,6 +76,7 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
   const menus = specs['doric.menus/v1'].methods;
   const cache = specs['doric.cache/v1'].methods;
   const tokens = specs['doric.tokens/v1'].methods;
+  const migrations = specs['doric.migrations/v1'].methods;
   const notifications = specs['doric.notifications/v1'].methods;
   const log = specs['doric.log/v1'].methods;
 
@@ -136,6 +144,16 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
         input: cache.directory.input,
         output: cache.directory.output,
         execute: (_input, call) => deps.cacheDirectory(call.caller.bundleId),
+      }),
+    }),
+  );
+  services.provide(
+    definePlatformService(DoricMigrationsV1, {
+      storage: defineMethod({
+        input: migrations.storage.input,
+        output: migrations.storage.output,
+        execute: (request: { readonly key: string; readonly marker: string }) =>
+          deps.migrateStorage(request),
       }),
     }),
   );

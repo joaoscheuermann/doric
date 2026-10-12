@@ -20,6 +20,7 @@ import { isPlatformContract } from '../contracts/ids.js';
 import type { AnyServiceRef } from '../contracts/types.js';
 import type { ProviderRecord } from './directory.js';
 import { createStub, type DispatchTarget } from './dispatch.js';
+import { misdeclaredExposure } from './exposure.js';
 import { createHooksFacade } from './facades.js';
 import { jsonEqual, memberSchema } from './json-schema.js';
 import {
@@ -84,6 +85,19 @@ const assertBasicShape = (definition: AnyServiceDefinition): void => {
         { contract: definition.id, method: name },
       );
     }
+  }
+};
+
+/** A provider may not declare an exposure its contract's platform specification does not give. */
+const assertExposure = (definition: AnyServiceDefinition): void => {
+  const method = misdeclaredExposure(definition.id, definition.methods);
+
+  if (method !== undefined) {
+    throw new ContractError(
+      'contract_mismatch',
+      `Method "${method}" of "${definition.id}" may not be exposed to the desktop: the platform specification decides.`,
+      { contract: definition.id, method },
+    );
   }
 };
 
@@ -175,6 +189,7 @@ const provide = (
   }
 
   assertBasicShape(definition);
+  assertExposure(definition);
 
   if (definition.cardinality === 'one') {
     const chosen = runtime.catalog.activeProvider(id);

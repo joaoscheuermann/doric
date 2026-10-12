@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { SecretsBackendV1, type StoredSecret } from 'bundle/contracts';
-import { memoryFoundation } from 'storage/memory';
-
-import { publicCredential } from '../src/lib/credentials/kind.js';
 import {
   type CredentialService,
   MissingKeyError,
-} from '../src/lib/credentials/service.js';
+  publicCredential,
+} from 'host-config/testing';
+import { memoryFoundation } from 'storage/memory';
+
 import { persistenceFixture } from './helpers/persistence-fixture.js';
 import { type Kernel, kernelOver, startKernel } from './helpers/platform.js';
 

@@ -1,8 +1,10 @@
 {
   "core": "core",
   "enabled": [
+    "transport",
     "postgres",
     "core",
+    "host-config",
     "files",
     "web",
     "git",
@@ -26,6 +28,7 @@
     "storage.backend/v1": "postgres",
     "secrets.backend/v1": "postgres"
   },
+  "resident": ["host-config", "transport"],
   "required": {
     "contracts": [
       "runtime/v1",

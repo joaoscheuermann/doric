@@ -359,6 +359,17 @@ Eventos DOM (`CustomEvent`) fazem a comunicação local entre Web Components e s
 
 Trabalho assíncrono que precisa sobreviver a uma falha usa stream durável com cursor ou outbox transacional/idempotente, não um assinante efêmero (ver [armazenamento](./storage.md)).
 
+## Exposição à janela desktop
+
+Um método só pode ser chamado por uma janela desktop quando a sua declaração o expõe. O padrão é negar.
+
+- Nos contratos da plataforma, a exposição é o campo `expose` do `MethodSpec` (`'desktop'`), declarado em `packages/bundle`.
+- Nos contratos de um provedor, a exposição fica em `x-doric-expose` do documento do contrato, e vale para os métodos que o provedor fornece.
+- O manifesto do provedor declara em `desktopScope` as chaves de escopo que a janela pode enviar a cada contrato. Chaves fora da lista são recusadas, e `windowKey` é da plataforma.
+- Um contrato sem provedor ativo responde como indisponível.
+
+O conjunto exposto fica fixado pelo snapshot `agents/doric/tests/bridge-exposure.snapshot.json`. Mudar o que uma janela pode alcançar exige atualizar esse snapshot na revisão.
+
 ## Relações
 
 - [Arquitetura de bundles](../bundles.md): documento principal que mostra onde os serviços e canais entram no conjunto.

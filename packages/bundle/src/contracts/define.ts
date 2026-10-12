@@ -3,6 +3,11 @@ import { z } from 'zod';
 import type { Call } from './call.js';
 import type { Services } from './context.js';
 import {
+  isMethodExposure,
+  type MethodExposure,
+  methodExposures,
+} from './expose.js';
+import {
   type ContractId,
   contractIdPattern,
   isPlatformContract,
@@ -207,6 +212,8 @@ export interface MethodDefinition<
 > {
   readonly input: I;
   readonly output: O;
+  /** Who may reach the method from outside its process; absent = no one. */
+  readonly expose?: MethodExposure;
   execute(input: z.output<I>, call: Call, services: Services): R;
 }
 
@@ -228,10 +235,17 @@ export const defineMethod = <
 >(method: {
   readonly input: I;
   readonly output: O;
+  readonly expose?: MethodExposure;
   readonly execute: (input: z.output<I>, call: Call, services: Services) => R;
 }): MethodDefinition<I, O, R> => {
   if (typeof method.execute !== 'function') {
     throw new TypeError('A method needs an execute function.');
+  }
+
+  if (method.expose !== undefined && !isMethodExposure(method.expose)) {
+    throw new TypeError(
+      `Invalid expose "${String(method.expose)}": expected one of ${methodExposures.join(', ')}.`,
+    );
   }
 
   const execute = method.execute;
@@ -239,6 +253,7 @@ export const defineMethod = <
   return brand('method', {
     input: method.input,
     output: method.output,
+    ...(method.expose === undefined ? {} : { expose: method.expose }),
     execute: (input: z.output<I>, call: Call, services: Services): R =>
       execute(input, call, services),
   });

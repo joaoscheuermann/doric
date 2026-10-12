@@ -76,10 +76,13 @@ describe('window stylesheets', () => {
     );
     theme = await compile(themeSheet, dirname(themeSheet));
     shell = await compile(join(renderer, 'src/styles.css'));
-    const chatSheet = join(repository, 'bundles/chat/src/client/styles.css');
+    const chatSheet = join(
+      repository,
+      'bundles/desktop/chat/src/client/styles.css',
+    );
     const layoutSheet = join(
       repository,
-      'bundles/layout/src/client/styles.css',
+      'bundles/desktop/layout/src/client/styles.css',
     );
     chat = await compile(chatSheet, dirname(chatSheet));
     layout = await compile(layoutSheet, dirname(layoutSheet));

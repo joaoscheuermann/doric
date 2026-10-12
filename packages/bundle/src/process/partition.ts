@@ -4,10 +4,14 @@ import type { CatalogEntry, ResolvedEnvironment } from '../runtime/catalog.js';
  * Residency (D4-1): foundation, core and every embedded bundle run in the
  * kernel; installed `others` run in the generation process.
  */
-export const isKernelResident = (entry: CatalogEntry): boolean =>
+export const isKernelResident = (
+  entry: CatalogEntry,
+  resident: readonly string[] = [],
+): boolean =>
   entry.phase === 'foundation' ||
   entry.phase === 'core' ||
-  entry.source.kind === 'embedded';
+  entry.source.kind === 'embedded' ||
+  resident.includes(entry.id);
 
 export interface HostPartition {
   /** The resolved catalog with the published order: kernel, then generation (D4-2). */
@@ -40,7 +44,10 @@ export const partitionCatalog = (
       continue;
     }
 
-    (isKernelResident(entry) ? kernelOrder : generationOrder).push(id);
+    (isKernelResident(entry, resolved.composition.resident)
+      ? kernelOrder
+      : generationOrder
+    ).push(id);
   }
 
   return {
@@ -67,7 +74,9 @@ export const withOrder = (
  * versions, phases, states, sources) and the providers it publishes.
  */
 export const kernelSignature = (resolved: ResolvedEnvironment): string => {
-  const kernel = resolved.entries.filter(isKernelResident);
+  const kernel = resolved.entries.filter((entry) =>
+    isKernelResident(entry, resolved.composition.resident),
+  );
   const ids = new Set(kernel.map(({ id }) => id));
 
   return JSON.stringify({

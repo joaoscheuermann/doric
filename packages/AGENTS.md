@@ -6,6 +6,13 @@ These instructions apply to workflow packages under `packages/`.
 
 - Only packages can be written in this folder.
 - Tools should be written under `tools/` folder.
+- A package holds a generic primitive or a platform responsibility. A concept a
+  bundle owns (Project, Thread, prompt, Git, settings, credential semantics, a
+  feature's UI) belongs in `bundles/`. The platform packages (`bundle`,
+  `storage`, `desktop-client`, `desktop-ui`, `desktop-reads`) import no bundle's
+  `contracts` entrypoint and no bundle source.
+- `packages/host` no longer exists: the `Host` facade types live in
+  `bundles/runtime/runtime/src/contracts/tool-host`.
 
 # Reuse before reimplementing
 
@@ -17,6 +24,9 @@ package's public entrypoint. Check these before writing a second version:
   (`captureProcessOutput`, `processTerminationScript`).
 - `llms`: the reasoning-effort vocabulary — `reasoningEfforts`,
   `ReasoningEffort`, `isReasoningEffort`.
+- `bundle`: the call-scope bounds — `callScopeSchema`, `scopeKeyPattern`,
+  `SCOPE_MAX_KEYS`, `SCOPE_MAX_VALUE`; a contract that carries a scope uses
+  them rather than its own limits.
 
 # Tolerated duplication
 

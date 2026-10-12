@@ -196,9 +196,9 @@ Compose volumes, including the database.
   persistence, and deployment details.
 - [Desktop app](app/doric/README.md) and
   [renderer](app/doric-renderer/README.md) — app development and packaging.
-- [Core services](bundles/core/README.md), [workspace tools](bundles/files/README.md),
-  [Git](bundles/git/README.md), and
-  [Thread delegation](bundles/threads/README.md) — built-in bundles.
+- [Core services](bundles/foundation/core/README.md), [workspace tools](bundles/features/files/README.md),
+  [Git](bundles/features/git/README.md), and
+  [Thread delegation](bundles/features/threads/README.md) — built-in bundles.
 - [Agent runtime](packages/agent/README.md) and
   [model integrations](packages/llms/README.md) — reusable TypeScript APIs.
 - [GROUNDING.md](GROUNDING.md) — repository constraints for contributors.

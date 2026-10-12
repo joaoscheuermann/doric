@@ -175,16 +175,22 @@ const configurationValuesSchema = z.record(z.string(), z.string());
 
 export const modelsMethods = {
   resolve: { input: modelRequestSchema, output: resolvedModelSchema },
-  kinds: { input: noInput, output: z.array(modelKindDescriptorSchema) },
+  kinds: {
+    input: noInput,
+    output: z.array(modelKindDescriptorSchema),
+    expose: 'desktop',
+  },
   kind: {
     input: z.tuple([z.string()]),
     output: modelKindDescriptorSchema.optional(),
+    expose: 'desktop',
   },
   catalog: {
     input: z
       .object({ kind: z.string(), configuration: configurationValuesSchema })
       .strict(),
     output: catalogResultSchema,
+    expose: 'desktop',
   },
   prepare: {
     input: z.record(z.string(), z.unknown()),

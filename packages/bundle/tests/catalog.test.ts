@@ -134,7 +134,7 @@ void test('quarantines bundles whose descriptor disagrees with provides', () => 
   const source = manifest('git', { provides: ['git.commands/v1@1.3.0'] });
   const mismatched: CatalogCandidate = {
     id: 'git',
-    source: { kind: 'installed', dir: '/bundles/git' },
+    source: { kind: 'installed', dir: '/bundles/features/git' },
     manifest: manifestV1Schema.parse(source),
     descriptor: {
       ...descriptorFor(source),
@@ -382,7 +382,7 @@ void test('takes the cardinality of a contract from the bundle that owns it', ()
 void test('a bundle without a readable manifest never collides with a real bundle ID', () => {
   const unreadable: CatalogCandidate = {
     id: 'git',
-    source: { kind: 'installed', dir: '/bundles/git' },
+    source: { kind: 'installed', dir: '/bundles/features/git' },
     errors: [{ code: 'invalid_manifest', message: 'Unexpected end of JSON' }],
   };
   const valid: CatalogCandidate = {

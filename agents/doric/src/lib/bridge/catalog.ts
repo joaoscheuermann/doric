@@ -66,7 +66,7 @@ export const createCatalogDistribution = ({
 
           // A kernel-embedded bundle has no directory: its contract
           // documents are distributed from memory, so the desktop can route
-          // calls to its host contracts (`host-config/v1`, `resources/v1`).
+          // calls to its host contracts.
           const documents = Object.entries(
             source.embeddedDocuments?.(bundle.id) ?? {},
           ).sort(([left], [right]) =>

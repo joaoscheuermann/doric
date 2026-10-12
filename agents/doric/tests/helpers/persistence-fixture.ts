@@ -6,7 +6,8 @@ import pg from 'pg';
 import { PrismaClient } from 'postgres/prisma';
 
 /** The migrations belong to the `postgres` bundle, which owns the schema. */
-export const migrationDirectory = 'bundles/postgres/prisma/migrations';
+export const migrationDirectory =
+  'bundles/foundation/postgres/prisma/migrations';
 
 /** Runs every release even when a dependent resource fails to close. */
 export function cleanupStack() {

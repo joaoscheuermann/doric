@@ -17,7 +17,7 @@ import {
   startKernel,
   type Variables,
 } from 'bundle';
-import type { CatalogSnapshot } from 'bundle/contracts';
+import type { CatalogSnapshot, NetworkResources } from 'bundle/contracts';
 import type { Logger } from 'pino';
 import { ToolErrorObject } from 'tool';
 
@@ -43,6 +43,7 @@ export class BundleRecoveryError extends Error {
 }
 
 export interface StartBundlesOptions {
+  readonly network?: NetworkResources;
   readonly bundlesPath: string;
   readonly compositionPath: string;
   /**
@@ -57,7 +58,7 @@ export interface StartBundlesOptions {
    * default `composition.overrides.json` beside the composition.
    */
   readonly compositionOverridesPath?: string;
-  /** The kernel-embedded bundles: `host-config` and `transport`. */
+  /** Optional embedded bundles, used by isolated hosts and tests. */
   readonly embedded?: readonly EmbeddedBundle[];
   readonly logger: Logger;
   /** Test seam: the generation runner the kernel forks. */
@@ -111,24 +112,8 @@ const platformLog = (logger: Logger): PlatformLog => ({
  */
 export type StructuralRequirement = NonNullable<Composition['required']>;
 
-/**
- * What a composition that declares no `required` requires: the structural
- * set the host has always required (runtime, executor, sandbox, models and
- * host-config contracts, and the transport bundle). The shipped composition
- * declares the same set; an operator composition without `required` keeps
- * the refusal the host always gave, so an omission cannot boot a host without
- * routes or without the operations its routes call.
- */
-export const defaultRequirement: StructuralRequirement = {
-  contracts: [
-    'runtime/v1',
-    'executor/v1',
-    'sandbox/v1',
-    'models/v1',
-    'host-config/v1',
-  ],
-  bundles: ['transport'],
-};
+/** Only the composition defines which providers are essential. */
+const noRequirements: StructuralRequirement = { contracts: [], bundles: [] };
 
 /** Why the catalog cannot serve the host, or `undefined` when it can. */
 export const structuralFault = (
@@ -210,7 +195,7 @@ export const hostComposition = async (
     return {
       composition: { path: compositionPath },
       alternatives: {},
-      required: defaultRequirement,
+      required: noRequirements,
     };
   }
 
@@ -218,7 +203,7 @@ export const hostComposition = async (
     return {
       composition: { path: compositionPath },
       alternatives: enabledAlternatives(composition),
-      required: composition.required ?? defaultRequirement,
+      required: composition.required ?? noRequirements,
     };
 
   const alternatives = selectAlternatives(composition, variables);
@@ -231,7 +216,7 @@ export const hostComposition = async (
       ? enableAlternatives(composition, alternatives)
       : { path: compositionPath },
     alternatives,
-    required: composition.required ?? defaultRequirement,
+    required: composition.required ?? noRequirements,
   };
 };
 
@@ -253,6 +238,7 @@ export const startBundles = async ({
   runnerPath,
   hostBoot = randomUUID(),
   startup,
+  network,
 }: StartBundlesOptions): Promise<Bundles> => {
   const platform = await startKernel({
     bundlesPath,
@@ -265,6 +251,7 @@ export const startBundles = async ({
     distribution: (source) => createCatalogDistribution({ source, hostBoot }),
     ...(runnerPath === undefined ? {} : { runnerPath }),
     ...(startup === undefined ? {} : { startup }),
+    ...(network === undefined ? {} : { network }),
   });
 
   if (platform.mode === 'recovery') {

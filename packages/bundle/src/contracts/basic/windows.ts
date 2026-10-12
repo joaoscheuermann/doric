@@ -51,5 +51,9 @@ export interface Windows {
 export const WindowsV1 = ref<Windows>('windows/v1');
 
 export const windowsMethods = {
-  open: { input: openWindowRequestSchema, output: openWindowResultSchema },
+  open: {
+    input: openWindowRequestSchema,
+    output: openWindowResultSchema,
+    expose: 'desktop',
+  },
 } as const satisfies MethodSpecs;

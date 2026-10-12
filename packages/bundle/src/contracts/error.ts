@@ -43,6 +43,8 @@ export const contractErrorCodes = [
   'credential_storage_unavailable',
   'credential_key_required',
   'credential_unreadable',
+  'unknown_kind',
+  'duplicate_credential_kind',
   // desktop platform (stage 8)
   'not_found',
   'disconnected',

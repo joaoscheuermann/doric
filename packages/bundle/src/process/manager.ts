@@ -436,7 +436,7 @@ export class HostGenerations implements GenerationManager {
 
       seen.add(entry.id);
 
-      if (isKernelResident(entry)) {
+      if (isKernelResident(entry, live.resolved.composition.resident)) {
         return kernelById.get(entry.id) ?? fallback;
       }
 

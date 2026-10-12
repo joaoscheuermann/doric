@@ -920,6 +920,7 @@ const basicPlans: Readonly<
     },
   },
   'secrets/v1': {
+    registerKind: { optimistic: true, output: disposableOut },
     registerReferences: { refused: 'secrets/v1 registerReferences' },
     view: { refused: 'secrets/v1 view' },
   },

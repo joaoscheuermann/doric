@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { bundleIdPattern, isPlatformContract } from '../contracts/ids.js';
+import {
+  SCOPE_MAX_KEYS,
+  scopeKeyPattern,
+  windowScopeKey,
+} from '../contracts/call.js';
+import {
+  bundleIdPattern,
+  contractIdPattern,
+  isPlatformContract,
+} from '../contracts/ids.js';
 import { isRange, isVersion, parseVersion, rangeMajor } from './semver.js';
 
 export const semverString = z
@@ -90,6 +99,51 @@ const checkEntries = (
   });
 };
 
+/** A scope key a desktop window may send; the platform alone sets `windowKey`, in any case. */
+const desktopScopeKey = z
+  .string()
+  .regex(scopeKeyPattern, 'Expected a scope key.')
+  .refine(
+    (key) => key.toLowerCase() !== windowScopeKey.toLowerCase(),
+    `"${windowScopeKey}" is set by the platform.`,
+  );
+
+/**
+ * The scope keys a desktop window may send to each contract this bundle
+ * provides (`desktopScope`). A key not listed here is refused at the IPC.
+ */
+const desktopScopeSchema = z.record(
+  z.string().regex(contractIdPattern),
+  z.array(desktopScopeKey).max(SCOPE_MAX_KEYS),
+);
+
+const checkDesktopScope = (
+  scope: z.infer<typeof desktopScopeSchema> | undefined,
+  provides: readonly string[],
+  context: z.core.$RefinementCtx,
+) => {
+  const provided = new Set(
+    provides.map((entry) => parseContractEntry(entry)?.id),
+  );
+
+  for (const [id, keys] of Object.entries(scope ?? {})) {
+    const issue = (message: string) =>
+      context.addIssue({
+        code: 'custom',
+        path: ['desktopScope', id],
+        message,
+      });
+
+    if (!provided.has(id)) {
+      issue(`"${id}" is not a provided contract.`);
+    }
+
+    if (new Set(keys).size !== keys.length) {
+      issue(`"${id}" lists a scope key more than once.`);
+    }
+  }
+};
+
 /** Manifest v1: identity, platform range and declared contracts; nothing else. */
 export const manifestV1Schema = z
   .object({
@@ -102,12 +156,16 @@ export const manifestV1Schema = z
     engines: z.object({ doric: semverRange }).strict(),
     provides: z.array(contractRef).default([]),
     requires: z.array(contractRef).default([]),
+    /** Contracts usable when present, without becoming activation dependencies. */
+    optional: z.array(z.string().regex(contractIdPattern)).optional(),
+    desktopScope: desktopScopeSchema.optional(),
     description: z.string().trim().min(1).optional(),
   })
   .strict()
   .superRefine((manifest, context) => {
     checkEntries(manifest.provides, 'provides', context);
     checkEntries(manifest.requires, 'requires', context);
+    checkDesktopScope(manifest.desktopScope, manifest.provides, context);
   });
 
 export type ManifestV1 = z.output<typeof manifestV1Schema>;
@@ -156,9 +214,8 @@ export interface ReadManifest {
   };
 }
 
-/** The bundle ID a v0 name maps to; `core` became `files`. */
-export const v0BundleId = (name: string): string =>
-  name === 'core' ? 'files' : name;
+/** Legacy identity stays the author's name; renames belong to the distribution. */
+export const v0BundleId = (name: string): string => name;
 
 /**
  * In-memory v0 → v1 conversion: ID from the name, version 0.0.0, any platform,

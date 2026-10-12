@@ -82,6 +82,9 @@ export const configureDockerHost = async (input: {
   const directory = join(input.config.statePath, id);
 
   if (input.network.ssh !== false) {
+    // A container reattached after a host restart still has the key directory
+    // its previous host wrote, and ssh-keygen refuses to overwrite it.
+    await rm(directory, { recursive: true, force: true });
     await mkdir(directory, { recursive: true, mode: 0o700 });
   }
 
@@ -98,7 +101,13 @@ export const configureDockerHost = async (input: {
       input.network.mode === 'egress' &&
       firewallStrategy(input.config.platform) === 'nftables'
     ) {
-      table = `doric_docker_${id.replaceAll('-', '').slice(0, 12)}`;
+      table = firewallTable(id);
+
+      // A reattached container may still hold the table its previous host
+      // wrote for an address it no longer has; replace it, never add to it.
+      await command('nft', ['delete', 'table', 'inet', table]).catch(
+        () => undefined,
+      );
 
       await command(
         'nft',
@@ -154,6 +163,26 @@ export const configureDockerHost = async (input: {
 
     throw cause;
   }
+};
+
+const firewallTable = (id: string): string =>
+  `doric_docker_${id.replaceAll('-', '').slice(0, 12)}`;
+
+/**
+ * Removes the host state a container left behind: its firewall table and its
+ * key directory. Its container must already be gone.
+ */
+export const removeDockerHostState = async (
+  config: DockerHostConfig,
+  id: string,
+): Promise<void> => {
+  if (firewallStrategy(config.platform) === 'nftables') {
+    await command('nft', ['delete', 'table', 'inet', firewallTable(id)]).catch(
+      () => undefined,
+    );
+  }
+
+  await rm(join(config.statePath, id), { recursive: true, force: true });
 };
 
 const preflightLinuxFirewall = async (

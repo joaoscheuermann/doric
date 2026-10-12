@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
 
-import type { Call } from 'bundle/contracts';
+import type { Call, JsonObject } from 'bundle/contracts';
 import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
 import { ConnectionRelay } from '../src/connection/relay';
@@ -18,7 +18,10 @@ import {
   type DesktopEvent,
   Dispatcher,
 } from '../src/platform/bridge/dispatcher';
-import { createHostBridge } from '../src/platform/bridge/host-bridge';
+import {
+  createHostBridge,
+  hostUnavailable,
+} from '../src/platform/bridge/host-bridge';
 import { createSchemaValidators } from '../src/platform/bridge/validation';
 import { resolveDistribution } from '../src/platform/catalog/resolve';
 import type { GenerationProcess } from '../src/platform/generation/process';
@@ -30,6 +33,7 @@ import {
 } from '../src/platform/windows/registry';
 import { fixtureDistribution } from './support/distribution';
 
+// The exposed methods of a contract document are its `x-doric-expose` map.
 const pingDocument = {
   $defs: {
     'ping.input': {
@@ -43,10 +47,29 @@ const pingDocument = {
     'slow.output': {},
     'register.input': { 'x-doric-local': true },
     'register.output': { 'x-doric-local': 'disposable' },
+    'quiet.input': { type: 'array', maxItems: 0 },
+    'quiet.output': {},
   },
+  'x-doric-expose': { ping: 'desktop', slow: 'desktop', register: 'desktop' },
 };
 
-const { catalog } = fixtureDistribution({
+// The same methods, none exposed to the desktop.
+const quietDocument = {
+  $defs: { 'ping.input': pingDocument.$defs['ping.input'], 'ping.output': {} },
+};
+
+const malformedDocument = {
+  ...quietDocument,
+  'x-doric-expose': { ghost: 'desktop' },
+};
+
+/** The composition's choice for one-cardinality contracts two bundles provide. */
+const chosen = {
+  'choice-denied.api/v1': 'chosen',
+  'choice-allowed.api/v1': 'chosen-allowed',
+};
+
+const { catalog: distributed, artifacts } = fixtureDistribution({
   core: 'mincore',
   bundles: [
     { id: 'mincore', files: { 'desktop/index.js': '' } },
@@ -59,7 +82,13 @@ const { catalog } = fixtureDistribution({
           document: pingDocument,
         },
       ],
-      requires: ['remote.api/v1@^1.0.0'],
+      requires: [
+        'remote.api/v1@^1.0.0',
+        'choice-denied.api/v1@^1.0.0',
+        'choice-allowed.api/v1@^1.0.0',
+        'broken.api/v1@^1.0.0',
+      ],
+      desktopScope: { 'probe.api/v1': ['projectId', 'tenantSlug'] },
       files: { 'desktop/index.js': '', 'client/index.js': '' },
     },
     {
@@ -68,9 +97,82 @@ const { catalog } = fixtureDistribution({
         { id: 'remote.api/v1', environment: 'host', document: pingDocument },
         { id: 'other.api/v1', environment: 'host', document: pingDocument },
       ],
+      desktopScope: { 'remote.api/v1': ['projectId'] },
+    },
+    {
+      id: 'chosen',
+      provides: [
+        {
+          id: 'choice-denied.api/v1',
+          environment: 'host',
+          document: quietDocument,
+        },
+      ],
+    },
+    {
+      id: 'elsewhere',
+      provides: [
+        {
+          id: 'choice-denied.api/v1',
+          environment: 'host',
+          document: pingDocument,
+        },
+      ],
+      desktopScope: { 'choice-denied.api/v1': ['projectId'] },
+    },
+    {
+      id: 'chosen-allowed',
+      provides: [
+        {
+          id: 'choice-allowed.api/v1',
+          environment: 'host',
+          document: pingDocument,
+        },
+      ],
+      desktopScope: { 'choice-allowed.api/v1': ['projectId'] },
+    },
+    {
+      id: 'alternate-allowed',
+      provides: [
+        {
+          id: 'choice-allowed.api/v1',
+          environment: 'host',
+          document: quietDocument,
+        },
+      ],
+    },
+    {
+      id: 'broken',
+      provides: [
+        {
+          id: 'broken.api/v1',
+          environment: 'host',
+          document: malformedDocument,
+        },
+      ],
     },
   ],
 });
+
+// The host lists the active provider of a one-cardinality contract only.
+const catalog = {
+  ...distributed,
+  composition: {
+    ...distributed.composition,
+    providers: chosen,
+  },
+  host: {
+    ...distributed.host,
+    contracts: distributed.host.contracts.filter(
+      (contract) =>
+        !(contract.id in chosen) ||
+        contract.providers.some(
+          (provider) =>
+            provider.bundleId === chosen[contract.id as keyof typeof chosen],
+        ),
+    ),
+  },
+};
 const files = new Map(
   catalog.bundles.map((bundle) => [bundle.id, bundle] as const),
 );
@@ -162,10 +264,15 @@ beforeEach(() => {
     catalog,
     resolution,
     read: (bundle, path) => {
-      const source = files.get(bundle.id);
-      const file = source?.files.find((candidate) => candidate.path === path);
+      const file = files
+        .get(bundle.id)
+        ?.files.find((candidate) => candidate.path === path);
+      const content =
+        file === undefined ? undefined : artifacts.get(file.sha256);
 
-      return file === undefined ? undefined : pingDocument;
+      return content === undefined
+        ? undefined
+        : (JSON.parse(content) as JsonObject);
     },
   });
 
@@ -508,5 +615,145 @@ describe('desktop IPC dispatcher', () => {
     });
 
     assert.equal((refused as { ok: boolean }).ok, false);
+  });
+
+  test('a method the selected provider does not expose is unavailable, though another provider exposes it', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        contract: 'choice-denied.api/v1',
+        input: ['hello'],
+      }),
+    });
+
+    assert.deepEqual(
+      (result as { error?: { code: string; message: string } }).error,
+      {
+        code: 'unavailable',
+        message: 'choice-denied.api/v1 ping is not available to the desktop.',
+        details: { contract: 'choice-denied.api/v1', method: 'ping' },
+      },
+    );
+  });
+
+  test('a method the selected provider exposes reaches its route, though another provider does not expose it', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        contract: 'choice-allowed.api/v1',
+        input: ['hello'],
+      }),
+    });
+
+    // The route is the host's: with the host down it answers the host refusal.
+    assert.equal(
+      (result as { error?: { message: string } }).error?.message,
+      hostUnavailable().message,
+    );
+  });
+
+  test('an unexposed method of an exposed provider, and a method no document declares, are unavailable', async () => {
+    await describeWindow();
+
+    const quiet = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({ method: 'quiet', input: [] }),
+    });
+    const missing = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({ method: 'missing', input: [] }),
+    });
+
+    assert.equal(
+      (quiet as { error?: { message: string } }).error?.message,
+      'probe.api/v1 quiet is not available to the desktop.',
+    );
+    assert.equal(
+      (missing as { error?: { code: string } }).error?.code,
+      'unavailable',
+    );
+    assert.equal(calls.length, 0);
+  });
+
+  test('a malformed exposure leaves its contract unreachable from the window', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({ contract: 'broken.api/v1', method: 'ping' }),
+    });
+
+    assert.equal(
+      (result as { error?: { code: string } }).error?.code,
+      'unavailable',
+    );
+  });
+
+  test('a declared scope key, an arbitrary non-product one included, reaches the provider', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({ scope: { projectId: 'p1', tenantSlug: 'acme' } }),
+    });
+
+    assert.deepEqual(result, { ok: true, output: 'pong:hello' });
+    assert.deepEqual(calls[0]?.call.scope, {
+      projectId: 'p1',
+      tenantSlug: 'acme',
+      windowKey: 'workspace',
+    });
+  });
+
+  test('a scope key the provider does not declare is refused as invalid input', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({ scope: { projectId: 'p1', threadId: 't1' } }),
+    });
+
+    assert.equal(
+      (result as { error?: { code: string } }).error?.code,
+      'invalid_input',
+    );
+    assert.equal(calls.length, 0);
+  });
+
+  test('a host call is refused for an undeclared scope key before it reaches the host', async () => {
+    await describeWindow();
+
+    const result = await dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        contract: 'remote.api/v1',
+        scope: { tenantSlug: 'acme' },
+      }),
+    });
+
+    assert.equal(
+      (result as { error?: { code: string } }).error?.code,
+      'invalid_input',
+    );
+  });
+
+  test('the window key is refused at the IPC in every letter case, as is any malformed scope', async () => {
+    await describeWindow();
+
+    for (const key of ['windowKey', 'WindowKey', 'windowkey', 'WINDOWKEY']) {
+      await assert.rejects(
+        dispatcher.handle(event(window.contents), {
+          op: 'call',
+          envelope: envelope({ scope: { [key]: 'forged' } }),
+        }),
+        /Invalid desktop request/,
+        key,
+      );
+    }
+    assert.equal(calls.length, 0);
   });
 });

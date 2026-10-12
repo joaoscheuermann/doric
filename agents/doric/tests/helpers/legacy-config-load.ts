@@ -1,11 +1,10 @@
-import { type ProviderField, providerKind } from 'llms';
-import type { Database } from 'postgres/prisma';
-
 import {
   type ConfigInput,
   ConfigInputSchema,
   type DoricConfig,
-} from '../../src/lib/config/schema.js';
+} from 'host-config/testing';
+import { type ProviderField, providerKind } from 'llms';
+import type { Database } from 'postgres/prisma';
 
 // A frozen copy of the configuration store as it was before the configuration
 // moved into a `settings/v1` space, over raw SQL because the generated client

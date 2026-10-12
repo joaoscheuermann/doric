@@ -94,6 +94,10 @@ Não há regra de produto em `createWindow` ou `createSettingsWindow`, nem lista
 
 Os dados da janela vão no path, como os parâmetros `:threadId` e `:repository` de `/git/diff/:threadId/:repository`.
 
+## Janela primária
+
+Uma descrição de janela pode marcar `primary: true`. O processo principal aceita uma só janela primária por catálogo, e uma falha do cliente dela é falha do core, não "pronto". Pedir `primary` para uma chave já aberta sem a marca é recusado com `registration_conflict`, antes da regra de uma primária. A marca é fixada na criação, e uma chamada sem a marca não rebaixa uma janela primária aberta. O core marca `workspace` como primária. A plataforma não tem `openSettings()`: o comando `core.open-settings/v1` é um comando comum do core.
+
 ## Chaves e paths
 
 A chave também identifica a janela para restaurar posição, tamanho, monitor e estado maximizado, e para reabrir as janelas que estavam abertas. Duas janelas do mesmo tipo de conteúdo usam chaves diferentes, como `diff:<threadId>:<repository>`. O main guarda o último path de cada chave e reabre a janela nele; dentro da janela, a navegação muda o path com a History API, como em [navegação e rotas](./navigation.md).

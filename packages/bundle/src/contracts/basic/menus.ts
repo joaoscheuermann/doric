@@ -64,7 +64,11 @@ export const menuContextSchema = z
   .strict();
 
 export const menusMethods = {
-  addItem: { input: menuItemSchema, output: z.void() },
-  addKeybinding: { input: keybindingSchema, output: z.void() },
-  setContext: { input: menuContextSchema, output: z.void() },
+  addItem: { input: menuItemSchema, output: z.void(), expose: 'desktop' },
+  addKeybinding: {
+    input: keybindingSchema,
+    output: z.void(),
+    expose: 'desktop',
+  },
+  setContext: { input: menuContextSchema, output: z.void(), expose: 'desktop' },
 } as const satisfies MethodSpecs;

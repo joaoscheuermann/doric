@@ -25,6 +25,7 @@ import {
 import type { Disposable } from './context.js';
 import { defineHook, definePlatformHooks, ref } from './define.js';
 import type { Environment } from './ids.js';
+import { networkMethods } from './network.js';
 import type { JsonObject } from './types.js';
 
 // Platform hooks ------------------------------------------------------------
@@ -202,6 +203,9 @@ export interface CatalogManifest {
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
   readonly requires: readonly string[];
+  readonly optional?: readonly string[];
+  /** The scope keys a desktop window may send to each provided contract. */
+  readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   readonly description?: string;
 }
 
@@ -213,6 +217,8 @@ export const catalogManifestSchema = z
     engines: z.object({ doric: z.string() }).strict(),
     provides: z.array(z.string()),
     requires: z.array(z.string()),
+    optional: z.array(z.string()).optional(),
+    desktopScope: z.record(z.string(), z.array(z.string())).optional(),
     description: z.string().optional(),
   })
   .strict();
@@ -654,6 +660,25 @@ export interface DoricTokens {
   get(call?: CallArg): Promise<Readonly<Record<string, string>>>;
 }
 
+/** Outcome of a one-time storage migration (`doric.migrations/v1`). */
+export type MigrationResult = (typeof migrationResults)[number];
+
+export interface MigrationRequest {
+  /** The localStorage key to copy from the packaged origin. */
+  readonly key: string;
+  /** The name of the desktop state record that marks the copy done. */
+  readonly marker: string;
+}
+
+/**
+ * One-time copies of a window's storage from the packaged origin, run by the
+ * platform. The caller chooses only the key and the marker: the origins and
+ * the pages involved belong to the platform.
+ */
+export interface DoricMigrations {
+  storage(request: MigrationRequest, call?: CallArg): Promise<MigrationResult>;
+}
+
 /** One native notification (decision 81). */
 export interface NotificationRequest {
   readonly title: string;
@@ -794,6 +819,7 @@ export const DoricLogV1 = ref<DoricLog>('doric.log/v1');
 export const DoricWindowsV1 = ref<DoricWindows>('doric.windows/v1');
 export const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 export const DoricCacheV1 = ref<DoricCache>('doric.cache/v1');
+export const DoricMigrationsV1 = ref<DoricMigrations>('doric.migrations/v1');
 export const DoricTokensV1 = ref<DoricTokens>('doric.tokens/v1');
 export const DoricNotificationsV1 = ref<DoricNotifications>(
   'doric.notifications/v1',
@@ -812,6 +838,25 @@ const elementSchema = z.custom<object>(
 
 export const connectionStatusSchema = z.enum(['connected', 'disconnected']);
 
+/** A localStorage key a migration may copy: bounded, with no origin in it. */
+export const migrationKeyPattern = /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
+/** A migration marker, the name of its record in the desktop state. */
+export const migrationMarkerPattern = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+
+export const migrationResults = [
+  'migrated',
+  'none',
+  'skipped',
+  'failed',
+] as const;
+
+const migrationRequestSchema = z
+  .object({
+    key: z.string().regex(migrationKeyPattern),
+    marker: z.string().regex(migrationMarkerPattern),
+  })
+  .strict();
+
 export interface PlatformContractSpec {
   readonly environments: readonly Environment[];
   readonly methods: MethodSpecs;
@@ -819,32 +864,52 @@ export interface PlatformContractSpec {
 
 /** Method specifications of the `doric.*` services, by contract ID. */
 export const platformContracts = Object.freeze({
+  'doric.network/v1': { environments: ['host'], methods: networkMethods },
   // [S8-7] desktopMain and client have their own catalog and diagnostics.
   'doric.catalog/v1': {
     environments: ['host', 'desktopMain', 'client'],
     methods: {
-      get: { input: noInput, output: catalogSnapshotSchema },
-      distribution: { input: noInput, output: distributionCatalogSchema },
+      get: {
+        input: noInput,
+        output: catalogSnapshotSchema,
+        expose: 'desktop',
+      },
+      distribution: {
+        input: noInput,
+        output: distributionCatalogSchema,
+        expose: 'desktop',
+      },
       artifact: {
         input: z.object({ sha256: sha256Schema }).strict(),
         output: distributionArtifactSchema,
+        expose: 'desktop',
       },
       watch: {
         input: z.tuple([streamListener(catalogChangeSchema)]),
         output: disposableSchema,
+        expose: 'desktop',
       },
       disable: {
         input: z.object({ bundleId: z.string().min(1) }).strict(),
         output: z.void(),
+        expose: 'desktop',
       },
-      resetComposition: { input: noInput, output: z.void() },
+      resetComposition: {
+        input: noInput,
+        output: z.void(),
+        expose: 'desktop',
+      },
     },
   },
   'doric.diagnostics/v1': {
     environments: ['host', 'desktopMain', 'client'],
     methods: {
       get: { input: noInput, output: diagnosticsSchema },
-      report: { input: diagnosticReportSchema, output: z.void() },
+      report: {
+        input: diagnosticReportSchema,
+        output: z.void(),
+        expose: 'desktop',
+      },
     },
   },
   'doric.bundle/v1': {
@@ -894,6 +959,15 @@ export const platformContracts = Object.freeze({
   'doric.cache/v1': {
     environments: ['desktopMain'],
     methods: { directory: { input: noInput, output: z.string() } },
+  },
+  'doric.migrations/v1': {
+    environments: ['desktopMain'],
+    methods: {
+      storage: {
+        input: migrationRequestSchema,
+        output: z.enum(migrationResults),
+      },
+    },
   },
   'doric.generation/v1': {
     environments: ['host'],

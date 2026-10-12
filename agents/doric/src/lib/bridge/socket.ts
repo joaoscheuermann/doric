@@ -3,7 +3,8 @@
 // `kind` and carries the whole envelope message: the desktop sends `call`,
 // `cancel`, `subscribe` and `unsubscribe`; the host answers `result`, `event`
 // and `end`. Calls resolve in the kernel's active view, as principal `doric`,
-// and reach only the methods of the host allowlist (HR-10, `allowlist.ts`).
+// and reach only the methods the active provider exposes to the desktop (HR-10,
+// the `expose` declarations of its contract methods).
 
 import type { KernelPlatform } from 'bundle';
 import {
@@ -15,6 +16,7 @@ import {
 } from 'bundle/contracts';
 import {
   type CallMessage,
+  isDesktopExposed,
   isTupleSchema,
   memberSchema,
   type SubscribeMessage,
@@ -24,8 +26,6 @@ import {
   wireMessageSchema,
 } from 'bundle/runtime';
 import type { Server, Socket } from 'socket.io';
-
-import { assertBridgeAllowed } from './allowlist.js';
 
 export const BRIDGE_NAMESPACE = '/doric/bridge';
 
@@ -88,6 +88,25 @@ const argumentsOf = (
   return [...target.input];
 };
 
+/** Refuses a method the active provider does not expose to the desktop. */
+const assertExposed = async (
+  platform: KernelPlatform,
+  target: Pick<CallMessage, 'contract' | 'method'>,
+  signal: AbortSignal,
+): Promise<void> => {
+  const { contract, method } = target;
+  // As the stub does: a respawning generation's provider is awaited first.
+  const spec = await platform.awaitMethodSpec(contract, method, signal);
+
+  if (!isDesktopExposed(contract, method, spec)) {
+    throw new ContractError(
+      'unavailable',
+      `${contract} ${method} is not available to the desktop.`,
+      { contract, method },
+    );
+  }
+};
+
 /** The `doric` stub method a request targets (every name dispatches). */
 const methodOf = (
   platform: KernelPlatform,
@@ -117,7 +136,7 @@ const serve = (platform: KernelPlatform, socket: Socket, log: BridgeLog) => {
     calls.set(message.id, controller);
 
     try {
-      assertBridgeAllowed(message.contract, message.method);
+      await assertExposed(platform, message, controller.signal);
       const args = argumentsOf(platform, message, false);
       const output = await methodOf(platform, message)(
         ...args,
@@ -165,7 +184,7 @@ const serve = (platform: KernelPlatform, socket: Socket, log: BridgeLog) => {
     streams.set(id, open);
 
     try {
-      assertBridgeAllowed(message.contract, message.method);
+      await assertExposed(platform, message, controller.signal);
       const args = argumentsOf(platform, message, true);
       const held = (await methodOf(platform, message)(
         ...args,

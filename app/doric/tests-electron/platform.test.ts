@@ -77,6 +77,10 @@ describe('desktop platform, default composition', () => {
     assert.equal(workspace.getTitle(), 'Doric');
   });
 
+  test('startup completes the core storage migration through the generation process', () => {
+    assert.equal(booted.platform.state.data.migrations.selectionOrigin, true);
+  });
+
   test('the workspace window has today’s isolation and the splash closed at its first ready()', async () => {
     // Sandboxed, isolated, no Node: the page sees neither require nor process.
     assert.equal(

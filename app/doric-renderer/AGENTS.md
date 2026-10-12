@@ -20,8 +20,8 @@ src/
 ```
 
 The UI itself lives in client bundles: the workspace frame in
-`bundles/layout`, the conversation in `bundles/chat`, the settings page in
-`bundles/settings`, the outlet, regions and router in `bundles/core`. Each has
+`bundles/desktop/layout`, the conversation in `bundles/desktop/chat`, the settings page in
+`bundles/desktop/settings`, the outlet, regions and router in `bundles/foundation/core`. Each has
 its own `AGENTS.md`. Do not add components, hooks, stores or product logic to
 the shell; a page or a region item is a bundle's.
 

@@ -23,6 +23,8 @@ export interface FixtureBundle {
   readonly engines?: string;
   readonly provides?: readonly FixtureContract[];
   readonly requires?: readonly string[];
+  /** The window scope keys each provided contract accepts (`desktopScope`). */
+  readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   /** dist-relative path → content. */
   readonly files?: Readonly<Record<string, string>>;
   /** Host-side state (default active). */
@@ -63,6 +65,9 @@ export const fixtureDistribution = (input: {
         (id) => `${id}@1.0.0`,
       ),
       requires: [...(bundle.requires ?? [])],
+      ...(bundle.desktopScope === undefined
+        ? {}
+        : { desktopScope: bundle.desktopScope }),
     };
     const descriptor = {
       descriptorVersion: 1,

@@ -58,6 +58,12 @@ Contratos `doric.*` são da plataforma: não aparecem no `provides` de nenhum bu
 
 Dependências opcionais não entram no manifesto: o código as consulta com `services.whenAvailable(...)` (ou `services.use(HooksV1).whenAvailable(...)`, no caso de hooks) e degrada sozinho quando elas não existem.
 
+### `optional`, `desktopScope` e exposição de métodos
+
+- `optional` lista IDs de contrato que o bundle pode chamar em melhor esforço, sem dependência de ativação. Sem provedor ativo, a chamada cai no comportamento indisponível do próprio chamador. O transporte usa esse campo para `files/v1`, `git.commands/v1`, `usage/v1`, `resources/v1` e `terminal/v1`.
+- `desktopScope` é um mapa de contrato para as chaves de escopo que uma janela desktop pode enviar a esse contrato. Qualquer outra chave é recusada, e `windowKey` é só da plataforma.
+- A exposição de um método segue a mesma regra. Um método só chega a uma janela desktop com `expose: 'desktop'`: nos contratos da plataforma, a declaração fica no `MethodSpec` de `packages/bundle`; nos contratos de um provedor, fica em `x-doric-expose` do documento do contrato. O padrão é negar. Ver [serviços e canais](./services-and-channels.md#exposição-à-janela-desktop).
+
 ## Convenções de pastas
 
 As partes do bundle e os recursos estáticos são encontrados por convenção:
@@ -203,7 +209,7 @@ IDs de contribuição de um bundle começam com o ID dele: contratos no formato 
 
 Em cada ambiente, o loader ativa nesta ordem:
 
-1. A **fundação**: os bundles escolhidos em `providers` para contratos que o core fornece ou consome, por exemplo `myhooks` para `hooks/v1` e `postgres` para `storage.backend/v1` e `secrets.backend/v1`. Eles só declaram `requires` de contratos `doric.*`.
+1. A **fundação**: os bundles escolhidos em `providers` para contratos que o core fornece ou consome, por exemplo `myhooks` para `hooks/v1` e `postgres` para `storage.backend/v1` e `secrets.backend/v1`. Um provedor que substitui uma fachada básica pode exigir os backends de storage e segredos; os demais não podem depender de bundles ativados depois.
 2. O core, cujo `requires` só pode citar contratos da fundação (`storage.backend/v1` e `secrets.backend/v1`).
 3. Os demais bundles, em ordem de dependência.
 
@@ -215,13 +221,13 @@ O manifesto v1 é validado por um JSON Schema publicado em `doric://app/schemas/
 
 ## Manifesto v0
 
-O formato atual (`name`, `description`, `tools`, `skills`, validado em modo `strict` por `packages/bundle/src/lib/load.ts`) passa a ser o manifesto v0, reconhecido pela ausência de `manifestVersion`. O loader converte v0 em memória:
+O formato legado (`name`, `description`, `tools`, `skills`) é o manifesto v0, reconhecido pela ausência de `manifestVersion`. O loader converte v0 em memória:
 
-- `id` vem do `name`, que nos bundles atuais já é curto (`git`, `threads`); a exceção é `bundles/core`, cujo `name` `core` colidiria com o ID do bundle core e vira `files`, o nome que esse bundle adota na primeira etapa, preservando os nomes públicos das tools e skills;
+- `id` preserva o `name` informado pelo autor, sem renomeações específicas de produto;
 - `version` é `0.0.0`;
 - o próprio loader registra as tools e skills listadas em nome do bundle.
 
-A conversão existe só até os bundles atuais migrarem na primeira etapa (veja [migração](./migration.md)).
+Os bundles distribuídos já usam v1. A conversão de v0 permanece como compatibilidade do loader (veja [migração](./migration.md)).
 
 ## Relações
 

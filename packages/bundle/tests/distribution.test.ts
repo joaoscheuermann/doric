@@ -47,7 +47,11 @@ const alphaFiles = {
 
 const writeInstalled = async (root: string) => {
   const bundles = join(root, 'bundles');
-  const alpha = manifest('alpha');
+  const alpha = {
+    ...manifest('alpha', { provides: ['alpha.api/v1@1.0.0'] }),
+    optional: ['optional/v1'],
+    desktopScope: { 'alpha.api/v1': ['entityId'] },
+  };
   const beta = manifest('beta', { engines: '^2.0.0' });
   const gamma = manifest('gamma');
 
@@ -167,6 +171,8 @@ void test('the distribution catalog carries the host generation, identity, parts
     assert.deepEqual(catalog.host.storage, catalog.storage);
 
     const byId = new Map(catalog.bundles.map((bundle) => [bundle.id, bundle]));
+    assert.deepEqual(byId.get('alpha')?.manifest?.optional, ['optional/v1']);
+    assert.deepEqual(byId.get('alpha')?.manifest?.desktopScope, { 'alpha.api/v1': ['entityId'] });
 
     assert.deepEqual(byId.get('alpha')?.parts, {
       desktopMain: 'desktop/index.js',

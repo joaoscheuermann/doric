@@ -1,7 +1,8 @@
-// What a window may send as a call scope: exactly the three keys HEAD admitted
-// (`projectId`, `threadId`, `promptId`), never another key and never a
-// `windowKey` in any letter case. Main fills the window key itself, so a
-// window cannot name another window or reach a key the platform never admitted.
+// What a window may send as a call scope: a bounded opaque record. Which keys a
+// contract accepts is its provider's declaration, checked by main (see the
+// dispatcher tests); here the IPC admits any well-formed key up to the bounds
+// and never a `windowKey` in any letter case. Main fills the window key itself,
+// so a window cannot name another window.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -25,7 +26,12 @@ const callWithScope = (scope: Record<string, string> | undefined) => ({
 const accepts = (scope: Record<string, string> | undefined): boolean =>
   desktopRequestSchema.safeParse(callWithScope(scope)).success;
 
-void test('a window sends the closed set of scope keys, unchanged', () => {
+const keysOf = (count: number): Record<string, string> =>
+  Object.fromEntries(
+    Array.from({ length: count }, (_, index) => [`key${index}`, 'v']),
+  );
+
+void test('a window sends its scope unchanged', () => {
   const scope = { projectId: 'p1', threadId: 't1', promptId: 'r1' };
   const parsed = desktopRequestSchema.parse(callWithScope(scope));
 
@@ -35,13 +41,17 @@ void test('a window sends the closed set of scope keys, unchanged', () => {
 
 void test('a window may send a call without a scope or an empty one', () => {
   assert.ok(accepts(undefined));
-  assert.ok(accepts({ projectId: 'p1' }));
+  assert.ok(accepts({}));
 });
 
-void test('a window cannot send any other scope key, as HEAD refused', () => {
-  assert.equal(accepts({ workspaceId: 'w1' }), false);
-  assert.equal(accepts({ projectId: 'p1', 'bad key': 'v' }), false);
-  assert.equal(accepts({ projectId: 'p1', projectid: 'v' }), false);
+void test('any well-formed scope key crosses the IPC; the provider decides the rest', () => {
+  assert.ok(accepts({ workspaceId: 'w1' }));
+  assert.ok(accepts({ tenantSlug: 'acme', 'segment.two-three_4': 'x' }));
+});
+
+void test('a scope key must match the scope key pattern', () => {
+  assert.equal(accepts({ 'bad key': 'v' }), false);
+  assert.equal(accepts({ '1abc': 'v' }), false);
 });
 
 void test('a window cannot send windowKey in any letter case', () => {
@@ -51,7 +61,14 @@ void test('a window cannot send windowKey in any letter case', () => {
   assert.equal(accepts({ projectId: 'p1', windowkey: 'forged' }), false);
 });
 
-void test('a window scope value must be a string', () => {
+void test('a window scope holds at most the bounded number of keys', () => {
+  assert.ok(accepts(keysOf(16)));
+  assert.equal(accepts(keysOf(17)), false);
+});
+
+void test('a window scope value is a string of at most the bounded length', () => {
+  assert.ok(accepts({ projectId: 'a'.repeat(512) }));
+  assert.equal(accepts({ projectId: 'a'.repeat(513) }), false);
   assert.equal(
     desktopRequestSchema.safeParse({
       ...callWithScope(undefined),

@@ -45,11 +45,23 @@ Os antigos papéis exclusivos (armazenamento durável, segredos, runtime padrão
 
 Neste exemplo, `myhooks` e o core fornecem `hooks/v1`, e a composição escolhe `myhooks`. Fora da fundação, um contrato com um único provedor habilitado não precisa aparecer em `providers`. Os provedores dos contratos que o core consome (`storage.backend/v1` e `secrets.backend/v1`) sempre aparecem em `providers`, mesmo quando `postgres` é o único provedor habilitado, porque é essa escolha que os coloca na fundação e os ativa antes do core.
 
+## `resident`, `required` e `alternatives`
+
+A composição distribuída, em `agents/doric/composition.json`, tem três blocos genéricos além de `core`, `enabled` e `providers`:
+
+- `resident` lista bundles instalados que rodam no processo nativo do host, e não num processo de geração. Na composição distribuída são `host-config` (configuração e `settings/v1` de `host-config.configuration/v1`) e `transport` (rotas REST e namespaces Socket.IO).
+- `required` lista `contracts` e `bundles` sem os quais o host não serve. Sem o bloco, nada é exigido. A checagem roda em `bundle_load`, e a falha põe o host em modo de recuperação com o motivo.
+- `alternatives` escolhe entre bundles que preenchem o mesmo papel. Cada alternativa nomeia a variável de ambiente que a escolhe (`env`), uma opção `default` e as `options`. Hoje há uma só, `sandbox`: `docker` por padrão, `firecracker` com `DORIC_SANDBOX_PROVIDER`. O kernel registra a escolha como `alternatives` no log de startup.
+
+O kernel lê esses blocos sem saber o que eles significam. Os nomes de contrato e de variável são dados da composição, não código da plataforma.
+
+As pastas `foundation`, `runtime`, `providers`, `sandboxes`, `features` e `desktop` organizam o código-fonte. Elas não determinam a fase de ativação: `transport` fica em `bundles/foundation/transport` e a composição o executa como residente, depois das dependências exigidas por seu manifesto.
+
 ## Fundação e ordem de ativação
 
 Em cada ambiente, o loader ativa os bundles nesta ordem:
 
-1. **Fundação:** os bundles escolhidos em `providers` para contratos que o core fornece ou consome. No exemplo, `myhooks` (para `hooks/v1`) e `postgres` (para `storage.backend/v1` e `secrets.backend/v1`). Um bundle da fundação só pode declarar `requires` de contratos `doric.*`, que são da plataforma e sempre existem.
+1. **Fundação:** os bundles escolhidos em `providers` para contratos que o core fornece ou consome. No exemplo, `myhooks` (para `hooks/v1`) e `postgres` (para `storage.backend/v1` e `secrets.backend/v1`). Um provedor que substitui uma fachada básica pode exigir os backends de storage e segredos; os demais não podem depender de bundles ativados depois. Contratos `doric.*` pertencem à plataforma.
 2. **Core:** o core pode declarar `requires` apenas de contratos que a fundação fornece, `storage.backend/v1` e `secrets.backend/v1`.
 3. **Demais bundles:** em ordem de dependência, conforme os `requires` de cada manifesto.
 

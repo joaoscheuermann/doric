@@ -1,0 +1,88 @@
+{
+  "$comment": "Frozen parity with the desktop bridge allowlist before declarative exposure (BWP-10). Any change to desktop exposure or accepted scope keys must update this file in review.",
+  "methods": {
+    "doric.catalog/v1": [
+      "artifact",
+      "disable",
+      "distribution",
+      "get",
+      "resetComposition",
+      "watch"
+    ],
+    "doric.diagnostics/v1": ["report"],
+    "files/v1": ["content", "directory", "tree"],
+    "git.commands/v1": [
+      "branches",
+      "changes",
+      "diff",
+      "fileDiff",
+      "status",
+      "switchBranch"
+    ],
+    "host-config/v1": ["current", "replace"],
+    "models/v1": ["catalog", "kind", "kinds"],
+    "resources/v1": ["host", "project"],
+    "runtime/v1": [
+      "createProject",
+      "deleteProject",
+      "projects",
+      "renameProject",
+      "setProjectColor",
+      "terminateProject",
+      "watchProject"
+    ],
+    "runtime.lease/v1": [
+      "branches",
+      "changes",
+      "diff",
+      "file",
+      "fileDiff",
+      "files",
+      "git",
+      "resources",
+      "tree"
+    ],
+    "runtime.terminals/v1": [
+      "create",
+      "input",
+      "list",
+      "resize",
+      "snapshot",
+      "stop",
+      "watchProject"
+    ],
+    "runtime.threads/v1": [
+      "createThread",
+      "deleteThread",
+      "editQueued",
+      "pause",
+      "prompt",
+      "queue",
+      "queuedPrompt",
+      "removeQueued",
+      "renameThread",
+      "resume",
+      "resumeQueue",
+      "rewind",
+      "setThreadCwd",
+      "terminateThread",
+      "thread",
+      "threads",
+      "usage",
+      "watchThread"
+    ],
+    "secrets/v1": ["create", "delete", "list", "update"],
+    "terminal/v1": [
+      "create",
+      "input",
+      "list",
+      "resize",
+      "snapshot",
+      "stop",
+      "watchProject"
+    ],
+    "tools/v1": ["catalog"],
+    "usage/v1": ["thread"]
+  },
+  "scopeKeys": ["projectId", "threadId", "promptId"]
+}

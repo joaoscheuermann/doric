@@ -16,7 +16,7 @@
 @reference 'desktop-ui/tailwind.css';
 @source './';
 @source '../../../packages/desktop-ui/src';
-@source '../../../bundles/*/src/client/**/*';
+@source '../../../bundles/*/*/src/client/**/*';
 
 @layer base {
   * {

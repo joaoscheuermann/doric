@@ -9,7 +9,7 @@ import type { DistributionBundle, DistributionCatalog } from 'bundle/runtime';
 
 import { type FixtureBundle, fixtureDistribution } from './distribution';
 
-export const CORE_DIST = resolve('bundles/core/dist');
+export const CORE_DIST = resolve('bundles/foundation/core/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {

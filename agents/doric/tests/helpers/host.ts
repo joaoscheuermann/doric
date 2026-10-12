@@ -18,7 +18,7 @@ import { credentialKey } from './platform.js';
  */
 
 const entrypoint = 'agents/doric/dist/src/index.js';
-const migrations = 'bundles/postgres/prisma/migrations';
+const migrations = 'bundles/foundation/postgres/prisma/migrations';
 
 /** One record of the host's JSON log file. */
 export interface LogLine {

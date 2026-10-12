@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-09
+Last reviewed: 2026-10-12
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -103,12 +103,11 @@ key plus a path; the core provides the router (`navigation/v1`), the
 outlet, `ui/v1` and `regions/v1`, and the `layout` bundle registers `/` with
 the workspace frame, its regions and its tabs. These files are proposals: the current
 package responsibilities and runtime behavior below remain authoritative until
-the relevant migration steps are implemented and validated. Migration stage 1
-(contracts, loader, manifest v1, composition, `core`, quarantine and the
-provisional host adapter) and stages 2 and 3, implemented together (the
-`postgres` foundation bundle, the `packages/storage` protocol and conformance
-kit, and the core's `settings/v1`, `secrets/v1`, `storage/v1` and `events/v1`),
-are implemented and described under Current Runtime.
+the relevant migration steps are implemented and validated. Migration stages 1
+to 10 are implemented and described under Current Runtime, together with the
+platform/bundle boundary described under Platform Boundary, which replaces the
+provisional host adapters stage 1 introduced: the platform knows no bundle
+concept, and the bundles own their own.
 
 `agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
@@ -117,7 +116,8 @@ reusable agent loop remains in `packages/agent`.
 `app/doric` is the Electron desktop application. Its sandboxed, context-isolated
 windows load the shell built by `app/doric-renderer`, which since migration
 stage 9 only boots the client bundles; the UI described below is drawn by the
-`layout`, `chat` and `settings` client bundles (and the core's outlet), using
+`layout`, `chat` and `settings` client bundles, the feature bundles' client parts
+that `layout` hosts, and the core's outlet, using
 Tailwind CSS and the shadcn/ui components and Radix primitives of
 `packages/desktop-ui`. Where this section says "the renderer", it means those
 bundles in the window.
@@ -480,11 +480,12 @@ unavailable. The model list and selector share the compact bordered popover
 styling used for conversation costs, with the selector in a shaded footer. Its
 effort menu and the footer's effort menu use compact rows, a subtle highlight
 for the selected level, and the same bordered surface.
-A credential is named and has one of a closed set of kinds that fixes its fields:
-`API_TOKEN` is authentication, which a provider key and the GitHub token both
-are; `USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity
-alone, the username and email the agent's git commands commit with, which is why
-it holds no secret at all. A secret is write-only: the host answers whether a
+A credential is named and has one of a set of kinds that fixes its fields: the
+built-in `API_TOKEN` is authentication, which a provider key and the GitHub token
+both are; `USERNAME_PASSWORD` is authentication with a name; and the kinds a
+bundle registers are added to that set. `GIT`, registered by the `git` bundle, is
+identity alone, the username and email the agent's git commands commit with,
+which is why it holds no secret at all. A secret is write-only: the host answers whether a
 credential holds one and never the secret, so the field always starts empty, an
 empty field keeps what is stored, and a value sets it. There is no Save button: a
 valid change sends itself once typing settles, on a field blur, and as the window
@@ -542,17 +543,102 @@ The thread delegation tools act only on direct children in the same Project,
 reached through the per-prompt host facade; each child has its own history, not
 an automatic copy of its parent's history.
 
-The Direct executor and its system prompt live in `/bundles/direct`; the
-former one-module-per-coordination-tool set ships in `/bundles/threads`. The
+The Direct executor and its system prompt live in `/bundles/runtime/direct`; the
+former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
 system prompt file exports only one constant literal template string; dynamic
 bundle skills are appended by the executor, not encoded as arrays of prompt
 lines. Project and Thread lifecycle, queues, the prompt runner and the
-prompt-scoped host facade live in `/bundles/runtime`; REST routes, Socket.IO
+prompt-scoped host facade live in `/bundles/runtime/runtime`; REST routes, Socket.IO
 namespaces, HTTP errors and safe event serialization live in
-`/bundles/transport`. `agents/doric/src` keeps only the kernel: boot, the
-embedded `host-config` bundle and the `PUT /config` pipeline
-(`lib/config/service.ts`), the database connection, the sandbox log settings
-and the generation handover wiring.
+`/bundles/foundation/transport`, which registers them on the native listeners through
+`doric.network/v1`. The configuration and its `PUT /config` pipeline live in
+`/bundles/foundation/host-config`, the database connection in `/bundles/foundation/postgres`, and the
+Project and Thread handover in `/bundles/runtime/runtime/src/host`.
+`agents/doric/src` is the kernel: it reads the composition, applies its
+alternatives, checks the composition's `required` block, owns the native HTTP
+and Socket.IO listeners and the generic desktop bridge, runs the platform's
+start and stop hooks and binds the port. It names no bundle contract.
+
+### Platform Boundary
+
+The platform installs bundles, composes providers, routes calls, and runs
+processes, windows, and IPC. It never knows a bundle's concepts (Project,
+Thread, prompt, queue, Git, settings) or their methods and storage formats, and
+a field of a generic schema that names one is a leak. The platform is
+`packages/bundle`, `packages/storage`, `packages/desktop-client`,
+`packages/desktop-ui`, `packages/desktop-reads`, `app/doric`,
+`app/doric-renderer`, `app/doric-platform`, and the kernel `agents/doric`.
+Bundles reach one another only through published contracts; a bundle may import
+another bundle's `<id>/contracts` entrypoint, never its source.
+
+The mechanisms the platform provides, by name:
+
+- **Call scope.** `CallScope` is an opaque record of bounded string keys:
+  `callScopeSchema` accepts keys matching `scopeKeyPattern`, at most
+  `SCOPE_MAX_KEYS` (16) of them, each value at most `SCOPE_MAX_VALUE` (512)
+  characters. `windowKey` is platform-owned: only the main process injects it,
+  a window may not send it in any spelling, and a bundle-supplied one is
+  stripped. A bundle's scope keys belong to the bundle; `runtime/contracts`
+  exports `runtimeScope` and `readRuntimeScope` for the Project, Thread and
+  prompt keys.
+- **Work holds.** A call pinned to a generation holds a `WorkHold {key, label?}`
+  owned by its calling bundle, taken from the call's caller and never from the
+  input. The process manager counts work holds and window holds apart, a drain
+  waits only for work holds, and a lost generation reports its holds to each
+  owning bundle.
+- **Lifecycle hooks.** `doric.app.hooks/v1` has `onHostStartHook` (sequence,
+  activation order, a failure is fatal, before `onHostReadyHook`),
+  `onHostStopHook` (sequence, reverse order, after the listener closes),
+  `onGenerationChangedHook` (`activated`, `draining`, `lost` or `stopped`, with
+  the live generations and only the receiving bundle's own holds), and
+  `onPeerSignalHook`, which delivers a `doric.generation/v1.signal(topic,
+payload)` to the same bundle in every other live generation. The kernel names
+  no bundle contract in these hooks; a bundle decides what they mean.
+- **Startup records.** `doric.startup/v1` gives a bundle `stage(name)` and
+  `log(level, fields, message)`, which the kernel's startup record uses; the
+  kernel names only its own stages.
+- **Composition data.** `composition.json` may name `resident` (installed
+  bundles that run in the native host process rather than in a generation),
+  `required` (the contracts and bundles the host refuses to serve without;
+  absent, nothing is required), and `alternatives` (a choice between bundles
+  that fill one role, made by the variable each alternative names; the shipped
+  one is `sandbox`). The kernel reads these generically.
+- **Optional contracts.** A manifest's `optional` lists contract IDs a bundle may
+  call on a best-effort basis without an activation dependency. A call to a
+  contract with no active provider keeps the caller's own unavailable behavior;
+  the transport's feature reads are the example.
+- **Native handles.** `doric.network/v1.register(listener)` gives a resident
+  bundle the host's native HTTP and Socket.IO handles, locally and never
+  serialized; the listener's cleanup runs when the bundle deactivates. The
+  kernel owns the listener and the generic `/doric/bridge` bridge, and the
+  `transport` bundle registers every product route and namespace through it.
+- **Event sinks.** `events/v1` has one sink per provider, registered with
+  `sink({scopeKeys, stream})`. The stream is a template over the scope keys the
+  sink names; an append whose call scope lacks one is refused with
+  `invalid_scope`. The core knows no Thread key.
+- **Credential kinds.** `secrets/v1.registerKind` adds a kind to the built-in
+  `API_TOKEN` and `USERNAME_PASSWORD`. A kind name matches
+  `^[A-Z][A-Z0-9_]{1,31}$`, and a duplicate is refused with
+  `duplicate_credential_kind`. `git` registers `GIT`, with username and email and
+  no secret.
+- **Desktop exposure.** The default is deny. A method reaches a desktop window
+  only when it declares `expose: 'desktop'`: a platform contract declares it on
+  its `MethodSpec` in `packages/bundle`, and a provider declares it in
+  `x-doric-expose` of its contract document. A
+  provider names the scope keys a window may send for it in `desktopScope` in its
+  manifest, and any other key is refused. A contract with no active provider is
+  unavailable. The exposed set is pinned by a permanent snapshot test,
+  `agents/doric/tests/bridge-exposure.snapshot.json`, so a change to what
+  windows may reach is an explicit change in review.
+- **Windows.** A window descriptor may set `primary`. The main process accepts
+  one primary window per catalog and refuses a primary request for an already
+  open window that was opened without the flag, with `registration_conflict`.
+  The core marks `workspace` primary. The platform has no `openSettings()`; a
+  command runs by id through `commands/v1`.
+
+Client reads and UI that name a bundle's concept belong to that bundle.
+`packages/desktop-reads` and `packages/desktop-ui` hold only generic primitives
+(refresh queues, path utilities, tree and panel components, tokens).
 
 ### Current Runtime
 
@@ -566,11 +652,12 @@ v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist` and a public
 `<id>/contracts` entrypoint. The bundle build CLI of `packages/bundle`
 validates the manifest and skills, dry-activates the host part to write the
 contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas; it
-does not compare them with a committed baseline, which returns with publishing
-(stage 11). `doric:build-bundles` then stages each `dist` into
+does not compare them with any baseline: no `contracts.published.json` is
+committed, and the `baseline` command and its Nx targets are removed until
+publishing (stage 11) compares against the registry. `doric:build-bundles` then stages each `dist` into
 `agents/doric/dist/bundles/<id>`.
 
-`/bundles/core` is the composition's core. Its host part provides the basic
+`/bundles/foundation/core` is the composition's core. Its host part provides the basic
 contracts `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,
 `secrets/v1`, `storage/v1` and `events/v1` of `bundle/contracts`, and it
 requires `storage.backend/v1` and `secrets.backend/v1`, which the composition
@@ -581,8 +668,8 @@ generation, call scope, trace and environment, have every stored or added
 credential secret replaced with `[REDACTED]` in the message and the string
 fields, and reach the host's pino destinations through the platform's
 `doric.log/v1`; tools and skills are kept in bundle order with globally unique
-names, and skill `allowed-tools` resolve only against tools the same bundle
-registered. The other four are facades over the chosen backends. `storage/v1`
+names, and skill `allowed-tools` resolve against the whole `tools/v1` catalog after
+activation. The other four are facades over the chosen backends. `storage/v1`
 lets a bundle define the storage types its namespace names and lists in
 `provides`, validates every write against the type's schema, lets only the
 owner read or write a type and only the bundle a stream's first segment names
@@ -594,38 +681,41 @@ version, the write time and the global `core.settings-generation/v1` counter,
 and runs subscribers after each commit, before the next queued write.
 `secrets/v1` caches the backend's credentials on first load (backend name
 order, then `localeCompare` after each save), applies the shared credential
-field rules, resolves by id or by kind, keeps the redaction set, and answers
+field rules to the built-in kinds and to any kind a bundle adds with
+`registerKind` (the `git` bundle adds `GIT`), resolves by id or by kind, keeps
+the redaction set, and answers
 `referenced` to a delete while a registered reference source names the
 credential; `settings.set` and the secrets writes share one write queue, which
 replaces the foreign keys that used to protect referenced credentials and
 assumes, as the credential cache already did, one host process per database.
-`events/v1` appends a registered event's envelope `{ projectId, threadId,
-promptId, type, event }`, redacted and made storable, to
-`runtime.thread.events/<threadId>`. The `runtime` registers only
-`runtime.prompt-finished/v1` and writes the Thread events it owns to that
+`events/v1` appends a registered event's envelope, redacted and made storable,
+to the stream its one sink names. The owner registers that sink with `sink({
+scopeKeys, stream })`, so the core keeps no Thread, Project or prompt key: an
+append whose call scope lacks a key the sink names is refused with
+`invalid_scope`. The `runtime` registers `projectId`, `threadId` and `promptId`
+with the stream `runtime.thread.events/{threadId}`, registers only
+`runtime.prompt-finished/v1`, and writes the Thread events it owns to that
 stream directly, in the same commit as the Thread document; REST and Socket.IO
-serve the stream. `/bundles/files` (the former `/bundles/core`) owns the built-in `cwd`,
+serve the stream. `/bundles/features/files` owns the built-in `cwd`,
 `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
 working directory and moves it, and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
 resolves one against the current directory; a move that resolves outside the
-workspace root changes nothing. `/bundles/git` owns the routable `git` tool
+workspace root changes nothing. `/bundles/features/git` owns the routable `git` tool
 plus focused skills for cloning, commit preparation, conflict resolution,
 rebasing, remote synchronization, and linked worktrees. The Git tool executes
 structured argv directly without shell interpretation, forces non-interactive
 Git behavior, bounds stdout and stderr, and exposes no dedicated credential
-input. `/bundles/threads` owns the delegation tools `thread-spawn`,
+input. `/bundles/features/threads` owns the delegation tools `thread-spawn`,
 `thread-list`, `thread-get`, `thread-events`, `thread-send`,
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
-inspection, and steering skills. `/bundles/terminal`
-exists only as the contracts package `terminal/contracts` (`terminal/v1`); it
-has no manifest and is not staged. Migration stages 5 to 7 are described
-below.
+inspection, and steering skills. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
+describes below. Migration stages 5 to 7 are described below.
 
-`/bundles/postgres` is the foundation bundle the composition chooses for
+`/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
 It owns the Prisma ORM 7 schema, the versioned migrations and the generated
-client (`bundles/postgres/prisma` and the git-ignored `src/generated/prisma`)
+client (`bundles/foundation/postgres/prisma` and the git-ignored `src/generated/prisma`)
 and the process's single PostgreSQL client, which it creates on first use from
 `DORIC_DATABASE_URL` and disconnects when it deactivates; neither it nor the
 core performs I/O during activation. Its `storage.backend/v1` keeps the generic
@@ -660,14 +750,17 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `bundle_load` stage, Doric reads the installed bundles below
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
-names `core`, enables `postgres`, `core`, `files`, `git`, `threads`,
-`terminal`, `usage`, `resources`, `runtime`, `direct`, `openai`,
-`openrouter`, `codex`, `docker`, `notifications`, `layout`, `settings`,
-`chat` and `history`, and chooses
-`postgres` for `storage.backend/v1` and `secrets.backend/v1`), and always adds
-the embedded provisional `host-config` bundle, which owns the configuration's
-`settings/v1` space and provides `host-config/v1`, and the embedded
-`transport` bundle. A
+names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
+`git`, `threads`, `terminal`, `usage`, `resources`, `runtime`, `direct`,
+`openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
+`settings`, `chat` and `history`, and chooses
+`postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
+list names the installed host parts that run in the native host process rather
+than in a generation process: `host-config`, which owns the configuration's
+`settings/v1` space and provides `host-config/v1`, and `transport`, which
+registers the REST and Socket.IO routes. Its `required` block names the
+contracts and bundles the host refuses to serve without, and its `alternatives`
+block names the sandbox choice that `DORIC_SANDBOX_PROVIDER` makes. A
 composition that chooses no backend for either contract puts the host in
 recovery, because the core requires them. The loader activates the foundation,
 then the core, then the others in dependency order with lexical tie-break,
@@ -687,34 +780,44 @@ Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
 and for each prompt; `Bundles loaded`
 reports the activated installed bundles (19 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
-activation opens no database, the startup stages run as `bootstrap`,
-`sandbox_pool`, `bundle_load`, `database_client` (connects the client through
-`postgres.database/v1` and resolves the storage identity, so a missing URL or
-an unreachable database still fails here), `credential_activation` (loads the
+activation opens no database, so the startup work runs in the start hooks.
+`onHostStartHook` runs in activation order after the bundles load and the
+composition's `required` block is checked, and before `onHostReadyHook`, which
+the bundles hear before the listener binds. Each bundle names the stage it runs
+through `doric.startup/v1`, and the kernel names only its own: `bootstrap`,
+`bundle_load`, `network_binding` and `ready`. The shipped bundles name
+`database_client` (`postgres` connects its client there, so a missing URL or an
+unreachable database still fails), `credential_activation` (`core` loads the
 credentials through `secrets/v1`, so a missing or malformed key or an
-unreadable envelope still fails here), `configuration_activation`,
-`workspace_reconciliation`, `network_binding` and `ready`; the bundles hear
-`onHostReadyHook` before the listener binds. At shutdown the
-kernel closes the server and sockets, calls `runtime/v1.dispose()`, and then
-stops the platform, which deactivates the generation (and its sandbox pool)
-and disconnects the database.
+unreadable envelope still fails), `configuration_activation` (`host-config`),
+`sandbox_pool` (`docker` or `firecracker`) and `workspace_reconciliation`
+(`runtime`). At shutdown the kernel closes the server and sockets and runs
+`onHostStopHook` in reverse activation order; the runtime's stop releases its
+Projects, and the platform then deactivates the bundles, which closes the
+generation (and its sandbox pool) and disconnects the database.
 Migration stage 4 ("Processos de geração") implements the approved
 multi-process scope of HC-003 for the host. The Doric process is the kernel: it
-runs the foundation, the core, every embedded bundle and the platform (catalog,
+runs the foundation, the core, every embedded bundle, the bundles the composition
+lists as `resident`, and the platform (catalog,
 diagnostics, dispatcher, generation manager). The installed other bundles
 (`files`, `git`, `threads`, from stage 5 `runtime` and `direct`, and from
 stage 10 the feature, provider and sandbox bundles) activate in one Node `child_process.fork` per bundle
 generation, through `startKernel` and the runner of `packages/bundle`, and the
 two processes call each other's services through one RPC envelope; the tools
-of those bundles execute in the generation process. Each prompt holds a lease
-on the generation that was active when it started and keeps that generation's
-tools and skills until it ends. A kernel-internal `publish` activates a new
-generation, switches new prompts to it and drains the old one until its leases
-end; a change to the kernel partition is refused with
+of those bundles execute in the generation process. Each call pinned to a generation holds a
+`WorkHold {key, label?}` on it, owned by the calling bundle (the runtime keys
+its holds by `projectId/threadId/promptId`), and that generation keeps its
+tools and skills until the hold ends. A kernel-internal `publish` activates a
+new generation, switches new calls to it and drains the old one until its holds
+end, and the bundles hear about each change through `onGenerationChangedHook`
+(`activated`, `draining`, `lost`, `stopped`, each filtered to the receiving
+bundle's own holds) and `onPeerSignalHook`, so the kernel never calls a runtime
+method; a change to the kernel partition is refused with
 `kernel_restart_required`. The child ignores SIGINT and SIGTERM and exits when
 the kernel disconnects. When a generation process crashes, its pending calls
-fail with `generation_lost` and record no `tool.failed`; the prompts pinned to
-it pause with `host_restarted`, their Threads hold their queues, and they
+fail with `generation_lost` and record no `tool.failed`; the holds it lost reach the
+owning bundle through `onGenerationChangedHook` (`lost`), the runtime pauses
+those prompts with `host_restarted`, its Threads hold their queues, and they
 resume with the boot's attempt budget and order once the respawned process
 (same generation number, next incarnation) or the active generation is ready.
 After three failed starts the generation's bundles are quarantined with
@@ -724,11 +827,10 @@ Prisma schema.
 
 Migration stages 5 to 7 ("Runtime", "Executor" and "Dados") move the domain
 out of the kernel; decisions D-S5-01 to D-S7-01 are indexed in
-`implementation-decisions.md`. `/bundles/runtime` owns Projects, Threads,
+`implementation-decisions.md`. `/bundles/runtime/runtime` owns Projects, Threads,
 queues, leases, recovery and the prompt runner through `runtime/v1`,
 `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`,
-`runtime.terminals/v1` and `runtime.hooks/v1`, and provisionally `terminal/v1`
-until the `terminal` bundle is extracted. Stage 10 adds the local
+`runtime.terminals/v1` and `runtime.hooks/v1`. Stage 10 adds the local
 `runtime.lease/v1.withLease` and `runtime.workspace/v1.withThread`, the
 terminal result delivery on `runtime.threads/v1`, `onThreadsClosingHook` and
 the unfilled `runtime.usage/v1.read`; the core adds
@@ -738,25 +840,30 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.history/v1` documents and each Thread's events in the
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
 `pending` queue projection and the usage aggregate into the same commit as
-the event. `/bundles/direct` provides the local `executor/v1`, whose `run`
+the event. `/bundles/runtime/direct` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession`, and keeps its history as the opaque
 `direct.history/v1` state (`messages` and `meta`). The core provides
 `models/v1`; since stage 10 the `openai`, `openrouter` and `codex` bundles
 register their `models.provider/v1` kinds and `docker` (or `firecracker`,
 selected with `DORIC_SANDBOX_PROVIDER`) provides `sandbox/v1`; the stage-5
 provisional `models-adapter` and `sandbox-adapter` bundles have been removed. The kernel
-refuses to boot, at `bundle_load`, when `runtime/v1`, `executor/v1`,
-`sandbox/v1`, `models/v1` or `host-config/v1` has no active provider or
-`transport` is not active; when a structural provider is lost after boot (its
+refuses to boot, at `bundle_load`, when a contract or bundle that the
+composition's `required` block names has no active provider or is not active
+(the shipped block names `runtime/v1`, `executor/v1`, `sandbox/v1`, `models/v1`,
+`host-config/v1` and the `transport` bundle; an absent block requires nothing); when a structural provider is lost after boot (its
 generation exhausted its respawns) the kernel logs `Bundle recovery mode` and
 exits with code 1, as the process used to die. A kernel-internal `publish()`
 hands Projects over between generations: each Project records its owning
 generation and incarnation, the draining generation finishes the prompts it
 runs and releases each idle Project (closing its live terminals), and the new
-generation adopts it; Projects of a dead owner get the `host_restarted`
+generation adopts it through its own handover (`onGenerationChangedHook`, and
+the `runtime.released` peer signal of `onPeerSignalHook`), not through a kernel
+call; Projects of a dead owner get the `host_restarted`
 recovery. The sandbox-pool and `llms` debug lines are now written by the
-generation through `log/v1` with a `bundleId`; the kernel still writes `Doric
-starting`, `Sandbox pool configured` and `Doric listening {sandboxProvider}`.
+generation through `log/v1` with a `bundleId`; the kernel writes `Doric
+starting` and `Doric listening` with the composition's chosen `alternatives`
+(for example `{ sandbox: "docker" }`), and the sandbox bundle writes its pool
+line from its start hook through `doric.startup/v1`.
 The `GET /resources` CPU sample runs in the transport (the kernel process) and
 the `web` tool's `fetch` runs in the generation process, both on the host
 machine as before. Stage 4's asynchronous `RemoteTool` check no longer runs
@@ -787,8 +894,9 @@ default composition" actions call the host's `doric.catalog/v1.disable` and
 database, and publish a new generation; every host catalog read leaves the
 disabled bundles out of `enabled`, and the core cannot be disabled. The main runs one Electron `utilityProcess`
 per desktop generation, executing the core's `desktopMain` part, which opens
-the `workspace` window at the last path the main stored for that key
-(`doric/windows.json`, paths only, no bounds) and defines the menu skeleton
+the window the core marks `primary` (the `workspace` key today) at the last path the main stored for that key
+(`doric/windows.json`, paths only, no bounds). An allowed quit waits for pending
+window-path and platform-state writes before exiting. The core defines the menu skeleton
 without a Settings item or `Cmd+,`. One dispatcher routes window calls by
 contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
@@ -798,7 +906,12 @@ the shared platform packages are
 `packages/desktop-client` (the window client) and `app/doric-platform` (the
 platform files and import map). The CSP adds `worker-src 'self'` and the import
 map's script hash. The renderer's local storage, including the selected Thread,
-migrates once from the packaged `file://` origin to `doric://app`; development
+migrates once from the packaged `file://` origin to `doric://app`: the core's
+`onAppReadyHook` asks the platform through `doric.migrations/v1.storage` to copy
+its own key, and awaits the answer before it opens the primary window. The
+platform owns both origins and the legacy and blank pages; a caller names only
+the key and a marker, which the platform records in its state. A failed copy is
+logged, its marker is still recorded, and the window opens anyway. Development
 profiles do not migrate.
 
 Migration stage 9 ("UI em bundles") moves the whole renderer UI into client
@@ -895,9 +1008,12 @@ responsive variant of another sheet, and `desktop-ui/sidebar` exports
 `SidebarScope`, the sidebar context alone, for an element that draws sidebar
 rows from its own React root.
 
-`packages/host` owns the `Host` capability facade the runtime's runner builds
-for every prompt. It is types only and no longer a cross-package API: only
-`/bundles/runtime` uses it internally, until stage 10. A `Host` is prompt-scoped; it closes over the calling
+The `Host` capability facade the runtime's runner builds for every prompt is
+the `runtime` bundle's own contract: its types live in
+`bundles/runtime/runtime/src/contracts/tool-host` and are exported from `runtime/contracts`,
+and the runner that builds them lives in `bundles/runtime/runtime`. The former
+`packages/host` package is gone; it held only these types, and no other package
+imported it. A `Host` is prompt-scoped; it closes over the calling
 prompt's Project and Thread, so `host.threads.*` reaches only that prompt's
 direct children and stops when the prompt ends, and `host.workspace.*` reports
 and moves only that prompt's own Thread's working directory. Today's
@@ -907,7 +1023,7 @@ without exposing other Threads' sessions. Background process ownership
 survives completion of its originating prompt; future namespaces (`config`,
 `vms`, `providers`) are added only for a concrete need, never as a state dump,
 a leaked `ProjectRuntime` or Prisma row, or an `invoke` escape hatch. Bundle
-tools no longer receive it as an argument: `/bundles/runtime` provides
+tools no longer receive it as an argument: `/bundles/runtime/runtime` provides
 `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1` and
 `terminal/v1` by forwarding each call one to one to the `Host` and sandbox the
 runner built for the prompt named by the call's scope, while that prompt runs; an ended prompt's
@@ -1048,8 +1164,8 @@ using a fixed rank constant of 60, deduplicates by a caller-provided canonical
 key, and resolves fused-score ties by that key. It has no persistence or
 provider integration.
 
-`agents/doric` receives complete singleton configuration replacements through
-`PUT /config`. It persists only provider IDs, the kind each provider is, the
+The `host-config` bundle receives complete singleton configuration replacements
+through `PUT /config`, which the `transport` bundle routes to it. It persists only provider IDs, the kind each provider is, the
 configuration values that kind declares, the models each provider offers, one
 `models.execution` profile, and `execution.maxTurns`. A provider's kind, the
 fields it declares and the model list it keeps are `providerKinds` in
@@ -1085,15 +1201,15 @@ runs, so a provider, model, reasoning effort, or turn limit chosen in the
 settings reaches the next prompt of any Project, including one already running.
 
 The host's credential store is the `credential` table of the `postgres`
-bundle's `secrets.backend/v1`, reached through the core's `secrets/v1`, which
-`agents/doric` adapts to its unchanged credential service: named rows of a
-closed kind set, where the kind fixes the field set. `API_TOKEN` is
-authentication and the provider keys and GitHub token are both ones;
-`USERNAME_PASSWORD` is authentication with a name; and `GIT` is identity alone
-and therefore holds no secret. `credentialFields` in `bundle/contracts`
-(re-exported by `agents/doric/src/lib/credentials`) is the one rule the Zod
-input schemas and the `secrets/v1` validation both derive from, so a value the
-kind forbids is rejected before it is stored. A secret is stored as a versioned
+bundle's `secrets.backend/v1`, reached through the core's `secrets/v1`, whose
+facade serves named rows of a closed kind set, where the kind fixes the field
+set. `API_TOKEN` is authentication and the provider keys and GitHub token are
+both ones; `USERNAME_PASSWORD` is authentication with a name; both are built
+in. A bundle may add a kind with `secrets/v1.registerKind`: `git` adds `GIT`,
+which is identity alone and therefore holds no secret. The one field rule,
+`credentialFieldsSatisfied` in `bundle/contracts`, is what the `secrets/v1`
+validation applies, so a value the kind forbids is rejected before it is
+stored. A secret is stored as a versioned
 AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`, a base64 32-byte key, so the
 key can rotate later. The host refuses to start when a stored secret exists and
 that key is missing or unusable, and it never serves an unreadable secret as an
@@ -1123,8 +1239,13 @@ repository discovery, network-policy normalization, and disposed-session
 behavior. A session may be provisioned for a durable workspace: the Docker
 provider keeps it in the volume `doric-workspace-<identity>`, binds that volume
 at the sandbox root, and labels the container with it, so provisioning the same
-identity again reattaches the same files — across a container, a host restart,
-and the next lease for that Project — and `discardWorkspace` removes it when the
+identity again reattaches that Project's one running container and the same
+files — across a host restart and the next lease for that Project; a stale
+container of the same identity is removed, never duplicated. Reattachment
+requires compatible image, resource, network, DNS and SSH settings; otherwise
+the container is replaced while the named volume is kept. Failed duplicate
+removal fails acquisition, and concurrent leases share one container with
+idempotent release. `discardWorkspace` removes it when the
 Project is deleted. A sandbox provisioned without a workspace binds nothing and
 loses its files with the container, which is what the Firecracker profile still
 does: its guest disks live under the per-run state directory. The durable volume
@@ -1132,7 +1253,7 @@ holds its files on the host's own storage, so a sandbox's `diskMiB` bounds only
 the container's writable layer. It also owns the
 one implementation of the workspace visibility rules — root confinement,
 `.gitignore` handling with negation, hidden entries except `.agents`, and
-directories-first ordering — which the `/bundles/files` `tree` tool and Doric's
+directories-first ordering — which the `/bundles/features/files` `tree` tool and Doric's
 Project file routes both consume, so neither can drift from the other; a scoped
 diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has
@@ -1165,8 +1286,8 @@ never be placed in model-visible tool arguments.
 `docker-sandbox` and `firecracker-sandbox`, renamed in stage 10 to free the
 bundle IDs) depend inward on Sandbox and expose providers. The `docker` and
 `firecracker` bundles each provide `sandbox/v1` over one of them, with the VM
-registry from `sandbox` (`createVmRegistry`); only one is enabled per
-composition. Docker is Doric's default; `DORIC_SANDBOX_PROVIDER=firecracker`
+registry from `sandbox` (`createVmRegistry`); the composition's `alternatives.sandbox`
+enables only one. Docker is Doric's default; `DORIC_SANDBOX_PROVIDER=firecracker`
 selects the direct Linux x86_64 Firecracker/KVM boundary. Firecracker has no
 Docker dependency or socket access. Firecracker resolves anonymous public
 Linux/amd64 OCI images directly with skopeo and umoci, converts validated
@@ -1212,10 +1333,12 @@ lease exactly once on termination, acquisition failure, or shutdown. Projects
 have no automatic expiry and therefore occupy capacity until explicitly
 terminated.
 
-Doric initializes an otherwise unconfigured Express application and attaches
-a Socket.IO server to the same HTTP listener. The listener binds to
+The kernel creates an otherwise unconfigured Express application and a
+Socket.IO server on the same HTTP listener, and the `transport` bundle registers
+every route and namespace on them through `doric.network/v1.register`. The
+listener binds to
 `DORIC_HOST` and `DORIC_PORT`, defaulting to `0.0.0.0:3000`; the Doric image
-exposes port 3000. Its modular Express router exposes `GET /vms`, which returns
+exposes port 3000. The transport's Express router exposes `GET /vms`, which returns
 the IDs and selected provider names of runtimes successfully provisioned by
 this Doric process and not yet successfully disposed. `GET /vms/:id/ssh`
 returns the selected provider, owning live Project ID, and complete
@@ -1247,7 +1370,7 @@ untracked files — with discovery stopping at each repository boundary, exactly
 as Git reports a nested repository. A
 workspace-relative path is normalised, resolved against the workspace root, and
 rejected when it escapes; the routes never log file content or diff bodies.
-REST additionally owns `GET/PUT /config`, the `/credentials` create, list,
+REST additionally serves `GET/PUT /config` (through `host-config/v1`), the `/credentials` create, list,
 patch, and delete surface,
 named Project and Thread creation, rename through `PATCH`, cursor listing,
 detail, FIFO prompt acceptance through `POST /threads/:id/prompt`, history
@@ -1267,7 +1390,7 @@ representations contain identity, name, state, ownership, timestamps,
 applicable revision/sequence and sanitized error codes, not prompts, messages,
 events, results, or SSH credentials.
 
-Socket.IO uses separate `/status`, `/projects`, and `/threads` namespaces.
+The `transport` bundle serves separate Socket.IO `/status`, `/projects`, and `/threads` namespaces; the kernel's `/doric/bridge` namespace is the generic desktop bridge described under Platform Boundary.
 `/status` accepts no subscription input or application payload and provides the
 long-lived connectivity signal consumed by the Electron main process. Project
 and Thread subscription parameters travel through namespace-scoped handshake
@@ -1305,7 +1428,9 @@ drops those tables and the `ModelRole` enum; a stored provider kind outside
 `openai`, `openrouter` and `codex` stops the migration instead of being
 discarded or converted. It cannot be reversed, so operators back up the
 database before applying it. The configuration has no foreign keys any more and
-the `credential` table stands alone: the embedded `host-config` bundle refuses
+the `credential` table stands alone. The incremental registered-kind migration
+converts its kind enum to text without changing IDs or encrypted secret bytes,
+so bundle-defined kinds need no backend schema release. The `host-config` bundle refuses
 a configuration that names a credential that is not stored and registers the
 provider tokens, Git identity and GitHub token the stored configuration names as
 references, so the core's `secrets/v1` refuses to delete them, exactly as the

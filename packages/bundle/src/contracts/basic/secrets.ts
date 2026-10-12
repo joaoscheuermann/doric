@@ -27,15 +27,17 @@ import {
 //   `DORIC_CREDENTIAL_KEY is required while a stored credential holds a secret.`
 // - `credential_unreadable` (backend decryption): a stored secret is not a
 //   supported envelope, or the cipher rejects it.
+// - `unknown_kind` (`create`, `update`, `resolve`, `resolveByKind`): no
+//   registration the call's generation sees names the kind.
+// - `duplicate_credential_kind` (`registerKind`): a registration the call's
+//   generation collides with already holds the kind.
 
-/** The closed set of credential kinds. A kind fixes the field set below. */
-export const credentialKinds = [
-  'API_TOKEN',
-  'USERNAME_PASSWORD',
-  'GIT',
-] as const;
-
-export const credentialKindSchema = z.enum(credentialKinds);
+/**
+ * A credential kind is a registered name. The platform defines the two kinds
+ * below; a bundle registers any other with `registerKind`. A stored row of a
+ * kind nothing registers stays listable, and resolving it is refused.
+ */
+export const credentialKindSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,31}$/);
 
 export type CredentialKind = z.output<typeof credentialKindSchema>;
 
@@ -55,28 +57,42 @@ export interface CredentialFieldSet {
   readonly optional: readonly CredentialField[];
 }
 
-/**
- * The one rule every kind derives from, and the reason `credential` carries no
- * cross-column CHECK: a required field must be present, and every other field
- * must be absent. `API_TOKEN` is authentication (a provider key or a GitHub
- * token); `USERNAME_PASSWORD` is authentication with a name; `GIT` is identity
- * alone, which is why it holds no secret at all.
- */
-const fieldSets: Record<CredentialKind, CredentialFieldSet> = {
-  API_TOKEN: { required: ['secret'], optional: [] },
-  USERNAME_PASSWORD: { required: ['username', 'secret'], optional: [] },
-  GIT: { required: ['username', 'email'], optional: [] },
-};
+/** A kind as it is registered: its name, the field set it fixes, and a label. */
+export interface CredentialKindDefinition extends CredentialFieldSet {
+  readonly id: CredentialKind;
+  readonly label?: string;
+}
 
-export const credentialFields = (kind: CredentialKind): CredentialFieldSet =>
-  fieldSets[kind];
+export const credentialKindDefinitionSchema = z
+  .object({
+    id: credentialKindSchema,
+    required: z.array(z.enum(credentialFieldNames)),
+    optional: z.array(z.enum(credentialFieldNames)),
+    label: z.string().optional(),
+  })
+  .strict()
+  .refine(
+    ({ required, optional }) =>
+      !required.some((field) => optional.includes(field)),
+    { message: 'A credential field cannot be both required and optional.' },
+  );
+
+/**
+ * The kinds the platform itself defines. A kind fixes its field set: a required
+ * field must be present, and every field it does not list must be absent.
+ * `API_TOKEN` is authentication (a provider key or a token); `USERNAME_PASSWORD`
+ * is authentication with a name.
+ */
+export const builtinCredentialKinds: readonly CredentialKindDefinition[] = [
+  { id: 'API_TOKEN', required: ['secret'], optional: [] },
+  { id: 'USERNAME_PASSWORD', required: ['username', 'secret'], optional: [] },
+];
 
 /** Whether these values satisfy the kind's required and forbidden fields. */
 export const credentialFieldsSatisfied = (
-  kind: CredentialKind,
+  { required, optional }: CredentialFieldSet,
   values: CredentialValues,
 ): boolean => {
-  const { required, optional } = credentialFields(kind);
   const allowed = new Set<CredentialField>([...required, ...optional]);
 
   return (
@@ -88,14 +104,17 @@ export const credentialFieldsSatisfied = (
 };
 
 /** The readable statement of that rule, used by the API's rejection messages. */
-export const credentialFieldsMessage = (kind: CredentialKind): string => {
-  const { required, optional } = credentialFields(kind);
+export const credentialFieldsMessage = ({
+  id,
+  required,
+  optional,
+}: CredentialKindDefinition): string => {
   const carries =
     optional.length === 0
       ? 'and carries no other field'
       : `and may also carry ${optional.join(', ')}`;
 
-  return `A ${kind} credential requires ${required.join(', ')} ${carries}.`;
+  return `A ${id} credential requires ${required.join(', ')} ${carries}.`;
 };
 
 export const credentialRefSchema = z.object({ id: z.string() }).strict();
@@ -200,6 +219,18 @@ export type ReferenceSource = () => Iterable<string>;
 export interface Secrets {
   resolve(ref: CredentialRef, call?: CallArg): Promise<Secret>;
   list(call?: CallArg): Promise<readonly CredentialDescription[]>;
+  /** The kinds the call's generation sees: the built-in ones and the registered ones. */
+  kinds(call?: CallArg): Promise<readonly CredentialKindDefinition[]>;
+  /**
+   * Registers a kind for the calling bundle (1.2.0). Like `tools/v1.register`,
+   * it is partitioned by generation: a kind another registration in the same
+   * view holds throws `duplicate_credential_kind`, and disposing the returned
+   * registration releases the name.
+   */
+  registerKind(
+    definition: CredentialKindDefinition,
+    call?: CallArg,
+  ): Disposable;
   describe(
     ref: CredentialRef,
     call?: CallArg,
@@ -242,17 +273,38 @@ export const SecretsV1 = ref<Secrets>('secrets/v1');
 
 export const secretsMethods = {
   resolve: { input: credentialRefSchema, output: secretSchema },
-  list: { input: noInput, output: z.array(credentialDescriptionSchema) },
+  list: {
+    input: noInput,
+    output: z.array(credentialDescriptionSchema),
+    expose: 'desktop',
+  },
+  kinds: {
+    input: noInput,
+    output: z.array(credentialKindDefinitionSchema),
+  },
+  registerKind: {
+    input: credentialKindDefinitionSchema,
+    output: disposableSchema,
+  },
   describe: {
     input: credentialRefSchema,
     output: credentialDescriptionSchema.optional(),
   },
-  create: { input: credentialCreateSchema, output: credentialWriteSchema },
+  create: {
+    input: credentialCreateSchema,
+    output: credentialWriteSchema,
+    expose: 'desktop',
+  },
   update: {
     input: z.tuple([credentialRefSchema, credentialUpdateSchema]),
     output: credentialWriteSchema,
+    expose: 'desktop',
   },
-  delete: { input: credentialRefSchema, output: credentialDeleteResultSchema },
+  delete: {
+    input: credentialRefSchema,
+    output: credentialDeleteResultSchema,
+    expose: 'desktop',
+  },
   resolveByKind: {
     input: z.tuple([
       credentialKindSchema,

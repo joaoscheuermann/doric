@@ -242,9 +242,9 @@ A escolha vale em cada ambiente em que o bundle escolhido fornece o contrato. Qu
 
 Como o core vira dependência de quase todos os bundles, uma falha do core leva ao modo de recuperação, descrito em [splash e recuperação](./splash-and-recovery.md).
 
-## O bundle `bundles/core` atual
+## O bundle `bundles/foundation/core` atual
 
-O bundle `bundles/core` atual contém tools de arquivos, terminal e web. Ele é renomeado para `files` na primeira etapa, preservando os nomes públicos das tools e skills, e o ID `core` passa a pertencer ao bundle core novo. Na etapa 1, o contexto passa a ter só serviços, `bundle/contracts` passa a exportar as funções `define*`, `ref` e as referências e os tipos dos contratos básicos, e o core novo fornece `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`. `settings/v1`, `secrets/v1`, `storage/v1` e `events/v1` do core entram na etapa 2, junto com o `postgres` fornecendo `storage.backend/v1` e `secrets.backend/v1` sobre o Prisma atual. A sequência de etapas está em [migração em entregas verificáveis](./migration.md), e o destino das funcionalidades atuais em [divisão das funcionalidades atuais](./feature-split.md).
+O bundle `bundles/foundation/core` atual contém tools de arquivos, terminal e web. Ele é renomeado para `files` na primeira etapa, preservando os nomes públicos das tools e skills, e o ID `core` passa a pertencer ao bundle core novo. Na etapa 1, o contexto passa a ter só serviços, `bundle/contracts` passa a exportar as funções `define*`, `ref` e as referências e os tipos dos contratos básicos, e o core novo fornece `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`. `settings/v1`, `secrets/v1`, `storage/v1` e `events/v1` do core entram na etapa 2, junto com o `postgres` fornecendo `storage.backend/v1` e `secrets.backend/v1` sobre o Prisma atual. A sequência de etapas está em [migração em entregas verificáveis](./migration.md), e o destino das funcionalidades atuais em [divisão das funcionalidades atuais](./feature-split.md).
 
 ## Quarentena
 
@@ -262,6 +262,13 @@ A escolha de provedores está em [contextos e capacidades](./contexts.md), e `st
 ## Core mínimo de teste
 
 Um **core mínimo de teste**, usado só nos testes, abre uma janela simples sem nenhum bundle da UI padrão. Ele prova que trocar o core troca a interface inteira: se esse teste quebrar, alguém criou uma dependência da plataforma com a UI padrão.
+
+## O que o core não conhece
+
+- **Eventos.** `events/v1` do core não lê IDs de Project, Thread ou prompt. Cada provedor tem um sumidouro registrado pelo dono (ver [eventos e nós](./events-and-nodes.md#sumidouro-registrado-pelo-dono)), e o `runtime` registra o do log de Thread.
+- **Segredos.** `secrets/v1.registerKind` aceita kinds de bundles. Os básicos `API_TOKEN` e `USERNAME_PASSWORD` ficam no contrato genérico. O bundle `git` registra `GIT` com usuário e e-mail, sem segredo.
+- **Credenciais na partida.** O start hook `credential_activation` fica no core (`bundles/foundation/core/src/host/secrets/activation.ts`), e é o único lugar do host que carrega as credenciais na ativação.
+- **Escopo.** O core só repassa o `call.scope`, que é opaco. Ele não monta nem interpreta chaves de bundle.
 
 ## Relações
 
@@ -281,4 +288,4 @@ Um **core mínimo de teste**, usado só nos testes, abre uma janela simples sem 
 - [Splash e recuperação](./splash-and-recovery.md): mostra quarentena e diagnóstico mesmo quando o core falha, com log próprio da plataforma.
 - [Armazenamento genérico e histórico](./storage.md): `storage/v1` do core sobre `storage.backend/v1`, e `secrets/v1` sobre `secrets.backend/v1`, ambos fornecidos pelo `postgres` na fundação.
 - [Observabilidade e diagnóstico](./observability.md): o motivo da quarentena chega ao diagnóstico da plataforma, e `log/v1` usa `call.caller` para identificar o bundle de origem.
-- [Migração em entregas verificáveis](./migration.md): a etapa 1 renomeia o `bundles/core` atual para `files` e cria o core com `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`; a etapa 2 acrescenta `settings/v1`, `secrets/v1`, `storage/v1`, `events/v1` e o `postgres`.
+- [Migração em entregas verificáveis](./migration.md): a etapa 1 renomeia o `bundles/foundation/core` atual para `files` e cria o core com `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`; a etapa 2 acrescenta `settings/v1`, `secrets/v1`, `storage/v1`, `events/v1` e o `postgres`.

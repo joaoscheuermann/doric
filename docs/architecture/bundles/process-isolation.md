@@ -71,9 +71,9 @@ Cada contrato declara cardinalidade nas opções de `defineService`. Um contrato
 
 ### Troca de geração e recuperação
 
-- Execuções novas vão para a geração ativa.
-- As execuções que estavam em curso terminam ou pausam na geração antiga, que então é encerrada.
-- Se o processo de uma geração cair, as execuções dele falham ou pausam, o kernel sobe o processo de novo e as Threads retomam pelo checkpoint, com a mesma semântica de recuperação que existe hoje.
+- Chamadas novas vão para a geração ativa.
+- As chamadas que a geração antiga segura por uma retenção de trabalho (`WorkHold`) terminam ali. A geração entra em dreno e é encerrada quando essas retenções acabam; retenções de janela não contam para o dreno.
+- Se o processo de uma geração cair, as retenções perdidas chegam a cada bundle dono por `onGenerationChangedHook` (`lost`), já filtradas às retenções desse bundle. O bundle decide o que fazer com elas: o `runtime` pausa as prompts afetadas, e as Threads retomam pelo checkpoint com a mesma semântica de recuperação de hoje.
 
 ### Criação da geração pelo kernel
 
@@ -124,12 +124,10 @@ type CallMessage = {
   input: unknown;
   deadline: number;
   caller: { bundleId: string; version: string; generation: number }; // preenchido pelo dispatcher
-  scope: {
-    projectId?: string;
-    threadId?: string;
-    promptId?: string;
-    windowKey?: string; // preenchido pelo dispatcher em chamadas de janela client
-  };
+  // Registro opaco de chaves de string limitadas. Só `windowKey` é da
+  // plataforma (preenchido pelo dispatcher em chamadas de janela client); as
+  // demais chaves, como as de Project, Thread e prompt, são do bundle que as lê.
+  scope: Readonly<Record<string, string>>;
   trace: { traceparent: string };
 };
 type ResultMessage =

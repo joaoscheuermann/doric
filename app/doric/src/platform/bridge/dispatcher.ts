@@ -613,6 +613,26 @@ export class Dispatcher {
       );
     }
 
+    if (spec.expose !== 'desktop') {
+      throw new ContractError(
+        'unavailable',
+        `${envelope.contract} ${envelope.method} is not available to the desktop.`,
+        { contract: envelope.contract, method: envelope.method },
+      );
+    }
+
+    const undeclared = Object.keys(envelope.scope ?? {}).find(
+      (key) => !route.scopeKeys.includes(key),
+    );
+
+    if (undeclared !== undefined) {
+      throw new ContractError(
+        'invalid_input',
+        `Scope key "${undeclared}" is not declared for ${envelope.contract}.`,
+        { contract: envelope.contract, method: envelope.method },
+      );
+    }
+
     if (spec.local) {
       throw new ContractError(
         'local_only',

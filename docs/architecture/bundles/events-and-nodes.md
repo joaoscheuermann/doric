@@ -66,6 +66,14 @@ O `call` repassado a `append` é o `call` pai: o dispatcher da plataforma herda 
 
 O `type` carrega a major (`/v1`); a versão completa vem de `provides` no manifesto, conforme a política de [versionamento](./versioning.md). O `payload` é um schema zod fechado (`.strict()`); o JSON Schema canônico é gerado dele no build e publicado no catálogo, como descrito em [contratos](./contracts.md).
 
+### Sumidouro registrado pelo dono
+
+`events/v1` tem um sumidouro por provedor. O dono o registra com `sink({ scopeKeys, stream })`: `scopeKeys` são as chaves do escopo de chamada que o evento exige, em ordem fixa, e `stream` é um modelo com `{chave}` para cada uma delas.
+
+- Um `append` cuja chamada não traz uma das chaves é recusado com `invalid_scope`. Sem sumidouro registrado, a recusa é a mesma.
+- Um segundo sumidouro é recusado com `registration_conflict`. Uma escrita fora do dono é recusada com `not_owner`.
+- O `runtime` registra `projectId`, `threadId` e `promptId` com o stream `runtime.thread.events/{threadId}`. O core não conhece essas chaves, e o formato das linhas e os nomes dos streams são os mesmos de antes.
+
 ### Validação
 
 O provedor de `events/v1` valida o evento com o schema registrado e o persiste e publica como é. Eventos não carregam valores de segredo, só referências, que quem precisar do valor resolve por `secrets/v1`.

@@ -10,6 +10,7 @@ import {
 import { type CallScope, generationOf } from '../contracts/call.js';
 import type { Activate, Services } from '../contracts/context.js';
 import { ContractError } from '../contracts/error.js';
+import type { NetworkResources } from '../contracts/network.js';
 import { platformContracts } from '../contracts/platform.js';
 import type { JsonObject } from '../contracts/types.js';
 import {
@@ -54,6 +55,7 @@ import {
   HostGenerations,
   type SpawnedGeneration,
 } from './manager.js';
+import { provideNetwork } from './network.js';
 import { childTransport } from './node-transport.js';
 import { partitionCatalog, withOrder } from './partition.js';
 
@@ -86,6 +88,8 @@ export interface StartupSink {
 }
 
 export interface StartKernelOptions extends StartHostOptions {
+  /** Local listener handles shared with installed resident bundles. */
+  readonly network?: NetworkResources;
   /** Default: the compiled `runner-main.js` next to this module. */
   readonly runnerPath?: string;
   /** Error classes rebuilt with their prototype (agents/doric passes ToolErrorObject). */
@@ -151,6 +155,16 @@ export interface KernelPlatform extends HostPlatform {
    * tuple and tell a stream method apart (the host bridge, HR-1).
    */
   methodSpec(contractId: string, method: string): MethodSpec | undefined;
+  /**
+   * `methodSpec` as a kernel call sees it: during a respawn it waits for the
+   * next activation (G-11), as a call to the contract does, then answers the
+   * spec of the provider that activation brought, or undefined.
+   */
+  awaitMethodSpec(
+    contractId: string,
+    method: string,
+    signal?: AbortSignal,
+  ): Promise<MethodSpec | undefined>;
 }
 
 /** Platform providers the generation process answers itself. */
@@ -400,6 +414,8 @@ export const startKernel = async (
     startup: options.startup ?? silentStartup,
   });
 
+  if (options.network !== undefined) provideNetwork(platform, options.network);
+
   const installedById = new Map<string, InstalledBundle>();
 
   for (const bundle of installed) {
@@ -509,6 +525,16 @@ export const startKernel = async (
     }
   };
 
+  const methodSpecOf = (
+    contractId: string,
+    method: string,
+  ): MethodSpec | undefined => {
+    const record = activeView.active(contractId);
+
+    return record !== undefined && Object.hasOwn(record.methods, method)
+      ? record.methods[method]
+      : undefined;
+  };
   const views = new Map<number, Principal>();
   let started: Promise<void> | undefined;
   let shutdownHooks: Promise<void> | undefined;
@@ -535,12 +561,15 @@ export const startKernel = async (
     catalog: () => manager.catalogOf(manager.liveFor(0), resolved),
     storageIdentity,
     diagnostics: () => manager.diagnosticsOf(manager.liveFor(0)),
-    methodSpec: (contractId, method) => {
-      const record = activeView.active(contractId);
+    methodSpec: methodSpecOf,
+    awaitMethodSpec: async (contractId, method, signal) => {
+      const waiting = manager.awaitProvider(contractId, signal);
 
-      return record !== undefined && Object.hasOwn(record.methods, method)
-        ? record.methods[method]
-        : undefined;
+      if (waiting !== undefined) {
+        await waiting;
+      }
+
+      return methodSpecOf(contractId, method);
     },
     view: (generation) => {
       const directory = manager.viewOf(generation);

@@ -27,6 +27,7 @@
     "docker-sandbox": "0.0.1",
     "express": "^5.2.1",
     "firecracker-sandbox": "0.0.1",
+    "host-config": "0.0.1",
     "llms": "0.0.1",
     "messages": "0.0.1",
     "oauth": "0.0.1",

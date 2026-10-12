@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import type { ConfigInput, DoricConfig } from '../src/lib/config/schema.js';
+import type { ConfigInput, DoricConfig } from 'host-config/testing';
+
 import { legacyLoad, legacyReplace } from './helpers/legacy-config-load.js';
 import {
   migrationDirectory,
