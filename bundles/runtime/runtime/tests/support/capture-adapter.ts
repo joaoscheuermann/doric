@@ -606,7 +606,7 @@ const kernelModules = async (root: string): Promise<KernelModules> => {
       string,
       unknown
     >;
-  const base = 'agents/doric/dist-tests';
+  const base = 'app/backend/doric-host/dist-tests';
 
   return {
     ...(await load(`${base}/src/lib/workspace/service.js`)),

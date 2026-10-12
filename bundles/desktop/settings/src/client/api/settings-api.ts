@@ -3,13 +3,13 @@
 // credentials}` is here, over the host contracts the window reaches through the
 // bridge. What reached the renderer before is what reaches it now:
 //
-// - the guards of `app/doric/src/workspace/validation.ts` (the IPC boundary),
+// - the guards of `app/desktop/doric/src/workspace/validation.ts` (the IPC boundary),
 //   with their messages; `desktopConfiguration` is its `configuration()` and
 //   keeps its quirk: Tools values and `execution.maxToolResultChars` never
 //   reach the host;
 // - the checks of the REST routes the old path went through
 //   (`bundles/foundation/transport/src/host/routes/*`), with their envelope messages;
-// - the response readers of `app/doric/src/workspace/api.ts`, with
+// - the response readers of `app/desktop/doric/src/workspace/api.ts`, with
 //   'Doric returned an invalid response.' for a shape they refuse.
 
 import {
@@ -70,7 +70,7 @@ const fail = (message: string): never => {
   throw new SettingsApiError(message);
 };
 
-// The REST client's messages (app/doric/src/workspace/api.ts).
+// The REST client's messages (app/desktop/doric/src/workspace/api.ts).
 const unavailableMessage = 'Doric backend is unavailable.';
 const invalidResponseMessage = 'Doric returned an invalid response.';
 // The transport's final error handler.

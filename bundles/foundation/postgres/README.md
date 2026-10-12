@@ -3,7 +3,7 @@
 `postgres` is the foundation bundle of the Direct host: the composition
 chooses it in `providers` for `storage.backend/v1` and `secrets.backend/v1`,
 so it activates before the core. Its build writes `bundles/foundation/postgres/dist`,
-which `doric:build-bundles` stages into `agents/doric/dist/bundles/postgres`.
+which `doric-host:build-bundles` stages into `app/backend/doric-host/dist/bundles/postgres`.
 
 ## Services
 

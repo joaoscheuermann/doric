@@ -3,7 +3,7 @@
 These instructions apply to `bundles/desktop/settings` and narrow the root
 `AGENTS.md`. The settings bundle is the application-global settings page
 (`/settings` and its sections) and the execution picker of the workspace
-footer. It moved here from `app/doric-renderer` in stage 9 and must keep that
+footer. It moved here from `app/desktop/doric-renderer` in stage 9 and must keep that
 renderer's visible text, roles, layout and quirks, including the dropped Tools
 edits and the autosave without a Save button.
 

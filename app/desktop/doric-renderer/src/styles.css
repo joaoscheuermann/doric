@@ -1,0 +1,133 @@
+/*
+ * The shell's sheet (stage 9, design §9.4). The window loads desktop/ui's
+ * `theme.css` (preflight, faces, tokens, the theme mapping and the components'
+ * utilities) before this sheet, and each UI bundle's `client/styles.css` after
+ * it; the conversation's rules live in the chat bundle and the Monaco and xterm
+ * slider rules in the layout bundle. What stays here is window-wide: the base
+ * rules every page wears, the chrome bar and the footer weight invariant.
+ *
+ * The utilities are the whole sorted set the window's in-repo surfaces use (the
+ * shared components and every UI bundle's client sources), so a class two
+ * sheets emit keeps the order one compiled stylesheet gave it, as it did when
+ * the renderer compiled the whole UI. The sources are named, not detected from
+ * the working directory, so the set does not depend on where the build runs.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@reference 'desktop/ui/tailwind.css';
+@source './';
+@source '../../../../packages/desktop/src';
+@source '../../../../bundles/*/*/src/client/**/*';
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /* Every clickable surface shows a pointer. Tailwind v4's preflight leaves
+     buttons with the plain arrow, and the hand is half of what makes a surface
+     read as clickable. The roles cover the composed primitives — Radix menus,
+     options, tabs, tree rows — that are not buttons underneath. */
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  input:is(
+    [type='button'],
+    [type='submit'],
+    [type='reset'],
+    [type='checkbox'],
+    [type='radio']
+  ):not(:disabled),
+  label:has(input:is([type='checkbox'], [type='radio'])),
+  [role='button']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']),
+  [role='link']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemcheckbox']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='radio']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='treeitem']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  body {
+    @apply bg-background text-foreground select-none;
+    margin: 0;
+    font-family: var(--font-sans);
+    /* Thin is the app's default weight; anything heavier is stated where it is
+       wanted, so a screen reads its own hierarchy rather than the browser's. */
+    font-weight: 100;
+  }
+
+  /*
+   * A title is medium, never the browser's bold: an `<h1>`–`<h3>` names a thing
+   * and what it names is already the strongest thing on the screen, so the rule
+   * is stated once here instead of on each heading. The smaller headings are the
+   * app's normal weight, like every other surface.
+   */
+  h1,
+  h2,
+  h3 {
+    font-weight: 500;
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-weight: var(--font-weight-normal);
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    @apply select-text;
+  }
+
+  [contenteditable='true'][data-placeholder]:empty::before {
+    color: var(--muted-foreground);
+    content: attr(data-placeholder);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /*
+   * Lucide draws every icon at a 2px stroke, which reads heavier than the app's
+   * thin type. The weight is stated once here rather than at each call site: the
+   * icons carry it as a presentation attribute, which any rule outranks, and
+   * absolute stroke width stays off, so the stroke scales with the size an icon
+   * is drawn at instead of holding a fixed pixel weight.
+   */
+  .lucide {
+    stroke-width: 1.25px;
+  }
+}
+
+/*
+ * The chrome bars, and the reason they are one class instead of one height
+ * copied into ten places: every bar — the workspace's header and footer, the
+ * sidebar's, the file viewer's, the sandbox panel's, and the settings window's —
+ * carries the same `size="sm"` or `icon-sm` control, which is 28px. The bar is
+ * that control plus four of air on each side, so a control never reads as
+ * touching the rule it stands on, and an adjustment is made here rather than
+ * nine times over.
+ */
+.chrome-bar {
+  height: 2.25rem;
+}
+
+/* All footer text has one weight, including nested controls. Keep this invariant
+   stronger than component utilities and inline weights introduced by callers. */
+:is(footer, [data-slot$='-footer']),
+:is(footer, [data-slot$='-footer']) * {
+  /* biome-ignore lint/complexity/noImportantStyles: the footer weight invariant must also override callers' inline font weights */
+  font-weight: 400 !important;
+}

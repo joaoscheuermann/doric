@@ -1,7 +1,7 @@
 // The chat's host adapter (§7.5, §11): the `window.doric.threads.*` members
 // the conversation called, over `runtime.threads/v1`. Each member answers
 // what the semantic preload answered: the main-process guard runs first
-// (`app/doric/src/workspace/validation.ts`, same messages), then the REST
+// (`app/desktop/doric/src/workspace/validation.ts`, same messages), then the REST
 // route's own input checks, and every host outcome becomes the exact message
 // the REST route sent (`bundles/foundation/transport/src/host/routes/threads.ts`, R-ERR).
 // Failures reject with `Error(message)`, which `messageFrom` shows.

@@ -1,8 +1,8 @@
 # Git bundle
 
 `git` gives Doric structured, non-interactive Git capabilities. Its build
-writes `bundles/features/git/dist`, which `doric:build-bundles` stages into
-`agents/doric/dist/bundles/git` for the Direct host to load at startup.
+writes `bundles/features/git/dist`, which `doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/git` for the Direct host to load at startup.
 
 ## Capabilities
 
@@ -48,5 +48,5 @@ npx nx test bundle-git
 To rebuild and stage every bundle used by the Direct host:
 
 ```console
-npx nx run doric:build-bundles
+npx nx run doric-host:build-bundles
 ```

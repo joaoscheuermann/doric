@@ -12,15 +12,15 @@ A framework for building ui, components and design systems. Components are added
 
 ## Doric Workspace
 
-The shadcn project is `app/doric-renderer`, not the repository root. From the
-repository root, append `-c app/doric-renderer` to every shadcn CLI command.
+The shadcn project is `app/desktop/doric-renderer`, not the repository root. From the
+repository root, append `-c app/desktop/doric-renderer` to every shadcn CLI command.
 The examples below omit this project-specific flag for readability. Do not run
 the commands against the monorepo root without `-c`.
 
 ## Current Project Context
 
 ```json
-!`npx shadcn@latest info --json -c app/doric-renderer`
+!`npx shadcn@latest info --json -c app/desktop/doric-renderer`
 ```
 
 The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.

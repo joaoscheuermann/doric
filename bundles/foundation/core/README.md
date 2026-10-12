@@ -5,8 +5,8 @@ after the foundation on the host and provides the basic services every other
 bundle uses. It requires `storage.backend/v1` and `secrets.backend/v1`, so the
 composition must choose a provider for each in `providers` (`postgres` in the
 shipped host, the `storage/memory` foundation in tests). Its build writes
-`bundles/foundation/core/dist`, which `doric:build-bundles` stages into
-`agents/doric/dist/bundles/core`.
+`bundles/foundation/core/dist`, which `doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/core`.
 
 ## Services
 
@@ -80,5 +80,5 @@ npx nx test bundle-core
 To rebuild and stage every bundle used by the Direct host:
 
 ```console
-npx nx run doric:build-bundles
+npx nx run doric-host:build-bundles
 ```

@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "doric-platform",
+  "projectType": "application",
+  "sourceRoot": "app/desktop/doric-platform",
+  "tags": ["type:app"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "inputs": [
+        "{projectRoot}/**/*",
+        "^default",
+        "{workspaceRoot}/package-lock.json",
+        { "env": "NODE_ENV" }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/importmap.platform.json",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/react@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/react-dom@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/lexical@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/@lexical",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/zod@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/bundle@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/desktop@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/schemas"
+      ],
+      "options": {
+        "command": "node app/desktop/doric-platform/build.mjs --out dist/app/desktop/doric/assets"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test app/desktop/doric-platform/tests/*.test.mjs"
+      }
+    }
+  }
+}

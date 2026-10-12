@@ -1,5 +1,5 @@
 // The window's terminal calls over the client → host bridge (moved from the
-// layout's provisional adapter, before that `app/doric`'s terminal IPC and
+// layout's provisional adapter, before that `app/desktop/doric`'s terminal IPC and
 // REST client). Each operation keeps the old path's order: the main
 // process's payload guard with its messages, the host call, then the REST
 // client's reading of the route's answer. Terminal calls carry no deadline

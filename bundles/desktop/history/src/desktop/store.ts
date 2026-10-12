@@ -22,7 +22,7 @@ export type ThreadHistory = HistorySnapshot;
 /**
  * A best-effort local snapshot of each Thread's durable event log.
  *
- * Ported from `app/doric/src/workspace/thread-history.ts`. The host's Thread
+ * Ported from `app/desktop/doric/src/workspace/thread-history.ts`. The host's Thread
  * events remain the sole conversation-history source; this cache only lets a
  * conversation render instantly when a Thread opens, and the event stream
  * reconciles it afterwards. Absorbing an update never blocks, reads never

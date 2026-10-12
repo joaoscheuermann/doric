@@ -1,5 +1,5 @@
 // The Thread watch over `runtime.threads/v1.watchThread`, with the cases of
-// `app/doric/tests/thread-events.test.ts` ported to the stream (the socket's
+// `app/desktop/doric/tests/thread-events.test.ts` ported to the stream (the socket's
 // reconnect auth is the `afterSequence` of the next subscription) and the
 // stream-only behaviour: invalid items, ended streams and the lost bridge.
 

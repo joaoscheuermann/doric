@@ -1,5 +1,5 @@
 // The workspace records the conversation reads, as the renderer typed them
-// (`app/doric-renderer/src/domain/workspace.ts`). The chat keeps its own copy
+// (`app/desktop/doric-renderer/src/domain/workspace.ts`). The chat keeps its own copy
 // so the projection, the store and the cache see the exact shapes they saw
 // over the semantic preload; the layout owns the Project/Thread tree helpers.
 

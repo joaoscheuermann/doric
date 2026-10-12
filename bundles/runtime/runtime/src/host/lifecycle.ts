@@ -49,7 +49,7 @@ export const createLifecycle = ({
   let adoptions: Promise<void> = Promise.resolve();
 
   /**
-   * Today's boot sequence (agents/doric index.ts), once per runtime process.
+   * Today's boot sequence (app/backend/doric-host index.ts), once per runtime process.
    * The Projects a live process in the handover owns are left out (57-WP-H).
    */
   const reconcile = async (handover?: Handover): Promise<RecoverySummary> => {

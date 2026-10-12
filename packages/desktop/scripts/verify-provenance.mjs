@@ -1,7 +1,7 @@
 // Proves the vendored components are the renderer's own shadcn files.
 //
 // Every file listed in tests/fixtures/provenance.json was copied from
-// app/doric-renderer at the commit the file names. Undoing the import rewrites
+// app/desktop/doric-renderer at the commit the file names. Undoing the import rewrites
 // (`@/components/ui/<x>` → `./<x>.js`, `@/utility/utils` → `../lib/utils.js`,
 // `@/hooks/use-mobile` → `../hooks/use-mobile.js`) and the local patches listed
 // in PROVENANCE.md must give back that file byte for byte. Any other difference,
@@ -25,10 +25,10 @@ const recordPath = join(packageRoot, 'tests/fixtures/provenance.json');
  */
 const origin = (file) =>
   file.startsWith('components/')
-    ? `app/doric-renderer/src/components/ui/${file.slice('components/'.length)}`
+    ? `app/desktop/doric-renderer/src/components/ui/${file.slice('components/'.length)}`
     : file === 'lib/utils.ts'
-      ? 'app/doric-renderer/src/utility/utils.ts'
-      : `app/doric-renderer/src/${file}`;
+      ? 'app/desktop/doric-renderer/src/utility/utils.ts'
+      : `app/desktop/doric-renderer/src/${file}`;
 
 /**
  * The local patches, each undone exactly. A patch that no longer matches leaves

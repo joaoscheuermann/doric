@@ -1,8 +1,8 @@
 # Files bundle
 
 `files` gives the Doric agent its workspace tools. Its build writes
-`bundles/features/files/dist`, which `doric:build-bundles` stages into
-`agents/doric/dist/bundles/files`.
+`bundles/features/files/dist`, which `doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/files`.
 
 ## Capabilities
 
@@ -56,5 +56,5 @@ npx nx test bundle-files
 To rebuild and stage every bundle used by the Direct host:
 
 ```console
-npx nx run doric:build-bundles
+npx nx run doric-host:build-bundles
 ```

@@ -1,5 +1,5 @@
 // Keyboard input reaches the host in the order it was typed, per terminal
-// (`app/doric/src/workspace/terminal-ipc.ts`, then the layout's provisional
+// (`app/desktop/doric/src/workspace/terminal-ipc.ts`, then the layout's provisional
 // adapter): each write waits for the terminal's previous one, whatever its
 // outcome, and the chain is dropped once it drains.
 

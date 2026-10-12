@@ -53,12 +53,12 @@ Clone this repository, enter its directory, and install dependencies:
 
 ```sh
 npm ci
-cp agents/doric/.env.example agents/doric/.env
+cp app/backend/doric-host/.env.example app/backend/doric-host/.env
 openssl rand -hex 24
 openssl rand -base64 32
 ```
 
-Edit `agents/doric/.env`: use the first generated value for
+Edit `app/backend/doric-host/.env`: use the first generated value for
 `DORIC_POSTGRES_PASSWORD` and the second for `DORIC_CREDENTIAL_KEY`. Keep the
 default database and username (`doric`). This file is ignored by Git. Keep the
 credential key across restarts: stored secrets cannot be decrypted without it.
@@ -66,7 +66,7 @@ credential key across restarts: stored secrets cannot be decrypted without it.
 Build the sandbox image, which includes Node.js, Git, and the GitHub CLI:
 
 ```sh
-docker build -f agents/doric/.sandbox.Dockerfile -t doric-sandbox:local agents/doric
+docker build -f app/backend/doric-host/.sandbox.Dockerfile -t doric-sandbox:local app/backend/doric-host
 ```
 
 ### 2. Start the backend
@@ -74,8 +74,8 @@ docker build -f agents/doric/.sandbox.Dockerfile -t doric-sandbox:local agents/d
 **Linux — Docker Compose:**
 
 ```sh
-docker compose --env-file agents/doric/.env -f agents/doric/compose.yaml --profile docker up -d --build
-docker compose --env-file agents/doric/.env -f agents/doric/compose.yaml logs -f docker
+docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker up -d --build
+docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml logs -f docker
 ```
 
 Compose starts PostgreSQL, applies database migrations, and starts the backend.
@@ -88,17 +88,17 @@ keep running. The first image build can take several minutes.
 Start only PostgreSQL, then load the values from the file you just edited:
 
 ```sh
-docker compose --env-file agents/doric/.env -f agents/doric/compose.yaml up -d --wait postgres
+docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml up -d --wait postgres
 set -a
-. ./agents/doric/.env
+. ./app/backend/doric-host/.env
 set +a
 export DORIC_DATABASE_URL="postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}"
 export DORIC_HOST=127.0.0.1
 export DORIC_SANDBOX_PROVIDER=docker
 export DORIC_SANDBOX_IMAGE=doric-sandbox:local
 export DORIC_SANDBOX_SSH=false
-npx nx run doric:migrate
-npx nx serve doric
+npx nx run doric-host:migrate
+npx nx serve doric-host
 ```
 
 Keep this terminal open. Repeat the environment-loading and export commands
@@ -183,7 +183,7 @@ To stop the Linux Compose backend while retaining its database and Project
 volumes:
 
 ```sh
-docker compose --env-file agents/doric/.env -f agents/doric/compose.yaml --profile docker down
+docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker down
 ```
 
 For the macOS path, stop the native backend with Ctrl+C and use the same Compose
@@ -192,10 +192,10 @@ Compose volumes, including the database.
 
 ## Explore further
 
-- [Backend and API](agents/doric/README.md) — configuration, events,
+- [Backend and API](app/backend/doric-host/README.md) — configuration, events,
   persistence, and deployment details.
-- [Desktop app](app/doric/README.md) and
-  [renderer](app/doric-renderer/README.md) — app development and packaging.
+- [Desktop app](app/desktop/doric/README.md) and
+  [renderer](app/desktop/doric-renderer/README.md) — app development and packaging.
 - [Core services](bundles/foundation/core/README.md), [workspace tools](bundles/features/files/README.md),
   [Git](bundles/features/git/README.md), and
   [Thread delegation](bundles/features/threads/README.md) — built-in bundles.

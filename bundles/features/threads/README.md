@@ -1,8 +1,8 @@
 # Threads bundle
 
 `threads` contains the delegation capabilities Doric exposes to its agent. Its
-build writes `bundles/features/threads/dist`, which `doric:build-bundles` stages into
-`agents/doric/dist/bundles/threads`; the Direct host loads it through the
+build writes `bundles/features/threads/dist`, which `doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/threads`; the Direct host loads it through the
 `bundle` loader.
 
 ## Capabilities
@@ -20,7 +20,7 @@ prompt's direct child threads in the same project:
 
 Each tool reaches the calling prompt's children through `runtime.threads/v1`
 (`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
-the serialized result. The bundle never imports `agents/doric` internals.
+the serialized result. The bundle never imports `app/backend/doric-host` internals.
 
 Skills cover delegating self-contained work, inspecting delegated work, and
 steering or closing children. Skills live in `src/skills/<name>/SKILL.md` and
@@ -59,5 +59,5 @@ npx nx test bundle-threads
 To rebuild and stage every bundle used by the Direct host:
 
 ```console
-npx nx run doric:build-bundles
+npx nx run doric-host:build-bundles
 ```

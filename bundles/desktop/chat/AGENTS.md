@@ -3,7 +3,7 @@
 These instructions apply to `bundles/desktop/chat` and narrow the root `AGENTS.md`.
 The chat is the conversation of one Thread: its transcript, the composer and
 its queue, the trail and the footer composer controls. It moved here from
-`app/doric-renderer` in stage 9 and must keep that renderer's visible text,
+`app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
 roles, layout and quirks.
 
 ## Layers

@@ -10,7 +10,7 @@ out-tsc
 *.log
 /.env
 # Compose reads this local file for the Docker deploy; it holds secrets.
-/agents/doric/.env
+/app/backend/doric-host/.env
 
 # dependencies
 node_modules

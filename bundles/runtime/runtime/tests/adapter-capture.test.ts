@@ -122,7 +122,7 @@ const live =
 void test('a fresh recording from the kernel adapter equals the fixture', {
   skip: live
     ? false
-    : 'Requires DORIC_TEST_DATABASE_URL, DORIC_TEST_ADAPTER_CAPTURE=true and the agents/doric test build',
+    : 'Requires DORIC_TEST_DATABASE_URL, DORIC_TEST_ADAPTER_CAPTURE=true and the app/backend/doric-host test build',
   timeout: 60_000,
 }, async () => {
   const recorded = await recordTranscript(

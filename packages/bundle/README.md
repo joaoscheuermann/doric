@@ -66,8 +66,8 @@ optional `alwaysAvailable` frontmatter flag). A manifest without
 import { startHost } from 'bundle';
 
 const platform = await startHost({
-  bundlesPath: 'agents/doric/dist/bundles',
-  composition: { path: 'agents/doric/composition.json' },
+  bundlesPath: 'app/backend/doric-host/dist/bundles',
+  composition: { path: 'app/backend/doric-host/composition.json' },
   log: platformLog,
   sink: logSink,
 });

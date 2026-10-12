@@ -109,12 +109,12 @@ platform/bundle boundary described under Platform Boundary, which replaces the
 provisional host adapters stage 1 introduced: the platform knows no bundle
 concept, and the bundles own their own.
 
-`agents/doric` is the Direct agent host. It exposes long-lived sandbox-backed
+`app/backend/doric-host` is the Direct agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
-`app/doric` is the Electron desktop application. Its sandboxed, context-isolated
-windows load the shell built by `app/doric-renderer`, which since migration
+`app/desktop/doric` is the Electron desktop application. Its sandboxed, context-isolated
+windows load the shell built by `app/desktop/doric-renderer`, which since migration
 stage 9 only boots the client bundles; the UI described below is drawn by the
 `layout`, `chat` and `settings` client bundles, the feature bundles' client parts
 that `layout` hosts, and the core's outlet, using
@@ -525,9 +525,9 @@ legacy development databases must be explicitly recreated; neither startup nor
 migrations silently reset an existing database.
 
 The Project/Thread implementation replaces the former Session contract.
-Its current architecture is defined here and implemented in `agents/doric`;
+Its current architecture is defined here and implemented in `app/backend/doric-host`;
 the host's public API and persistence details are documented in
-`agents/doric/README.md`.
+`app/backend/doric-host/README.md`.
 
 Interrupt targets an active `promptId`, preserves pending inputs and children,
 and waits for cooperative cancellation before the next input runs. Terminating
@@ -554,7 +554,7 @@ namespaces, HTTP errors and safe event serialization live in
 `doric.network/v1`. The configuration and its `PUT /config` pipeline live in
 `/bundles/foundation/host-config`, the database connection in `/bundles/foundation/postgres`, and the
 Project and Thread handover in `/bundles/runtime/runtime/src/host`.
-`agents/doric/src` is the kernel: it reads the composition, applies its
+`app/backend/doric-host/src` is the kernel: it reads the composition, applies its
 alternatives, checks the composition's `required` block, owns the native HTTP
 and Socket.IO listeners and the generic desktop bridge, runs the platform's
 start and stop hooks and binds the port. It names no bundle contract.
@@ -565,8 +565,8 @@ The platform installs bundles, composes providers, routes calls, and runs
 processes, windows, and IPC. It never knows a bundle's concepts (Project,
 Thread, prompt, queue, Git, settings) or their methods and storage formats, and
 a field of a generic schema that names one is a leak. The platform is
-`packages/bundle`, `packages/storage`, `packages/desktop`, `app/doric`,
-`app/doric-renderer`, `app/doric-platform`, and the kernel `agents/doric`.
+`packages/bundle`, `packages/storage`, `packages/desktop`, `app/desktop/doric`,
+`app/desktop/doric-renderer`, `app/desktop/doric-platform`, and the kernel `app/backend/doric-host`.
 Bundles reach one another only through published contracts; a bundle may import
 another bundle's `<id>/contracts` entrypoint, never its source.
 
@@ -627,7 +627,7 @@ payload)` to the same bundle in every other live generation. The kernel names
   provider names the scope keys a window may send for it in `desktopScope` in its
   manifest, and any other key is refused. A contract with no active provider is
   unavailable. The exposed set is pinned by a permanent snapshot test,
-  `agents/doric/tests/bridge-exposure.snapshot.json`, so a change to what
+  `app/backend/doric-host/tests/bridge-exposure.snapshot.json`, so a change to what
   windows may reach is an explicit change in review.
 - **Windows.** A window descriptor may set `primary`. The main process accepts
   one primary window per catalog and refuses a primary request for an already
@@ -653,8 +653,8 @@ validates the manifest and skills, dry-activates the host part to write the
 contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas; it
 does not compare them with any baseline: no `contracts.published.json` is
 committed, and the `baseline` command and its Nx targets are removed until
-publishing (stage 11) compares against the registry. `doric:build-bundles` then stages each `dist` into
-`agents/doric/dist/bundles/<id>`.
+publishing (stage 11) compares against the registry. `doric-host:build-bundles` then stages each `dist` into
+`app/backend/doric-host/dist/bundles/<id>`.
 
 `/bundles/foundation/core` is the composition's core. Its host part provides the basic
 contracts `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`,
@@ -748,7 +748,7 @@ API (`define*`, `ref`, `Call`, `ContractError`, `Services`, the basic and
 loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `bundle_load` stage, Doric reads the installed bundles below
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
-JSON at `DORIC_COMPOSITION` (default: `agents/doric/composition.json`, which
+JSON at `DORIC_COMPOSITION` (default: `app/backend/doric-host/composition.json`, which
 names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `git`, `threads`, `terminal`, `usage`, `resources`, `runtime`, `direct`,
 `openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
@@ -903,7 +903,7 @@ and the renderer was the shell's legacy React tree (both removed by stage 9);
 the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
 theme, fonts and shadcn/ui components; `desktop/client` runs the window;
 `desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
-window-main API. `app/doric-platform` builds the platform files and import map.
+window-main API. `app/desktop/doric-platform` builds the platform files and import map.
 The CSP adds `worker-src 'self'` and the import
 map's script hash. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`: the core's
@@ -1270,7 +1270,7 @@ unknown instead of failing one. Both use the image named by
 `DORIC_SANDBOX_IMAGE`, which defaults to the
 multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
 selected Git skills can reach public remotes. That default ships Git; the
-sandbox image Doric builds from `agents/doric/.sandbox.Dockerfile` ships Git and
+sandbox image Doric builds from `app/backend/doric-host/.sandbox.Dockerfile` ships Git and
 the GitHub CLI. The image is a deployment choice the host reads from its
 environment rather than a compiled-in value, and Firecracker resolves an
 anonymous public OCI image, so a locally built tag needs publishing, or the
@@ -1316,7 +1316,7 @@ platforms reject Docker egress. SSH is disabled by default, uses per-sandbox
 Ed25519 user and host keys, is key-only, and binds to loopback unless an
 advertised remote binding is explicit.
 
-`agents/doric/.Dockerfile` reproducibly builds the agent and every built-in
+`app/backend/doric-host/.Dockerfile` reproducibly builds the agent and every built-in
 bundle, pinned Firecracker and jailer, Linux 6.18 guest kernel, static BusyBox
 and Dropbear bootstrap, initramfs, OCI/ext4 tooling, networking tools, and
 OpenSSH client. Its Linux-only Compose profiles provide either the Docker
@@ -1324,7 +1324,7 @@ socket plus host-network firewall access or KVM/TUN/cgroup/state/cache access
 without a Docker socket. The privileged Firecracker profile is a development
 and e2e harness, not a production isolation boundary. Local deploy credentials,
 including the PostgreSQL password, live only in the git-ignored
-`agents/doric/.env` (see `agents/doric/.env.example`); they are never committed
+`app/backend/doric-host/.env` (see `app/backend/doric-host/.env.example`); they are never committed
 or baked into the image. Doric acquires one pool
 lease when each persisted Project is created and retains it across all its
 Threads and prompts. It binds every bundle tool to that sandbox, propagates
@@ -1410,8 +1410,8 @@ ordering between Threads; Project reconnection refreshes its snapshot and tree.
 
 The `postgres` bundle owns the Prisma ORM 7 schema, generated client
 configuration, and versioned PostgreSQL migrations;
-`agents/doric/prisma.config.ts` remains the compatible entry point that
-Compose's migrate service, the image build and `nx run doric:migrate` use.
+`app/backend/doric-host/prisma.config.ts` remains the compatible entry point that
+Compose's migrate service, the image build and `nx run doric-host:migrate` use.
 Production uses one adapter-pg Prisma client per process and never applies
 migrations implicitly during HTTP startup. PostgreSQL stores the singleton
 configuration as the `settings/v1` space `host-config.configuration/v1` (one
@@ -1732,7 +1732,7 @@ recovery hooks, or external side effects.
 ## Repository Shape
 
 Doric is an Nx-managed TypeScript workspace with npm workspaces for
-`agents/*`, `packages/*`, `tools/*`, `workflows/*`, `bundles/*`, and
+`app/*/*`, `packages/*`, `tools/*`, `workflows/*`, `bundles/*/*`, and
 `benchmarks/*`.
 
 Use current manifests and source as the package inventory. Do not treat this
@@ -1741,7 +1741,8 @@ file as the source of truth for every package responsibility.
 Durable boundaries:
 
 - product packages live under `packages/*`;
-- agent entry surfaces live under `agents/*`;
+- backend host and end-to-end tests live under `app/backend/*`;
+- desktop applications, renderer, platform, and end-to-end tests live under `app/desktop/*`;
 - standalone tool packages live under `tools/*`;
 - workflow packages live under `workflows/*`;
 - private evaluation instruments live under `benchmarks/*`;

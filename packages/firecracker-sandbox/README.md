@@ -44,7 +44,7 @@ Provisioning performs a strict preflight. The host must provide:
   `preflightFirecrackerHost`;
 - writable state and cache directories.
 
-The `agents/doric` Firecracker Compose profile packages these requirements for
+The `app/backend/doric-host` Firecracker Compose profile packages these requirements for
 development and e2e use. It is a privileged harness, not a production
 isolation boundary.
 

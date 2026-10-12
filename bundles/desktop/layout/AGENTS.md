@@ -3,7 +3,7 @@
 These instructions apply to `bundles/desktop/layout` and narrow the root `AGENTS.md`.
 The layout is the workspace frame of the desktop window: Projects and Threads,
 the header, the side panel, the tabs and the footers. It moved here from
-`app/doric-renderer` in stage 9 and must keep that renderer's visible text,
+`app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
 roles, layout and quirks.
 
 ## Layers
@@ -51,7 +51,7 @@ src/client/
 
 All footer text, including nested controls, uses `font-weight: 400`. Use a
 semantic `footer` element or a `data-slot` ending in `-footer` so the shell's
-footer rule (`app/doric-renderer/src/styles.css`) applies.
+footer rule (`app/desktop/doric-renderer/src/styles.css`) applies.
 
 ## Tests
 

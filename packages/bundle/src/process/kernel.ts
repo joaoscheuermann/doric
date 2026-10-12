@@ -92,7 +92,7 @@ export interface StartKernelOptions extends StartHostOptions {
   readonly network?: NetworkResources;
   /** Default: the compiled `runner-main.js` next to this module. */
   readonly runnerPath?: string;
-  /** Error classes rebuilt with their prototype (agents/doric passes ToolErrorObject). */
+  /** Error classes rebuilt with their prototype (app/backend/doric-host passes ToolErrorObject). */
   readonly errorClasses?: readonly (abstract new (
     ...args: never[]
   ) => Error)[];

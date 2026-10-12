@@ -1,5 +1,5 @@
 // One Thread watch per Thread over `runtime.threads/v1.watchThread` (§7.5),
-// the port of `app/doric/src/workspace/events.ts`: a newer watch replaces the
+// the port of `app/desktop/doric/src/workspace/events.ts`: a newer watch replaces the
 // older; updates naming another Thread are dropped and foreign events inside
 // a snapshot are filtered; an invalid snapshot or event becomes an `error`
 // update with the fixed message; the cursor is the highest delivered

@@ -1,0 +1,95 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "doric-host",
+  "projectType": "application",
+  "sourceRoot": "app/backend/doric-host/src",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "dependsOn": ["^build", "build-bundles"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "outputPath": "app/backend/doric-host/dist",
+        "main": "app/backend/doric-host/src/index.ts",
+        "tsConfig": "app/backend/doric-host/tsconfig.lib.json",
+        "clean": false
+      }
+    },
+    "build-bundles": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/bundles"],
+      "options": {
+        "commands": [
+          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/usage bundles/features/resources bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config"
+        ],
+        "parallel": false
+      },
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": [
+            "bundle-postgres",
+            "bundle-core",
+            "bundle-files",
+            "bundle-git",
+            "bundle-threads",
+            "bundle-runtime",
+            "bundle-direct",
+            "bundle-openai",
+            "bundle-openrouter",
+            "bundle-codex",
+            "bundle-docker",
+            "bundle-firecracker",
+            "bundle-web",
+            "bundle-terminal",
+            "bundle-usage",
+            "bundle-resources",
+            "bundle-notifications",
+            "bundle-layout",
+            "bundle-settings",
+            "bundle-chat",
+            "bundle-history",
+            "bundle-transport",
+            "bundle-host-config"
+          ]
+        }
+      ],
+      "cache": false
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "prisma migrate deploy --config app/backend/doric-host/prisma.config.ts"
+      }
+    },
+    "run": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node app/backend/doric-host/dist/src/index.js"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "continuous": true,
+      "options": {
+        "command": "node app/backend/doric-host/dist/src/index.js"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p app/backend/doric-host/tsconfig.spec.json",
+          "node --test app/backend/doric-host/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": []
+}

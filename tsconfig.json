@@ -25,7 +25,7 @@
       "path": "./packages/agent"
     },
     {
-      "path": "./agents/doric"
+      "path": "./app/backend/doric-host"
     },
     {
       "path": "./packages/config"
@@ -61,10 +61,10 @@
       "path": "./packages/victor"
     },
     {
-      "path": "./app/doric-renderer"
+      "path": "./app/desktop/doric-renderer"
     },
     {
-      "path": "./app/doric"
+      "path": "./app/desktop/doric"
     },
     {
       "path": "./bundles/features/threads"
@@ -139,10 +139,10 @@
       "path": "./bundles/desktop/settings"
     },
     {
-      "path": "./agents/doric-e2e"
+      "path": "./app/backend/doric-host-e2e"
     },
     {
-      "path": "./app/doric-e2e"
+      "path": "./app/desktop/doric-e2e"
     }
   ]
 }

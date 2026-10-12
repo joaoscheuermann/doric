@@ -351,7 +351,7 @@ void test('a sink whose owner segment is a placeholder writes only the streams o
 // ships may provide one through stage 7.
 void test('no bundle of the shipped host composition but the runtime provides an event contract', async () => {
   const composition = JSON.parse(
-    await readFile('agents/doric/composition.json', 'utf8'),
+    await readFile('app/backend/doric-host/composition.json', 'utf8'),
   ) as { readonly enabled: readonly string[] };
 
   const descriptors = new Map<string, string>();

@@ -144,7 +144,7 @@ test('formats JavaScript with single quotes and semicolons', () => {
 test('ignores generated source', () => {
   const result = run({
     source: 'missingFunction();\n',
-    directory: 'agents/doric/src/generated',
+    directory: 'app/backend/doric-host/src/generated',
     extension: 'ts',
     args: ['--no-errors-on-unmatched'],
   });
@@ -156,20 +156,29 @@ test('ignores generated source', () => {
 const workspacePackageNames = () => {
   const names = new Set();
 
-  for (const parent of ['packages', 'agents', 'tools', 'bundles']) {
+  for (const parent of ['packages', 'tools', 'app', 'bundles']) {
     for (const entry of readdirSync(join(root, parent), {
       withFileTypes: true,
     })) {
       if (!entry.isDirectory()) continue;
 
-      try {
-        const manifest = JSON.parse(
-          readFileSync(join(root, parent, entry.name, 'package.json'), 'utf8'),
-        );
+      const directories =
+        parent === 'app' || parent === 'bundles'
+          ? readdirSync(join(root, parent, entry.name), { withFileTypes: true })
+              .filter((child) => child.isDirectory())
+              .map((child) => join(root, parent, entry.name, child.name))
+          : [join(root, parent, entry.name)];
 
-        if (typeof manifest.name === 'string') names.add(manifest.name);
-      } catch {
-        // A directory without a readable manifest is not a workspace package.
+      for (const directory of directories) {
+        try {
+          const manifest = JSON.parse(
+            readFileSync(join(directory, 'package.json'), 'utf8'),
+          );
+
+          if (typeof manifest.name === 'string') names.add(manifest.name);
+        } catch {
+          // A directory without a readable manifest is not a workspace package.
+        }
       }
     }
   }
@@ -216,7 +225,7 @@ test('keeps cross-package imports on public entrypoints', () => {
   const names = workspacePackageNames();
   const offenders = [];
 
-  for (const parent of ['packages', 'agents', 'app', 'tools', 'bundles']) {
+  for (const parent of ['packages', 'app', 'tools', 'bundles']) {
     for (const file of sourceFiles(join(root, parent))) {
       for (const specifier of importedModules(readFileSync(file, 'utf8'))) {
         if (names.some((name) => specifier.startsWith(`${name}/src/`))) {

@@ -1,7 +1,7 @@
 # Provenance of the vendored components
 
 `src/components/*.tsx` and `src/hooks/use-mobile.ts` are the shadcn/ui files
-that `app/doric-renderer` vendored with the shadcn CLI and edited locally.
+that `app/desktop/doric-renderer` vendored with the shadcn CLI and edited locally.
 `src/lib/utils.ts` is the renderer's `utility/utils.ts`. They were copied from
 commit `20775a6`, not regenerated.
 
@@ -81,6 +81,6 @@ it compares:
 ## Fonts
 
 `assets/fonts/*.woff2`, `NotoSans-OFL.txt` and `IBMPlexMono-OFL.txt` are byte
-copies of `app/doric-renderer/src/assets/fonts`. `src/styles/fonts.css` holds
+copies of `app/desktop/doric-renderer/src/assets/fonts`. `src/styles/fonts.css` holds
 the 12 `@font-face` rules from the renderer's `styles.css` (lines 5-169), with
 the URLs rebased to `../../assets/fonts/`.

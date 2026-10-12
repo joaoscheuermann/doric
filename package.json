@@ -64,11 +64,10 @@
   },
   "workspaces": [
     "bundles/*/*",
-    "agents/*",
     "packages/*",
     "tools/*",
     "workflows/*",
     "benchmarks/*",
-    "app/*"
+    "app/*/*"
   ]
 }

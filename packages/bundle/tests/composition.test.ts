@@ -115,7 +115,9 @@ void test('the alternatives an enabled set names are the single enabled option, 
 });
 
 void test('the shipped composition requires the five structural contracts and the transport, and offers the sandbox alternative', async () => {
-  const shipped = await readComposition('agents/doric/composition.json');
+  const shipped = await readComposition(
+    'app/backend/doric-host/composition.json',
+  );
 
   assert.deepEqual(shipped.required, {
     contracts: [
