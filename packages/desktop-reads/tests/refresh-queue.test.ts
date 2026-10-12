@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createRefreshQueue } from '../src/project-refresh.js';
+import { createRefreshQueue } from '../src/refresh.js';
 
 test('coalesces a burst of mutations into one sandbox read', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });

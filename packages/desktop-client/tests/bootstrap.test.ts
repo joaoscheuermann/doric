@@ -21,13 +21,15 @@ const run = async (
   bundles: readonly ClientBundle[],
   options: {
     readonly key?: string;
+    readonly primary?: boolean;
     readonly describeError?: Error;
     readonly mount?: () => void | Promise<void>;
   } = {},
 ) => {
-  const description = describe(
-    options.key === undefined ? {} : { key: options.key },
-  );
+  const description = describe({
+    key: options.key ?? 'workspace',
+    primary: options.primary ?? true,
+  });
   const desktop = fakeDesktop(
     description,
     windowCatalog(bundles, { core: 'core' }),
@@ -103,7 +105,7 @@ void test('a quarantined core in the workspace window reports a core failure ins
   ]);
 });
 
-void test('a quarantined core outside the workspace window still reports ready', async () => {
+void test('a quarantined core outside the primary window still reports ready', async () => {
   const { desktop } = await run(
     [
       {
@@ -113,11 +115,37 @@ void test('a quarantined core outside the workspace window still reports ready',
         },
       },
     ],
-    { key: 'settings' },
+    { key: 'settings', primary: false },
   );
 
   assert.deepEqual(desktop.failures, []);
   assert.equal(desktop.steps.at(-1), 'ready');
+});
+
+void test('the primary flag decides the core failure, not the window key', async () => {
+  const failing: ClientBundle[] = [
+    {
+      id: 'core',
+      activate: () => {
+        throw new Error('core client failed');
+      },
+    },
+  ];
+
+  const primaryElsewhere = await run(failing, { key: 'main', primary: true });
+
+  assert.deepEqual(primaryElsewhere.desktop.failures, [
+    { kind: 'core', bundleId: 'core', message: 'core client failed' },
+  ]);
+  assert.equal(primaryElsewhere.desktop.steps.includes('ready'), false);
+
+  const workspaceNotPrimary = await run(failing, {
+    key: 'workspace',
+    primary: false,
+  });
+
+  assert.deepEqual(workspaceNotPrimary.desktop.failures, []);
+  assert.equal(workspaceNotPrimary.desktop.steps.at(-1), 'ready');
 });
 
 void test('a bootstrap error reports a bootstrap failure', async () => {

@@ -385,6 +385,7 @@ export const describe = (
 ): WindowDescription => ({
   key: 'workspace',
   kind: 'window',
+  primary: true,
   path: '/',
   generation: 3,
   chrome,

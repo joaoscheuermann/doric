@@ -2,13 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  changeClassName,
   changeDecorations,
   changeDirectoryKey,
   changedLineTotals,
+  changeLetter,
+  changeMarks,
   changesCount,
   changesTree,
   changesTreeView,
-} from '../src/change-tree.js';
+} from '../src/client/reads/change-tree.js';
 
 const repository = {
   path: 'project',
@@ -148,4 +151,60 @@ test('search reveals matches while preserving collapsed state when the search cl
   assert.equal(cleared.open, false);
   assert.equal(cleared.expanded.has('project/src'), false);
   assert.equal(cleared.changes.get('project/src/new.ts')?.status, 'renamed');
+});
+
+test('gives every change the letter its badge carries', () => {
+  assert.deepEqual(
+    (['added', 'modified', 'deleted', 'renamed', 'untracked'] as const).map(
+      changeLetter,
+    ),
+    ['A', 'M', 'D', 'R', 'U'],
+  );
+});
+
+test('draws each status in the colour the palette gives it, added and untracked alike', () => {
+  assert.equal(changeClassName('added'), 'text-[var(--git-added)]');
+  assert.equal(changeClassName('untracked'), 'text-[var(--git-added)]');
+  assert.equal(changeClassName('modified'), 'text-[var(--git-modified)]');
+  assert.equal(changeClassName('deleted'), 'text-[var(--git-deleted)]');
+  assert.equal(changeClassName('renamed'), 'text-[var(--git-renamed)]');
+  assert.equal(changeClassName('conflicted'), 'text-[var(--git-conflicted)]');
+});
+
+test('marks a changed file with its colour, letter and count, and strikes only a deleted one', () => {
+  const marks = changeMarks(repositories);
+  assert.deepEqual(marks.get('project/read me.md'), {
+    description: 'untracked · Unstaged',
+    count: 1,
+    tone: 'text-[var(--git-added)]',
+    letter: 'U',
+    struck: false,
+  });
+  assert.equal(marks.get('project/src/removed.ts')?.struck, true);
+  assert.equal(marks.get('project/src/removed.ts')?.letter, 'D');
+  assert.equal(marks.get('project/src')?.count, 2);
+  assert.equal(marks.get('project/src')?.struck, false);
+});
+
+test('a directory mark carries the colour of the status it summarizes', () => {
+  const marks = changeMarks([
+    {
+      path: 'project',
+      changes: [
+        { path: 'src/a.ts', status: 'deleted' },
+        { path: 'src/b.ts', status: 'deleted' },
+      ],
+    },
+  ]);
+  assert.equal(marks.get('project/src')?.tone, 'text-[var(--git-deleted)]');
+  assert.equal(marks.get('project/src')?.description, '2 changed files');
+});
+
+test('the changes view hands its tree the marks of the repository it draws', () => {
+  const view = changesTreeView(repository, '', new Set());
+  assert.equal(
+    view.decorations.get('project/src/new.ts')?.tone,
+    'text-[var(--git-renamed)]',
+  );
+  assert.equal(view.decorations.get('project/src/new.ts')?.struck, false);
 });

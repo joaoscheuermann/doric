@@ -1,36 +1,61 @@
-import { baseName, joinPath, parentPath } from './files.js';
+// The changed paths of a Project as the Changes view and the file trees draw
+// them (moved from `desktop-reads`, stage BWP-11): the tree rows, the marks a
+// tree shows beside a path, and the totals the footer and the tabs read.
+
+import { baseName, joinPath, parentPath } from 'desktop-reads';
+import type { TreeNode } from 'desktop-ui/panels';
+
 import type {
+  ChangeMark,
   ProjectChange,
   ProjectChangeStatus,
-  ProjectTreeNode,
-} from './project-files.js';
+} from '../../contracts/index.js';
 
 export type ChangeRepository = {
   readonly path: string;
   readonly changes: readonly ProjectChange[];
 };
 
+/** A path's decoration before the tree draws it: the status and what it counts. */
 export type ChangeDecoration = {
-  readonly status?: ProjectChangeStatus;
+  readonly status: ProjectChangeStatus;
   readonly count: number;
   readonly description: string;
 };
 
+/**
+ * The tree classes a status is drawn with. Arbitrary `var()` values name the
+ * same colour variables the palette states (`--git-*`), which this bundle's own
+ * stylesheet declares.
+ */
 export const changeClassName = (status: ProjectChangeStatus): string => {
   switch (status) {
     case 'added':
     case 'untracked':
-      return 'text-git-added';
+      return 'text-[var(--git-added)]';
     case 'modified':
-      return 'text-git-modified';
+      return 'text-[var(--git-modified)]';
     case 'deleted':
-      return 'text-git-deleted';
+      return 'text-[var(--git-deleted)]';
     case 'renamed':
-      return 'text-git-renamed';
+      return 'text-[var(--git-renamed)]';
     case 'conflicted':
-      return 'text-git-conflicted';
+      return 'text-[var(--git-conflicted)]';
   }
 };
+
+const changeLetters: Record<ProjectChangeStatus, string> = {
+  conflicted: '!',
+  added: 'A',
+  deleted: 'D',
+  modified: 'M',
+  renamed: 'R',
+  untracked: 'U',
+};
+
+/** The letter a changed file's badge carries. */
+export const changeLetter = (status: ProjectChangeStatus): string =>
+  changeLetters[status];
 
 export const changeDescription = (change: ProjectChange): string => {
   const placement =
@@ -82,23 +107,40 @@ export const changeDecorations = (
   return decorations;
 };
 
+/** The marks the trees draw: each decorated path's colour, letter and count. */
+export const changeMarks = (
+  repositories: readonly ChangeRepository[],
+): ReadonlyMap<string, ChangeMark> =>
+  new Map(
+    [...changeDecorations(repositories)].map(([path, decoration]) => [
+      path,
+      {
+        description: decoration.description,
+        count: decoration.count,
+        tone: changeClassName(decoration.status),
+        letter: changeLetter(decoration.status),
+        struck: decoration.status === 'deleted',
+      },
+    ]),
+  );
+
 /** Changes retain their directory chain; search includes rename origins. */
 export const changesTree = (
   repository: ChangeRepository,
   filter = '',
-): readonly ProjectTreeNode[] => {
+): readonly TreeNode[] => {
   const query = filter.trim().toLocaleLowerCase();
   const changes = repository.changes.filter((change) =>
     [joinPath(repository.path, change.path), change.originalPath].some((path) =>
       path?.toLocaleLowerCase().includes(query),
     ),
   );
-  const branches = new Map<string, ProjectTreeNode[]>();
+  const branches = new Map<string, TreeNode[]>();
   branches.set(repository.path, []);
-  const ensureDirectory = (path: string): ProjectTreeNode[] => {
+  const ensureDirectory = (path: string): TreeNode[] => {
     const existing = branches.get(path);
     if (existing !== undefined) return existing;
-    const children: ProjectTreeNode[] = [];
+    const children: TreeNode[] = [];
     branches.set(path, children);
     ensureDirectory(parentPath(path)).push({
       name: baseName(path),
@@ -127,7 +169,7 @@ export const changesTree = (
 };
 
 export const treeDirectories = (
-  entries: readonly ProjectTreeNode[],
+  entries: readonly TreeNode[],
 ): readonly string[] =>
   entries.flatMap((entry) =>
     entry.type === 'directory'
@@ -197,7 +239,7 @@ export const changesTreeView = (
           !collapsed.has(changeDirectoryKey(repository.path, path)),
       ),
     ),
-    decorations: changeDecorations([repository]),
+    decorations: changeMarks([repository]),
     changes: new Map(
       repository.changes.map((change) => [
         joinPath(repository.path, change.path),

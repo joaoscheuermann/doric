@@ -1,6 +1,6 @@
 import { Button } from 'desktop-ui/button';
+import { indentation, TreeGuides } from 'desktop-ui/panels';
 import { SidebarMenuSubButton, SidebarMenuSubItem } from 'desktop-ui/sidebar';
-import { indentation, TreeGuides } from 'desktop-ui/workspace';
 import { SquareIcon, TerminalIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

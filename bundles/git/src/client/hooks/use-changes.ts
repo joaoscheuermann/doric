@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react';
 import type { ChangesObservation } from '../../contracts/index.js';
 import { gitClient } from '../state.js';
 
-const idle: ChangesObservation = { read: { status: 'idle' }, fetching: false };
+const idle: ChangesObservation = {
+  read: { status: 'idle' },
+  decorations: new Map(),
+  fetching: false,
+};
 
 /**
  * The changes read of one Project and working directory while this surface

@@ -249,6 +249,7 @@ export class Dispatcher {
         return {
           key: null,
           kind: 'technical',
+          primary: false,
           path: pathOf(event.sender.getURL()),
           generation: null,
           chrome: this.#deps.chrome(undefined),
@@ -386,6 +387,7 @@ export class Dispatcher {
         return {
           key: entry.key,
           kind: 'window',
+          primary: entry.primary,
           path: pathOf(event.sender.getURL()),
           generation: view.generation,
           chrome: this.#deps.chrome(entry),

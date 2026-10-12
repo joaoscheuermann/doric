@@ -333,6 +333,7 @@ export const openWindow = async (
     describeWindow: async () => ({
       key: options.key ?? 'workspace',
       kind: 'window',
+      primary: (options.key ?? 'workspace') === 'workspace',
       path: window.location.pathname,
       generation: 3,
       chrome: {

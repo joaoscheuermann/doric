@@ -9,13 +9,6 @@
 // 4. a failed call is an `Error` with the message the REST path showed.
 
 import { isContractError, type Services } from 'bundle/contracts';
-import type {
-  ProjectFileContent,
-  ProjectFileEntry,
-  ProjectFileResult,
-  ProjectTreeNode,
-  ProjectTreeResult,
-} from 'desktop-reads';
 
 import {
   type ContentRead,
@@ -24,6 +17,13 @@ import {
   type LeaseOutcome,
   type TreeRead,
 } from '../../contracts/index.js';
+import type {
+  ProjectFileContent,
+  ProjectFileEntry,
+  ProjectFileResult,
+  ProjectTreeNode,
+  ProjectTreeResult,
+} from '../reads/project-files.js';
 
 export const readMessages = {
   unavailable: 'Doric backend is unavailable.',

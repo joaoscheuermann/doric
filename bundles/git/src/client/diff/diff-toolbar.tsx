@@ -1,17 +1,17 @@
-import {
-  baseName,
-  changeClassName,
-  changeDescription,
-  changeLetter,
-  type ProjectChange,
-  parentPath,
-} from 'desktop-reads';
+import { baseName, parentPath } from 'desktop-reads';
 import { Button } from 'desktop-ui/button';
 import type { DiffControls } from 'desktop-ui/code';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
 import { cn } from 'desktop-ui/utils';
-import { ChangeCounts } from 'desktop-ui/workspace';
 import { FileIcon, TriangleAlertIcon } from 'lucide-react';
+
+import type { ProjectChange } from '../../contracts/index.js';
+import { ChangeCounts } from '../changes/change-counts.js';
+import {
+  changeClassName,
+  changeDescription,
+  changeLetter,
+} from '../reads/change-tree.js';
 
 /** File identity and opening remain visible at every panel width. */
 export function DiffToolbar({

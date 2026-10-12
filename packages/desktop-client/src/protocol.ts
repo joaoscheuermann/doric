@@ -48,6 +48,11 @@ export interface WindowDescription {
   /** null for the splash (technical window). */
   readonly key: string | null;
   readonly kind: 'window' | 'technical';
+  /**
+   * The primary window (main opened it so): a failed core client there is a
+   * core failure, not a ready window.
+   */
+  readonly primary: boolean;
   /** The path main loaded. */
   readonly path: string;
   /** The pinned client generation; null for the splash. */
@@ -61,6 +66,7 @@ export const windowDescriptionSchema = z
   .object({
     key: z.union([z.string(), z.null()]),
     kind: z.enum(['window', 'technical']),
+    primary: z.boolean(),
     path: z.string(),
     generation: z.union([z.number().int(), z.null()]),
     chrome: windowChromeSchema,

@@ -28,6 +28,12 @@ export const openWindowRequestSchema = z
     key: z.string(),
     path: z.string(),
     appearance: windowAppearanceSchema.optional(),
+    /**
+     * Marks the primary window: a core client that fails there is reported as
+     * a core failure instead of ready. Main accepts one primary window at a
+     * time and refuses a second one while the first is open.
+     */
+    primary: z.boolean().optional(),
   })
   .strict();
 

@@ -13,6 +13,8 @@ export interface WindowEntry {
   readonly key: string;
   readonly window: BrowserWindow;
   readonly appearance: ParsedAppearance;
+  /** Opened as the primary window: its core failures are core failures. */
+  readonly primary: boolean;
   /** The client generation the shell loaded; null until it is pinned. */
   pinnedGeneration: number | null;
   /** The menu context of this window (`menus/v1.setContext`). */

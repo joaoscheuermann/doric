@@ -2,11 +2,6 @@
    src/tokens/tokens.ts. Do not edit; edit the tokens and rebuild. */
 
 :root {
-  --git-added: oklch(0.47 0.14 150);
-  --git-modified: oklch(0.5 0.13 82);
-  --git-deleted: oklch(0.52 0.19 27);
-  --git-renamed: oklch(0.48 0.16 255);
-  --git-conflicted: oklch(0.5 0.2 320);
   --background: oklch(0.9232 0.0026 48.7171);
   --foreground: oklch(0.2795 0.0368 260.031);
   --card: oklch(0.9699 0.0013 106.4238);
@@ -66,11 +61,6 @@
 }
 
 .dark {
-  --git-added: oklch(0.76 0.16 150);
-  --git-modified: oklch(0.83 0.16 85);
-  --git-deleted: oklch(0.74 0.17 27);
-  --git-renamed: oklch(0.76 0.14 255);
-  --git-conflicted: oklch(0.78 0.18 320);
   --background: oklch(0.2244 0.0074 67.437);
   --foreground: oklch(0.9288 0.0126 255.5078);
   --card: oklch(0.2801 0.008 59.3379);

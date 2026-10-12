@@ -56,6 +56,7 @@ void test('onAppReadyHook sets the default menu, then opens the workspace window
             key: 'workspace',
             path: '/',
             appearance: workspaceAppearance,
+            primary: true,
           },
         },
       ],
@@ -85,6 +86,7 @@ void test('onAppReadyHook reopens the workspace at the path main remembered for 
           key: 'workspace',
           path: '/projects/p1/threads/t1',
           appearance: workspaceAppearance,
+          primary: true,
         },
       ],
     );

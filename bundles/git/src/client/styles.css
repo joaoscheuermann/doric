@@ -1,6 +1,9 @@
 /*
  * The git bundle's utilities: the classes its elements use, over the
- * platform theme, which the window loads once. No rules of its own.
+ * platform theme, which the window loads once. Its own rules are the
+ * `--git-*` colour variables below (the platform palette no longer states
+ * them): the window loads this sheet with the git part, which every window
+ * built from the generation carries (client-routing's `parts`).
  */
 @import 'tailwindcss/utilities.css' layer(utilities);
 @reference 'desktop-ui/tailwind.css';
@@ -18,3 +21,25 @@
 @source '../../../layout/src/client';
 @source '../../../chat/src/client';
 @source '../../../settings/src/client';
+
+/*
+ * The colours of a change: the palette's `--git-*` variables, which the Changes
+ * view, the file trees' change marks, the diff editor and the change counts
+ * read. The values are the palette's own, light on `:root` and dark on `.dark`
+ * (BWP-11 moved them here from the desktop palette, which no longer states them).
+ */
+:root {
+  --git-added: oklch(0.47 0.14 150);
+  --git-modified: oklch(0.5 0.13 82);
+  --git-deleted: oklch(0.52 0.19 27);
+  --git-renamed: oklch(0.48 0.16 255);
+  --git-conflicted: oklch(0.5 0.2 320);
+}
+
+.dark {
+  --git-added: oklch(0.76 0.16 150);
+  --git-modified: oklch(0.83 0.16 85);
+  --git-deleted: oklch(0.74 0.17 27);
+  --git-renamed: oklch(0.76 0.14 255);
+  --git-conflicted: oklch(0.78 0.18 320);
+}

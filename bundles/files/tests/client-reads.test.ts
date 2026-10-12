@@ -1,38 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import {
-  baseName,
-  changeLetter,
-  emptyDirectoryNotice,
-  fileLanguage,
-  fileReadState,
-  joinPath,
-  parentPath,
-  pathSegments,
-  ROOT_NAME,
-  ROOT_PATH,
-  sandboxNotice,
-  toggleExpanded,
-  treeReadState,
-  truncationNotice,
-} from '../src/files.js';
 import type {
   ProjectFileContent,
   ProjectTreeNode,
-} from '../src/project-files.js';
+} from '../src/client/reads/project-files.js';
+import {
+  fileReadState,
+  pathSegments,
+  ROOT_NAME,
+  treeReadState,
+  truncationNotice,
+} from '../src/client/reads/state.js';
+import { ROOT_PATH, sandboxNotice } from '../src/contracts/index.js';
 
-describe('sandbox paths', () => {
-  test('joins and parents a path at the workspace root', () => {
-    assert.equal(joinPath(ROOT_PATH, 'src'), 'src');
-    assert.equal(joinPath('src', 'app.ts'), 'src/app.ts');
-    assert.equal(parentPath('src/app.ts'), 'src');
-    assert.equal(parentPath('app.ts'), ROOT_PATH);
-    assert.equal(baseName('src/app.ts'), 'app.ts');
-    assert.equal(baseName('app.ts'), 'app.ts');
-    assert.equal(baseName(ROOT_PATH), ROOT_PATH);
-  });
-
+describe('the path chain the breadcrumb names', () => {
   test('names every segment from the workspace root down to the path', () => {
     assert.deepEqual(pathSegments('src/domain/files.ts'), [
       { name: ROOT_NAME, path: ROOT_PATH },
@@ -43,130 +25,6 @@ describe('sandbox paths', () => {
     assert.deepEqual(pathSegments(ROOT_PATH), [
       { name: ROOT_NAME, path: ROOT_PATH },
     ]);
-  });
-
-  test('toggles one directory without touching the others', () => {
-    const expanded = toggleExpanded(new Set(['src']), 'src/domain');
-    assert.deepEqual([...expanded].sort(), ['src', 'src/domain']);
-    assert.deepEqual([...toggleExpanded(expanded, 'src')], ['src/domain']);
-  });
-});
-
-describe('the language a file is read as', () => {
-  test('names a language by the extension of the file itself', () => {
-    const named = [
-      'src/app.ts',
-      'src/app.tsx',
-      'src/app.mts',
-      'src/app.cts',
-      'src/app.mjs',
-      'src/app.jsx',
-      'src/app.css',
-      'src/app.html',
-      'src/app.xml',
-      'src/app.yaml',
-      'src/app.yml',
-      'src/app.sh',
-      'src/app.py',
-      'src/app.rs',
-      'src/app.sql',
-      'README.md',
-    ];
-
-    assert.deepEqual(named.map(fileLanguage), [
-      'typescript',
-      'typescript',
-      'typescript',
-      'typescript',
-      'javascript',
-      'javascript',
-      'css',
-      'html',
-      'xml',
-      'yaml',
-      'yaml',
-      'shell',
-      'python',
-      'rust',
-      'sql',
-      'markdown',
-    ]);
-  });
-
-  test('reads an extension whatever case it is written in', () => {
-    assert.equal(fileLanguage('SRC/App.TSX'), 'typescript');
-    assert.equal(fileLanguage('Docker.YML'), 'yaml');
-  });
-
-  test('reads a name with no extension as plaintext', () => {
-    assert.equal(fileLanguage('Makefile'), 'plaintext');
-    assert.equal(fileLanguage('src/Dockerfile'), 'plaintext');
-    assert.equal(fileLanguage('.gitignore'), 'plaintext');
-    assert.equal(fileLanguage('LICENSE'), 'plaintext');
-    assert.equal(fileLanguage('README.'), 'plaintext');
-    assert.equal(fileLanguage(ROOT_PATH), 'plaintext');
-  });
-
-  test('reads an extension no grammar covers as plaintext', () => {
-    // Monaco serves JSON as a worker-backed language service, which this
-    // read-only view does not bundle.
-    assert.equal(fileLanguage('package.json'), 'plaintext');
-    assert.equal(fileLanguage('src/app.rb'), 'plaintext');
-    assert.equal(fileLanguage('src/app.toml'), 'plaintext');
-  });
-
-  test('takes the extension of the file, not one of a directory in its path', () => {
-    assert.equal(fileLanguage('docs.md/notes'), 'plaintext');
-    assert.equal(fileLanguage('docs.md/notes.ts'), 'typescript');
-  });
-
-  test('names only the languages this surface registers a grammar for', () => {
-    const extensions = [
-      'bash',
-      'cjs',
-      'css',
-      'cts',
-      'htm',
-      'html',
-      'js',
-      'jsx',
-      'markdown',
-      'md',
-      'mjs',
-      'mts',
-      'py',
-      'rs',
-      'sh',
-      'sql',
-      'svg',
-      'ts',
-      'tsx',
-      'xml',
-      'yaml',
-      'yml',
-      'zsh',
-    ];
-
-    assert.deepEqual(
-      [
-        ...new Set(
-          extensions.map((extension) => fileLanguage(`a.${extension}`)),
-        ),
-      ].sort(),
-      [
-        'css',
-        'html',
-        'javascript',
-        'markdown',
-        'python',
-        'rust',
-        'shell',
-        'sql',
-        'typescript',
-        'xml',
-        'yaml',
-      ],
-    );
   });
 });
 
@@ -193,19 +51,6 @@ describe('what the surface says', () => {
     assert.match(sandboxNotice('missing'), /no sandbox yet/);
     assert.match(sandboxNotice('invalid_path'), /not inside the workspace/);
     assert.match(sandboxNotice('not_found'), /no longer in the workspace/);
-  });
-
-  test('says that an empty directory is empty', () => {
-    assert.equal(emptyDirectoryNotice, 'This directory is empty.');
-  });
-
-  test('gives every change the letter its badge carries', () => {
-    assert.deepEqual(
-      (['added', 'modified', 'deleted', 'renamed', 'untracked'] as const).map(
-        changeLetter,
-      ),
-      ['A', 'M', 'D', 'R', 'U'],
-    );
   });
 });
 

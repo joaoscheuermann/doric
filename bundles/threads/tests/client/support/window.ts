@@ -351,6 +351,7 @@ export const openThreadsWindow = async (input: {
     describeWindow: async () => ({
       key: 'main',
       kind: 'window',
+      primary: false,
       path: window.location.pathname,
       generation: 3,
       chrome: {

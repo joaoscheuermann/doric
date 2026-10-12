@@ -1,15 +1,15 @@
 import {
+  indentation,
+  rowInteraction,
+  TreeGuides,
+  treeClassName,
+} from 'desktop-ui/panels';
+import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
-import {
-  indentation,
-  rowInteraction,
-  TreeGuides,
-  treeClassName,
-} from 'desktop-ui/workspace';
 import {
   ChevronRightIcon,
   GitBranchIcon,

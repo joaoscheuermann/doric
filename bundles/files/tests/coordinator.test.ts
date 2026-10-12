@@ -1,7 +1,7 @@
 // files.refresh/v1 (stage 10, §3.6): when the Project refresh coordinator
 // rereads a Project's registered reads. Observed through the public service
 // and a registrant's `refresh`, over a fake workspace, a fake window and a
-// fake clock; the coalescing is `refreshProject`'s, observed through one
+// fake clock; the coalescing is the refresh queue's, observed through one
 // files query client.
 
 import assert from 'node:assert/strict';
@@ -10,7 +10,6 @@ import { beforeEach, describe, test } from 'node:test';
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
 import type { Disposable } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import { refreshProject } from 'desktop-reads';
 
 import {
   createFilesRefresh,
@@ -19,6 +18,7 @@ import {
   type RefreshEnvironment,
   type RefreshWorkspace,
 } from '../src/client/refresh/coordinator.js';
+import { refreshSandbox } from '../src/client/sandbox-store.js';
 import { FilesRefreshV1 } from '../src/contracts/index.js';
 
 type Thread = { id: string; state: string; cwd?: string };
@@ -274,7 +274,7 @@ describe('a registrant over the files query client', () => {
     coordinator.register({
       projectId: 'p-1',
       active: () => true,
-      refresh: ({ periodic }) => refreshProject(client, 'p-1', periodic),
+      refresh: ({ periodic }) => refreshSandbox(client, 'p-1', periodic),
     });
     for (let index = 0; index < 5; index += 1) coordinator.request('p-1');
     t.mock.timers.tick(249);

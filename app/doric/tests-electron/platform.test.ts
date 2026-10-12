@@ -174,11 +174,11 @@ describe('desktop platform, default composition', () => {
   });
 
   test('settings opens once at /settings with today’s size; a second open focuses it', async () => {
-    await booted.platform.openSettings();
+    await booted.platform.runCommand('core.open-settings/v1');
 
     const settings = await booted.window('settings');
 
-    await booted.platform.openSettings();
+    await booted.platform.runCommand('core.open-settings/v1');
 
     assert.equal(urlOf(settings).pathname, '/settings');
     assert.equal(settings.getTitle(), 'Doric Settings');
@@ -188,6 +188,50 @@ describe('desktop platform, default composition', () => {
         .length,
       1,
     );
+  });
+
+  test('one primary window at a time: a second primary is refused, a plain window opens', async () => {
+    await assert.rejects(
+      booted.platform.windows.open({
+        key: 'probe:primary',
+        path: '/',
+        primary: true,
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        (error as { code?: unknown }).code === 'registration_conflict',
+    );
+    assert.equal(booted.platform.registry.byKey('probe:primary'), undefined);
+
+    await booted.platform.windows.open({ key: 'probe:plain', path: '/' });
+
+    const plain = booted.platform.registry.byKey('probe:plain');
+
+    assert.equal(plain?.primary, false);
+    assert.equal(booted.platform.registry.byKey('workspace')?.primary, true);
+    plain?.window.destroy();
+  });
+
+  test('a primary request for an open window without the flag is refused; the window stays plain', async () => {
+    await booted.platform.windows.open({ key: 'probe:open', path: '/' });
+
+    const open = booted.platform.registry.byKey('probe:open');
+
+    await assert.rejects(
+      booted.platform.windows.open({
+        key: 'probe:open',
+        path: '/',
+        primary: true,
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        (error as { code?: unknown }).code === 'registration_conflict' &&
+        (error as { details?: { windowKey?: unknown } }).details?.windowKey ===
+          'probe:open',
+    );
+    assert.equal(booted.platform.registry.byKey('probe:open')?.primary, false);
+    assert.equal(booted.platform.registry.byKey('workspace')?.primary, true);
+    open?.window.destroy();
   });
 
   test('a close waits for the flush, and a renderer that never flushes closes at the deadline', async () => {

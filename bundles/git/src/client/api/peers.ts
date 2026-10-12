@@ -5,7 +5,7 @@
 // a peer's own window shows.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
-import type { ProjectTreeNode, ReadState } from 'desktop-reads';
+import type { ProjectTreeNode, ReadState } from 'files/contracts';
 
 /** files.sandbox/v1 (client, local): the tree read the Changes view is gated by. */
 export interface TreeObservation {

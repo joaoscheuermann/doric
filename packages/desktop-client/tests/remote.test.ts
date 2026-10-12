@@ -76,7 +76,7 @@ const clientOf = async (
       },
     },
   ];
-  const description = describe({ key: 'probe:graph' });
+  const description = describe({ key: 'probe:graph', primary: false });
   const catalog = windowCatalog(bundles, { core: 'probe', remote: [probe] });
 
   const desktop = fakeDesktop(description, catalog);

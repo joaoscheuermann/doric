@@ -11,26 +11,31 @@ const rows = [
   { id: 'file-b1', depth: 1, folder: false, width: 'w-28' },
 ];
 
-/** Mirrors tree row heights, nesting, icons and name columns during the first read. */
+/**
+ * Mirrors tree row heights, nesting, icons and name columns during the first
+ * read. `root` adds a row above the tree for the node the tree hangs from (a
+ * repository, in the Changes view), so every row sits one level deeper.
+ */
 export function TreeSkeleton({
-  changes = false,
+  root = false,
+  label,
 }: {
-  readonly changes?: boolean;
+  readonly root?: boolean;
+  /** The status the skeleton announces; the bundle that shows the tree names it. */
+  readonly label: string;
 }) {
-  // The Changes view nests its paths under a repository row, so every row sits
-  // one level deeper than the same row in Files.
-  const levels = changes
+  const levels = root
     ? rows.map((row) => ({ ...row, depth: row.depth + 1 }))
     : rows;
   return (
     <div
       role="status"
-      aria-label={changes ? 'Loading changes' : 'Loading files'}
+      aria-label={label}
       aria-busy="true"
       className="min-w-0 overflow-hidden"
     >
       <div aria-hidden className="py-1">
-        {changes && (
+        {root && (
           <div
             className="relative flex h-7 items-center gap-2 pr-8"
             style={{ paddingLeft: indentation(0) }}

@@ -6,6 +6,7 @@
 // (files and git); built-in entries remain possible but none is passed.
 
 import type { RegionEntry } from 'bundle/contracts';
+import { TabStrip } from 'desktop-ui/panels';
 import { Separator } from 'desktop-ui/separator';
 import {
   Sidebar,
@@ -14,7 +15,6 @@ import {
   SidebarGroupContent,
 } from 'desktop-ui/sidebar';
 import { Tabs } from 'desktop-ui/tabs';
-import { TabStrip } from 'desktop-ui/workspace';
 import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
 import { createElement, type ReactNode, useState } from 'react';
 

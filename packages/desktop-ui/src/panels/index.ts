@@ -1,7 +1,8 @@
-// `desktop-ui/workspace`: the workspace widgets more than one bundle renders
-// (file, changes, terminal and resource surfaces, and the layout's strips),
-// served once per window so dnd-kit and the toast store are shared.
-export * from './change-counts.js';
+// `desktop-ui/panels`: the panel widgets more than one bundle renders (file,
+// changes, terminal and resource surfaces, and the layout's strips), served
+// once per window so dnd-kit and the toast store are shared. Nothing here
+// names a bundle's concept: a bundle passes its own rows, labels and colours.
+export * from './expansion.js';
 export * from './file-tree.js';
 export * from './move-item.js';
 export * from './panel-state.js';

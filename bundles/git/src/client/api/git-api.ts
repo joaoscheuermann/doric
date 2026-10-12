@@ -14,13 +14,7 @@ import {
   isContractError,
   type Services,
 } from 'bundle/contracts';
-import type {
-  ProjectChangeStatus,
-  ProjectChangesResult,
-  ProjectFileChange,
-  ProjectFileDiffResult,
-  ProjectLeaseState,
-} from 'desktop-reads';
+import type { ProjectLeaseState } from 'files/contracts';
 
 import {
   type ChangesRead,
@@ -28,6 +22,10 @@ import {
   type Git,
   GitCommandsV1,
   type LeaseOutcome,
+  type ProjectChangeStatus,
+  type ProjectChangesResult,
+  type ProjectFileChange,
+  type ProjectFileDiffResult,
 } from '../../contracts/index.js';
 import type {
   GitBranches,

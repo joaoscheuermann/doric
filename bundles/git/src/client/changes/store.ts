@@ -2,25 +2,22 @@
 // window and its changes read, moved from the changes part of the layout's
 // `useProjectFiles`, plus the Changes view's collapsed directories (the
 // layout's `filesStore.changesCollapsed`). The changes query keeps its key,
-// `['files', p, 'changes', cwd]`, so `refreshProject`'s `['files', p, …]`
-// targeting is unchanged; it retries a failed read a bounded number of times
-// and polls a pending lease at the host's hint. It runs only while something
-// observes it [D10-14].
+// `['files', p, 'changes', cwd]`; the Project's Thread summaries live in this
+// client too, and both are reread together for a Project. Each retries a failed
+// read a bounded number of times and polls a pending lease at the host's hint.
+// It runs only while something observes it [D10-14].
 
+import type { Query } from '@tanstack/query-core';
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
 import { type Disposable, defineMethod, defineService } from 'bundle/contracts';
 import {
   messageFrom,
-  type ProjectChanges,
-  type ProjectChangesResult,
   pendingReadInterval,
-  type ReadState,
-  ROOT_PATH,
-  refreshProject,
-  sandboxReadRetry,
-  toggleExpanded,
-  workspacePath,
+  readRetry,
+  refreshQueries,
 } from 'desktop-reads';
+import { toggleExpanded } from 'desktop-ui/panels';
+import { type ReadState, ROOT_PATH, workspacePath } from 'files/contracts';
 import { createStore } from 'zustand/vanilla';
 
 import {
@@ -28,8 +25,11 @@ import {
   type ChangesScope,
   GitChangesV1,
   gitChangesMethods,
+  type ProjectChanges,
+  type ProjectChangesResult,
 } from '../../contracts/index.js';
 import type { GitApi } from '../api/git-api.js';
+import { changeMarks } from '../reads/change-tree.js';
 
 /**
  * The host is local and answers once, so nothing refetches on its own: a read
@@ -81,6 +81,18 @@ export const gitKeys = {
 /** The workspace-relative root a working directory names. */
 export const rootOf = (cwd: string | undefined): string =>
   cwd === undefined ? ROOT_PATH : workspacePath(cwd);
+
+/**
+ * The queries a refresh of one Project rereads in this client: its changes and
+ * file comparisons, and each Thread's Git summary that carries the Project.
+ */
+const projectGitQueries =
+  (projectId: string) =>
+  (query: Query): boolean =>
+    (query.queryKey[0] === 'files' && query.queryKey[1] === projectId) ||
+    (query.queryKey[0] === 'thread' &&
+      query.meta?.projectId === projectId &&
+      query.queryKey[2] === 'git');
 
 /**
  * What the Changes view and the footer read: idle until asked, `loading`
@@ -153,7 +165,7 @@ export const createGitStore = (
       queryKey: gitKeys.changes(projectId, cwd),
       queryFn: () =>
         api().changes(projectId, root === ROOT_PATH ? undefined : root),
-      ...sandboxReadRetry,
+      ...readRetry,
       refetchInterval: (query) =>
         query.state.status === 'error'
           ? false
@@ -161,8 +173,13 @@ export const createGitStore = (
     });
     const emit = () => {
       const result = observer.getCurrentResult();
+      const read = changesReadState(result.data, result.isPending);
       listener({
-        read: changesReadState(result.data, result.isPending),
+        read,
+        decorations:
+          read.status === 'ready'
+            ? changeMarks(read.value.repositories)
+            : new Map(),
         ...(result.isError ? { error: messageFrom(result.error) } : {}),
         fetching: result.isFetching,
       });
@@ -179,7 +196,8 @@ export const createGitStore = (
       },
     };
   },
-  refresh: (projectId, periodic) => refreshProject(client, projectId, periodic),
+  refresh: (projectId, periodic) =>
+    refreshQueries(client, projectId, projectGitQueries(projectId), periodic),
   dispose: () => client.clear(),
 });
 

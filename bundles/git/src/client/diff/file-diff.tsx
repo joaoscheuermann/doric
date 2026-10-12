@@ -5,21 +5,17 @@
 // workspace path the comparison names.
 
 import { CommandsV1, type Services } from 'bundle/contracts';
-import {
-  fileLanguage,
-  joinPath,
-  messageFrom,
-  sandboxNotice,
-} from 'desktop-reads';
-import { type DiffControls, DiffEditor } from 'desktop-ui/code';
+import { joinPath, messageFrom } from 'desktop-reads';
+import { type DiffControls, DiffEditor, fileLanguage } from 'desktop-ui/code';
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from 'desktop-ui/empty';
+import { ReadFeedback } from 'desktop-ui/panels';
 import { Skeleton } from 'desktop-ui/skeleton';
-import { ReadFeedback } from 'desktop-ui/workspace';
+import { sandboxNotice } from 'files/contracts';
 import { useRef } from 'react';
 
 import { OPEN_FILE_COMMAND } from '../api/peers.js';
@@ -118,6 +114,7 @@ function FileDiffViewer({
               original={diff.original}
               modified={diff.modified}
               language={fileLanguage(diff.path)}
+              diffTokens={{ added: '--git-added', removed: '--git-deleted' }}
               toolbar={toolbar}
               footer={(controls) => (
                 <DiffFooter path={path} controls={controls} />

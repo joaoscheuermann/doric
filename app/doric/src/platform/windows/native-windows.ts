@@ -69,7 +69,11 @@ export class NativeWindows {
   readonly #options: NativeWindowsOptions;
   readonly #lastRequest = new Map<
     string,
-    { readonly path: string; readonly appearance: ParsedAppearance }
+    {
+      readonly path: string;
+      readonly appearance: ParsedAppearance;
+      readonly primary: boolean;
+    }
   >();
 
   constructor(options: NativeWindowsOptions) {
@@ -100,7 +104,31 @@ export class NativeWindows {
 
     const appearance: ParsedAppearance =
       parsed.appearance ?? windowAppearanceSchema.parse({});
+    const primary = parsed.primary === true;
     const existing = this.#options.registry.byKey(parsed.key);
+
+    // The primary mark is fixed when a window is created: a request for it on
+    // an open window that lacks it cannot be honoured, so it is refused, not
+    // reported as done. An omitted flag never demotes an open primary window.
+    if (primary && existing !== undefined && !existing.primary) {
+      throw new ContractError(
+        'registration_conflict',
+        `Window "${parsed.key}" is already open without the primary flag; close it before opening it as the primary window.`,
+        { windowKey: parsed.key },
+      );
+    }
+
+    const otherPrimary = this.#options.registry
+      .all()
+      .find((entry) => entry.primary && entry.key !== parsed.key);
+
+    if (primary && otherPrimary !== undefined) {
+      throw new ContractError(
+        'registration_conflict',
+        `Window "${otherPrimary.key}" is already the primary window.`,
+        { windowKey: otherPrimary.key },
+      );
+    }
 
     if (existing !== undefined) {
       const { window } = existing;
@@ -122,9 +150,13 @@ export class NativeWindows {
       return;
     }
 
-    this.#lastRequest.set(parsed.key, { path: parsed.path, appearance });
+    this.#lastRequest.set(parsed.key, {
+      path: parsed.path,
+      appearance,
+      primary,
+    });
 
-    const entry = this.#create(parsed.key, appearance);
+    const entry = this.#create(parsed.key, appearance, primary);
 
     try {
       await entry.window.loadURL(doricUrl(parsed.path));
@@ -180,6 +212,7 @@ export class NativeWindows {
       key,
       path: this.lastPath(key) ?? last.path,
       appearance: last.appearance,
+      primary: last.primary,
     });
   }
 
@@ -187,7 +220,11 @@ export class NativeWindows {
     return this.#options.paths.get(key);
   }
 
-  #create(key: string, appearance: ParsedAppearance): WindowEntry {
+  #create(
+    key: string,
+    appearance: ParsedAppearance,
+    primary: boolean,
+  ): WindowEntry {
     const { registry, tokens, preload, paths, answers, events, log } =
       this.#options;
     const platform = this.#options.platform ?? process.platform;
@@ -206,6 +243,7 @@ export class NativeWindows {
       key,
       window,
       appearance,
+      primary,
       pinnedGeneration: null,
       context: { path: null, focus: null },
     };

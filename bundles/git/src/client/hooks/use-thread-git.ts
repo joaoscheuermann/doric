@@ -4,11 +4,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import {
-  messageFrom,
-  pendingReadInterval,
-  sandboxReadRetry,
-} from 'desktop-reads';
+import { messageFrom, pendingReadInterval, readRetry } from 'desktop-reads';
 import { useCallback } from 'react';
 import type { Thread } from 'runtime/contracts';
 
@@ -41,7 +37,7 @@ export const useThreadGit = (thread: Thread | undefined): ThreadGitState => {
           ? { status: query.state.data.status }
           : undefined,
       ),
-    ...sandboxReadRetry,
+    ...readRetry,
   });
 
   const projectId = thread?.projectId;

@@ -22,7 +22,7 @@ import {
   functionSchema,
   ref,
 } from 'bundle/contracts';
-import type { ProjectChanges, ReadState } from 'desktop-reads';
+import type { ReadState } from 'files/contracts';
 import type {
   Branch,
   FileDiff,
@@ -33,6 +33,8 @@ import type {
 } from 'runtime/contracts';
 import { z } from 'zod';
 
+import type { ChangeMark, ProjectChanges } from './reads.js';
+
 export type {
   Branch,
   FileChange,
@@ -42,6 +44,8 @@ export type {
   RepositoryChanges,
   ThreadGit,
 } from 'runtime/contracts';
+
+export * from './reads.js';
 
 /** What a read on one live Thread answers. */
 export type ThreadOutcome<T> =
@@ -304,6 +308,8 @@ export const GitCommandsV1 = ref<Git>('git.commands/v1');
 /** What the changes read of one Project and working directory shows. */
 export interface ChangesObservation {
   readonly read: ReadState<ProjectChanges>;
+  /** The marks of the changed paths, by workspace-relative path, for the trees that draw them. */
+  readonly decorations: ReadonlyMap<string, ChangeMark>;
   /** The failed read's message, as the toast shows it. */
   readonly error?: string;
   readonly fetching: boolean;

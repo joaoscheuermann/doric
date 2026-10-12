@@ -1,4 +1,13 @@
-import type { ProjectLeaseState } from 'desktop-reads';
+/**
+ * Why a Project's sandbox cannot be read, as the monitor states a Project's read.
+ * Restated here rather than imported from `files`: `layout` depends on this
+ * bundle, and `files` depends on `layout`, so this bundle cannot depend on `files`.
+ */
+export type ProjectLeaseState =
+  | 'missing'
+  | 'pending'
+  | 'expired'
+  | 'unavailable';
 
 /**
  * The resource monitor's vocabulary: what a host and a Project's container read,

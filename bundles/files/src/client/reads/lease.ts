@@ -1,4 +1,6 @@
-import type { ProjectLeaseState } from './project-files.js';
+// The host's lease outcome as the window's read surfaces see it.
+
+import type { ProjectLeaseState } from '../../contracts/reads.js';
 
 /** What a host read under a Project's sandbox lease returns. */
 export type LeaseOutcome<Value> =

@@ -7,14 +7,10 @@
 // the row of the current comparison tab is the selected one.
 
 import { CommandsV1, type Services } from 'bundle/contracts';
-import {
-  changedRepositories,
-  type ProjectChange,
-  sandboxNotice,
-} from 'desktop-reads';
+import { PanelState, ReadFeedback, TreeSkeleton } from 'desktop-ui/panels';
 import { ScrollArea } from 'desktop-ui/scroll-area';
 import { SidebarMenu } from 'desktop-ui/sidebar';
-import { PanelState, ReadFeedback, TreeSkeleton } from 'desktop-ui/workspace';
+import { sandboxNotice } from 'files/contracts';
 import { LayoutTabsV1 } from 'layout/contracts';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useStore } from 'zustand/react';
@@ -22,6 +18,7 @@ import { useStore } from 'zustand/react';
 import {
   type ChangesObservation,
   OPEN_COMPARISON_COMMAND,
+  type ProjectChange,
 } from '../../contracts/index.js';
 import {
   type FilesSandbox,
@@ -33,6 +30,7 @@ import { useChanges } from '../hooks/use-changes.js';
 import { useProjectReads } from '../hooks/use-project-reads.js';
 import { useSelection } from '../hooks/use-selection.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
+import { changedRepositories } from '../reads/change-tree.js';
 import { gitClient, requestProjectRefresh } from '../state.js';
 import { ChangesTree } from './changes-tree.js';
 import { collapsedOf, collapsedScope, rootOf } from './store.js';
@@ -154,7 +152,7 @@ function SandboxGate({
   if (read.status === 'idle' || read.status === 'loading') {
     // A read on its way — and the error, when there is one, is what failed it.
     if (tree.error !== undefined) return null;
-    return <TreeSkeleton changes />;
+    return <TreeSkeleton root label="Loading changes" />;
   }
   if (read.status !== 'ready') {
     return (
@@ -222,7 +220,8 @@ function ChangesList({
       />
     );
   }
-  if (read.status === 'loading') return <TreeSkeleton changes />;
+  if (read.status === 'loading')
+    return <TreeSkeleton root label="Loading changes" />;
   if (read.status !== 'ready') {
     return (
       <PanelState

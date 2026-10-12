@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { changedLineCounts } from '../src/file-diff.js';
+import { changedLineCounts } from '../src/code/diff-counts.js';
 
 test('counts insertions and deletions without counting the absent side', () => {
   assert.deepEqual(

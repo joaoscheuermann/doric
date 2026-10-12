@@ -60,7 +60,12 @@ export const createActivate =
       const path = (await nativeWindows.lastPath('workspace', call)) ?? '/';
 
       await nativeWindows.open(
-        { key: 'workspace', path, appearance: WORKSPACE_APPEARANCE },
+        {
+          key: 'workspace',
+          path,
+          appearance: WORKSPACE_APPEARANCE,
+          primary: true,
+        },
         call,
       );
     });

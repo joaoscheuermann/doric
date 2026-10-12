@@ -4,11 +4,11 @@
 // (`project-files-sidebar.tsx:110-115`).
 
 import type { Services } from 'bundle/contracts';
-import { changedLineTotals } from 'desktop-reads';
-import { ChangeCounts } from 'desktop-ui/workspace';
 
 import { useChanges } from '../hooks/use-changes.js';
 import { useSelection } from '../hooks/use-selection.js';
+import { changedLineTotals } from '../reads/change-tree.js';
+import { ChangeCounts } from './change-counts.js';
 
 export function ChangesBadge({ services }: { readonly services: Services }) {
   const { project, thread } = useSelection(services);

@@ -85,7 +85,7 @@ export const bootstrapWindow = async (
           }
         : null;
 
-    const coreFailure = description.key === 'workspace' ? quarantined : null;
+    const coreFailure = description.primary ? quarantined : null;
 
     if (options.mount !== undefined) {
       await options.mount({ description });

@@ -20,6 +20,8 @@ import { z } from 'zod';
 
 export type { LeaseOutcome } from 'runtime/contracts';
 
+export * from './reads.js';
+
 /** One directory level of the workspace (`GET /projects/:id/files`). */
 export type DirectoryRead =
   | {

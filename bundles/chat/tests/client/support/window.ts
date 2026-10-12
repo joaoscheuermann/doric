@@ -327,6 +327,7 @@ export const openChatWindow = async (input: {
     describeWindow: async () => ({
       key: 'main',
       kind: 'window',
+      primary: false,
       path: window.location.pathname,
       generation: 3,
       chrome: {

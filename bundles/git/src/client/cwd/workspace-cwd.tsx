@@ -1,10 +1,10 @@
-import { changedLineTotals, messageFrom } from 'desktop-reads';
+import { messageFrom } from 'desktop-reads';
 import { Button } from 'desktop-ui/button';
+import { ReadFeedback } from 'desktop-ui/panels';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
 import { Separator } from 'desktop-ui/separator';
 import { toast } from 'desktop-ui/sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
-import { ChangeCounts, ReadFeedback } from 'desktop-ui/workspace';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -15,8 +15,10 @@ import { useState } from 'react';
 import type { Thread } from 'runtime/contracts';
 
 import type { ChangesObservation } from '../../contracts/index.js';
+import { ChangeCounts } from '../changes/change-counts.js';
 import { gitLine, gitStatusLine } from '../domain/thread-git.js';
 import { useThreadGit } from '../hooks/use-thread-git.js';
+import { changedLineTotals } from '../reads/change-tree.js';
 import { BranchPicker } from './branch-picker.js';
 
 /** The conversation's worktree context and directory-scoped changes shortcut. */

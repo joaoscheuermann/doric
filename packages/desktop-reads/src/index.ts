@@ -1,12 +1,8 @@
-// Browser-safe read helpers the file, changes, diff and resource surfaces
-// share. Each client part inlines what it imports, so nothing here may hold
-// window-wide state of its own.
-export * from './change-tree.js';
-export * from './cwd.js';
-export * from './file-diff.js';
-export * from './files.js';
-export * from './lease.js';
+// Browser-safe helpers every read surface shares: the path strings the
+// workspace is named in, the refresh queue that coalesces rereads, the retry
+// policy of a read the host answers as pending, and the message a failed read
+// shows. Nothing here names a bundle's concept.
 export * from './messages.js';
-export * from './project-files.js';
-export * from './project-refresh.js';
-export * from './sandbox-reads.js';
+export * from './paths.js';
+export * from './read-policy.js';
+export * from './refresh.js';

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { moveItem } from 'desktop-ui/workspace';
+import { moveItem } from 'desktop-ui/panels';
 
 test('moves a navigation tab while retaining all remaining tabs in order', () => {
   assert.deepEqual(moveItem(['files', 'changes'], 0, 1), ['changes', 'files']);

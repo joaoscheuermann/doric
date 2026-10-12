@@ -8,9 +8,9 @@ import {
   CommandList,
 } from 'desktop-ui/command';
 import { Input } from 'desktop-ui/input';
+import { ReadFeedback } from 'desktop-ui/panels';
 import { ScrollArea } from 'desktop-ui/scroll-area';
 import { Skeleton } from 'desktop-ui/skeleton';
-import { ReadFeedback } from 'desktop-ui/workspace';
 import {
   CheckIcon,
   GitBranchIcon,

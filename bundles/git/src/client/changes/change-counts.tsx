@@ -1,6 +1,10 @@
-import { cn } from '../lib/utils.js';
+import { cn } from 'desktop-ui/utils';
 
-/** Shared Git totals; an empty comparison uses the same muted style everywhere. */
+/**
+ * Git's line totals. An empty comparison uses the muted style; a change adds in
+ * the added colour and removes in the deleted one (the `--git-*` variables this
+ * bundle's stylesheet declares).
+ */
 export function ChangeCounts({
   added,
   removed,
@@ -13,13 +17,17 @@ export function ChangeCounts({
     <span className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums">
       <span
         aria-hidden="true"
-        className={cn(empty ? 'text-muted-foreground' : 'text-git-added')}
+        className={cn(
+          empty ? 'text-muted-foreground' : 'text-[var(--git-added)]',
+        )}
       >
         +{added}
       </span>
       <span
         aria-hidden="true"
-        className={cn(empty ? 'text-muted-foreground' : 'text-git-deleted')}
+        className={cn(
+          empty ? 'text-muted-foreground' : 'text-[var(--git-deleted)]',
+        )}
       >
         −{removed}
       </span>

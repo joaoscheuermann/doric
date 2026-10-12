@@ -36,12 +36,22 @@ const declared = (selector: string): Record<string, string> => {
   return result;
 };
 
-/** The palette variables a variant resolves, without the window variables. */
+/**
+ * The palette variables a variant resolves, without the window variables and
+ * without the git colours: those belong to the git bundle, which states them in
+ * its own stylesheet (its test pins them to the values the old palette had).
+ */
 const palette = (variant: 'light' | 'dark'): Record<string, string> =>
   Object.fromEntries(
     Object.entries(resolvedVariables(tokens, variant)).filter(
-      ([name]) => !name.startsWith('--doric-'),
+      ([name]) => !name.startsWith('--doric-') && !name.startsWith('--git-'),
     ),
+  );
+
+/** The old block without its git colours, the palette the desktop-ui module owns. */
+const withoutGit = (block: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(block).filter(([name]) => !name.startsWith('--git-')),
   );
 
 const channels = (hex: string): number[] =>
@@ -49,13 +59,13 @@ const channels = (hex: string): number[] =>
 
 describe('the palette', () => {
   test('the light variant resolves exactly what the old :root stated', () => {
-    assert.deepEqual(palette('light'), declared(':root'));
+    assert.deepEqual(palette('light'), withoutGit(declared(':root')));
   });
 
   test('the dark variant resolves :root as .dark overrode it', () => {
     assert.deepEqual(palette('dark'), {
-      ...declared(':root'),
-      ...declared('.dark'),
+      ...withoutGit(declared(':root')),
+      ...withoutGit(declared('.dark')),
     });
   });
 
@@ -64,6 +74,14 @@ describe('the palette', () => {
     assert.deepEqual(
       resolvedVariables(tokens),
       resolvedVariables(tokens, 'dark'),
+    );
+  });
+
+  test('the palette leaves the change colours to the bundle that draws them', () => {
+    const names = Object.keys(resolvedVariables(tokens));
+    assert.deepEqual(
+      names.filter((name) => name.startsWith('--git-')),
+      [],
     );
   });
 

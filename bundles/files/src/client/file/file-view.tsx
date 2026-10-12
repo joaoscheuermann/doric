@@ -6,18 +6,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import {
-  fileLanguage,
-  fileReadState,
-  messageFrom,
-  type ProjectFileContent,
-  pendingReadInterval,
-  type ReadState,
-  sandboxNotice,
-  sandboxReadRetry,
-  truncationNotice,
-} from 'desktop-reads';
-import { CodeView } from 'desktop-ui/code';
+import { messageFrom, pendingReadInterval, readRetry } from 'desktop-reads';
+import { CodeView, fileLanguage } from 'desktop-ui/code';
 import {
   Empty,
   EmptyDescription,
@@ -25,13 +15,17 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from 'desktop-ui/empty';
+import { ReadFeedback } from 'desktop-ui/panels';
 import { ScrollArea } from 'desktop-ui/scroll-area';
 import { Skeleton } from 'desktop-ui/skeleton';
-import { ReadFeedback } from 'desktop-ui/workspace';
 import { AlertCircleIcon, FileIcon } from 'lucide-react';
 
+import type { ReadState } from '../../contracts/index.js';
+import { sandboxNotice } from '../../contracts/index.js';
 import { filesReadsOf } from '../api/reads.js';
 import { useProjectReads } from '../hooks/use-project-reads.js';
+import type { ProjectFileContent } from '../reads/project-files.js';
+import { fileReadState, truncationNotice } from '../reads/state.js';
 import { filesKeys } from '../sandbox-store.js';
 
 export function FileView({
@@ -57,7 +51,7 @@ function TabFile({
   readonly path: string;
 }) {
   const query = useQuery({
-    ...sandboxReadRetry,
+    ...readRetry,
     queryKey: filesKeys.file(projectId, path),
     queryFn: () => filesReadsOf(services).file(projectId, path),
     refetchInterval: (query) =>

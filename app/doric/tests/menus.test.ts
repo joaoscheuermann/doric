@@ -67,6 +67,7 @@ const entry = (key: string, id: number): WindowEntry => ({
   key,
   window: { webContents: { id } } as unknown as WindowEntry['window'],
   appearance: { titleBar: 'integrated', background: 'window' },
+  primary: key === 'workspace',
   pinnedGeneration: 1,
   context: { path: null, focus: null },
 });

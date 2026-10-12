@@ -1,10 +1,10 @@
-import {
-  type ChangeRepository,
-  changeDirectoryKey,
-  changesTreeView,
-  type ProjectChange,
-} from 'desktop-reads';
 import { Badge } from 'desktop-ui/badge';
+import {
+  FileTree,
+  indentation,
+  rowInteraction,
+  treeClassName,
+} from 'desktop-ui/panels';
 import {
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -12,14 +12,15 @@ import {
   SidebarMenuSub,
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
-import {
-  ChangeCounts,
-  FileTree,
-  indentation,
-  rowInteraction,
-  treeClassName,
-} from 'desktop-ui/workspace';
 import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+
+import type { ProjectChange } from '../../contracts/index.js';
+import {
+  type ChangeRepository,
+  changeDirectoryKey,
+  changesTreeView,
+} from '../reads/change-tree.js';
+import { ChangeCounts } from './change-counts.js';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {

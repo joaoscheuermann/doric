@@ -22,7 +22,7 @@ const installed = [
   'cancelAnimationFrame',
 ] as const;
 
-type Feedback = typeof import('desktop-ui/workspace').ReadFeedback;
+type Feedback = typeof import('desktop-ui/panels').ReadFeedback;
 type Toast = typeof import('desktop-ui/sonner').toast;
 
 let ReadFeedback: Feedback;
@@ -46,7 +46,7 @@ before(async () => {
   createElement = react.createElement;
   Fragment = react.Fragment;
   ({ createRoot } = await import('react-dom/client'));
-  ({ ReadFeedback } = await import('desktop-ui/workspace'));
+  ({ ReadFeedback } = await import('desktop-ui/panels'));
   ({ toast } = await import('desktop-ui/sonner'));
 });
 

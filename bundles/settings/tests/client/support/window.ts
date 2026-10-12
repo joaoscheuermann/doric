@@ -368,6 +368,7 @@ export const openSettingsWindow = async (input: {
     describeWindow: async () => ({
       key: 'settings',
       kind: 'window',
+      primary: false,
       path: window.location.pathname,
       generation: 3,
       chrome: {

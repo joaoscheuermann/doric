@@ -200,6 +200,7 @@ beforeEach(() => {
       webContents: window.contents,
     } as unknown as WindowEntry['window'],
     appearance: { titleBar: 'integrated', background: 'window' },
+    primary: true,
     pinnedGeneration: null,
     context: { path: null, focus: null },
   };
@@ -279,6 +280,7 @@ describe('desktop IPC dispatcher', () => {
     assert.deepEqual(await describeWindow(), {
       key: 'workspace',
       kind: 'window',
+      primary: true,
       path: '/projects/p1/threads/t1',
       generation: 1,
       chrome: {
@@ -452,6 +454,7 @@ describe('desktop IPC dispatcher', () => {
         webContents: settings.contents,
       } as unknown as WindowEntry['window'],
       appearance: { titleBar: 'integrated', background: 'window' },
+      primary: false,
       pinnedGeneration: null,
       context: { path: null, focus: null },
     });

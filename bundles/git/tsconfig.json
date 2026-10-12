@@ -33,6 +33,9 @@
       "path": "../layout"
     },
     {
+      "path": "../files"
+    },
+    {
       "path": "../../packages/desktop-ui"
     }
   ]

@@ -8,25 +8,22 @@
 
 import { CommandsV1, type Services } from 'bundle/contracts';
 import {
-  changeDecorations,
   emptyDirectoryNotice,
-  sandboxNotice,
-} from 'desktop-reads';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { SidebarMenu } from 'desktop-ui/sidebar';
-import {
   FileTree,
   type FileTreeActions,
   PanelState,
   ReadFeedback,
   TreeSkeleton,
-} from 'desktop-ui/workspace';
+} from 'desktop-ui/panels';
+import { ScrollArea } from 'desktop-ui/scroll-area';
+import { SidebarMenu } from 'desktop-ui/sidebar';
 import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useStore } from 'zustand/react';
 
 import {
   OPEN_FILE_COMMAND,
+  sandboxNotice,
   type TreeObservation,
 } from '../../contracts/index.js';
 import {
@@ -201,7 +198,7 @@ function SandboxGate({
   if (read.status === 'idle' || read.status === 'loading') {
     // A read on its way — and the error, when there is one, is what failed it.
     if (tree.error !== undefined) return null;
-    return <TreeSkeleton changes={false} />;
+    return <TreeSkeleton label="Loading files" />;
   }
   if (read.status !== 'ready') {
     return (
@@ -253,11 +250,7 @@ function FilesView({
           entries={entries}
           expanded={expanded}
           selectedPath={selectedPath}
-          decorations={changeDecorations(
-            changes?.read.status === 'ready'
-              ? changes.read.value.repositories
-              : [],
-          )}
+          decorations={changes?.decorations}
         />
       </SidebarMenu>
     </ScrollArea>

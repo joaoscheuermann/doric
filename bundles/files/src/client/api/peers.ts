@@ -10,10 +10,9 @@ import {
   defineHooks,
   ref,
 } from 'bundle/contracts';
-import type { ProjectChanges } from 'desktop-reads';
 import { z } from 'zod';
 
-import type { ReadState, TreeScope } from '../../contracts/index.js';
+import type { TreeScope } from '../../contracts/index.js';
 
 /** chat.hooks/v1 (D9-10): a sandbox-writing tool finished in a held Thread. */
 export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
@@ -23,9 +22,21 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
   }),
 });
 
-/** What git's changes read shows for one Project and working directory. */
+/**
+ * The mark git's changes read gives one tree row: the description its label
+ * reads, the directory badge count, and the file badge's colour and letter.
+ */
+export interface ChangeMark {
+  readonly description: string;
+  readonly count: number;
+  readonly tone?: string;
+  readonly letter?: string;
+  readonly struck?: boolean;
+}
+
+/** What git's changes read shows for one Project and working directory: its marks by path. */
 export interface ChangesObservation {
-  readonly read: ReadState<ProjectChanges>;
+  readonly decorations: ReadonlyMap<string, ChangeMark>;
   readonly error?: string;
   readonly fetching: boolean;
 }

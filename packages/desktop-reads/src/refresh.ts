@@ -52,18 +52,28 @@ type Refresh = {
 };
 const queues = new WeakMap<QueryClient, Map<string, Refresh>>();
 
-/** Revalidates the sandbox and every cached Git summary belonging to its Project. */
-export function refreshProject(
+/**
+ * Rereads the queries of one scope in a client: those `matches` selects and
+ * that are observed. A failed read and a read whose data is not ready (a lease
+ * still pending) own their retry schedule, so a periodic refresh leaves them
+ * alone; a refresh that is not periodic includes them. Reads in flight when the
+ * refresh starts settle first, then the subset is reread, so an IPC call the
+ * host still runs is never cancelled.
+ *
+ * `scope` names the queue: one trailing refresh per client and scope.
+ */
+export function refreshQueries(
   client: QueryClient,
-  projectId: string,
+  scope: string,
+  matches: (query: Query) => boolean,
   periodic = false,
 ): Promise<void> {
-  let projects = queues.get(client);
-  if (!projects) {
-    projects = new Map();
-    queues.set(client, projects);
+  let scopes = queues.get(client);
+  if (!scopes) {
+    scopes = new Map();
+    queues.set(client, scopes);
   }
-  let refresh = projects.get(projectId);
+  let refresh = scopes.get(scope);
   if (!refresh) {
     const entry: Refresh = {
       includeErrors: false,
@@ -72,8 +82,6 @@ export function refreshProject(
         entry.includeErrors = false;
         const filters = {
           predicate: (query: Query) => {
-            // Failed reads own bounded retry and pending leases own their host
-            // delay. Polling must not restart either policy every fifteen seconds.
             if (
               !includeErrors &&
               (query.state.status === 'error' ||
@@ -83,17 +91,9 @@ export function refreshProject(
                   query.state.data.status !== 'ready'))
             )
               return false;
-            return (
-              (query.queryKey[0] === 'files' &&
-                query.queryKey[1] === projectId) ||
-              (query.queryKey[0] === 'thread' &&
-                query.meta?.projectId === projectId &&
-                query.queryKey[2] === 'git')
-            );
+            return matches(query);
           },
         };
-        // A request already in flight can predate the change. Let it settle, then
-        // reread that subset, instead of cancelling IPC calls the host still runs.
         const inFlight = new Set(
           client
             .getQueryCache()
@@ -124,7 +124,7 @@ export function refreshProject(
         }
       }),
     };
-    projects.set(projectId, entry);
+    scopes.set(scope, entry);
     refresh = entry;
   }
   refresh.includeErrors ||= !periodic;

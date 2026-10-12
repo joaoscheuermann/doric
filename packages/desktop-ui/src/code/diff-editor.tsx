@@ -1,10 +1,11 @@
 // The code view's Monaco module: its language registration and same-origin
 // editor worker, loaded with a dynamic import when the editor mounts.
 
-import { changedLineCounts } from 'desktop-reads';
 import type { editor } from 'monaco-editor/editor/editor.api.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
+import type { DiffTokens } from './code-view-theme.js';
+import { changedLineCounts } from './diff-counts.js';
 import { loadMonaco, type Monaco } from './monaco.js';
 
 export type DiffControls = {
@@ -21,12 +22,15 @@ export function DiffEditor({
   original,
   modified,
   language,
+  diffTokens,
   toolbar,
   footer,
 }: {
   readonly original: string;
   readonly modified: string;
   readonly language: string;
+  /** The palette tokens of the added and removed lines (the caller's colours). */
+  readonly diffTokens: DiffTokens;
   readonly toolbar: (controls: DiffControls) => ReactNode;
   readonly footer: (controls: DiffControls) => ReactNode;
 }) {
@@ -46,10 +50,10 @@ export function DiffEditor({
   // is what lets the create effect stay free of the props it only reads once.
   // Monaco arrives with a dynamic import (`./monaco.js`), so the editor is
   // built from the text of the render current when it lands.
-  const initial = useRef({ language, original, modified });
+  const initial = useRef({ language, original, modified, diffTokens });
   initial.current =
     view.current === undefined
-      ? { language, original, modified }
+      ? { language, original, modified, diffTokens }
       : initial.current;
   const monaco = useRef<Monaco | undefined>(undefined);
   const [ready, setReady] = useState(false);
@@ -90,7 +94,7 @@ export function DiffEditor({
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         stickyScroll: { enabled: false },
-        theme: loaded.defineCodeViewTheme(),
+        theme: loaded.defineCodeViewTheme(initial.current.diffTokens),
       });
       const changed = created.onDidUpdateDiff(() => {
         const lines = created.getLineChanges();

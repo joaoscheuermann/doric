@@ -1,30 +1,30 @@
 // files.sandbox/v1 (stage 10, §3.6): the window's query client of the files
 // bundle and its tree read, moved from the tree part of the layout's
 // `useProjectFiles`. The tree query keeps its key, `['files', p, 'tree', cwd]`,
-// so `refreshProject`'s `['files', p, …]` targeting is unchanged; it retries
-// a failed read a bounded number of times and polls a pending lease at the
+// so the Project's `['files', p, …]` targeting is unchanged; it retries a
+// failed read a bounded number of times and polls a pending lease at the
 // host's hint. It is enabled only while something observes it.
 
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
 import { type Disposable, defineMethod, defineService } from 'bundle/contracts';
 import {
   messageFrom,
-  type ProjectTreeResult,
   pendingReadInterval,
-  ROOT_PATH,
-  refreshProject,
-  sandboxReadRetry,
-  treeReadState,
-  workspacePath,
+  readRetry,
+  refreshQueries,
 } from 'desktop-reads';
 
 import {
   FilesSandboxV1,
   filesSandboxMethods,
+  ROOT_PATH,
   type TreeObservation,
   type TreeScope,
+  workspacePath,
 } from '../contracts/index.js';
 import type { FilesReads } from './api/reads.js';
+import type { ProjectTreeResult } from './reads/project-files.js';
+import { treeReadState } from './reads/state.js';
 
 /**
  * The host is local and answers once, so nothing refetches on its own: a read
@@ -59,6 +59,23 @@ export const filesKeys = {
 export const rootOf = (cwd: string | undefined): string =>
   cwd === undefined ? ROOT_PATH : workspacePath(cwd);
 
+/**
+ * Rereads a Project's sandbox reads in one client: the tree and every file read
+ * of that Project. The Project's Git reads belong to the git bundle, which
+ * rereads them through its own client.
+ */
+export const refreshSandbox = (
+  client: QueryClient,
+  projectId: string,
+  periodic: boolean,
+): Promise<void> =>
+  refreshQueries(
+    client,
+    projectId,
+    (query) => query.queryKey[0] === 'files' && query.queryKey[1] === projectId,
+    periodic,
+  );
+
 export interface SandboxStore {
   readonly client: QueryClient;
   observeTree(
@@ -80,7 +97,7 @@ export const createSandboxStore = (
     const observer = new QueryObserver<ProjectTreeResult, Error>(client, {
       queryKey: filesKeys.tree(projectId, cwd),
       queryFn: () => reads().tree(projectId, root),
-      ...sandboxReadRetry,
+      ...readRetry,
       refetchInterval: (query) =>
         query.state.status === 'error'
           ? false
@@ -106,7 +123,7 @@ export const createSandboxStore = (
       },
     };
   },
-  refresh: (projectId, periodic) => refreshProject(client, projectId, periodic),
+  refresh: (projectId, periodic) => refreshSandbox(client, projectId, periodic),
   dispose: () => client.clear(),
 });
 

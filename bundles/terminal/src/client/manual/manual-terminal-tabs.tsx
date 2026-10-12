@@ -1,6 +1,6 @@
 import { Button } from 'desktop-ui/button';
+import { TabStrip } from 'desktop-ui/panels';
 import { Tabs, TabsContent } from 'desktop-ui/tabs';
-import { TabStrip } from 'desktop-ui/workspace';
 import { TerminalIcon, XIcon } from 'lucide-react';
 
 import type { TerminalApi } from '../api.js';

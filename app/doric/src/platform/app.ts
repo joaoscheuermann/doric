@@ -1167,8 +1167,12 @@ export class DesktopPlatform {
     );
   }
 
-  /** The legacy `doric:settings:open`: `core.open-settings/v1` in desktopMain. */
-  async openSettings(): Promise<void> {
+  /**
+   * Executes the command `id` (with `input`, `{}` by default) in the newest
+   * generation's desktopMain `commands/v1`. Tests use it to drive a command
+   * the way a menu or keybinding does.
+   */
+  async runCommand(id: string, input: unknown = {}): Promise<void> {
     const generation = this.#newest;
     const live =
       generation === undefined ? undefined : this.#lives.get(generation);
@@ -1179,13 +1183,13 @@ export class DesktopPlatform {
 
     await live.process.services
       .use(CommandsV1)
-      .execute('core.open-settings/v1', {}, live.process.call());
+      .execute(id as `${string}/v${number}`, input, live.process.call());
   }
 
   #windowFailure(entry: WindowEntry, failure: WindowFailure): void {
     this.log.error({ windowKey: entry.key, ...failure }, 'Window failure');
 
-    if (entry.key === 'workspace' && failure.kind === 'core') {
+    if (entry.primary && failure.kind === 'core') {
       const live =
         entry.pinnedGeneration === null
           ? undefined

@@ -1,10 +1,3 @@
-import {
-  type ChangeDecoration,
-  changeClassName,
-  changeLetter,
-  emptyDirectoryNotice,
-  type ProjectTreeNode,
-} from 'desktop-reads';
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
 
 import { Badge } from '../components/badge.js';
@@ -23,6 +16,35 @@ import {
   treeClassName,
 } from './tree-guides.js';
 
+/** One tree node: a file, or a directory that carries its own children. */
+export type TreeNode = {
+  readonly name: string;
+  readonly path: string;
+  readonly type: 'directory' | 'file';
+  /** Present for directories; empty when every child is hidden or ignored. */
+  readonly children?: readonly TreeNode[];
+};
+
+/**
+ * What a decorated row shows beside its name, stated by the bundle that knows
+ * what the marks mean. A row with no `tone` shows no change.
+ */
+export type TreeDecoration = {
+  /** The row's accessible label and tooltip suffix. */
+  readonly description: string;
+  /** The badge a directory row carries: how many changes lie below it. */
+  readonly count: number;
+  /** Class names of the decorated name and badge (the change's colour). */
+  readonly tone?: string;
+  /** The letter a changed file's badge carries. */
+  readonly letter?: string;
+  /** Whether a file's name is struck through (a deleted file). */
+  readonly struck?: boolean;
+};
+
+/** The sentence an empty directory shows instead of nothing at all. */
+export const emptyDirectoryNotice = 'This directory is empty.';
+
 export type FileTreeActions = {
   readonly open: (path: string) => void;
   readonly toggle: (path: string) => void;
@@ -31,16 +53,16 @@ export type FileTreeActions = {
 type FileTreeProps = {
   readonly actions: FileTreeActions;
   readonly depth: number;
-  readonly entries: readonly ProjectTreeNode[];
+  readonly entries: readonly TreeNode[];
   readonly expanded: ReadonlySet<string>;
   readonly selectedPath?: string;
-  readonly decorations?: ReadonlyMap<string, ChangeDecoration>;
+  readonly decorations?: ReadonlyMap<string, TreeDecoration>;
 };
 
 /**
- * One level of a Project's sandbox, recursing into the directories that are
- * open. The whole tree arrives through `entries`, so this reads nothing and
- * asks for nothing: expanding a directory only decides what is drawn.
+ * One level of a tree, recursing into the directories that are open. The whole
+ * tree arrives through `entries`, so this reads nothing and asks for nothing:
+ * expanding a directory only decides what is drawn.
  *
  * A directory is a row that expands — on click, Enter, Space or ArrowRight —
  * and collapses on ArrowLeft; a file is a row that selects. A directory that is
@@ -131,14 +153,11 @@ export function FileTree({
                   <span
                     className={cn(
                       'truncate',
-                      decoration?.status !== undefined &&
-                        changeClassName(decoration.status),
-                      decoration?.status !== undefined
+                      decoration?.tone !== undefined && decoration.tone,
+                      decoration?.tone !== undefined
                         ? 'font-normal'
                         : 'font-light',
-                      !directory &&
-                        decoration?.status === 'deleted' &&
-                        'line-through',
+                      !directory && decoration?.struck && 'line-through',
                     )}
                   >
                     {entry.name}
@@ -148,18 +167,8 @@ export function FileTree({
               {decoration !== undefined && (
                 <SidebarMenuBadge>
                   <Badge variant="ghost" className="px-1" aria-hidden>
-                    <span
-                      className={
-                        decoration.status === undefined
-                          ? undefined
-                          : changeClassName(decoration.status)
-                      }
-                    >
-                      {directory
-                        ? decoration.count
-                        : decoration.status === undefined
-                          ? ''
-                          : changeLetter(decoration.status)}
+                    <span className={decoration.tone}>
+                      {directory ? decoration.count : (decoration.letter ?? '')}
                     </span>
                   </Badge>
                 </SidebarMenuBadge>

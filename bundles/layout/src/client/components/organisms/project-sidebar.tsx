@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import { rowInteraction, treeClassName } from 'desktop-ui/panels';
 import {
   Sidebar,
   SidebarContent,
@@ -14,7 +15,6 @@ import {
   SidebarMenuSubItem,
 } from 'desktop-ui/sidebar';
 import { cn } from 'desktop-ui/utils';
-import { rowInteraction, treeClassName } from 'desktop-ui/workspace';
 import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 

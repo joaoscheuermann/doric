@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
 
-import { refreshProject } from '../src/project-refresh.js';
+import { refreshQueries } from '../src/refresh.js';
 
 const client = () =>
   new QueryClient({
@@ -13,13 +13,12 @@ const client = () =>
   });
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test('refreshes sandbox and Git for the owning project without a cached thread list', async (context) => {
+test('rereads only the observed queries the scope selects', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });
   const queries = client();
-  const watch = (key: readonly string[], projectId: string) => {
+  const watch = (key: readonly string[]) => {
     const observer = new QueryObserver(queries, {
       queryKey: key,
-      meta: { projectId },
       initialData: 'old',
       queryFn: async () => 'new',
     });
@@ -27,37 +26,26 @@ test('refreshes sandbox and Git for the owning project without a cached thread l
     context.after(stop);
     return observer;
   };
-  const tree = watch(['files', 'selected', 'tree'], 'selected');
-  const changes = watch(
-    ['files', 'selected', 'changes', '/workspace'],
+  const selected = watch(['scope', 'selected', 'tree']);
+  const other = watch(['scope', 'other', 'tree']);
+  const pending = refreshQueries(
+    queries,
     'selected',
+    (query) => query.queryKey[1] === 'selected',
   );
-  const comparison = watch(
-    ['files', 'selected', 'file-diff', '', 'src/app.ts'],
-    'selected',
-  );
-  const git = watch(['thread', 'new-thread', 'git', '/workspace'], 'selected');
-  const other = watch(
-    ['thread', 'foreign-thread', 'git', '/workspace'],
-    'other',
-  );
-  const pending = refreshProject(queries, 'selected');
   context.mock.timers.tick(250);
   await pending;
-  assert.equal(tree.getCurrentResult().data, 'new');
-  assert.equal(changes.getCurrentResult().data, 'new');
-  assert.equal(comparison.getCurrentResult().data, 'new');
-  assert.equal(git.getCurrentResult().data, 'new');
+  assert.equal(selected.getCurrentResult().data, 'new');
   assert.equal(other.getCurrentResult().data, 'old');
   queries.clear();
 });
 
-test('marks closed surfaces stale without reading disabled queries', async (context) => {
+test('marks selected surfaces stale without reading disabled queries', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });
   const queries = client();
   let hostReads = 0;
   const observer = new QueryObserver(queries, {
-    queryKey: ['files', 'project', 'diff'],
+    queryKey: ['scope', 'project', 'diff'],
     enabled: false,
     initialData: 'old',
     queryFn: async () => {
@@ -66,12 +54,12 @@ test('marks closed surfaces stale without reading disabled queries', async (cont
     },
   });
   const stop = observer.subscribe(() => undefined);
-  const pending = refreshProject(queries, 'project');
+  const pending = refreshQueries(queries, 'project', () => true);
   context.mock.timers.tick(250);
   await pending;
   assert.equal(hostReads, 0);
   assert.equal(
-    queries.getQueryState(['files', 'project', 'diff'])?.isInvalidated,
+    queries.getQueryState(['scope', 'project', 'diff'])?.isInvalidated,
     true,
   );
   stop();
@@ -91,7 +79,7 @@ for (const outcome of ['ready', 'pending', 'failed'] as const) {
     let finish: (result: Result) => void = () => undefined;
     let fail: (error: Error) => void = () => undefined;
     const observer = new QueryObserver(queries, {
-      queryKey: ['files', 'project', 'tree'],
+      queryKey: ['scope', 'project', 'tree'],
       queryFn: async (): Promise<Result> => {
         reads++;
         if (reads === 1)
@@ -103,7 +91,8 @@ for (const outcome of ['ready', 'pending', 'failed'] as const) {
       },
     });
     const stop = observer.subscribe(() => undefined);
-    const pending = refreshProject(queries, 'project');
+    const matches = () => true;
+    const pending = refreshQueries(queries, 'project', matches);
     context.mock.timers.tick(250);
     await turn();
     if (outcome === 'failed') fail(new Error('offline'));
@@ -126,11 +115,11 @@ for (const outcome of ['ready', 'pending', 'failed'] as const) {
         observer.getCurrentResult().status,
         outcome === 'failed' ? 'error' : 'success',
       );
-      const periodic = refreshProject(queries, 'project', true);
+      const periodic = refreshQueries(queries, 'project', matches, true);
       context.mock.timers.tick(250);
       await periodic;
       assert.equal(reads, 1, 'periodic checks preserve the recovery schedule');
-      const retry = refreshProject(queries, 'project');
+      const retry = refreshQueries(queries, 'project', matches);
       context.mock.timers.tick(250);
       await retry;
       assert.equal(observer.getCurrentResult().data?.content, 'new');

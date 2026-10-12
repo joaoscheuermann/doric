@@ -68,7 +68,7 @@ void test('a window of the minimal core shows its own outlet', async () => {
 void test('a core that defines no outlet reports a core failure instead of ready', async () => {
   const bundles: ClientBundle[] = [{ id: 'core', activate: () => undefined }];
   const desktop = fakeDesktop(
-    describe({ key: 'settings' }),
+    describe({ key: 'settings', primary: false }),
     windowCatalog(bundles, { core: 'core' }),
   );
 

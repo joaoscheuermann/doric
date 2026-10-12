@@ -181,6 +181,7 @@ describe('a desktopMain generation (core part, real runner)', () => {
             titleBar: 'integrated',
             background: 'window',
           },
+          primary: true,
         },
       ]);
     } finally {

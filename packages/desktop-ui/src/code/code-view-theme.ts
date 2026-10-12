@@ -17,6 +17,15 @@ const THEME_BY_MODE = { dark: 'doric-dark', light: 'doric-light' } as const;
 type Mode = keyof typeof THEME_BY_MODE;
 
 /**
+ * The two palette tokens a diff paints its added and removed lines with, by
+ * name (`--…`). The caller that shows the diff states them; the code view has none.
+ */
+export type DiffTokens = {
+  readonly added: string;
+  readonly removed: string;
+};
+
+/**
  * The roles code is coloured by. `comment` is the one the palette already has a
  * colour for; the rest are the theme's own.
  */
@@ -85,7 +94,11 @@ const read = (
  * selection nor the occurrence highlight, because Monaco derives both from
  * `editor.selectionBackground`.
  */
-const colours = (mode: Mode, palette: CSSStyleDeclaration): editor.IColors => {
+const colours = (
+  mode: Mode,
+  palette: CSSStyleDeclaration,
+  diff: DiffTokens | undefined,
+): editor.IColors => {
   const hues = HUES[mode];
   const token = (name: string): string | undefined => read(palette, name);
   const hue = (role: Hue): string | undefined => read(palette, hues[role]);
@@ -107,10 +120,14 @@ const colours = (mode: Mode, palette: CSSStyleDeclaration): editor.IColors => {
     // modes, and dark enough under the foreground to read a selection on.
     'editor.selectionBackground': token('--accent'),
     'editorError.foreground': token('--destructive'),
-    'diffEditor.insertedTextBackground': token('--git-added')?.concat('33'),
-    'diffEditor.removedTextBackground': token('--git-deleted')?.concat('33'),
-    'diffEditor.insertedLineBackground': token('--git-added')?.concat('18'),
-    'diffEditor.removedLineBackground': token('--git-deleted')?.concat('18'),
+    'diffEditor.insertedTextBackground':
+      diff && token(diff.added)?.concat('33'),
+    'diffEditor.removedTextBackground':
+      diff && token(diff.removed)?.concat('33'),
+    'diffEditor.insertedLineBackground':
+      diff && token(diff.added)?.concat('18'),
+    'diffEditor.removedLineBackground':
+      diff && token(diff.removed)?.concat('18'),
     // The one widget a read-only panel can still open, the find box, is a
     // raised surface like any other in the app.
     'editorWidget.background': token('--card'),
@@ -175,11 +192,14 @@ const rules = (
 };
 
 /** The theme data for `mode`, read from the palette the document has now. */
-const themeData = (mode: Mode): editor.IStandaloneThemeData => {
+const themeData = (
+  mode: Mode,
+  diff: DiffTokens | undefined,
+): editor.IStandaloneThemeData => {
   const palette = getComputedStyle(document.documentElement);
   return {
     base: mode === 'dark' ? 'vs-dark' : 'vs',
-    colors: colours(mode, palette),
+    colors: colours(mode, palette, diff),
     // Nothing is inherited, so this theme alone decides how code is painted: a
     // token name no rule states is the default foreground rather than a VS Code
     // colour leaking in from `vs-dark`.
@@ -195,11 +215,16 @@ const themeData = (mode: Mode): editor.IStandaloneThemeData => {
  * the one the editor will be painted on; a theme for the other mode could only
  * be built from these same tokens, which would be the wrong ones.
  */
-export const defineCodeViewTheme = (): string => {
+export const defineCodeViewTheme = (diff?: DiffTokens): string => {
   const mode: Mode = document.documentElement.classList.contains('dark')
     ? 'dark'
     : 'light';
-  const name = THEME_BY_MODE[mode];
-  editor.defineTheme(name, themeData(mode));
+  // A diff's colours are its own theme: one per pair of tokens, so a window that
+  // shows a diff and a plain file never repaints each other's editor.
+  const name =
+    diff === undefined
+      ? THEME_BY_MODE[mode]
+      : `${THEME_BY_MODE[mode]}-diff-${diff.added}-${diff.removed}`;
+  editor.defineTheme(name, themeData(mode, diff));
   return name;
 };

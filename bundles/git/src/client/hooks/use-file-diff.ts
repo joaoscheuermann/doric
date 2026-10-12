@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { pendingReadInterval, sandboxReadRetry } from 'desktop-reads';
+import { pendingReadInterval, readRetry } from 'desktop-reads';
 
 import { gitKeys } from '../changes/store.js';
 import { gitClient } from '../state.js';
@@ -12,7 +12,7 @@ export const useFileDiff = (
   path: string,
 ) =>
   useQuery({
-    ...sandboxReadRetry,
+    ...readRetry,
     queryKey: gitKeys.fileDiff(projectId, repository, path),
     queryFn: () =>
       (gitClient()?.store.api() ?? unbound()).fileDiff(

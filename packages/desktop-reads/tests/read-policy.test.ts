@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { pendingReadInterval, sandboxReadRetry } from '../src/sandbox-reads.js';
+import { pendingReadInterval, readRetry } from '../src/read-policy.js';
 
 test('waits for the host lease retry hint before asking again', () => {
   assert.equal(
@@ -32,8 +32,8 @@ test('stops polling when a sandbox read is ready or cannot recover by waiting', 
 });
 
 test('limits rejected reads to a finite retry budget with increasing delays', () => {
-  assert.ok(sandboxReadRetry.retry > 0 && sandboxReadRetry.retry <= 3);
-  assert.ok(sandboxReadRetry.retryDelay(1) > sandboxReadRetry.retryDelay(0));
-  assert.ok(sandboxReadRetry.retryDelay(2) > sandboxReadRetry.retryDelay(1));
-  assert.ok(sandboxReadRetry.retryDelay(100) <= 30000);
+  assert.ok(readRetry.retry > 0 && readRetry.retry <= 3);
+  assert.ok(readRetry.retryDelay(1) > readRetry.retryDelay(0));
+  assert.ok(readRetry.retryDelay(2) > readRetry.retryDelay(1));
+  assert.ok(readRetry.retryDelay(100) <= 30000);
 });
