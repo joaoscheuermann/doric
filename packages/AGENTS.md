@@ -9,7 +9,7 @@ These instructions apply to workflow packages under `packages/`.
 - A package holds a generic primitive or a platform responsibility. A concept a
   bundle owns (Project, Thread, prompt, Git, settings, credential semantics, a
   feature's UI) belongs in `bundles/`. The platform packages (`bundle`,
-  `storage`, `desktop-client`, `desktop-ui`, `desktop-reads`) import no bundle's
+  `storage`, `desktop`) import no bundle's
   `contracts` entrypoint and no bundle source.
 - `packages/host` no longer exists: the `Host` facade types live in
   `bundles/runtime/runtime/src/contracts/tool-host`.

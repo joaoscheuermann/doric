@@ -22,7 +22,7 @@
         "{workspaceRoot}/dist/app/doric/assets/platform/@lexical",
         "{workspaceRoot}/dist/app/doric/assets/platform/zod@*",
         "{workspaceRoot}/dist/app/doric/assets/platform/bundle@*",
-        "{workspaceRoot}/dist/app/doric/assets/platform/desktop-ui@*",
+        "{workspaceRoot}/dist/app/doric/assets/platform/desktop@*",
         "{workspaceRoot}/dist/app/doric/assets/schemas"
       ],
       "options": {

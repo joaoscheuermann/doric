@@ -5,7 +5,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from 'desktop-ui/context-menu';
+} from 'desktop/ui/context-menu';
 import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import type { ReactNode } from 'react';
 

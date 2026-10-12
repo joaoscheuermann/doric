@@ -2,7 +2,7 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from 'desktop-ui/resizable';
+} from 'desktop/ui/resizable';
 import type { ReactNode } from 'react';
 
 /**

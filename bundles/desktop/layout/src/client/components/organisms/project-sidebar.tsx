@@ -1,5 +1,5 @@
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
-import { rowInteraction, treeClassName } from 'desktop-ui/panels';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { rowInteraction, treeClassName } from 'desktop/ui/panels';
 import {
   Sidebar,
   SidebarContent,
@@ -13,8 +13,8 @@ import {
   SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubItem,
-} from 'desktop-ui/sidebar';
-import { cn } from 'desktop-ui/utils';
+} from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 

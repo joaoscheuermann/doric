@@ -7,9 +7,9 @@
 // the row of the current comparison tab is the selected one.
 
 import { CommandsV1, type Services } from 'bundle/contracts';
-import { PanelState, ReadFeedback, TreeSkeleton } from 'desktop-ui/panels';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { SidebarMenu } from 'desktop-ui/sidebar';
+import { PanelState, ReadFeedback, TreeSkeleton } from 'desktop/ui/panels';
+import { ScrollArea } from 'desktop/ui/scroll-area';
+import { SidebarMenu } from 'desktop/ui/sidebar';
 import { sandboxNotice } from 'files/contracts';
 import { LayoutTabsV1 } from 'layout/contracts';
 import { type ReactNode, useEffect, useState } from 'react';

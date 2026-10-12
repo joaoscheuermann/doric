@@ -29,15 +29,15 @@ src/client/
   window tests in `tests/client/` or in the running app.
 - One file, one responsibility; split along that rule rather than by taste, and
   do not change a neighbour's contract in the same step as the cut.
-- The shadcn primitives are `desktop-ui/<name>`; `toast` comes only from
-  `desktop-ui/sonner`, so a window has one toast store.
+- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
+  `desktop/ui/sonner`, so a window has one toast store.
 - Imports are relative with `.js` extensions; the package is ESM and the part
   is bundled by `bundle`'s build.
 
 ## Boundaries
 
 - The client part never imports `bundle`, `bundle/runtime` or
-  `desktop-client`, and touches no DOM at module load.
+  `desktop/client`, and touches no DOM at module load.
 - Conversation history is durable on the host and replayed, never invented
   locally: the Thread chat store subscribes each opened Thread and treats its
   copy as a view; `history.snapshots/v1` only seeds it.

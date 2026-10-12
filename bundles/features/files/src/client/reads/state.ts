@@ -1,5 +1,5 @@
 // What the tree and the file view show for each sandbox read (moved from
-// `desktop-reads`): the state a read leaves on screen, and the path chain the
+// `desktop/reads`): the state a read leaves on screen, and the path chain the
 // breadcrumb names.
 
 import type { ReadState } from '../../contracts/index.js';

@@ -51,14 +51,14 @@ export const bundleContracts = {
 };
 
 export const desktopUi = {
-  package: 'desktop-ui',
-  root: 'packages/desktop-ui',
-  theme: 'packages/desktop-ui/src/styles/theme.css',
-  fonts: 'packages/desktop-ui/assets/fonts',
+  package: 'desktop',
+  root: 'packages/desktop',
+  theme: 'packages/desktop/src/styles/theme.css',
+  fonts: 'packages/desktop/assets/fonts',
   /** `fonts.css` names the faces relative to its source folder. */
   fontsUrlPrefix: '../../assets/fonts/',
-  tokens: 'packages/desktop-ui/dist/tokens.json',
-  /** Module workers, each served at `file` inside the desktop-ui folder. */
+  tokens: 'packages/desktop/dist/tokens.json',
+  /** Module workers, each served at `file` inside the desktop/ui folder. */
   workers: [
     {
       source: 'src/code/editor.worker.ts',

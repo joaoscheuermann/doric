@@ -1,5 +1,5 @@
-import { Button } from 'desktop-ui/button';
-import { cn } from 'desktop-ui/utils';
+import { Button } from 'desktop/ui/button';
+import { cn } from 'desktop/ui/utils';
 import {
   $getNodeByKey,
   DecoratorNode,

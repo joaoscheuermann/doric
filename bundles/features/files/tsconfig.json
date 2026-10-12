@@ -35,10 +35,7 @@
       "path": "../../desktop/layout"
     },
     {
-      "path": "../../../packages/desktop-ui"
-    },
-    {
-      "path": "../../../packages/desktop-reads"
+      "path": "../../../packages/desktop"
     }
   ],
   "exclude": ["src/client/**"]

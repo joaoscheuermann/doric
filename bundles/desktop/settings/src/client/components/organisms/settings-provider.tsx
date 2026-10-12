@@ -1,9 +1,9 @@
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from 'desktop-ui/collapsible';
+} from 'desktop/ui/collapsible';
 import {
   Combobox,
   ComboboxContent,
@@ -11,14 +11,14 @@ import {
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
-} from 'desktop-ui/combobox';
+} from 'desktop/ui/combobox';
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
+} from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
 import {
   Select,
   SelectContent,
@@ -26,7 +26,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from 'desktop-ui/select';
+} from 'desktop/ui/select';
 import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
 
 import {

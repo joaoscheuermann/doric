@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { messageFrom, pendingReadInterval } from 'desktop-reads';
-import { toast } from 'desktop-ui/sonner';
+import { messageFrom, pendingReadInterval } from 'desktop/reads';
+import { toast } from 'desktop/ui/sonner';
 import type { Thread } from 'runtime/contracts';
 
 import { gitKeys } from '../changes/store.js';

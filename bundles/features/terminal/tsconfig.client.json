@@ -17,7 +17,7 @@
     "src/contracts/**/*.ts"
   ],
   "references": [
-    { "path": "../../../packages/desktop-ui" },
+    { "path": "../../../packages/desktop" },
     { "path": "../../../packages/bundle" }
   ]
 }

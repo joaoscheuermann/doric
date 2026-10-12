@@ -61,7 +61,7 @@ const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
     template: async () => TEMPLATE,
     generation: () => 3,
     importMap: () => map,
-    themeHref: '/platform/desktop-ui@1.0.0/theme.css',
+    themeHref: '/platform/desktop@1.0.0/theme.css',
     devServerOrigin: 'http://localhost:4200',
   }),
   ...overrides,
@@ -269,7 +269,7 @@ describe('shell document', () => {
     const { html } = renderShell(TEMPLATE, {
       generation: 7,
       importMap: map,
-      themeHref: '/platform/desktop-ui@1.0.0/theme.css',
+      themeHref: '/platform/desktop@1.0.0/theme.css',
     });
     const head = html.slice(html.indexOf('<head>') + '<head>'.length);
 
@@ -280,7 +280,7 @@ describe('shell document', () => {
     );
     assert.ok(
       head.indexOf(
-        '<link rel="stylesheet" href="/platform/desktop-ui@1.0.0/theme.css">',
+        '<link rel="stylesheet" href="/platform/desktop@1.0.0/theme.css">',
       ) < head.indexOf('/platform/shell@1.0.0/styles.css'),
     );
     assert.match(html, /<html lang="en" class="dark">/u);

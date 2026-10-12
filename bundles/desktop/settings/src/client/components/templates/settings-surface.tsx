@@ -5,8 +5,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from 'desktop-ui/breadcrumb';
-import { Separator } from 'desktop-ui/separator';
+} from 'desktop/ui/breadcrumb';
+import { Separator } from 'desktop/ui/separator';
 import {
   Sidebar,
   SidebarContent,
@@ -15,7 +15,7 @@ import {
   SidebarGroupLabel,
   SidebarInput,
   SidebarMenu,
-} from 'desktop-ui/sidebar';
+} from 'desktop/ui/sidebar';
 import type { LucideIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 

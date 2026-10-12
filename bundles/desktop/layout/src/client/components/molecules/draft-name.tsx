@@ -1,4 +1,4 @@
-import { indentation, TreeGuides } from 'desktop-ui/panels';
+import { indentation, TreeGuides } from 'desktop/ui/panels';
 import { MessageSquareIcon } from 'lucide-react';
 
 import { EditableName } from './editable-name.js';

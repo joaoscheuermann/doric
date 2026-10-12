@@ -1,6 +1,6 @@
-import type { DesktopPush } from 'desktop-client/protocol';
+import type { DesktopPush } from 'desktop/protocol';
 
-/** The `doric:desktop:push` channel (`desktop-client`'s DESKTOP_PUSH_CHANNEL). */
+/** The `doric:desktop:push` channel (`desktop/client`'s DESKTOP_PUSH_CHANNEL). */
 export const DESKTOP_PUSH_CHANNEL = 'doric:desktop:push';
 
 export interface PushTarget {

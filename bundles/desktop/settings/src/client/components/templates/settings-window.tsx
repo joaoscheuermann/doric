@@ -1,7 +1,7 @@
-import { Button } from 'desktop-ui/button';
-import { Separator } from 'desktop-ui/separator';
-import { SidebarProvider } from 'desktop-ui/sidebar';
-import { cn } from 'desktop-ui/utils';
+import { Button } from 'desktop/ui/button';
+import { Separator } from 'desktop/ui/separator';
+import { SidebarProvider } from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import { ArrowLeftIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 

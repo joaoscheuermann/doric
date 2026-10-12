@@ -6,10 +6,10 @@
 // R-9.9).
 
 import { type Services, UiV1 } from 'bundle/contracts';
-import { Button } from 'desktop-ui/button';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { TooltipProvider } from 'desktop-ui/tooltip';
-import { cn } from 'desktop-ui/utils';
+import { Button } from 'desktop/ui/button';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { TooltipProvider } from 'desktop/ui/tooltip';
+import { cn } from 'desktop/ui/utils';
 import { BotIcon } from 'lucide-react';
 import { type ReactNode, StrictMode, useEffect, useRef } from 'react';
 

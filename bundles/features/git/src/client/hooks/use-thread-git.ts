@@ -4,7 +4,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { messageFrom, pendingReadInterval, readRetry } from 'desktop-reads';
+import { messageFrom, pendingReadInterval, readRetry } from 'desktop/reads';
 import { useCallback } from 'react';
 import type { Thread } from 'runtime/contracts';
 

@@ -45,8 +45,8 @@ const clientExternals = [
   'react-dom/*',
   'lexical',
   '@lexical/*',
-  'desktop-ui',
-  'desktop-ui/*',
+  'desktop/ui',
+  'desktop/ui/*',
   'zod',
   'zod/*',
   'bundle/contracts',
@@ -80,8 +80,7 @@ const forbiddenInDesktop = (specifier: string): boolean => {
     name === 'react-dom' ||
     name === 'lexical' ||
     name.startsWith('@lexical/') ||
-    name === 'desktop-ui' ||
-    name === 'desktop-client'
+    name === 'desktop'
   );
 };
 
@@ -89,7 +88,9 @@ const forbiddenInDesktop = (specifier: string): boolean => {
 const forbiddenInClient = (specifier: string): boolean =>
   specifier === 'bundle' ||
   specifier === 'bundle/runtime' ||
-  packageOf(specifier) === 'desktop-client';
+  specifier === 'desktop' ||
+  specifier === 'desktop/client' ||
+  specifier.startsWith('desktop/client/');
 
 const exists = async (path: string): Promise<boolean> => {
   try {

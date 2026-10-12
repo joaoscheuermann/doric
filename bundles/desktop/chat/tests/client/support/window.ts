@@ -1,5 +1,5 @@
 // One real workspace window in this process: a happy-dom window as the
-// globals, the window platform of `desktop-client`, the core's client part
+// globals, the window platform of `desktop/client`, the core's client part
 // and the chat client part exactly as their builds ship them, plus an
 // optional in-memory "probe" bundle standing for another bundle that extends
 // the conversation. The boundaries faked are the preload API
@@ -26,7 +26,7 @@ import {
   type DoricDesktopApi,
   type RemoteContract,
   type WindowCatalog,
-} from 'desktop-client';
+} from 'desktop/client';
 import { Window } from 'happy-dom';
 
 const here = dirname(fileURLToPath(import.meta.url));

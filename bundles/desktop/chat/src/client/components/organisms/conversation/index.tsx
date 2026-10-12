@@ -17,8 +17,8 @@ import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import type { Ui } from 'bundle/contracts';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { toast } from 'desktop-ui/sonner';
+import { ScrollArea } from 'desktop/ui/scroll-area';
+import { toast } from 'desktop/ui/sonner';
 import {
   $getRoot,
   $isTextNode,

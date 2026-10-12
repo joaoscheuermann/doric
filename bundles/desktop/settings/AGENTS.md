@@ -27,15 +27,15 @@ src/client/
   `tests/client/` or in the running app.
 - `domain/config.ts` mirrors the host's validation so a draft the host would
   refuse is never sent; the host re-validates.
-- The shadcn primitives are `desktop-ui/<name>`; `toast` comes only from
-  `desktop-ui/sonner`.
+- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
+  `desktop/ui/sonner`.
 - Imports are relative with `.js` extensions; the package is ESM and the part
   is bundled by `bundle`'s build.
 
 ## Boundaries
 
 - The client part never imports `bundle`, `bundle/runtime` or
-  `desktop-client`, and touches no DOM at module load.
+  `desktop/client`, and touches no DOM at module load.
 - A secret is never read back: the host answers only whether one is stored.
 - Autosave is bound to the activation services and flushes in the window's
   `onFlushHook`, never through an element's services (D9-17).

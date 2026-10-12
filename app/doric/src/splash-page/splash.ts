@@ -2,7 +2,7 @@
 // main streams on `doric.splash/v1.state` and sends the chosen action with
 // `doric.splash/v1.act`.
 
-import type { DoricDesktopApi } from 'desktop-client/protocol';
+import type { DoricDesktopApi } from 'desktop/protocol';
 
 import {
   loadingText,

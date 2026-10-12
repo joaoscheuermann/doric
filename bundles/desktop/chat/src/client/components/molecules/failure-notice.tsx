@@ -8,8 +8,8 @@
  * a warning in the theme's own warning tone.
  */
 
-import { Marker, MarkerContent, MarkerIcon } from 'desktop-ui/marker';
-import { cn } from 'desktop-ui/utils';
+import { Marker, MarkerContent, MarkerIcon } from 'desktop/ui/marker';
+import { cn } from 'desktop/ui/utils';
 import { CircleAlertIcon, TriangleAlertIcon } from 'lucide-react';
 
 import {

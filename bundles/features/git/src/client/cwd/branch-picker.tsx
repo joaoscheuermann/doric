@@ -1,16 +1,16 @@
-import { messageFrom } from 'desktop-reads';
-import { CommandPrimitive } from 'desktop-ui/cmdk';
+import { messageFrom } from 'desktop/reads';
+import { CommandPrimitive } from 'desktop/ui/cmdk';
 import {
   Command,
   CommandEmpty,
   CommandGroup,
   CommandItem,
   CommandList,
-} from 'desktop-ui/command';
-import { Input } from 'desktop-ui/input';
-import { ReadFeedback } from 'desktop-ui/panels';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { Skeleton } from 'desktop-ui/skeleton';
+} from 'desktop/ui/command';
+import { Input } from 'desktop/ui/input';
+import { ReadFeedback } from 'desktop/ui/panels';
+import { ScrollArea } from 'desktop/ui/scroll-area';
+import { Skeleton } from 'desktop/ui/skeleton';
 import {
   CheckIcon,
   GitBranchIcon,

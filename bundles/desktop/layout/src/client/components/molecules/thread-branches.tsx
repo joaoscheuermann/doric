@@ -3,13 +3,13 @@ import {
   rowInteraction,
   TreeGuides,
   treeClassName,
-} from 'desktop-ui/panels';
+} from 'desktop/ui/panels';
 import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-} from 'desktop-ui/sidebar';
-import { cn } from 'desktop-ui/utils';
+} from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import {
   ChevronRightIcon,
   GitBranchIcon,

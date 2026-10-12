@@ -1,9 +1,9 @@
 // The window tokens main needs, read once from the platform's `tokens.json`
-// (the file `desktop-ui` generates from its token module).
+// (the file `desktop/ui` generates from its token module).
 
 import { readFileSync } from 'node:fs';
 
-import type { Tokens } from 'desktop-ui/tokens';
+import type { Tokens } from 'desktop/ui/tokens';
 
 export interface WindowTokens {
   /** The chrome bar height, in CSS pixels. */
@@ -16,7 +16,7 @@ export interface WindowTokens {
   color(name: string, dark: boolean): string;
   /**
    * `doric.tokens/v1.get()`: the shared tokens, the default (dark) variant
-   * and the window variables, as `desktop-ui`'s `resolvedVariables` states
+   * and the window variables, as `desktop/ui`'s `resolvedVariables` states
    * them (a test pins the equality).
    */
   variables(): Readonly<Record<string, string>>;
@@ -57,6 +57,6 @@ export const windowTokens = (tokens: Tokens): WindowTokens => {
   });
 };
 
-/** Reads `desktop-ui@<v>/tokens.json` of the platform assets. */
+/** Reads `desktop@<v>/tokens.json` of the platform assets. */
 export const loadWindowTokens = (path: string): WindowTokens =>
   windowTokens(JSON.parse(readFileSync(path, 'utf8')) as Tokens);

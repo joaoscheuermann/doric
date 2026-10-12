@@ -1,8 +1,8 @@
-import { Button } from 'desktop-ui/button';
-import { ToolbarDivider } from 'desktop-ui/panels';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
-import { cn } from 'desktop-ui/utils';
+import { Button } from 'desktop/ui/button';
+import { ToolbarDivider } from 'desktop/ui/panels';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
+import { cn } from 'desktop/ui/utils';
 import { CpuIcon, MemoryStickIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 

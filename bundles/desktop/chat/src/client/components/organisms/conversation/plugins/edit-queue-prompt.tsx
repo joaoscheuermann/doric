@@ -1,6 +1,6 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'desktop-ui/sonner';
+import { toast } from 'desktop/ui/sonner';
 import {
   $createTextNode,
   $parseSerializedNode,

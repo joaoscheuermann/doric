@@ -41,7 +41,7 @@
       "path": "../terminal"
     },
     {
-      "path": "../../../packages/desktop-reads/tsconfig.lib.json"
+      "path": "../../../packages/desktop/tsconfig.lib.json"
     },
     {
       "path": "../../desktop/layout"

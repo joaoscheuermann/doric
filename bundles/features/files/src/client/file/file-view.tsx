@@ -6,18 +6,18 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import { messageFrom, pendingReadInterval, readRetry } from 'desktop-reads';
-import { CodeView, fileLanguage } from 'desktop-ui/code';
+import { messageFrom, pendingReadInterval, readRetry } from 'desktop/reads';
+import { CodeView, fileLanguage } from 'desktop/ui/code';
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from 'desktop-ui/empty';
-import { ReadFeedback } from 'desktop-ui/panels';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { Skeleton } from 'desktop-ui/skeleton';
+} from 'desktop/ui/empty';
+import { ReadFeedback } from 'desktop/ui/panels';
+import { ScrollArea } from 'desktop/ui/scroll-area';
+import { Skeleton } from 'desktop/ui/skeleton';
 import { AlertCircleIcon, FileIcon } from 'lucide-react';
 
 import type { ReadState } from '../../contracts/index.js';

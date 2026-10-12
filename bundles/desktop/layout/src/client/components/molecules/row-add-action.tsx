@@ -1,4 +1,4 @@
-import { SidebarMenuAction, SidebarMenuBadge } from 'desktop-ui/sidebar';
+import { SidebarMenuAction, SidebarMenuBadge } from 'desktop/ui/sidebar';
 import { PlusIcon } from 'lucide-react';
 
 import { useExecutionTime } from '../../hooks/use-execution-time.js';

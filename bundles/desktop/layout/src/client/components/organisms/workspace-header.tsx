@@ -1,6 +1,6 @@
-import { Button } from 'desktop-ui/button';
-import { Separator } from 'desktop-ui/separator';
-import { useSidebar } from 'desktop-ui/sidebar';
+import { Button } from 'desktop/ui/button';
+import { Separator } from 'desktop/ui/separator';
+import { useSidebar } from 'desktop/ui/sidebar';
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 

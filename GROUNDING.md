@@ -119,7 +119,7 @@ stage 9 only boots the client bundles; the UI described below is drawn by the
 `layout`, `chat` and `settings` client bundles, the feature bundles' client parts
 that `layout` hosts, and the core's outlet, using
 Tailwind CSS and the shadcn/ui components and Radix primitives of
-`packages/desktop-ui`. Where this section says "the renderer", it means those
+`packages/desktop`. Where this section says "the renderer", it means those
 bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
@@ -229,7 +229,7 @@ The title navigates independently of the toggle. Opening reveals the recorded
 status and read-only Markdown. Mouse and keyboard share the node's open state,
 which survives transcript updates.
 The packaged CSP permits fonts from `self`
-only, and the faces vendored by `packages/desktop-ui` under `assets/fonts` are the only ones the
+only, and the faces vendored by `packages/desktop` under `assets/fonts` are the only ones the
 renderer wears: Noto Sans for the app's own surfaces, and IBM Plex Mono for the
 conversation body alone. The sidebar
 tree follows the selected Project's live
@@ -565,8 +565,7 @@ The platform installs bundles, composes providers, routes calls, and runs
 processes, windows, and IPC. It never knows a bundle's concepts (Project,
 Thread, prompt, queue, Git, settings) or their methods and storage formats, and
 a field of a generic schema that names one is a leak. The platform is
-`packages/bundle`, `packages/storage`, `packages/desktop-client`,
-`packages/desktop-ui`, `packages/desktop-reads`, `app/doric`,
+`packages/bundle`, `packages/storage`, `packages/desktop`, `app/doric`,
 `app/doric-renderer`, `app/doric-platform`, and the kernel `agents/doric`.
 Bundles reach one another only through published contracts; a bundle may import
 another bundle's `<id>/contracts` entrypoint, never its source.
@@ -637,7 +636,7 @@ payload)` to the same bundle in every other live generation. The kernel names
   command runs by id through `commands/v1`.
 
 Client reads and UI that name a bundle's concept belong to that bundle.
-`packages/desktop-reads` and `packages/desktop-ui` hold only generic primitives
+`packages/desktop/reads` and `packages/desktop/ui` hold only generic primitives
 (refresh queues, path utilities, tree and panel components, tokens).
 
 ### Current Runtime
@@ -901,10 +900,11 @@ without a Settings item or `Cmd+,`. One dispatcher routes window calls by
 contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
 and the renderer was the shell's legacy React tree (both removed by stage 9);
-the shared platform packages are
-`packages/desktop-ui` (tokens, theme, fonts and shadcn/ui components),
-`packages/desktop-client` (the window client) and `app/doric-platform` (the
-platform files and import map). The CSP adds `worker-src 'self'` and the import
+the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
+theme, fonts and shadcn/ui components; `desktop/client` runs the window;
+`desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
+window-main API. `app/doric-platform` builds the platform files and import map.
+The CSP adds `worker-src 'self'` and the import
 map's script hash. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`: the core's
 `onAppReadyHook` asks the platform through `doric.migrations/v1.storage` to copy
@@ -946,7 +946,7 @@ new `layout.panel/v1` (the Project panel over `layout.panel` region items, with
 under each Thread), `chat.hooks/v1@1.1.0.onThreadUpdateHook`, a
 `chat.delegated-input/v1` renderer slot and `<chat-readonly-markdown>`, and
 `settings.config/v1` (the settings window's one autosave draft). The layout
-imports the shared widgets from `desktop-ui/workspace` and `desktop-ui/code`.
+imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
@@ -1004,7 +1004,7 @@ in the window at receive time), and shown by main's
 announcement, the client form of `doric.notifications/v1` and the
 `doric.shell/v1.notify` call are gone. Feature bundle stylesheets also scan
 the stage-9 window bundles' sources, so a shared class never lands after a
-responsive variant of another sheet, and `desktop-ui/sidebar` exports
+responsive variant of another sheet, and `desktop/ui/sidebar` exports
 `SidebarScope`, the sidebar context alone, for an element that draws sidebar
 rows from its own React root.
 

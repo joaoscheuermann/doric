@@ -1,8 +1,8 @@
-// The fixture shell's bootstrap: desktop-client's real bootstrap with a
+// The fixture shell's bootstrap: desktop/client's real bootstrap with a
 // mount that only records the path it mounted, and a `ready()` that marks
 // the page so tests can wait for it.
 
-import { bootstrapWindow } from 'desktop-client';
+import { bootstrapWindow } from 'desktop/client';
 
 const exposed = window.doric.desktop;
 const desktop = {

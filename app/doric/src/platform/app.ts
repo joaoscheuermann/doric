@@ -26,11 +26,7 @@ import {
   statesOf,
   type WireCall,
 } from 'bundle/runtime';
-import type {
-  WindowChrome,
-  WindowFailure,
-  WindowMode,
-} from 'desktop-client/protocol';
+import type { WindowChrome, WindowFailure, WindowMode } from 'desktop/protocol';
 import {
   app,
   type BrowserWindow,
@@ -203,7 +199,7 @@ export class DesktopPlatform {
     this.tokens = loadWindowTokens(
       join(
         this.resources.platformRoot,
-        `desktop-ui@${PLATFORM_VERSION}`,
+        `desktop@${PLATFORM_VERSION}`,
         'tokens.json',
       ),
     );
@@ -488,7 +484,7 @@ export class DesktopPlatform {
           : () => devProxy.template(),
       generation: () => this.#newest ?? null,
       importMap: (generation) => this.#importMap(generation),
-      themeHref: `/platform/desktop-ui@${PLATFORM_VERSION}/theme.css`,
+      themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
       devServerOrigin,
     });
 

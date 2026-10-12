@@ -127,7 +127,7 @@ describe('doric:// privileges', () => {
               template: () => readFile(join(shellRoot, 'shell.html'), 'utf8'),
               generation: () => 1,
               importMap: () => importMap,
-              themeHref: '/platform/desktop-ui@1.0.0/theme.css',
+              themeHref: '/platform/desktop@1.0.0/theme.css',
               devServerOrigin: 'http://localhost:4200',
             }).render(),
         },

@@ -26,7 +26,7 @@ module.exports = {
     publicPath: shellPath,
   },
   resolve: {
-    // Workspace packages (desktop-client, bundle) compile from source into
+    // Workspace packages (desktop/client, bundle) compile from source into
     // the shell's one script.
     conditionNames: ['@org/source', 'import', 'module', 'browser', 'default'],
   },
@@ -54,7 +54,7 @@ module.exports = {
       index: './src/shell.html',
       baseHref: false,
       deployUrl: shellPath,
-      // The faces and their licenses ship with desktop-ui's theme (stage 8);
+      // The faces and their licenses ship with desktop/ui's theme (stage 8);
       // the shell's only asset is its icon.
       assets: ['./src/favicon.ico'],
       styles: ['./src/styles.css'],

@@ -7,7 +7,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from 'desktop-ui/alert-dialog';
+} from 'desktop/ui/alert-dialog';
 
 import type { Entity } from '../../domain/workspace.js';
 

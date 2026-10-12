@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { CloseRequest } from 'desktop-client/protocol';
+import type { CloseRequest } from 'desktop/protocol';
 
 import {
   CloseAnswers,

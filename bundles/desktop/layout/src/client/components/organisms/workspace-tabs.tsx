@@ -2,8 +2,8 @@
 // element (`layout.tabs/v1`) since WP-10N moved the file, diff and terminal
 // tabs to the files, git and terminal bundles.
 
-import { TabStrip } from 'desktop-ui/panels';
-import { Tabs, TabsContent } from 'desktop-ui/tabs';
+import { TabStrip } from 'desktop/ui/panels';
+import { Tabs, TabsContent } from 'desktop/ui/tabs';
 import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 

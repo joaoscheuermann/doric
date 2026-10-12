@@ -3,8 +3,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
+} from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
 
 import {
   type Configuration,

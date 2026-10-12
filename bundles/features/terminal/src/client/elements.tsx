@@ -4,8 +4,8 @@
 // activation's store, never an element's own state (D9-17).
 
 import type { Services } from 'bundle/contracts';
-import { Button } from 'desktop-ui/button';
-import { defineReactElement } from 'desktop-ui/react-element';
+import { Button } from 'desktop/ui/button';
+import { defineReactElement } from 'desktop/ui/react-element';
 import { TerminalIcon } from 'lucide-react';
 
 import type { TerminalApi } from './api.js';

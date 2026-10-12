@@ -20,7 +20,7 @@ import {
   type Services,
   UiV1,
 } from 'bundle/contracts';
-import { toast } from 'desktop-ui/sonner';
+import { toast } from 'desktop/ui/sonner';
 
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';

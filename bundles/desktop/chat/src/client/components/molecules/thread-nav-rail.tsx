@@ -8,10 +8,10 @@
  * the reader scrolls again.
  */
 
-import { Button } from 'desktop-ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
-import { Separator } from 'desktop-ui/separator';
-import { cn } from 'desktop-ui/utils';
+import { Button } from 'desktop/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { Separator } from 'desktop/ui/separator';
+import { cn } from 'desktop/ui/utils';
 import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';

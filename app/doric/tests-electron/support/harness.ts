@@ -1,6 +1,6 @@
 // What the Electron tests boot: the real desktop platform over the built
 // platform assets, a fake host (a Socket.IO server in this process, the real
-// network boundary) and a fixture shell whose bootstrap is desktop-client's.
+// network boundary) and a fixture shell whose bootstrap is desktop/client's.
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server as HttpServer } from 'node:http';
@@ -203,7 +203,7 @@ const SHELL = `<!doctype html>
 </html>
 `;
 
-/** A shell root with `shell.html` and desktop-client's bootstrap bundled. */
+/** A shell root with `shell.html` and desktop/client's bootstrap bundled. */
 const fixtureShell = async (directory: string): Promise<string> => {
   const { build } = await import('esbuild');
   const root = join(directory, 'shell');

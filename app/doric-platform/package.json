@@ -5,7 +5,7 @@
   "type": "module",
   "dependencies": {
     "bundle": "0.0.1",
-    "desktop-ui": "1.0.0"
+    "desktop": "1.0.0"
   },
   "devDependencies": {
     "@tailwindcss/node": "4.3.3",

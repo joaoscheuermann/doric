@@ -5,8 +5,8 @@
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { SidebarScope } from 'desktop-ui/sidebar';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { SidebarScope } from 'desktop/ui/sidebar';
 import type { ReactNode } from 'react';
 
 import { FileView } from './file/file-view.js';

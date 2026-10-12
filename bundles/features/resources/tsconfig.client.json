@@ -18,10 +18,7 @@
   ],
   "references": [
     {
-      "path": "../../../packages/desktop-ui"
-    },
-    {
-      "path": "../../../packages/desktop-reads"
+      "path": "../../../packages/desktop"
     },
     {
       "path": "../../../packages/bundle"

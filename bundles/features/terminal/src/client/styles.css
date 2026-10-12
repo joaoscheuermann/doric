@@ -3,13 +3,13 @@
  * platform theme, which the window loads once.
  */
 @import 'tailwindcss/utilities.css' layer(utilities);
-@reference 'desktop-ui/tailwind.css';
+@reference 'desktop/ui/tailwind.css';
 @source './';
 /*
  * The shared components' classes too, so this sheet's utilities are always the
  * whole sorted set the window uses (as the files, settings and chat sheets do).
  */
-@source '../../../../../packages/desktop-ui/src';
+@source '../../../../../packages/desktop/src';
 
 /* Match ScrollArea's 10px lane, 1px padding and transparent left border.
  * The scope outranks xterm's injected hover/active background shorthand so it

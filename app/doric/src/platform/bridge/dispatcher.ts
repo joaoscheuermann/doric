@@ -30,7 +30,7 @@ import {
   type WindowDescription,
   type WindowFailure,
   type WindowMode,
-} from 'desktop-client/protocol';
+} from 'desktop/protocol';
 import { z } from 'zod';
 
 import type { ConnectionSource } from '../../connection/relay';

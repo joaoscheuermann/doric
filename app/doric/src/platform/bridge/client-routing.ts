@@ -20,7 +20,7 @@ import {
   type WindowCatalog,
   type WindowMode,
   type WindowPart,
-} from 'desktop-client/protocol';
+} from 'desktop/protocol';
 
 import type { DesktopResolution } from '../catalog/resolve';
 import { bundleUrl } from '../protocol/import-map';

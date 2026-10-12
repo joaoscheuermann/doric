@@ -4,10 +4,10 @@ import {
   type Services,
   WindowHooksV1,
 } from 'bundle/contracts';
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
-import { SidebarMenuButton, SidebarMenuItem } from 'desktop-ui/sidebar';
-import { Skeleton } from 'desktop-ui/skeleton';
-import { toast } from 'desktop-ui/sonner';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { SidebarMenuButton, SidebarMenuItem } from 'desktop/ui/sidebar';
+import { Skeleton } from 'desktop/ui/skeleton';
+import { toast } from 'desktop/ui/sonner';
 import { AlertCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';

@@ -1,8 +1,8 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { Toaster } from 'desktop-ui/sonner';
-import { TooltipProvider } from 'desktop-ui/tooltip';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { Toaster } from 'desktop/ui/sonner';
+import { TooltipProvider } from 'desktop/ui/tooltip';
 import { type ReactNode, StrictMode, useEffect } from 'react';
 
 import { ExecutionPicker } from '../components/organisms/execution-picker.js';

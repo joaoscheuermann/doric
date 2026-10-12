@@ -17,11 +17,20 @@
     "src/contracts/**/*.ts"
   ],
   "references": [
-    { "path": "../../../packages/desktop-ui" },
-    { "path": "../../../packages/desktop-reads" },
-    { "path": "../../../packages/bundle" },
-    { "path": "../../../packages/sandbox" },
-    { "path": "../../runtime/runtime" },
-    { "path": "../../desktop/layout" }
+    {
+      "path": "../../../packages/desktop"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/sandbox"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../../desktop/layout"
+    }
   ]
 }

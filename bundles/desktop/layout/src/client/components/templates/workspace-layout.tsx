@@ -2,8 +2,8 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from 'desktop-ui/resizable';
-import { useSidebar } from 'desktop-ui/sidebar';
+} from 'desktop/ui/resizable';
+import { useSidebar } from 'desktop/ui/sidebar';
 import { type ReactNode, useLayoutEffect } from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 

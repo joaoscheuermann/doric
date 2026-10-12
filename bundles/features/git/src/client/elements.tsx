@@ -6,9 +6,9 @@
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { SidebarScope } from 'desktop-ui/sidebar';
-import { TooltipProvider } from 'desktop-ui/tooltip';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { SidebarScope } from 'desktop/ui/sidebar';
+import { TooltipProvider } from 'desktop/ui/tooltip';
 import { type ReactNode, StrictMode } from 'react';
 
 import { ChangesBadge } from './changes/changes-badge.js';

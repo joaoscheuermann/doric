@@ -7,10 +7,10 @@
   "// targets": "to see all targets run: nx show project doric-renderer --web",
   "targets": {
     "build": {
-      "dependsOn": ["^build", "desktop-client:build", "desktop-ui:build"]
+      "dependsOn": ["^build", "desktop:build"]
     },
     "serve": {
-      "dependsOn": ["desktop-client:build", "desktop-ui:build"]
+      "dependsOn": ["desktop:build"]
     },
     "test": {
       "executor": "nx:run-commands",

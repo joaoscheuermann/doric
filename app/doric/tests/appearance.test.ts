@@ -9,7 +9,7 @@ import { splashWindowOptions } from '../src/platform/splash/window';
 import { loadWindowTokens } from '../src/platform/tokens';
 import { chromeFor, nativeOptions } from '../src/platform/windows/appearance';
 
-const tokensPath = resolve('packages/desktop-ui/dist/tokens.json');
+const tokensPath = resolve('packages/desktop/dist/tokens.json');
 const tokens = loadWindowTokens(tokensPath);
 const preload = '/app/preload.js';
 const screen = { width: 2560, height: 1440 };
@@ -175,10 +175,10 @@ describe('window chrome', () => {
     });
   });
 
-  test('doric.tokens/v1 serves what desktop-ui resolves for a window', async () => {
-    // desktop-ui's root entry (React components); its source is not this
+  test('doric.tokens/v1 serves what desktop/ui resolves for a window', async () => {
+    // desktop/ui's root entry (React components); its source is not this
     // project's to typecheck, so it is loaded by name.
-    const entry: string = 'desktop-ui';
+    const entry: string = 'desktop/ui';
     const { resolvedVariables } = (await import(entry)) as {
       resolvedVariables(tokens: unknown): Readonly<Record<string, string>>;
     };

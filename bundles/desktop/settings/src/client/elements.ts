@@ -4,7 +4,7 @@
 // routes of `/settings`) are portal hosts that root renders into, so the nav,
 // the sections and the provider page share one draft and one save.
 
-import { portalHosts } from 'desktop-ui/react-element';
+import { portalHosts } from 'desktop/ui/react-element';
 
 /** The props of a `settings-link` region item (D9-15). */
 export interface SettingsLinkProps {

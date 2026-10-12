@@ -1,5 +1,5 @@
-import { toast } from 'desktop-ui/sonner';
-import { cn } from 'desktop-ui/utils';
+import { toast } from 'desktop/ui/sonner';
+import { cn } from 'desktop/ui/utils';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { messageFrom } from '../../domain/errors.js';

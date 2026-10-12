@@ -28,15 +28,15 @@ src/client/
 - A rule that can be stated in terms of its arguments belongs in `domain/` or
   `utility/` and has a test; code that needs React or the DOM is proven in the
   running app.
-- The shadcn primitives are `desktop-ui/<name>`; `toast` comes only from
-  `desktop-ui/sonner`, so a window has one toast store.
+- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
+  `desktop/ui/sonner`, so a window has one toast store.
 - Imports are relative with `.js` extensions; the package is ESM and the part
   is bundled by `bundle`'s build.
 
 ## Boundaries
 
 - The client part never imports `bundle`, `bundle/runtime` or
-  `desktop-client`, and touches no DOM at module load.
+  `desktop/client`, and touches no DOM at module load.
 - `runtime/contracts` is imported for types only; contract references are
   built from their IDs in `api/host.ts`.
 - Persistent work (watches, the selection route, timers) is bound to the

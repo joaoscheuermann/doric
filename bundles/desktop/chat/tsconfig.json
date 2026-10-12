@@ -21,13 +21,10 @@
       "path": "../history"
     },
     {
-      "path": "../../../packages/desktop-ui"
+      "path": "../../../packages/desktop"
     },
     {
       "path": "../../../packages/bundle"
-    },
-    {
-      "path": "../../../packages/desktop-client"
     },
     {
       "path": "../../foundation/core"

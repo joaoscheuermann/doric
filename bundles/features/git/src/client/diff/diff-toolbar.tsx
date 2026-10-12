@@ -1,8 +1,8 @@
-import { baseName, parentPath } from 'desktop-reads';
-import { Button } from 'desktop-ui/button';
-import type { DiffControls } from 'desktop-ui/code';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
-import { cn } from 'desktop-ui/utils';
+import { baseName, parentPath } from 'desktop/reads';
+import { Button } from 'desktop/ui/button';
+import type { DiffControls } from 'desktop/ui/code';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
+import { cn } from 'desktop/ui/utils';
 import { FileIcon, TriangleAlertIcon } from 'lucide-react';
 
 import type { ProjectChange } from '../../contracts/index.js';

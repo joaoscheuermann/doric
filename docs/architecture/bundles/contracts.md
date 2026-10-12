@@ -77,7 +77,7 @@ Os demais entrypoints seguem esta regra:
 - contratos de outros bundles vêm de `<bundle>/contracts`, por exemplo `git/contracts` ou `chat/contracts`;
 - o próprio bundle importa seus contratos por caminho relativo (`../contracts/index.js`), nunca pelo próprio `<bundle>/contracts`;
 - nenhum código de bundle importa o entrypoint `bundle`, que é o loader Node;
-- bundles não importam `packages/desktop-client`, que é o runtime client do loader usado por `app/doric-renderer`; componentes, tokens e Tailwind continuam em `desktop-ui`.
+- bundles não importam `packages/desktop`, que é o runtime client do loader usado por `app/doric-renderer`; componentes, tokens e Tailwind continuam em `desktop/ui`.
 
 ## IDs de contrato
 

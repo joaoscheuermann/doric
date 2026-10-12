@@ -5,16 +5,16 @@
 // workspace path the comparison names.
 
 import { CommandsV1, type Services } from 'bundle/contracts';
-import { joinPath, messageFrom } from 'desktop-reads';
-import { type DiffControls, DiffEditor, fileLanguage } from 'desktop-ui/code';
+import { joinPath, messageFrom } from 'desktop/reads';
+import { type DiffControls, DiffEditor, fileLanguage } from 'desktop/ui/code';
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from 'desktop-ui/empty';
-import { ReadFeedback } from 'desktop-ui/panels';
-import { Skeleton } from 'desktop-ui/skeleton';
+} from 'desktop/ui/empty';
+import { ReadFeedback } from 'desktop/ui/panels';
+import { Skeleton } from 'desktop/ui/skeleton';
 import { sandboxNotice } from 'files/contracts';
 import { useRef } from 'react';
 

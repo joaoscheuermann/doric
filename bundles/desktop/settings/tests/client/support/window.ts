@@ -1,5 +1,5 @@
 // One real settings window in this process: a happy-dom window as the
-// globals, the window platform of `desktop-client`, the core's client part
+// globals, the window platform of `desktop/client`, the core's client part
 // and the settings client part exactly as their builds ship them. The
 // boundaries faked are the preload API (`window.doric.desktop`) and, behind
 // it, the host contracts the bridge reaches: a test answers them as the host
@@ -26,7 +26,7 @@ import {
   type RemoteContract,
   remoteMethodSpecFromSchema,
   type WindowCatalog,
-} from 'desktop-client';
+} from 'desktop/client';
 import { Window } from 'happy-dom';
 
 const here = dirname(fileURLToPath(import.meta.url));

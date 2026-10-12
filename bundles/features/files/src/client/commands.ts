@@ -4,7 +4,7 @@
 // Opening a file whose tab is open selects that tab.
 
 import { defineCommand } from 'bundle/contracts';
-import { baseName } from 'desktop-reads';
+import { baseName } from 'desktop/reads';
 import { LayoutTabsV1, type TabRequest } from 'layout/contracts';
 
 import {

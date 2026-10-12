@@ -20,8 +20,8 @@
       "!!scripts/**/evidence",
       "!!doric.config.json",
       "!!package-lock.json",
-      "!!packages/desktop-ui/src/components",
-      "!!packages/desktop-ui/src/styles/tokens.css"
+      "!!packages/desktop/src/components",
+      "!!packages/desktop/src/styles/tokens.css"
     ]
   },
   "formatter": {

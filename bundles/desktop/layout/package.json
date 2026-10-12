@@ -21,7 +21,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "bundle": "0.0.1",
-    "desktop-ui": "1.0.0",
+    "desktop": "1.0.0",
     "lucide-react": "^0.544.0",
     "monaco-editor": "^0.56.0",
     "react": "^19.0.0",

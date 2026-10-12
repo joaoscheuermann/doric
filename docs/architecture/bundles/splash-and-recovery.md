@@ -8,7 +8,7 @@ O splash e a recuperação são uma única superfície técnica do app (`app/dor
 
 ## Uma superfície, sem código de bundle
 
-O splash e a recuperação são **a mesma superfície técnica do app** (`app/doric`), sem código de bundle. Ela usa só `desktop-ui/theme.css` e os tokens em JSON, e funciona mesmo com a fundação ou o core quebrados.
+O splash e a recuperação são **a mesma superfície técnica do app** (`app/doric`), sem código de bundle. Ela usa só `desktop/ui/theme.css` e os tokens em JSON, e funciona mesmo com a fundação ou o core quebrados.
 
 A superfície funciona sem o core porque não usa nenhum contrato fornecido por bundles. Ela não chama `hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `storage/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `windows/v1`, `menus/v1` nem outro serviço básico, que o core fornece por padrão e que outro bundle pode substituir pela escolha em `providers`. Também não chama `storage.backend/v1` nem `secrets.backend/v1`, que a fundação fornece (o bundle `postgres`, por padrão). Ela fala só com contratos `doric.*` da plataforma, que não aceitam outro provedor e existem antes de qualquer bundle ativar. O que a superfície registra vai para o log próprio da plataforma, independente do core e do provedor de `log/v1`.
 
@@ -59,6 +59,6 @@ O último core que ativou com sucesso fica no cache local e serve para diagnosti
 - [Bundle core e quarentena](./core.md): a quarentena de bundles e a falha do core são os casos que a superfície mostra no estado de recuperação.
 - [Composição e distribuição pelo host](./composition-and-distribution.md): descreve o fluxo de conexão, download e verificação que o estado "Carregando" mostra, e a operação desconectada usada quando o host está inacessível.
 - [Hooks e ciclo de vida](./hooks.md): define o `onAppReadyHook`, cujo prazo de prontidão das janelas dispara a recuperação.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `desktop-ui/theme.css` e os tokens em JSON, a única dependência visual da superfície.
+- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `desktop/ui/theme.css` e os tokens em JSON, a única dependência visual da superfície.
 - [Observabilidade e diagnóstico](./observability.md): o diagnóstico da plataforma (`doric.diagnostics/v1`) sustenta o que a superfície mostra sobre as falhas.
 - [Manifesto v1](./manifest.md): a validação do manifesto é uma das fontes de falha que levam um bundle à quarentena.

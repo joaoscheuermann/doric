@@ -1,5 +1,5 @@
 // One real window of the desktop client in this process: a happy-dom window
-// as the globals, the window platform of `desktop-client` (bootstrap,
+// as the globals, the window platform of `desktop/client` (bootstrap,
 // activation, doric.elements/v1), the core's client part exactly as its build
 // ships it, and probe bundles. The preload API (`window.doric.desktop`) is
 // the faked boundary: it answers the bridge calls of the remote contracts the
@@ -33,7 +33,7 @@ import {
   remoteMethodSpecFromSchema,
   type WindowCatalog,
   type WindowFailure,
-} from 'desktop-client';
+} from 'desktop/client';
 import { Window } from 'happy-dom';
 
 const DIST = 'bundles/foundation/core/dist';

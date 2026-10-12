@@ -4,7 +4,7 @@
 
 ## Resumo
 
-A aparência nativa de uma janela do Doric, como barra de título, tamanho e cor de fundo, é dividida em três partes com donos distintos. A chamada de abertura declara só a intenção, os tokens da plataforma definem medidas e cores, e o Electron main converte intenção e tokens em opções nativas. O main devolve à janela a área segura resolvida, e o shell a expõe como variáveis CSS que o componente `ChromeBar` de `desktop-ui` aplica. Assim o main deixa de conhecer medidas do CSS do renderer, e o renderer deixa de adivinhar onde o main colocou os controles da janela.
+A aparência nativa de uma janela do Doric, como barra de título, tamanho e cor de fundo, é dividida em três partes com donos distintos. A chamada de abertura declara só a intenção, os tokens da plataforma definem medidas e cores, e o Electron main converte intenção e tokens em opções nativas. O main devolve à janela a área segura resolvida, e o shell a expõe como variáveis CSS que o componente `ChromeBar` de `desktop/ui` aplica. Assim o main deixa de conhecer medidas do CSS do renderer, e o renderer deixa de adivinhar onde o main colocou os controles da janela.
 
 ## Problema atual
 
@@ -148,10 +148,10 @@ O shell grava esses valores como `--doric-safe-top`, `--doric-safe-left` e `--do
 
 ## `ChromeBar`
 
-`desktop-ui` fornece um componente `ChromeBar` que aplica a altura, o recuo da área segura e as regiões de arraste. Na janela principal, quem o usa é o header do `<layout-workspace>`, do [bundle layout](./layout.md):
+`desktop/ui` fornece um componente `ChromeBar` que aplica a altura, o recuo da área segura e as regiões de arraste. Na janela principal, quem o usa é o header do `<layout-workspace>`, do [bundle layout](./layout.md):
 
 ```tsx
-import { ChromeBar } from 'desktop-ui/chrome-bar';
+import { ChromeBar } from 'desktop/ui/chrome-bar';
 
 <ChromeBar>
   <WorkspaceTitle />
@@ -174,7 +174,7 @@ import { ChromeBar } from 'desktop-ui/chrome-bar';
 ## Relações
 
 - [Janelas abertas pelo core](./windows.md): define `windows/v1` sobre `doric.windows/v1`, as chaves e `describeWindow`, que carregam a intenção de aparência e devolvem a área segura; partes `client` chamam `windows/v1` pela ponte.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `desktop-ui`, onde vive `ChromeBar`, e os tokens do tema exportados em CSS e JSON.
+- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `desktop/ui`, onde vive `ChromeBar`, e os tokens do tema exportados em CSS e JSON.
 - [Splash e recuperação](./splash-and-recovery.md): o splash é a janela técnica com `titleBar: 'none'` que lê a cor de fundo dos mesmos tokens em JSON.
 - [Protocolo doric://](./doric-protocol.md): o shell que grava as variáveis da área segura é servido pela origem `doric://app` sob a CSP da plataforma.
 - [Bundle core e quarentena](./core.md): o core é quem abre as janelas pelo `doric.windows/v1`, expõe `windows/v1` aos outros bundles e abre a janela principal em `/`.

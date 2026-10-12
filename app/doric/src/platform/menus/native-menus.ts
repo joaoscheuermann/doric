@@ -8,7 +8,7 @@ import {
   type MenuSkeleton,
   type MenuWhen,
 } from 'bundle/contracts';
-import type { ShellKeybinding } from 'desktop-client/protocol';
+import type { ShellKeybinding } from 'desktop/protocol';
 import type { Menu, MenuItem, MenuItemConstructorOptions } from 'electron';
 
 import type {

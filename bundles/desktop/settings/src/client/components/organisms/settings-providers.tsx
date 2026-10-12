@@ -14,10 +14,10 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
-import { Button } from 'desktop-ui/button';
-import { FieldGroup } from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { Button } from 'desktop/ui/button';
+import { FieldGroup } from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
 import {
   Select,
   SelectContent,
@@ -25,7 +25,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from 'desktop-ui/select';
+} from 'desktop/ui/select';
 import {
   Table,
   TableBody,
@@ -33,7 +33,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from 'desktop-ui/table';
+} from 'desktop/ui/table';
 import {
   AlertCircleIcon,
   ArrowUpDownIcon,

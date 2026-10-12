@@ -19,10 +19,7 @@
       "path": "../../packages/bundle/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/desktop-client/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/desktop-ui/tsconfig.lib.json"
+      "path": "../../packages/desktop/tsconfig.lib.json"
     }
   ]
 }

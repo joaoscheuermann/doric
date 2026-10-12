@@ -1,4 +1,4 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import { PauseIcon } from 'lucide-react';
 import { useStore } from 'zustand/react';
 

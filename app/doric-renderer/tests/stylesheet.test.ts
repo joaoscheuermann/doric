@@ -1,5 +1,5 @@
 /**
- * The window's styles after the stage-9 cut-over: desktop-ui's `theme.css`
+ * The window's styles after the stage-9 cut-over: desktop/ui's `theme.css`
  * first, the shell's `styles.css` next, then each UI bundle's own sheet.
  * Together they have to cascade as the one stylesheet the renderer compiled
  * before: the theme owns the preflight, the faces and the tokens once, the
@@ -72,7 +72,7 @@ describe('window stylesheets', () => {
   before(async () => {
     const themeSheet = join(
       repository,
-      'packages/desktop-ui/src/styles/theme.css',
+      'packages/desktop/src/styles/theme.css',
     );
     theme = await compile(themeSheet, dirname(themeSheet));
     shell = await compile(join(renderer, 'src/styles.css'));

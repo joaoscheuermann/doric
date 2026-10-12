@@ -20,8 +20,7 @@
   },
   "devDependencies": {
     "codex": "0.0.1",
-    "desktop-client": "0.0.1",
-    "desktop-ui": "1.0.0",
+    "desktop": "1.0.0",
     "happy-dom": "20.8.9",
     "llms": "0.0.1",
     "openai": "0.0.1",

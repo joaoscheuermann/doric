@@ -12,7 +12,7 @@ import {
   pendingReadInterval,
   readRetry,
   refreshQueries,
-} from 'desktop-reads';
+} from 'desktop/reads';
 
 import {
   FilesSandboxV1,

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { pendingReadInterval, readRetry } from 'desktop-reads';
+import { pendingReadInterval, readRetry } from 'desktop/reads';
 
 import { gitKeys } from '../changes/store.js';
 import { gitClient } from '../state.js';

@@ -12,7 +12,7 @@ every window loads from `doric://app`, served by main under
 
 ```
 src/
-  bootstrap.ts   calls desktop-client's `bootstrapWindow({})`; the core's
+  bootstrap.ts   calls desktop/client's `bootstrapWindow({})`; the core's
                  outlet then shows whatever the active route renders
   shell.html     the template main renders per request (import map, CSP)
   styles.css     the window-wide rules and the sorted utility set
@@ -28,13 +28,13 @@ the shell; a page or a region item is a bundle's.
 ## The IPC boundary
 
 The shell never opens HTTP or Socket.IO and has no semantic API. The preload
-exposes only `window.doric.desktop` (desktop-client's protocol); every host or
+exposes only `window.doric.desktop` (desktop/client's protocol); every host or
 desktop call is a contract call routed by main's dispatcher. Adding a channel
 to the preload is a boundary change, not a feature.
 
 ## Styling
 
-The window loads desktop-ui's `theme.css` (preflight, faces, tokens, theme
+The window loads desktop/ui's `theme.css` (preflight, faces, tokens, theme
 mapping) first, this project's `src/styles.css` next, and each UI bundle's
 `client/styles.css` after it. `src/styles.css` holds only window-wide rules —
 the base layer, `.chrome-bar` and the footer weight invariant — plus the whole

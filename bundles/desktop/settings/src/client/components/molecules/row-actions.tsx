@@ -1,11 +1,11 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from 'desktop-ui/dropdown-menu';
+} from 'desktop/ui/dropdown-menu';
 import { EllipsisVerticalIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 

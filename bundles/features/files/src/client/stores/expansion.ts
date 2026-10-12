@@ -1,4 +1,4 @@
-import { toggleExpanded } from 'desktop-ui/panels';
+import { toggleExpanded } from 'desktop/ui/panels';
 import { createStore } from 'zustand/vanilla';
 
 /**

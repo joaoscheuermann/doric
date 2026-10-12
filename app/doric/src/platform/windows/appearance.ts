@@ -2,7 +2,7 @@
 // options, plus the chrome and safe area its shell applies.
 
 import type { windowAppearanceSchema } from 'bundle/contracts';
-import type { WindowChrome } from 'desktop-client/protocol';
+import type { WindowChrome } from 'desktop/protocol';
 import type { z } from 'zod';
 
 import type { WindowTokens } from '../tokens';

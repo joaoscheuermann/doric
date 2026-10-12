@@ -1,4 +1,4 @@
-import { cn } from 'desktop-ui/utils';
+import { cn } from 'desktop/ui/utils';
 
 /**
  * Git's line totals. An empty comparison uses the muted style; a change adds in

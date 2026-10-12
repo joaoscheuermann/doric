@@ -50,7 +50,7 @@ describe('the platform import map', () => {
     }
   });
 
-  test('serves exactly React, ReactDOM, Lexical, desktop-ui, zod and bundle/contracts', () => {
+  test('serves exactly React, ReactDOM, Lexical, desktop/ui, zod and bundle/contracts', () => {
     const roots = new Set(
       Object.keys(imports).map((specifier) => {
         const parts = specifier.split('/');
@@ -59,14 +59,9 @@ describe('the platform import map', () => {
     );
     for (const root of roots) {
       assert.ok(
-        [
-          'react',
-          'react-dom',
-          'lexical',
-          'desktop-ui',
-          'zod',
-          'bundle',
-        ].includes(root) || root.startsWith('@lexical/'),
+        ['react', 'react-dom', 'lexical', 'desktop', 'zod', 'bundle'].includes(
+          root,
+        ) || root.startsWith('@lexical/'),
         `unexpected platform package ${root}`,
       );
     }
@@ -79,8 +74,8 @@ describe('the platform import map', () => {
       'lexical',
       'zod',
       'bundle/contracts',
-      'desktop-ui',
-      'desktop-ui/',
+      'desktop/ui',
+      'desktop/ui/',
     ]) {
       assert.ok(specifier in imports, `${specifier} is not mapped`);
     }
@@ -88,6 +83,9 @@ describe('the platform import map', () => {
       'radix-ui',
       'lucide-react',
       '@tanstack/react-query',
+      'desktop/client',
+      'desktop/protocol',
+      'desktop/reads',
     ]) {
       assert.equal(imports[removed], undefined);
     }
@@ -110,7 +108,7 @@ describe('the platform import map', () => {
       imports['bundle/contracts'],
       `${prefix}bundle@1.0.0/contracts.js`,
     );
-    assert.equal(imports['desktop-ui/'], `${prefix}desktop-ui@1.0.0/`);
+    assert.equal(imports['desktop/ui/'], `${prefix}desktop@1.0.0/`);
   });
 
   test('maps every Lexical specifier the client bundles import', () => {
@@ -146,9 +144,9 @@ describe('the platform import map', () => {
     }
   });
 
-  test('maps every desktop-ui component by its own explicit entry', () => {
+  test('maps every desktop/ui component by its own explicit entry', () => {
     const components = readdirSync(
-      join(workspace, 'packages/desktop-ui/src/components'),
+      join(workspace, 'packages/desktop/src/components'),
     )
       .filter((name) => name.endsWith('.tsx'))
       .map((name) => name.slice(0, -'.tsx'.length));
@@ -161,8 +159,8 @@ describe('the platform import map', () => {
       'tokens',
     ]) {
       assert.equal(
-        imports[`desktop-ui/${name}`],
-        `${prefix}desktop-ui@1.0.0/${name}.js`,
+        imports[`desktop/ui/${name}`],
+        `${prefix}desktop@1.0.0/${name}.js`,
       );
     }
   });
@@ -229,7 +227,7 @@ describe('a window module loaded through the map', () => {
     ),
   );
 
-  test('renders a desktop-ui Button from a component using hooks, so one React instance serves both', () => {
+  test('renders a desktop/ui Button from a component using hooks, so one React instance serves both', () => {
     assert.match(
       report.button,
       /^<button data-slot="button" data-variant="secondary"/,
@@ -249,8 +247,8 @@ describe('a window module loaded through the map', () => {
   });
 });
 
-describe('the desktop-ui stylesheet', () => {
-  const folder = join(platform, 'desktop-ui@1.0.0');
+describe('the desktop/ui stylesheet', () => {
+  const folder = join(platform, 'desktop@1.0.0');
   const theme = readFileSync(join(folder, 'theme.css'), 'utf8');
 
   test('resolves every url() to a font the build copied', () => {
@@ -289,7 +287,7 @@ describe('the desktop-ui stylesheet', () => {
   test('ships the tokens and every license next to the files', () => {
     assert.deepEqual(
       manifest(join(folder, 'tokens.json')),
-      manifest(join(workspace, 'packages/desktop-ui/dist/tokens.json')),
+      manifest(join(workspace, 'packages/desktop/dist/tokens.json')),
     );
     for (const name of ['NotoSans-OFL.txt', 'IBMPlexMono-OFL.txt']) {
       assert.ok(existsSync(join(folder, 'fonts', name)));

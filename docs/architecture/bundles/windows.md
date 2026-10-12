@@ -267,7 +267,7 @@ A abertura recebe só os campos de `open`, sem arquivo HTML ou preload; o Electr
 ## Bootstrap de cada janela no renderer
 
 ```ts
-// app/doric-renderer, com o runtime client de packages/desktop-client
+// app/doric-renderer, com o runtime client de packages/desktop
 import { AppHooksV1, WindowHooksV1 } from 'bundle/contracts';
 
 const { chrome } = await window.doric.desktop.describeWindow();
@@ -296,7 +296,7 @@ document.body.replaceChildren(document.createElement('core-outlet'));
 await window.doric.desktop.ready();
 ```
 
-O bootstrap e `activateClientBundles` pertencem a `packages/desktop-client`, o runtime client do loader usado por `app/doric-renderer`; bundles não importam esse pacote, e componentes, tokens e Tailwind continuam em `desktop-ui`. `applyChrome` aplica os tokens da área segura e da barra de título, de [aparência nativa da janela](./window-appearance.md) e [pacotes compartilhados e tokens do tema](./platform-packages.md).
+O bootstrap e `activateClientBundles` pertencem a `packages/desktop`, o runtime client do loader usado por `app/doric-renderer`; bundles não importam esse pacote, e componentes, tokens e Tailwind continuam em `desktop/ui`. `applyChrome` aplica os tokens da área segura e da barra de título, de [aparência nativa da janela](./window-appearance.md) e [pacotes compartilhados e tokens do tema](./platform-packages.md).
 
 ### `activateClientBundles`
 
@@ -360,7 +360,7 @@ As assinaturas atuais de Project e Thread também precisam ser indexadas por jan
 - [Navegação e rotas](./navigation.md): a rota é o path da janela, mostrada pelo `<core-outlet>` que o bootstrap põe no `body`.
 - [O bundle layout](./layout.md): a rota `/`, mostrada na janela `workspace`.
 - [Composição e distribuição pelo host](./composition-and-distribution.md): fornece os artefatos que `activateClientBundles` importa e a escolha de `providers` por ambiente.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): `packages/desktop-client` é o runtime client do loader que executa o bootstrap da janela.
+- [Pacotes compartilhados e tokens do tema](./platform-packages.md): `packages/desktop` é o runtime client do loader que executa o bootstrap da janela.
 - [UI composta por bundles](./ui-composition.md): elementos de rota e de região são custom elements definidos com `define` de `ui/v1`.
 - [React dentro de Web Components](./react-web-components.md): mostra como um elemento React é publicado como custom element.
 - [Menus nativos e atalhos](./menus-and-keybindings.md): o item “Settings” do menu dispara o comando que abre a janela de settings.

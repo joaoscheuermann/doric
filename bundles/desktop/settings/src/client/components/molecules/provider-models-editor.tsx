@@ -1,7 +1,7 @@
-import { Button } from 'desktop-ui/button';
-import { Field, FieldDescription, FieldLabel } from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
-import { Toggle } from 'desktop-ui/toggle';
+import { Button } from 'desktop/ui/button';
+import { Field, FieldDescription, FieldLabel } from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
+import { Toggle } from 'desktop/ui/toggle';
 import { PlusIcon, TrashIcon } from 'lucide-react';
 
 import {

@@ -3,7 +3,7 @@
 // real close. It replaces the settings window's flush handshake and serves
 // every window.
 
-import type { CloseAnswer, CloseRequest } from 'desktop-client/protocol';
+import type { CloseAnswer, CloseRequest } from 'desktop/protocol';
 
 import { type PushTarget, push } from './push';
 

@@ -5,7 +5,7 @@
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContractError } from 'bundle/contracts';
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import { $getRoot, createEditor } from 'lexical';
 import { createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';

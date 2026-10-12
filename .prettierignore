@@ -43,7 +43,7 @@ package-lock.json
 
 # The shadcn vendor boundary is written by the CLI and edited only through it,
 # so no formatter should rewrite it. Biome excludes it in `biome.json` too.
-packages/desktop-ui/src/components/
+packages/desktop/src/components/
 
-# Written by packages/desktop-ui/scripts/build-tokens.mjs from the tokens module.
-packages/desktop-ui/src/styles/tokens.css
+# Written by packages/desktop/scripts/build-tokens.mjs from the tokens module.
+packages/desktop/src/styles/tokens.css

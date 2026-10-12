@@ -187,7 +187,7 @@ function ChatSlot(props: {
 ## Relações
 
 - [UI composta por bundles](./ui-composition.md): define Web Components como fronteira pública, o catálogo client de contribuições e as regiões.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): o import map que garante uma única instância de `react`, `react-dom/client` e `@tanstack/react-query`, e o subpath `bundle/contracts` com a referência `UiV1` e os tipos `ClientContext` e `Services`. `packages/desktop-client` é o runtime client do loader usado por `app/doric-renderer`; bundles não o importam.
+- [Pacotes compartilhados e tokens do tema](./platform-packages.md): o import map que garante uma única instância de `react`, `react-dom/client` e `@tanstack/react-query`, e o subpath `bundle/contracts` com a referência `UiV1` e os tipos `ClientContext` e `Services`. `packages/desktop` é o runtime client do loader usado por `app/doric-renderer`; bundles não o importam.
 - [O bundle chat](./chat.md): dono de `<chat-view>`, de `ChatClientState` e da rota `/projects/:projectId/threads/:threadId`.
 - [Bundle core e quarentena](./core.md#ui-no-client): o core fornece `ui/v1`, `navigation/v1`, `<core-outlet>` e `<core-region>` no client.
 - [O bundle layout](./layout.md): `<layout-workspace>`, escrito em React do mesmo jeito, com o outlet onde `<chat-view>` aparece.

@@ -1,11 +1,11 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from 'desktop-ui/collapsible';
-import { Separator } from 'desktop-ui/separator';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+} from 'desktop/ui/collapsible';
+import { Separator } from 'desktop/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,

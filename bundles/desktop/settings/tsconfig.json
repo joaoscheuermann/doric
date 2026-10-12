@@ -14,7 +14,7 @@
   "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
   "references": [
     {
-      "path": "../../../packages/desktop-ui"
+      "path": "../../../packages/desktop"
     },
     {
       "path": "../../../packages/bundle"
@@ -24,9 +24,6 @@
     },
     {
       "path": "../../foundation/host-config"
-    },
-    {
-      "path": "../../../packages/desktop-client"
     },
     {
       "path": "../../foundation/core"

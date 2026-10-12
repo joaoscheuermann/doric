@@ -31,7 +31,7 @@ export const renderShell = (
     /** The client generation of this document; null before the first one. */
     readonly generation: number | null;
     readonly importMap: ImportMap;
-    /** `/platform/desktop-ui@<v>/theme.css`. */
+    /** `/platform/desktop@<v>/theme.css`. */
     readonly themeHref: string;
   },
 ): RenderedShell => {

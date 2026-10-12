@@ -23,7 +23,7 @@
       "path": "../../../packages/tool"
     },
     {
-      "path": "../../../packages/desktop-ui"
+      "path": "../../../packages/desktop"
     },
     {
       "path": "../../../packages/docker-sandbox"

@@ -1,17 +1,17 @@
-import { Badge } from 'desktop-ui/badge';
+import { Badge } from 'desktop/ui/badge';
 import {
   FileTree,
   indentation,
   rowInteraction,
   treeClassName,
-} from 'desktop-ui/panels';
+} from 'desktop/ui/panels';
 import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
-} from 'desktop-ui/sidebar';
-import { cn } from 'desktop-ui/utils';
+} from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
 
 import type { ProjectChange } from '../../contracts/index.js';

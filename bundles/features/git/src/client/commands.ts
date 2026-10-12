@@ -5,7 +5,7 @@
 // Opening a comparison whose tab is open selects that tab.
 
 import { defineCommand } from 'bundle/contracts';
-import { baseName, joinPath } from 'desktop-reads';
+import { baseName, joinPath } from 'desktop/reads';
 import {
   type CurrentTab,
   LayoutTabsV1,

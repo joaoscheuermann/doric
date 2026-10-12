@@ -2,8 +2,8 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from 'desktop-ui/collapsible';
-import { cn } from 'desktop-ui/utils';
+} from 'desktop/ui/collapsible';
+import { cn } from 'desktop/ui/utils';
 import { ChevronRightIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 

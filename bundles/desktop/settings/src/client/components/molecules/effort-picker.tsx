@@ -1,5 +1,5 @@
-import { Button } from 'desktop-ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
+import { Button } from 'desktop/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { useState } from 'react';
 
 import { ChoiceList } from './choice-list.js';

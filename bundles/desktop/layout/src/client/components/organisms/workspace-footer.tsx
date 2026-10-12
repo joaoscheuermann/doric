@@ -1,4 +1,4 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import { SettingsIcon } from 'lucide-react';
 
 import { connectionLabel } from '../../domain/connection.js';

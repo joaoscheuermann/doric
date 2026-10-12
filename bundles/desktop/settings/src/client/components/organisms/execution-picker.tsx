@@ -1,4 +1,4 @@
-import { Input } from 'desktop-ui/input';
+import { Input } from 'desktop/ui/input';
 
 import {
   effortLabel,

@@ -5,7 +5,7 @@ import {
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-} from 'desktop-ui/context-menu';
+} from 'desktop/ui/context-menu';
 
 import { type ProjectColor, projectColors } from '../../domain/workspace.js';
 import { ProjectAvatar } from './project-avatar.js';

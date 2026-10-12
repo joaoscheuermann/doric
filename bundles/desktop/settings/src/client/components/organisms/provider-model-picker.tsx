@@ -1,11 +1,11 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from 'desktop-ui/collapsible';
-import { Field, FieldDescription, FieldLabel } from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
+} from 'desktop/ui/collapsible';
+import { Field, FieldDescription, FieldLabel } from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
 import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
 import { useState } from 'react';
 

@@ -5,7 +5,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from 'desktop-ui/breadcrumb';
+} from 'desktop/ui/breadcrumb';
 import { MessageSquareIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 

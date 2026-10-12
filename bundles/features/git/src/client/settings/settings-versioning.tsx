@@ -7,7 +7,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from 'desktop-ui/field';
+} from 'desktop/ui/field';
 import {
   Select,
   SelectContent,
@@ -15,7 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from 'desktop-ui/select';
+} from 'desktop/ui/select';
 
 import type { VersioningDraft } from '../api/peers.js';
 import {

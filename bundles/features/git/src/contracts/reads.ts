@@ -1,5 +1,5 @@
 // The changed-file vocabulary the window reads and draws (moved from
-// `desktop-reads`, stage BWP-11). Types only: a window loads this module
+// `desktop/reads`, stage BWP-11). Types only: a window loads this module
 // through its own specifier, and the schemas that check these shapes are
 // written in `index.ts`.
 

@@ -12,7 +12,7 @@ const page = (name: string): string =>
   readFileSync(resolve('app/doric/src/splash-page', name), 'utf8');
 
 const tokens = JSON.parse(
-  readFileSync(resolve('packages/desktop-ui/dist/tokens.json'), 'utf8'),
+  readFileSync(resolve('packages/desktop/dist/tokens.json'), 'utf8'),
 ) as { variants: { dark: Record<string, string> } };
 
 describe('splash screen', () => {
@@ -23,7 +23,7 @@ describe('splash screen', () => {
     assert.match(markup, /<html lang="en" class="dark">/u);
     assert.match(markup, /<title>Doric<\/title>/u);
     assert.match(markup, /<div class="splash-title">Doric<\/div>/u);
-    assert.match(markup, /href="\/platform\/desktop-ui@1\.0\.0\/theme\.css"/u);
+    assert.match(markup, /href="\/platform\/desktop@1\.0\.0\/theme\.css"/u);
     assert.match(css, /justify-content: center/u);
     assert.match(css, /align-items: center/u);
     assert.match(css, /background: var\(--background\)/u);

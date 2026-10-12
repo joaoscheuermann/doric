@@ -1,7 +1,7 @@
-import { Button } from 'desktop-ui/button';
-import { ToolbarDivider } from 'desktop-ui/panels';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+import { Button } from 'desktop/ui/button';
+import { ToolbarDivider } from 'desktop/ui/panels';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 
 import type { Usage } from '../../contracts/index.js';
 import { contextLabel, costLabel } from '../domain/usage.js';

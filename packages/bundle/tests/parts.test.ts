@@ -111,10 +111,11 @@ void test('a part with a forbidden import fails the build', async () => {
   for (const [part, specifier] of [
     ['desktop', 'react'],
     ['desktop', '@lexical/react/LexicalComposer'],
-    ['desktop', 'desktop-ui/button'],
+    ['desktop', 'desktop/ui/button'],
     ['desktop', 'bundle'],
     ['client', 'bundle/runtime'],
-    ['client', 'desktop-client'],
+    ['client', 'desktop'],
+    ['client', 'desktop/client'],
   ] as const) {
     await withBundle(
       {
@@ -141,7 +142,7 @@ void test('a client part leaves the import-map specifiers to the window', async 
       'src/client/index.ts': [
         `import { createElement } from 'react';`,
         `import { createRoot } from 'react-dom/client';`,
-        `import { Button } from 'desktop-ui/button';`,
+        `import { Button } from 'desktop/ui/button';`,
         `import { $getRoot } from 'lexical';`,
         `import { GitV1 } from 'git/contracts';`,
         `export const activate = () => [createElement, createRoot, Button, $getRoot, GitV1];`,
@@ -156,7 +157,7 @@ void test('a client part leaves the import-map specifiers to the window', async 
         new Set([
           'react',
           'react-dom/client',
-          'desktop-ui/button',
+          'desktop/ui/button',
           'lexical',
           'git/contracts',
         ]),

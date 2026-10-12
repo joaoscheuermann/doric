@@ -1,5 +1,5 @@
 import { CommandsV1, type ContractId, type Services } from 'bundle/contracts';
-import { toast } from 'desktop-ui/sonner';
+import { toast } from 'desktop/ui/sonner';
 import { type ReactNode, useEffect, useRef } from 'react';
 
 import {

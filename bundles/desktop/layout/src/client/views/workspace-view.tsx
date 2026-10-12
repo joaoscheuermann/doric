@@ -10,10 +10,10 @@ import {
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-} from 'desktop-ui/empty';
-import { SidebarInset, SidebarProvider } from 'desktop-ui/sidebar';
-import { Toaster } from 'desktop-ui/sonner';
-import { TooltipProvider } from 'desktop-ui/tooltip';
+} from 'desktop/ui/empty';
+import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
+import { Toaster } from 'desktop/ui/sonner';
+import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
   type CSSProperties,
   createElement,

@@ -45,8 +45,8 @@ const meta = (content: string | null) => ({
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('preload desktop API', () => {
-  test('uses the channels desktop-client names', async () => {
-    const protocol = (await import('desktop-client/protocol')) as {
+  test('uses the channels desktop/client names', async () => {
+    const protocol = (await import('desktop/protocol')) as {
       DESKTOP_CHANNEL: string;
       DESKTOP_PUSH_CHANNEL: string;
     };

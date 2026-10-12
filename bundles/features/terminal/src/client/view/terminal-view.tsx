@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import { XIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 

@@ -170,40 +170,39 @@ groups.push({
   ],
 });
 
-// desktop-ui: every code subpath of its export map (CSS and JSON excluded).
+// desktop/ui: every UI code subpath of its export map (CSS and JSON excluded).
 const desktopUiRoot = join(workspace, desktopUi.root);
 const desktopUiManifest = JSON.parse(
   readFileSync(join(desktopUiRoot, 'package.json'), 'utf8'),
 );
 const desktopUiEntries = [];
 for (const [key, value] of Object.entries(desktopUiManifest.exports)) {
-  if (typeof value === 'string') continue;
+  if (typeof value === 'string' || !key.startsWith('./ui')) continue;
   const source = value['@org/source'];
   if (!key.includes('*')) {
-    const bare = key === '.' ? 'index' : key.slice(2);
+    const bare = key === './ui' ? 'index' : key.slice('./ui/'.length);
     desktopUiEntries.push({
-      specifier: key === '.' ? 'desktop-ui' : `desktop-ui/${bare}`,
+      specifier: key === './ui' ? 'desktop/ui' : `desktop/ui/${bare}`,
       file: `${bare}.js`,
       source: join(desktopUiRoot, source),
     });
     continue;
   }
   const [prefix, suffix] = source.split('*');
-  const [keyPrefix] = key.split('*');
   const dir = join(desktopUiRoot, prefix);
   for (const file of readdirSync(dir).sort()) {
     if (!file.endsWith(suffix)) continue;
     const stem = file.slice(0, -suffix.length);
-    const bare = `${keyPrefix.slice(2)}${stem}`;
+    const bare = stem;
     desktopUiEntries.push({
-      specifier: `desktop-ui/${bare}`,
+      specifier: `desktop/ui/${bare}`,
       file: `${bare}.js`,
       source: join(dir, file),
     });
   }
 }
 groups.push({
-  kind: 'desktop-ui',
+  kind: 'ui',
   package: desktopUi.package,
   dir: folder(desktopUi.package, PLATFORM_VERSION),
   entries: desktopUiEntries,
@@ -324,7 +323,7 @@ const licenseFile = (dir) =>
 const copyLicenses = async (group, metafile) => {
   const target = join(platformOut, group.dir);
   const own = licenseFile(
-    group.kind === 'contracts' || group.kind === 'desktop-ui'
+    group.kind === 'contracts' || group.kind === 'ui'
       ? join(workspace, 'packages', group.package)
       : packageDir(group.package),
   );
@@ -381,7 +380,7 @@ const buildGroup = async (group) => {
     jsx: 'automatic',
     plugins: [platformExternals, cjsEntry],
     // Monaco's stylesheets name the codicon face; it ships beside the files.
-    ...(group.kind === 'desktop-ui'
+    ...(group.kind === 'ui'
       ? {
           loader: { '.ttf': 'file' },
           assetNames: 'assets/[name]-[hash]',
@@ -394,7 +393,7 @@ const buildGroup = async (group) => {
     ),
   );
   await copyLicenses(group, result.metafile);
-  if (group.kind === 'desktop-ui') {
+  if (group.kind === 'ui') {
     await collectDesktopUiStyles(outdir, emitted, group.entries);
     await buildDesktopUiWorkers(outdir);
   }
@@ -402,7 +401,7 @@ const buildGroup = async (group) => {
 };
 
 /**
- * The CSS desktop-ui's JS imports (Monaco's, through `desktop-ui/code`). The
+ * The CSS desktop/ui's JS imports (Monaco's, through `desktop/ui/code`). The
  * split build emits it per chunk, overlapping, as files no window links; those
  * are dropped, and one unsplit pass over every entry collects each stylesheet
  * once, in import order, to be appended to `theme.css`, which every window
@@ -445,7 +444,7 @@ const collectDesktopUiStyles = async (outdir, emitted, entries) => {
   }
 };
 
-/** Module workers desktop-ui starts by URL: self-contained, nothing external. */
+/** Module workers desktop/ui starts by URL: self-contained, nothing external. */
 const buildDesktopUiWorkers = async (outdir) => {
   for (const worker of desktopUi.workers) {
     await esbuild.build({
@@ -520,8 +519,8 @@ for (const group of groups) {
     imports[entry.specifier] =
       `${platformUrl}${posix.join(group.dir, entry.file)}`;
   }
-  if (group.kind === 'desktop-ui') {
-    imports['desktop-ui/'] = `${platformUrl}${group.dir}/`;
+  if (group.kind === 'ui') {
+    imports['desktop/ui/'] = `${platformUrl}${group.dir}/`;
   }
 }
 await buildTheme();

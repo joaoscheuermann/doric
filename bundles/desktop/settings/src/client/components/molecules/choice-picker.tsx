@@ -1,11 +1,11 @@
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from 'desktop-ui/dropdown-menu';
+} from 'desktop/ui/dropdown-menu';
 import { ChevronDownIcon } from 'lucide-react';
 
 /** One value a picker offers, under the name the trigger and the menu show it. */

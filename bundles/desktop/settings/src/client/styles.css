@@ -4,7 +4,7 @@
  * (design §9.4).
  */
 @import 'tailwindcss/utilities.css' layer(utilities);
-@reference 'desktop-ui/tailwind.css';
+@reference 'desktop/ui/tailwind.css';
 @source './';
 /*
  * The shared components' classes too, so this sheet's utilities are always the
@@ -12,4 +12,4 @@
  * theme emit (`*:w-full` on a field over a trigger's `w-fit`) keeps the order
  * one compiled stylesheet gives it, instead of losing to a later plain utility.
  */
-@source '../../../../../packages/desktop-ui/src';
+@source '../../../../../packages/desktop/src';

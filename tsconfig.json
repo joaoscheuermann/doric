@@ -7,7 +7,7 @@
       "path": "./packages/jsonl"
     },
     {
-      "path": "./packages/desktop-reads"
+      "path": "./packages/desktop"
     },
     {
       "path": "./packages/sandbox"
@@ -89,12 +89,6 @@
     },
     {
       "path": "./bundles/runtime/direct"
-    },
-    {
-      "path": "./packages/desktop-client"
-    },
-    {
-      "path": "./packages/desktop-ui"
     },
     {
       "path": "./bundles/desktop/history"

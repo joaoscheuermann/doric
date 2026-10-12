@@ -27,16 +27,13 @@
       "path": "../../../packages/sandbox"
     },
     {
-      "path": "../../../packages/desktop-reads"
+      "path": "../../../packages/desktop"
     },
     {
       "path": "../../desktop/layout"
     },
     {
       "path": "../files"
-    },
-    {
-      "path": "../../../packages/desktop-ui"
     }
   ]
 }

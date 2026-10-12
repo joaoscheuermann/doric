@@ -1,5 +1,5 @@
-import { Button } from 'desktop-ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop-ui/tooltip';
+import { Button } from 'desktop/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import { ArrowUpIcon, CheckIcon, PauseIcon, PlayIcon } from 'lucide-react';
 
 /** One control sends a draft, resumes queued work, or pauses dispatch. */

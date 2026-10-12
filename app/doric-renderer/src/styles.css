@@ -1,5 +1,5 @@
 /*
- * The shell's sheet (stage 9, design §9.4). The window loads desktop-ui's
+ * The shell's sheet (stage 9, design §9.4). The window loads desktop/ui's
  * `theme.css` (preflight, faces, tokens, the theme mapping and the components'
  * utilities) before this sheet, and each UI bundle's `client/styles.css` after
  * it; the conversation's rules live in the chat bundle and the Monaco and xterm
@@ -13,9 +13,9 @@
  * the working directory, so the set does not depend on where the build runs.
  */
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
-@reference 'desktop-ui/tailwind.css';
+@reference 'desktop/ui/tailwind.css';
 @source './';
-@source '../../../packages/desktop-ui/src';
+@source '../../../packages/desktop/src';
 @source '../../../bundles/*/*/src/client/**/*';
 
 @layer base {

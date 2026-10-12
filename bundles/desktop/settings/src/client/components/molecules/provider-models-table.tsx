@@ -16,16 +16,16 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { Button } from 'desktop-ui/button';
-import { Checkbox } from 'desktop-ui/checkbox';
+import { Button } from 'desktop/ui/button';
+import { Checkbox } from 'desktop/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuTrigger,
-} from 'desktop-ui/dropdown-menu';
-import { Input } from 'desktop-ui/input';
+} from 'desktop/ui/dropdown-menu';
+import { Input } from 'desktop/ui/input';
 import {
   Select,
   SelectContent,
@@ -33,7 +33,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from 'desktop-ui/select';
+} from 'desktop/ui/select';
 import {
   Table,
   TableBody,
@@ -41,7 +41,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from 'desktop-ui/table';
+} from 'desktop/ui/table';
 import {
   ArrowUpDownIcon,
   CheckIcon,

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'desktop-ui/sonner';
+import { toast } from 'desktop/ui/sonner';
 import { useCallback } from 'react';
 
 import { threadsApi } from '../api/threads-api.js';

@@ -5,8 +5,8 @@
 
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { TooltipProvider } from 'desktop-ui/tooltip';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { TooltipProvider } from 'desktop/ui/tooltip';
 import type { ReactNode } from 'react';
 
 import { UsageSummary } from './components/usage-summary.js';

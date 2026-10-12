@@ -5,7 +5,7 @@
 // two is on screen.
 
 import type { Services } from 'bundle/contracts';
-import { Button } from 'desktop-ui/button';
+import { Button } from 'desktop/ui/button';
 import { LayoutPanelV1 } from 'layout/contracts';
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react';
 

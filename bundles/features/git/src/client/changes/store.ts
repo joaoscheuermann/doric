@@ -15,8 +15,8 @@ import {
   pendingReadInterval,
   readRetry,
   refreshQueries,
-} from 'desktop-reads';
-import { toggleExpanded } from 'desktop-ui/panels';
+} from 'desktop/reads';
+import { toggleExpanded } from 'desktop/ui/panels';
 import { type ReadState, ROOT_PATH, workspacePath } from 'files/contracts';
 import { createStore } from 'zustand/vanilla';
 

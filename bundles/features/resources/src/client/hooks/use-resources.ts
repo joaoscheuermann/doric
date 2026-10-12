@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { pendingReadInterval } from 'desktop-reads';
+import { pendingReadInterval } from 'desktop/reads';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ResourcesReads } from '../api/resources.js';

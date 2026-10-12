@@ -14,9 +14,9 @@ import {
   PanelState,
   ReadFeedback,
   TreeSkeleton,
-} from 'desktop-ui/panels';
-import { ScrollArea } from 'desktop-ui/scroll-area';
-import { SidebarMenu } from 'desktop-ui/sidebar';
+} from 'desktop/ui/panels';
+import { ScrollArea } from 'desktop/ui/scroll-area';
+import { SidebarMenu } from 'desktop/ui/sidebar';
 import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useStore } from 'zustand/react';

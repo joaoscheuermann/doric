@@ -1,9 +1,9 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
-import { Button } from 'desktop-ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop-ui/popover';
-import { Separator } from 'desktop-ui/separator';
-import { cn } from 'desktop-ui/utils';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { Button } from 'desktop/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { Separator } from 'desktop/ui/separator';
+import { cn } from 'desktop/ui/utils';
 import type { NodeKey } from 'lexical';
 import {
   type KeyboardEvent,

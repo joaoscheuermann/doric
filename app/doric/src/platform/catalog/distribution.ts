@@ -4,7 +4,7 @@
 // `ready()`; every failure shows its recovery state and waits for an action.
 
 import type { Diagnostics } from 'bundle/contracts';
-import type { WindowMode } from 'desktop-client/protocol';
+import type { WindowMode } from 'desktop/protocol';
 
 import { messageOf, type PlatformLog } from '../log';
 import {

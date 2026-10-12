@@ -1,5 +1,5 @@
 // The sandbox vocabulary the files, git and resources surfaces share (moved
-// from `desktop-reads`, stage BWP-11). It is published through this contracts
+// from `desktop/reads`, stage BWP-11). It is published through this contracts
 // module, which a window loads by its own specifier, so it imports nothing at
 // runtime: the workspace root is restated here as the empty path it is.
 

@@ -14,9 +14,9 @@ import type {
   WindowChrome,
   WindowDescription,
   WindowFailure,
-} from 'desktop-client/protocol';
+} from 'desktop/protocol';
 
-/** = `desktop-client`'s DESKTOP_CHANNEL and DESKTOP_PUSH_CHANNEL (a test pins it). */
+/** = `desktop/client`'s DESKTOP_CHANNEL and DESKTOP_PUSH_CHANNEL (a test pins it). */
 export const DESKTOP_CHANNEL = 'doric:desktop';
 export const DESKTOP_PUSH_CHANNEL = 'doric:desktop:push';
 

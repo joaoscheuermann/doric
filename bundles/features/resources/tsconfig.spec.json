@@ -28,7 +28,7 @@
       "path": "../../runtime/runtime"
     },
     {
-      "path": "../../../packages/desktop-reads/tsconfig.lib.json"
+      "path": "../../../packages/desktop/tsconfig.lib.json"
     }
   ]
 }

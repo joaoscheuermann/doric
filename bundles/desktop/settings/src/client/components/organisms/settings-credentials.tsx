@@ -16,8 +16,8 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
-import { Alert, AlertDescription, AlertTitle } from 'desktop-ui/alert';
-import { Button } from 'desktop-ui/button';
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { Button } from 'desktop/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -25,21 +25,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from 'desktop-ui/dialog';
+} from 'desktop/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuTrigger,
-} from 'desktop-ui/dropdown-menu';
+} from 'desktop/ui/dropdown-menu';
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-} from 'desktop-ui/field';
-import { Input } from 'desktop-ui/input';
+} from 'desktop/ui/field';
+import { Input } from 'desktop/ui/input';
 import {
   Select,
   SelectContent,
@@ -47,8 +47,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from 'desktop-ui/select';
-import { toast } from 'desktop-ui/sonner';
+} from 'desktop/ui/select';
+import { toast } from 'desktop/ui/sonner';
 import {
   Table,
   TableBody,
@@ -56,7 +56,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from 'desktop-ui/table';
+} from 'desktop/ui/table';
 import {
   AlertCircleIcon,
   ArrowUpDownIcon,

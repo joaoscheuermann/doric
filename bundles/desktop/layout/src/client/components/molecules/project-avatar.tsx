@@ -1,4 +1,4 @@
-import { cn } from 'desktop-ui/utils';
+import { cn } from 'desktop/ui/utils';
 
 import {
   type ProjectColor,

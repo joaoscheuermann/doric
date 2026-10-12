@@ -1,9 +1,9 @@
 // The changed paths of a Project as the Changes view and the file trees draw
-// them (moved from `desktop-reads`, stage BWP-11): the tree rows, the marks a
+// them (moved from `desktop/reads`, stage BWP-11): the tree rows, the marks a
 // tree shows beside a path, and the totals the footer and the tabs read.
 
-import { baseName, joinPath, parentPath } from 'desktop-reads';
-import type { TreeNode } from 'desktop-ui/panels';
+import { baseName, joinPath, parentPath } from 'desktop/reads';
+import type { TreeNode } from 'desktop/ui/panels';
 
 import type {
   ChangeMark,

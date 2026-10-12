@@ -1,6 +1,6 @@
-import { Button } from 'desktop-ui/button';
-import type { DiffControls } from 'desktop-ui/code';
-import { ToggleGroup, ToggleGroupItem } from 'desktop-ui/toggle-group';
+import { Button } from 'desktop/ui/button';
+import type { DiffControls } from 'desktop/ui/code';
+import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
 import {
   ArrowDownIcon,
   ArrowUpIcon,

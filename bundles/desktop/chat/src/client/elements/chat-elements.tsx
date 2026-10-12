@@ -2,13 +2,13 @@
 // and `<chat-composer>` (a `layout.footer` item) each own a React root over
 // the one chat query client, with a tooltip provider per root; neither
 // mounts a toaster, since the window's single toaster belongs to the layout
-// and `toast` reaches it through `desktop-ui/sonner`. `<chat-block>` draws a
+// and `toast` reaches it through `desktop/ui/sonner`. `<chat-block>` draws a
 // block no renderer claims. `<chat-readonly-markdown text>` (R-9.9) is the
 // conversation's read-only Markdown for another bundle's block element.
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { defineReactElement } from 'desktop-ui/react-element';
-import { TooltipProvider } from 'desktop-ui/tooltip';
+import { defineReactElement } from 'desktop/ui/react-element';
+import { TooltipProvider } from 'desktop/ui/tooltip';
 import { type ReactNode, StrictMode } from 'react';
 
 import type { RenderBlock } from '../../contracts/index.js';
