@@ -16,7 +16,12 @@ import {
 import type { ElementConstructor } from './basic/ui.js';
 import type { OpenWindowRequest } from './basic/windows.js';
 import { openWindowRequestSchema } from './basic/windows.js';
-import type { CallArg, Caller, CallScope } from './call.js';
+import {
+  type CallArg,
+  type Caller,
+  type CallScope,
+  callScopeSchema,
+} from './call.js';
 import type { Disposable } from './context.js';
 import { defineHook, definePlatformHooks, ref } from './define.js';
 import type { Environment } from './ids.js';
@@ -436,15 +441,6 @@ export interface LogRecord {
   readonly traceId?: string;
 }
 
-const scopeSchema = z
-  .object({
-    projectId: z.string().optional(),
-    threadId: z.string().optional(),
-    promptId: z.string().optional(),
-    windowKey: z.string().optional(),
-  })
-  .strict();
-
 export const logRecordSchema = z
   .object({
     level: z.enum(['debug', 'info', 'warn', 'error']),
@@ -454,7 +450,7 @@ export const logRecordSchema = z
     version: z.string(),
     generation: z.number().int(),
     environment: environmentSchema,
-    scope: scopeSchema.optional(),
+    scope: callScopeSchema.optional(),
     traceId: z.string().optional(),
   })
   .strict();

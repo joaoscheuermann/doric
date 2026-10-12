@@ -26,9 +26,6 @@
       "path": "../../packages/bundle"
     },
     {
-      "path": "../../packages/host"
-    },
-    {
       "path": "../../packages/desktop-client"
     },
     {

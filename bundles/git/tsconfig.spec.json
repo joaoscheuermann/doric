@@ -31,9 +31,6 @@
       "path": "../../packages/sandbox/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/host/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/desktop-reads/tsconfig.lib.json"
     },
     {

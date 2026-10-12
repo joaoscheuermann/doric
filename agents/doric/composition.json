@@ -25,5 +25,22 @@
   "providers": {
     "storage.backend/v1": "postgres",
     "secrets.backend/v1": "postgres"
+  },
+  "required": {
+    "contracts": [
+      "runtime/v1",
+      "executor/v1",
+      "sandbox/v1",
+      "models/v1",
+      "host-config/v1"
+    ],
+    "bundles": ["transport"]
+  },
+  "alternatives": {
+    "sandbox": {
+      "env": "DORIC_SANDBOX_PROVIDER",
+      "default": "docker",
+      "options": ["docker", "firecracker"]
+    }
   }
 }

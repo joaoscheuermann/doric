@@ -11,6 +11,7 @@ import {
   runtimeLeaseMethods as methods,
   RuntimeLeaseV1,
 } from '../../contracts/lease.js';
+import { readRuntimeScope } from '../../contracts/scope.js';
 import type { Bindings } from '../domain/bindings.js';
 import type { WorkspaceService } from '../domain/types.js';
 import type { ProjectResourcesReader } from '../peers.js';
@@ -25,7 +26,7 @@ import type { ProjectResourcesReader } from '../peers.js';
 const describe = ({ id, root }: Sandbox) => ({ id, root });
 
 const scoped = (call: Call, key: 'projectId' | 'threadId'): string => {
-  const id = call.scope?.[key];
+  const id = readRuntimeScope(call)[key];
   if (id === undefined)
     throw new ContractError('invalid_input', leaseScopeMessage);
   return id;

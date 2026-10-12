@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import type { Caller, CallScope, TraceContext } from '../../contracts/call.js';
+import {
+  type Caller,
+  type CallScope,
+  callScopeSchema,
+  scopeKeyPattern,
+  type TraceContext,
+} from '../../contracts/call.js';
 import type { Cardinality } from '../../contracts/define.js';
 import type { Environment } from '../../contracts/ids.js';
 import {
@@ -276,16 +282,27 @@ const callerSchema = z.object({
   generation: z.number(),
 });
 
-const scopeSchema = z.object({
-  projectId: z.string().optional(),
-  threadId: z.string().optional(),
-  promptId: z.string().optional(),
-  windowKey: z.string().optional(),
-});
+/**
+ * A wire scope drops what cannot be a scope entry, a key outside the scope
+ * pattern or a non-string value, before the bounds are checked: a sender's
+ * stray entry does not refuse the whole call, as the wire has always stripped
+ * such keys. The bounds of `callScopeSchema` still apply to what remains.
+ */
+const wireScopeSchema = z
+  .record(z.string(), z.unknown())
+  .transform((scope) =>
+    Object.fromEntries(
+      Object.entries(scope).filter(
+        ([key, value]) =>
+          scopeKeyPattern.test(key) && typeof value === 'string',
+      ),
+    ),
+  )
+  .pipe(callScopeSchema);
 
 const wireCallShape = {
   caller: callerSchema,
-  scope: scopeSchema.optional(),
+  scope: wireScopeSchema.optional(),
   trace: z.object({ traceparent: z.string() }),
   deadline: z.number(),
   generation: z.number().int().nonnegative(),

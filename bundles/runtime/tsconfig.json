@@ -29,9 +29,6 @@
     },
     {
       "path": "../postgres"
-    },
-    {
-      "path": "../../packages/host"
     }
   ]
 }

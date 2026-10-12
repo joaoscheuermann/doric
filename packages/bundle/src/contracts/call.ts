@@ -1,10 +1,34 @@
-/** Execution scope carried by a call; `use(contract, scope)` binds one too. */
-export interface CallScope {
-  readonly projectId?: string;
-  readonly threadId?: string;
-  readonly promptId?: string;
-  readonly windowKey?: string;
-}
+import { z } from 'zod';
+
+/**
+ * Scope carried by a call; `use(contract, scope)` binds one too. The platform
+ * only transports it: its keys and values are owned by the bundles that read
+ * them. `windowKey` is the one reserved key, filled by the platform for calls
+ * leaving a window (see `callScopeSchema`).
+ */
+export type CallScope = Readonly<Record<string, string>>;
+
+/** The key the platform fills for calls leaving a window. */
+export const windowScopeKey = 'windowKey';
+
+/** A scope key: a letter, then letters, digits, `_`, `.` or `-`. */
+export const scopeKeyPattern = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+
+/** The most keys one scope carries. */
+export const SCOPE_MAX_KEYS = 16;
+
+/** The longest value a scope key holds. */
+export const SCOPE_MAX_VALUE = 512;
+
+/**
+ * Every scope on the wire, in logs and in bridge payloads: bounded string
+ * records. The bounds keep the transport generic, and no key is named here.
+ */
+export const callScopeSchema = z
+  .record(z.string().regex(scopeKeyPattern), z.string().max(SCOPE_MAX_VALUE))
+  .refine((scope) => Object.keys(scope).length <= SCOPE_MAX_KEYS, {
+    message: `A call scope holds at most ${SCOPE_MAX_KEYS} keys.`,
+  });
 
 /** The principal that made one hop, filled by the dispatcher and never inherited. */
 export interface Caller {

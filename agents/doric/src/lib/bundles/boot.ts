@@ -2,13 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
+  type AlternativeChoices,
   type Composition,
   compositionOverridesPath,
   type EmbeddedBundle,
+  enableAlternatives,
+  enabledAlternatives,
   type KernelPlatform,
   type LogSink,
   type PlatformLog,
+  readComposition,
+  selectAlternatives,
   startKernel,
+  type Variables,
 } from 'bundle';
 import type { CatalogSnapshot } from 'bundle/contracts';
 import type { Logger } from 'pino';
@@ -40,8 +46,9 @@ export interface StartBundlesOptions {
   readonly compositionPath: string;
   /**
    * The composition to boot in place of the file at `compositionPath`, such
-   * as the shipped one with the sandbox bundle `DORIC_SANDBOX_PROVIDER` names
-   * (D10-9); its overrides still live beside `compositionPath`.
+   * as the shipped one with the alternatives the variables chose applied
+   * (`hostComposition`, D10-9); its overrides still live beside
+   * `compositionPath`.
    */
   readonly composition?: Composition | { readonly path: string };
   /**
@@ -95,24 +102,35 @@ const platformLog = (logger: Logger): PlatformLog => ({
 });
 
 /**
- * The contracts without which the host cannot serve: the domain, the
- * executor, the sandboxes, the models and the configuration. Each must have
- * an active provider, and the transport must be active, or the host would
- * run without routes or without the operations its routes call.
+ * The contracts and bundles the host needs active before it serves, as its
+ * composition declares them (`required`). Without them the host would run
+ * without routes or without the operations its routes call.
  */
-export const structuralContracts = [
-  'runtime/v1',
-  'executor/v1',
-  'sandbox/v1',
-  'models/v1',
-  'host-config/v1',
-] as const;
+export type StructuralRequirement = NonNullable<Composition['required']>;
 
-export const structuralBundles = ['transport'] as const;
+/**
+ * What a composition that declares no `required` requires: the structural
+ * set the host has always required (runtime, executor, sandbox, models and
+ * host-config contracts, and the transport bundle). The shipped composition
+ * declares the same set; an operator composition without `required` keeps
+ * the refusal the host always gave, so an omission cannot boot a host without
+ * routes or without the operations its routes call.
+ */
+export const defaultRequirement: StructuralRequirement = {
+  contracts: [
+    'runtime/v1',
+    'executor/v1',
+    'sandbox/v1',
+    'models/v1',
+    'host-config/v1',
+  ],
+  bundles: ['transport'],
+};
 
 /** Why the catalog cannot serve the host, or `undefined` when it can. */
 export const structuralFault = (
   catalog: CatalogSnapshot,
+  required: StructuralRequirement,
 ): string | undefined => {
   const active = new Set(
     catalog.bundles
@@ -120,7 +138,7 @@ export const structuralFault = (
       .map(({ id }) => id),
   );
   const missing = [
-    ...structuralContracts.filter(
+    ...required.contracts.filter(
       (id) =>
         !catalog.contracts.some(
           (contract) =>
@@ -128,7 +146,7 @@ export const structuralFault = (
             contract.providers.some(({ bundleId }) => active.has(bundleId)),
         ),
     ),
-    ...structuralBundles.filter((id) => !active.has(id)),
+    ...required.bundles.filter((id) => !active.has(id)),
   ];
 
   return missing.length === 0
@@ -145,14 +163,73 @@ export const structuralFault = (
 export const assertStructural = async (
   platform: KernelPlatform,
   logger: Logger,
+  required: StructuralRequirement,
 ): Promise<void> => {
-  const reason = structuralFault(platform.catalog());
+  const reason = structuralFault(platform.catalog(), required);
 
   if (reason === undefined) return;
 
   logger.error({ reason }, 'Bundle recovery mode');
   await platform.stop();
   throw new BundleRecoveryError(reason);
+};
+
+/** The composition the host boots, with what the startup log says about it. */
+export interface HostComposition {
+  /**
+   * What the kernel boots: the composition file, or the object with the chosen
+   * alternatives enabled.
+   */
+  readonly composition: Composition | { readonly path: string };
+  /** The option each alternative takes (`{ sandbox: 'docker' }`). */
+  readonly alternatives: AlternativeChoices;
+  readonly required: StructuralRequirement;
+}
+
+/**
+ * Reads the composition the host boots and applies the alternatives its
+ * variables choose (D10-9). Without `DORIC_COMPOSITION`, the shipped
+ * composition boots with each chosen option enabled in place of its default
+ * bundle; its overrides still live beside the file. An operator composition
+ * is booted as written, and its enabled bundles say which option it uses. A
+ * composition that cannot be read is left to the kernel, which refuses it at
+ * `bundle_load`.
+ */
+export const hostComposition = async (
+  variables: Variables,
+  compositionPath: string,
+): Promise<HostComposition> => {
+  let composition: Composition;
+
+  try {
+    composition = await readComposition(compositionPath);
+  } catch {
+    return {
+      composition: { path: compositionPath },
+      alternatives: {},
+      required: defaultRequirement,
+    };
+  }
+
+  if (variables.DORIC_COMPOSITION !== undefined)
+    return {
+      composition: { path: compositionPath },
+      alternatives: enabledAlternatives(composition),
+      required: composition.required ?? defaultRequirement,
+    };
+
+  const alternatives = selectAlternatives(composition, variables);
+  const changed = Object.entries(alternatives).some(
+    ([name, option]) => option !== composition.alternatives?.[name]?.default,
+  );
+
+  return {
+    composition: changed
+      ? enableAlternatives(composition, alternatives)
+      : { path: compositionPath },
+    alternatives,
+    required: composition.required ?? defaultRequirement,
+  };
 };
 
 /**
@@ -215,9 +292,10 @@ export const watchStructural = (
   platform: KernelPlatform,
   logger: Logger,
   fatal: (reason: string) => void,
+  required: StructuralRequirement,
 ): (() => void) =>
   platform.generations.onActive(() => {
-    const reason = structuralFault(platform.catalog());
+    const reason = structuralFault(platform.catalog(), required);
 
     if (reason === undefined) return;
 

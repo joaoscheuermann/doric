@@ -6,8 +6,11 @@ import {
   toolsMethods,
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import type { ThreadControl } from 'host';
-import { RuntimeThreadsV1, runtimeThreadsMethods } from 'runtime/contracts';
+import {
+  RuntimeThreadsV1,
+  runtimeThreadsMethods,
+  type ThreadControl,
+} from 'runtime/contracts';
 import { isBoundTool, type Tool } from 'tool';
 
 import { activate } from '../../src/host/index.js';

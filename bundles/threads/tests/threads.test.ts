@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ThreadControl, ThreadView } from 'host';
+import type { ThreadControl, ThreadView } from 'runtime/contracts';
 import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 
 import { activatedTools } from './support/services.js';

@@ -6,7 +6,7 @@ import { LOCAL_KEY } from './runtime.js';
 
 /*
  * runtime.workspace/v1: the working directory of the calling prompt's own
- * Thread (call.scope), derived from packages/host's WorkspaceControl.
+ * Thread (call.scope), derived from the tool-host WorkspaceControl.
  */
 
 /** What moving a Thread's working directory did; every outcome is a value. */

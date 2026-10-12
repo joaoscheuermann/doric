@@ -1,7 +1,7 @@
 import { lstat, readdir, readFile, stat } from 'node:fs/promises';
 import hostPath, { posix as sandboxPath } from 'node:path';
 
-import type { Host } from 'host';
+import type { Host } from 'runtime/contracts';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 export const WORKSPACE_ROOT = '/workspace';

@@ -35,9 +35,6 @@
       "path": "../layout"
     },
     {
-      "path": "../../packages/host"
-    },
-    {
       "path": "../../packages/desktop-ui"
     },
     {

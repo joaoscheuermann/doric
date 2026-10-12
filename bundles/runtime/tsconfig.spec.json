@@ -16,9 +16,6 @@
       "path": "../../packages/bundle/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/host/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/sandbox/tsconfig.lib.json"
     },
     {

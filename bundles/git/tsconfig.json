@@ -27,9 +27,6 @@
       "path": "../../packages/sandbox"
     },
     {
-      "path": "../../packages/host"
-    },
-    {
       "path": "../../packages/desktop-reads"
     },
     {

@@ -1,55 +1,19 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
+
+import type { CatalogSnapshot } from 'bundle/contracts';
 
 import {
-  sandboxComposition,
-  sandboxSettings,
-} from '../src/lib/bundles/sandbox.js';
-import { bundlesPath } from './helpers/platform.js';
+  defaultRequirement,
+  hostComposition,
+  structuralFault,
+} from '../src/lib/bundles/boot.js';
 
-// The kernel's `sandbox_pool` log lines describe the pool the staged
-// `docker` or `firecracker` bundle builds in the generation process, so both
-// must read the same environment into the same settings; and the shipped
-// composition enables the bundle `DORIC_SANDBOX_PROVIDER` names (D10-9).
-
-type Settings = (
-  environment: Readonly<Record<string, string | undefined>>,
-) => unknown;
-
-const bundleSettings = async (
-  bundle: 'docker' | 'firecracker',
-): Promise<Settings> => {
-  const module = (await import(
-    pathToFileURL(resolve(bundlesPath, `${bundle}/host/sandbox.js`)).href
-  )) as Record<string, Settings>;
-  const settings = module[`${bundle}SandboxSettings`];
-  assert.ok(settings);
-  return settings;
-};
-
-const environments: readonly Readonly<Record<string, string | undefined>>[] = [
-  {},
-  { DORIC_SANDBOX_IMAGE: 'doric-sandbox:local', DORIC_SANDBOX_SSH: 'true' },
-  { DORIC_SANDBOX_IMAGE: 'custom:1', DORIC_SANDBOX_SSH: 'false' },
-];
-
-void test('the kernel logs the sandbox settings the staged sandbox bundle builds its pool from', async () => {
-  for (const bundle of ['docker', 'firecracker'] as const) {
-    const settings = await bundleSettings(bundle);
-    for (const environment of environments) {
-      const { providerName, ...logged } = sandboxSettings(environment, bundle);
-      assert.equal(providerName, bundle);
-      assert.deepEqual(
-        logged,
-        settings(environment),
-        JSON.stringify(environment),
-      );
-    }
-  }
-});
+// The shipped composition enables the sandbox bundle `DORIC_SANDBOX_PROVIDER`
+// names (D10-9). The kernel keeps no sandbox settings: each sandbox bundle reads
+// its own environment in its generation process.
 
 const shipped = 'agents/doric/composition.json';
 
@@ -62,16 +26,16 @@ void test('the shipped composition boots docker unless DORIC_SANDBOX_PROVIDER as
     { DORIC_SANDBOX_PROVIDER: 'docker' },
     { DORIC_SANDBOX_PROVIDER: 'unknown' },
   ]) {
-    const chosen = await sandboxComposition(environment, shipped);
-    assert.equal(chosen.providerName, 'docker');
+    const chosen = await hostComposition(environment, shipped);
+    assert.deepEqual(chosen.alternatives, { sandbox: 'docker' });
     assert.deepEqual(chosen.composition, { path: shipped });
   }
 
-  const firecracker = await sandboxComposition(
+  const firecracker = await hostComposition(
     { DORIC_SANDBOX_PROVIDER: 'firecracker' },
     shipped,
   );
-  assert.equal(firecracker.providerName, 'firecracker');
+  assert.deepEqual(firecracker.alternatives, { sandbox: 'firecracker' });
   const enabled = enabledOf(firecracker.composition);
   assert.ok(enabled.includes('firecracker'));
   assert.ok(!enabled.includes('docker'));
@@ -83,39 +47,112 @@ void test('the shipped composition boots docker unless DORIC_SANDBOX_PROVIDER as
   );
 });
 
-void test('an operator composition names its sandbox bundle itself', async () => {
+void test('the shipped composition requires what the host always required', async () => {
+  const chosen = await hostComposition({}, shipped);
+
+  assert.deepEqual(chosen.required, defaultRequirement);
+});
+
+const withComposition = async (
+  document: unknown,
+  run: (path: string) => Promise<void>,
+) => {
   const directory = await mkdtemp(join('agents/doric/dist-tests', 'sandbox-'));
   const path = join(directory, 'composition.json');
   try {
+    // A string is written as it is: the unreadable case is not JSON.
     await writeFile(
       path,
-      JSON.stringify({ core: 'core', enabled: ['core', 'firecracker'] }),
+      typeof document === 'string' ? document : JSON.stringify(document),
     );
-    const own = await sandboxComposition(
-      { DORIC_COMPOSITION: path, DORIC_SANDBOX_PROVIDER: 'docker' },
-      path,
-    );
-    assert.equal(own.providerName, 'firecracker');
-    assert.deepEqual(own.composition, { path });
-
-    await writeFile(
-      path,
-      JSON.stringify({ core: 'core', enabled: ['core', 'docker'] }),
-    );
-    const kept = await sandboxComposition(
-      { DORIC_COMPOSITION: path, DORIC_SANDBOX_PROVIDER: 'firecracker' },
-      path,
-    );
-    assert.equal(kept.providerName, 'docker');
-    assert.deepEqual(kept.composition, { path });
-
-    // An unreadable file is left to the kernel's own refusal.
-    await writeFile(path, '{');
-    assert.deepEqual(
-      await sandboxComposition({ DORIC_COMPOSITION: path }, path),
-      { composition: { path }, providerName: 'docker' },
-    );
+    await run(path);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+};
+
+const alternatives = {
+  sandbox: {
+    env: 'DORIC_SANDBOX_PROVIDER',
+    default: 'docker',
+    options: ['docker', 'firecracker'],
+  },
+};
+
+void test('an operator composition names its sandbox bundle itself', async () => {
+  await withComposition(
+    { core: 'core', enabled: ['core', 'firecracker'], alternatives },
+    async (path) => {
+      const own = await hostComposition(
+        { DORIC_COMPOSITION: path, DORIC_SANDBOX_PROVIDER: 'docker' },
+        path,
+      );
+      assert.deepEqual(own.alternatives, { sandbox: 'firecracker' });
+      assert.deepEqual(own.composition, { path });
+    },
+  );
+
+  await withComposition(
+    { core: 'core', enabled: ['core', 'docker'], alternatives },
+    async (path) => {
+      const kept = await hostComposition(
+        { DORIC_COMPOSITION: path, DORIC_SANDBOX_PROVIDER: 'firecracker' },
+        path,
+      );
+      assert.deepEqual(kept.alternatives, { sandbox: 'docker' });
+      assert.deepEqual(kept.composition, { path });
+    },
+  );
+});
+
+void test('an operator composition without alternatives boots as written', async () => {
+  await withComposition(
+    { core: 'core', enabled: ['core', 'firecracker'] },
+    async (path) => {
+      const own = await hostComposition(
+        { DORIC_COMPOSITION: path, DORIC_SANDBOX_PROVIDER: 'docker' },
+        path,
+      );
+      // No alternative is declared, so none is named: the enabled bundles
+      // boot as written and no sandbox option is assumed.
+      assert.deepEqual(own.alternatives, {});
+      assert.deepEqual(own.composition, { path });
+    },
+  );
+});
+
+void test('an operator composition without required keeps the structural requirement', async () => {
+  await withComposition({ core: 'core', enabled: ['core'] }, async (path) => {
+    const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
+
+    assert.deepEqual(own.required, defaultRequirement);
+    assert.deepEqual(own.required.bundles, ['transport']);
+  });
+});
+
+void test('an operator composition without required refuses a host without transport, as HEAD did', async () => {
+  await withComposition({ core: 'core', enabled: ['core'] }, async (path) => {
+    const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
+    // Only the core is active: the structural set is missing, as the host's
+    // boot reported it before `required` was configurable.
+    const catalog = {
+      contracts: [],
+      bundles: [{ id: 'core', state: 'active' }],
+    } as unknown as CatalogSnapshot;
+
+    assert.equal(
+      structuralFault(catalog, own.required),
+      'structural providers unavailable: runtime/v1, executor/v1, sandbox/v1, models/v1, host-config/v1, transport',
+    );
+  });
+});
+
+void test('an unreadable composition is left to the kernel with the same requirement', async () => {
+  await withComposition('{', async (path) => {
+    assert.deepEqual(await hostComposition({ DORIC_COMPOSITION: path }, path), {
+      composition: { path },
+      alternatives: {},
+      required: defaultRequirement,
+    });
+  });
 });

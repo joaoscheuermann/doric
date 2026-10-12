@@ -22,7 +22,6 @@
   ],
   "references": [
     { "path": "../../packages/bundle/tsconfig.lib.json" },
-    { "path": "../../packages/host/tsconfig.lib.json" },
     { "path": "../../packages/sandbox/tsconfig.lib.json" },
     { "path": "../../packages/tool/tsconfig.lib.json" },
     { "path": "../../packages/docker-sandbox/tsconfig.lib.json" }

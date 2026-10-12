@@ -1,7 +1,7 @@
-import type { CwdChange } from 'host';
 import type { ProviderMessage } from 'llms';
 import type {
   ContainerResources,
+  CwdChange,
   FileDiff,
   ProjectChangeSet,
   RepositoryChanges,

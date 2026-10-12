@@ -17,10 +17,14 @@ export type LeaseScope =
   | { readonly projectId: string }
   | { readonly threadId: string };
 
-/** The scope a Project read of a feature bundle binds. */
-export interface ProjectScope {
+/**
+ * The scope a Project read of a feature bundle binds. A type alias, not an
+ * interface: `CallScope` is `Readonly<Record<string, string>>`, which only an
+ * object type (not an interface) is assignable to.
+ */
+export type ProjectScope = {
   readonly projectId: string;
-}
+};
 
 /**
  * The contract stubs the routes and sockets call (design 57 §8.1). Each one

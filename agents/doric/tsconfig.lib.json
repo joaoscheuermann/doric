@@ -45,9 +45,6 @@
       "path": "../../packages/llms/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/host/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/firecracker-sandbox/tsconfig.lib.json"
     },
     {

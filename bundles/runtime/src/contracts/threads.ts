@@ -48,7 +48,7 @@ import {
 
 /*
  * runtime.threads/v1: the direct-child controls of one active parent prompt,
- * derived one to one from packages/host's ThreadControl. Record schemas are
+ * derived one to one from the tool-host ThreadControl. Record schemas are
  * loose so the host's real (larger) records validate and travel unchanged.
  */
 

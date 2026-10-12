@@ -3,7 +3,7 @@
 // `doric.shell/v1` contract. Browser-safe: types and zod schemas only; the
 // Electron main process imports it to validate what a window sends.
 
-import type { CallScope, Cardinality, JsonObject } from 'bundle/contracts';
+import type { Cardinality, JsonObject } from 'bundle/contracts';
 import {
   LOCAL_KEY,
   type ResolvedEnvironment,
@@ -219,7 +219,22 @@ export interface WindowCatalog {
 
 // Bridge calls ---------------------------------------------------------------
 
-export type BridgeScope = Omit<CallScope, 'windowKey'>;
+/**
+ * The scope a window sends: exactly the three keys the window could send
+ * before the scope became a generic record (`.strict()`, no other key), so a
+ * window cannot reach a key the platform never admitted. `windowKey` is not
+ * among them, so the dispatcher's own key cannot be impersonated. Values stay
+ * unbounded strings, as they were.
+ */
+const bridgeScopeSchema = z
+  .object({
+    projectId: z.string().optional(),
+    threadId: z.string().optional(),
+    promptId: z.string().optional(),
+  })
+  .strict();
+
+export type BridgeScope = z.infer<typeof bridgeScopeSchema>;
 
 export interface BridgeCallEnvelope {
   readonly id: string;
@@ -233,14 +248,6 @@ export interface BridgeCallEnvelope {
   readonly deadline: number;
   readonly traceparent: string;
 }
-
-const bridgeScopeSchema = z
-  .object({
-    projectId: z.string().optional(),
-    threadId: z.string().optional(),
-    promptId: z.string().optional(),
-  })
-  .strict();
 
 export const bridgeCallEnvelopeSchema = z
   .object({

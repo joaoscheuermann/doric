@@ -13,13 +13,13 @@ import { installBridge } from './lib/bridge/socket.js';
 import {
   assertStructural,
   bundlePaths,
+  hostComposition,
   startBundles,
   watchStructural,
 } from './lib/bundles/boot.js';
 import { createHostConfig } from './lib/bundles/configuration.js';
 import { connectDatabase } from './lib/bundles/database.js';
 import { installHandover } from './lib/bundles/handover.js';
-import { sandboxComposition, sandboxSettings } from './lib/bundles/sandbox.js';
 import { createHostTransport } from './lib/bundles/transport.js';
 import { createCredentialService } from './lib/credentials/service.js';
 
@@ -48,43 +48,23 @@ async function main() {
     process.env,
     dirname(fileURLToPath(import.meta.url)),
   );
-  const { composition, providerName } = await sandboxComposition(
+  const { composition, alternatives, required } = await hostComposition(
     process.env,
     paths.compositionPath,
   );
-  const sandbox = sandboxSettings(process.env, providerName);
-  const sandboxProviderName = sandbox.providerName;
   const startup = logger.child({ component: 'startup' });
 
-  startup.info(
-    {
-      host,
-      port,
-      sandboxProviderName,
-      sshEnabled: sandbox.ssh,
-    },
-    'Doric starting',
-  );
+  startup.info({ host, port, alternatives }, 'Doric starting');
   const app = express();
   const server = createServer(app);
   const io = new SocketServer(server);
 
-  // The pool itself is built by the enabled `docker` or `firecracker` bundle
-  // in the generation process, from the same environment; the kernel keeps
-  // the stage for its log lines.
+  // The pool itself is built by the enabled sandbox bundle in the generation
+  // process, from its own environment; the kernel names only the chosen
+  // alternatives. Its settings are logged by that bundle (BWP-6).
   startupStage = 'sandbox_pool';
-  startup.info({ sandboxProviderName }, 'Configuring sandbox pool');
-  startup.info(
-    {
-      sandboxProviderName,
-      sandboxImage: sandbox.image,
-      sandboxResources: sandbox.resources,
-      ...sandbox.limits,
-      networkMode: 'egress',
-      sshEnabled: sandbox.ssh,
-    },
-    'Sandbox pool configured',
-  );
+  startup.info({ alternatives }, 'Configuring sandbox pool');
+  startup.info({ alternatives }, 'Sandbox pool configured');
 
   startupStage = 'bundle_load';
   startup.info('Loading bundles');
@@ -99,7 +79,7 @@ async function main() {
   const { platform } = bundles;
   transport.bind(platform);
 
-  await assertStructural(platform, startup);
+  await assertStructural(platform, startup, required);
   const skills = await platform.services.use(SkillsV1).list();
   startup.info(
     {
@@ -153,10 +133,15 @@ async function main() {
     services: platform.services,
     log: startup,
   });
-  const structural = watchStructural(platform, startup, () => {
-    logger.flush();
-    process.exit(1);
-  });
+  const structural = watchStructural(
+    platform,
+    startup,
+    () => {
+      logger.flush();
+      process.exit(1);
+    },
+    required,
+  );
   // The desktop's bridge to the kernel (HR-1): distribution, artifacts and
   // generation changes of `doric.catalog/v1`, and desktop diagnostics.
   installBridge({
@@ -178,10 +163,7 @@ async function main() {
     server.once('error', reject);
     server.listen(port, host, resolve);
   });
-  startup.info(
-    { host, port, sandboxProvider: sandboxProviderName, interrupted },
-    'Doric listening',
-  );
+  startup.info({ host, port, alternatives, interrupted }, 'Doric listening');
   startupStage = 'ready';
 
   let closing = false;

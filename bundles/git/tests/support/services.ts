@@ -1,7 +1,7 @@
 import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import type { Host } from 'host';
 import {
+  type Host,
   RuntimeLeaseV1,
   RuntimeWorkspaceV1,
   runtimeLeaseMethods,

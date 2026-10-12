@@ -27,7 +27,6 @@
     "chat": "0.0.1",
     "core": "0.0.1",
     "desktop-client": "0.0.1",
-    "happy-dom": "20.8.9",
-    "host": "0.0.1"
+    "happy-dom": "20.8.9"
   }
 }

@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 /*
  * terminal/v1: tracked terminal commands of the calling prompt's Thread
- * (call.scope), derived one to one from packages/host's TerminalControl, and
+ * (call.scope), derived one to one from the runtime's tool-host TerminalControl, and
  * (1.1.0, stage 10) the terminal sessions of every Project: the manual shells
  * a user opens and the commands the agent runs, with their output stream.
  * The `terminal` bundle provides it; until stage 10's host switch the

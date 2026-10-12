@@ -17,9 +17,6 @@
       "path": "../../packages/bundle"
     },
     {
-      "path": "../../packages/host"
-    },
-    {
       "path": "../../packages/sandbox"
     },
     {

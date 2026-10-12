@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, test } from 'node:test';
 
-import type { Host } from 'host';
+import type { Host } from 'runtime/contracts';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 import { createTool } from '../src/host/tools/git.js';

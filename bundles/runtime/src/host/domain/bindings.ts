@@ -1,6 +1,8 @@
 import type { Call, CallScope } from 'bundle/contracts';
-import type { Host } from 'host';
 import type { Sandbox } from 'sandbox';
+
+import { readRuntimeScope } from '../../contracts/scope.js';
+import type { Host } from '../../contracts/tool-host/index.js';
 
 /*
  * The prompt bindings (design 57 §4.4): what the stage-1 host-adapter's
@@ -51,14 +53,14 @@ export const createBindings = (): Bindings => {
       };
     },
     bound: (call) => {
-      const promptId = call.scope?.promptId;
+      const scope = readRuntimeScope(call);
       const binding =
-        promptId === undefined ? undefined : bindings.get(promptId);
+        scope.promptId === undefined ? undefined : bindings.get(scope.promptId);
 
       if (
         binding === undefined ||
-        binding.threadId !== call.scope?.threadId ||
-        binding.projectId !== call.scope?.projectId
+        binding.threadId !== scope.threadId ||
+        binding.projectId !== scope.projectId
       )
         throw inactiveControl();
 

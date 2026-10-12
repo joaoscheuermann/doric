@@ -3,30 +3,24 @@ import test from 'node:test';
 
 import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import type * as host from 'host';
 import type { SandboxExecInput } from 'sandbox';
+import type { Terminal as TerminalRunner } from 'terminal/contracts';
 import type { z } from 'zod';
 
 import {
-  type CwdChange,
-  type InterruptResult,
   type LeaseExecInput,
-  type PromptResult,
   type RuntimeThreadControls,
   RuntimeThreadsV1,
   type RuntimeWorkspace,
   runtimeThreadsMethods,
-  type SpawnedThread,
-  type ThreadEventsPage,
-  type ThreadEventView,
-  type ThreadPage,
-  type ThreadResult,
-  type ThreadSummary,
+  type TerminalControl,
+  type ThreadControl,
   type ThreadView,
   type threadViewSchema,
+  type WorkspaceControl,
 } from '../src/contracts/index.js';
 
-/** Exact type equality: drift from packages/host fails this compilation. */
+/** Exact type equality: drift between the tool-host facade and its contracts fails compilation. */
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
     ? true
@@ -43,29 +37,30 @@ type WithoutCall<F> = F extends (...args: infer P) => infer R
 
 type Controls<I> = { readonly [K in keyof I]: WithoutCall<I[K]> };
 
+type Run = TerminalRunner['run'] extends (
+  input: infer I,
+  call?: infer _C,
+) => infer R
+  ? (input: I) => R
+  : never;
+
 const parity = {
-  threadView: same<Equal<ThreadView, host.ThreadView>>(),
-  threadEventView: same<Equal<ThreadEventView, host.ThreadEventView>>(),
-  threadResult: same<Equal<ThreadResult, host.ThreadResult>>(),
-  threadPage: same<Equal<ThreadPage, host.ThreadPage>>(),
-  threadSummary: same<Equal<ThreadSummary, host.ThreadSummary>>(),
-  threadEventsPage: same<Equal<ThreadEventsPage, host.ThreadEventsPage>>(),
-  spawnedThread: same<Equal<SpawnedThread, host.SpawnedThread>>(),
-  promptResult: same<Equal<PromptResult, host.PromptResult>>(),
-  interruptResult: same<Equal<InterruptResult, host.InterruptResult>>(),
-  cwdChange: same<Equal<CwdChange, host.CwdChange>>(),
   threads:
     same<
       Equal<
         Controls<RuntimeThreadControls>,
-        { readonly [K in keyof host.ThreadControl]: host.ThreadControl[K] }
+        { readonly [K in keyof ThreadControl]: ThreadControl[K] }
       >
     >(),
   setCwd:
     same<
+      Equal<WithoutCall<RuntimeWorkspace['setCwd']>, WorkspaceControl['setCwd']>
+    >(),
+  terminalRun:
+    same<
       Equal<
-        WithoutCall<RuntimeWorkspace['setCwd']>,
-        host.WorkspaceControl['setCwd']
+        Awaited<ReturnType<Run>>,
+        Awaited<ReturnType<TerminalControl['run']>>
       >
     >(),
   exec: same<Equal<LeaseExecInput, Omit<SandboxExecInput, 'signal'>>>(),
@@ -73,7 +68,7 @@ const parity = {
     same<z.output<typeof threadViewSchema> extends ThreadView ? true : false>(),
 } as const;
 
-void test('runtime contracts mirror the packages/host types', () => {
+void test('the tool-host facade mirrors the runtime and terminal contracts', () => {
   assert.deepEqual(
     Object.values(parity),
     Object.values(parity).map(() => true),

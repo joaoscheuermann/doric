@@ -26,7 +26,6 @@
     "@tanstack/react-query": "^5.104.1",
     "desktop-reads": "0.0.1",
     "desktop-ui": "1.0.0",
-    "host": "0.0.1",
     "layout": "0.0.1",
     "lucide-react": "^0.544.0",
     "pino": "^10.3.1",

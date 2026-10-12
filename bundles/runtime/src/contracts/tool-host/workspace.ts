@@ -1,3 +1,5 @@
+import type { CwdChange } from '../workspace.js';
+
 /**
  * The workspace capabilities one active prompt reaches through
  * `host.workspace`.
@@ -17,16 +19,3 @@ export interface WorkspaceControl {
    */
   setCwd(path: string): Promise<CwdChange>;
 }
-
-/**
- * What moving a Thread's working directory did. Every outcome is a value, so a
- * caller reports a refusal instead of handling a thrown failure.
- */
-export type CwdChange =
-  | { readonly status: 'set'; readonly cwd: string }
-  /** The resolved path leaves the workspace root. */
-  | { readonly status: 'outside' }
-  /** No such path. */
-  | { readonly status: 'missing' }
-  /** The path exists and is not a directory. */
-  | { readonly status: 'not-directory' };

@@ -17,6 +17,7 @@ import {
   type LeaseTask,
   RuntimeLeaseV1,
   RuntimeWorkspaceV1,
+  readRuntimeScope,
   runtimeLeaseMethods,
   runtimeWorkspaceMethods,
   type Terminal,
@@ -150,7 +151,7 @@ export const gitOver = (sandbox: Sandbox, runtime: FakeRuntime) => {
         withLease: defineMethod({
           ...runtimeLeaseMethods.withLease,
           execute: async (task: LeaseTask<unknown>, call) => {
-            runtime.leases.push(call.scope?.projectId);
+            runtime.leases.push(readRuntimeScope(call).projectId);
             if (runtime.lease !== 'ready') return { status: runtime.lease };
             const value = await task(sandbox);
             return runtime.dropDuringTask

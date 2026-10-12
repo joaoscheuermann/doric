@@ -46,6 +46,7 @@ import {
   type RuntimeOwner,
   RuntimeV1,
 } from '../../../src/contracts/runtime.js';
+import { readRuntimeScope } from '../../../src/contracts/scope.js';
 import {
   type RuntimeTerminals,
   RuntimeTerminalsV1,
@@ -387,7 +388,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
         input: runtimeLeaseMethods.resources.input,
         output: z.any(),
         execute: (_input, call, services) => {
-          resourceReads.push(call.scope?.projectId);
+          resourceReads.push(readRuntimeScope(call).projectId);
           return services
             .use(RuntimeLeaseV1, call.scope)
             .withLease(async (sandbox) => {

@@ -35,9 +35,6 @@
       "path": "../../packages/sandpool/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/host/tsconfig.lib.json"
-    },
-    {
       "path": "../runtime"
     },
     {

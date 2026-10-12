@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, normalize } from 'node:path';
 
 import type { Log } from 'bundle/contracts';
-import type { Host, ThreadControl, WorkspaceControl } from 'host';
 import { type Sandbox, workspacePathKind } from 'sandbox';
 
 import type { Executor, HistoryReader } from '../../contracts/executor.js';
@@ -18,6 +17,11 @@ import {
   type ThreadGit,
 } from '../../contracts/model.js';
 import type { InterruptResult } from '../../contracts/threads.js';
+import type {
+  Host,
+  ThreadControl,
+  WorkspaceControl,
+} from '../../contracts/tool-host/index.js';
 import { cwdRepoHint, threadGit } from '../provisional/git-status.js';
 import {
   queuedPrompt,

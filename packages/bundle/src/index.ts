@@ -104,6 +104,8 @@ export {
   partitionCatalog,
 } from './process/partition.js';
 export type {
+  Alternative,
+  AlternativeChoices,
   CatalogEntry,
   Composition,
   Descriptor,
@@ -114,13 +116,19 @@ export type {
   ResolvedEnvironment,
 } from './runtime/index.js';
 export {
+  alternativeSchema,
   compositionSchema,
   convertV0,
   descriptorSchema,
+  enableAlternatives,
+  enabledAlternatives,
   manifestV0Schema,
   manifestV1Schema,
   PLATFORM_VERSION,
+  requiredSchema,
   resolveEnvironment,
+  selectAlternatives,
+  type Variables,
 } from './runtime/index.js';
 export {
   AnnouncingDirectory,

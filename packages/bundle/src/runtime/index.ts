@@ -38,9 +38,17 @@ export {
   resolveEnvironment,
 } from './catalog.js';
 export {
+  type Alternative,
+  type AlternativeChoices,
+  alternativeSchema,
   type Composition,
   compositionSchema,
+  enableAlternatives,
+  enabledAlternatives,
   parseComposition,
+  requiredSchema,
+  selectAlternatives,
+  type Variables,
 } from './composition.js';
 export {
   type Descriptor,

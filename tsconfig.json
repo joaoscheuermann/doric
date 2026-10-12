@@ -70,9 +70,6 @@
       "path": "./bundles/threads"
     },
     {
-      "path": "./packages/host"
-    },
-    {
       "path": "./bundles/files"
     },
     {

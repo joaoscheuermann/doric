@@ -57,16 +57,22 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
 
       assert.equal(line('Bundles loaded')?.bundleCount, 20);
       assert.equal(line('Bundles loaded')?.toolCount, 16);
-      assert.deepEqual(line('Sandbox pool configured')?.sandboxResources, {
-        cpuCount: 1,
-        memoryMiB: 2048,
-        diskMiB: 4096,
+      // The kernel names the chosen sandbox alternative only; the pool's own
+      // settings are the sandbox bundle's to log (BWP-6, parity exception).
+      assert.deepEqual(line('Sandbox pool configured')?.alternatives, {
+        sandbox: 'docker',
       });
       assert.deepEqual(line('Doric listening')?.interrupted, {
         interruptedThreads: 0,
         interruptedProjects: 0,
       });
-      assert.equal(line('Doric listening')?.sandboxProvider, 'docker');
+      // The chosen sandbox option is logged as the alternatives it belongs to.
+      assert.deepEqual(line('Doric starting')?.alternatives, {
+        sandbox: 'docker',
+      });
+      assert.deepEqual(line('Doric listening')?.alternatives, {
+        sandbox: 'docker',
+      });
       // The runtime logs its own recovery steps through log/v1, between
       // reconciliation and the network interfaces.
       const recovery = lines

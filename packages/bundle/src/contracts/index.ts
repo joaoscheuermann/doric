@@ -9,11 +9,16 @@ export {
   type CallOptions,
   type CallScope,
   callGeneration,
+  callScopeSchema,
   deadlineOf,
   generationOf,
   isCall,
   isCallOptions,
+  SCOPE_MAX_KEYS,
+  SCOPE_MAX_VALUE,
+  scopeKeyPattern,
   type TraceContext,
+  windowScopeKey,
 } from './call.js';
 export type {
   Activate,

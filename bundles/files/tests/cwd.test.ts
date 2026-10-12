@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
-import type { Host } from 'host';
+import type { Host } from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
 
 import { tool as factory } from '../src/host/tools/cwd.js';

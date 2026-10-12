@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import type { Composition } from 'bundle';
+import { type Composition, readComposition } from 'bundle';
 import { SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
@@ -15,11 +15,11 @@ import {
   BundleRecoveryError,
   type Bundles,
   bundlePaths,
+  hostComposition,
   startBundles,
   watchStructural,
 } from '../src/lib/bundles/boot.js';
 import { createHostConfig } from '../src/lib/bundles/configuration.js';
-import { sandboxComposition } from '../src/lib/bundles/sandbox.js';
 import { createHostTransport } from '../src/lib/bundles/transport.js';
 
 // Build doric first: these tests boot the bundles the host stages in
@@ -31,6 +31,19 @@ import { createHostTransport } from '../src/lib/bundles/transport.js';
 /** The built bundles the host stages, and the composition it ships. */
 const bundlesPath = 'agents/doric/dist/bundles';
 const compositionPath = 'agents/doric/composition.json';
+
+/** The structural requirement the shipped composition declares. */
+const shippedRequired = async () => {
+  const { required } = await readComposition(compositionPath);
+
+  assert.ok(required, 'the shipped composition declares what it requires');
+  return required;
+};
+
+const structural = async (
+  platform: Bundles['platform'],
+  logger = pino({ enabled: false }),
+) => assertStructural(platform, logger, await shippedRequired());
 
 /** Captured from the pre-migration build (HEAD 20775a6) before any change. */
 const fixtures = 'agents/doric/tests/fixtures/stage1-parity';
@@ -282,7 +295,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         order.indexOf(provider) < order.indexOf(consumer),
         `${provider} before ${consumer}: ${order.join(', ')}`,
       );
-    await assertStructural(host.platform, pino({ enabled: false }));
+    await structural(host.platform);
   });
 });
 
@@ -302,14 +315,14 @@ void test("the tools of moved bundles keep their names and positions: terminal a
 });
 
 void test('DORIC_SANDBOX_PROVIDER=firecracker boots the shipped composition with the firecracker bundle', async () => {
-  const { composition, providerName } = await sandboxComposition(
+  const { composition, alternatives } = await hostComposition(
     { DORIC_SANDBOX_PROVIDER: 'firecracker' },
     compositionPath,
   );
   const host = await boot({ derived: composition });
 
   try {
-    assert.equal(providerName, 'firecracker');
+    assert.deepEqual(alternatives, { sandbox: 'firecracker' });
     const states = Object.fromEntries(
       host.platform.diagnostics().bundles.map(({ id, state }) => [id, state]),
     );
@@ -323,7 +336,7 @@ void test('DORIC_SANDBOX_PROVIDER=firecracker boots the shipped composition with
       sandbox?.providers.map(({ bundleId }) => bundleId),
       ['firecracker'],
     );
-    await assertStructural(host.platform, pino({ enabled: false }));
+    await structural(host.platform);
   } finally {
     await host.platform.stop();
   }
@@ -422,7 +435,7 @@ void test('a broken tool bundle is quarantined and the others still serve', asyn
       assert.ok(tools.includes('thread-spawn'));
       assert.ok(!skills.some(({ skill }) => skill.name.startsWith('git-')));
       // No structural provider was lost, so the host still boots.
-      await assertStructural(host.platform, pino({ enabled: false }));
+      await structural(host.platform);
     } finally {
       await host.platform.stop();
     }
@@ -463,7 +476,7 @@ void test('a composition without the runtime has no structural provider and boot
     );
 
     await assert.rejects(
-      assertStructural(host.platform, logger),
+      structural(host.platform, logger),
       (error: unknown) =>
         error instanceof BundleRecoveryError &&
         /runtime\/v1/u.test(error.message) &&
@@ -507,7 +520,7 @@ void test('a generation that cannot start leaves no structural provider and boot
         'quarantined',
       );
       await assert.rejects(
-        assertStructural(host.platform, pino({ enabled: false })),
+        structural(host.platform),
         (error: unknown) =>
           error instanceof BundleRecoveryError &&
           ['runtime/v1', 'executor/v1', 'sandbox/v1'].every((id) =>
@@ -544,9 +557,14 @@ void test('after boot, an activation that leaves no structural provider takes th
         },
       },
     } as unknown as Parameters<typeof watchStructural>[0];
-    const stop = watchStructural(platform, logger, (reason) => {
-      reasons.push(reason);
-    });
+    const stop = watchStructural(
+      platform,
+      logger,
+      (reason) => {
+        reasons.push(reason);
+      },
+      await shippedRequired(),
+    );
 
     active?.(1);
     assert.deepEqual(reasons, []);
@@ -583,4 +601,22 @@ void test('the bundles root and composition come from the environment or the hos
     ),
     { bundlesPath: '/srv/bundles', compositionPath: '/srv/c.json' },
   );
+});
+
+void test("the structural requirement is the composition's: a contract it names that no provider serves refuses the boot", async () => {
+  const host = await boot();
+
+  try {
+    await assert.rejects(
+      assertStructural(host.platform, pino({ enabled: false }), {
+        contracts: ['nothing/v1'],
+        bundles: [],
+      }),
+      (error: unknown) =>
+        error instanceof BundleRecoveryError &&
+        error.message.includes('structural providers unavailable: nothing/v1'),
+    );
+  } finally {
+    await host.platform.stop();
+  }
 });
