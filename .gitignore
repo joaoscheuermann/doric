@@ -16,6 +16,7 @@ out-tsc
 node_modules
 local_cache
 /.cache/
+/.boost/
 
 # IDEs and editors
 /.idea
