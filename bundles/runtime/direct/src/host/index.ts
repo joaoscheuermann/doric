@@ -5,6 +5,7 @@ import {
 } from 'bundle/contracts';
 import { ExecutorV1, executorMethods } from 'runtime/contracts';
 
+import { compactThread } from './compact.js';
 import { runDirect } from './executor.js';
 import { checkpoint, historyFormat, rewind } from './history.js';
 
@@ -33,6 +34,11 @@ export const directExecutor = defineService(ExecutorV1.id, {
     input: executorMethods.formats.input,
     output: executorMethods.formats.output,
     execute: () => [historyFormat],
+  }),
+  compact: defineMethod({
+    input: executorMethods.compact.input,
+    output: executorMethods.compact.output,
+    execute: (input, call, services) => compactThread(input, call, services),
   }),
 });
 

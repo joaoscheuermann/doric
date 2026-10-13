@@ -1,6 +1,7 @@
 import type { LeaseOutcome, LeaseTask } from '../../contracts/lease.js';
 import type {
   BranchResult,
+  CompactResult,
   CwdResult,
   DeleteResult,
   EditQueueResult,
@@ -149,6 +150,8 @@ export interface WorkspaceService {
      */
     resume(id: string, promptId: string): Promise<ResumeResult>;
     rewind(id: string, promptId: string, prompt: string): Promise<RewindResult>;
+    /** The on-demand context compaction of one idle Thread. */
+    compact(id: string): Promise<CompactResult>;
     events(
       id: string,
       afterSequence: number,

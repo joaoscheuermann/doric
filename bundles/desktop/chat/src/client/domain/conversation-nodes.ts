@@ -27,6 +27,12 @@ export const ACTIVITY_TURN_BLOCK = 'activity-turn-node';
 /** A prompt's pause or resume: a quiet row between the blocks it sits between. */
 export const LIFECYCLE_TURN_BLOCK = 'lifecycle-turn-node';
 
+/**
+ * One compaction of the thread's history: a quiet row between the blocks it
+ * sits between, the way a lifecycle row reads.
+ */
+export const COMPACTION_TURN_BLOCK = 'compaction-turn-node';
+
 /** A prompt the host closed as a failure, and what it was closed with. */
 export const FAILURE_TURN_BLOCK = 'failure-turn-node';
 
@@ -56,15 +62,21 @@ const UNDELETABLE = new Set([
   USER_PROMPT_BLOCK,
   ACTIVITY_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
+  COMPACTION_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
 ]);
 
 /**
- * Agent answers and delegated inputs need this rule: the thinking, tool, lifecycle and
- * failure turns render as decorators, which the editor already refuses to let
- * anyone type into.
+ * Agent answers and delegated inputs need this rule: the thinking, tool,
+ * lifecycle and failure turns render as decorators, which the editor already
+ * refuses to let anyone type into, and so does the compaction row — named here
+ * as well, since nothing in it reads as text a reader could change.
  */
-const READ_ONLY = new Set([AGENT_TURN_BLOCK, DELEGATED_TURN_BLOCK]);
+const READ_ONLY = new Set([
+  AGENT_TURN_BLOCK,
+  DELEGATED_TURN_BLOCK,
+  COMPACTION_TURN_BLOCK,
+]);
 
 /** Whether a block of this type survives every deletion, empty or not. */
 export const isUndeletableBlock = (nodeType: string): boolean =>

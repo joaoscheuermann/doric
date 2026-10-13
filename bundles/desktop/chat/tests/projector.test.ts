@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 
 import {
   type ActivityTurn,
+  type CompactionTurn,
   emptyProjection,
   type LifecycleTurn,
   projectEvents,
@@ -891,6 +892,152 @@ describe('the prompt lifecycle in a log', () => {
 
     assert.deepEqual(types(projection.turns), ['agent']);
     assert.equal(textOf(projection.turns[0]), 'The prompt failed.');
+  });
+});
+
+describe('a compaction bracket in the log', () => {
+  const compactionOf = (turn: Turn | undefined): CompactionTurn | undefined =>
+    turn?.type === 'compaction' ? turn : undefined;
+
+  test('closes a started bracket into one completed compaction turn', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
+      event(2, 'one', {
+        type: 'compaction.finished',
+        summaryId: 's1',
+        condensedMessages: 12,
+        retainedMessages: 3,
+        tokensFreed: 4500,
+        summaryChars: 800,
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['compaction']);
+    const turn = compactionOf(projection.turns[0]);
+    assert.equal(turn?.promptId, 'one');
+    assert.equal(turn?.status, 'completed');
+    assert.equal(turn?.trigger, 'automatic');
+    assert.equal(turn?.condensedMessages, 12);
+    assert.equal(turn?.tokensFreed, 4500);
+    assert.equal(turn?.code, undefined);
+    assert.deepEqual(
+      turn?.events.map((item) => item.type),
+      ['compaction.started', 'compaction.finished'],
+    );
+  });
+
+  test('closes a started bracket into one failed compaction turn', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'compaction.started', trigger: 'manual' }),
+      event(2, 'one', { type: 'compaction.failed', code: 'unsafe_boundary' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['compaction']);
+    const turn = compactionOf(projection.turns[0]);
+    assert.equal(turn?.status, 'failed');
+    assert.equal(turn?.code, 'unsafe_boundary');
+    assert.equal(turn?.trigger, 'manual');
+    assert.equal(turn?.condensedMessages, undefined);
+    assert.equal(turn?.tokensFreed, undefined);
+  });
+
+  test('stands for no turn while the bracket is still open', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), []);
+  });
+
+  test('reads a closing half with no started one as nothing', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'compaction.finished',
+        summaryId: 's1',
+        condensedMessages: 12,
+        retainedMessages: 3,
+        tokensFreed: 4500,
+        summaryChars: 800,
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), []);
+  });
+
+  test('leaves the prompts around the bracket as they project alone', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'done',
+        source: {},
+      }),
+      event(3, 'one', { type: 'compaction.started', trigger: 'manual' }),
+      event(4, 'one', {
+        type: 'compaction.finished',
+        summaryId: 's1',
+        condensedMessages: 2,
+        retainedMessages: 4,
+        tokensFreed: 900,
+        summaryChars: 300,
+      }),
+      event(5, 'two', {
+        type: 'prompt.accepted',
+        text: 'Next',
+        source: { kind: 'user' },
+      }),
+      event(6, 'two', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'next done',
+        source: {},
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), [
+      'user',
+      'agent',
+      'compaction',
+      'user',
+      'agent',
+    ]);
+    assert.equal(textOf(projection.turns[1]), 'done');
+    assert.equal(agentStatus(projection.turns[1]), 'completed');
+    const turn = compactionOf(projection.turns[2]);
+    assert.equal(turn?.promptId, 'one');
+    assert.equal(turn?.status, 'completed');
+    assert.equal(turn?.condensedMessages, 2);
+    assert.equal(turn?.tokensFreed, 900);
+    assert.equal(projection.turns[3]?.promptId, 'two');
+    assert.equal(textOf(projection.turns[4]), 'next done');
+    assert.equal(agentStatus(projection.turns[4]), 'completed');
+  });
+
+  test('closes a bracket the log delivered in batches', () => {
+    let step = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
+    ]);
+    assert.deepEqual(types(step.turns), []);
+
+    step = projectEvents(step, [
+      event(2, 'one', {
+        type: 'compaction.finished',
+        summaryId: 's1',
+        condensedMessages: 5,
+        retainedMessages: 2,
+        tokensFreed: 1200,
+        summaryChars: 400,
+      }),
+    ]);
+
+    assert.deepEqual(types(step.turns), ['compaction']);
+    assert.equal(compactionOf(step.turns[0])?.status, 'completed');
+    assert.equal(compactionOf(step.turns[0])?.tokensFreed, 1200);
   });
 });
 

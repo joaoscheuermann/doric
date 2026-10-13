@@ -300,8 +300,30 @@ const providers = z.array(provider).min(1);
 
 const models = z.object({ execution: reasoningModel }).strict();
 
+/**
+ * The context-compaction policy one execution carries: when the conversation's
+ * pressure crosses `pressurePercent`, the executor condenses the history beyond
+ * a `tailMinMessages` tail into one summary of at most `summaryMaxChars`
+ * characters, keeping the history the provider reads within `charBudget`. The
+ * policy is optional and names no default here, exactly as `maxToolResultChars`
+ * does not: the consumer applies its own.
+ */
+const contextCompaction = z
+  .object({
+    enabled: z.boolean(),
+    pressurePercent: z.number().int().safe().min(50).max(95),
+    tailMinMessages: limit,
+    summaryMaxChars: z.number().int().safe().min(200),
+    charBudget: z.number().int().safe().min(1000),
+  })
+  .strict();
+
 const execution = z
-  .object({ maxTurns: limit, maxToolResultChars: limit.optional() })
+  .object({
+    maxTurns: limit,
+    maxToolResultChars: limit.optional(),
+    contextCompaction: contextCompaction.optional(),
+  })
   .strict();
 
 interface ProviderReferences {

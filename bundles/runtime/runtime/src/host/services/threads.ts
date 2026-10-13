@@ -114,6 +114,11 @@ export const threadsService = ({
       execute: ({ id, promptId, prompt }) =>
         service.threads.rewind(id, promptId, prompt),
     }),
+    compact: defineMethod({
+      expose: 'desktop',
+      ...methods.compact,
+      execute: ({ id }) => service.threads.compact(id),
+    }),
     threadEvents: defineMethod({
       ...methods.threadEvents,
       execute: ({ id, afterSequence }) =>

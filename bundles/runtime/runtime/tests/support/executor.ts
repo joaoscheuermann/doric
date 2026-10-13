@@ -91,6 +91,9 @@ export const scriptedExecutor =
         },
       };
     },
+    // The scripted executor does not condense: an on-demand compaction of a
+    // Thread it owns reads as a refusal with nothing to condense.
+    compact: async () => ({ status: 'refused', reason: 'nothing_to_compact' }),
     rewind: async ({ history, promptId, removedPromptIds }) => {
       const meta = await metaOf(history);
       const boundary = meta.checkpoints[promptId];

@@ -49,6 +49,16 @@ const eventsInput = z.object({
   afterSequence: z.coerce.number().int().safe().nonnegative().default(0),
 });
 
+/** The sentence each compaction refusal reads as. */
+const compactRefusal: Readonly<
+  Record<'disabled' | 'missing_history' | 'nothing_to_compact', string>
+> = {
+  disabled: 'Context compaction is disabled in the settings.',
+  missing_history: 'This Thread has no conversation to compact yet.',
+  nothing_to_compact:
+    'Nothing condenses here: the recent conversation is already the smallest safe span.',
+};
+
 /** What one refused working directory means, in one sentence per outcome. */
 const cwdRefusal: Readonly<
   Record<'outside' | 'missing' | 'not-directory', string>
@@ -339,6 +349,50 @@ export const createThreadsRouter = ({
       return;
     }
     response.status(202).json({ promptId: result.promptId });
+  });
+  router.post('/:id/compact', async (request, response) => {
+    const result = await threads.compact({ id: request.params.id });
+    if (result.status === 'missing') {
+      missing(response, 'thread');
+      return;
+    }
+    if (result.status === 'busy') {
+      sendError(
+        response,
+        409,
+        'thread_busy',
+        'The Thread is running or has queued input and cannot be compacted now.',
+      );
+      return;
+    }
+    if (result.status === 'refused') {
+      sendError(
+        response,
+        409,
+        'compaction_refused',
+        compactRefusal[result.reason],
+      );
+      return;
+    }
+    if (result.status === 'failed') {
+      sendError(
+        response,
+        502,
+        'compaction_failed',
+        `The compaction failed (${result.code}); the log carries the attempt.`,
+      );
+      return;
+    }
+    if (result.status !== 'compacted') {
+      conflict(response, 'thread', result.status);
+      return;
+    }
+    response.status(200).json({
+      status: result.status,
+      condensedMessages: result.condensedMessages,
+      retainedMessages: result.retainedMessages,
+      tokensFreed: result.tokensFreed,
+    });
   });
   router.get('/:id/events', async (request, response) => {
     response.set('Cache-Control', 'no-store');

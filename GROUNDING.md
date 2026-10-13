@@ -881,7 +881,16 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `pending` queue projection and the usage aggregate into the same commit as
 the event. `/bundles/runtime/direct` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession`, and keeps its history as the opaque
-`direct.history/v1` state (`messages` and `meta`). The core provides
+`direct.history/v1` state (`messages` and `meta`). Its `compact` condenses an
+idle Thread's history into one marked summary message: the automatic trigger
+runs between provider turns of a run (after `usage`/`response.finished`, and
+before a resumed run's first call) when the projected next call crosses the
+configured `execution.contextCompaction` pressure, and `POST /threads/:id/compact`
+condenses on demand. Both record the bracket events `compaction.started`,
+`compaction.finished` and `compaction.failed` on the Thread log and rewrite
+`messages` (plus the re-based `meta.checkpoints`) in one history-and-event
+commit, so the log stays the full conversation and the summary never splits
+an assistant tool call from its result. The core provides
 `models/v1`; since stage 10 the `openai`, `openrouter` and `codex` bundles
 register their `models.provider/v1` kinds and `docker` (or `firecracker`,
 selected with `DORIC_SANDBOX_PROVIDER`) provides `sandbox/v1`; the stage-5

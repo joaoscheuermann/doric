@@ -26,6 +26,8 @@ import {
   ToolErrorObject,
 } from 'tool';
 
+import { compactionConfig, maybeCompactRun } from './compact.js';
+import { isContextOverflow } from './compaction/project.js';
 import { readMessages, readMeta, saved } from './history.js';
 import { systemPrompt } from './prompts/system.js';
 import { resolveToolConfigs } from './tool-config.js';
@@ -168,10 +170,14 @@ export const runDirect = async (
   const signal = call.signal;
   signal.throwIfAborted();
   const stored = await readMessages(session.history);
-  const { checkpoints } = await readMeta(session.history);
+  // The map the compaction rewrite re-bases when it condenses this run's
+  // history: `history()` reads the current value, so every later save
+  // carries the re-based boundaries.
+  let { checkpoints } = await readMeta(session.history);
   const boundary = checkpoints[job.id];
   const resume = boundary !== undefined && stored.length > boundary;
   const { configuration } = await services.use(ConfigurationV1).current(call);
+  const compaction = compactionConfig(configuration);
   // `list` answers a promise when tools/v1 is in another process.
   const tools = boundTools(await services.use(ToolsV1).list(call));
   const skills = (await services.use(SkillsV1).list(call)).map(
@@ -215,6 +221,36 @@ export const runDirect = async (
   let text = '';
   /** Set once the run's generation process was lost; see below. */
   let lost = false;
+  /** The last response's reported usage and window, for the projection. */
+  let lastInputTokens: number | undefined;
+  let lastOutputTokens: number | undefined;
+  let contextWindow: number | undefined;
+  /**
+   * One compaction attempt between turns: skips or refuses without
+   * recording anything, condenses and re-bases the checkpoint map when it
+   * runs. The pre-run call projects the pending prompt on top of the
+   * resumed history; the between-turn calls project with real usage.
+   */
+  const compactIfUnderPressure = async (promptChars: number, force = false) => {
+    const result = await maybeCompactRun({
+      session,
+      messages,
+      checkpoints,
+      config: compaction,
+      provider,
+      model: execution.model,
+      promptChars,
+      ...(lastInputTokens === undefined ? {} : { lastInputTokens }),
+      ...(lastOutputTokens === undefined ? {} : { lastOutputTokens }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+      force,
+      signal,
+    });
+    if (result.status === 'compacted') checkpoints = result.checkpoints;
+  };
+  // A long resumed history plus this run's input is the classic overflow:
+  // measure it before the first provider call of the run.
+  await compactIfUnderPressure(input(job).length);
   try {
     for await (const value of agent.stream(input(job), {
       resume,
@@ -236,6 +272,13 @@ export const runDirect = async (
         await session.record({ history: history() });
         throw signal.reason;
       }
+      if (value.type === 'response.started') {
+        contextWindow = value.contextWindow ?? contextWindow;
+      }
+      if (value.type === 'usage') {
+        lastInputTokens = value.usage.inputTokens;
+        lastOutputTokens = value.usage.outputTokens;
+      }
       const event =
         value.type === 'response.started'
           ? { ...value, providerId: execution.providerId }
@@ -243,10 +286,30 @@ export const runDirect = async (
       await session.record(
         addedMessages(value) ? { history: history(), event } : { event },
       );
+      // The pressure only moves where usage lands: the provider window grew
+      // by this turn's tokens, so the check rides the usage and finished
+      // events, before the agent builds its next request from the storage.
+      if (value.type === 'usage' || value.type === 'response.finished') {
+        await compactIfUnderPressure(0);
+      }
+      if (
+        value.type === 'error' &&
+        isContextOverflow(String(value.error.message ?? ''))
+      ) {
+        // The window the provider refused is proof the pressure exists. The
+        // emergency condensation prepares the next resume; this run still
+        // fails with the provider's error, as it does without the check.
+        await compactIfUnderPressure(0, true);
+      }
       signal.throwIfAborted();
       if (value.type === 'agent.finished') text = value.response.text;
     }
     return { text };
+  } catch (error) {
+    if (isContextOverflow(String((error as Error)?.message ?? error))) {
+      await compactIfUnderPressure(0, true).catch(() => undefined);
+    }
+    throw error;
   } finally {
     // The run ended, so whatever it left — complete or partial — is the history
     // its Thread carries on with.

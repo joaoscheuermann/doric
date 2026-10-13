@@ -53,6 +53,17 @@ const withProvider = (
   },
 });
 
+/**
+ * An execution whose context-compaction policy is the value under test, loosely
+ * typed because most cases are shapes the schema is meant to refuse.
+ */
+const withCompaction = (
+  contextCompaction: Record<string, unknown>,
+): unknown => ({
+  ...structuredClone(defaultConfig),
+  execution: { ...defaultConfig.execution, contextCompaction },
+});
+
 void test('accepts the complete default configuration', () => {
   assert.equal(ConfigInputSchema.safeParse(defaultConfig).success, true);
 });
@@ -317,6 +328,56 @@ void test('rejects model profiles that reference an unavailable provider', () =>
 void test('rejects fields outside the Direct configuration contract', () => {
   const invalid = { ...structuredClone(defaultConfig), routing: {} };
   assert.equal(ConfigInputSchema.safeParse(invalid).success, false);
+});
+
+void test('accepts an execution that carries a whole context-compaction policy', () => {
+  assert.equal(
+    ConfigInputSchema.safeParse(
+      withCompaction({
+        enabled: true,
+        pressurePercent: 80,
+        tailMinMessages: 6,
+        summaryMaxChars: 6000,
+        charBudget: 200000,
+      }),
+    ).success,
+    true,
+  );
+});
+
+void test('keeps an execution that names no context-compaction policy acceptable', () => {
+  // No default is injected: an absent policy stays absent, and the consumer
+  // applies its own defaults, as it does for `maxToolResultChars`.
+  assert.deepEqual(ConfigInputSchema.parse(defaultConfig).execution, {
+    maxTurns: 32,
+  });
+});
+
+void test('rejects a context-compaction policy outside the shape the host stores', () => {
+  const whole = {
+    enabled: true,
+    pressurePercent: 80,
+    tailMinMessages: 6,
+    summaryMaxChars: 6000,
+    charBudget: 200000,
+  };
+
+  for (const contextCompaction of [
+    { ...whole, pressurePercent: 40 },
+    { ...whole, pressurePercent: 96 },
+    { ...whole, pressurePercent: 80.5 },
+    { ...whole, tailMinMessages: 0 },
+    { ...whole, summaryMaxChars: 199 },
+    { ...whole, charBudget: 999 },
+    { ...whole, enabled: 'yes' },
+    { enabled: true, pressurePercent: 80 },
+    { ...whole, unknown: true },
+  ]) {
+    assert.equal(
+      ConfigInputSchema.safeParse(withCompaction(contextCompaction)).success,
+      false,
+    );
+  }
 });
 
 void test('rejects duplicate provider identifiers', () => {

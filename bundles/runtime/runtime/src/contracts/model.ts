@@ -193,6 +193,28 @@ export type RewindResult =
       readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
     };
 
+/** The answers one on-demand compaction can give. */
+export type CompactResult =
+  | {
+      readonly status: 'compacted';
+      readonly condensedMessages: number;
+      readonly retainedMessages: number;
+      /** An estimate, not a measurement. */
+      readonly tokensFreed: number;
+    }
+  | {
+      readonly status: 'refused';
+      readonly reason: 'disabled' | 'missing_history' | 'nothing_to_compact';
+    }
+  | {
+      /** A post-bracket failure the log already carries. */
+      readonly status: 'failed';
+      readonly code: 'summarizer_failed' | 'unsafe_boundary';
+    }
+  | {
+      readonly status: 'missing' | 'inactive' | 'busy' | 'not_supported';
+    };
+
 export type ResumeResult =
   | { readonly status: 'resumed'; readonly thread: Thread }
   | {
@@ -596,6 +618,25 @@ export const rewindResultSchema: z.ZodType<RewindResult, RewindResult> =
   z.union([
     z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
     statuses(['missing', 'inactive', 'busy', 'unknown_prompt']),
+  ]);
+
+export const compactResultSchema: z.ZodType<CompactResult, CompactResult> =
+  z.union([
+    z.looseObject({
+      status: z.literal('compacted'),
+      condensedMessages: z.number(),
+      retainedMessages: z.number(),
+      tokensFreed: z.number(),
+    }),
+    z.looseObject({
+      status: z.literal('refused'),
+      reason: z.enum(['disabled', 'missing_history', 'nothing_to_compact']),
+    }),
+    z.looseObject({
+      status: z.literal('failed'),
+      code: z.enum(['summarizer_failed', 'unsafe_boundary']),
+    }),
+    statuses(['missing', 'inactive', 'busy', 'not_supported']),
   ]);
 
 export const resumeResultSchema: z.ZodType<ResumeResult, ResumeResult> =

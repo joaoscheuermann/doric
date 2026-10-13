@@ -53,6 +53,7 @@
       "watchProject"
     ],
     "runtime.threads/v1": [
+      "compact",
       "createThread",
       "deleteThread",
       "editQueued",

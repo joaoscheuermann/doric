@@ -6,6 +6,7 @@ import { type Sandbox, workspacePathKind } from 'sandbox';
 
 import type { Executor, HistoryReader } from '../../contracts/executor.js';
 import {
+  type CompactResult,
   type CwdRefusal,
   type CwdRepo,
   type CwdResult,
@@ -65,6 +66,11 @@ export interface RunnerContext {
     readonly threadId: string;
     readonly promptId: string;
   }) => Executor;
+  /** The compaction policy the configuration in force names. */
+  readonly compactionPolicy: () => Promise<{
+    readonly tailMinMessages: number;
+    readonly summaryMaxChars: number;
+  }>;
   readonly checkStorage?: () => Promise<void>;
   /**
    * runtime.hooks/v1 onThreadsClosingHook, awaited where the terminals of
@@ -781,6 +787,74 @@ export const createThreadRunner = (context: RunnerContext) => {
     publisher.event(marker);
     return enqueue(project, thread, prompt, { kind: 'user' });
   };
+  /**
+   * The on-demand compaction of an idle Thread (the executor's `compact`,
+   * under the same conditions a rewind runs under). It records its own
+   * bracket events through a compaction session: a promptId of its own, no
+   * prompt job, no sandbox binding. The executor answers refusals and
+   * failures in-band, so they are results here too; a persistence failure
+   * keeps the session's retry, like a run's does.
+   */
+  const compact = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+  ): Promise<CompactResult> => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state))
+      return { status: 'inactive' as const };
+    // A rewrite the run is reading would tear mid-conversation; the queue
+    // must drain first, exactly like a rewind's truncation.
+    if (thread.active !== undefined || thread.jobs.length > 0)
+      return { status: 'busy' as const };
+    const scope = {
+      projectId: project.project.id,
+      threadId: thread.thread.id,
+      promptId: `compaction-${randomUUID()}`,
+    };
+    let reader: HistoryReader;
+    try {
+      reader = await store.history(thread.thread.id);
+    } catch (cause) {
+      throw new ThreadPersistenceError(cause);
+    }
+    const executor = context.executor(scope);
+    // A history this executor cannot read fails before any model call.
+    if (
+      reader.format !== undefined &&
+      !(await executor.formats()).includes(reader.format)
+    )
+      return { status: 'not_supported' as const };
+    const session = createSession({
+      threadId: thread.thread.id,
+      promptId: scope.promptId,
+      reader,
+      store,
+      redactor: context.redactor,
+      publish: (event) => publisher.event(event),
+    });
+    try {
+      const result = await executor.compact(
+        {
+          thread: thread.thread,
+          session,
+          policy: await context.compactionPolicy(),
+        },
+        { signal: new AbortController().signal },
+      );
+      return result.status === 'compacted'
+        ? {
+            status: 'compacted' as const,
+            condensedMessages: result.condensedMessages,
+            retainedMessages: result.retainedMessages,
+            tokensFreed: result.tokensFreed,
+          }
+        : result.status === 'refused'
+          ? { status: 'refused' as const, reason: result.reason }
+          : { status: 'failed' as const, code: result.code };
+    } catch (error) {
+      // The session's own failure keeps its retry across the dispatcher.
+      throw session.failure ?? error;
+    }
+  };
   const descendants = (project: ProjectRuntime, rootId: string) => {
     const threads = [...project.threads.values()].map(({ thread }) => thread);
     const ids = subtreeIds(threads, rootId);
@@ -1184,6 +1258,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     removeQueued,
     editQueued,
     rewind,
+    compact,
     descendants,
     close,
     suspend,
