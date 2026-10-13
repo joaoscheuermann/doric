@@ -286,7 +286,7 @@ function Workspace() {
               </ConversationTerminals>
               <footer
                 data-slot="workspace-footer"
-                className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-[11px] font-light text-muted-foreground"
+                className="flex chrome-bar shrink-0 items-center justify-end gap-1 px-2 text-[11px] font-light text-muted-foreground"
               >
                 <Region name="layout.footer" />
               </footer>

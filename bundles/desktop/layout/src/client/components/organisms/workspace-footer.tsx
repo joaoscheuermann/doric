@@ -38,7 +38,7 @@ export function WorkspaceGlobalFooter({
   return (
     <footer
       data-slot="workspace-global-footer"
-      className="flex chrome-bar shrink-0 items-center justify-end gap-1.5 border-t bg-sidebar px-2 text-xs text-muted-foreground"
+      className="flex h-8 shrink-0 items-center justify-end gap-1.5 border-t bg-sidebar px-2 text-xs text-muted-foreground"
     >
       <ConnectionStatus />
       <Region name="layout.global-footer" />
