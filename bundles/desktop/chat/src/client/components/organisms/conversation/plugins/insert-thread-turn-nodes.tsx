@@ -177,6 +177,8 @@ const $createBlock = (
         turn.name,
         turn.args,
         turn.status,
+        turn.result,
+        turn.error,
       );
     case 'lifecycle':
       return $createLifecycleTurnNode(

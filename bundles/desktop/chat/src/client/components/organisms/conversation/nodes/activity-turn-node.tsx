@@ -274,7 +274,13 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
     const openness =
       item.kind === 'thinking'
         ? thinkingOpenness(reasoningText(item.text), false)
-        : toolOpenness(item.status, item.args, item.result, item.error);
+        : toolOpenness(
+            item.status,
+            item.args,
+            item.result,
+            item.error,
+            item.name,
+          );
     this.setStepChosen(
       index,
       blockToggled(this.__itemChosen[index] ?? null, openness),

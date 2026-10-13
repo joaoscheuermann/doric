@@ -2,6 +2,8 @@ import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { humanize } from '../../utility/humanize.js';
 import { CollapsibleBlock } from './collapsible-block.js';
+import { EditToolItem } from './edit-tool-item.js';
+import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
   readonly args: string;
@@ -31,6 +33,33 @@ export function ToolItem({
   result,
   status,
 }: ToolItemProps) {
+  if (name === 'terminal') {
+    return (
+      <TerminalToolItem
+        args={args}
+        chosen={chosen}
+        error={error}
+        focused={focused}
+        onChosenChange={onChosenChange}
+        result={result}
+        status={status}
+      />
+    );
+  }
+  if (name === 'edit') {
+    return (
+      <EditToolItem
+        args={args}
+        chosen={chosen}
+        error={error}
+        focused={focused}
+        onChosenChange={onChosenChange}
+        result={result}
+        status={status}
+      />
+    );
+  }
+
   const running = status === 'running';
 
   return (
@@ -39,7 +68,7 @@ export function ToolItem({
       focused={focused}
       label={`${running ? 'Calling' : 'Called'} ${humanize(name)}`}
       onChosenChange={onChosenChange}
-      openness={toolOpenness(status, args, result, error)}
+      openness={toolOpenness(status, args, result, error, name)}
     >
       <div className="flex flex-col gap-1.5">
         {args.length > 0 ? (

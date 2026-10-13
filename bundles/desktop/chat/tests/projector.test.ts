@@ -233,6 +233,51 @@ describe('thread event projection', () => {
     );
   });
 
+  test('keeps edit calls outside the activity summary while grouping terminal calls inside it', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
+      event(2, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'terminal', { command: 'npm test' }),
+      }),
+      event(3, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'terminal', { command: 'npm test' }),
+        record: { output: 'pass' },
+      }),
+      event(4, 'one', {
+        type: 'tool.started',
+        call: call('c2', 'edit', { path: 'src/a.ts', edits: [] }),
+      }),
+      event(5, 'one', {
+        type: 'tool.finished',
+        call: call('c2', 'edit', { path: 'src/a.ts', edits: [] }),
+        record: { output: '{"success":true,"diff":"1 +ok"}' },
+      }),
+      event(6, 'one', { type: 'reasoning.delta', delta: 'verify' }),
+      event(7, 'one', {
+        type: 'tool.started',
+        call: call('c3', 'terminal', { command: 'npm run check' }),
+      }),
+      event(8, 'one', {
+        type: 'tool.finished',
+        call: call('c3', 'terminal', { command: 'npm run check' }),
+        record: { output: 'clean' },
+      }),
+      event(9, 'one', { type: 'text.delta', delta: 'All set.' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), [
+      'activity',
+      'tool_call',
+      'activity',
+      'agent',
+    ]);
+    assert.equal(toolOf(projection.turns[1])?.name, 'edit');
+    assert.equal(activityOf(projection.turns[0])?.tools, 1);
+    assert.equal(activityOf(projection.turns[2])?.tools, 1);
+  });
+
   test('keeps a lone thought when a new prompt closes it', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),

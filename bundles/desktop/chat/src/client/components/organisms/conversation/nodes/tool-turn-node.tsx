@@ -54,6 +54,8 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     name: string,
     args: string,
     status: ToolTurn['status'],
+    result?: string,
+    error?: string,
     key?: NodeKey,
   ) {
     super(key);
@@ -63,6 +65,8 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     this.__name = name.trim();
     this.__args = args.trim();
     this.__status = status;
+    this.__result = result?.trim();
+    this.__error = error?.trim();
   }
 
   static override getType(): string {
@@ -77,6 +81,8 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
       node.__name,
       node.__args,
       node.__status,
+      node.__result,
+      node.__error,
       node.__key,
     );
   }
@@ -149,7 +155,13 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     this.setChosen(
       blockToggled(
         this.__chosen,
-        toolOpenness(this.__status, this.__args, this.__result, this.__error),
+        toolOpenness(
+          this.__status,
+          this.__args,
+          this.__result,
+          this.__error,
+          this.__name,
+        ),
       ),
     );
   }
@@ -202,6 +214,8 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
       serialized.name,
       serialized.args,
       serialized.status,
+      serialized.result,
+      serialized.error,
     );
   }
 }
@@ -213,8 +227,19 @@ export function $createToolTurnNode(
   name: string,
   args: string,
   status: ToolTurn['status'],
+  result?: string,
+  error?: string,
 ): ToolTurnNode {
-  return new ToolTurnNode(turnKey, promptId, callId, name, args, status);
+  return new ToolTurnNode(
+    turnKey,
+    promptId,
+    callId,
+    name,
+    args,
+    status,
+    result,
+    error,
+  );
 }
 
 export function $isToolTurnNode(

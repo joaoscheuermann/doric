@@ -831,3 +831,163 @@ test('a registered renderer draws the delegated input with the read-only Markdow
     },
   });
 });
+
+test('edit tool calls stand outside the activity summary with their diff while terminal calls fold into the summary with their shell view', async () => {
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+  });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Update parser and run tests',
+      source: { kind: 'user' },
+    }),
+    event(2, {
+      type: 'reasoning.delta',
+      delta: 'Checking the test suite first.',
+    }),
+    event(3, {
+      type: 'tool.started',
+      call: {
+        id: 'call-term-1',
+        name: 'terminal',
+        payload: { command: 'npm test', working_directory: '/workspace' },
+      },
+    }),
+    event(4, {
+      type: 'tool.finished',
+      call: {
+        id: 'call-term-1',
+        name: 'terminal',
+        payload: { command: 'npm test', working_directory: '/workspace' },
+      },
+      record: {
+        output: JSON.stringify({
+          schema: 'terminal.compact.v1',
+          trace_id: null,
+          command: 'npm test',
+          working_directory: '/workspace',
+          exit_code: 0,
+          duration_ms: 1200,
+          termination_reason: 'exited',
+          success: true,
+          stdout: {
+            bytes: 12,
+            lines: 1,
+            head: ['1 passing'],
+            tail: [],
+            omitted_lines: 0,
+            omitted_bytes: 0,
+            truncated: false,
+          },
+          stderr: {
+            bytes: 0,
+            lines: 0,
+            head: [],
+            tail: [],
+            omitted_lines: 0,
+            omitted_bytes: 0,
+            truncated: false,
+          },
+          diagnostics: [],
+          truncation: { truncated: false, message: 'ok' },
+          raw_output_ref: null,
+        }),
+      },
+    }),
+    event(5, {
+      type: 'tool.started',
+      call: {
+        id: 'call-edit-1',
+        name: 'edit',
+        payload: {
+          path: 'src/parser.ts',
+          edits: [
+            {
+              oldText: 'const old = 1;',
+              newText: 'const next = 2;\nexport { next };',
+            },
+          ],
+        },
+      },
+    }),
+    event(6, {
+      type: 'tool.finished',
+      call: {
+        id: 'call-edit-1',
+        name: 'edit',
+        payload: {
+          path: 'src/parser.ts',
+          edits: [
+            {
+              oldText: 'const old = 1;',
+              newText: 'const next = 2;\nexport { next };',
+            },
+          ],
+        },
+      },
+      record: {
+        output: JSON.stringify({
+          success: true,
+          diff: ' 1 -const old = 1;\n 1 +const next = 2;\n 2 +export { next };',
+          first_changed_line: 1,
+        }),
+      },
+    }),
+    event(7, {
+      type: 'prompt.finished',
+      status: 'completed',
+      text: 'Updated src/parser.ts.',
+      source: { kind: 'user' },
+    }),
+  ]);
+
+  const view = opened.document.querySelector('chat-view');
+  assert.ok(view);
+
+  // The edit block stands outside the activity summary with its diff open.
+  const editTool = view.querySelector('[data-slot="edit-tool"]');
+  assert.notEqual(editTool, null);
+  assert.equal(
+    editTool?.querySelector('[data-slot="edit-file-name"]')?.textContent,
+    'parser.ts',
+  );
+  assert.equal(
+    editTool?.querySelector('[data-slot="edit-file-dir"]')?.textContent,
+    'src',
+  );
+  assert.match(
+    editTool?.querySelector('[data-slot="edit-counts"]')?.textContent ?? '',
+    /\+2.*−1/,
+  );
+  assert.equal(
+    editTool?.querySelectorAll('[data-slot="edit-diff-line"]').length,
+    3,
+  );
+
+  // The terminal call is folded inside the activity summary ("Thought once, called 1 tool").
+  assert.match(view.textContent ?? '', /Thought once, called 1 tool/);
+  assert.equal(view.querySelector('[data-slot="terminal-tool"]'), null);
+
+  // Opening the activity summary reveals the terminal tool card inside it.
+  const triggers = [...view.querySelectorAll<HTMLElement>('button')];
+  const summaryButton = triggers.find((button) =>
+    button.textContent?.includes('Thought once, called 1 tool'),
+  );
+  assert.ok(summaryButton);
+  summaryButton.click();
+  await settle(50);
+
+  const terminalTool = view.querySelector('[data-slot="terminal-tool"]');
+  assert.notEqual(terminalTool, null);
+  assert.equal(
+    terminalTool?.querySelector('[data-slot="terminal-command-preview"]')
+      ?.textContent,
+    'npm test',
+  );
+  assert.equal(
+    terminalTool?.querySelector('[data-slot="terminal-duration"]')?.textContent,
+    '1.2s',
+  );
+});

@@ -21,11 +21,13 @@ export type Openness = {
   readonly active: boolean;
   /** Whether there is anything to show. */
   readonly hasContent: boolean;
+  /** Whether the block stays open after its work settles until the reader folds it. */
+  readonly defaultOpen?: boolean;
 };
 
 /** What a block shows now: the reader's choice, else the work's own answer. */
 export const blockOpen = (chosen: Chosen, open: Openness): boolean =>
-  chosen ?? (open.active && open.hasContent);
+  chosen ?? ((open.defaultOpen ?? open.active) && open.hasContent);
 
 /**
  * The reader's next choice when they open or close a block: whatever the block
@@ -47,15 +49,20 @@ export const thinkingOpenness = (
   hasContent: body.length > 0,
 });
 
-/** A tool call's answer: open while it runs, once the call shows anything. */
+/**
+ * A tool call's answer: open while it runs, once the call shows anything, and
+ * open by default for `edit` calls so the diff stands visible in the transcript.
+ */
 export const toolOpenness = (
   status: ToolStatus,
   args: string,
   result: string | undefined,
   error: string | undefined,
+  name?: string,
 ): Openness => ({
   active: status === 'running',
   hasContent: args.length > 0 || result !== undefined || error !== undefined,
+  ...(name === 'edit' ? { defaultOpen: true } : {}),
 });
 
 /** A settled burst's answer: an activity summary is never the live one. */

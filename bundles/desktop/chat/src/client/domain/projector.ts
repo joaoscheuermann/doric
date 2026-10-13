@@ -274,8 +274,14 @@ type BurstDraft = Extract<Draft, { type: 'thinking' | 'tool_call' }>;
 /** The draft a compaction bracket holds while the log has not closed it. */
 type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
+/**
+ * Whether a draft belongs to the burst an `ActivityTurn` folds together:
+ * reasoning and tool calls other than `edit`, which stays out of the summary as
+ * its own turn block so every file modification remains visible in the flow.
+ */
 const isBurstDraft = (turn: Draft): turn is BurstDraft =>
-  turn.type === 'thinking' || turn.type === 'tool_call';
+  turn.type === 'thinking' ||
+  (turn.type === 'tool_call' && turn.name !== 'edit');
 
 /** One grouped step, in the shape a surface renders it. */
 const activityItem = (item: BurstDraft): ActivityItem =>
