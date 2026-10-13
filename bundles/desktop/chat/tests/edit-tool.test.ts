@@ -96,4 +96,36 @@ describe('edit tool domain parsing', () => {
       'Could not find the exact text in src/parser.ts.',
     );
   });
+
+  test('parses write tool input content and WriteOutput summary diff', () => {
+    const running = parseEditCall(
+      JSON.stringify({
+        path: 'src/new-file.ts',
+        content: 'export const x = 1;\nexport const y = 2;\n',
+      }),
+    );
+    assert.equal(running.fileName, 'new-file.ts');
+    assert.equal(running.added, 2);
+    assert.equal(running.removed, 0);
+    assert.equal(running.diffLines.length, 2);
+
+    const finished = parseEditCall(
+      JSON.stringify({
+        path: 'src/new-file.ts',
+        content: 'export const x = 1;\nexport const y = 2;\n',
+      }),
+      JSON.stringify({
+        success: true,
+        bytes_written: 40,
+        diff: 'Edited src/new-file.ts (+2 -0)\n1 +export const x = 1;\n2 +export const y = 2;',
+      }),
+    );
+    assert.equal(finished.success, true);
+    assert.equal(finished.added, 2);
+    assert.equal(finished.removed, 0);
+    assert.deepEqual(finished.diffLines, [
+      { kind: 'add', lineNumber: 1, text: 'export const x = 1;' },
+      { kind: 'add', lineNumber: 2, text: 'export const y = 2;' },
+    ]);
+  });
 });

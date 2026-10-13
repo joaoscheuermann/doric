@@ -11,7 +11,7 @@
     "chat.lexical/v1@1.0.0",
     "chat.hooks/v1@1.1.0"
   ],
-  "optional": ["history.snapshots/v1"],
+  "optional": ["history.snapshots/v1", "terminal/v1", "runtime.terminals/v1"],
   "requires": [
     "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",

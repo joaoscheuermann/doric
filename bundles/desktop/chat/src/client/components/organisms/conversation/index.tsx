@@ -38,6 +38,7 @@ import { withPendingTurns } from '../../../domain/pending-turns.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
 import { useExternalBlocks } from '../../../hooks/use-external-blocks.js';
+import { ConversationThreadContext } from '../../../hooks/use-live-terminal.js';
 import { useThreadChat } from '../../../hooks/use-thread-chat.js';
 import { useThreadQueue } from '../../../hooks/use-thread-queue.js';
 import { useThreadStop } from '../../../hooks/use-thread-stop.js';
@@ -45,6 +46,7 @@ import {
   type ChatLexicalRegistry,
   chatLexicalRegistry,
 } from '../../../services/lexical.js';
+import { retainProjectTerminals } from '../../../stores/live-terminals.js';
 import type { PromptSignal } from '../../../utility/prompt-signal.js';
 import { ThreadNavRail } from '../../molecules/thread-nav-rail.js';
 import { ActivityTurnNode } from './nodes/activity-turn-node.js';
@@ -356,6 +358,11 @@ export function Conversation({
     () => ({ blocks: external.drawn, ui }),
     [external.drawn, ui],
   );
+  const threadInfo = useMemo(
+    () => ({ threadId: thread.id, projectId: thread.projectId }),
+    [thread.id, thread.projectId],
+  );
+  useEffect(() => retainProjectTerminals(thread.projectId), [thread.projectId]);
 
   return (
     <div className="flex min-h-0 min-w-0 w-full flex-1">
@@ -366,47 +373,49 @@ export function Conversation({
         {/* The top padding keeps the first block off the header, since the
           transcript grows from the top of the scroll view. */}
         <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
-          <ChatBlocksContext.Provider value={blocksSource}>
-            <LexicalExtensionComposer
-              extension={extension}
-              contentEditable={contentEditable}
-            >
-              <UndeletableBlocksPlugin
-                isReadOnly={isReadOnlyBlock}
-                isUndeletable={isUndeletableNode}
-              />
-              <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-              <CaretNavigation />
-              <TableBlocksPlugin />
-              <MarkdownPromptPlugin />
-              <PromptLineBreaks />
-              <PasteIntoPrompt />
-              <InsertThreadTurnNodes
-                autoFocus={autoFocus}
-                threadId={thread.id}
-                turns={turns}
-                blocks={external.placed}
-                onResume={chat.resume}
-                navigating={navigating}
-                following={following}
-              />
-              <SendPrompt
-                canStop={running}
-                promptSignal={promptSignal}
-                send={chat.prompt}
-                sendRequest={sendRequest}
-                onStop={stop}
-                onResumeQueue={
-                  !queue.resuming &&
-                  !queue.isError &&
-                  composerAction(running, queue.data) === 'resume'
-                    ? queue.resume
-                    : undefined
-                }
-              />
-              <EditQueuePrompt threadId={thread.id} />
-            </LexicalExtensionComposer>
-          </ChatBlocksContext.Provider>
+          <ConversationThreadContext.Provider value={threadInfo}>
+            <ChatBlocksContext.Provider value={blocksSource}>
+              <LexicalExtensionComposer
+                extension={extension}
+                contentEditable={contentEditable}
+              >
+                <UndeletableBlocksPlugin
+                  isReadOnly={isReadOnlyBlock}
+                  isUndeletable={isUndeletableNode}
+                />
+                <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+                <CaretNavigation />
+                <TableBlocksPlugin />
+                <MarkdownPromptPlugin />
+                <PromptLineBreaks />
+                <PasteIntoPrompt />
+                <InsertThreadTurnNodes
+                  autoFocus={autoFocus}
+                  threadId={thread.id}
+                  turns={turns}
+                  blocks={external.placed}
+                  onResume={chat.resume}
+                  navigating={navigating}
+                  following={following}
+                />
+                <SendPrompt
+                  canStop={running}
+                  promptSignal={promptSignal}
+                  send={chat.prompt}
+                  sendRequest={sendRequest}
+                  onStop={stop}
+                  onResumeQueue={
+                    !queue.resuming &&
+                    !queue.isError &&
+                    composerAction(running, queue.data) === 'resume'
+                      ? queue.resume
+                      : undefined
+                  }
+                />
+                <EditQueuePrompt threadId={thread.id} />
+              </LexicalExtensionComposer>
+            </ChatBlocksContext.Provider>
+          </ConversationThreadContext.Provider>
         </div>
         {/* Inside the scroll view, pinned to it: the rail is absolutely
           positioned against the scroll area's root, so the transcript scrolls

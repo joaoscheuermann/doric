@@ -1,5 +1,4 @@
 import { cn } from 'desktop/ui/utils';
-import { FileDiffIcon } from 'lucide-react';
 
 import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
 import { type DiffLine, parseEditCall } from '../../domain/edit-tool.js';
@@ -40,8 +39,9 @@ const lineMarkerClass = (kind: DiffLine['kind']): string => {
 
 /**
  * An `edit` tool call rendered as a standalone file-diff block in the
- * transcript: its header shows the file path and `+added / −removed` counts,
- * and its body renders the unified diff lines with line numbers and colours.
+ * transcript: its header shows the file name and `+added / −removed` counts,
+ * and its body renders the unified diff lines directly below without a card or
+ * vertical guide line.
  */
 export function EditToolItem({
   args,
@@ -60,30 +60,18 @@ export function EditToolItem({
 
   const label = (
     <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
-      <FileDiffIcon aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="shrink-0">{verb}</span>
       {parsed.fileName !== undefined ? (
-        <span
-          data-slot="edit-file-name"
-          className="truncate font-mono text-xs text-foreground"
-        >
+        <span data-slot="edit-file-name" className="truncate font-mono">
           {parsed.fileName}
         </span>
       ) : (
         <span>file</span>
       )}
-      {parsed.directory !== undefined ? (
-        <span
-          data-slot="edit-file-dir"
-          className="truncate font-mono text-xs text-muted-foreground"
-        >
-          {parsed.directory}
-        </span>
-      ) : null}
       {hasCounts ? (
         <span
           data-slot="edit-counts"
-          className="inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums"
+          className="inline-flex shrink-0 items-center gap-1 font-mono tabular-nums"
         >
           <span className="text-[var(--paper-green)]">+{parsed.added}</span>
           <span className="text-[var(--paper-red)]">−{parsed.removed}</span>
@@ -97,6 +85,7 @@ export function EditToolItem({
       <CollapsibleBlock
         chosen={chosen}
         focused={focused}
+        guide={false}
         label={label}
         onChosenChange={onChosenChange}
         openness={toolOpenness(status, args, result, error, 'edit')}
@@ -105,7 +94,7 @@ export function EditToolItem({
           {parsed.error !== undefined && parsed.error.length > 0 ? (
             <div
               data-slot="edit-error"
-              className="whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive"
+              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
             >
               {parsed.error}
             </div>
@@ -113,7 +102,7 @@ export function EditToolItem({
           {parsed.diffLines.length > 0 ? (
             <div
               data-slot="edit-diff"
-              className="max-h-80 overflow-auto rounded-md border border-border bg-card/40 py-1 font-mono text-xs"
+              className="max-h-80 overflow-auto font-mono text-sm"
             >
               {parsed.diffLines.map((line, index) => (
                 <div
@@ -126,7 +115,7 @@ export function EditToolItem({
                     lineRowClass(line.kind),
                   )}
                 >
-                  <span className="w-9 shrink-0 select-none px-1.5 text-right text-[11px] tabular-nums text-muted-foreground/70">
+                  <span className="w-8 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/70">
                     {line.lineNumber ?? ''}
                   </span>
                   <span
@@ -145,7 +134,7 @@ export function EditToolItem({
               ))}
             </div>
           ) : parsed.rawOutput !== undefined && parsed.rawOutput.length > 0 ? (
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+            <pre className="whitespace-pre-wrap break-words font-mono text-sm text-muted-foreground">
               {parsed.rawOutput}
             </pre>
           ) : null}

@@ -38,6 +38,10 @@ type CollapsibleBlockProps = {
   readonly onChosenChange: (chosen: boolean) => void;
   /** Whether the block is the caret's stop; it then wears the hover style. */
   readonly focused?: boolean;
+  /** Whether the open content draws the left vertical guide line; defaults to true. */
+  readonly guide?: boolean;
+  /** Optional control rendered at the right end of the header row (e.g. Stop). */
+  readonly trailing?: ReactNode;
   readonly children: ReactNode;
 };
 
@@ -60,9 +64,11 @@ export function CollapsibleBlock({
   children,
   chosen,
   focused,
+  guide = true,
   label,
   onChosenChange,
   openness,
+  trailing,
 }: CollapsibleBlockProps) {
   const open = blockOpen(chosen, openness);
   const toggle = (): void => onChosenChange(blockToggled(chosen, openness));
@@ -83,12 +89,26 @@ export function CollapsibleBlock({
   return (
     <Collapsible open={open} onOpenChange={toggle}>
       {action === undefined ? (
-        <CollapsibleTrigger className={headerClass}>
-          <span className={cn('min-w-0', openness.active && 'shimmer')}>
-            {label}
-          </span>
-          {chevron}
-        </CollapsibleTrigger>
+        trailing === undefined ? (
+          <CollapsibleTrigger className={headerClass}>
+            <span className={cn('min-w-0', openness.active && 'shimmer')}>
+              {label}
+            </span>
+            {chevron}
+          </CollapsibleTrigger>
+        ) : (
+          <div className="flex w-full items-center gap-2">
+            <CollapsibleTrigger
+              className={cn(headerClass, 'w-auto min-w-0 flex-1')}
+            >
+              <span className={cn('min-w-0', openness.active && 'shimmer')}>
+                {label}
+              </span>
+              {chevron}
+            </CollapsibleTrigger>
+            {trailing}
+          </div>
+        )
       ) : (
         <div className={headerClass}>
           <CollapsibleTrigger
@@ -104,9 +124,15 @@ export function CollapsibleBlock({
           >
             {chevron}
           </CollapsibleTrigger>
+          {trailing}
         </div>
       )}
-      <CollapsibleContent className="mt-1.5 ml-1.5 border-l border-border pl-3 text-sm text-muted-foreground">
+      <CollapsibleContent
+        className={cn(
+          'mt-1.5 text-sm text-muted-foreground',
+          guide && 'ml-1.5 border-l border-border pl-3',
+        )}
+      >
         {children}
       </CollapsibleContent>
     </Collapsible>

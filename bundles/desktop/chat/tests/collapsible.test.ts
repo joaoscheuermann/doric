@@ -99,17 +99,19 @@ describe('what opens each block on its own', () => {
     );
   });
 
-  test('an edit tool-call block stays open by default once settled until the reader closes it', () => {
-    const settled = toolOpenness(
-      'finished',
-      '{"path":"a.ts"}',
-      '{"success":true,"diff":"1 +ok"}',
-      undefined,
-      'edit',
-    );
-    assert.equal(settled.active, false);
-    assert.equal(blockOpen(null, settled), true);
-    assert.equal(blockToggled(null, settled), false);
+  test('edit and write tool-call blocks stay open by default once settled until the reader closes them', () => {
+    for (const toolName of ['edit', 'write'] as const) {
+      const settled = toolOpenness(
+        'finished',
+        '{"path":"a.ts"}',
+        '{"success":true,"diff":"1 +ok"}',
+        undefined,
+        toolName,
+      );
+      assert.equal(settled.active, false);
+      assert.equal(blockOpen(null, settled), true);
+      assert.equal(blockToggled(null, settled), false);
+    }
   });
 
   test('an activity summary is folded until the reader opens it', () => {

@@ -953,10 +953,7 @@ test('edit tool calls stand outside the activity summary with their diff while t
     editTool?.querySelector('[data-slot="edit-file-name"]')?.textContent,
     'parser.ts',
   );
-  assert.equal(
-    editTool?.querySelector('[data-slot="edit-file-dir"]')?.textContent,
-    'src',
-  );
+  assert.equal(editTool?.querySelector('[data-slot="edit-file-dir"]'), null);
   assert.match(
     editTool?.querySelector('[data-slot="edit-counts"]')?.textContent ?? '',
     /\+2.*−1/,
@@ -985,9 +982,5 @@ test('edit tool calls stand outside the activity summary with their diff while t
     terminalTool?.querySelector('[data-slot="terminal-command-preview"]')
       ?.textContent,
     'npm test',
-  );
-  assert.equal(
-    terminalTool?.querySelector('[data-slot="terminal-duration"]')?.textContent,
-    '1.2s',
   );
 });

@@ -1,7 +1,7 @@
 /**
- * Reading an `edit` tool call's serialized input and output into the fields an
- * edit block renders: the target path, the line counts (+added / -removed),
- * the parsed diff lines, and any failure message.
+ * Reading an `edit` or `write` tool call's serialized input and output into the
+ * fields a file-diff block renders: the target path, the line counts
+ * (+added / -removed), the parsed diff lines, and any failure message.
  */
 
 export type DiffLineKind = 'context' | 'add' | 'remove';
@@ -28,7 +28,7 @@ export type ParsedEditCall = {
   readonly added: number;
   readonly removed: number;
   readonly error?: string;
-  /** Raw result text when the output is not a JSON `EditOutput` record. */
+  /** Raw result text when the output is not a JSON `EditOutput`/`WriteOutput` record. */
   readonly rawOutput?: string;
 };
 
@@ -55,16 +55,22 @@ const splitLines = (value: string): readonly string[] => {
 };
 
 const NUMBERED_DIFF_LINE = /^\s*(\d+)\s([ +-])(.*)$/;
+const DIFF_SUMMARY_HEADER = /^Edited\s+.+\s+\(\+(\d+)\s+-(\d+)\)$/;
 
 /**
- * Parses the numbered diff preview produced by `files`'s `edit` tool
- * (`"  12 -old"` / `"  12 +new"` / `"  10  context"`), or a plain unified diff.
+ * Parses the numbered diff preview produced by `files`'s `edit` and `write`
+ * tools (`"  12 -old"` / `"  12 +new"` / `"  10  context"`), stripping the
+ * leading `"Edited <path> (+N -M)"` summary line when present.
  */
 export const parseDiffLines = (diff: string): readonly DiffLine[] => {
   const rawLines = splitLines(diff);
   const parsed: DiffLine[] = [];
 
-  for (const raw of rawLines) {
+  for (const [index, raw] of rawLines.entries()) {
+    if (index === 0 && DIFF_SUMMARY_HEADER.test(raw)) {
+      continue;
+    }
+
     const match = raw.match(NUMBERED_DIFF_LINE);
     if (match !== null) {
       const lineNumber = Number(match[1]);
@@ -90,20 +96,41 @@ export const parseDiffLines = (diff: string): readonly DiffLine[] => {
   return parsed;
 };
 
-/** Builds preview diff lines from `input.edits` while the call is still running. */
-const previewLinesFromEdits = (
+const parseHeaderCounts = (
+  diff: string,
+): { readonly added: number; readonly removed: number } | undefined => {
+  const firstLine = splitLines(diff)[0];
+  if (firstLine === undefined) return undefined;
+  const match = firstLine.match(DIFF_SUMMARY_HEADER);
+  if (match === null) return undefined;
+  return { added: Number(match[1]), removed: Number(match[2]) };
+};
+
+/** Builds preview diff lines from `input.edits` or `input.content` while running. */
+const previewLinesFromInput = (
   edits: readonly EditEntry[],
+  content?: string,
 ): readonly DiffLine[] => {
-  const lines: DiffLine[] = [];
-  for (const edit of edits) {
-    for (const line of splitLines(edit.oldText)) {
-      lines.push({ kind: 'remove', lineNumber: null, text: line });
+  if (edits.length > 0) {
+    const lines: DiffLine[] = [];
+    for (const edit of edits) {
+      for (const line of splitLines(edit.oldText)) {
+        lines.push({ kind: 'remove', lineNumber: null, text: line });
+      }
+      for (const line of splitLines(edit.newText)) {
+        lines.push({ kind: 'add', lineNumber: null, text: line });
+      }
     }
-    for (const line of splitLines(edit.newText)) {
-      lines.push({ kind: 'add', lineNumber: null, text: line });
-    }
+    return lines;
   }
-  return lines;
+  if (content !== undefined && content.length > 0) {
+    return splitLines(content).map((line, index) => ({
+      kind: 'add' as const,
+      lineNumber: index + 1,
+      text: line,
+    }));
+  }
+  return [];
 };
 
 /** Splits a file path into its trailing file name and leading directory. */
@@ -132,7 +159,7 @@ const readEdits = (value: unknown): readonly EditEntry[] => {
   return entries;
 };
 
-/** Parses an `edit` tool call's `args` and `result` JSON strings. */
+/** Parses an `edit` or `write` tool call's `args` and `result` JSON strings. */
 export const parseEditCall = (
   args: string,
   result?: string,
@@ -145,9 +172,11 @@ export const parseEditCall = (
       : undefined;
   const parts = path === undefined ? undefined : splitFilePath(path);
   const edits = readEdits(input?.edits);
+  const content =
+    typeof input?.content === 'string' ? input.content : undefined;
 
   if (result === undefined || result.trim().length === 0) {
-    const diffLines = previewLinesFromEdits(edits);
+    const diffLines = previewLinesFromInput(edits, content);
     const added = diffLines.filter((line) => line.kind === 'add').length;
     const removed = diffLines.filter((line) => line.kind === 'remove').length;
     return {
@@ -163,7 +192,10 @@ export const parseEditCall = (
   }
 
   const output = parseJsonRecord(result);
-  if (output !== undefined && typeof output.diff === 'string') {
+  if (
+    output !== undefined &&
+    (typeof output.diff === 'string' || typeof output.success === 'boolean')
+  ) {
     const success =
       typeof output.success === 'boolean' ? output.success : undefined;
     const firstChangedLine =
@@ -175,12 +207,19 @@ export const parseEditCall = (
         ? output.error
         : undefined;
     const error = toolError ?? outputError;
+    const rawDiff = typeof output.diff === 'string' ? output.diff : '';
     const diffLines =
-      output.diff.length > 0
-        ? parseDiffLines(output.diff)
-        : previewLinesFromEdits(edits);
-    const added = diffLines.filter((line) => line.kind === 'add').length;
-    const removed = diffLines.filter((line) => line.kind === 'remove').length;
+      rawDiff.length > 0
+        ? parseDiffLines(rawDiff)
+        : previewLinesFromInput(edits, content);
+    const headerCounts =
+      rawDiff.length > 0 ? parseHeaderCounts(rawDiff) : undefined;
+    const added =
+      headerCounts?.added ??
+      diffLines.filter((line) => line.kind === 'add').length;
+    const removed =
+      headerCounts?.removed ??
+      diffLines.filter((line) => line.kind === 'remove').length;
 
     return {
       ...(path === undefined ? {} : { path }),
@@ -196,7 +235,7 @@ export const parseEditCall = (
     };
   }
 
-  const diffLines = previewLinesFromEdits(edits);
+  const diffLines = previewLinesFromInput(edits, content);
   const added = diffLines.filter((line) => line.kind === 'add').length;
   const removed = diffLines.filter((line) => line.kind === 'remove').length;
 

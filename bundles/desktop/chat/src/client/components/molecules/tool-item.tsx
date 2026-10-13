@@ -46,7 +46,7 @@ export function ToolItem({
       />
     );
   }
-  if (name === 'edit') {
+  if (name === 'edit' || name === 'write') {
     return (
       <EditToolItem
         args={args}

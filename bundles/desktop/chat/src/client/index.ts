@@ -11,9 +11,15 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import { RuntimeTerminalsV1 } from 'runtime/contracts';
 
 import { ChatHooksV1 } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
+import {
+  fromRuntimeTerminals,
+  fromTerminalService,
+  TerminalServiceV1,
+} from './api/terminals-contract.js';
 import { LayoutWorkspaceV1 } from './api/workspace-contract.js';
 import { THREAD_ROUTE } from './domain/thread-route.js';
 import {
@@ -41,6 +47,11 @@ import {
 } from './services/views.js';
 import { resetComposers } from './stores/composer.js';
 import { resetConnectionStore } from './stores/connection.js';
+import {
+  resetLiveTerminalsStore,
+  setRuntimeTerminalsApi,
+  setTerminalServiceApi,
+} from './stores/live-terminals.js';
 import { threadChatsStore } from './stores/thread-chats.js';
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -82,16 +93,27 @@ export function activate({ services }: ClientContext): Cleanup {
     setHistory(api);
     return () => setHistory(undefined);
   });
+  const terminalService = services.whenAvailable(TerminalServiceV1, (api) => {
+    setTerminalServiceApi(fromTerminalService(api));
+    return () => setTerminalServiceApi(undefined);
+  });
+  const runtimeTerminals = services.whenAvailable(RuntimeTerminalsV1, (api) => {
+    setRuntimeTerminalsApi(fromRuntimeTerminals(api));
+    return () => setRuntimeTerminalsApi(undefined);
+  });
   const stopActivity = watchSandboxActivity(threadChatsStore, hooks);
 
   return () => {
     stopActivity();
     threadChatsStore.getState().closeAll();
+    runtimeTerminals.dispose();
+    terminalService.dispose();
     history.dispose();
     workspace.dispose();
     composer.dispose();
     route.dispose();
     for (const element of elements.reverse()) element.dispose();
+    resetLiveTerminalsStore();
     resetConnectionStore();
     resetComposers();
     setChatLexicalRegistry(undefined);

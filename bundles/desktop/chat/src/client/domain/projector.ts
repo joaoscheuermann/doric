@@ -276,12 +276,13 @@ type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
 /**
  * Whether a draft belongs to the burst an `ActivityTurn` folds together:
- * reasoning and tool calls other than `edit`, which stays out of the summary as
- * its own turn block so every file modification remains visible in the flow.
+ * reasoning and tool calls other than `edit` and `write`, which stay out of the
+ * summary as their own turn blocks so every file modification remains visible in
+ * the flow.
  */
 const isBurstDraft = (turn: Draft): turn is BurstDraft =>
   turn.type === 'thinking' ||
-  (turn.type === 'tool_call' && turn.name !== 'edit');
+  (turn.type === 'tool_call' && turn.name !== 'edit' && turn.name !== 'write');
 
 /** One grouped step, in the shape a surface renders it. */
 const activityItem = (item: BurstDraft): ActivityItem =>

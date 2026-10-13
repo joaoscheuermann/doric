@@ -62,7 +62,7 @@ export const toolOpenness = (
 ): Openness => ({
   active: status === 'running',
   hasContent: args.length > 0 || result !== undefined || error !== undefined,
-  ...(name === 'edit' ? { defaultOpen: true } : {}),
+  ...(name === 'edit' || name === 'write' ? { defaultOpen: true } : {}),
 });
 
 /** A settled burst's answer: an activity summary is never the live one. */
