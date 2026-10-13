@@ -14,6 +14,8 @@ export interface ConversationThreadInfo {
 export const ConversationThreadContext =
   createContext<ConversationThreadInfo | null>(null);
 
+const noopSubscribe = (): (() => void) => () => {};
+
 export const useLiveTerminal = (input: {
   readonly command: string | undefined;
   readonly terminalId: string | undefined;
@@ -21,16 +23,19 @@ export const useLiveTerminal = (input: {
 }): LiveTerminalSession | undefined => {
   const thread = useContext(ConversationThreadContext);
   const threadId = thread?.threadId;
+  const canMatch = input.toolRunning || input.terminalId !== undefined;
 
   return useSyncExternalStore(
-    subscribeLiveTerminals,
+    canMatch ? subscribeLiveTerminals : noopSubscribe,
     () =>
-      matchLiveTerminal({
-        threadId,
-        command: input.command,
-        terminalId: input.terminalId,
-        toolRunning: input.toolRunning,
-      }),
+      canMatch
+        ? matchLiveTerminal({
+            threadId,
+            command: input.command,
+            terminalId: input.terminalId,
+            toolRunning: input.toolRunning,
+          })
+        : undefined,
     () => undefined,
   );
 };

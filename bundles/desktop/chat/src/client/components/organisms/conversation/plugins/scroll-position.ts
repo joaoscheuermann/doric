@@ -33,15 +33,29 @@ const visibleBlock = (
   return null;
 };
 
-/** Read the viewport before Lexical changes the transcript. */
-export const readScroll = (root: HTMLElement | null): ScrollReading | null => {
+const findScrollElement = (root: HTMLElement | null): HTMLElement | null => {
+  const viewport = root?.closest('[data-slot="scroll-area-viewport"]');
+  if (viewport instanceof HTMLElement) return viewport;
   let element = root?.parentElement ?? null;
   while (
     element !== null &&
     !/auto|scroll|overlay/.test(getComputedStyle(element).overflowY)
   )
     element = element.parentElement;
+  return element;
+};
+
+/** Read the viewport before Lexical changes the transcript. */
+export const readScroll = (
+  root: HTMLElement | null,
+  decision: ScrollPlan = 'hold',
+): ScrollReading | null => {
+  if (decision === 'navigate') return null;
+  const element = findScrollElement(root);
   if (element === null) return null;
+  if (decision !== 'hold') {
+    return { element, anchor: null, anchorTop: 0 };
+  }
 
   const anchor = root === null ? null : visibleBlock(element, root);
   return {

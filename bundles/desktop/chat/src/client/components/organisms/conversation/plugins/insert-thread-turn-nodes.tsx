@@ -439,12 +439,12 @@ export function InsertThreadTurnNodes({
       // What this pass may do to the reader's view, decided from the facts
       // before it runs. Only the opener touches focus and the caret. Later
       // passes keep the end or the visible block in its place.
-      const scroll = readScroll(editor.getRootElement());
       const decision = scrollPlan({
         opening,
         navigating: navigating.current,
         following: following.current,
       });
+      const scroll = readScroll(editor.getRootElement(), decision);
       let plan: SyncPlan = { steps: [], removals: [], pending: false };
       editor.update(
         () => {

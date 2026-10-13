@@ -24,6 +24,14 @@ export const unseenTerminalOutput = (
 ): string =>
   offset <= seen ? '' : data.slice(Math.max(0, seen - (offset - data.length)));
 
+const MAX_LIVE_OUTPUT_CHARS = 32_000;
+const OUTPUT_THROTTLE_MS = 50;
+
+const trimOutput = (value: string): string =>
+  value.length > MAX_LIVE_OUTPUT_CHARS
+    ? value.slice(-MAX_LIVE_OUTPUT_CHARS)
+    : value;
+
 let terminalServiceProvider: ChatTerminalsApi | undefined;
 let runtimeTerminalsProvider: ChatTerminalsApi | undefined;
 
@@ -35,9 +43,31 @@ const projectRefCounts = new Map<string, number>();
 const projectStreams = new Map<string, Disposable>();
 const snapshotRequested = new Set<string>();
 const listeners = new Set<() => void>();
+let lastOutputNotifyAt = 0;
+let pendingOutputTimer: ReturnType<typeof setTimeout> | null = null;
 
 const notify = (): void => {
+  if (pendingOutputTimer !== null) {
+    clearTimeout(pendingOutputTimer);
+    pendingOutputTimer = null;
+  }
+  lastOutputNotifyAt = Date.now();
   for (const listener of [...listeners]) listener();
+};
+
+const notifyOutput = (): void => {
+  const now = Date.now();
+  const elapsed = now - lastOutputNotifyAt;
+  if (elapsed >= OUTPUT_THROTTLE_MS) {
+    notify();
+    return;
+  }
+  if (pendingOutputTimer === null) {
+    pendingOutputTimer = setTimeout(() => {
+      pendingOutputTimer = null;
+      notify();
+    }, OUTPUT_THROTTLE_MS - elapsed);
+  }
 };
 
 const requestInitialSnapshot = (terminal: Terminal): void => {
@@ -63,10 +93,10 @@ const requestInitialSnapshot = (terminal: Terminal): void => {
       const nextOffset = Math.max(seen, snap.offset);
       sessions.set(terminal.id, {
         terminal: baseTerminal,
-        output: nextOutput,
+        output: trimOutput(nextOutput),
         offset: nextOffset,
       });
-      notify();
+      notifyOutput();
     })
     .catch(() => undefined);
 };
@@ -132,10 +162,10 @@ const handleWatchItem = (item: TerminalWatchItem): void => {
     if (delta.length === 0 && offset <= existing.offset) return;
     sessions.set(terminalId, {
       ...existing,
-      output: `${existing.output}${delta}`,
+      output: trimOutput(`${existing.output}${delta}`),
       offset: Math.max(existing.offset, offset),
     });
-    notify();
+    notifyOutput();
   }
 };
 
@@ -262,6 +292,11 @@ export const matchLiveTerminal = (input: {
 };
 
 export const resetLiveTerminalsStore = (): void => {
+  if (pendingOutputTimer !== null) {
+    clearTimeout(pendingOutputTimer);
+    pendingOutputTimer = null;
+  }
+  lastOutputNotifyAt = 0;
   for (const projectId of [...projectStreams.keys()]) {
     closeStream(projectId);
   }

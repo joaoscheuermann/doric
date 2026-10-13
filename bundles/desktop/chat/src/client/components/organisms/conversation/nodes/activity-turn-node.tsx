@@ -160,6 +160,7 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   override decorate(editor: LexicalEditor): JSX.Element {
+    const open = blockOpen(this.__chosen, settledOpenness);
     return (
       <WidgetFocus nodeKey={this.__key}>
         {(focused) => (
@@ -176,49 +177,51 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
               }
               openness={settledOpenness}
             >
-              {/* A flex column, so the steps stand `gap-2` apart without carrying a
-                margin of their own: a margin would also push the guide down. */}
-              <div className="flex flex-col gap-2">
-                {this.__items.map((item, index) => (
-                  <div
-                    // The node holds one entry per step by position: the caret, the
-                    // open/closed choice and the focus marker are all read by index,
-                    // and a burst only ever appends to or rewrites this list.
-                    // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity the node keeps its steps under
-                    key={index}
-                    role="none"
-                    onClick={(event: MouseEvent) => {
-                      event.stopPropagation();
-                      this.takeStep(editor, index);
-                    }}
-                  >
-                    {item.kind === 'thinking' ? (
-                      <ThinkingItem
-                        chosen={this.__itemChosen[index] ?? null}
-                        focused={focused && this.__itemFocus === index}
-                        onChosenChange={(chosen) =>
-                          this.takeStepChosen(editor, index, chosen)
-                        }
-                        streaming={false}
-                        text={item.text}
-                      />
-                    ) : (
-                      <ToolItem
-                        args={item.args}
-                        chosen={this.__itemChosen[index] ?? null}
-                        error={item.error}
-                        focused={focused && this.__itemFocus === index}
-                        name={item.name}
-                        onChosenChange={(chosen) =>
-                          this.takeStepChosen(editor, index, chosen)
-                        }
-                        result={item.result}
-                        status={item.status}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
+              {open ? (
+                /* A flex column, so the steps stand `gap-2` apart without carrying a
+                  margin of their own: a margin would also push the guide down. */
+                <div className="flex flex-col gap-2">
+                  {this.__items.map((item, index) => (
+                    <div
+                      // The node holds one entry per step by position: the caret, the
+                      // open/closed choice and the focus marker are all read by index,
+                      // and a burst only ever appends to or rewrites this list.
+                      // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity the node keeps its steps under
+                      key={index}
+                      role="none"
+                      onClick={(event: MouseEvent) => {
+                        event.stopPropagation();
+                        this.takeStep(editor, index);
+                      }}
+                    >
+                      {item.kind === 'thinking' ? (
+                        <ThinkingItem
+                          chosen={this.__itemChosen[index] ?? null}
+                          focused={focused && this.__itemFocus === index}
+                          onChosenChange={(chosen) =>
+                            this.takeStepChosen(editor, index, chosen)
+                          }
+                          streaming={false}
+                          text={item.text}
+                        />
+                      ) : (
+                        <ToolItem
+                          args={item.args}
+                          chosen={this.__itemChosen[index] ?? null}
+                          error={item.error}
+                          focused={focused && this.__itemFocus === index}
+                          name={item.name}
+                          onChosenChange={(chosen) =>
+                            this.takeStepChosen(editor, index, chosen)
+                          }
+                          result={item.result}
+                          status={item.status}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </CollapsibleBlock>
           </div>
         )}

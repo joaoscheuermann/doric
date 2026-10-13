@@ -1,6 +1,11 @@
 import { cn } from 'desktop/ui/utils';
+import { memo, useMemo } from 'react';
 
-import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
+import {
+  blockOpen,
+  type Chosen,
+  toolOpenness,
+} from '../../domain/collapsible.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import {
   formatCommandPreview,
@@ -66,7 +71,7 @@ function StreamBlock({
  * card (without a vertical guide line). While the command is running, live
  * output streams into the card and a `Stop` action appears in the header.
  */
-export function TerminalToolItem({
+export const TerminalToolItem = memo(function TerminalToolItem({
   args,
   chosen,
   error,
@@ -75,7 +80,7 @@ export function TerminalToolItem({
   result,
   status,
 }: TerminalToolItemProps) {
-  const parsed = parseTerminalCall(args, result);
+  const parsed = useMemo(() => parseTerminalCall(args, result), [args, result]);
   const live = useLiveTerminal({
     command: parsed.command,
     terminalId: parsed.terminalId,
@@ -104,6 +109,7 @@ export function TerminalToolItem({
   const openness = liveActive
     ? { active: true, hasContent: true, defaultOpen: true }
     : baseOpenness;
+  const open = blockOpen(chosen, openness);
 
   const label = (
     <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
@@ -143,56 +149,58 @@ export function TerminalToolItem({
         openness={openness}
         trailing={stopAction}
       >
-        <div className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-md border border-border bg-card/50 px-3 py-2 font-mono text-sm">
-          {parsed.command !== undefined && parsed.command.length > 0 ? (
-            <div
-              data-slot="terminal-command"
-              className="whitespace-pre-wrap break-all text-foreground"
-            >
-              <span className="mr-1.5 select-none text-muted-foreground">
-                $
-              </span>
-              {parsed.command}
-            </div>
-          ) : null}
-          {hasLiveOutput ? (
-            <pre
-              data-slot="terminal-live-output"
-              className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/90"
-            >
-              {liveOutput}
-            </pre>
-          ) : null}
-          {hasStdout && parsed.stdout !== undefined ? (
-            <StreamBlock stream={parsed.stdout} tone="stdout" />
-          ) : null}
-          {hasStderr && parsed.stderr !== undefined ? (
-            <StreamBlock stream={parsed.stderr} tone="stderr" />
-          ) : null}
-          {parsed.rawOutput !== undefined && parsed.rawOutput.length > 0 ? (
-            <pre
-              data-slot="terminal-raw-output"
-              className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/90"
-            >
-              {parsed.rawOutput}
-            </pre>
-          ) : null}
-          {error !== undefined && error.length > 0 ? (
-            <div
-              data-slot="terminal-error"
-              className="whitespace-pre-wrap break-words text-destructive"
-            >
-              {error}
-            </div>
-          ) : null}
-          {parsed.background === true &&
-          !hasSettledOutput &&
-          !hasLiveOutput &&
-          error === undefined ? (
-            <div className="text-muted-foreground">Started in background</div>
-          ) : null}
-        </div>
+        {open ? (
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-md border border-border bg-card/50 px-3 py-2 font-mono text-sm">
+            {parsed.command !== undefined && parsed.command.length > 0 ? (
+              <div
+                data-slot="terminal-command"
+                className="whitespace-pre-wrap break-all text-foreground"
+              >
+                <span className="mr-1.5 select-none text-muted-foreground">
+                  $
+                </span>
+                {parsed.command}
+              </div>
+            ) : null}
+            {hasLiveOutput ? (
+              <pre
+                data-slot="terminal-live-output"
+                className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/90"
+              >
+                {liveOutput}
+              </pre>
+            ) : null}
+            {hasStdout && parsed.stdout !== undefined ? (
+              <StreamBlock stream={parsed.stdout} tone="stdout" />
+            ) : null}
+            {hasStderr && parsed.stderr !== undefined ? (
+              <StreamBlock stream={parsed.stderr} tone="stderr" />
+            ) : null}
+            {parsed.rawOutput !== undefined && parsed.rawOutput.length > 0 ? (
+              <pre
+                data-slot="terminal-raw-output"
+                className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/90"
+              >
+                {parsed.rawOutput}
+              </pre>
+            ) : null}
+            {error !== undefined && error.length > 0 ? (
+              <div
+                data-slot="terminal-error"
+                className="whitespace-pre-wrap break-words text-destructive"
+              >
+                {error}
+              </div>
+            ) : null}
+            {parsed.background === true &&
+            !hasSettledOutput &&
+            !hasLiveOutput &&
+            error === undefined ? (
+              <div className="text-muted-foreground">Started in background</div>
+            ) : null}
+          </div>
+        ) : null}
       </CollapsibleBlock>
     </div>
   );
-}
+});

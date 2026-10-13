@@ -133,7 +133,7 @@ export function CollapsibleBlock({
           guide && 'ml-1.5 border-l border-border pl-3',
         )}
       >
-        {children}
+        {open ? children : null}
       </CollapsibleContent>
     </Collapsible>
   );

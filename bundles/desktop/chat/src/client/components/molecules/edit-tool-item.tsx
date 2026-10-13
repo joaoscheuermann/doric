@@ -1,6 +1,11 @@
 import { cn } from 'desktop/ui/utils';
+import { memo, useMemo } from 'react';
 
-import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
+import {
+  blockOpen,
+  type Chosen,
+  toolOpenness,
+} from '../../domain/collapsible.js';
 import { type DiffLine, parseEditCall } from '../../domain/edit-tool.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { CollapsibleBlock } from './collapsible-block.js';
@@ -38,12 +43,12 @@ const lineMarkerClass = (kind: DiffLine['kind']): string => {
 };
 
 /**
- * An `edit` tool call rendered as a standalone file-diff block in the
+ * An `edit` or `write` tool call rendered as a standalone file-diff block in the
  * transcript: its header shows the file name and `+added / −removed` counts,
  * and its body renders the unified diff lines directly below without a card or
  * vertical guide line.
  */
-export function EditToolItem({
+export const EditToolItem = memo(function EditToolItem({
   args,
   chosen,
   error,
@@ -53,10 +58,15 @@ export function EditToolItem({
   status,
 }: EditToolItemProps) {
   const running = status === 'running';
-  const parsed = parseEditCall(args, result, error);
+  const parsed = useMemo(
+    () => parseEditCall(args, result, error),
+    [args, result, error],
+  );
   const failed = status === 'failed' || parsed.success === false;
   const verb = running ? 'Editing' : failed ? 'Failed to edit' : 'Edited';
   const hasCounts = parsed.added > 0 || parsed.removed > 0;
+  const openness = toolOpenness(status, args, result, error, 'edit');
+  const open = blockOpen(chosen, openness);
 
   const label = (
     <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
@@ -88,58 +98,61 @@ export function EditToolItem({
         guide={false}
         label={label}
         onChosenChange={onChosenChange}
-        openness={toolOpenness(status, args, result, error, 'edit')}
+        openness={openness}
       >
-        <div className="flex flex-col gap-1.5">
-          {parsed.error !== undefined && parsed.error.length > 0 ? (
-            <div
-              data-slot="edit-error"
-              className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
-            >
-              {parsed.error}
-            </div>
-          ) : null}
-          {parsed.diffLines.length > 0 ? (
-            <div
-              data-slot="edit-diff"
-              className="max-h-80 overflow-auto font-mono text-sm"
-            >
-              {parsed.diffLines.map((line, index) => (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static positional rows of one tool result
-                  key={index}
-                  data-slot="edit-diff-line"
-                  data-kind={line.kind}
-                  className={cn(
-                    'flex min-w-full w-fit items-baseline leading-relaxed',
-                    lineRowClass(line.kind),
-                  )}
-                >
-                  <span className="w-8 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/70">
-                    {line.lineNumber ?? ''}
-                  </span>
-                  <span
-                    aria-hidden="true"
+        {open ? (
+          <div className="flex flex-col gap-1.5">
+            {parsed.error !== undefined && parsed.error.length > 0 ? (
+              <div
+                data-slot="edit-error"
+                className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
+              >
+                {parsed.error}
+              </div>
+            ) : null}
+            {parsed.diffLines.length > 0 ? (
+              <div
+                data-slot="edit-diff"
+                className="font-mono text-sm [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
+              >
+                {parsed.diffLines.map((line, index) => (
+                  <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static positional rows of one tool result
+                    key={index}
+                    data-slot="edit-diff-line"
+                    data-kind={line.kind}
                     className={cn(
-                      'w-4 shrink-0 select-none text-center',
-                      lineMarkerClass(line.kind),
+                      'flex w-full items-baseline leading-relaxed',
+                      lineRowClass(line.kind),
                     )}
                   >
-                    {lineMarker(line.kind)}
-                  </span>
-                  <span className="flex-1 whitespace-pre pr-3">
-                    {line.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : parsed.rawOutput !== undefined && parsed.rawOutput.length > 0 ? (
-            <pre className="whitespace-pre-wrap break-words font-mono text-sm text-muted-foreground">
-              {parsed.rawOutput}
-            </pre>
-          ) : null}
-        </div>
+                    <span className="w-8 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/70">
+                      {line.lineNumber ?? ''}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'w-4 shrink-0 select-none text-center',
+                        lineMarkerClass(line.kind),
+                      )}
+                    >
+                      {lineMarker(line.kind)}
+                    </span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">
+                      {line.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : parsed.rawOutput !== undefined &&
+              parsed.rawOutput.length > 0 ? (
+              <pre className="whitespace-pre-wrap break-words font-mono text-sm text-muted-foreground">
+                {parsed.rawOutput}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
       </CollapsibleBlock>
     </div>
   );
-}
+});
