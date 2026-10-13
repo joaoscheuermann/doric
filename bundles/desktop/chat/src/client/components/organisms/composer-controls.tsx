@@ -49,7 +49,7 @@ export function ComposerControls({
           aria-label="Pause execution"
           onClick={onStop}
         >
-          <PauseIcon />
+          <PauseIcon fill="currentColor" />
         </Button>
       )}
       <ComposerButton

@@ -1,6 +1,20 @@
 import { Button } from 'desktop/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
-import { ArrowUpIcon, CheckIcon, PauseIcon, PlayIcon } from 'lucide-react';
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  type LucideProps,
+  PauseIcon,
+  PlayIcon,
+} from 'lucide-react';
+
+/**
+ * A pause drawn solid: inside the solid footer button the outline alone reads
+ * faint, so the icon carries its whole fill.
+ */
+const SolidPauseIcon = (props: LucideProps) => (
+  <PauseIcon fill="currentColor" {...props} />
+);
 
 /** One control sends a draft, resumes queued work, or pauses dispatch. */
 export function ComposerButton({
@@ -27,7 +41,7 @@ export function ComposerButton({
   const Icon = {
     send: ArrowUpIcon,
     resume: PlayIcon,
-    pause: PauseIcon,
+    pause: SolidPauseIcon,
     save: CheckIcon,
   }[action];
   return (
