@@ -66,7 +66,12 @@ export function ToolItem({
     <CollapsibleBlock
       chosen={chosen}
       focused={focused}
-      label={`${running ? 'Calling' : 'Called'} ${humanize(name)}`}
+      label={
+        <>
+          <span className="font-normal">{running ? 'Calling' : 'Called'}</span>{' '}
+          <span className="font-light">{humanize(name)}</span>
+        </>
+      }
       onChosenChange={onChosenChange}
       openness={toolOpenness(status, args, result, error, name)}
     >

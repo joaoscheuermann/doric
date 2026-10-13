@@ -168,7 +168,11 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
             <CollapsibleBlock
               chosen={this.__chosen}
               focused={focused && this.__itemFocus === null}
-              label={activitySummary(this.__thoughts, this.__tools)}
+              label={
+                <span className="font-normal">
+                  {activitySummary(this.__thoughts, this.__tools)}
+                </span>
+              }
               onChosenChange={(chosen) =>
                 editor.update(() => {
                   const node = $getNodeByKey(this.__key);

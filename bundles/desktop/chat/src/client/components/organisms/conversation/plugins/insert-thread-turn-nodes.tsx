@@ -233,6 +233,105 @@ const $syncAuthor = (
   return author;
 };
 
+const turnEquals = (left: Turn, right: Turn): boolean => {
+  if (left === right) return true;
+  if (left.type !== right.type || left.promptId !== right.promptId)
+    return false;
+  switch (left.type) {
+    case 'agent': {
+      const other = right as Extract<Turn, { type: 'agent' }>;
+      return left.status === other.status && left.text === other.text;
+    }
+    case 'thinking': {
+      const other = right as Extract<Turn, { type: 'thinking' }>;
+      return left.streaming === other.streaming && left.text === other.text;
+    }
+    case 'tool_call': {
+      const other = right as Extract<Turn, { type: 'tool_call' }>;
+      return (
+        left.callId === other.callId &&
+        left.name === other.name &&
+        left.args === other.args &&
+        left.status === other.status &&
+        left.result === other.result &&
+        left.error === other.error
+      );
+    }
+    case 'user': {
+      const other = right as Extract<Turn, { type: 'user' }>;
+      return (
+        left.accepted === other.accepted &&
+        left.awaiting === other.awaiting &&
+        left.text === other.text &&
+        left.delegated?.kind === other.delegated?.kind &&
+        left.delegated?.threadId === other.delegated?.threadId &&
+        left.delegated?.text === other.delegated?.text
+      );
+    }
+    case 'activity': {
+      const other = right as Extract<Turn, { type: 'activity' }>;
+      if (
+        left.thoughts !== other.thoughts ||
+        left.tools !== other.tools ||
+        left.items.length !== other.items.length
+      )
+        return false;
+      for (let index = 0; index < left.items.length; index += 1) {
+        const a = left.items[index];
+        const b = other.items[index];
+        if (a === b) continue;
+        if (a === undefined || b === undefined || a.kind !== b.kind)
+          return false;
+        if (a.kind === 'thinking' && b.kind === 'thinking') {
+          if (a.text !== b.text) return false;
+          continue;
+        }
+        if (a.kind === 'tool' && b.kind === 'tool') {
+          if (
+            a.name !== b.name ||
+            a.args !== b.args ||
+            a.status !== b.status ||
+            a.result !== b.result ||
+            a.error !== b.error
+          )
+            return false;
+        }
+      }
+      return true;
+    }
+    case 'lifecycle': {
+      const other = right as Extract<Turn, { type: 'lifecycle' }>;
+      return left.lifecycle === other.lifecycle;
+    }
+    case 'compaction': {
+      const other = right as Extract<Turn, { type: 'compaction' }>;
+      return (
+        left.trigger === other.trigger &&
+        left.status === other.status &&
+        left.condensedMessages === other.condensedMessages &&
+        left.tokensFreed === other.tokensFreed &&
+        left.code === other.code &&
+        left.summary === other.summary
+      );
+    }
+    case 'failure': {
+      const other = right as Extract<Turn, { type: 'failure' }>;
+      return (
+        left.failure.code === other.failure.code &&
+        left.failure.message === other.failure.message &&
+        left.failure.name === other.failure.name
+      );
+    }
+    case 'queued': {
+      const other = right as Extract<Turn, { type: 'queued' }>;
+      return (
+        left.items.length === other.items.length &&
+        left.items.every((item, index) => item === other.items[index])
+      );
+    }
+  }
+};
+
 /** Hands the block the chat's newest version of its turn. */
 const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   if (turn.type === 'queued' && $isQueuedTurnNode(block)) {
@@ -264,9 +363,46 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
  * The prompt and the reader's author line that trails it, kept as the
  * conversation's last two blocks whatever an update did to the root. Only one
  * prompt is ever in the editor.
+ *
+ * In the steady state, the root's tail is `[..., QueueNode, PromptEditNode,
+ * UserPromptNode, TurnAuthorNode('user')]`. Checking the last 4 siblings first
+ * avoids scanning hundreds of historical turns on every RootNode transform.
  */
 const $settlePrompt = (threadId: string): UserPromptNode => {
   const root = $getRoot();
+  const tailAuthor = root.getLastChild();
+  const tailPrompt = tailAuthor?.getPreviousSibling() ?? null;
+  const tailHeader = tailPrompt?.getPreviousSibling() ?? null;
+  const tailQueue = tailHeader?.getPreviousSibling() ?? null;
+
+  if (
+    $isTurnAuthorNode(tailAuthor) &&
+    tailAuthor.__role === 'user' &&
+    $isUserPromptNode(tailPrompt) &&
+    $isPromptEditNode(tailHeader) &&
+    tailHeader.__threadId === threadId &&
+    $isQueueNode(tailQueue) &&
+    tailQueue.__threadId === threadId
+  ) {
+    let hasDuplicateTailNodes = false;
+    for (
+      let cursor = tailQueue.getPreviousSibling();
+      cursor !== null;
+      cursor = cursor.getPreviousSibling()
+    ) {
+      if (
+        $isUserPromptNode(cursor) ||
+        $isPromptEditNode(cursor) ||
+        $isQueueNode(cursor)
+      ) {
+        hasDuplicateTailNodes = true;
+        break;
+      }
+    }
+    if (!hasDuplicateTailNodes) {
+      return tailPrompt;
+    }
+  }
 
   let prompt = $getUserPromptNode();
   for (const node of root.getChildren()) {
@@ -296,12 +432,13 @@ const $settlePrompt = (threadId: string): UserPromptNode => {
     root.append(author);
   }
 
-  const queues = root.getChildren().filter($isQueueNode);
+  const children = root.getChildren();
+  const queues = children.filter($isQueueNode);
   const queue =
     queues.find((node) => node.__threadId === threadId) ??
     new QueueNode(threadId);
   for (const node of queues) if (node !== queue) node.remove();
-  const headers = root.getChildren().filter($isPromptEditNode);
+  const headers = children.filter($isPromptEditNode);
   const header =
     headers.find((node) => node.__threadId === threadId) ??
     new PromptEditNode(threadId);
@@ -330,13 +467,20 @@ const turnSequence = (block: TurnBlock): number => {
  * is left alone, so its element is never rebuilt by a pass; one the chat no
  * longer holds is removed.
  */
-const $placeBlocks = (blocks: readonly PlacedBlock[]): void => {
+const $placeBlocks = (
+  blocks: readonly PlacedBlock[],
+  children: readonly LexicalNode[],
+): void => {
   const root = $getRoot();
   const held = new Map<string, ChatBlockNode>();
-  for (const node of root.getChildren()) {
+  for (const node of children) {
     if (!$isChatBlockNode(node)) continue;
     if (held.has(node.__blockId)) node.remove();
     else held.set(node.__blockId, node);
+  }
+  if (blocks.length === 0) {
+    for (const node of held.values()) node.remove();
+    return;
   }
   const wanted = new Set(blocks.map((block) => block.id));
   for (const [id, node] of held) {
@@ -344,11 +488,11 @@ const $placeBlocks = (blocks: readonly PlacedBlock[]): void => {
     node.remove();
     held.delete(id);
   }
-  if (blocks.length === 0) return;
 
-  const turnBlocks = root.getChildren().filter(isTurnBlock);
+  const currentChildren = root.getChildren();
+  const turnBlocks = currentChildren.filter(isTurnBlock);
   const tail =
-    root.getChildren().find((node) => $isQueueNode(node)) ??
+    currentChildren.find((node) => $isQueueNode(node)) ??
     $getUserPromptNode() ??
     null;
   const anchorOf = (sequence: number): LexicalNode | null =>
@@ -431,6 +575,16 @@ export function InsertThreadTurnNodes({
   const [editor] = useLexicalComposerContext();
   const seated = useRef<LexicalEditor | null>(null);
   const frame = useRef<number | null>(null);
+  const syncedTurns = useRef(
+    new WeakMap<
+      LexicalNode,
+      {
+        readonly turn: Turn;
+        readonly authorAt: string | undefined;
+        readonly authorRole: AuthorDraft['role'] | null;
+      }
+    >(),
+  );
 
   useEffect(() => {
     const run = (): void => {
@@ -449,12 +603,13 @@ export function InsertThreadTurnNodes({
       editor.update(
         () => {
           const root = $getRoot();
+          const rootChildren = root.getChildren();
           const existing = new Map<string, TurnUnit>();
           // An author line is read as the tail of the block before it: a turn's for
           // a turn, and the reader's for the prompt. A line with neither before it is
           // a leftover, so it is dropped rather than left behind.
           let trailing: TurnBlock | null = null;
-          for (const node of root.getChildren()) {
+          for (const node of rootChildren) {
             if (isTurnBlock(node)) {
               existing.set(node.__turnKey, { block: node, author: null });
               trailing = node;
@@ -493,8 +648,29 @@ export function InsertThreadTurnNodes({
             if (step.kind === 'update') {
               const unit = existing.get(step.key);
               if (unit === undefined) continue;
-              $applyTurn(unit.block, step.turn);
-              tails.set(step.key, $syncAuthor(unit, step.author) ?? unit.block);
+              const last = syncedTurns.current.get(unit.block);
+              const currentAuthorRole = unit.author?.__role ?? null;
+              const nextAuthorRole = step.author?.role ?? null;
+              const nextAuthorAt = step.author?.at;
+              if (
+                last !== undefined &&
+                turnEquals(last.turn, step.turn) &&
+                last.authorRole === nextAuthorRole &&
+                last.authorAt === nextAuthorAt &&
+                currentAuthorRole === nextAuthorRole
+              ) {
+                continue;
+              }
+              if (last === undefined || !turnEquals(last.turn, step.turn)) {
+                $applyTurn(unit.block, step.turn);
+              }
+              const author = $syncAuthor(unit, step.author);
+              tails.set(step.key, author ?? unit.block);
+              syncedTurns.current.set(unit.block.getLatest(), {
+                turn: step.turn,
+                authorRole: nextAuthorRole,
+                authorAt: nextAuthorAt,
+              });
               continue;
             }
 
@@ -513,10 +689,13 @@ export function InsertThreadTurnNodes({
                 else first.insertBefore(block);
               }
             }
-            tails.set(
-              step.key,
-              $syncAuthor({ author: null, block }, step.author) ?? block,
-            );
+            const author = $syncAuthor({ author: null, block }, step.author);
+            tails.set(step.key, author ?? block);
+            syncedTurns.current.set(block, {
+              turn: step.turn,
+              authorRole: step.author?.role ?? null,
+              authorAt: step.author?.at,
+            });
           }
 
           for (const key of plan.removals) {
@@ -525,7 +704,7 @@ export function InsertThreadTurnNodes({
             unit?.block.remove();
           }
 
-          $placeBlocks(blocks);
+          $placeBlocks(blocks, rootChildren);
 
           // Seat the caret in the prompt before focusing the editor. Focusing an
           // empty root would park it above the transcript instead.

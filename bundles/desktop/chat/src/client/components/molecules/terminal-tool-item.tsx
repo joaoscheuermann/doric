@@ -1,4 +1,5 @@
 import { cn } from 'desktop/ui/utils';
+import { SquareIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 
 import {
@@ -112,8 +113,8 @@ export const TerminalToolItem = memo(function TerminalToolItem({
   const open = blockOpen(chosen, openness);
 
   const label = (
-    <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
-      <span className="shrink-0">{verb}</span>
+    <span className="inline-flex max-w-full items-center gap-1.5 align-middle font-light">
+      <span className="shrink-0 font-normal">{verb}</span>
       {preview.length > 0 ? (
         <span
           data-slot="terminal-command-preview"
@@ -127,14 +128,17 @@ export const TerminalToolItem = memo(function TerminalToolItem({
     </span>
   );
 
+  const hasCommand = parsed.command !== undefined && parsed.command.length > 0;
   const stopAction = liveActive ? (
     <button
       type="button"
       data-slot="terminal-stop"
-      className="shrink-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      aria-label="Stop"
+      title="Stop"
+      className="ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       onClick={() => stopLiveTerminal(live.terminal.id)}
     >
-      Stop
+      <SquareIcon aria-hidden="true" className="size-3 fill-current" />
     </button>
   ) : undefined;
 
@@ -147,19 +151,23 @@ export const TerminalToolItem = memo(function TerminalToolItem({
         label={label}
         onChosenChange={onChosenChange}
         openness={openness}
-        trailing={stopAction}
       >
         {open ? (
           <div className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-md border border-border bg-card/50 px-3 py-2 font-mono text-sm">
-            {parsed.command !== undefined && parsed.command.length > 0 ? (
-              <div
-                data-slot="terminal-command"
-                className="whitespace-pre-wrap break-all text-foreground"
-              >
-                <span className="mr-1.5 select-none text-muted-foreground">
-                  $
-                </span>
-                {parsed.command}
+            {hasCommand || stopAction !== undefined ? (
+              <div className="flex items-center justify-between gap-2">
+                {hasCommand ? (
+                  <div
+                    data-slot="terminal-command"
+                    className="min-w-0 flex-1 truncate text-foreground"
+                  >
+                    <span className="mr-1.5 select-none text-muted-foreground">
+                      $
+                    </span>
+                    {parsed.command}
+                  </div>
+                ) : null}
+                {stopAction}
               </div>
             ) : null}
             {hasLiveOutput ? (

@@ -99,6 +99,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Isolate layout and style recalculation to individual conversation blocks so
+   expanding a diff or resizing the pane does not force every turn to relayout. */
+.conversation-scroll [data-lexical-editor] > :not([data-prompt-input]) {
+  contain: layout style;
+}
+
 /* The edit header, composer and author are Lexical siblings. Their adjoining
    edges form one surface without introducing a second editing host. */
 .queue-edit-heading,

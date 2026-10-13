@@ -37,32 +37,35 @@ export const $blockIndex = (block: LexicalNode): number =>
 export const $selectedBlocks = (
   selection: RangeSelection | NodeSelection,
 ): LexicalNode[] => {
-  const blocks: LexicalNode[] = [];
-  const collect = (block: LexicalNode | null): void => {
-    if (block === null) return;
-    if (blocks.some((seen) => seen.is(block))) return;
-    blocks.push(block);
-  };
-
   if ($isNodeSelection(selection)) {
-    for (const node of selection.getNodes()) collect($blockOf(node));
-  } else if ($isRangeSelection(selection)) {
+    const blocks: LexicalNode[] = [];
+    for (const node of selection.getNodes()) {
+      const block = $blockOf(node);
+      if (block === null) continue;
+      if (blocks.some((seen) => seen.is(block))) continue;
+      blocks.push(block);
+    }
+    if (blocks.length <= 1) return blocks;
+    return blocks.sort((left, right) => $blockIndex(left) - $blockIndex(right));
+  }
+
+  if ($isRangeSelection(selection)) {
     const anchor = $blockOf(selection.anchor.getNode());
     const focus = $blockOf(selection.focus.getNode());
     if (anchor === null || focus === null) return [];
+    if (anchor.is(focus)) return [anchor];
     const anchorIndex = $blockIndex(anchor);
     const focusIndex = $blockIndex(focus);
     if (anchorIndex === -1 || focusIndex === -1) return [];
-    const children = $getRoot().getChildren();
-    for (const block of children.slice(
-      Math.min(anchorIndex, focusIndex),
-      Math.max(anchorIndex, focusIndex) + 1,
-    )) {
-      collect(block);
-    }
+    return $getRoot()
+      .getChildren()
+      .slice(
+        Math.min(anchorIndex, focusIndex),
+        Math.max(anchorIndex, focusIndex) + 1,
+      );
   }
 
-  return blocks.sort((left, right) => $blockIndex(left) - $blockIndex(right));
+  return [];
 };
 
 /** Whether a collapsed caret sits before everything in its block. */

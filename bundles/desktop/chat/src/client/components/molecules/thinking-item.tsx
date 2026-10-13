@@ -37,7 +37,11 @@ export function ThinkingItem({
     <CollapsibleBlock
       chosen={chosen}
       focused={focused}
-      label={streaming ? 'Thinking' : 'Thought'}
+      label={
+        <span className="font-normal">
+          {streaming ? 'Thinking' : 'Thought'}
+        </span>
+      }
       onChosenChange={onChosenChange}
       openness={thinkingOpenness(body, streaming)}
     >

@@ -66,7 +66,7 @@ function DelegatedTurn({
       label={
         <>
           <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
-          <span>
+          <span className="font-normal">
             {input.kind === 'parent' ? 'Instruction from:' : 'Result from:'}
           </span>
         </>

@@ -161,15 +161,34 @@ const $lineLeavesBlock = (
   return didNotMove || !(movedNode.is(block) || $hasAncestor(movedNode, block));
 };
 
+/** A child of the root as the block type the caret walks. */
+const $effectiveBlockType = (child: LexicalNode): string =>
+  $isQueueNode(child) && child.items().length === 0
+    ? TURN_AUTHOR_BLOCK
+    : child.getType();
+
+/** The adjacent non-furniture block in `direction`, walking sibling pointers in O(1). */
+const $nextSiblingStop = (
+  fromBlock: LexicalNode,
+  direction: Direction,
+): LexicalNode | null => {
+  let current =
+    direction === 'next'
+      ? fromBlock.getNextSibling()
+      : fromBlock.getPreviousSibling();
+  while (current !== null) {
+    if (caretKind($effectiveBlockType(current)) !== 'furniture') return current;
+    current =
+      direction === 'next'
+        ? current.getNextSibling()
+        : current.getPreviousSibling();
+  }
+  return null;
+};
+
 /** The root's children as the blocks the caret walks, in their types. */
-const $blockTypes = (): string[] =>
-  $getRoot()
-    .getChildren()
-    .map((child) =>
-      $isQueueNode(child) && child.items().length === 0
-        ? TURN_AUTHOR_BLOCK
-        : child.getType(),
-    );
+const $blockTypes = (children: readonly LexicalNode[]): string[] =>
+  children.map($effectiveBlockType);
 
 /**
  * One arrow press. Handled exactly when it would leave the caret's block for
@@ -184,8 +203,6 @@ const $handleArrow = (
 ): boolean => {
   if (event.shiftKey) return false;
   const selection = $getSelection();
-  const children = $getRoot().getChildren();
-  const types = $blockTypes();
   const step = direction === 'next' ? 1 : -1;
 
   if ($isNodeSelection(selection)) {
@@ -207,8 +224,7 @@ const $handleArrow = (
     const summary =
       nodes.length === 1 && $isActivityTurnNode(nodes[0]) ? nodes[0] : null;
     if (summary !== null) {
-      const index = children.findIndex((child) => child.is(summary));
-      if (index !== -1) {
+      if ($isRootNode(summary.getParent())) {
         const target = nextItem(
           summary.getItemFocus(),
           summary.visibleSteps(),
@@ -218,14 +234,29 @@ const $handleArrow = (
         if (target !== 'leave') summary.setItemFocus(target);
         else {
           // A step with no stop left stays where the caret is.
-          const stop = nextStop(types, index, direction);
-          if (stop !== undefined) $landOn(children[stop], direction);
+          const stop = $nextSiblingStop(summary, direction);
+          if (stop !== null) $landOn(stop, direction);
         }
+        return true;
+      }
+    }
+    // Fast path for a single selected block widget.
+    if (nodes.length === 1) {
+      const node = nodes[0];
+      if (
+        $isRootNode(node.getParent()) &&
+        caretKind($effectiveBlockType(node)) !== 'text'
+      ) {
+        event.preventDefault();
+        const stop = $nextSiblingStop(node, direction);
+        if (stop !== null) $landOn(stop, direction);
         return true;
       }
     }
     // A focused widget (or furniture) is one stop: one press leaves it for the
     // next stop in that direction, past any furniture between.
+    const children = $getRoot().getChildren();
+    const types = $blockTypes(children);
     const indices = nodes
       .map((node) => children.findIndex((child) => child.is(node)))
       .filter((index) => index !== -1);
@@ -246,45 +277,46 @@ const $handleArrow = (
   // Where the movement continues from: the seam between two blocks, or the
   // caret's own block.
   const anchor = selection.anchor;
-  let from: number;
-  let block: LexicalNode | null = null;
-  let seam = false;
   if (anchor.type === 'element' && $isRootNode(anchor.getNode())) {
-    from = direction === 'next' ? anchor.offset - 1 : anchor.offset;
-    seam = true;
-  } else {
-    block = $blockOf(anchor.getNode());
-    if (block === null) return false;
-    const index = children.findIndex((child) => child.is(block));
-    if (index === -1) return false;
-    from = index;
+    const children = $getRoot().getChildren();
+    const types = $blockTypes(children);
+    const from = direction === 'next' ? anchor.offset - 1 : anchor.offset;
+    const first = from + step;
+    if (first < 0 || first >= types.length) return false;
+    if (caretKind(types[first]) === 'text') return false;
+    event.preventDefault();
+    const stop = nextStop(types, from, direction);
+    if (stop !== undefined) $landOn(children[stop], direction);
+    return true;
   }
+
+  const block = $blockOf(anchor.getNode());
+  if (block === null || !$isRootNode(block.getParent())) return false;
 
   // Only a step onto furniture or a widget is this plugin's; a step onto text
   // is the editor's own, which crosses text blocks well enough.
-  const first = from + step;
-  if (first < 0 || first >= types.length) return false;
-  if (caretKind(types[first]) === 'text') return false;
+  const adjacent =
+    direction === 'next' ? block.getNextSibling() : block.getPreviousSibling();
+  if (adjacent === null) return false;
+  if (caretKind($effectiveBlockType(adjacent)) === 'text') return false;
 
   // The press is taken only when it would leave the caret's block. Up and down
   // ask the browser whether one line leaves it — a caret on any line of the
   // block leaves toward the stop below or above, and one in the middle of
   // wrapped text stays — while left and right leave only at the block's edge.
-  if (!seam && block !== null) {
-    if (byLine) {
-      if (!$lineLeavesBlock(editor, block, direction)) return false;
-    } else if (
-      direction === 'next'
-        ? !$atBlockEnd(selection, block)
-        : !$atBlockStart(selection, block)
-    ) {
-      return false;
-    }
+  if (byLine) {
+    if (!$lineLeavesBlock(editor, block, direction)) return false;
+  } else if (
+    direction === 'next'
+      ? !$atBlockEnd(selection, block)
+      : !$atBlockStart(selection, block)
+  ) {
+    return false;
   }
 
   event.preventDefault();
-  const stop = nextStop(types, from, direction);
-  if (stop !== undefined) $landOn(children[stop], direction);
+  const stop = $nextSiblingStop(block, direction);
+  if (stop !== null) $landOn(stop, direction);
   return true;
 };
 
@@ -338,14 +370,11 @@ const $handleFurnitureClick = (event: MouseEvent): boolean => {
   const element = target instanceof Element ? target : target.parentElement;
   if (element?.closest('button, a, input, select, textarea')) return false;
   event.preventDefault();
-  const children = $getRoot().getChildren();
-  const types = $blockTypes();
-  const index = children.findIndex((child) => child.is(block));
-  if (index === -1) return true;
-  const previous = nextStop(types, index, 'previous');
-  const stop = previous ?? nextStop(types, index, 'next');
-  if (stop !== undefined) {
-    $landOn(children[stop], previous === undefined ? 'next' : 'previous');
+  if (!$isRootNode(block.getParent())) return true;
+  const previous = $nextSiblingStop(block, 'previous');
+  const stop = previous ?? $nextSiblingStop(block, 'next');
+  if (stop !== null) {
+    $landOn(stop, previous === null ? 'next' : 'previous');
   }
   return true;
 };

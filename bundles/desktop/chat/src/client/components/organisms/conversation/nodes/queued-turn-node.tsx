@@ -96,15 +96,20 @@ export class QueuedTurnNode extends DecoratorNode<JSX.Element> {
             )
           }
           label={
-            grouped
-              ? `Queued ${this.__items.length} prompts`
-              : first && (
-                  <span className="inline-flex max-w-full items-center gap-2 align-middle [&>svg]:size-4.5">
-                    <span className="shrink-0">Queued</span>
-                    <PromptAuthor source={first.source} />
-                    <span className="min-w-0 truncate">“{first.text}”</span>
-                  </span>
-                )
+            grouped ? (
+              <span className="font-light">
+                <span className="font-normal">Queued</span>{' '}
+                {this.__items.length} prompts
+              </span>
+            ) : (
+              first && (
+                <span className="inline-flex max-w-full items-center gap-2 align-middle font-light [&>svg]:size-4.5">
+                  <span className="shrink-0 font-normal">Queued</span>
+                  <PromptAuthor source={first.source} />
+                  <span className="min-w-0 truncate">“{first.text}”</span>
+                </span>
+              )
+            )
           }
         >
           {grouped ? (

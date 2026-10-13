@@ -41,9 +41,37 @@ const resolveViewport = (root: HTMLElement | null): HTMLElement | null =>
 const markerKey = (marker: Pick<ThreadMarker, 'kind' | 'promptId'>): string =>
   `${marker.kind}:${marker.promptId}`;
 
-/** The blocks the surface draws, keyed by marker kind and prompt id. */
+/**
+ * The blocks the surface draws, keyed by marker kind and prompt id.
+ *
+ * The transcript blocks live as direct children of `[data-lexical-editor]`, so
+ * scanning its `children` when present avoids walking every nested token and
+ * diff line in the viewport.
+ */
 const blocksByMarker = (viewport: HTMLElement): Map<string, HTMLElement> => {
   const blocks = new Map<string, HTMLElement>();
+  const editorRoot = viewport.querySelector<HTMLElement>(
+    '[data-lexical-editor]',
+  );
+  if (editorRoot !== null) {
+    for (const child of Array.from(editorRoot.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      const promptId = child.dataset.promptId;
+      if (promptId !== undefined && promptId !== '') {
+        const kind =
+          child.dataset.resultPromptId === undefined ? 'prompt' : 'result';
+        const key = markerKey({ kind, promptId });
+        if (!blocks.has(key)) blocks.set(key, child);
+      }
+      const queuedPromptId = child.dataset.queuedPromptId;
+      if (queuedPromptId !== undefined && queuedPromptId !== '') {
+        const key = markerKey({ kind: 'queued', promptId: queuedPromptId });
+        if (!blocks.has(key)) blocks.set(key, child);
+      }
+    }
+    if (blocks.size > 0) return blocks;
+  }
+
   for (const block of Array.from(
     viewport.querySelectorAll<HTMLElement>(PROMPT_BLOCK_SELECTOR),
   )) {
@@ -65,11 +93,17 @@ const blocksByMarker = (viewport: HTMLElement): Map<string, HTMLElement> => {
   return blocks;
 };
 
+/** A block's offset in the scroll content, measured from a precomputed viewport top. */
+const blockTopFrom = (
+  viewportTop: number,
+  viewportScrollTop: number,
+  block: HTMLElement,
+): number =>
+  block.getBoundingClientRect().top - viewportTop + viewportScrollTop;
+
 /** A block's offset in the scroll content, measured from the viewport's top. */
 const blockTop = (viewport: HTMLElement, block: HTMLElement): number =>
-  block.getBoundingClientRect().top -
-  viewport.getBoundingClientRect().top +
-  viewport.scrollTop;
+  blockTopFrom(viewport.getBoundingClientRect().top, viewport.scrollTop, block);
 
 /** How far the viewport scrolls, whatever its content is at the moment. */
 const maxScroll = (viewport: HTMLElement): number =>
@@ -143,11 +177,17 @@ export function useThreadNav({
     const viewport = resolveViewport(scrollRoot.current);
     if (viewport === null) return;
     const blocks = blocksByMarker(viewport);
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const viewportScrollTop = viewport.scrollTop;
+    const viewportClientHeight = viewport.clientHeight;
     const positions = markers.map((marker) => {
       const block = blocks.get(markerKey(marker));
       return {
         kind: marker.kind,
-        top: block === undefined ? null : blockTop(viewport, block),
+        top:
+          block === undefined
+            ? null
+            : blockTopFrom(viewportTop, viewportScrollTop, block),
       };
     });
     const selectedIndex =
@@ -177,13 +217,16 @@ export function useThreadNav({
     const next =
       selectedIndex >= 0
         ? selectedIndex
-        : activeMarkerIndex(
-            positions,
-            viewport.scrollTop,
-            viewport.clientHeight,
-          );
+        : activeMarkerIndex(positions, viewportScrollTop, viewportClientHeight);
     setActive((current) => (current === next ? current : next));
   }, [clearHighlight, markers, scrollRoot, showHighlight]);
+
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+
+  useEffect(() => {
+    measure();
+  }, [measure]);
 
   useEffect(() => {
     const viewport = resolveViewport(scrollRoot.current);
@@ -194,8 +237,24 @@ export function useThreadNav({
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        measure();
+        measureRef.current();
       });
+    };
+    let scrollSettleFrame: number | null = null;
+    const scheduleFollowGrowth = (): void => {
+      if (
+        following.current &&
+        !navigating.current &&
+        scrollSettleFrame === null
+      ) {
+        scrollSettleFrame = requestAnimationFrame(() => {
+          scrollSettleFrame = null;
+          if (following.current && !navigating.current) {
+            viewport.scrollTop = maxScroll(viewport);
+          }
+        });
+      }
+      schedule();
     };
     schedule();
     const resumeAtEnd = (): void => {
@@ -214,15 +273,10 @@ export function useThreadNav({
     };
     viewport.addEventListener('scroll', onScroll, { passive: true });
     const content = viewport.firstElementChild;
-    const followGrowth = (): void => {
-      if (following.current && !navigating.current)
-        viewport.scrollTop = maxScroll(viewport);
-      schedule();
-    };
-    const resize = new ResizeObserver(followGrowth);
+    const resize = new ResizeObserver(scheduleFollowGrowth);
     resize.observe(viewport);
     if (content !== null) resize.observe(content);
-    const mutations = new MutationObserver(followGrowth);
+    const mutations = new MutationObserver(scheduleFollowGrowth);
     if (content !== null)
       mutations.observe(content, {
         childList: true,
@@ -324,6 +378,7 @@ export function useThreadNav({
     window.addEventListener('pointerup', finishScrollbarDrag);
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
+      if (scrollSettleFrame !== null) cancelAnimationFrame(scrollSettleFrame);
       viewport.removeEventListener('scroll', onScroll);
       resize.disconnect();
       mutations.disconnect();
@@ -336,7 +391,7 @@ export function useThreadNav({
       root?.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('pointerup', finishScrollbarDrag);
     };
-  }, [clearHighlight, following, measure, navigating, scrollRoot]);
+  }, [clearHighlight, following, navigating, scrollRoot]);
 
   const jump = useCallback(
     (viewport: HTMLElement, block: HTMLElement) => {

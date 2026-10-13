@@ -1,5 +1,4 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection';
 import {
   $addUpdateTag,
   $createNodeSelection,
@@ -21,6 +20,7 @@ import {
 } from 'lexical';
 import { type KeyboardEvent, useEffect } from 'react';
 
+import { useSharedNodeSelection } from '../components/molecules/widget-focus.js';
 import { $isQueueNode } from '../components/organisms/conversation/nodes/queue-node.js';
 import { $getUserPromptNode } from '../components/organisms/conversation/nodes/user-prompt-node.js';
 
@@ -32,7 +32,7 @@ export function useQueueCaret(
   edit: (id: string) => boolean,
 ) {
   const [editor] = useLexicalComposerContext();
-  const [selected] = useLexicalNodeSelection(nodeKey);
+  const [selected] = useSharedNodeSelection(nodeKey);
   useEffect(() => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey);

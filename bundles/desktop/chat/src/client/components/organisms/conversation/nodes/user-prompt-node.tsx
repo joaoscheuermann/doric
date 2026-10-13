@@ -99,10 +99,15 @@ export function $isUserPromptNode(
 
 /**
  * The conversation's one prompt block, wherever it sits, or `undefined` before
- * one exists. There is only ever one, so the first found is the prompt.
+ * one exists. It normally stands as the root's second-to-last child (right
+ * above the reader's author line), so walking from the tail finds it in O(1).
  */
 export function $getUserPromptNode(): UserPromptNode | undefined {
-  for (const child of $getRoot().getChildren()) {
+  for (
+    let child = $getRoot().getLastChild();
+    child !== null;
+    child = child.getPreviousSibling()
+  ) {
     if ($isUserPromptNode(child)) return child;
   }
   return undefined;

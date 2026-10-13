@@ -1,5 +1,5 @@
 import { cn } from 'desktop/ui/utils';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 import {
   blockOpen,
@@ -9,6 +9,8 @@ import {
 import { type DiffLine, parseEditCall } from '../../domain/edit-tool.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { CollapsibleBlock } from './collapsible-block.js';
+
+export const INITIAL_DIFF_LINES = 16;
 
 type EditToolItemProps = {
   readonly args: string;
@@ -58,6 +60,7 @@ export const EditToolItem = memo(function EditToolItem({
   status,
 }: EditToolItemProps) {
   const running = status === 'running';
+  const [expanded, setExpanded] = useState(false);
   const parsed = useMemo(
     () => parseEditCall(args, result, error),
     [args, result, error],
@@ -67,10 +70,16 @@ export const EditToolItem = memo(function EditToolItem({
   const hasCounts = parsed.added > 0 || parsed.removed > 0;
   const openness = toolOpenness(status, args, result, error, 'edit');
   const open = blockOpen(chosen, openness);
+  const hiddenCount = Math.max(0, parsed.diffLines.length - INITIAL_DIFF_LINES);
+  const canToggleMore = hiddenCount > 0;
+  const visibleLines =
+    canToggleMore && !expanded
+      ? parsed.diffLines.slice(0, INITIAL_DIFF_LINES)
+      : parsed.diffLines;
 
   const label = (
-    <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
-      <span className="shrink-0">{verb}</span>
+    <span className="inline-flex max-w-full items-center gap-1.5 align-middle font-light">
+      <span className="shrink-0 font-normal">{verb}</span>
       {parsed.fileName !== undefined ? (
         <span data-slot="edit-file-name" className="truncate font-mono">
           {parsed.fileName}
@@ -115,7 +124,7 @@ export const EditToolItem = memo(function EditToolItem({
                 data-slot="edit-diff"
                 className="font-mono text-sm [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
               >
-                {parsed.diffLines.map((line, index) => (
+                {visibleLines.map((line, index) => (
                   <div
                     // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static positional rows of one tool result
                     key={index}
@@ -126,7 +135,7 @@ export const EditToolItem = memo(function EditToolItem({
                       lineRowClass(line.kind),
                     )}
                   >
-                    <span className="w-8 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/70">
+                    <span className="min-w-[5ch] w-13 shrink-0 select-none whitespace-nowrap pr-2 text-right tabular-nums text-muted-foreground/70">
                       {line.lineNumber ?? ''}
                     </span>
                     <span
@@ -143,6 +152,18 @@ export const EditToolItem = memo(function EditToolItem({
                     </span>
                   </div>
                 ))}
+                {canToggleMore ? (
+                  <button
+                    type="button"
+                    data-slot="edit-diff-more"
+                    className="flex w-full cursor-pointer items-center gap-2 py-1 text-left font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setExpanded((prev) => !prev)}
+                  >
+                    {expanded
+                      ? '⋯ Show less'
+                      : `⋯ Show ${hiddenCount} more ${hiddenCount === 1 ? 'line' : 'lines'}`}
+                  </button>
+                ) : null}
               </div>
             ) : parsed.rawOutput !== undefined &&
               parsed.rawOutput.length > 0 ? (
