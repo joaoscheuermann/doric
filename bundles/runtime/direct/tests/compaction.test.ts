@@ -36,6 +36,31 @@ const user = (text: string): ProviderMessage => ({
   role: 'user',
   content: text,
 });
+
+test('refuses to compact only an existing summary but allows new eligible messages', () => {
+  const summary = user(
+    checkpointMessage('Saved decisions', {
+      start: 0,
+      end: 10,
+      trigger: 'manual',
+    }),
+  );
+  const policy = { tailMinMessages: 2, summaryMaxChars: 1000 };
+  assert.deepEqual(
+    planCompaction([summary, user('recent one'), user('recent two')], policy),
+    {
+      status: 'refused',
+      reason: 'nothing_to_compact',
+    },
+  );
+  assert.equal(
+    planCompaction(
+      [summary, user('new content'), user('recent one'), user('recent two')],
+      policy,
+    ).status,
+    'planned',
+  );
+});
 const assistant = (
   text: string,
   callIds: readonly string[],

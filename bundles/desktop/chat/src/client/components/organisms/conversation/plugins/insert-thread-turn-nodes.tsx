@@ -196,6 +196,7 @@ const $createBlock = (
         turn.condensedMessages,
         turn.tokensFreed,
         turn.code,
+        turn.summary,
       );
   }
 };

@@ -2,8 +2,8 @@ import type { Call, Services } from 'bundle/contracts';
 import { ModelsV1 } from 'bundle/contracts';
 import {
   ConfigurationV1,
-  defaultContextCompaction,
   type ConfigurationValue,
+  defaultContextCompaction,
 } from 'host-config/contracts';
 import type { LlmProvider } from 'llms';
 import type { MessageStorage } from 'messages';
@@ -162,6 +162,7 @@ export const compactThread = async (
       event: {
         type: 'compaction.finished',
         summaryId: applied.summaryId,
+        summary: applied.summaryMessage.content,
         condensedMessages: applied.condensation.condensedMessages,
         retainedMessages: applied.condensation.retainedMessages,
         tokensFreed: applied.condensation.tokensFreed,
@@ -270,6 +271,7 @@ export const maybeCompactRun = async (options: {
       event: {
         type: 'compaction.finished',
         summaryId: applied.summaryId,
+        summary: applied.summaryMessage.content,
         condensedMessages: applied.condensation.condensedMessages,
         retainedMessages: applied.condensation.retainedMessages,
         tokensFreed: applied.condensation.tokensFreed,

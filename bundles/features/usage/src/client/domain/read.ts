@@ -23,7 +23,7 @@ export const usageMessages = {
 export const usageQueryKey = (threadId: string | undefined) =>
   ['thread', threadId, 'usage'] as const;
 
-/** Every non-terminal bridge call carries a 10 s deadline [D10-2]. */
+/** Reads and settings writes use the usual 10 s bridge deadline. */
 const deadline = () => ({ deadline: Date.now() + 10_000 });
 
 const identifier = (value: unknown): string => {
@@ -107,7 +107,8 @@ export const compactThread = async (
 ): Promise<CompactResult> => {
   const id = identifier(threadId);
   try {
-    return await usage.compact(id, deadline());
+    // Summarizing a long conversation is a model generation, not a quick read.
+    return await usage.compact(id, { deadline: Date.now() + 5 * 60_000 });
   } catch (error) {
     throw failure(error);
   }
@@ -117,7 +118,7 @@ export const compactThread = async (
 export const compactResultMessage = (result: CompactResult): string => {
   switch (result.status) {
     case 'compacted':
-      return `Compacted ${result.condensedMessages} messages into one summary (about ${result.tokensFreed} tokens freed).`;
+      return `Compacted ${result.condensedMessages} ${result.condensedMessages === 1 ? 'message' : 'messages'} into one summary (about ${result.tokensFreed} tokens freed).`;
     case 'refused':
       return result.reason === 'disabled'
         ? 'Context compaction is disabled in the settings.'

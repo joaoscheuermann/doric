@@ -140,10 +140,12 @@ export type FailureTurn = TurnBase & {
  * holds it.
  */
 export type CompactionTurn = TurnBase & {
+  readonly summaryId?: string;
+  readonly summary?: string;
   readonly type: 'compaction';
   /** What asked for the compaction: the job's own budget, or the reader. */
   readonly trigger: 'automatic' | 'manual';
-  readonly status: 'completed' | 'failed';
+  readonly status: 'open' | 'completed' | 'failed';
   /** How many messages the summary condensed, once the bracket has closed. */
   readonly condensedMessages?: number;
   /** How many tokens condensing the history gave back, once it has closed. */
@@ -256,10 +258,11 @@ export type Draft =
       events: ThreadEvent[];
       trigger: 'automatic' | 'manual';
       /**
-       * `open` while only the bracket's started half has arrived: such a draft
-       * stands for no block until the log closes it.
+       * `open` shows progress until the bracket's closing event arrives.
        */
       status: 'open' | 'completed' | 'failed';
+      summaryId?: string;
+      summary?: string;
       condensedMessages?: number;
       tokensFreed?: number;
       code?: 'summarizer_failed' | 'unsafe_boundary';
@@ -298,15 +301,6 @@ const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
 });
 
 /**
- * Whether a compaction draft has closed: only a closed bracket is a row. The
- * reading it names is the draft itself with the open state narrowed away.
- */
-const isClosedCompaction = (
-  turn: Draft | undefined,
-): turn is CompactionDraft & { status: CompactionTurn['status'] } =>
-  turn?.type === 'compaction' && turn.status !== 'open';
-
-/**
  * The turns a surface renders: every burst of reasoning and tool calls that is
  * done and did more than one thing becomes one turn, while the steps of a burst
  * of one, and of the burst the log is still writing — the transcript's last, in
@@ -340,10 +334,7 @@ const grouped = (
       continue;
     }
     if (turn === undefined || !isBurstDraft(turn)) {
-      // A compaction bracket the log has not closed yet stands for no block:
-      // only a closed one — finished or failed — becomes a row.
-      if (turn !== undefined && turn.type !== 'compaction') result.push(turn);
-      else if (isClosedCompaction(turn)) result.push(turn);
+      if (turn !== undefined) result.push(turn);
       index += 1;
       continue;
     }
@@ -641,9 +632,7 @@ const readEvent = (
   } else if (event?.type === 'agent.cancelled') {
     status.set(promptId, 'cancelled');
   } else if (event?.type === 'compaction.started') {
-    // The bracket a compaction opens stands for no block yet: a start alone
-    // says nothing a reader can read, so the row waits for the half that
-    // closes it — the finished one, or the failed one.
+    // Show progress immediately; the closing event updates this same row.
     turns.push({
       type: 'compaction',
       promptId,
@@ -658,6 +647,10 @@ const readEvent = (
     const opened = findOpenCompaction(turns, promptId);
     if (opened !== undefined) {
       opened.status = 'completed';
+      opened.summaryId =
+        typeof event.summaryId === 'string' ? event.summaryId : undefined;
+      opened.summary =
+        typeof event.summary === 'string' ? event.summary : undefined;
       opened.condensedMessages =
         typeof event.condensedMessages === 'number'
           ? event.condensedMessages

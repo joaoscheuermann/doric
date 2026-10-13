@@ -1,11 +1,18 @@
 /**
  * One compaction of the thread's history as a block of the transcript: a quiet
  * row between the blocks the event sits between, stating what the bracket's
- * closing half reported, or why the attempt failed. The caret skips this
- * informational block; nothing in it acts.
+ * closing half reported, or why the attempt failed. Completed rows expand to
+ * the durable summary; the caret skips this read-only block.
  */
 
+import { Button } from 'desktop/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from 'desktop/ui/collapsible';
 import { Marker, MarkerContent } from 'desktop/ui/marker';
+import { toast } from 'desktop/ui/sonner';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -13,10 +20,12 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
+import { ChevronRightIcon, CopyIcon } from 'lucide-react';
 import type { JSX } from 'react/jsx-runtime';
 
 import { COMPACTION_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { CompactionTurn } from '../../../../domain/projector.js';
+import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
 export type SerializedCompactionTurnNode = Spread<
@@ -28,6 +37,7 @@ export type SerializedCompactionTurnNode = Spread<
     condensedMessages: CompactionTurn['condensedMessages'];
     tokensFreed: CompactionTurn['tokensFreed'];
     code: CompactionTurn['code'];
+    summary?: string;
   },
   SerializedLexicalNode
 >;
@@ -44,8 +54,65 @@ const rowLine = (
   // still reads as a compaction that happened.
   if (condensedMessages === undefined || tokensFreed === undefined)
     return 'Contexto compactado';
-  return `Contexto compactado · ${condensedMessages} mensagens → resumo (${tokensFreed} tokens liberados)`;
+  return `Contexto compactado · ${condensedMessages} ${condensedMessages === 1 ? 'mensagem' : 'mensagens'} → resumo (${tokensFreed.toLocaleString('pt-BR')} tokens liberados)`;
 };
+
+function CompactionDetails({
+  label,
+  summary,
+}: {
+  readonly label: string;
+  readonly summary?: string;
+}) {
+  return (
+    <Collapsible>
+      <Marker variant="separator" className="gap-1.5 text-xs">
+        <MarkerContent>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="group h-auto max-w-full whitespace-normal py-1 font-normal"
+            >
+              {label}
+              <ChevronRightIcon
+                data-icon="inline-end"
+                className="group-data-[state=open]:rotate-90"
+              />
+            </Button>
+          </CollapsibleTrigger>
+        </MarkerContent>
+      </Marker>
+      <CollapsibleContent className="mt-2 min-w-0 select-text rounded-md border border-border p-3">
+        {summary === undefined ? (
+          <p className="text-xs text-muted-foreground">
+            O resumo desta compactação antiga não foi preservado no histórico.
+          </p>
+        ) : (
+          <>
+            <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Resumo enviado ao modelo</span>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  void navigator.clipboard.writeText(summary).then(
+                    () => toast.success('Resumo copiado.'),
+                    () => toast.error('Não foi possível copiar o resumo.'),
+                  );
+                }}
+              >
+                <CopyIcon data-icon="inline-start" />
+                Copiar
+              </Button>
+            </div>
+            <ReadonlyMarkdown text={summary} />
+          </>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;
@@ -55,6 +122,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
   __condensedMessages: CompactionTurn['condensedMessages'];
   __tokensFreed: CompactionTurn['tokensFreed'];
   __code: CompactionTurn['code'];
+  __summary: string | undefined;
 
   constructor(
     turnKey: string,
@@ -64,6 +132,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     condensedMessages: CompactionTurn['condensedMessages'],
     tokensFreed: CompactionTurn['tokensFreed'],
     code: CompactionTurn['code'],
+    summary?: string,
     key?: NodeKey,
   ) {
     super(key);
@@ -74,6 +143,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     this.__condensedMessages = condensedMessages;
     this.__tokensFreed = tokensFreed;
     this.__code = code;
+    this.__summary = summary;
   }
 
   static override getType(): string {
@@ -89,6 +159,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       node.__condensedMessages,
       node.__tokensFreed,
       node.__code,
+      node.__summary,
       node.__key,
     );
   }
@@ -117,6 +188,27 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   override decorate(): JSX.Element {
+    if (this.__status === 'open')
+      return (
+        <Marker
+          variant="separator"
+          className="gap-1.5 text-xs"
+          role="status"
+          aria-live="polite"
+        >
+          <MarkerContent>
+            <span className="shimmer">Compacting</span>
+          </MarkerContent>
+        </Marker>
+      );
+    const label = rowLine(
+      this.__status,
+      this.__condensedMessages,
+      this.__tokensFreed,
+      this.__code,
+    );
+    if (this.__status === 'completed')
+      return <CompactionDetails label={label} summary={this.__summary} />;
     return (
       <Marker variant="separator" className="gap-1.5 text-xs">
         <MarkerContent>
@@ -143,7 +235,8 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       this.__trigger === turn.trigger &&
       this.__condensedMessages === turn.condensedMessages &&
       this.__tokensFreed === turn.tokensFreed &&
-      this.__code === turn.code
+      this.__code === turn.code &&
+      this.__summary === turn.summary
     )
       return;
     const writable = this.getWritable();
@@ -152,6 +245,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     writable.__condensedMessages = turn.condensedMessages;
     writable.__tokensFreed = turn.tokensFreed;
     writable.__code = turn.code;
+    writable.__summary = turn.summary;
   }
 
   override exportJSON(): SerializedCompactionTurnNode {
@@ -164,6 +258,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       condensedMessages: this.__condensedMessages,
       tokensFreed: this.__tokensFreed,
       code: this.__code,
+      ...(this.__summary === undefined ? {} : { summary: this.__summary }),
     };
   }
 
@@ -178,6 +273,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       serialized.condensedMessages,
       serialized.tokensFreed,
       serialized.code,
+      serialized.summary,
     );
   }
 }
@@ -190,6 +286,7 @@ export function $createCompactionTurnNode(
   condensedMessages: CompactionTurn['condensedMessages'],
   tokensFreed: CompactionTurn['tokensFreed'],
   code: CompactionTurn['code'],
+  summary?: string,
 ): CompactionTurnNode {
   return new CompactionTurnNode(
     turnKey,
@@ -199,6 +296,7 @@ export function $createCompactionTurnNode(
     condensedMessages,
     tokensFreed,
     code,
+    summary,
   );
 }
 

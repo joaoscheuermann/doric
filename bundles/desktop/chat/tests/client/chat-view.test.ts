@@ -121,6 +121,52 @@ const deliver = async (
 
 const placeholder = 'Ask the agent to search, edit or build in this project…';
 
+test('a compaction row expands its saved Markdown summary and keeps it open across transcript updates', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  const summary = '# Preserved decisions\n\nKeep the **compact tabs**.';
+  const events = [
+    event(1, { type: 'compaction.started', trigger: 'manual' }),
+    event(2, {
+      type: 'compaction.finished',
+      summaryId: 'summary-1',
+      summary,
+      condensedMessages: 12,
+      tokensFreed: 4500,
+    }),
+  ];
+  await deliver(opened, events.slice(0, 1));
+  const progress = opened.document.querySelector('[role="status"] .shimmer');
+  assert.equal(progress?.textContent, 'Compacting');
+  const markerNode = progress?.closest('[data-slot="marker"]')?.parentElement;
+  await deliver(opened, events);
+  assert.equal(opened.document.querySelector('[role="status"] .shimmer'), null);
+  const toggle = [...opened.document.querySelectorAll('button')].find(
+    (button) => button.textContent?.includes('Contexto compactado'),
+  );
+  assert.ok(toggle);
+  assert.equal(markerNode?.isConnected, true);
+  assert.equal(opened.document.querySelector('h1')?.textContent, undefined);
+  toggle.click();
+  await settle();
+  assert.match(
+    opened.document.querySelector('h1')?.textContent ?? '',
+    /Preserved decisions/,
+  );
+  assert.ok(
+    [...opened.document.querySelectorAll('button')].some(
+      (button) => button.textContent === 'Copiar',
+    ),
+  );
+  await deliver(opened, [
+    ...events,
+    event(3, { type: 'text.delta', delta: 'Next answer' }),
+  ]);
+  assert.match(
+    opened.document.querySelector('h1')?.textContent ?? '',
+    /Preserved decisions/,
+  );
+});
+
 const hasPrompt = (window: ChatWindow): boolean =>
   window.document.querySelector(`[data-placeholder="${placeholder}"]`) !== null;
 

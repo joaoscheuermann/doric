@@ -898,7 +898,18 @@ runs between provider turns of a run (after `usage`/`response.finished`, and
 before a resumed run's first call) when the projected next call crosses the
 configured `execution.contextCompaction` pressure, and `POST /threads/:id/compact`
 condenses on demand. Both record the bracket events `compaction.started`,
-`compaction.finished` and `compaction.failed` on the Thread log and rewrite
+`compaction.finished` and `compaction.failed` on the Thread log, using a
+UUID prompt identifier compatible with event storage. The
+finished event retains the exact summary message and its `summaryId`, so each
+completed compaction node can expand to read and copy its own Markdown summary
+after a shimmering `Compacting` row appears on `compaction.started` and updates
+in place on completion or failure. The expansion icon sits immediately after
+the completed row's label, on its right. The saved summary remains available
+after later compactions. Legacy events without a saved summary show that it is
+unavailable. A span containing only existing summary messages is refused as
+`nothing_to_compact` before generation or event recording. The
+desktop's manual compaction call allows five minutes for model generation;
+usage reads and settings writes retain their ten-second deadlines. They rewrite
 `messages` (plus the re-based `meta.checkpoints`) in one history-and-event
 commit, so the log stays the full conversation and the summary never splits
 an assistant tool call from its result. The core provides
@@ -1044,7 +1055,11 @@ switch) moves each feature into its own bundle. The composition enables
 exposes the footer's compaction controls (`compact`, `compactionTarget`,
 `setCompactionTarget`: the manual compaction of one idle Thread through
 `runtime.threads/v1.compact`, and the pressure line read from and moved on
-the configuration in force); the `terminal` bundle
+the configuration in force). The context popover shows used tokens and capacity,
+a single vertical drag handle at the compaction percentage on the full bar,
+and a collapsible breakdown of used context, available space, capacity and
+the compaction threshold. Unknown measurements stay unknown; the breakdown
+does not infer per-category token counts. The `terminal` bundle
 owns the `terminal` tool and closes a closing Thread's sessions through
 `onThreadsClosingHook`. Tools and skills keep one global model-visible order
 (`order` on `tools/v1` and `skills/v1`), and `allowed-tools` resolve against

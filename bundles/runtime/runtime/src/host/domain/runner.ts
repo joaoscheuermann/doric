@@ -808,7 +808,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     const scope = {
       projectId: project.project.id,
       threadId: thread.thread.id,
-      promptId: `compaction-${randomUUID()}`,
+      promptId: randomUUID(),
     };
     let reader: HistoryReader;
     try {

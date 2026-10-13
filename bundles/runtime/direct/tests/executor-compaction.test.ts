@@ -17,6 +17,37 @@ import {
 
 const scope = { projectId, threadId, promptId };
 
+test('repeating manual compaction without new eligible content does not call the model or append events', async () => {
+  const state = fakeThreadState();
+  const services = directServices({
+    configuration: compactionConfiguration(),
+    provider: {
+      stream: () => {
+        assert.fail('no model call for an existing summary');
+      },
+    },
+  });
+  await services.activate();
+  seedHistory(state, {
+    messages: [
+      { role: 'user', content: '[Context summary]\n\nExisting summary' },
+      { role: 'user', content: 'retained one' },
+      { role: 'user', content: 'retained two' },
+    ],
+  });
+  const result = await services.executor(scope).compact({
+    thread: thread(),
+    session: state.session('retry'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+  assert.deepEqual(result, { status: 'refused', reason: 'nothing_to_compact' });
+  assert.equal(state.events.length, 0);
+  assert.equal(
+    ((await state.reader().read('messages')) as unknown[]).length,
+    3,
+  );
+});
+
 const compactionConfiguration = (overrides: Record<string, unknown> = {}) =>
   ({
     ...testConfiguration(),
@@ -223,6 +254,14 @@ void test('the on-demand compact condenses a big history and records the bracket
   }
   const messages = (await state.reader().read('messages')) as ProviderMessage[];
   assert.equal(messages.length, 3);
+  const finished = state.events
+    .map(
+      (entry) =>
+        entry.event as { type?: string; summary?: string; summaryId?: string },
+    )
+    .find((event) => event.type === 'compaction.finished');
+  assert.equal(finished?.summary, messages[0]?.content);
+  assert.ok(finished?.summaryId);
   assert.equal(
     String(messages[0]?.content).startsWith('[Context summary]'),
     true,

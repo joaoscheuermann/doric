@@ -905,6 +905,7 @@ describe('a compaction bracket in the log', () => {
       event(2, 'one', {
         type: 'compaction.finished',
         summaryId: 's1',
+        summary: '[Context summary]\n\nKeep the agreed design.',
         condensedMessages: 12,
         retainedMessages: 3,
         tokensFreed: 4500,
@@ -918,6 +919,8 @@ describe('a compaction bracket in the log', () => {
     assert.equal(turn?.status, 'completed');
     assert.equal(turn?.trigger, 'automatic');
     assert.equal(turn?.condensedMessages, 12);
+    assert.equal(turn?.summaryId, 's1');
+    assert.equal(turn?.summary, '[Context summary]\n\nKeep the agreed design.');
     assert.equal(turn?.tokensFreed, 4500);
     assert.equal(turn?.code, undefined);
     assert.deepEqual(
@@ -941,12 +944,13 @@ describe('a compaction bracket in the log', () => {
     assert.equal(turn?.tokensFreed, undefined);
   });
 
-  test('stands for no turn while the bracket is still open', () => {
+  test('shows an open compaction turn as soon as the bracket starts', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), []);
+    assert.deepEqual(types(projection.turns), ['compaction']);
+    assert.equal(compactionOf(projection.turns[0])?.status, 'open');
   });
 
   test('reads a closing half with no started one as nothing', () => {
@@ -1022,7 +1026,8 @@ describe('a compaction bracket in the log', () => {
     let step = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
     ]);
-    assert.deepEqual(types(step.turns), []);
+    assert.deepEqual(types(step.turns), ['compaction']);
+    assert.equal(compactionOf(step.turns[0])?.status, 'open');
 
     step = projectEvents(step, [
       event(2, 'one', {

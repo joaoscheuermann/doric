@@ -170,6 +170,24 @@ describe('the compaction calls on the footer', () => {
     );
   });
 
+  test('manual compaction allows time for model generation beyond the read deadline', async () => {
+    const now = Date.now();
+    await compactThread(
+      {
+        ...source(refused as Usage['thread']),
+        compact: async (_id, call) => {
+          assert.ok(
+            call && 'deadline' in call && typeof call.deadline === 'number',
+          );
+          assert.ok(call.deadline >= now + 300_000);
+          assert.ok(call.deadline <= Date.now() + 300_000);
+          return { status: 'refused', reason: 'nothing_to_compact' };
+        },
+      },
+      'thread-1',
+    );
+  });
+
   test('the compact result reads as one sentence per status', () => {
     assert.equal(
       compactResultMessage({ status: 'refused', reason: 'disabled' }),

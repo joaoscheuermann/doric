@@ -4,7 +4,11 @@ import type { ProviderMessage } from 'llms';
 
 import { isSafeBoundary } from './boundaries.js';
 import { CompactionError } from './errors.js';
-import { type CompactionCheckpoint, checkpointMessage } from './markers.js';
+import {
+  type CompactionCheckpoint,
+  checkpointMessage,
+  isCompactionCheckpoint,
+} from './markers.js';
 import type { HistoryMeta } from './rewrite.js';
 import {
   type Condensation,
@@ -53,7 +57,8 @@ export const planCompaction = (
   if (messages.length === 0)
     return { status: 'refused', reason: 'missing_history' };
   const end = condensibleEnd(messages, policy.tailMinMessages);
-  return end === undefined
+  return end === undefined ||
+    messages.slice(0, end).every(isCompactionCheckpoint)
     ? { status: 'refused', reason: 'nothing_to_compact' }
     : { status: 'planned', end };
 };
