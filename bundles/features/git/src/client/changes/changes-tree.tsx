@@ -52,12 +52,15 @@ export function ChangesTree({
   if (entries.length === 0) return null;
   const label = repository.path || 'workspace';
   return (
-    <SidebarMenuItem role="presentation" className="w-full">
-      <div className="group/tree-row relative w-full">
+    <SidebarMenuItem role="presentation" className="w-full min-w-0">
+      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
         <SidebarMenuButton
           asChild
           size="sm"
-          className={cn('h-7 w-full rounded-none pr-8', rowInteraction(false))}
+          className={cn(
+            'h-7 w-full min-w-0 rounded-none pr-8',
+            rowInteraction(false),
+          )}
           style={{ paddingLeft: indentation(0) }}
         >
           <div
@@ -88,10 +91,10 @@ export function ChangesTree({
               )}
             />
             <GitBranchIcon />
-            <span className="truncate font-light">{label}</span>
+            <span className="min-w-0 flex-1 truncate font-light">{label}</span>
           </div>
         </SidebarMenuButton>
-        <SidebarMenuBadge>
+        <SidebarMenuBadge className="z-10 bg-sidebar/90">
           <Badge variant="ghost" className="px-1" aria-hidden>
             <ChangeCounts
               added={repository.added}

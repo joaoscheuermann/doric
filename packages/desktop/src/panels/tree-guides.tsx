@@ -6,7 +6,7 @@ const treeStep = 1.5;
 
 /** The shared class for the nested `SidebarMenuSub` that holds a tree level. */
 export const treeClassName =
-  'mx-0 w-full translate-x-0 gap-0 border-0 px-0 py-0';
+  'mx-0 w-full min-w-0 translate-x-0 gap-0 overflow-hidden border-0 px-0 py-0';
 
 /** Left padding for a row at `depth`, shared by tree rows and draft rows. */
 export const indentation = (depth: number): string =>

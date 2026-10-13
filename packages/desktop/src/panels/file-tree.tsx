@@ -93,16 +93,16 @@ export function FileTree({
           <SidebarMenuItem
             key={entry.path}
             role="presentation"
-            className="w-full"
+            className="w-full min-w-0"
           >
-            <div className="group/tree-row relative w-full">
+            <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
               <TreeGuides depth={depth} />
               <SidebarMenuButton
                 asChild
                 isActive={selected}
                 size="sm"
                 className={cn(
-                  'h-7 w-full rounded-none pr-8',
+                  'h-7 w-full min-w-0 rounded-none pr-8',
                   rowInteraction(selected),
                 )}
                 style={{ paddingLeft: indentation(depth) }}
@@ -152,7 +152,7 @@ export function FileTree({
                   {directory ? <FolderIcon /> : <FileIcon />}
                   <span
                     className={cn(
-                      'truncate',
+                      'min-w-0 flex-1 truncate',
                       decoration?.tone !== undefined && decoration.tone,
                       decoration?.tone !== undefined
                         ? 'font-normal'
@@ -165,7 +165,7 @@ export function FileTree({
                 </div>
               </SidebarMenuButton>
               {decoration !== undefined && (
-                <SidebarMenuBadge>
+                <SidebarMenuBadge className="z-10 bg-sidebar/90">
                   <Badge variant="ghost" className="px-1" aria-hidden>
                     <span className={decoration.tone}>
                       {directory ? decoration.count : (decoration.letter ?? '')}
