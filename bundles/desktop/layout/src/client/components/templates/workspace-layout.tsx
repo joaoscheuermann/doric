@@ -31,9 +31,7 @@ type WorkspaceLayoutProps = {
   readonly fileViewer?: ReactNode;
   /** Reports that the panel was opened or closed, from its handle or elsewhere. */
   readonly onFilesOpenChange?: (open: boolean) => void;
-  readonly footer: ReactNode;
   readonly sidebar: ReactNode;
-  readonly sidebarFooter: ReactNode;
 };
 
 export function WorkspaceLayout({
@@ -44,10 +42,8 @@ export function WorkspaceLayout({
   files,
   filesOpen = false,
   fileViewer,
-  footer,
   onFilesOpenChange,
   sidebar,
-  sidebarFooter,
 }: WorkspaceLayoutProps) {
   const filesPanel = usePanelRef();
   const [viewerWidth, setViewerWidth] = useState(0);
@@ -87,17 +83,11 @@ export function WorkspaceLayout({
           minSize="11rem"
           maxSize="24rem"
         >
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="min-h-0 flex-1">{sidebar}</div>
-            {sidebarFooter}
-          </div>
+          {sidebar}
         </ResizablePanel>
         <ResizableHandle className="[app-region:no-drag]" />
         <ResizablePanel className="min-w-0" minSize="16rem">
-          <div className="flex h-full min-h-0 flex-col">
-            {children}
-            {footer}
-          </div>
+          <div className="flex h-full min-h-0 flex-col">{children}</div>
         </ResizablePanel>
         {fileViewer !== undefined && (
           <>

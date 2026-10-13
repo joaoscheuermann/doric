@@ -73,6 +73,7 @@ import { CaretNavigation } from './plugins/caret-navigation.js';
 import { EditQueuePrompt } from './plugins/edit-queue-prompt.js';
 import { InsertThreadTurnNodes } from './plugins/insert-thread-turn-nodes.js';
 import { MarkdownPromptPlugin } from './plugins/markdown-prompt.js';
+import { PasteIntoPrompt } from './plugins/paste-into-prompt.js';
 import { PromptLineBreaks } from './plugins/prompt-line-breaks.js';
 import { ReadOnlyBlocksPlugin } from './plugins/read-only-blocks.js';
 import { SendPrompt } from './plugins/send-prompt.js';
@@ -379,6 +380,7 @@ export function Conversation({
               <TableBlocksPlugin />
               <MarkdownPromptPlugin />
               <PromptLineBreaks />
+              <PasteIntoPrompt />
               <InsertThreadTurnNodes
                 autoFocus={autoFocus}
                 threadId={thread.id}

@@ -1,7 +1,7 @@
 // The resources bundle's client part (§3.12): the `<resources-monitor>`
 // element, bound to the activation services (D9-17).
 //
-// Its `layout.panel.footer` item (`resourcesRegion`) is registered by the
+// Its `layout.global-footer` item (`resourcesRegion`) is registered by the
 // activation since WP-10N removed the layout's provisional monitor.
 
 import { QueryClient } from '@tanstack/react-query';
@@ -19,16 +19,16 @@ import { defineResourcesElements } from './elements.js';
 
 export const RESOURCES_MONITOR_TAG = 'resources-monitor';
 
-/** Where the monitor sits today: the Project panel's footer [D10-13]. */
+/** Where the monitor sits today: the window's global footer [D10-13]. */
 export const resourcesRegion: {
   readonly region: string;
   readonly item: RegionItem;
 } = {
-  region: 'layout.panel.footer',
+  region: 'layout.global-footer',
   item: { id: 'resources', tag: RESOURCES_MONITOR_TAG, order: 100 },
 };
 
-/** Adds the monitor to the layout's panel footer (WP-10N). */
+/** Adds the monitor to the layout's global footer (WP-10N). */
 export const registerResourcesRegion = (
   regions: Pick<Regions, 'add'>,
 ): Disposable => regions.add(resourcesRegion.region, resourcesRegion.item);

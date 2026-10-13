@@ -84,7 +84,7 @@ export function ExecutionPicker() {
         />
       )}
       <span aria-hidden="true" className="text-muted-foreground">
-        ●
+        ·
       </span>
       <EffortPicker
         ariaLabel="Reasoning effort"
