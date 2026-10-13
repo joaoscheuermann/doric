@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
+import { getExtensionDependencyFromEditor } from '@lexical/extension';
 import {
   type ClientContext,
   CommandsV1,
@@ -22,8 +23,11 @@ import {
   $createTextNode,
   $getRoot,
   $isElementNode,
+  $isTextNode,
   defineExtension,
+  HISTORY_PUSH_TAG,
   type LexicalEditor,
+  UNDO_COMMAND,
 } from 'lexical';
 import { z } from 'zod';
 
@@ -128,6 +132,74 @@ let opened: ChatWindow | undefined;
 afterEach(async () => {
   await opened?.close();
   opened = undefined;
+});
+
+test('streamed transcripts do not accumulate undo snapshots', async () => {
+  let editor: LexicalEditor | undefined;
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    probe: {
+      requires: ['chat.lexical/v1@^1.0.0'],
+      activate: ({ services }: ClientContext) => {
+        services.use(ChatLexicalV1).registerExtension(
+          defineExtension({
+            name: 'test/stream-history',
+            register: (value) => {
+              editor = value;
+              return () => {};
+            },
+          }),
+        );
+      },
+    },
+  });
+  await deliver(opened, exchange);
+  assert.ok(editor);
+  for (let index = 0; index < 20; index += 1) {
+    await deliver(opened, [
+      event(index + 3, {
+        type: 'text.delta',
+        delta: `Answer ${index} `,
+      }),
+    ]);
+  }
+  const { HistoryExtension } = await import('@lexical/history');
+  const history = getExtensionDependencyFromEditor(
+    editor,
+    HistoryExtension,
+  ).output.historyState.peek();
+  assert.equal(history.undoStack.length, 0);
+  assert.equal(history.redoStack.length, 0);
+  assert.match(textOf(opened, 'chat-view') ?? '', /Answer 19/);
+  for (let index = 0; index < 60; index += 1) {
+    editor.update(
+      () => {
+        const prompt = $getRoot()
+          .getChildren()
+          .find((node) => node.getType() === 'user-prompt-node');
+        assert.ok($isElementNode(prompt));
+        const text = prompt.getFirstChild();
+        if ($isTextNode(text)) text.setTextContent(`Draft ${index}`);
+        else prompt.append($createTextNode(`Draft ${index}`));
+        prompt.selectEnd();
+      },
+      { discrete: true, tag: HISTORY_PUSH_TAG },
+    );
+    await settle(1);
+  }
+  assert.equal(history.undoStack.length, 50);
+  editor.dispatchCommand(UNDO_COMMAND, undefined);
+  await settle();
+  assert.equal(
+    editor.getEditorState().read(() =>
+      $getRoot()
+        .getChildren()
+        .find((node) => node.getType() === 'user-prompt-node')
+        ?.getTextContent(),
+    ),
+    'Draft 58',
+  );
 });
 
 test('a Thread path opens its conversation with the transcript and the prompt', async () => {

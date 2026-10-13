@@ -22,9 +22,11 @@ export const projectIdFromPath = (path: string): string | undefined => {
 };
 
 export const rememberPath = (state: ProjectTabs, path: string): ProjectTabs => {
-  if (path === '/' || path === '/projects') return { ...state, homePath: path };
+  if (path === '/' || path === '/projects')
+    return state.homePath === path ? state : { ...state, homePath: path };
   const id = projectIdFromPath(path);
   if (id === undefined) return state;
+  if (state.paths[id] === path && state.order.includes(id)) return state;
   return {
     ...state,
     order: state.order.includes(id) ? state.order : [...state.order, id],

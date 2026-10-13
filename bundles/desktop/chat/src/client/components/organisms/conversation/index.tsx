@@ -202,7 +202,7 @@ const defineConversationExtension = (
       ClipboardDOMImportExtension,
       StyleImportExportExtension,
       EditorStateExtension,
-      HistoryExtension,
+      configExtension(HistoryExtension, { maxDepth: 50 }),
       TreeViewExtension,
       PromptInitialState,
       ...added.extensions,

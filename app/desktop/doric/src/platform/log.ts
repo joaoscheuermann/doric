@@ -1,6 +1,8 @@
 // The desktop platform's log: one JSON line per record on the console. Main
 // keeps no log files (stage 8); the host writes its own.
 
+import { Console } from 'node:console';
+
 export type PlatformLogLevel = 'info' | 'warn' | 'error';
 
 export interface PlatformLog {
@@ -36,7 +38,11 @@ export const formatLogLine = (
   );
 
 export const createPlatformLog = (
-  output: LogConsole = console,
+  output: LogConsole = new Console({
+    stdout: process.stdout,
+    stderr: process.stderr,
+    ignoreErrors: true,
+  }),
   now?: () => Date,
 ): PlatformLog => ({
   info: (fields, message) =>

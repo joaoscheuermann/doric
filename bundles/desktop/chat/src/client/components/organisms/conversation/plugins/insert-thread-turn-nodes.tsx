@@ -1,6 +1,7 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $getRoot,
+  HISTORIC_TAG,
   type LexicalEditor,
   type LexicalNode,
   RootNode,
@@ -511,7 +512,12 @@ export function InsertThreadTurnNodes({
         {
           // Transcript updates never move the caret. Reapplying its DOM selection
           // would scroll back to the input or dismiss a focused popover.
-          tag: opening && autoFocus ? undefined : SKIP_DOM_SELECTION_TAG,
+          // Host history is not a user edit: retaining each streamed snapshot
+          // in undo history keeps old transcripts and tool payloads alive.
+          tag:
+            opening && autoFocus
+              ? HISTORIC_TAG
+              : [HISTORIC_TAG, SKIP_DOM_SELECTION_TAG],
           // Reconcile the viewport only after Lexical has committed its DOM.
           onUpdate: () => {
             const settle = (): void => {

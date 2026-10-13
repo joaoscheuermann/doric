@@ -167,7 +167,10 @@ selected-Project tree watch, connection status and the native-notification
 write are contract calls and streams that main's one `doric:desktop`
 dispatcher routes over the host bridge (`/doric/bridge`) or to the desktopMain
 generation; the semantic IPC channels and the main-process Thread history are
-gone, and the Thread history snapshot is the `history` bundle's
+gone. Desktop pushes skip detached or destroyed renderer frames, including
+disposal during a native send. Platform console logging tolerates closed output
+pipes so logging cannot crash the main process after its launcher exits.
+The Thread history snapshot is the `history` bundle's
 `history.snapshots/v1` cache in desktopMain. The renderer keeps the
 Threads it has read for each Project; the sidebar renders the selected Project's
 tree while live updates follow that Project alone. A
@@ -208,6 +211,8 @@ Thread in the same Project. A direct subthread route first establishes its root
 conversation on the left. The subthread tab contains its history, composer and
 send/pause/queue controls, scoped to that Thread; composer signals and send requests
 are isolated by Thread so simultaneous conversations cannot send each other's draft.
+Transcript synchronization does not enter the editor's undo history. User edits
+retain at most 50 undo entries per conversation, bounding retained editor states.
 Switching tabs preserves the mounted conversation. Closing its tab only closes
 the view, without terminating or deleting the Thread. Renames update the tab title;
 deleting the Thread removes its tab after the Project tree confirms removal.
@@ -247,7 +252,9 @@ persists through the Electron window path across app restarts. Home is `/`, the
 full Project list is `/projects`, a Project view is `/projects/:projectId`, and
 direct Thread routes remain available. A fixed Dashboard tab opens `/projects`
 directly; the all-Projects sidebar has no Doric avatar or brand heading. Locally saved
-Project tabs remember their list view, order and last path. The fixed 40-pixel
+Project tabs remember their list view, order and last path. Their navigation
+subscription stays stable across renders and is disposed on unmount; observing
+the same route again does not replace their state. The fixed 40-pixel
 top bar uses the panel surface (#2a2a2a in dark mode) and follows Papermache's
 compact pill tabs: Dashboard stays pinned, the active
 tab has a subtly raised neutral control surface. Project tabs show the Project's
