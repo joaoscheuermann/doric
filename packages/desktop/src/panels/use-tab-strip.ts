@@ -34,17 +34,45 @@ export function useTabStrip(
   );
   const order = JSON.stringify(ids);
 
-  // `selected` and `order` are change triggers: the active tab is read from the
-  // DOM, so the scroll must still re-run when the selection or the tab order
-  // changes even though neither value is read in the body.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: extra entries are deliberate change triggers rather than values the body reads
+  // biome-ignore lint/correctness/useExhaustiveDependencies: order reveals the selection again after reordering
   useEffect(() => {
     if (sorting) return;
-    const active = root.current?.querySelector<HTMLElement>(
-      '[role="tab"][data-state="active"]',
-    );
-    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const strip = root.current;
+    if (!strip) return;
+    const reveal = () => {
+      const active = Array.from(
+        strip.querySelectorAll<HTMLElement>('[data-tab-id]'),
+      ).find((tab) => tab.dataset.tabId === selected);
+      active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
   }, [selected, order, sorting]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: order reconnects when the first tab mounts the strip
+  useEffect(() => {
+    const strip = root.current;
+    if (!strip) return;
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || strip.scrollWidth <= strip.clientWidth) return;
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      const unit =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? strip.clientWidth
+            : 1;
+      strip.scrollLeft += delta * unit;
+      event.preventDefault();
+    };
+    strip.addEventListener('wheel', wheel, { passive: false });
+    return () => strip.removeEventListener('wheel', wheel);
+  }, [order]);
 
   return {
     root,
@@ -81,9 +109,7 @@ export function useTabStrip(
         onMove(String(active.id), String(over.id));
     },
     cancel: () => setFrozen(undefined),
-    canScroll: (element: Element) =>
-      element ===
-      root.current?.querySelector('[data-slot="scroll-area-viewport"]'),
+    canScroll: (element: Element) => element === root.current,
     keyDown: (event: KeyboardEvent, id: string) => {
       if (sorting) {
         // Let dnd-kit's document listener handle these without Radix selecting a tab.

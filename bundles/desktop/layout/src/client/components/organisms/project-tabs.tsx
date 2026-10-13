@@ -8,6 +8,7 @@ import {
 } from 'desktop/ui/context-menu';
 import {
   closestCenter,
+  compactTabClassName,
   DndContext,
   horizontalListSortingStrategy,
   restrictToFirstScrollableAncestor,
@@ -25,8 +26,7 @@ import type { Project } from '../../domain/workspace.js';
 import { EditableName } from '../molecules/editable-name.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
-const tab =
-  'group relative flex h-[28px] items-center gap-[6px] rounded-[6px] px-[8px] text-[12px] leading-[16px] font-[500] text-[var(--paper-gray-3)] hover:bg-[color-mix(in_srgb,currentColor_7.5%,transparent)] hover:text-[var(--paper-gray-2)] data-[active=true]:bg-[var(--paper-control)] data-[active=true]:text-[var(--paper-gray-1)] data-[active=true]:shadow-[var(--paper-shadow-control)] data-[active=true]:hover:bg-[var(--paper-control)] [-webkit-app-region:no-drag] [&:has(:focus-visible)]:outline-2 [&:has(:focus-visible)]:-outline-offset-1 [&:has(:focus-visible)]:outline-[var(--paper-focus)]';
+const tab = cn('group', compactTabClassName);
 
 function HomeTabIcon({ active }: { readonly active: boolean }) {
   return (
@@ -302,7 +302,7 @@ export function ProjectTabBar({
         >
           <div
             ref={events.root}
-            className="-mx-[4px] flex h-full min-w-0 flex-initial items-center gap-[4px] overflow-x-auto px-[4px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="-mx-[4px] flex h-full min-w-0 flex-initial items-center gap-[4px] overflow-x-auto overflow-y-hidden px-[4px] [-webkit-app-region:drag] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <SortableContext
               items={[...state.order]}

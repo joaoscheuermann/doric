@@ -258,7 +258,11 @@ the same route again does not replace their state. The fixed 40-pixel
 top bar uses the panel surface (#2a2a2a in dark mode) and follows Papermache's
 compact pill tabs: Dashboard stays pinned, the active
 tab has a subtly raised neutral control surface. Project tabs show the Project's
-colored avatar, with neutral backgrounds and shadows and no colored border.
+colored avatar, with neutral backgrounds and no shadows or colored border.
+Project and resource tabs share their compact typography, spacing and active
+surface. Both strips scroll horizontally with the trackpad or mouse wheel,
+hide their scrollbars and reveal the selected tab after selection, reordering
+or resizing.
 They support animated pointer and keyboard sorting and inline rename
 through the host, retaining the saved title until confirmation. The macOS
 traffic-light inset is released in fullscreen through the existing chrome event.
