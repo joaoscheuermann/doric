@@ -1029,7 +1029,11 @@ switch) moves each feature into its own bundle. The composition enables
 `firecracker-sandbox`), `terminal`, `usage`, `resources` and `notifications`.
 `files` (`files/v1`), `git` (`git.commands/v1`), `terminal` (`terminal/v1`),
 `usage` (`usage/v1`) and `resources` (`resources/v1`) read the sandbox over
-`runtime.lease/v1.withLease` and never acquire a lease; the `terminal` bundle
+`runtime.lease/v1.withLease` and never acquire a lease; `usage/v1` also
+exposes the footer's compaction controls (`compact`, `compactionTarget`,
+`setCompactionTarget`: the manual compaction of one idle Thread through
+`runtime.threads/v1.compact`, and the pressure line read from and moved on
+the configuration in force); the `terminal` bundle
 owns the `terminal` tool and closes a closing Thread's sessions through
 `onThreadsClosingHook`. Tools and skills keep one global model-visible order
 (`order` on `tools/v1` and `skills/v1`), and `allowed-tools` resolve against

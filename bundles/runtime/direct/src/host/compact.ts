@@ -2,6 +2,7 @@ import type { Call, Services } from 'bundle/contracts';
 import { ModelsV1 } from 'bundle/contracts';
 import {
   ConfigurationV1,
+  defaultContextCompaction,
   type ConfigurationValue,
 } from 'host-config/contracts';
 import type { LlmProvider } from 'llms';
@@ -38,13 +39,7 @@ export interface CompactionConfig {
   readonly charBudget: number;
 }
 
-export const compactionDefaults: CompactionConfig = {
-  enabled: true,
-  pressurePercent: 80,
-  tailMinMessages: 6,
-  summaryMaxChars: 6000,
-  charBudget: 200_000,
-};
+export const compactionDefaults: CompactionConfig = defaultContextCompaction;
 
 /** The compaction section of the configuration in force, defaults filled. */
 export const compactionConfig = (

@@ -9,7 +9,16 @@ import {
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import {
+  ConfigurationV1,
+  type ConfigurationValue,
+  type ContextCompactionConfig,
+  configurationMethods,
+} from 'host-config/contracts';
+import {
+  type CompactResult,
+  RuntimeThreadsV1,
   RuntimeUsageV1,
+  runtimeThreadsMethods,
   runtimeUsageMethods,
   type ThreadUsage,
 } from 'runtime/contracts';
@@ -178,5 +187,219 @@ describe('usage/v1.thread', () => {
 
     assert.equal(await usage.thread('missing'), undefined);
     assert.deepEqual(requests, []);
+  });
+});
+
+/*
+ * The compaction members: `compact` delegates to the runtime's Thread
+ * service, while the target line reads and moves the policy on the
+ * configuration in force (an absent section is the default one).
+ */
+
+describe('usage/v1 compaction members', () => {
+  const baseConfiguration = (
+    contextCompaction: ContextCompactionConfig | undefined,
+  ): ConfigurationValue => ({
+    providers: [
+      {
+        id: 'openrouter',
+        kind: 'openrouter',
+        configuration: {
+          endpoint: 'https://openrouter.ai/api/v1',
+          token: 'c1',
+        },
+        models: [],
+      },
+    ],
+    models: {
+      execution: { providerId: 'openrouter', model: 'openai/gpt-5' },
+    },
+    execution: {
+      maxTurns: 8,
+      ...(contextCompaction === undefined ? {} : { contextCompaction }),
+    },
+    tools: {},
+  });
+
+  const compactionOver = async (
+    configuration: ConfigurationValue,
+    compactAnswer: CompactResult,
+  ) => {
+    const compactedIds: string[] = [];
+    const replaced: unknown[] = [];
+    const unexpected = () => {
+      throw new Error('Only compact and the configuration are read.');
+    };
+    const harness = createTestServices({
+      bundle: { id: 'usage' },
+      provide: [
+        defineService(RuntimeUsageV1, {
+          read: defineMethod({
+            ...runtimeUsageMethods.read,
+            execute: unexpected,
+          }),
+        }),
+        // By id: the runtime threads contract names every Thread method.
+        defineService(RuntimeThreadsV1.id, {
+          compact: defineMethod({
+            ...runtimeThreadsMethods.compact,
+            execute: async ({ id }: { readonly id: string }) => {
+              compactedIds.push(id);
+              return compactAnswer;
+            },
+          }),
+        }),
+        defineService(ConfigurationV1.id, {
+          current: defineMethod({
+            ...configurationMethods.current,
+            execute: () => ({
+              configuration,
+              revision: 1,
+              updatedAt: new Date(0).toISOString(),
+            }),
+          }),
+          replace: defineMethod({
+            ...configurationMethods.replace,
+            execute: async (input: unknown) => {
+              replaced.push(input);
+              return {
+                status: 'replaced' as const,
+                config: {
+                  configuration: input as ConfigurationValue,
+                  revision: 2,
+                  updatedAt: new Date(0).toISOString(),
+                },
+              };
+            },
+          }),
+        }),
+      ],
+    });
+    await activate({ services: harness.services });
+    return {
+      usage: harness.services.use(UsageV1),
+      compactedIds,
+      replaced,
+    };
+  };
+
+  test('compact delegates to the runtime threads service with the id', async () => {
+    const answer: CompactResult = {
+      status: 'compacted',
+      condensedMessages: 4,
+      retainedMessages: 3,
+      tokensFreed: 900,
+    };
+    const { usage, compactedIds } = await compactionOver(
+      baseConfiguration(undefined),
+      answer,
+    );
+
+    assert.deepEqual(await usage.compact('thread-1'), answer);
+    assert.deepEqual(compactedIds, ['thread-1']);
+  });
+
+  test('compactionTarget reads the section and falls back to the default', async () => {
+    const withSection = await compactionOver(
+      baseConfiguration({
+        enabled: true,
+        pressurePercent: 65,
+        tailMinMessages: 6,
+        summaryMaxChars: 6000,
+        charBudget: 200000,
+      }),
+      { status: 'refused', reason: 'nothing_to_compact' } as CompactResult,
+    );
+    assert.deepEqual(await withSection.usage.compactionTarget(), {
+      pressurePercent: 65,
+    });
+
+    const absent = await compactionOver(baseConfiguration(undefined), {
+      status: 'refused',
+      reason: 'nothing_to_compact',
+    } as CompactResult);
+    assert.deepEqual(await absent.usage.compactionTarget(), {
+      pressurePercent: 80,
+    });
+  });
+
+  test('setCompactionTarget moves the section and keeps the rest of the configuration', async () => {
+    const section: ContextCompactionConfig = {
+      enabled: true,
+      pressurePercent: 80,
+      tailMinMessages: 6,
+      summaryMaxChars: 6000,
+      charBudget: 200000,
+    };
+    const { usage, replaced } = await compactionOver(
+      baseConfiguration(section),
+      { status: 'refused', reason: 'nothing_to_compact' } as CompactResult,
+    );
+
+    assert.deepEqual(await usage.setCompactionTarget({ pressurePercent: 90 }), {
+      pressurePercent: 90,
+    });
+    assert.equal(replaced.length, 1);
+    const next = replaced[0] as {
+      execution: { contextCompaction: object; maxTurns: number };
+    };
+    assert.equal(next.execution.maxTurns, 8);
+    assert.deepEqual(next.execution.contextCompaction, {
+      ...section,
+      pressurePercent: 90,
+    });
+  });
+
+  test('a refused replace keeps the line the configuration still names', async () => {
+    const section: ContextCompactionConfig = {
+      enabled: true,
+      pressurePercent: 80,
+      tailMinMessages: 6,
+      summaryMaxChars: 6000,
+      charBudget: 200000,
+    };
+    const harness = createTestServices({
+      bundle: { id: 'usage' },
+      provide: [
+        // By id: the runtime usage contract is otherwise fully typed.
+        defineService(RuntimeUsageV1.id, {
+          read: defineMethod({
+            ...runtimeUsageMethods.read,
+            execute: () => undefined,
+          }),
+        }),
+        // By id: the runtime threads contract names every Thread method.
+        defineService(RuntimeThreadsV1.id, {
+          compact: defineMethod({
+            ...runtimeThreadsMethods.compact,
+            execute: () =>
+              ({
+                status: 'refused',
+                reason: 'nothing_to_compact',
+              }) as CompactResult,
+          }),
+        }),
+        defineService(ConfigurationV1.id, {
+          current: defineMethod({
+            ...configurationMethods.current,
+            execute: () => ({
+              configuration: baseConfiguration(section),
+              revision: 1,
+              updatedAt: new Date(0).toISOString(),
+            }),
+          }),
+          replace: defineMethod({
+            ...configurationMethods.replace,
+            execute: () => ({ status: 'rejected' }) as const,
+          }),
+        }),
+      ],
+    });
+    await activate({ services: harness.services });
+    const usage = harness.services.use(UsageV1);
+
+    assert.deepEqual(await usage.setCompactionTarget({ pressurePercent: 90 }), {
+      pressurePercent: 80,
+    });
   });
 });

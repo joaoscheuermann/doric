@@ -7,6 +7,8 @@
   "provides": ["usage/v1@1.0.0"],
   "requires": [
     "runtime.usage/v1@^1.0.0",
+    "runtime.threads/v1@^1.0.0",
+    "host-config/v1@^1.0.0",
     "models/v1@^1.1.0",
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",

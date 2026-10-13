@@ -27,8 +27,7 @@ export interface ConfigurationProvider {
 /**
  * The context-compaction policy one execution carries. The field is optional and
  * this contract carries it unchanged: the consumer applies the defaults an
- * absent policy stands for — `enabled: true`, `pressurePercent: 80`,
- * `tailMinMessages: 6`, `summaryMaxChars: 6000`, `charBudget: 200000`.
+ * absent policy stands for.
  */
 export interface ContextCompactionConfig {
   readonly enabled: boolean;
@@ -37,6 +36,15 @@ export interface ContextCompactionConfig {
   readonly summaryMaxChars: number;
   readonly charBudget: number;
 }
+
+/** The policy an absent `execution.contextCompaction` stands for. */
+export const defaultContextCompaction: ContextCompactionConfig = {
+  enabled: true,
+  pressurePercent: 80,
+  tailMinMessages: 6,
+  summaryMaxChars: 6000,
+  charBudget: 200000,
+};
 
 export interface ConfigurationValue {
   readonly providers: readonly ConfigurationProvider[];
