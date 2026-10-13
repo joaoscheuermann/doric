@@ -7,6 +7,9 @@ import { limitName, nameError } from '../../domain/workspace.js';
 
 type EditableNameProps = {
   readonly className?: string;
+  readonly creating?: boolean;
+  /** A display label for an existing entity with no name. */
+  readonly placeholder?: string;
   /** Whether the name is open for typing. */
   readonly editing: boolean;
   readonly label: string;
@@ -14,7 +17,7 @@ type EditableNameProps = {
   /** Opens the name for typing, for a caller that shows a closed name. */
   readonly onStart?: () => void;
   readonly onSubmit: (name: string) => Promise<void>;
-  /** The name as it exists. Empty means the entity is being created. */
+  /** The stored name, which may be empty for an unnamed Thread. */
   readonly value: string;
 };
 
@@ -29,10 +32,8 @@ const selectContents = (element: HTMLElement): void => {
 /**
  * One name, whether it exists yet or not.
  *
- * Creating and renaming differ only in whether there is a name to show: an empty
- * `value` is an entity being created, a value is one being renamed, and everything
- * else follows from that. A creation has nothing to restore on cancel and nothing
- * to leave behind on blur; a rename does both.
+ * A creation has nothing to restore on cancel and nothing to leave behind on
+ * blur; a rename does both, even when the existing entity has no name yet.
  *
  * A failed edit or save marks the name itself — the text wears a red underline —
  * and says why in a toast, because the reason does not deserve a row of its own in
@@ -41,11 +42,13 @@ const selectContents = (element: HTMLElement): void => {
  */
 export function EditableName({
   className,
+  creating = false,
   editing,
   label,
   onCancel,
   onStart,
   onSubmit,
+  placeholder,
   value,
 }: EditableNameProps) {
   const element = useRef<HTMLSpanElement>(null);
@@ -57,14 +60,15 @@ export function EditableName({
     const current = element.current;
     if (current === null) return;
     if (!editing) {
-      current.textContent = value;
+      current.textContent = value || placeholder || '';
       setError(undefined);
       setPending(false);
       return;
     }
+    current.textContent = value;
     current.focus();
     selectContents(current);
-  }, [editing, value]);
+  }, [editing, placeholder, value]);
 
   const text = (): string => element.current?.textContent ?? '';
 
@@ -78,7 +82,8 @@ export function EditableName({
     });
 
   const cancel = () => {
-    if (element.current) element.current.textContent = value;
+    if (element.current)
+      element.current.textContent = value || placeholder || '';
     setError(undefined);
     setPending(false);
     onCancel();
@@ -88,7 +93,7 @@ export function EditableName({
     if (!editing || pending) return;
     const next = text();
     // An entity being created has nothing to save while the name is empty.
-    if (value === '' && next.trim().length === 0) {
+    if (creating && next.trim().length === 0) {
       refocus();
       return;
     }
@@ -119,7 +124,7 @@ export function EditableName({
   const leave = () => {
     if (!editing || pending) return;
     const next = text().trim();
-    if (value === '' || next === value.trim()) cancel();
+    if (creating || next === value.trim()) cancel();
     else void submit();
   };
 
@@ -178,7 +183,7 @@ export function EditableName({
           );
         }}
       >
-        {value}
+        {editing ? value : value || placeholder}
       </span>
     </>
   );

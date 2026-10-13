@@ -11,7 +11,6 @@ import { TerminalIcon } from 'lucide-react';
 import type { TerminalApi } from './api.js';
 import type { Terminal } from './domain/terminals.js';
 import { useService, useSubscribed } from './hooks.js';
-import { ManualTerminalTabs } from './manual/manual-terminal-tabs.js';
 import type { TerminalWatchApi } from './output-watch.js';
 import {
   type LayoutWorkspace,
@@ -32,12 +31,12 @@ export interface TerminalClient {
   readonly open: (terminal: Terminal) => void;
 }
 
-/** The sidebar depth of a Thread's rows: top-level Threads sit at depth 1. */
+/** Terminal rows sit one level below their owning Thread. */
 export const rowsDepth = (
   workspace: Pick<LayoutWorkspace, 'thread'>,
   threadId: string,
 ): number => {
-  let depth = 2;
+  let depth = 1;
   const seen = new Set<string>([threadId]);
   let parent = workspace.thread(threadId)?.parentThreadId;
   while (parent !== undefined && !seen.has(parent)) {
@@ -101,29 +100,6 @@ export const defineTerminalElements = (client: TerminalClient) => {
     );
   }
 
-  function Manual({ services }: { readonly services: Services }) {
-    const thread = useSelectedThread(services);
-    const terminals = useTerminals();
-    const state = useSubscribed(
-      store,
-      () => (thread === undefined ? undefined : store.manual(thread.id)),
-      undefined,
-    );
-    if (thread === undefined || state === undefined) return null;
-    const manual = terminals.find((terminal) => terminal.id === state.manualId);
-    if (manual === undefined) return null;
-    return (
-      <ManualTerminalTabs
-        api={api}
-        watches={watches}
-        store={store}
-        state={state}
-        threadId={manual.threadId}
-        terminals={terminals}
-      />
-    );
-  }
-
   function View({
     terminalId,
     showHeader,
@@ -154,7 +130,6 @@ export const defineTerminalElements = (client: TerminalClient) => {
       props: ['thread-id'],
       render: Rows,
     }),
-    manual: defineReactElement<object>({ props: [], render: Manual }),
     view: defineReactElement<{
       readonly terminalId?: string;
       readonly showHeader?: boolean;

@@ -20,6 +20,7 @@ import {
   ChatComposerElement,
   ChatGenericBlockElement,
   ChatReadonlyMarkdownElement,
+  ChatThreadPanelElement,
   ChatViewElement,
 } from './elements/chat-elements.js';
 import { setChatHooks } from './services/chat-hooks.js';
@@ -38,6 +39,7 @@ import {
   GENERIC_BLOCK_TAG,
   setChatViewsRegistry,
 } from './services/views.js';
+import { resetComposers } from './stores/composer.js';
 import { resetConnectionStore } from './stores/connection.js';
 import { threadChatsStore } from './stores/thread-chats.js';
 
@@ -57,6 +59,7 @@ export function activate({ services }: ClientContext): Cleanup {
   const elements = [
     ui.define('chat-view', ChatViewElement),
     ui.define('chat-composer', ChatComposerElement),
+    ui.define('chat-thread-panel', ChatThreadPanelElement),
     ui.define(GENERIC_BLOCK_TAG, ChatGenericBlockElement),
     ui.define('chat-readonly-markdown', ChatReadonlyMarkdownElement),
   ];
@@ -90,6 +93,7 @@ export function activate({ services }: ClientContext): Cleanup {
     route.dispose();
     for (const element of elements.reverse()) element.dispose();
     resetConnectionStore();
+    resetComposers();
     setChatLexicalRegistry(undefined);
     setChatViewsRegistry(undefined);
     setChatHooks(undefined);

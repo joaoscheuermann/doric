@@ -1,20 +1,14 @@
-// The Project panel's frame (WP-10P, R-9.2), moved out of the provisional
-// files sidebar: the "Project views" tab strip over the `layout.panel` region
-// items, the `layout.panel.header` region before the panel's own toggle, the
-// selected view, and the `project-files-footer` bar with the
-// `layout.panel.footer` region. Since WP-10N every view is a region item
-// (files and git); built-in entries remain possible but none is passed.
+// The Project panel's content and its compact controls. The controls live in
+// the workspace tab bar; the panel itself starts directly with its content.
 
 import type { RegionEntry } from 'bundle/contracts';
 import { TabStrip } from 'desktop/ui/panels';
-import { Separator } from 'desktop/ui/separator';
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
 } from 'desktop/ui/sidebar';
-import { Tabs } from 'desktop/ui/tabs';
 import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
 import { createElement, type ReactNode, useState } from 'react';
 
@@ -54,7 +48,6 @@ const Region = ({ name }: { readonly name: string }) =>
 
 type ProjectPanelProps = {
   readonly active: string;
-  readonly onActiveChange: (id: string) => void;
   readonly builtIns?: readonly PanelBuiltIn[];
   /** What a built-in view shows; drawn while one is selected. */
   readonly builtInContent?: ReactNode;
@@ -64,77 +57,76 @@ type ProjectPanelProps = {
   readonly footer?: ReactNode;
 };
 
-/**
- * The sandbox, as a right-hand panel beside the conversation. Its views are
- * icon-only tabs in the header in place of a title, because they name what
- * the panel is showing and select it among a set, in the order the reader
- * drags them into. The `layout.panel.header` region (the files bundle's
- * toggle, WP-10N) is the last control at the corner.
- */
-export function ProjectPanel({
+/** Compact, reorderable view controls for the workspace's top tab bar. */
+export function ProjectPanelTabs({
   active,
   onActiveChange,
   builtIns = [],
-  builtInContent,
   items,
-  footer,
-}: ProjectPanelProps) {
+}: Pick<ProjectPanelProps, 'active' | 'builtIns' | 'items'> & {
+  readonly onActiveChange: (id: string) => void;
+}) {
   const available = [
     ...builtIns.map((view) => view.id),
     ...items.map((item) => item.id),
   ];
   const [held, setOrder] = useState<readonly string[]>(available);
   const order = panelOrder(held, available);
+  return (
+    <div className="min-w-0 max-w-[40vw] [-webkit-app-region:no-drag]">
+      <TabStrip
+        variant="toggle"
+        label="Project views"
+        selected={active}
+        onSelect={onActiveChange}
+        onMove={(from, to) => setOrder(movedPanelOrder(order, from, to))}
+        items={order.flatMap((id) => {
+          const view = builtIns.find((entry) => entry.id === id);
+          if (view !== undefined) {
+            return [
+              {
+                id,
+                label: view.label,
+                iconOnly: true,
+                icon: view.icon,
+                badge: view.badge,
+              },
+            ];
+          }
+          const entry = items.find((candidate) => candidate.id === id);
+          if (entry === undefined) return [];
+          const badgeTag = entry.props?.badgeTag;
+          return [
+            {
+              id,
+              label: text(entry.props?.label),
+              iconOnly: true,
+              icon: panelIcon(entry.props?.icon),
+              badge:
+                typeof badgeTag === 'string' && badgeTag !== '' ? (
+                  <ElementHost tag={badgeTag} />
+                ) : undefined,
+            },
+          ];
+        })}
+      />
+    </div>
+  );
+}
+
+/** The selected sandbox view, without a second header below the tab bar. */
+export function ProjectPanel({
+  active,
+  builtIns = [],
+  builtInContent,
+  items,
+  footer,
+}: ProjectPanelProps) {
   const item = items.find((entry) => entry.id === active);
   const builtIn = builtIns.some((view) => view.id === active);
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden">
-      <PanelHeader>
-        <div className="ml-auto flex min-w-0 items-center gap-1 pr-2">
-          <Tabs
-            className="min-w-0 [app-region:no-drag]"
-            value={active}
-            onValueChange={onActiveChange}
-          >
-            <TabStrip
-              label="Project views"
-              selected={active}
-              onMove={(from, to) => setOrder(movedPanelOrder(order, from, to))}
-              items={order.flatMap((id) => {
-                const view = builtIns.find((entry) => entry.id === id);
-                if (view !== undefined) {
-                  return [
-                    {
-                      id,
-                      label: view.label,
-                      icon: view.icon,
-                      iconOnly: true,
-                      badge: view.badge,
-                    },
-                  ];
-                }
-                const entry = items.find((candidate) => candidate.id === id);
-                if (entry === undefined) return [];
-                const badgeTag = entry.props?.badgeTag;
-                return [
-                  {
-                    id,
-                    label: text(entry.props?.label),
-                    icon: panelIcon(entry.props?.icon),
-                    iconOnly: true,
-                    badge:
-                      typeof badgeTag === 'string' && badgeTag !== '' ? (
-                        <ElementHost tag={badgeTag} />
-                      ) : undefined,
-                  },
-                ];
-              })}
-            />
-          </Tabs>
-          <Region name="layout.panel.header" />
-        </div>
-      </PanelHeader>
       <SidebarContent className="overflow-hidden p-0">
         <SidebarGroup className="h-full min-h-0 p-0">
           <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
@@ -158,22 +150,5 @@ export function ProjectPanel({
         <Region name="layout.panel.footer" />
       </footer>
     </Sidebar>
-  );
-}
-
-/**
- * The panel's header strip: the drag region, its boundary, and the controls it
- * carries — the view tabs and the panel's own toggle, together at the right
- * corner.
- */
-function PanelHeader({ children }: { readonly children: ReactNode }) {
-  return (
-    <div
-      data-slot="project-files-header"
-      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-2 [app-region:drag]"
-    >
-      <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
-      {children}
-    </div>
   );
 }

@@ -36,6 +36,7 @@ import type {
   PromptProgress,
   ThreadStore,
 } from '../store/types.js';
+import { sortActivity, summarizeActivity } from './activity.js';
 import type { Bindings } from './bindings.js';
 import { randomProjectColor } from './colors.js';
 import { workingDirectoriesInside } from './cwd.js';
@@ -800,6 +801,25 @@ export const createWorkspaceService = ({
         }),
       find: (id) => projects.record(id),
       list: (limit, cursor) => projects.list(limit, cursor),
+      activity: async () => {
+        const all: Project[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await projects.list(100, cursor);
+          all.push(...page.items);
+          cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        return sortActivity(
+          await Promise.all(
+            all.map(async (project) =>
+              summarizeActivity(
+                project,
+                await threads.listByProject(project.id),
+              ),
+            ),
+          ),
+        );
+      },
       rename: (id, name) => changeProject(id, () => projects.rename(id, name)),
       setColor: (id, color) =>
         changeProject(id, () => projects.setColor(id, color)),

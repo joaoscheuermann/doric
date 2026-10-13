@@ -8,11 +8,9 @@ import {
 import { Toaster as Sonner, type ToasterProps, toast } from 'sonner';
 
 /**
- * The shell is dark only — `index.html` sets `dark` once and nothing toggles it —
- * so the toast takes a dark theme by default instead of resolving one through a
- * provider this application does not have. Pass `theme` to override it.
+ * Follow the operating system, including changes while a window is open.
  */
-const Toaster = ({ theme = 'dark', ...props }: ToasterProps) => {
+const Toaster = ({ theme = 'system', ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme}

@@ -18,6 +18,13 @@ import {
   ref,
   UiV1,
 } from 'bundle/contracts';
+import {
+  $createTextNode,
+  $getRoot,
+  $isElementNode,
+  defineExtension,
+  type LexicalEditor,
+} from 'lexical';
 import { z } from 'zod';
 
 import {
@@ -386,7 +393,10 @@ test('editor nodes are accepted until the first conversation editor exists, then
 // The footer composer, with a probe standing in for the layout's
 // `layout.workspace/v1` (the selected Thread).
 
-const workspaceProbe = (selected: () => unknown): Probe => ({
+const workspaceProbe = (
+  selected: () => unknown,
+  record?: (id: string) => unknown,
+): Probe => ({
   provides: ['layout.workspace/v1'],
   activate: ({ services }: ClientContext) => {
     const LayoutWorkspaceV1 = ref<{
@@ -400,6 +410,7 @@ const workspaceProbe = (selected: () => unknown): Probe => ({
           input: z.string(),
           output: z.unknown(),
           execute: (id: string) => {
+            if (record) return record(id);
             const current = selected() as { id?: string } | undefined;
             return current?.id === id ? current : undefined;
           },
@@ -463,6 +474,144 @@ test('while the selected Thread runs, the composer pauses its active prompt', as
     .received('runtime.threads/v1.pause')
     .map((envelope) => envelope.input);
   assert.deepEqual(paused, [{ id: threadId, promptId }]);
+});
+
+test('two conversations keep their drafts and footer sends scoped to their own Thread', async () => {
+  const childId = '44444444-4444-4444-8444-444444444444';
+  const records = [thread(), thread({ id: childId, parentThreadId: threadId })];
+  const editors = new Set<LexicalEditor>();
+  let create:
+    | ((tag: string, props: Record<string, string>) => HTMLElement)
+    | undefined;
+  const workspace = workspaceProbe(
+    () => records[0],
+    (id) => records.find((entry) => entry.id === id),
+  );
+  opened = await openChatWindow({
+    url: 'doric://app/elsewhere',
+    host: host(thread(), {
+      'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
+    }),
+    probe: {
+      provides: workspace.provides,
+      requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
+      activate: async (context: ClientContext) => {
+        await workspace.activate(context);
+        const ui = context.services.use(UiV1);
+        create = (tag, props) => ui.create(tag, props) as HTMLElement;
+        context.services.use(ChatLexicalV1).registerExtension(
+          defineExtension({
+            name: 'test/editor-input',
+            register: (editor) => {
+              editors.add(editor);
+              return () => {
+                editors.delete(editor);
+              };
+            },
+          }),
+        );
+      },
+    },
+  });
+  assert.ok(create);
+  const main = create('chat-view', { projectId, threadId });
+  opened.document.body.append(main);
+  const mainFooter = await footer(opened);
+  const mainEditor = main.querySelector<HTMLElement>(
+    '[contenteditable="true"]',
+  );
+  assert.ok(mainEditor);
+  mainEditor.focus();
+  const panel = create('chat-thread-panel', { projectId, threadId: childId });
+  opened.document.body.append(panel);
+  await settle(100);
+  assert.equal(
+    opened.document.activeElement,
+    mainEditor,
+    'mounting a child panel preserves main-editor focus',
+  );
+  const type = async (root: Element, text: string) => {
+    const editor = [...editors].find((candidate) =>
+      root.contains(candidate.getRootElement()),
+    );
+    assert.ok(editor);
+    editor.update(() => {
+      const prompt = $getRoot()
+        .getChildren()
+        .find((node) => node.getType() === 'user-prompt-node');
+      assert.ok($isElementNode(prompt));
+      prompt.clear().append($createTextNode(text));
+    });
+    await settle();
+  };
+  await type(main, 'Keep this main draft');
+  await type(panel, 'Send only this child draft');
+  button(panel, 'Send (Cmd+Enter)')?.click();
+  await settle(50);
+  assert.deepEqual(
+    opened.received('runtime.threads/v1.prompt').map((call) => call.input),
+    [{ id: childId, prompt: 'Send only this child draft' }],
+  );
+  assert.match(main.textContent ?? '', /Keep this main draft/);
+  button(mainFooter, 'Send (Cmd+Enter)')?.click();
+  await settle(50);
+  assert.deepEqual(
+    opened.received('runtime.threads/v1.prompt').map((call) => call.input),
+    [
+      { id: childId, prompt: 'Send only this child draft' },
+      { id: threadId, prompt: 'Keep this main draft' },
+    ],
+  );
+});
+
+test('a child conversation footer pauses its Thread while the main Thread stays selected', async () => {
+  const childId = '44444444-4444-4444-8444-444444444444';
+  const childPrompt = '55555555-5555-4555-8555-555555555555';
+  let create:
+    | ((tag: string, props: Record<string, string>) => HTMLElement)
+    | undefined;
+  const records = [
+    thread({ state: 'running', activePromptId: promptId }),
+    thread({ id: childId, state: 'running', activePromptId: childPrompt }),
+  ];
+  const workspace = workspaceProbe(
+    () => records[0],
+    (id) => records.find((entry) => entry.id === id),
+  );
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), { 'runtime.threads/v1.pause': () => 'interrupted' }),
+    probe: {
+      provides: workspace.provides,
+      requires: ['ui/v1@^1.0.0'],
+      activate: async (context: ClientContext) => {
+        await workspace.activate(context);
+        const ui = context.services.use(UiV1);
+        create = (tag, props) => ui.create(tag, props) as HTMLElement;
+      },
+    },
+  });
+  const mainFooter = await footer(opened);
+  assert.ok(create);
+  const panel = create('chat-thread-panel', { projectId, threadId: childId });
+  opened.document.body.append(panel);
+  await settle(100);
+  assert.ok(button(panel, 'Pause (Esc)'));
+  button(panel, 'Pause (Esc)')?.click();
+  await settle();
+  assert.deepEqual(
+    opened.received('runtime.threads/v1.pause').map((call) => call.input),
+    [{ id: childId, promptId: childPrompt }],
+  );
+  button(mainFooter, 'Pause (Esc)')?.click();
+  await settle();
+  assert.deepEqual(
+    opened.received('runtime.threads/v1.pause').map((call) => call.input),
+    [
+      { id: childId, promptId: childPrompt },
+      { id: threadId, promptId },
+    ],
+  );
 });
 
 // R-9.7 and R-9.9: another Thread's input. Chat draws it itself until a

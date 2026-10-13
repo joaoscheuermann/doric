@@ -23,6 +23,7 @@ import { setLayoutServices } from './services/layout-services.js';
 import { createLayoutSidebar } from './services/layout-sidebar.js';
 import { createLayoutTabs } from './services/layout-tabs.js';
 import { createLayoutWorkspace } from './services/layout-workspace.js';
+import { watchThreadTabs } from './services/thread-tabs.js';
 import { resetBottom } from './stores/bottom.js';
 import { disposeConnection, initConnection } from './stores/connection.js';
 import { resetPanel } from './stores/panel.js';
@@ -42,6 +43,7 @@ export function activate({ services }: ClientContext): Cleanup {
   // new-terminal button and the panel's views are other bundles' region items
   // (git, usage, terminal, files, resources); the layout draws none itself.
   const ui = services.use(UiV1);
+  const stopThreadTabs = watchThreadTabs(ui);
   ui.define('layout-workspace', LayoutWorkspaceElement);
 
   const navigation = services.use(NavigationV1);
@@ -49,6 +51,9 @@ export function activate({ services }: ClientContext): Cleanup {
     path: '/',
     create: () => ui.create('layout-workspace'),
   });
+  for (const path of ['/projects', '/projects/:projectId']) {
+    navigation.register({ path, create: () => ui.create('layout-workspace') });
+  }
   services.provide(
     createLayoutTabs({
       ui,
@@ -73,6 +78,7 @@ export function activate({ services }: ClientContext): Cleanup {
   services.provide(createLayoutSidebar());
 
   return () => {
+    stopThreadTabs();
     disposeProjectWatch();
     disposeConnection();
     disposeWorkspaceApi();

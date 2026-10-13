@@ -7,7 +7,12 @@ import { beforeEach, describe, test } from 'node:test';
 
 import type { RouteMatch } from 'bundle/contracts';
 
-import type { ProjectTree } from '../src/client/domain/project-tree.js';
+import {
+  emptyTree,
+  type ProjectTree,
+  withSelection,
+  withThreads,
+} from '../src/client/domain/project-tree.js';
 import {
   pathFor,
   routeIntent,
@@ -37,6 +42,12 @@ const thread = (id: string, projectId = 'p1'): Thread => ({
 });
 
 const workspaceRoute: RouteMatch = { path: '/', pattern: '/', params: {} };
+
+const projectRoute: RouteMatch = {
+  path: '/projects/p1',
+  pattern: '/projects/:projectId',
+  params: { projectId: 'p1' },
+};
 
 const threadRoute = (projectId: string, threadId: string): RouteMatch => ({
   path: threadPath(projectId, threadId),
@@ -85,6 +96,7 @@ const restore = (options: {
   readonly legacy?: FakeLegacy;
   readonly lookup: (id: string) => Promise<Thread | undefined>;
   readonly isCurrent?: () => boolean;
+  readonly projectExists?: boolean;
 }) => {
   const restored: Thread[] = [];
   const looked: string[] = [];
@@ -97,12 +109,76 @@ const restore = (options: {
     },
     isActive: () => true,
     isCurrent: options.isCurrent ?? (() => true),
-    onRestore: (found) => void restored.push(found),
+    onRestore: (found) => {
+      restored.push(found);
+      return undefined;
+    },
+    onMissingProject: (projectId) =>
+      options.projectExists === false ? {} : { projectId },
   });
   return { restored, looked };
 };
 
 describe('startup restore', () => {
+  test('a failed asynchronous opener settles the restore without replacing its path', async () => {
+    const window = new FakeWindow('/projects/p1/threads/child');
+    startRestore({
+      route: threadRoute('p1', 'child'),
+      legacy: new FakeLegacy(null),
+      lookup: async () => thread('child'),
+      isActive: () => true,
+      isCurrent: () => true,
+      onRestore: async () => {
+        throw new Error('Unavailable');
+      },
+      onMissingProject: (projectId) => ({ projectId }),
+    });
+    await settled();
+    assert.equal(routeSelectionStore.getState().load, 'failed');
+    assert.equal(window.current, '/projects/p1/threads/child');
+  });
+
+  test('a direct child link persists the root selected by its asynchronous opener', async () => {
+    const window = new FakeWindow('/projects/p1/threads/child');
+    startRestore({
+      route: threadRoute('p1', 'child'),
+      legacy: new FakeLegacy(null),
+      lookup: async () => ({ ...thread('child'), parentThreadId: 'root' }),
+      isActive: () => true,
+      isCurrent: () => true,
+      onRestore: async () => ({ projectId: 'p1', threadId: 'root' }),
+      onMissingProject: (projectId) => ({ projectId }),
+    });
+    await settled();
+    assert.deepEqual(window.writes, [
+      { path: '/projects/p1/threads/root', replace: true },
+    ]);
+  });
+
+  test('a superseded asynchronous child opener preserves the newer selection', async () => {
+    const window = new FakeWindow('/projects/p1/threads/child');
+    let release: () => void = () => undefined;
+    startRestore({
+      route: threadRoute('p1', 'child'),
+      legacy: new FakeLegacy(null),
+      lookup: async () => ({ ...thread('child'), parentThreadId: 'root' }),
+      isActive: () => true,
+      isCurrent: () => true,
+      onRestore: () =>
+        new Promise<null>((resolve) => {
+          release = () => resolve(null);
+        }),
+      onMissingProject: (projectId) => ({ projectId }),
+    });
+    await settled();
+    const store = routeSelectionStore.getState();
+    store.markUserSelection({ projectId: 'p2', threadId: 'newer' });
+    store.changeSelection({ projectId: 'p2', threadId: 'newer' });
+    release();
+    await settled();
+    assert.equal(window.current, '/projects/p2/threads/newer');
+  });
+
   test('a legacy stored Thread becomes its path once', async () => {
     const window = new FakeWindow('/');
     const legacy = new FakeLegacy(serializeSelection('t1'));
@@ -143,7 +219,7 @@ describe('startup restore', () => {
     assert.equal(legacy.value, null);
   });
 
-  test('a deleted Thread leaves the path at /', async () => {
+  test('a deleted Thread falls back to its existing Project', async () => {
     const window = new FakeWindow('/projects/p1/threads/gone');
 
     const { restored } = restore({
@@ -153,6 +229,19 @@ describe('startup restore', () => {
     await settled();
 
     assert.deepEqual(restored, []);
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
+  });
+
+  test('a deleted Thread and Project fall back to Home', async () => {
+    const window = new FakeWindow('/projects/p1/threads/gone');
+
+    restore({
+      route: threadRoute('p1', 'gone'),
+      lookup: async () => undefined,
+      projectExists: false,
+    });
+    await settled();
+
     assert.deepEqual(window.writes, [{ path: '/', replace: true }]);
   });
 
@@ -219,6 +308,60 @@ describe('startup restore', () => {
     assert.deepEqual(window.writes, []);
   });
 
+  test('a direct Project path is kept while the Project selection initializes', () => {
+    const window = new FakeWindow('/projects/p1');
+
+    restore({ route: projectRoute, lookup: async (id) => thread(id) });
+
+    assert.deepEqual(window.writes, []);
+  });
+
+  test('a direct Project path becomes its first Thread when its list arrives', () => {
+    const window = new FakeWindow('/projects/p1');
+    restore({ route: projectRoute, lookup: async (id) => thread(id) });
+    const store = routeSelectionStore.getState();
+    const selected = withSelection(emptyTree, { projectId: 'p1' });
+    store.changeSelection(selected.selection);
+    const loaded = withThreads(selected, 'p1', [
+      thread('first'),
+      thread('second'),
+    ]);
+    store.changeSelection(loaded.selection);
+
+    assert.deepEqual(window.writes, [
+      {
+        path: '/projects/p1/threads/first',
+        replace: true,
+      },
+    ]);
+    assert.deepEqual(routeIntent(threadRoute('p1', 'first'), loaded), {
+      kind: 'none',
+    });
+  });
+
+  test('a Thread chosen while the Project list loads keeps its route', () => {
+    const window = new FakeWindow('/projects/p1');
+    restore({ route: projectRoute, lookup: async (id) => thread(id) });
+    const store = routeSelectionStore.getState();
+    const selected = withSelection(emptyTree, {
+      projectId: 'p1',
+      threadId: 'second',
+    });
+    store.markUserSelection(selected.selection);
+    store.changeSelection(selected.selection);
+    store.changeSelection(
+      withThreads(selected, 'p1', [thread('first'), thread('second')])
+        .selection,
+    );
+
+    assert.deepEqual(window.writes, [
+      {
+        path: '/projects/p1/threads/second',
+        replace: false,
+      },
+    ]);
+  });
+
   test('an unreadable legacy record is nothing stored, and is removed', () => {
     new FakeWindow('/');
     const legacy = new FakeLegacy('{"selectedThreadId":"t1"}');
@@ -266,7 +409,7 @@ describe('selection writes', () => {
     // The Thread was deleted: the selection keeps only its Project.
     store.changeSelection({ projectId: 'p1' });
 
-    assert.deepEqual(window.writes, [{ path: '/', replace: true }]);
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
   });
 
   test('a stale user mark does not turn a later system change into a push', () => {
@@ -277,11 +420,11 @@ describe('selection writes', () => {
     store.changeSelection({ projectId: 'p1', threadId: 't1' });
     store.changeSelection({ projectId: 'p1' });
 
-    assert.deepEqual(window.writes, [{ path: '/', replace: true }]);
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
   });
 
-  test('a Project-only selection is the path /', () => {
-    assert.equal(pathFor({ projectId: 'p1' }), '/');
+  test('a Project-only selection keeps its own path', () => {
+    assert.equal(pathFor({ projectId: 'p1' }), '/projects/p1');
     assert.equal(pathFor({}), '/');
   });
 
@@ -295,11 +438,32 @@ describe('selection writes', () => {
   test('a navigation that could not be selected is replaced by the selection path', () => {
     const window = settledWindow({});
     routeSelectionStore.getState().changeSelection({ projectId: 'p1' });
+    window.writes.length = 0;
     window.current = '/projects/p1/threads/gone';
 
     rewriteRoute();
 
-    assert.deepEqual(window.writes, [{ path: '/', replace: true }]);
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
+  });
+
+  test('a wrong Project segment for the selected Thread is replaced', () => {
+    const window = settledWindow({ projectId: 'p1', threadId: 't1' });
+    window.current = '/projects/p2/threads/t1';
+
+    rewriteRoute();
+
+    assert.deepEqual(window.writes, [
+      { path: '/projects/p1/threads/t1', replace: true },
+    ]);
+  });
+
+  test('history falls back to the Project of a removed Thread', () => {
+    const window = settledWindow({});
+    window.current = '/projects/p1/threads/gone';
+
+    rewriteRoute({ projectId: 'p1' });
+
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
   });
 });
 
@@ -312,18 +476,23 @@ describe('navigations the layout did not make', () => {
 
   test('a described Thread is selected', () => {
     const intent = routeIntent(
-      threadRoute('p1', 't2'),
+      threadRoute('p2', 't2'),
       tree({ projectId: 'p1', threadId: 't1' }),
     );
 
     assert.equal(intent.kind, 'select');
-    assert.equal(intent.kind === 'select' ? intent.thread.id : '', 't2');
+    assert.deepEqual(
+      intent.kind === 'select'
+        ? [intent.thread.id, intent.thread.projectId]
+        : [],
+      ['t2', 'p1'],
+    );
   });
 
   test('a Thread the tree does not describe is restored', () => {
     assert.deepEqual(
       routeIntent(threadRoute('p9', 't9'), tree({ projectId: 'p1' })),
-      { kind: 'restore', threadId: 't9' },
+      { kind: 'restore', projectId: 'p9', threadId: 't9' },
     );
   });
 
@@ -337,13 +506,23 @@ describe('navigations the layout did not make', () => {
     );
   });
 
-  test('/ with a selected Thread keeps only its Project', () => {
+  test('a Thread path with a different Project asks for canonicalization', () => {
+    assert.deepEqual(
+      routeIntent(
+        threadRoute('p2', 't1'),
+        tree({ projectId: 'p1', threadId: 't1' }),
+      ),
+      { kind: 'canonical' },
+    );
+  });
+
+  test('/ with a selected Thread returns Home', () => {
     assert.deepEqual(
       routeIntent(workspaceRoute, tree({ projectId: 'p1', threadId: 't1' })),
-      { kind: 'project', projectId: 'p1' },
+      { kind: 'home' },
     );
     assert.deepEqual(routeIntent(workspaceRoute, tree({ projectId: 'p1' })), {
-      kind: 'none',
+      kind: 'home',
     });
   });
 });

@@ -157,7 +157,7 @@ describe('window stylesheets', () => {
       unlayered(shell, '.chrome-bar')
         ?.nodes.find((node) => node.type === 'decl' && node.prop === 'height')
         ?.toString(),
-      'height: 2.25rem',
+      'height: 40px',
     );
     const footer = unlayered(
       shell,

@@ -29,7 +29,7 @@ export interface TabRequest {
 }
 
 /** The icons a tab trigger may carry (1.1.0). */
-export type TabIcon = 'file' | 'file-diff' | 'terminal';
+export type TabIcon = 'file' | 'file-diff' | 'terminal' | 'thread';
 
 /** The selected tab of the active owner (1.1.0). */
 export interface CurrentTab {
@@ -70,7 +70,7 @@ export const tabRequestSchema = z
     title: z.string(),
     tag: z.string().min(1),
     props: z.record(z.string(), z.unknown()).optional(),
-    icon: z.enum(['file', 'file-diff', 'terminal']).optional(),
+    icon: z.enum(['file', 'file-diff', 'terminal', 'thread']).optional(),
     ariaLabel: z.string().optional(),
     tooltip: z.string().optional(),
   })

@@ -392,8 +392,10 @@ export function InsertThreadTurnNodes({
   navigating,
   following,
   blocks = noBlocks,
+  autoFocus = true,
 }: {
   readonly threadId: string;
+  readonly autoFocus?: boolean;
   readonly turns: readonly Turn[];
   /** Other bundles' blocks, in log order (`chat.views/v1`). */
   readonly blocks?: readonly PlacedBlock[];
@@ -504,12 +506,12 @@ export function InsertThreadTurnNodes({
 
           // Seat the caret in the prompt before focusing the editor. Focusing an
           // empty root would park it above the transcript instead.
-          if (decision === 'open') prompt.select();
+          if (decision === 'open' && autoFocus) prompt.select();
         },
         {
           // Transcript updates never move the caret. Reapplying its DOM selection
           // would scroll back to the input or dismiss a focused popover.
-          tag: opening ? undefined : SKIP_DOM_SELECTION_TAG,
+          tag: opening && autoFocus ? undefined : SKIP_DOM_SELECTION_TAG,
           // Reconcile the viewport only after Lexical has committed its DOM.
           onUpdate: () => {
             const settle = (): void => {
@@ -517,7 +519,7 @@ export function InsertThreadTurnNodes({
               if (following.current) settleScroll(scroll, 'follow');
               else if (decision === 'hold') settleScroll(scroll, 'hold');
             };
-            if (decision === 'open') editor.focus(settle);
+            if (decision === 'open' && autoFocus) editor.focus(settle);
             settle();
           },
         },
@@ -532,7 +534,16 @@ export function InsertThreadTurnNodes({
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [blocks, editor, following, navigating, onResume, threadId, turns]);
+  }, [
+    autoFocus,
+    blocks,
+    editor,
+    following,
+    navigating,
+    onResume,
+    threadId,
+    turns,
+  ]);
 
   /**
    * The prompt cannot be deleted. The sync above runs when the chat changes; this

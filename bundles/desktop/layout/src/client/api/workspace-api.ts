@@ -9,7 +9,13 @@
 // loop. The provisional features add their own adapters.
 
 import { isContractError, type Services } from 'bundle/contracts';
-import type { Page, Project, ProjectColor, Thread } from 'runtime/contracts';
+import type {
+  Page,
+  Project,
+  ProjectActivity,
+  ProjectColor,
+  Thread,
+} from 'runtime/contracts';
 import { z } from 'zod';
 
 import { projectColors } from '../domain/workspace.js';
@@ -163,6 +169,7 @@ const pageOf = (cursor: string | undefined) =>
 export interface WorkspaceApi {
   readonly projects: {
     list(): Promise<readonly Project[]>;
+    activity(): Promise<readonly ProjectActivity[]>;
     create(name: string): Promise<Project>;
     rename(projectId: string, name: string): Promise<Project>;
     /** Assigns a palette color, or clears it when none is named. */
@@ -206,6 +213,7 @@ export const createWorkspaceApi = ({
     projects: {
       list: () =>
         allPages((cursor) => host(() => runtime.projects(pageOf(cursor)))),
+      activity: () => host(() => runtime.projectActivity()),
       create: async (name) => {
         const valid = guardName(name);
         return await host(() => runtime.createProject({ name: valid }));
@@ -264,7 +272,7 @@ export const createWorkspaceApi = ({
       },
       create: async (id, name, parentThreadId) => {
         guardIdentifier(id);
-        const valid = guardName(name);
+        const valid = name === '' ? '' : guardName(name);
         if (parentThreadId !== undefined) guardIdentifier(parentThreadId);
         const project = projectId(id);
         // `parentThreadId` is sent only when non-empty, as the REST body was.
@@ -338,6 +346,7 @@ const bound = (): WorkspaceApi => {
 export const api: WorkspaceApi = {
   projects: {
     list: () => bound().projects.list(),
+    activity: () => bound().projects.activity(),
     create: (name) => bound().projects.create(name),
     rename: (id, name) => bound().projects.rename(id, name),
     setColor: (id, color) => bound().projects.setColor(id, color),

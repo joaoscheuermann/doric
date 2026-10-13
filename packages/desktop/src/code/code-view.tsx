@@ -114,6 +114,17 @@ export function CodeView({ language, value }: CodeViewProps) {
     }
   }, [language, value, ready]);
 
+  useEffect(() => {
+    if (!ready) return;
+    const scheme = matchMedia('(prefers-color-scheme: dark)');
+    const update = () => {
+      const loaded = monaco.current;
+      if (loaded) loaded.editor.setTheme(loaded.defineCodeViewTheme());
+    };
+    scheme.addEventListener('change', update);
+    return () => scheme.removeEventListener('change', update);
+  }, [ready]);
+
   return (
     <div
       ref={container}

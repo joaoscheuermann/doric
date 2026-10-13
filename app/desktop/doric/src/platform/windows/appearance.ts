@@ -29,6 +29,7 @@ export const nativeOptions = (
   platform: NodeJS.Platform,
   workArea: WorkArea,
   preload: string,
+  dark = true,
 ): Electron.BrowserWindowConstructorOptions => {
   const size = appearance.size ?? PLATFORM_DEFAULT_SIZE;
   const options: Electron.BrowserWindowConstructorOptions = {
@@ -49,8 +50,7 @@ export const nativeOptions = (
       ? { minHeight: size.minHeight }
       : {}),
     show: false,
-    // The app is dark only (nativeTheme.themeSource = 'dark').
-    backgroundColor: tokens.color(appearance.background, true),
+    backgroundColor: tokens.color(appearance.background, dark),
     ...(appearance.titleBar === 'integrated' && platform === 'darwin'
       ? {
           titleBarStyle: 'hidden' as const,
@@ -79,18 +79,18 @@ export const keepsWindowButtons = (
 ): boolean => appearance.titleBar === 'integrated' && platform === 'darwin';
 
 /**
- * The chrome a window's shell applies [S8-5]: in stage 8 the safe area is
- * the reserved width on every platform and in fullscreen, as today's
- * renderer reserves `pl-20` unconditionally.
+ * The chrome a window's shell applies. Fullscreen hides the native controls,
+ * so their reserved space returns to the content.
  */
 export const chromeFor = (
   titleBar: ParsedAppearance['titleBar'],
   tokens: WindowTokens,
+  fullscreen = false,
 ): WindowChrome => ({
   titleBar,
   height: tokens.titlebarHeight,
   safeArea:
-    titleBar === 'none'
+    titleBar === 'none' || fullscreen
       ? { top: 0, left: 0, right: 0 }
       : { top: 0, left: tokens.reservedWidth, right: 0 },
 });

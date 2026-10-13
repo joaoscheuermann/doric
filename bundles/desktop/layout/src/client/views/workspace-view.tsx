@@ -13,32 +13,40 @@ import {
 } from 'desktop/ui/empty';
 import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Toaster } from 'desktop/ui/sonner';
+import { Tabs } from 'desktop/ui/tabs';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
   type CSSProperties,
   createElement,
   StrictMode,
   useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
-import { ProjectPanel } from '../components/organisms/project-panel.js';
+import { Dashboard } from '../components/organisms/dashboard.js';
+import {
+  ProjectPanel,
+  ProjectPanelTabs,
+} from '../components/organisms/project-panel.js';
 import {
   ProjectSidebar,
   type SidebarActions,
   type SidebarModel,
 } from '../components/organisms/project-sidebar.js';
+import { ProjectTabBar } from '../components/organisms/project-tabs.js';
 import { WorkspaceSidebarFooter } from '../components/organisms/workspace-footer.js';
 import {
-  WorkspaceHeader,
-  WorkspaceSidebarHeader,
-} from '../components/organisms/workspace-header.js';
-import { WorkspaceTabs } from '../components/organisms/workspace-tabs.js';
+  WorkspaceTabBar,
+  WorkspaceTabs,
+} from '../components/organisms/workspace-tabs.js';
 import { ConversationTerminals } from '../components/templates/conversation-terminals.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
-import { threadPath } from '../domain/thread-tree.js';
+import { useProjectTabs } from '../hooks/use-project-tabs.js';
 import { useRegionItems } from '../hooks/use-region-items.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
@@ -46,6 +54,7 @@ import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
 import { bottomStore } from '../stores/bottom.js';
 import { panelStore } from '../stores/panel.js';
+import { workspaceTabsStore } from '../stores/workspace-tabs.js';
 
 /** The panel owns the sidebar width, so the sidebar fills whatever it drags to. */
 const panelWidth = {
@@ -61,6 +70,26 @@ const Region = ({ name }: { readonly name: string }) =>
 
 function Workspace() {
   const workspace = useWorkspace();
+  const [newTab, setNewTab] = useState(false);
+  const frame = useRef<HTMLDivElement>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  useLayoutEffect(() => {
+    if (focusRequest === 0) return;
+    const content = frame.current?.querySelector<HTMLElement>(
+      '[aria-label="Thread conversation"], main',
+    );
+    if (content) {
+      content.tabIndex = -1;
+      content.focus({ preventScroll: true });
+    }
+  }, [focusRequest]);
+  const projectTabs = useProjectTabs(
+    workspace.projects,
+    !workspace.loadingProjects && workspace.error === undefined,
+  );
+  useEffect(() => {
+    if (projectTabs.path !== '/') setNewTab(false);
+  }, [projectTabs.path]);
   const tabOwner =
     workspace.selectedThreadId ??
     (workspace.selectedProjectId
@@ -114,13 +143,6 @@ function Workspace() {
   const selectedProject = workspace.projects.find(
     (project) => project.id === workspace.selectedProjectId,
   );
-  const selectedThreadPath =
-    selectedThread === undefined
-      ? []
-      : threadPath(
-          workspace.threadsByProject[selectedThread.projectId] ?? [],
-          selectedThread.id,
-        );
   const openSettings = () => {
     void layoutServices()
       .use(CommandsV1)
@@ -130,83 +152,161 @@ function Workspace() {
       });
   };
 
-  return (
-    <SidebarProvider
-      style={panelWidth}
-      className="h-svh min-h-0 flex-col overflow-hidden"
-    >
-      <WorkspaceLayout
-        files={
-          <ProjectPanel
-            active={panelView}
-            onActiveChange={panel.select}
-            items={panelItems}
-          />
-        }
-        filesOpen={filesOpen}
-        fileViewer={
-          tabs.items.length === 0 || !tabOwner ? undefined : (
-            <WorkspaceTabs state={tabs} threadId={tabOwner} />
-          )
-        }
-        footer={
-          <footer
-            data-slot="workspace-footer"
-            className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-xs"
-          >
-            <Region name="layout.footer" />
-          </footer>
-        }
-        header={
-          <WorkspaceHeader
-            actions={<Region name="layout.header" />}
-            onSelectProject={actions.selectProject}
-            onSelectThread={actions.selectThread}
-            path={selectedThreadPath}
-            project={selectedProject}
-          />
-        }
-        onFilesOpenChange={panel.setOpen}
-        sidebar={
-          <ProjectSidebar
-            actions={sidebarActions}
-            after={<Region name="layout.sidebar" />}
-            model={model}
-          />
-        }
-        sidebarFooter={<WorkspaceSidebarFooter onOpenSettings={openSettings} />}
-        sidebarHeader={<WorkspaceSidebarHeader />}
+  const tabBar = (
+    <ProjectTabBar
+      trailing={projectTabs.path === '/' || projectTabs.path === '/projects'}
+      state={projectTabs.state}
+      path={projectTabs.path}
+      projects={workspace.projects}
+      navigate={(path) => {
+        setNewTab(false);
+        projectTabs.navigate(path);
+        setFocusRequest((count) => count + 1);
+      }}
+      close={projectTabs.close}
+      closeMany={projectTabs.closeMany}
+      move={projectTabs.move}
+      rename={(project, name) =>
+        actions.rename({ kind: 'project', value: project }, name)
+      }
+      onNewProject={() => {
+        projectTabs.navigate('/');
+        setNewTab(true);
+      }}
+    />
+  );
+  if (projectTabs.path === '/' || projectTabs.path === '/projects') {
+    return (
+      <div
+        ref={frame}
+        className="flex h-svh min-h-0 flex-col bg-background text-foreground"
       >
-        <SidebarInset className="min-h-0">
-          <ConversationTerminals
-            bottom={bottomVisible && <Region name="layout.main.bottom" />}
+        {tabBar}
+        <Dashboard
+          workspace={workspace}
+          all={!newTab || projectTabs.path !== '/'}
+          navigate={(path) => {
+            setNewTab(false);
+            projectTabs.navigate(path);
+          }}
+        />
+        <DeleteDialog
+          entity={workspace.deleting}
+          pending={workspace.deletingPending}
+          onDelete={actions.confirmDelete}
+          onOpenChange={(open) => {
+            if (!open) actions.dismissDelete();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={frame}
+      className="flex h-svh min-h-0 flex-col bg-background text-foreground"
+    >
+      <SidebarProvider
+        style={panelWidth}
+        className="min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <Tabs
+          value={tabs.selected ?? ''}
+          onValueChange={(id) => {
+            if (tabOwner) workspaceTabsStore.getState().select(tabOwner, id);
+          }}
+          className="min-h-0 flex-1 gap-0"
+        >
+          <WorkspaceLayout
+            header={tabBar}
+            viewerTabs={
+              tabs.items.length > 0 && tabOwner ? (
+                <WorkspaceTabBar state={tabs} threadId={tabOwner} />
+              ) : undefined
+            }
+            headerActions={
+              <>
+                <Region name="layout.header" />
+                <ProjectPanelTabs
+                  active={panelView}
+                  onActiveChange={panel.show}
+                  items={panelItems}
+                />
+              </>
+            }
+            files={<ProjectPanel active={panelView} items={panelItems} />}
+            filesOpen={filesOpen}
+            fileViewer={
+              tabs.items.length === 0 || !tabOwner ? undefined : (
+                <WorkspaceTabs state={tabs} />
+              )
+            }
+            footer={
+              <footer
+                data-slot="workspace-footer"
+                className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-xs"
+              >
+                <Region name="layout.footer" />
+              </footer>
+            }
+            onFilesOpenChange={panel.setOpen}
+            sidebar={
+              <ProjectSidebar
+                actions={sidebarActions}
+                after={<Region name="layout.sidebar" />}
+                model={model}
+              />
+            }
+            sidebarFooter={
+              <WorkspaceSidebarFooter onOpenSettings={openSettings} />
+            }
           >
-            <ThreadPane>
-              {selectedThread ? (
-                createElement('core-outlet')
-              ) : (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>No thread selected</EmptyTitle>
-                    <EmptyDescription>
-                      Select a thread to open its conversation.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </ThreadPane>
-          </ConversationTerminals>
-        </SidebarInset>
-      </WorkspaceLayout>
-      <DeleteDialog
-        entity={workspace.deleting}
-        pending={workspace.deletingPending}
-        onDelete={actions.confirmDelete}
-        onOpenChange={(open) => {
-          if (!open) actions.dismissDelete();
-        }}
-      />
-    </SidebarProvider>
+            <SidebarInset className="min-h-0">
+              <ConversationTerminals
+                bottom={bottomVisible && <Region name="layout.main.bottom" />}
+              >
+                <ThreadPane>
+                  {selectedThread ? (
+                    createElement('core-outlet')
+                  ) : (
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyTitle>
+                          {selectedProject?.name ?? 'No project selected'}
+                        </EmptyTitle>
+                        <EmptyDescription>
+                          Start a thread or select one from the sidebar.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                      {selectedProject && (
+                        <button
+                          type="button"
+                          className="dashboard-new"
+                          onClick={() =>
+                            actions.beginThread(selectedProject.id)
+                          }
+                        >
+                          New thread
+                        </button>
+                      )}
+                    </Empty>
+                  )}
+                </ThreadPane>
+              </ConversationTerminals>
+            </SidebarInset>
+          </WorkspaceLayout>
+        </Tabs>
+        <DeleteDialog
+          entity={workspace.deleting}
+          pending={workspace.deletingPending}
+          onDelete={actions.confirmDelete}
+          onOpenChange={(open) => {
+            if (!open) actions.dismissDelete();
+          }}
+        />
+      </SidebarProvider>
+    </div>
   );
 }
 

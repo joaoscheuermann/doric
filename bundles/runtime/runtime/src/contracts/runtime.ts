@@ -98,6 +98,22 @@ export interface VmSsh {
   readonly ssh: SandboxSshAccess;
 }
 
+/** A Project ordered by its own or its Threads' latest activity. */
+export interface ProjectActivity {
+  readonly project: Project;
+  readonly activityAt: string;
+  readonly latestActiveThreadId?: string;
+}
+
+export const projectActivitySchema: z.ZodType<
+  ProjectActivity,
+  ProjectActivity
+> = z.looseObject({
+  project: projectSchema,
+  activityAt: z.string(),
+  latestActiveThreadId: z.string().optional(),
+});
+
 /** The structural runtime: Projects, boot recovery, host stop and notices. */
 export interface Runtime {
   /**
@@ -137,6 +153,7 @@ export interface Runtime {
     page: { readonly limit: number; readonly cursor?: string },
     call?: CallArg,
   ): Promise<Page<Project>>;
+  projectActivity(call?: CallArg): Promise<readonly ProjectActivity[]>;
   renameProject(
     input: { readonly id: string; readonly name: string },
     call?: CallArg,
@@ -213,6 +230,7 @@ export const runtimeMethods = {
       .strict(),
     output: projectPageSchema,
   },
+  projectActivity: { input: noInput, output: z.array(projectActivitySchema) },
   renameProject: {
     input: z.object({ id: z.string(), name: z.string() }).strict(),
     output: optional(projectSchema),

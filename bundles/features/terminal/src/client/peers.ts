@@ -17,7 +17,6 @@ export interface ThreadRecord {
 export interface LayoutWorkspace {
   thread(threadId: string, call?: CallArg): ThreadRecord | undefined;
   selectedThread(call?: CallArg): ThreadRecord | undefined;
-  setBottomVisible(itemId: string, visible: boolean, call?: CallArg): void;
   subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 

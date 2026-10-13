@@ -25,6 +25,7 @@
     "runtime/v1": [
       "createProject",
       "deleteProject",
+      "projectActivity",
       "projects",
       "renameProject",
       "setProjectColor",

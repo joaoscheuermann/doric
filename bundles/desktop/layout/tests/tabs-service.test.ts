@@ -159,9 +159,16 @@ describe('tab owner', () => {
     assert.equal(tabOwnerOf(threadRoute, 'p2'), 't1');
   });
 
-  test('without a Thread route the selected Project owns them', () => {
+  test('the Project route gives the Project ownership', () => {
     assert.equal(
-      tabOwnerOf({ path: '/', pattern: '/', params: {} }, 'p1'),
+      tabOwnerOf(
+        {
+          path: '/projects/p1',
+          pattern: '/projects/:projectId',
+          params: { projectId: 'p1' },
+        },
+        'p1',
+      ),
       'project:p1',
     );
   });

@@ -169,8 +169,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   );
 
   assert.deepEqual(manifest.provides, [
-    // 1.1.0: the generation handover members (57-WP-H); 1.2.0: watchProject.
-    `${RuntimeV1.id}@1.2.0`,
+    // 1.3.0: Project activity summaries for the desktop dashboard.
+    `${RuntimeV1.id}@1.3.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3).
     `${RuntimeThreadsV1.id}@1.2.0`,

@@ -172,13 +172,22 @@ void describe('terminal client calls', () => {
   });
 });
 
-const storeFixture = (api = createTerminalApi(() => host())) => {
+const storeFixture = (
+  api = createTerminalApi(() => host()),
+  openTerminal?: (terminal: Terminal) => Promise<void>,
+) => {
   const listeners = new Map<string, (update: TerminalUpdate) => void>();
   const toasts: string[] = [];
   const closed: { id: string; threadId: string }[] = [];
   const refreshed: string[] = [];
+  const opened: Terminal[] = [];
   const store = createTerminalStore({
     api,
+    openTerminal:
+      openTerminal ??
+      (async (terminal) => {
+        opened.push(terminal);
+      }),
     watchProject: (projectId, listener) => {
       listeners.set(projectId, listener);
       return () => listeners.delete(projectId);
@@ -192,6 +201,7 @@ const storeFixture = (api = createTerminalApi(() => host())) => {
     toasts,
     closed,
     refreshed,
+    opened,
     emit: (projectId: string, update: TerminalUpdate) =>
       listeners.get(projectId)?.(update),
     listeners,
@@ -217,11 +227,10 @@ void describe('terminal store', () => {
     assert.deepEqual(f.store.terminals(), []);
   });
 
-  void test('a terminal leaving the list closes its agent tab and its manual tab', () => {
+  void test('a terminal leaving the list closes its workspace tab for either origin', () => {
     const f = storeFixture();
     f.store.follow('project-1');
     f.emit('project-1', { kind: 'snapshot', terminals: [agent, manual] });
-    f.store.showManual('thread-1', 'manual-1');
     f.emit('project-1', { kind: 'snapshot', terminals: [manual] });
     assert.deepEqual(f.closed, [
       { id: 'terminal:agent-1', threadId: 'thread-1' },
@@ -230,10 +239,6 @@ void describe('terminal store', () => {
     assert.deepEqual(f.closed.at(-1), {
       id: 'terminal:manual-1',
       threadId: 'thread-1',
-    });
-    assert.deepEqual(f.store.manual('thread-1'), {
-      manualId: undefined,
-      manualIds: [],
     });
     assert.deepEqual(f.store.terminals(), []);
   });
@@ -266,13 +271,13 @@ void describe('terminal store', () => {
     assert.equal(f.store.terminals().length, 1);
   });
 
-  void test('create lists the new shell and shows it; a failure is a toast', async () => {
+  void test('create lists the new shell and opens its workspace tab; a failure is a toast', async () => {
     const f = storeFixture();
     await f.store.create('thread-1');
-    assert.deepEqual(f.store.manual('thread-1'), {
-      manualId: 'terminal-1',
-      manualIds: ['terminal-1'],
-    });
+    assert.deepEqual(
+      f.opened.map(({ id }) => id),
+      ['terminal-1'],
+    );
     assert.deepEqual(
       f.store.terminals().map(({ id }) => id),
       ['terminal-1'],
@@ -286,20 +291,16 @@ void describe('terminal store', () => {
     ]);
   });
 
-  void test('manual tabs move, hide and close as the tab strip asks', () => {
-    const f = storeFixture();
-    f.store.showManual('thread-1', 'a');
-    f.store.showManual('thread-1', 'b');
-    f.store.moveManual('thread-1', 'b', 'a');
-    assert.deepEqual(f.store.manual('thread-1').manualIds, ['b', 'a']);
-    f.store.showManual('thread-1');
-    assert.equal(f.store.manual('thread-1').manualId, undefined);
-    f.store.showManual('thread-1', 'a');
-    f.store.closeManual('thread-1', 'a');
-    assert.deepEqual(f.store.manual('thread-1'), {
-      manualId: 'b',
-      manualIds: ['b'],
+  void test('a failed workspace-tab opening retains the created shell for reopening', async () => {
+    const f = storeFixture(undefined, async () => {
+      throw new Error('The workspace tab could not open.');
     });
+    await f.store.create('thread-1');
+    assert.deepEqual(
+      f.store.threadTerminals('thread-1').map(({ id }) => id),
+      ['terminal-1'],
+    );
+    assert.deepEqual(f.toasts, ['The workspace tab could not open.']);
   });
 
   void test('a failed stop is a toast', async () => {

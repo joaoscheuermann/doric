@@ -1,20 +1,12 @@
 // The window's terminal state (moved from the layout's provisional
-// `useTerminals` and the manual part of its tabs store): each followed
-// Project's terminal list, kept by `terminal/v1.watchProject`, and each
-// Thread's manual shells. A terminal that leaves its Project's list closes its
-// agent tab and its manual tab; a change of a Project's terminal activity
+// `useTerminals`): each followed Project's terminal list, kept by
+// `terminal/v1.watchProject`. A terminal that leaves its Project's list closes its
+// workspace tab; a change of a Project's terminal activity
 // (id, state, command, cwd) asks the files bundle to refresh that Project.
 
 import type { Disposable } from 'bundle/contracts';
 
 import type { TerminalApi } from './api.js';
-import {
-  closeManual,
-  emptyManual,
-  type ManualTerminals,
-  moveManualTab,
-  openManual,
-} from './domain/manual.js';
 import type { Terminal, TerminalUpdate } from './domain/terminals.js';
 
 /** The message of a failure, as the renderer's `messageFrom` read it. */
@@ -31,7 +23,9 @@ export interface TerminalStoreOptions {
   ) => () => void;
   /** Shows a failure the way the renderer's `toast.error` did. */
   readonly toastError: (message: string) => void;
-  /** Closes the agent tab `terminal:<id>` of the terminal's Thread. */
+  /** Opens a shell in the same workspace tab area as files and diffs. */
+  readonly openTerminal: (terminal: Terminal) => Promise<void>;
+  /** Closes the workspace tab `terminal:<id>` of the terminal's Thread. */
   readonly closeTab: (input: {
     readonly id: string;
     readonly threadId: string;
@@ -49,11 +43,6 @@ export interface TerminalStore {
   terminals(): readonly Terminal[];
   /** A Thread's terminals, in list order. */
   threadTerminals(threadId: string): readonly Terminal[];
-  manual(threadId: string): ManualTerminals;
-  /** Shows the manual shell `id` of the Thread, or hides the section. */
-  showManual(threadId: string, id?: string): void;
-  closeManual(threadId: string, id: string): void;
-  moveManual(threadId: string, from: string, to: string): void;
   /** Opens a manual shell on the Thread and shows it; failures are toasts. */
   create(threadId: string): Promise<void>;
   /** Stops or discards a terminal; failures are toasts. */
@@ -83,7 +72,6 @@ export const createTerminalStore = (
 ): TerminalStore => {
   const lists = new Map<string, readonly Terminal[]>();
   const watches = new Map<string, () => void>();
-  const manual = new Map<string, ManualTerminals>();
   const listeners = new Set<() => void>();
   let all: readonly Terminal[] = [];
 
@@ -92,19 +80,11 @@ export const createTerminalStore = (
     for (const listener of [...listeners]) listener();
   };
 
-  const setManual = (threadId: string, next: ManualTerminals) => {
-    manual.set(threadId, next);
-    changed();
-  };
-
   const removed = (terminal: Pick<Terminal, 'id' | 'threadId'>) => {
     options.closeTab({
       id: `terminal:${terminal.id}`,
       threadId: terminal.threadId,
     });
-    const state = manual.get(terminal.threadId);
-    if (state !== undefined)
-      manual.set(terminal.threadId, closeManual(state, terminal.id));
   };
 
   const setList = (projectId: string, next: readonly Terminal[]) => {
@@ -131,9 +111,6 @@ export const createTerminalStore = (
     if (update.kind === 'removed') {
       const terminal = previous.find((item) => item.id === update.terminalId);
       if (terminal !== undefined) removed(terminal);
-      else
-        for (const [threadId, state] of manual)
-          manual.set(threadId, closeManual(state, update.terminalId));
       setList(
         projectId,
         previous.filter((item) => item.id !== update.terminalId),
@@ -159,16 +136,6 @@ export const createTerminalStore = (
     terminals: () => all,
     threadTerminals: (threadId) =>
       all.filter((terminal) => terminal.threadId === threadId),
-    manual: (threadId) => manual.get(threadId) ?? emptyManual,
-    showManual: (threadId, id) =>
-      setManual(threadId, openManual(manual.get(threadId) ?? emptyManual, id)),
-    closeManual: (threadId, id) =>
-      setManual(threadId, closeManual(manual.get(threadId) ?? emptyManual, id)),
-    moveManual: (threadId, from, to) =>
-      setManual(
-        threadId,
-        moveManualTab(manual.get(threadId) ?? emptyManual, from, to),
-      ),
     create: async (threadId) => {
       try {
         const terminal = await options.api.create(threadId);
@@ -176,10 +143,7 @@ export const createTerminalStore = (
           terminal.projectId,
           upsertLast(lists.get(terminal.projectId) ?? [], terminal),
         );
-        setManual(
-          threadId,
-          openManual(manual.get(threadId) ?? emptyManual, terminal.id),
-        );
+        await options.openTerminal(terminal);
       } catch (error) {
         options.toastError(messageFrom(error));
       }
@@ -198,7 +162,6 @@ export const createTerminalStore = (
       for (const stop of watches.values()) stop();
       watches.clear();
       lists.clear();
-      manual.clear();
       listeners.clear();
       all = [];
     },

@@ -1,10 +1,9 @@
 // The terminal bundle's client part (stage 10, §3.10): the window's terminal
-// store over `terminal/v1`, and the four elements — the header's "New
-// terminal" button, the sidebar's terminal rows, the manual terminals of the
-// bottom section and the agent terminal tab. All of it is bound to the
+// store over `terminal/v1`, and the header's "New terminal" button,
+// sidebar terminal rows and shared workspace terminal view. All are bound to the
 // activation services, never to an element's (D9-17).
 //
-// The header and bottom region items and the sidebar rows are registered by
+// The header region item and the sidebar rows are registered by
 // `registerTerminalSurfaces` while the layout serves `layout.sidebar/v1`,
 // since WP-10N removed the layout's provisional terminals.
 
@@ -41,10 +40,7 @@ import {
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
 
-/** The bottom section item the manual terminals are drawn in. */
-export const MANUAL_ITEM_ID = 'terminal-manual';
-
-/** The region items of the header button and the manual terminals. */
+/** The region item of the header's new-terminal button. */
 export const terminalRegions: readonly {
   readonly region: string;
   readonly item: RegionItem;
@@ -53,14 +49,10 @@ export const terminalRegions: readonly {
     region: 'layout.header',
     item: { id: 'terminal-new', tag: 'terminal-new-button', order: 10 },
   },
-  {
-    region: 'layout.main.bottom',
-    item: { id: MANUAL_ITEM_ID, tag: 'terminal-manual' },
-  },
 ];
 
 /**
- * Adds the header button, the bottom section's manual terminals and the
+ * Adds the header button and the
  * sidebar's terminal rows (WP-10N). The rows' count follows each Thread's
  * Project on first use, as the renderer followed every loaded Project.
  */
@@ -92,70 +84,30 @@ export const registerTerminalSurfaces = (
   };
 };
 
-/**
- * Shows the bottom section while the selected Thread's manual terminal is
- * one the store lists, as the workspace view rendered it.
- */
-const followBottom = (
-  store: TerminalStore,
-  workspace: LayoutWorkspace,
-): (() => void) => {
-  let shown = false;
-  const sync = () => {
-    const thread = workspace.selectedThread();
-    const manualId =
-      thread === undefined ? undefined : store.manual(thread.id).manualId;
-    const visible =
-      manualId !== undefined &&
-      store.terminals().some((terminal) => terminal.id === manualId);
-    if (visible === shown) return;
-    shown = visible;
-    workspace.setBottomVisible(MANUAL_ITEM_ID, visible);
-  };
-  const fromStore = store.subscribe(sync);
-  const fromWorkspace = workspace.subscribe(sync);
-  sync();
-  return () => {
-    fromWorkspace.dispose();
-    fromStore.dispose();
-    if (shown) workspace.setBottomVisible(MANUAL_ITEM_ID, false);
-  };
-};
-
 const threadRoute = (projectId: string, threadId: string): string =>
   `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}`;
 
 /** A row's click: select the owning Thread, then show or open the terminal. */
-const opener =
-  (services: Services, store: TerminalStore) => (terminal: Terminal) => {
-    let workspace: LayoutWorkspace | undefined;
-    try {
-      workspace = services.use(LayoutWorkspaceV1);
-    } catch {
-      workspace = undefined;
-    }
-    const thread = workspace?.thread(terminal.threadId);
-    if (thread !== undefined)
-      services
-        .use(NavigationV1)
-        .navigate(threadRoute(thread.projectId, thread.id));
-    if (terminal.origin === 'user') {
-      store.showManual(terminal.threadId, terminal.id);
-      return;
-    }
-    void services
-      .use(LayoutTabsV1)
-      .open({
-        id: `terminal:${terminal.id}`,
-        title: terminal.command || 'Terminal',
-        tag: TERMINAL_VIEW_TAG,
-        props: { terminalId: terminal.id, showHeader: true },
-        icon: 'terminal',
-      })
-      // Only a window with nothing selected refuses, which a row's click
-      // has just selected.
-      .catch(() => undefined);
-  };
+const opener = (services: Services) => async (terminal: Terminal) => {
+  let workspace: LayoutWorkspace | undefined;
+  try {
+    workspace = services.use(LayoutWorkspaceV1);
+  } catch {
+    workspace = undefined;
+  }
+  const thread = workspace?.thread(terminal.threadId);
+  if (thread !== undefined)
+    services
+      .use(NavigationV1)
+      .navigate(threadRoute(thread.projectId, thread.id));
+  await services.use(LayoutTabsV1).open({
+    id: `terminal:${terminal.id}`,
+    title: terminal.command || 'Terminal',
+    tag: TERMINAL_VIEW_TAG,
+    props: { terminalId: terminal.id, showHeader: terminal.origin !== 'user' },
+    icon: 'terminal',
+  });
+};
 
 export function activate({ services }: ClientContext): Cleanup {
   const terminals = () => services.use(TerminalServiceV1);
@@ -169,6 +121,7 @@ export function activate({ services }: ClientContext): Cleanup {
   });
   const store = createTerminalStore({
     api,
+    openTerminal: opener(services),
     watchProject: watches.watchProject,
     toastError: (message) => toast.error(message),
     closeTab: (input) => {
@@ -189,7 +142,13 @@ export function activate({ services }: ClientContext): Cleanup {
     api,
     watches,
     store,
-    open: opener(services, store),
+    open: (terminal) => {
+      void opener(services)(terminal).catch((error: unknown) =>
+        toast.error(
+          error instanceof Error ? error.message : 'Could not open terminal.',
+        ),
+      );
+    },
   };
 
   const ui = services.use(UiV1);
@@ -197,13 +156,9 @@ export function activate({ services }: ClientContext): Cleanup {
   const defined = [
     ui.define('terminal-new-button', elements.newButton),
     ui.define('terminal-rows', elements.rows),
-    ui.define('terminal-manual', elements.manual),
     ui.define(TERMINAL_VIEW_TAG, elements.view),
   ];
 
-  const bottom = services.whenAvailable(LayoutWorkspaceV1, (workspace) =>
-    followBottom(store, workspace),
-  );
   const surfaces = services.whenAvailable(LayoutSidebarV1, (sidebar) => {
     const registered = registerTerminalSurfaces(
       services.use(RegionsV1),
@@ -222,7 +177,6 @@ export function activate({ services }: ClientContext): Cleanup {
 
   return () => {
     surfaces.dispose();
-    bottom.dispose();
     for (const element of defined.reverse()) element.dispose();
     store.dispose();
     watches.close();

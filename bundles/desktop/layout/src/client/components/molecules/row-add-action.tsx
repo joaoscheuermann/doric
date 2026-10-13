@@ -18,7 +18,7 @@ export function RowAddAction({ label, onAdd, startedAt }: RowAddActionProps) {
         <SidebarMenuBadge
           role="status"
           aria-label="Agent running"
-          className="top-1 right-1 font-light group-hover/tree-row:opacity-0 group-focus-within/tree-row:opacity-0"
+          className="top-1 right-1 font-normal group-hover/tree-row:opacity-0 group-focus-within/tree-row:opacity-0"
         >
           <span aria-hidden>{elapsed}</span>
         </SidebarMenuBadge>

@@ -73,6 +73,8 @@ it compares:
   (`export { Toaster, toast }`). Every `toast` call in a window then reaches the
   store that the window's `Toaster` reads, whichever platform chunk loaded it
   (stage 8, S8-21).
+- `sonner.tsx`: now defaults to Sonner's `system` theme so native notifications
+  follow the operating system while the window remains open.
 - `sidebar.tsx`: also defines and exports `SidebarScope`, the sidebar context
   without the wrapper element or the shortcut, for a bundle element that draws
   sidebar rows inside the layout's sidebar from its own React root (stage 10,
@@ -84,3 +86,21 @@ it compares:
 copies of `app/desktop/doric-renderer/src/assets/fonts`. `src/styles/fonts.css` holds
 the 12 `@font-face` rules from the renderer's `styles.css` (lines 5-169), with
 the URLs rebased to `../../assets/fonts/`.
+
+## Papermache visual tokens
+
+`src/tokens/tokens.ts` maps the theme values from the local Papermache capture
+`app.paper.design/assets/index-DtkxL5QJ.css` (2026-10-07, theme block around
+lines 109-250) into Doric's existing semantic tokens. The `--paper-*` variables
+preserve values used directly by the adapted dashboard and tabs: root and panel
+surfaces, two panel highlights, separators, controls, gray text levels, blue
+focus, thumbnails, compact type sizes, radii, and the inset control shadow.
+`src/styles/tokens.css` is generated from that source module by
+`scripts/build-tokens.mjs`.
+
+Papermache's macOS system font stack is used for interface text, with Doric's
+licensed Noto Sans as fallback. IBM Plex Mono remains the code and conversation
+face. Doric keeps its own Project colors. The shadcn `--ring` and `--destructive`
+tokens retain stronger contrast where its focus ring and tinted destructive
+button need it; `--paper-focus` and `--paper-red` carry Papermache's exact values
+for surfaces that use their original treatment.

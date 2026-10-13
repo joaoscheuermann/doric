@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla';
 
 import type { Selection } from '../domain/project-tree.js';
 import {
+  PROJECTS_ROUTE,
   pathFor,
   routeThread,
   WORKSPACE_ROUTE,
@@ -57,7 +58,16 @@ export const isWritingRoute = (): boolean => writing;
 const persist = (state: RouteSelectionState): Partial<RouteSelectionState> => {
   if (writer === undefined || !shouldWriteSelection(state.load, state.changed))
     return {};
-  const target = pathFor(state.selection);
+  if (
+    state.selection.projectId === undefined &&
+    writer.path()?.startsWith('/projects/') &&
+    !state.changed
+  )
+    return {};
+  const target =
+    state.selection.projectId === undefined && writer.path() === PROJECTS_ROUTE
+      ? PROJECTS_ROUTE
+      : pathFor(state.selection);
   const user = state.userPath === target;
   if (writer.path() !== target) {
     writing = true;
@@ -93,12 +103,13 @@ export const routeSelectionStore = createStore<RouteSelectionState>()(
 );
 
 /**
- * Puts the path back on the selection after a navigation named a Thread that
- * could not be selected (gone, or its lookup failed): a replace, so the entry
- * that named it is not kept.
+ * Replaces a path that cannot be used with the selected or supplied fallback,
+ * so the invalid history entry is not kept.
  */
-export const rewriteRoute = (): void => {
-  const target = pathFor(routeSelectionStore.getState().selection);
+export const rewriteRoute = (
+  selection: Selection = routeSelectionStore.getState().selection,
+): void => {
+  const target = pathFor(selection);
   if (writer === undefined || writer.path() === target) return;
   writing = true;
   try {
@@ -158,7 +169,12 @@ export type RestoreOptions = {
   readonly isActive: () => boolean;
   /** False once the user acted while the lookup was pending. */
   readonly isCurrent: () => boolean;
-  readonly onRestore: (thread: Thread) => void;
+  /** May resolve a child to its main Thread; null discards a superseded restore. */
+  readonly onRestore: (
+    thread: Thread,
+  ) => Selection | null | undefined | Promise<Selection | null | undefined>;
+  /** Picks the Project fallback after a direct Thread link resolves as deleted. */
+  readonly onMissingProject: (projectId: string) => Selection;
 };
 
 /**
@@ -177,6 +193,7 @@ export const startRestore = ({
   isActive,
   isCurrent,
   onRestore,
+  onMissingProject,
 }: RestoreOptions): void => {
   const store = routeSelectionStore.getState();
   const legacyValue = legacy.read();
@@ -203,15 +220,37 @@ export const startRestore = ({
     return;
   }
   void lookup(stored).then(
-    (thread) => {
+    async (thread) => {
       if (!isActive()) return;
       // A user who acted while restoration was pending owns the newer state.
-      if (thread !== undefined && isCurrent()) {
-        onRestore(thread);
-        routeSelectionStore.setState({
-          selection: { projectId: thread.projectId, threadId: thread.id },
-          changed: true,
-        });
+      if (isCurrent()) {
+        if (thread !== undefined) {
+          let restored: Selection | null | undefined;
+          try {
+            restored = await onRestore(thread);
+          } catch {
+            if (isActive()) settle('failed');
+            return;
+          }
+          if (!isActive()) return;
+          if (restored !== null) {
+            routeSelectionStore.setState({
+              selection: restored ?? {
+                projectId: thread.projectId,
+                threadId: thread.id,
+              },
+              changed: true,
+            });
+          }
+        } else {
+          const projectId = routeThread(route)?.projectId;
+          if (projectId !== undefined) {
+            routeSelectionStore.setState({
+              selection: onMissingProject(projectId),
+              changed: true,
+            });
+          }
+        }
       }
       settle('restored');
     },

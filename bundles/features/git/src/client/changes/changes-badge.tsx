@@ -14,7 +14,7 @@ export function ChangesBadge({ services }: { readonly services: Services }) {
   const { project, thread } = useSelection(services);
   const changes = useChanges(project?.id, thread?.cwd);
   if (changes.read.status !== 'ready') return null;
-  return (
-    <ChangeCounts {...changedLineTotals(changes.read.value.repositories)} />
-  );
+  const totals = changedLineTotals(changes.read.value.repositories);
+  if (totals.added === 0 && totals.removed === 0) return null;
+  return <ChangeCounts {...totals} />;
 }

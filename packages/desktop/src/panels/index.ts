@@ -2,6 +2,17 @@
 // changes, terminal and resource surfaces, and the layout's strips), served
 // once per window so dnd-kit and the toast store are shared. Nothing here
 // names a bundle's concept: a bundle passes its own rows, labels and colours.
+// Custom strips must use this same dnd-kit instance as the shared sorting hooks.
+export { closestCenter, DndContext } from '@dnd-kit/core';
+export {
+  restrictToFirstScrollableAncestor,
+  restrictToHorizontalAxis,
+} from '@dnd-kit/modifiers';
+export {
+  horizontalListSortingStrategy,
+  SortableContext,
+} from '@dnd-kit/sortable';
+
 export * from './expansion.js';
 export * from './file-tree.js';
 export * from './move-item.js';

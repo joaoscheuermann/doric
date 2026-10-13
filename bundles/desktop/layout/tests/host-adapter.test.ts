@@ -50,6 +50,7 @@ const unexpected = (): never => {
 
 const runtimeHost = (overrides: Partial<RuntimeHost> = {}): RuntimeHost => ({
   projects: unexpected,
+  projectActivity: unexpected,
   createProject: unexpected,
   renameProject: unexpected,
   setProjectColor: unexpected,
@@ -334,6 +335,19 @@ describe('outcomes', () => {
 
     assert.equal(created.name, 'Child');
     assert.equal(created.parentThreadId, parentId);
+  });
+
+  test('an initial unnamed Thread retains its empty name', async () => {
+    const created = await adapter(
+      {},
+      {
+        createThread: async ({ name }) => ({
+          status: 'created',
+          thread: { ...thread, name },
+        }),
+      },
+    ).threads.create(projectId, '');
+    assert.equal(created.name, '');
   });
 });
 

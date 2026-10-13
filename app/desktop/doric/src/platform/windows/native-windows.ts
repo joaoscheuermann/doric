@@ -9,7 +9,7 @@ import {
   openWindowRequestSchema,
   windowAppearanceSchema,
 } from 'bundle/contracts';
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, nativeTheme, screen } from 'electron';
 
 import type { PlatformLog } from '../log';
 import { doricUrl } from '../protocol/scheme';
@@ -235,6 +235,7 @@ export class NativeWindows {
         platform,
         screen.getPrimaryDisplay().workAreaSize,
         preload,
+        nativeTheme.shouldUseDarkColors,
       ),
     );
     const contents = window.webContents;
@@ -301,7 +302,7 @@ export class NativeWindows {
     const chrome = () =>
       push(contents, {
         type: 'chrome',
-        chrome: chromeFor(appearance.titleBar, tokens),
+        chrome: chromeFor(appearance.titleBar, tokens, window.isFullScreen()),
       });
 
     window.on('enter-full-screen', chrome);

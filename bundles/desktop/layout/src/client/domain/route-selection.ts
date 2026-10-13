@@ -4,14 +4,19 @@ import type { ProjectTree, Selection } from './project-tree.js';
 import type { Thread } from './workspace.js';
 
 /**
- * The window path is the persisted selection (stage 9, §5.5): a selected
- * Thread is `/projects/<projectId>/threads/<threadId>` and everything else,
- * a Project-only selection included, is `/`. The rules here are pure; the
+ * The window path is the persisted selection: Home is `/`, a Project is
+ * `/projects/<projectId>`, and a selected Thread is
+ * `/projects/<projectId>/threads/<threadId>`. The rules here are pure; the
  * route-selection store and hook apply them.
  */
 export const THREAD_ROUTE = '/projects/:projectId/threads/:threadId';
 
 export const WORKSPACE_ROUTE = '/';
+export const PROJECTS_ROUTE = '/projects';
+export const PROJECT_ROUTE = '/projects/:projectId';
+
+export const projectPath = (projectId: string): string =>
+  `/projects/${encodeURIComponent(projectId)}`;
 
 export const threadPath = (projectId: string, threadId: string): string =>
   `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}`;
@@ -36,7 +41,9 @@ export const routeThread = (
 export const pathFor = (selection: Selection): string =>
   selection.projectId !== undefined && selection.threadId !== undefined
     ? threadPath(selection.projectId, selection.threadId)
-    : WORKSPACE_ROUTE;
+    : selection.projectId !== undefined
+      ? projectPath(selection.projectId)
+      : WORKSPACE_ROUTE;
 
 /** A described Thread anywhere in the tree. */
 export const describedThread = (
@@ -54,19 +61,26 @@ export const describedThread = (
  * What a navigation the layout did not make asks of the selection (back,
  * forward, a link):
  *
- * - `none`: the route already shows the selection, or is not the
- *   workspace's.
+ * - `none`: the route already shows the selection, or is not the workspace's.
  * - `select`: the route names a Thread the tree describes.
  * - `restore`: the route names a Thread the tree does not describe yet; it
  *   is looked up the way a restored selection is.
- * - `project`: the route is `/` while a Thread is selected; the selection
- *   keeps only its Project.
+ * - `canonical`: the route's Project disagrees with the already selected
+ *   Thread; replace it with the Thread's actual Project path.
+ * - `project`: the route names a Project view.
+ * - `home`: the route names Home or the full Project list.
  */
 export type RouteIntent =
   | { readonly kind: 'none' }
   | { readonly kind: 'select'; readonly thread: Thread }
-  | { readonly kind: 'restore'; readonly threadId: string }
-  | { readonly kind: 'project'; readonly projectId: string };
+  | {
+      readonly kind: 'restore';
+      readonly projectId: string;
+      readonly threadId: string;
+    }
+  | { readonly kind: 'project'; readonly projectId: string }
+  | { readonly kind: 'canonical' }
+  | { readonly kind: 'home' };
 
 export const routeIntent = (
   match: RouteMatch | undefined,
@@ -75,18 +89,32 @@ export const routeIntent = (
   const target = routeThread(match);
   const selection = tree.selection;
   if (target !== undefined) {
-    if (target.threadId === selection.threadId) return { kind: 'none' };
+    if (target.threadId === selection.threadId) {
+      return target.projectId === selection.projectId
+        ? { kind: 'none' }
+        : { kind: 'canonical' };
+    }
     const thread = describedThread(tree, target.threadId);
     return thread === undefined
-      ? { kind: 'restore', threadId: target.threadId }
+      ? {
+          kind: 'restore',
+          projectId: target.projectId,
+          threadId: target.threadId,
+        }
       : { kind: 'select', thread };
   }
+  if (match?.pattern === PROJECT_ROUTE) {
+    const projectId = match.params.projectId;
+    return projectId === undefined ||
+      (projectId === selection.projectId && selection.threadId === undefined)
+      ? { kind: 'none' }
+      : { kind: 'project', projectId };
+  }
   if (
-    match?.pattern === WORKSPACE_ROUTE &&
-    selection.threadId !== undefined &&
+    (match?.pattern === WORKSPACE_ROUTE || match?.pattern === PROJECTS_ROUTE) &&
     selection.projectId !== undefined
   ) {
-    return { kind: 'project', projectId: selection.projectId };
+    return { kind: 'home' };
   }
   return { kind: 'none' };
 };
@@ -100,4 +128,6 @@ export const tabOwnerOf = (
   selectedProjectId: string | undefined,
 ): string | undefined =>
   routeThread(match)?.threadId ??
-  (selectedProjectId ? `project:${selectedProjectId}` : undefined);
+  (match?.pattern === PROJECT_ROUTE && selectedProjectId
+    ? `project:${selectedProjectId}`
+    : undefined);

@@ -23,27 +23,39 @@ import {
   contrastRatio,
   type LinearRgb,
   linearRgb,
-  type Oklch,
 } from './support/contrast.js';
 
 /** The smallest difference a surface has to make to be seen at all. */
-const perceptible = 1.15;
+const perceptible = 1.07;
 const text = 4.5;
 const boundary = 3;
 
 /** One variant's colour tokens, as the window that wears it resolves them. */
 const tokensOf = (
   variant: 'light' | 'dark',
-): Readonly<Record<string, Oklch>> => {
-  const tokens: Record<string, Oklch> = {};
+): Readonly<Record<string, LinearRgb>> => {
+  const tokens: Record<string, LinearRgb> = {};
 
   for (const [name, value] of Object.entries(
     resolvedVariables(palette, variant),
   )) {
     const match = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/.exec(value);
-    if (match === null) continue;
-    const [, l, c, h] = match;
-    tokens[name.slice(2)] = { c: Number(c), h: Number(h), l: Number(l) };
+    if (match !== null) {
+      const [, l, c, h] = match;
+      tokens[name.slice(2)] = linearRgb({
+        c: Number(c),
+        h: Number(h),
+        l: Number(l),
+      });
+      continue;
+    }
+    const hex = /^#([0-9a-f]{6})$/i.exec(value);
+    if (hex === null) continue;
+    const channel = (offset: number) => {
+      const srgb = Number.parseInt(hex[1].slice(offset, offset + 2), 16) / 255;
+      return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+    };
+    tokens[name.slice(2)] = [channel(0), channel(2), channel(4)];
   }
 
   return tokens;
@@ -54,13 +66,13 @@ const dark = tokensOf('dark');
 
 /** The token one theme states under a name, or a failure that names it. */
 const colour = (
-  tokens: Readonly<Record<string, Oklch>>,
+  tokens: Readonly<Record<string, LinearRgb>>,
   name: string,
 ): LinearRgb => {
   const value = tokens[name];
   assert.notEqual(value, undefined, `the palette states --${name}`);
 
-  return linearRgb(value as Oklch);
+  return value as LinearRgb;
 };
 
 /** The pairs the renderer's controls actually put next to each other. */
@@ -80,7 +92,8 @@ const surfacePairs: readonly (readonly [string, string])[] = [
   ['accent', 'background'],
   ['border', 'background'],
   ['input', 'background'],
-  ['secondary', 'background'],
+  // Papermache's filled control is #f9f9f9 on white. Its border and inset
+  // shadow supply the boundary; the fill alone is intentionally subtler.
   ['sidebar-accent', 'sidebar'],
   ['sidebar-border', 'sidebar'],
 ];

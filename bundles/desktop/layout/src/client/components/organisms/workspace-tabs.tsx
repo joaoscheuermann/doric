@@ -3,14 +3,22 @@
 // tabs to the files, git and terminal bundles.
 
 import { TabStrip } from 'desktop/ui/panels';
-import { Tabs, TabsContent } from 'desktop/ui/tabs';
-import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
+import { TabsContent } from 'desktop/ui/tabs';
+import {
+  FileDiffIcon,
+  FileIcon,
+  MessageSquareIcon,
+  TerminalIcon,
+} from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
+import { LayoutTabsV1, type TabIcon } from '../../../contracts/index.js';
 import type { WorkspaceTabs as TabsState } from '../../domain/workspace-tabs.js';
+import { layoutServices } from '../../services/layout-services.js';
+import { workspaceStore } from '../../stores/workspace.js';
 import { workspaceTabsStore } from '../../stores/workspace-tabs.js';
 
-export function WorkspaceTabs({
+export function WorkspaceTabBar({
   state,
   threadId,
 }: {
@@ -19,65 +27,68 @@ export function WorkspaceTabs({
 }) {
   const actions = workspaceTabsStore.getState();
   return (
+    <TabStrip
+      variant="project"
+      label="Files, changes, terminals and threads"
+      selected={state.selected}
+      onMove={(from, to) => actions.move(threadId, from, to)}
+      onClose={(id) => {
+        void layoutServices()
+          .use(LayoutTabsV1)
+          .close({ id, threadId })
+          .catch((reason: unknown) => workspaceStore.getState().fail(reason));
+      }}
+      items={state.items.flatMap((tab) =>
+        tab.kind === 'element'
+          ? [
+              {
+                // Another bundle's tab (layout.tabs/v1): its title, and
+                // from 1.1.0 the icon, aria label and tooltip it asked for.
+                id: tab.id,
+                label: tab.title,
+                ariaLabel: tab.ariaLabel ?? tab.title,
+                title: tab.tooltip ?? tab.title,
+                icon: tabIcon(tab.icon),
+              },
+            ]
+          : [],
+      )}
+    />
+  );
+}
+
+export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
+  return (
     <section
-      aria-label="Files, changes and terminals"
+      aria-label="Files, changes, terminals and threads"
       className="flex h-full min-h-0 flex-col bg-sidebar"
     >
-      <Tabs
-        value={state.selected}
-        onValueChange={(id) => actions.select(threadId, id)}
-        className="min-h-0 min-w-0 flex-1 gap-0"
-      >
-        <header className="flex chrome-bar shrink-0 items-center gap-1 border-b px-2">
-          <TabStrip
-            label="Files, changes and terminals"
-            selected={state.selected}
-            onMove={(from, to) => actions.move(threadId, from, to)}
-            onClose={(id) => actions.close(threadId, id)}
-            items={state.items.flatMap((tab) =>
-              tab.kind === 'element'
-                ? [
-                    {
-                      // Another bundle's tab (layout.tabs/v1): its title, and
-                      // from 1.1.0 the icon, aria label and tooltip it asked for.
-                      id: tab.id,
-                      label: tab.title,
-                      ariaLabel: tab.ariaLabel ?? tab.title,
-                      title: tab.tooltip ?? tab.title,
-                      icon: tabIcon(tab.icon),
-                    },
-                  ]
-                : [],
-            )}
-          />
-        </header>
-        {/* Keep panels in stable DOM order when their triggers are moved. */}
-        {state.items
-          .slice()
-          .sort((left, right) => left.id.localeCompare(right.id))
-          .flatMap((tab) =>
-            tab.kind === 'element'
-              ? [
-                  <TabsContent
-                    key={tab.id}
-                    value={tab.id}
-                    forceMount
-                    hidden={state.selected !== tab.id}
-                    className="min-h-0 flex-1 data-[active=true]:flex data-[active=true]:flex-col"
-                    data-active={state.selected === tab.id}
-                  >
-                    <ElementTab element={tab.element} />
-                  </TabsContent>,
-                ]
-              : [],
-          )}
-      </Tabs>
+      {/* Keep panels in stable DOM order when their triggers are moved. */}
+      {state.items
+        .slice()
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .flatMap((tab) =>
+          tab.kind === 'element'
+            ? [
+                <TabsContent
+                  key={tab.id}
+                  value={tab.id}
+                  forceMount
+                  hidden={state.selected !== tab.id}
+                  className="min-h-0 flex-1 data-[active=true]:flex data-[active=true]:flex-col"
+                  data-active={state.selected === tab.id}
+                >
+                  <ElementTab element={tab.element} />
+                </TabsContent>,
+              ]
+            : [],
+        )}
     </section>
   );
 }
 
 /** The trigger icon an element tab asked for (`layout.tabs/v1@1.1.0`). */
-function tabIcon(icon: 'file' | 'file-diff' | 'terminal' | undefined) {
+function tabIcon(icon: TabIcon | undefined) {
   switch (icon) {
     case 'file':
       return <FileIcon />;
@@ -85,6 +96,8 @@ function tabIcon(icon: 'file' | 'file-diff' | 'terminal' | undefined) {
       return <FileDiffIcon />;
     case 'terminal':
       return <TerminalIcon />;
+    case 'thread':
+      return <MessageSquareIcon />;
     default:
       return null;
   }

@@ -169,8 +169,8 @@ dispatcher routes over the host bridge (`/doric/bridge`) or to the desktopMain
 generation; the semantic IPC channels and the main-process Thread history are
 gone, and the Thread history snapshot is the `history` bundle's
 `history.snapshots/v1` cache in desktopMain. The renderer keeps the
-Threads it has read for each Project, so every open Project row renders its own
-subtree while live updates continue to follow the selected Project alone. A
+Threads it has read for each Project; the sidebar renders the selected Project's
+tree while live updates follow that Project alone. A
 prompt that finishes is announced to the operating system: the `notifications`
 bundle (desktopMain, since stage 10) reads the terminal event — `prompt.finished`, the one a client
 acknowledges prompt completion by — into the Thread's name and the outcome
@@ -180,17 +180,17 @@ notification, bounded again on both of its lines and dropped in silence where
 the platform supports none, so a missing notice never hides a completion the
 Thread's own log still states.
 The macOS workspace window retains always-visible native traffic lights over a
-renderer-owned draggable title bar. Splash, native theme, and renderer default
-to dark before React starts. The compact, resizable shadcn sidebar lists named
-Projects and recursive Threads, supports inline create and rename, marks each
-Project with a color the host assigns from a fixed palette when the Project is
-created, and shows that color with a chevron for the row's open state. Rows keep
-their own open state: opening one leaves the others exactly as they were and the
-selection never closes a row, so a Project's Threads stay on screen while another
-Project is opened or selected. Projects start closed; Threads start open over
-their children. The sidebar exposes context actions
-for create, color, lifecycle-aware delete, and copying Thread IDs.
-The tree uses font weight 300. A running Thread's name uses shadcn's shimmer,
+renderer-owned draggable title bar. Splash, native theme, renderer, Monaco and
+notifications follow the system light or dark preference, including changes
+while a window is open. The compact, resizable shadcn sidebar lists only the
+selected Project's recursive Threads under a Threads label and an add action.
+It has no separate header or collapse button. Threads start open over their
+children and retain their independent expansion state. The sidebar supports
+inline create and rename and context actions for child creation,
+lifecycle-aware delete, and copying Thread IDs. Projects retain the color the
+host assigns from a fixed palette; their navigation and actions live in the
+Project tabs and Dashboard.
+The tree uses the Papermache UI's regular font weight. A running Thread's name uses shadcn's shimmer,
 and its add-action position shows elapsed execution time until hover or keyboard
 focus reveals the add button. Once complete, the last execution's duration is
 available in the row's hover title. Thread reads derive timing from the latest
@@ -201,8 +201,17 @@ while blur discards it without an API call. The draft row wears the mark the
 entity will wear — the Project's color mark, empty until the host assigns it,
 and a Thread's message icon, or the Git or GitHub icon once the host marks the
 Thread's working directory as a repository — never a generic file icon.
-Selecting a Thread opens its durable
-event-derived conversation; the header names it. The app keeps a best-effort
+Selecting a root Thread opens its durable event-derived conversation on the left,
+with no conversation header. Opening a subthread from the tree or a conversation
+link opens a reusable workspace tab on the right, preserving the current main
+Thread in the same Project. A direct subthread route first establishes its root
+conversation on the left. The subthread tab contains its history, composer and
+send/pause/queue controls, scoped to that Thread; composer signals and send requests
+are isolated by Thread so simultaneous conversations cannot send each other's draft.
+Switching tabs preserves the mounted conversation. Closing its tab only closes
+the view, without terminating or deleting the Thread. Renames update the tab title;
+deleting the Thread removes its tab after the Project tree confirms removal.
+The app keeps a best-effort
 local snapshot of each Thread's durable event log in the Electron main process:
 a Thread's conversation renders instantly from that snapshot when it opens, then
 reconciles through the subscription cursor and rewind markers. The conversation surface is, for now, deliberately bare: the rendering of it is
@@ -228,17 +237,43 @@ chevron. The prefix never wraps, and long titles truncate with an ellipsis.
 The title navigates independently of the toggle. Opening reveals the recorded
 status and read-only Markdown. Mouse and keyboard share the node's open state,
 which survives transcript updates.
-The packaged CSP permits fonts from `self`
-only, and the faces vendored by `packages/desktop` under `assets/fonts` are the only ones the
-renderer wears: Noto Sans for the app's own surfaces, and IBM Plex Mono for the
-conversation body alone. The sidebar
+The packaged CSP permits downloaded fonts from `self` only. App surfaces use
+the macOS system sans stack with vendored Noto Sans as fallback, while the
+conversation body uses vendored IBM Plex Mono. The sidebar
 tree follows the selected Project's live
 subscription, so a
 Thread created by an agent appears without a manual refresh. The selected Thread
-persists locally across app
-restarts. One
-full-height resize handle owns the sidebar boundary across header and content
-and disappears when the sidebar closes; it draws no grip of its own. A segmented
+persists through the Electron window path across app restarts. Home is `/`, the
+full Project list is `/projects`, a Project view is `/projects/:projectId`, and
+direct Thread routes remain available. A fixed Dashboard tab opens `/projects`
+directly; the all-Projects sidebar has no Doric avatar or brand heading. Locally saved
+Project tabs remember their list view, order and last path. The fixed 40-pixel
+top bar uses the panel surface (#2a2a2a in dark mode) and follows Papermache's
+compact pill tabs: Dashboard stays pinned, the active
+tab has a subtly raised neutral control surface. Project tabs show the Project's
+colored avatar, with neutral backgrounds and shadows and no colored border.
+They support animated pointer and keyboard sorting and inline rename
+through the host, retaining the saved title until confirmation. The macOS
+traffic-light inset is released in fullscreen through the existing chrome event.
+The tab bar's plus button alone opens Papermache's centered new-page layout
+with actions, search and a recent list, without automatically opening the create
+form. This is transient view state: startup and reload show the full Project list
+even if the saved route is `/`. The Projects sidebar has no Home link, and closing
+the last active Project tab returns to `/projects`. `/projects` uses its Finder layout with a 240-pixel navigation
+sidebar, a fixed list view without a view selector and the same Project actions.
+Project list and recent rows place the colored avatar beside the name without
+a thumbnail preview. Color selection, clearing the color and deletion live in
+the row's context menu; there is no ellipsis action button.
+The Projects heading has 32 pixels of top padding and its list content has 48;
+previously saved grid preferences do not change this view. Opening a Project
+without an explicit Thread selects the first available Thread after its tree
+loads. Returning to a Project tab preserves its remembered Thread path. Creating
+a Project in the desktop also creates an initial unnamed Thread and opens it
+selected. Its stored name is empty and the tree displays Untitled until rename.
+If that Thread creation fails after the Project was saved, the desktop opens the
+saved Project and reports the failure without resubmitting Project creation. One
+full-height resize handle owns the sidebar boundary; the sidebar stays expanded
+and the handle draws no grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to and its reasoning effort — beside the
@@ -295,15 +330,16 @@ branches, conflicts and in-progress Git operations are refused. Active prompts o
 terminal commands in the same worktree block switching under the Project mutation
 queue. A successful switch revalidates Git summaries, files and comparisons together;
 failures use toasts. The popover retains ahead/behind, dirty and operation details.
-The header
-names the selected Thread as a breadcrumb of its
-Project and the chain of Threads above it, and every part but the last selects
-what it names.
+The Project tab bar is the workspace's only top header. Its right side hosts
+the New terminal action followed by Files/Changes tabs. These tabs use the
+standard shadcn Toggle with only an icon and an accessible name, with only
+the active view pressed. Changes shows 12-pixel, regular-weight added/removed
+counts only when at least one line was added or removed. The
+conversation has no breadcrumb or title header.
 
 A Project-scoped sandbox surface sits in a resizable right-hand panel that starts
-open, and whose collapsed state is a narrow rail carrying its own toggle, so the
-one control that expands and collapses the panel stays at the window's right
-corner and never duplicates the sidebar's own toggle. It reads the selected
+open. It has no header or hide button; selecting a compact panel tab in the
+Project tab bar also reopens the panel if it was collapsed by resizing. It reads the selected
 Project's one sandbox, but roots its tree at the selected Thread's working
 directory rather than at the workspace root, so selecting another Thread
 re-roots what it shows while the sandbox it reads stays the Project's, and it
@@ -323,7 +359,7 @@ without sending file contents or patches to the renderer.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-panel's header, in place of a title. The panel's footer carries the hardware
+Project tab bar's right side. The panel's footer carries the hardware
 monitor and shares the conversation footer's height. The monitor reports the
 selected Project's sandbox — the container's own CPU against the cores it was
 given and its memory against its cgroup limit — beside the machine Doric runs
@@ -338,16 +374,20 @@ or unknown — while the machine half depends on no lease. Working-directory,
 branch and changes controls appear only in the conversation footer.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
-mixing files, individual Git comparisons, and agent terminals; opening the same item selects its existing
+mixing files, individual Git comparisons, both agent and manual terminals, and
+subthread conversations; opening the same item selects its existing
 tab, and closing the last tab removes the division. A file tab's footer states
-the chain the file was reached through. All tab bars use shadcn Tabs with the line variant
-inside a horizontal ScrollArea. Tabs can be reordered within their own bar by
-dragging or Alt+Shift+Left/Right; workspace and manual-terminal order belongs to
-the Thread. Reordering preserves mounted editors and terminal sessions. A selected
-closable tab shows its close button in the normal layout; an inactive tab reserves
-the same space and reveals its close button on hover with an opacity-only fade.
-Hover covers the full tab, including its padding and underline; inactive tabs
-show a faint underline on hover while the selected underline stays solid.
+the chain the file was reached through. The division extends into the main
+40-pixel header: Project tabs remain on its left, while file, diff, terminal and subthread
+tabs occupy its right side before the terminal and Files/Changes controls.
+The header seam follows the content division when resized, including dragging
+the seam within the header. There is no second tab bar inside the viewer.
+Its tabs use the Project tabs' 28-pixel neutral pills, 12-pixel medium labels,
+6-pixel corners and subtle active shadow. Horizontal overflow has no visible
+scrollbar. Tabs can be reordered within their own bar by dragging or
+Alt+Shift+Left/Right; workspace order belongs to the Thread. Reordering and
+switching tabs preserve mounted editors and terminal sessions. The close control
+is subdued until hover; middle-click also closes a tab.
 Reduced-motion preferences disable these transitions.
 Tab sorting uses dnd-kit with a six-pixel pointer activation threshold, horizontal
 movement, animated insertion previews and automatic scrolling at the bar's edges.
@@ -412,11 +452,11 @@ from keyboard input.
 The left sidebar lists terminals below their owning Thread. Agent rows show
 `command · elapsed (timeout)`; manual rows show the current command or shell
 name when idle. Agent terminals open as tabs beside files. The shell icon in
-right of the conversation header creates a manual shell in the selected Thread's
-working directory and opens a vertically resizable section below its
-conversation. This section shows tabs for the manual terminals opened in that
-Thread and preserves their emulators while switching tabs. Closing a tab or
-hiding a section leaves the process running;
+right of the Project tab bar creates a manual shell in the selected Thread's
+working directory and opens it in the workspace section beside the conversation,
+alongside files and diffs. Manual terminals have no separate bottom section.
+The workspace preserves their emulators while switching tabs. Closing a tab
+leaves the process running, and its sidebar row reopens it;
 an explicit stop or discard terminates it. Finished agent commands disappear
 from both the sidebar and open tabs, with no retained terminal session. Manual
 sessions remain until discarded, including an inactive view when their shell
@@ -987,13 +1027,13 @@ owns the `terminal` tool and closes a closing Thread's sessions through
 the whole `tools/v1` catalog after activation. The `web` bundle owns the
 `web` tool (700) and the `web-research` skill (1200); the old `web`
 source and `12-web-research` skill have been removed from `files`. On the desktop, the layout draws no feature UI of
-its own: the Files view and the panel toggles are `files` region items, the
+its own: the Files view is a `files` region item, the
 Changes view, the footer's working directory and branch, the comparison tab
 and the Versioning settings section (`/settings/git`, which replaces
 `/settings/versioning`; the window still opens at `/settings`) are `git`'s,
 the "New terminal" button, the sidebar terminal rows (`layout.sidebar/v1`
-rows created through `ui/v1`) and the manual terminals of the
-`layout.main.bottom` split are `terminal`'s, the footer's context and cost
+rows created through `ui/v1`) and workspace terminal tabs are `terminal`'s,
+the footer's context and cost
 are `usage`'s, and the resource monitor stays in the Project panel's footer
 (`layout.panel.footer`) as `resources`'. The file tab keeps its own footer,
 and diffs open as tabs. Prompt-completion notifications are decided in the
@@ -1382,8 +1422,11 @@ exactly at a turn boundary, removes the edited turn and every later turn from
 the durable event log, drops their checkpoints, and then accepts the edited text
 as a normal human input. Rewind refuses while the Thread is running or has
 queued input, so the FIFO queue never executes on truncated history. Project and
-Thread names
-are trimmed, exclude NUL, and contain 1 to 80 Unicode code points. `/projects`
+Thread names entered in the desktop
+are trimmed, exclude NUL, and contain 1 to 80 Unicode code points. The runtime
+Thread create contract also accepts an empty name, used by the desktop for a
+new Project's initial unnamed Thread; manual creation and rename still require
+a nonempty name. `/projects`
 owns environments and `/threads` owns conversations; there are no `/sessions`
 routes or compatibility aliases. Public Project and Thread list/detail
 representations contain identity, name, state, ownership, timestamps,

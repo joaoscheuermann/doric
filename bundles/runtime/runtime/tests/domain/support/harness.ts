@@ -428,6 +428,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
           limit,
           ...(cursor === undefined ? {} : { cursor }),
         }),
+      activity: () => runtime.projectActivity(),
       rename: (id, name) => runtime.renameProject({ id, name }),
       setColor: (id, color: ProjectColor | undefined) =>
         runtime.setProjectColor({ id, color: color ?? null }),

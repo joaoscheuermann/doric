@@ -40,6 +40,7 @@ export function DraftName({
       <TreeGuides depth={depth ?? 0} />
       {draft ? <ProjectAvatar /> : <MessageSquareIcon className="size-3.5" />}
       <EditableName
+        creating
         editing
         label={label}
         onCancel={onCancel}

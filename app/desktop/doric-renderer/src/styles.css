@@ -57,9 +57,7 @@
     @apply bg-background text-foreground select-none;
     margin: 0;
     font-family: var(--font-sans);
-    /* Thin is the app's default weight; anything heavier is stated where it is
-       wanted, so a screen reads its own hierarchy rather than the browser's. */
-    font-weight: 100;
+    font-weight: 400;
   }
 
   /*
@@ -113,15 +111,11 @@
 
 /*
  * The chrome bars, and the reason they are one class instead of one height
- * copied into ten places: every bar — the workspace's header and footer, the
- * sidebar's, the file viewer's, the sandbox panel's, and the settings window's —
- * carries the same `size="sm"` or `icon-sm` control, which is 28px. The bar is
- * that control plus four of air on each side, so a control never reads as
- * touching the rule it stands on, and an adjustment is made here rather than
- * nine times over.
+ * copied into ten places: the workspace, file viewer, sandbox panel, and
+ * settings bars share the Papermache window's 40px height.
  */
 .chrome-bar {
-  height: 2.25rem;
+  height: 40px;
 }
 
 /* All footer text has one weight, including nested controls. Keep this invariant

@@ -56,6 +56,11 @@ export const runtimeService = ({
       ...runtimeMethods.projects,
       execute: ({ limit, cursor }) => service.projects.list(limit, cursor),
     }),
+    projectActivity: defineMethod({
+      expose: 'desktop',
+      ...runtimeMethods.projectActivity,
+      execute: () => service.projects.activity(),
+    }),
     renameProject: defineMethod({
       expose: 'desktop',
       ...runtimeMethods.renameProject,

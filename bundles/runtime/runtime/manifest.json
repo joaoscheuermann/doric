@@ -1,13 +1,13 @@
 {
   "manifestVersion": 1,
   "id": "runtime",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "engines": {
     "doric": "^1.0.0"
   },
   "description": "Project and Thread model, queue, recovery, delegation and lease coordination.",
   "provides": [
-    "runtime/v1@1.2.0",
+    "runtime/v1@1.3.0",
     "runtime.threads/v1@1.2.0",
     "runtime.workspace/v1@1.1.0",
     "runtime.lease/v1@1.1.0",

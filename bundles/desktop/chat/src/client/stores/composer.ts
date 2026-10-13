@@ -16,8 +16,26 @@ export type ComposerState = {
   readonly send: () => void;
 };
 
-export const composerStore = createStore<ComposerState>()((set) => ({
-  promptSignal: createPromptSignal(),
-  sendRequest: 0,
-  send: () => set((state) => ({ sendRequest: state.sendRequest + 1 })),
-}));
+const createComposer = () =>
+  createStore<ComposerState>()((set) => ({
+    promptSignal: createPromptSignal(),
+    sendRequest: 0,
+    send: () => set((state) => ({ sendRequest: state.sendRequest + 1 })),
+  }));
+
+const composers = new Map<
+  string | undefined,
+  ReturnType<typeof createComposer>
+>();
+
+/** Separate editor/footer signals for each simultaneously open conversation. */
+export const composerFor = (threadId: string | undefined) => {
+  let store = composers.get(threadId);
+  if (store === undefined) {
+    store = createComposer();
+    composers.set(threadId, store);
+  }
+  return store;
+};
+
+export const resetComposers = (): void => composers.clear();

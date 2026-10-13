@@ -29,7 +29,7 @@ function SidebarToggle() {
       variant="ghost"
       size="icon-sm"
       aria-label={open ? 'Hide sidebar' : 'Show sidebar'}
-      className="self-center [app-region:no-drag]"
+      className="self-center rounded-[var(--paper-radius-control)] text-[var(--paper-gray-3)] hover:bg-[var(--paper-ghost-hover)] hover:text-[var(--paper-gray-1)] [app-region:no-drag]"
       onClick={toggleSidebar}
     >
       {open ? <PanelLeftCloseIcon /> : <PanelLeftOpenIcon />}
@@ -41,7 +41,7 @@ export function WorkspaceSidebarHeader() {
   return (
     <div
       data-slot="workspace-sidebar-header"
-      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-20 [app-region:drag]"
+      className="relative flex chrome-bar shrink-0 items-center bg-sidebar pl-2 text-[var(--paper-text-base)] [app-region:drag]"
     >
       <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       <SidebarToggle />
@@ -67,15 +67,15 @@ export function WorkspaceHeader({
   return (
     <header
       data-slot="workspace-header"
-      className="relative flex chrome-bar shrink-0 items-center bg-sidebar [app-region:drag]"
+      className="relative flex chrome-bar shrink-0 items-center bg-sidebar text-[var(--paper-text-base)] [app-region:drag]"
     >
       <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
       {!open && (
-        <div className="flex h-full shrink-0 items-center pl-20">
+        <div className="flex h-full shrink-0 items-center pl-2">
           <SidebarToggle />
         </div>
       )}
-      <div className="relative z-10 flex h-full min-w-0 flex-1 items-center px-3">
+      <div className="relative z-10 flex h-full min-w-0 flex-1 items-center px-2">
         <ThreadBreadcrumb
           onSelectProject={onSelectProject}
           onSelectThread={onSelectThread}

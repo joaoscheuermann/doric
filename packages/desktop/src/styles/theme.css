@@ -15,8 +15,8 @@
 @source '../chrome-bar.tsx';
 
 /*
- * Every chrome bar is the window's titlebar height: a 28px control plus four of
- * air on each side (`2.25rem`), stated once by the tokens.
+ * Every chrome bar is the Papermache app bar's 40px height, stated once by
+ * the tokens. A 28px control has 6px of air on each side.
  */
 .chrome-bar {
   height: var(--doric-titlebar-height);

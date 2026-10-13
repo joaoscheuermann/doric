@@ -3,6 +3,7 @@ import { NavigationV1, type RouteMatch } from 'bundle/contracts';
 import { useEffect, useRef } from 'react';
 
 import type { Selection } from '../domain/project-tree.js';
+import { PROJECT_ROUTE, PROJECTS_ROUTE } from '../domain/route-selection.js';
 import type { Thread } from '../domain/workspace.js';
 import { queryKeys } from '../queries/keys.js';
 import { layoutServices } from '../services/layout-services.js';
@@ -16,7 +17,10 @@ import {
 
 export type RouteSelectionOptions = {
   readonly isCurrent: () => boolean;
-  readonly onRestore: (thread: Thread) => void;
+  readonly onRestore: (
+    thread: Thread,
+  ) => Selection | null | undefined | Promise<Selection | null | undefined>;
+  readonly onMissingProject: (projectId: string) => Selection;
   readonly get: (id: string) => Promise<Thread | undefined>;
   /** A navigation the layout did not make: back, forward, a link. */
   readonly onRoute: (match: RouteMatch | undefined) => void;
@@ -38,6 +42,7 @@ export type RouteSelection = {
 export const useRouteSelection = ({
   isCurrent,
   onRestore,
+  onMissingProject,
   get,
   onRoute,
 }: RouteSelectionOptions): RouteSelection => {
@@ -47,8 +52,14 @@ export const useRouteSelection = ({
    * runs once, but a later render's callbacks carry the current selection
    * intent, so they are the ones the settled lookup must consult.
    */
-  const options = useRef({ get, isCurrent, onRestore, onRoute });
-  options.current = { get, isCurrent, onRestore, onRoute };
+  const options = useRef({
+    get,
+    isCurrent,
+    onRestore,
+    onMissingProject,
+    onRoute,
+  });
+  options.current = { get, isCurrent, onRestore, onMissingProject, onRoute };
 
   useEffect(() => {
     let active = true;
@@ -71,7 +82,15 @@ export const useRouteSelection = ({
       isActive: () => active,
       isCurrent: () => options.current.isCurrent(),
       onRestore: (thread) => options.current.onRestore(thread),
+      onMissingProject: (projectId) =>
+        options.current.onMissingProject(projectId),
     });
+    const initial = navigation.current();
+    if (
+      initial?.pattern === PROJECT_ROUTE ||
+      initial?.pattern === PROJECTS_ROUTE
+    )
+      options.current.onRoute(initial);
     return () => {
       active = false;
       subscription.dispose();

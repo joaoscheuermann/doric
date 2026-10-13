@@ -29,7 +29,11 @@ import type {
   ThreadQueue,
   ThreadUsage,
 } from '../../contracts/model.js';
-import type { RuntimeOwner, VmSsh } from '../../contracts/runtime.js';
+import type {
+  ProjectActivity,
+  RuntimeOwner,
+  VmSsh,
+} from '../../contracts/runtime.js';
 import type {
   InterruptResult,
   TerminalResultInput,
@@ -66,6 +70,7 @@ export interface WorkspaceService {
     create(name: string): Promise<Project>;
     find(id: string): Promise<Project | undefined>;
     list(limit: number, cursor?: string): Promise<Page<Project>>;
+    activity(): Promise<readonly ProjectActivity[]>;
     rename(id: string, name: string): Promise<Project | undefined>;
     setColor(
       id: string,

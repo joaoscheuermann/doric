@@ -82,10 +82,12 @@ const resolved = (
 const read = (
   palette: CSSStyleDeclaration,
   source: string,
-): string | undefined =>
-  oklchToHex(
-    source.startsWith('--') ? palette.getPropertyValue(source) : source,
-  );
+): string | undefined => {
+  const value = source.startsWith('--')
+    ? palette.getPropertyValue(source).trim()
+    : source;
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : oklchToHex(value);
+};
 
 /**
  * Every colour the panel paints, each read from the palette the document has

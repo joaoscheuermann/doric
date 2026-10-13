@@ -41,6 +41,12 @@ export const ChatComposerElement = defineReactElement({
   wrap: () => ChatRoot,
 });
 
+export const ChatThreadPanelElement = defineReactElement<ChatViewProps>({
+  props: ['projectId', 'threadId'],
+  render: (props) => <ChatView {...props} withFooter />,
+  wrap: () => ChatRoot,
+});
+
 export const ChatGenericBlockElement = defineReactElement<{
   readonly block?: RenderBlock;
 }>({

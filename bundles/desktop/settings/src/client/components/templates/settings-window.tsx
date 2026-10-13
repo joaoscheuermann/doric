@@ -3,7 +3,7 @@ import { Separator } from 'desktop/ui/separator';
 import { SidebarProvider } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
 import { ArrowLeftIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import {
   SettingsBreadcrumb,
@@ -58,7 +58,7 @@ function BackControl({
 
 /**
  * The settings window's frame: the shared settings surface under the window's
- * own title bar, matching the main window's bar — a 32px draggable strip whose
+ * own title bar, matching the main window's bar — a 40px draggable strip whose
  * left inset clears the native traffic lights, closed by a separator.
  *
  * The bar is where the window states what it is showing, so the breadcrumb
@@ -85,10 +85,13 @@ export function SettingsWindow({
   trail,
 }: SettingsWindowProps) {
   return (
-    <SidebarProvider className="h-svh min-h-0 flex-col overflow-hidden">
+    <SidebarProvider
+      className="h-svh min-h-0 flex-col overflow-hidden"
+      style={{ '--sidebar-width': '240px' } as CSSProperties}
+    >
       <div
         data-slot="settings-title-bar"
-        className="relative flex h-8 shrink-0 items-center bg-sidebar [app-region:drag]"
+        className="relative flex chrome-bar shrink-0 items-center bg-sidebar [app-region:drag]"
       >
         <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
         {/*

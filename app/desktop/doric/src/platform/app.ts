@@ -33,6 +33,7 @@ import {
   ipcMain,
   Menu,
   MenuItem,
+  nativeTheme,
   net,
   protocol,
   utilityProcess,
@@ -427,7 +428,11 @@ export class DesktopPlatform {
   }
 
   chrome(entry: WindowEntry | undefined): WindowChrome {
-    return chromeFor(entry?.appearance.titleBar ?? 'none', this.tokens);
+    return chromeFor(
+      entry?.appearance.titleBar ?? 'none',
+      this.tokens,
+      entry?.window.isFullScreen(),
+    );
   }
 
   generationOf(generation: number): Live | undefined {
@@ -558,7 +563,10 @@ export class DesktopPlatform {
     }
 
     this.#splash = openSplashWindow({
-      backgroundColor: this.tokens.color('window', true),
+      backgroundColor: this.tokens.color(
+        'window',
+        nativeTheme.shouldUseDarkColors,
+      ),
       preload: this.#preload,
       path: splashPath(this.resources),
       closed: () => {

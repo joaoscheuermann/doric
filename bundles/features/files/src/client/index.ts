@@ -3,9 +3,8 @@
 // elements — the Files panel view, the panel toggle and the file tab. All of
 // it is bound to the activation services, never to an element's (D9-17).
 //
-// The panel and header region items (`filesRegions`) are registered by the
-// activation since WP-10N removed the layout's provisional Files view and
-// its own panel toggles.
+// The panel region item (`filesRegions`) is registered by the activation.
+// Its selector is rendered in the workspace tab bar; no hide toggle is added.
 
 import {
   type Cleanup,
@@ -49,7 +48,7 @@ const windowEnvironment = (): RefreshEnvironment => ({
     clearInterval(handle as ReturnType<typeof setInterval>),
 });
 
-/** The region items of the Files view and its toggle (§3.6). */
+/** The Files view is selected from the workspace's compact top tabs. */
 export const filesRegions: readonly {
   readonly region: string;
   readonly item: RegionItem;
@@ -63,27 +62,9 @@ export const filesRegions: readonly {
       props: { label: 'Files', icon: 'files' },
     },
   },
-  {
-    region: 'layout.header',
-    item: {
-      id: 'files-toggle',
-      tag: 'files-toggle',
-      order: 200,
-      props: { placement: 'header' },
-    },
-  },
-  {
-    region: 'layout.panel.header',
-    item: {
-      id: 'files-toggle',
-      tag: 'files-toggle',
-      order: 100,
-      props: { placement: 'panel' },
-    },
-  },
 ];
 
-/** Adds the Files view and toggle to the layout's regions (WP-10N). */
+/** Adds the Files view to the layout's regions. */
 export const registerFilesRegions = (
   regions: Pick<Regions, 'add'>,
 ): Disposable => {

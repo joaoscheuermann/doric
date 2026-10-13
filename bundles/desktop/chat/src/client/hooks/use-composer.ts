@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { useStore } from 'zustand/react';
 
-import { composerStore } from '../stores/composer.js';
+import { composerFor } from '../stores/composer.js';
 import type { PromptSignal } from '../utility/prompt-signal.js';
 
 /**
@@ -26,7 +26,8 @@ export type Composer = {
   readonly send: () => void;
 };
 
-export const useComposer = (): Composer => {
+export const useComposer = (threadId: string | undefined): Composer => {
+  const composerStore = composerFor(threadId);
   const promptSignal = useStore(composerStore, (state) => state.promptSignal);
   const sendRequest = useStore(composerStore, (state) => state.sendRequest);
   const send = useStore(composerStore, (state) => state.send);

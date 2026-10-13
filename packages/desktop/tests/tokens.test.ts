@@ -1,8 +1,4 @@
-/**
- * The tokens module is the palette the renderer's stylesheet stated before the
- * platform existed (`fixtures/styles.css`, the 777-line file at 20775a6), and
- * the generated `tokens.css` and `tokens.json` are that module, nothing else.
- */
+/** The shared palette and its generated CSS and JSON assets. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,68 +8,53 @@ import { fileURLToPath } from 'node:url';
 import { PLATFORM_VERSION } from 'bundle';
 import { resolvedVariables, tokens, tokensCss } from 'desktop/ui';
 
-import { oklchToHex } from './support/oklch.js';
-
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (path: string): string =>
   readFileSync(join(packageRoot, path), 'utf8');
 
-const stylesheet = read('tests/fixtures/styles.css');
-
-/** The custom properties one block of the old stylesheet declares. */
-const declared = (selector: string): Record<string, string> => {
-  const start = stylesheet.indexOf(`${selector} {`);
-  assert.notEqual(start, -1, `the old stylesheet states ${selector}`);
-  const block = stylesheet
-    .slice(start + selector.length + 2, stylesheet.indexOf('}', start))
-    .replaceAll(/\/\*[\s\S]*?\*\//g, '');
-  const result: Record<string, string> = {};
-  for (const [, name, value] of block.matchAll(
-    /(--[a-z0-9-]+):\s*([\s\S]*?);/g,
-  )) {
-    result[name ?? ''] = (value ?? '').split(/\s+/).join(' ').trim();
-  }
-  return result;
-};
-
-/**
- * The palette variables a variant resolves, without the window variables and
- * without the git colours: those belong to the git bundle, which states them in
- * its own stylesheet (its test pins them to the values the old palette had).
- */
-const palette = (variant: 'light' | 'dark'): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(resolvedVariables(tokens, variant)).filter(
-      ([name]) => !name.startsWith('--doric-') && !name.startsWith('--git-'),
-    ),
-  );
-
-/** The old block without its git colours, the palette the desktop/ui module owns. */
-const withoutGit = (block: Record<string, string>): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(block).filter(([name]) => !name.startsWith('--git-')),
-  );
-
-const channels = (hex: string): number[] =>
-  [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
-
 describe('the palette', () => {
-  test('the light variant resolves exactly what the old :root stated', () => {
-    assert.deepEqual(palette('light'), withoutGit(declared(':root')));
+  test('light and dark use Papermache root, panel and text tones', () => {
+    assert.equal(tokens.variants.light['--background'], '#ffffff');
+    assert.equal(tokens.variants.light['--sidebar'], '#f2f2f2');
+    assert.equal(tokens.variants.light['--paper-panel-highlight-1'], '#eaeaea');
+    assert.equal(tokens.variants.light['--paper-control'], '#f9f9f9');
+    assert.equal(tokens.variants.light['--paper-separator'], '#e2e2e2');
+    assert.equal(
+      tokens.variants.light['--paper-gray-1'],
+      'oklab(0% none none / 0.8)',
+    );
+    assert.equal(tokens.variants.dark['--background'], '#222222');
+    assert.equal(tokens.variants.dark['--sidebar'], '#2a2a2a');
+    assert.equal(tokens.variants.dark['--foreground'], '#e9e9e9');
+    assert.equal(tokens.variants.dark['--paper-panel-highlight-1'], '#333333');
+    assert.equal(tokens.variants.dark['--paper-control'], '#373737');
+    assert.equal(tokens.variants.dark['--paper-separator'], '#373737');
+    assert.equal(
+      tokens.variants.dark['--paper-gray-1'],
+      'oklab(100% 0 5.96046e-8 / 0.9)',
+    );
   });
 
-  test('the dark variant resolves :root as .dark overrode it', () => {
-    assert.deepEqual(palette('dark'), {
-      ...withoutGit(declared(':root')),
-      ...withoutGit(declared('.dark')),
-    });
+  test('the adapted UI uses the system face and Papermache control geometry', () => {
+    assert.equal(
+      tokens.shared['--font-sans'],
+      "-apple-system, BlinkMacSystemFont, 'Noto Sans', sans-serif",
+    );
+    assert.equal(tokens.shared['--paper-text-base'], '12px');
+    assert.equal(tokens.shared['--paper-radius-control'], '6px');
+    assert.equal(tokens.variants.light['--paper-focus'], 'oklch(74% 0.12 258)');
+    assert.equal(tokens.variants.dark['--paper-focus'], 'oklch(60% 0.15 258)');
   });
 
-  test('windows start dark', () => {
-    assert.equal(tokens.defaultVariant, 'dark');
+  test('the stylesheet applies dark tokens before first paint with system preference', () => {
+    assert.match(tokensCss(tokens), /@media \(prefers-color-scheme: dark\)/u);
+  });
+
+  test('the light fallback is available before the system preference resolves', () => {
+    assert.equal(tokens.defaultVariant, 'light');
     assert.deepEqual(
       resolvedVariables(tokens),
-      resolvedVariables(tokens, 'dark'),
+      resolvedVariables(tokens, 'light'),
     );
   });
 
@@ -91,12 +72,9 @@ describe('the palette', () => {
 });
 
 describe('the window tokens', () => {
-  test('the titlebar is the old chrome bar height, 2.25rem', () => {
-    assert.equal(tokens.window.titlebarHeight, 2.25 * 16);
-    assert.equal(
-      resolvedVariables(tokens)['--doric-titlebar-height'],
-      `${2.25 * 16}px`,
-    );
+  test('the titlebar is 40px', () => {
+    assert.equal(tokens.window.titlebarHeight, 40);
+    assert.equal(resolvedVariables(tokens)['--doric-titlebar-height'], '40px');
   });
 
   test("the window buttons' reserved width is the renderer's pl-20", () => {
@@ -105,23 +83,15 @@ describe('the window tokens', () => {
     assert.equal(tokens.window.trafficLight.insetX, 14);
   });
 
-  test("the dark window background is today's native #1c1b19", () => {
-    assert.equal(tokens.window.backgrounds.window.dark, '#1c1b19');
+  test('native window backgrounds match both page backgrounds', () => {
+    assert.equal(tokens.window.backgrounds.window.light, '#ffffff');
+    assert.equal(tokens.window.backgrounds.window.dark, '#222222');
   });
 
   for (const variant of ['light', 'dark'] as const) {
     test(`the ${variant} window background is that variant's --background`, () => {
       const background = resolvedVariables(tokens, variant)['--background'];
-      const converted = oklchToHex(background ?? '');
-      assert.ok(converted, `--background converts to sRGB`);
-      const expected = channels(converted);
-      const actual = channels(tokens.window.backgrounds.window[variant]);
-      for (const [index, value] of actual.entries()) {
-        assert.ok(
-          Math.abs(value - (expected[index] ?? 0)) <= 2,
-          `${tokens.window.backgrounds.window[variant]} is within rounding of ${converted}`,
-        );
-      }
+      assert.equal(tokens.window.backgrounds.window[variant], background);
     });
   }
 

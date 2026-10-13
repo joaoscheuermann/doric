@@ -302,12 +302,14 @@ export function Conversation({
   thread,
   promptSignal,
   sendRequest,
+  autoFocus = true,
 }: {
   readonly thread: Thread;
   /** Where the editor writes whether the prompt holds words. */
   readonly promptSignal?: PromptSignal;
   /** The shell's send requests, counted; each new count sends the prompt once. */
   readonly sendRequest?: number;
+  readonly autoFocus?: boolean;
 }) {
   const chat = useThreadChat(thread);
   const queue = useThreadQueue(thread.id);
@@ -326,7 +328,7 @@ export function Conversation({
    * the conversation. A render of this surface must cost a render, nothing more.
    */
   const contentEditable = useMemo(
-    () => <ContentEditable className="flex-1 outline-none" />,
+    () => <ContentEditable className="min-w-0 flex-1 outline-none" />,
     [],
   );
   // The scroll area whose viewport holds the transcript, for the nav rail beside it.
@@ -353,14 +355,14 @@ export function Conversation({
   );
 
   return (
-    <div className="flex min-h-0 w-full flex-1">
+    <div className="flex min-h-0 min-w-0 w-full flex-1">
       <ScrollArea
         ref={scrollRoot}
-        className="conversation-scroll min-h-0 w-full flex-1"
+        className="conversation-scroll min-h-0 min-w-0 w-full flex-1"
       >
         {/* The top padding keeps the first block off the header, since the
           transcript grows from the top of the scroll view. */}
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
+        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
           <ChatBlocksContext.Provider value={blocksSource}>
             <LexicalExtensionComposer
               extension={extension}
@@ -376,6 +378,7 @@ export function Conversation({
               <MarkdownPromptPlugin />
               <PromptLineBreaks />
               <InsertThreadTurnNodes
+                autoFocus={autoFocus}
                 threadId={thread.id}
                 turns={turns}
                 blocks={external.placed}

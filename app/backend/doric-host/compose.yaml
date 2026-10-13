@@ -20,7 +20,7 @@ services:
 
   migrate:
     build:
-      context: ../..
+      context: ../../..
       dockerfile: app/backend/doric-host/.Dockerfile
       target: agent-runtime
     command: npx prisma migrate deploy --config app/backend/doric-host/prisma.config.ts
@@ -34,7 +34,7 @@ services:
   firecracker:
     profiles: [firecracker]
     build:
-      context: ../..
+      context: ../../..
       dockerfile: app/backend/doric-host/.Dockerfile
     environment:
       DORIC_DATABASE_URL: postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}
@@ -63,7 +63,7 @@ services:
   docker:
     profiles: [docker]
     build:
-      context: ../..
+      context: ../../..
       dockerfile: app/backend/doric-host/.Dockerfile
       target: docker-runtime
     environment:

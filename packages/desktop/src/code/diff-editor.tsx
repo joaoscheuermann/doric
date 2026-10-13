@@ -151,6 +151,18 @@ export function DiffEditor({
 
   useEffect(() => {
     if (!ready) return;
+    const scheme = matchMedia('(prefers-color-scheme: dark)');
+    const update = () => {
+      const loaded = monaco.current;
+      if (loaded)
+        loaded.editor.setTheme(loaded.defineCodeViewTheme(diffTokens));
+    };
+    scheme.addEventListener('change', update);
+    return () => scheme.removeEventListener('change', update);
+  }, [ready, diffTokens]);
+
+  useEffect(() => {
+    if (!ready) return;
     const current = view.current;
     const element = container.current;
     if (!current || !element) return;

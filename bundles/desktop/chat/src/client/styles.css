@@ -25,16 +25,17 @@
     pointer-events: none;
   }
 
-  /* An empty editor block carries a managed line break, which is what a caret
-     with no text anchors to. Drawing the placeholder out of flow leaves that
-     line break as the block's only inline content, so the caret rests at the
-     start instead of after the placeholder text. */
+  /* Keep the caret at the managed line break while reserving the full height
+     of a wrapping placeholder. The float occupies no inline width, and its
+     containing block includes its height. */
   [data-lexical-editor] [data-placeholder] {
-    position: relative;
+    display: flow-root;
   }
 
   [data-lexical-editor] [data-placeholder]::before {
-    position: absolute;
+    float: left;
+    width: 100%;
+    margin-right: -100%;
   }
 
   /*
@@ -49,6 +50,8 @@
     /* biome-ignore lint/complexity/noImportantStyles: Radix sets this wrapper's `display` inline, which only `!important` can override */
     display: flex !important;
     flex-direction: column;
+    width: 100%;
+    min-width: 0;
     min-height: 100%;
   }
 
@@ -88,6 +91,12 @@
       transition-duration: 0ms;
     }
   }
+}
+
+/* Long paths and URLs must fit each conversation's resizable pane. */
+.conversation-scroll [data-lexical-editor] {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The edit header, composer and author are Lexical siblings. Their adjoining
@@ -227,6 +236,9 @@
 }
 
 .editor-table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   margin: 0 0 0.5rem;
   /* The grid the markdown asked for, drawn rather than shown: the pipes it was
      written with are markers no cell keeps. */

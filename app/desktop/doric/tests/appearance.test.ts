@@ -32,7 +32,7 @@ const webPreferences = {
 };
 
 describe('native window options', () => {
-  test('the workspace window is today’s main window on macOS and Linux (P1)', () => {
+  test('the workspace window uses the system dark background on macOS and Linux', () => {
     assert.deepEqual(
       nativeOptions(workspace, tokens, 'darwin', screen, preload),
       {
@@ -41,9 +41,9 @@ describe('native window options', () => {
         minWidth: 960,
         minHeight: 640,
         show: false,
-        backgroundColor: '#1c1b19',
+        backgroundColor: '#222222',
         titleBarStyle: 'hidden',
-        trafficLightPosition: { x: 14, y: 12 },
+        trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
       },
     );
@@ -55,13 +55,21 @@ describe('native window options', () => {
         minWidth: 960,
         minHeight: 640,
         show: false,
-        backgroundColor: '#1c1b19',
+        backgroundColor: '#222222',
         webPreferences,
       },
     );
   });
 
-  test('the settings window is today’s settings window on macOS and Linux (P2)', () => {
+  test('a light system preference paints the native window white before loading', () => {
+    assert.equal(
+      nativeOptions(workspace, tokens, 'darwin', screen, preload, false)
+        .backgroundColor,
+      '#ffffff',
+    );
+  });
+
+  test('the settings window uses the shared chrome and background', () => {
     assert.deepEqual(
       nativeOptions(settings, tokens, 'darwin', screen, preload),
       {
@@ -70,9 +78,9 @@ describe('native window options', () => {
         minWidth: 720,
         minHeight: 520,
         show: false,
-        backgroundColor: '#1c1b19',
+        backgroundColor: '#222222',
         titleBarStyle: 'hidden',
-        trafficLightPosition: { x: 14, y: 12 },
+        trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
       },
     );
@@ -84,13 +92,13 @@ describe('native window options', () => {
         minWidth: 720,
         minHeight: 520,
         show: false,
-        backgroundColor: '#1c1b19',
+        backgroundColor: '#222222',
         webPreferences,
       },
     );
   });
 
-  test('the splash window keeps today’s frameless dark options (P3), now with the preload', () => {
+  test('the splash window uses the dark native background', () => {
     assert.deepEqual(
       splashWindowOptions({
         backgroundColor: tokens.color('window', true),
@@ -102,7 +110,7 @@ describe('native window options', () => {
         frame: false,
         roundedCorners: false,
         resizable: false,
-        backgroundColor: '#1c1b19',
+        backgroundColor: '#222222',
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
@@ -157,10 +165,18 @@ describe('native window options', () => {
 });
 
 describe('window chrome', () => {
-  test('keeps today’s 80px reserved width on every platform with a title bar (S8-5)', () => {
+  test('releases the native controls inset in fullscreen', () => {
+    assert.deepEqual(chromeFor('integrated', tokens, true).safeArea, {
+      top: 0,
+      left: 0,
+      right: 0,
+    });
+    assert.equal(chromeFor('integrated', tokens, true).height, 40);
+  });
+  test('keeps the 80px reserved width with a 40px title bar', () => {
     assert.deepEqual(chromeFor('integrated', tokens), {
       titleBar: 'integrated',
-      height: 36,
+      height: 40,
       safeArea: { top: 0, left: 80, right: 0 },
     });
     assert.deepEqual(chromeFor('native', tokens).safeArea, {

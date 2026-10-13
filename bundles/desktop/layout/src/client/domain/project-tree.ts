@@ -48,7 +48,18 @@ export const threadsOf = (
 export const withSelection = (
   tree: ProjectTree,
   selection: Selection,
-): ProjectTree => ({ ...tree, selection });
+): ProjectTree => {
+  const first = threadsOf(tree, selection.projectId).find(
+    (thread) => thread.parentThreadId === undefined,
+  );
+  return {
+    ...tree,
+    selection:
+      selection.threadId === undefined && first !== undefined
+        ? { ...selection, threadId: first.id }
+        : selection,
+  };
+};
 
 /**
  * The Projects whose Threads are on screen. Rows open and close one at a time:
@@ -106,13 +117,17 @@ export const withThreads = (
   tree: ProjectTree,
   projectId: string,
   threads: readonly Thread[],
-): ProjectTree => ({
-  ...tree,
-  threadsByProject: {
-    ...tree.threadsByProject,
-    [projectId]: threadsForProject(threads, projectId),
-  },
-});
+): ProjectTree =>
+  withSelection(
+    {
+      ...tree,
+      threadsByProject: {
+        ...tree.threadsByProject,
+        [projectId]: threadsForProject(threads, projectId),
+      },
+    },
+    tree.selection,
+  );
 
 /**
  * One Thread, added or replaced. A new Thread lands where the caller asks,

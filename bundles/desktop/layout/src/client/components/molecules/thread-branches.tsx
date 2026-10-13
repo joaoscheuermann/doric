@@ -156,6 +156,7 @@ export function ThreadBranches({
                       className={cn(running && 'shimmer')}
                       editing={editingThreadId === thread.id}
                       label="Thread name"
+                      placeholder="Untitled"
                       value={thread.name}
                       onStart={() => actions.startRename(thread)}
                       onCancel={actions.cancelRename}
@@ -164,7 +165,7 @@ export function ThreadBranches({
                   </div>
                 </SidebarMenuSubButton>
                 <RowAddAction
-                  label={`New child thread in ${thread.name}`}
+                  label={`New child thread in ${thread.name || 'Untitled'}`}
                   onAdd={addChild}
                   startedAt={running ? thread.executionStartedAt : undefined}
                 />

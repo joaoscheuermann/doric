@@ -66,6 +66,39 @@ const ids = (threads: readonly Thread[]): readonly string[] =>
   threads.map(({ id }) => id);
 
 describe('the Project tree', () => {
+  test('opening a described Project selects its first Thread', () => {
+    const opened = withSelection(
+      tree([project('one')], { one: [thread('a', 'one'), thread('b', 'one')] }),
+      { projectId: 'one' },
+    );
+    assert.deepEqual(opened.selection, { projectId: 'one', threadId: 'a' });
+  });
+
+  test('loading Threads selects the first only when the Project has no selected Thread', () => {
+    const initial = tree([project('one')], {}, { projectId: 'one' });
+    const threads = [thread('a', 'one'), thread('b', 'one')];
+    assert.equal(withThreads(initial, 'one', threads).selection.threadId, 'a');
+    const selected = withSelection(initial, {
+      projectId: 'one',
+      threadId: 'b',
+    });
+    assert.equal(withThreads(selected, 'one', threads).selection.threadId, 'b');
+  });
+
+  test('a background Project load does not select its Threads', () => {
+    const initial = tree(
+      [project('one'), project('two')],
+      {},
+      { projectId: 'two' },
+    );
+    assert.deepEqual(
+      withThreads(initial, 'one', [thread('a', 'one')]).selection,
+      {
+        projectId: 'two',
+      },
+    );
+  });
+
   test('holds a Project\u2019s Threads only once the host has described them', () => {
     const described = withThreads(tree([project('one')], {}), 'one', [
       thread('a', 'one'),

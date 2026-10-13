@@ -20,6 +20,7 @@ import type {
 import { queryKeys } from '../queries/keys.js';
 import { rewriteRoute } from '../stores/route-selection.js';
 import { workspaceStore } from '../stores/workspace.js';
+import { createThreadNavigation } from './thread-navigation.js';
 import { useProjectEvents } from './use-project-events.js';
 import { useRouteSelection } from './use-route-selection.js';
 
@@ -158,10 +159,10 @@ export const useWorkspace = (): Workspace => {
       .then((projects) => {
         if (!active) return;
         store.applyProjects(projects);
-        const first = projects[0];
-        if (first && intent.current === initialIntent) {
-          store.select({ projectId: first.id });
-          void loadThreads(first.id);
+        const selected = workspaceStore.getState().tree.selection.projectId;
+        if (selected && !projects.some((project) => project.id === selected)) {
+          store.select({});
+          rewriteRoute();
         }
       })
       .catch((reason: unknown) => {
@@ -183,20 +184,47 @@ export const useWorkspace = (): Workspace => {
     store.select,
     store.fail,
     store.setLoadingProjects,
-    loadThreads,
   ]);
+
+  const selectMissingThreadProject = (projectId: string): Selection => {
+    const current = workspaceStore.getState();
+    const listed = queryClient.getQueryData<readonly Project[]>(
+      queryKeys.projects,
+    );
+    const projects =
+      current.loadingProjects || listed === undefined
+        ? listed
+        : current.tree.projects;
+    const selection =
+      projects === undefined ||
+      projects.some((project) => project.id === projectId)
+        ? { projectId }
+        : {};
+    store.select(selection);
+    if (selection.projectId) void loadThreads(selection.projectId);
+    return selection;
+  };
 
   /** Selects what a navigation the layout did not make names (rule 5). */
   const followRoute = (match: RouteMatch | undefined): void => {
     const intended = routeIntent(match, workspaceStore.getState().tree);
     if (intended.kind === 'none') return;
     intent.current += 1;
+    if (intended.kind === 'canonical') {
+      rewriteRoute();
+      return;
+    }
+    if (intended.kind === 'home') {
+      store.select({});
+      return;
+    }
     if (intended.kind === 'project') {
       store.select({ projectId: intended.projectId });
+      void loadThreads(intended.projectId);
       return;
     }
     if (intended.kind === 'select') {
-      store.selectThread(intended.thread);
+      void openThread(intended.thread, false);
       return;
     }
     const requestIntent = intent.current;
@@ -209,11 +237,10 @@ export const useWorkspace = (): Workspace => {
         (thread) => {
           if (intent.current !== requestIntent) return;
           if (thread === undefined) {
-            rewriteRoute();
+            rewriteRoute(selectMissingThreadProject(intended.projectId));
             return;
           }
-          store.select({ projectId: thread.projectId, threadId: thread.id });
-          void loadThreads(thread.projectId);
+          void openThread(thread, false);
         },
         () => {
           if (intent.current === requestIntent) rewriteRoute();
@@ -225,9 +252,9 @@ export const useWorkspace = (): Workspace => {
     isCurrent: () => intent.current === restoreIntent.current,
     onRestore: (thread) => {
       intent.current += 1;
-      store.select({ projectId: thread.projectId, threadId: thread.id });
-      void loadThreads(thread.projectId);
+      return openThread(thread, false).then((selection) => selection ?? null);
     },
+    onMissingProject: selectMissingThreadProject,
     get: (id) => api.threads.get(id),
     onRoute: followRoute,
   });
@@ -237,16 +264,27 @@ export const useWorkspace = (): Workspace => {
     markUserSelection(selection);
   };
 
+  const openThread = createThreadNavigation({
+    intent,
+    loadThreads,
+    userSelection,
+  });
+
   /**
    * The tree owns the selection; the route-selection store writes the copy
    * the window path persists. Every selection change flows through here, so
    * the path cannot drift from the selection the surfaces render.
    */
   useEffect(() => {
-    changeSelection({
-      projectId: tree.selection.projectId,
-      threadId: tree.selection.threadId,
-    });
+    // Route restoration can select synchronously in an earlier mount effect.
+    // Let its next render persist instead of writing this stale snapshot.
+    const current = workspaceStore.getState().tree.selection;
+    if (
+      current.projectId !== tree.selection.projectId ||
+      current.threadId !== tree.selection.threadId
+    )
+      return;
+    changeSelection(current);
   }, [changeSelection, tree.selection.projectId, tree.selection.threadId]);
 
   useProjectEvents({
@@ -309,17 +347,14 @@ export const useWorkspace = (): Workspace => {
 
   const selectProject = (project: Project): void => {
     intent.current += 1;
-    userSelection({ projectId: project.id });
     store.selectProject(project);
+    userSelection(workspaceStore.getState().tree.selection);
     void loadThreads(project.id);
   };
 
   const selectThread = (thread: Thread): void => {
     intent.current += 1;
-    userSelection({ projectId: thread.projectId, threadId: thread.id });
-    store.selectThread(thread);
-    if (!isDescribed(tree, thread.projectId))
-      void loadThreads(thread.projectId);
+    void openThread(thread, true);
   };
 
   const beginProject = (): void => {
@@ -340,6 +375,19 @@ export const useWorkspace = (): Workspace => {
     try {
       const project = await createProjectWrite(name);
       store.applyCreatedProject(project);
+      let initialThread: Thread | undefined;
+      try {
+        initialThread = await createThreadWrite({
+          projectId: project.id,
+          name: '',
+        });
+        invalidateLoads(project.id);
+        store.applyThread(initialThread);
+      } catch (reason) {
+        // The Project exists even if its first Thread failed. Open it and
+        // report the failure without asking the create form to make it again.
+        store.fail(reason);
+      }
       if (
         isCurrentSequence(
           mutationSequences.current,
@@ -348,12 +396,19 @@ export const useWorkspace = (): Workspace => {
         ) &&
         intent.current === operationIntent
       ) {
-        userSelection({ projectId: project.id });
-        store.select({ projectId: project.id });
+        const selection = {
+          projectId: project.id,
+          ...(initialThread === undefined
+            ? {}
+            : { threadId: initialThread.id }),
+        };
+        userSelection(selection);
+        store.select(selection);
         store.clearProjectDraft();
       }
     } catch (reason) {
       store.fail(reason);
+      throw reason;
     }
   };
 
@@ -376,8 +431,7 @@ export const useWorkspace = (): Workspace => {
         isCurrentSequence(mutationSequences.current, key, sequence) &&
         intent.current === operationIntent
       ) {
-        userSelection({ projectId: thread.projectId, threadId: thread.id });
-        store.select({ projectId: thread.projectId, threadId: thread.id });
+        await openThread(thread, true);
         store.clearThreadDraft(operationDraft);
       }
     } catch (reason) {
@@ -408,6 +462,7 @@ export const useWorkspace = (): Workspace => {
       }
     } catch (reason) {
       store.fail(reason);
+      throw reason;
     }
   };
 

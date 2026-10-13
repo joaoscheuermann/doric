@@ -27,7 +27,7 @@ const electronNotifications: NotificationApi = {
 };
 
 void app.whenReady().then(async () => {
-  nativeTheme.themeSource = 'dark';
+  nativeTheme.themeSource = 'system';
   const log = createPlatformLog();
   const platform = new DesktopPlatform({
     mainDir: __dirname,
@@ -40,6 +40,14 @@ void app.whenReady().then(async () => {
       ? {}
       : { devServerOrigin: process.env.DORIC_RENDERER_DEV_URL }),
     log,
+  });
+  nativeTheme.on('updated', () => {
+    const color = platform.tokens.color(
+      'window',
+      nativeTheme.shouldUseDarkColors,
+    );
+    for (const window of BrowserWindow.getAllWindows())
+      window.setBackgroundColor(color);
   });
   await platform.prepare();
 

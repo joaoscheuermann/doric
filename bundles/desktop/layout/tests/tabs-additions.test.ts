@@ -63,6 +63,23 @@ beforeEach(() => {
 });
 
 describe('layout.tabs/v1@1.1.0', () => {
+  test('opens and disposes a thread tab through the public contract', async () => {
+    const { tabs, tabsOf, dispose } = setup('parent');
+    await tabs.open({
+      id: 'thread:child',
+      title: 'Child',
+      tag: 'chat-thread-panel',
+      icon: 'thread',
+      props: { projectId: 'project', threadId: 'child' },
+    });
+    const tab = tabsOf('parent').items[0];
+    assert.equal(tab?.kind === 'element' && tab.icon, 'thread');
+    await tabs.close({ id: 'thread:child', threadId: 'parent' });
+    assert.equal(tabsOf('parent').items.length, 0);
+    assert.deepEqual(ui.disposed, tab?.kind === 'element' ? [tab.element] : []);
+    await dispose();
+  });
+
   test('the tab keeps the icon, aria label, tooltip and props it was opened with', async () => {
     const { tabs, tabsOf, dispose } = setup('t1');
 
@@ -155,7 +172,7 @@ describe('layout.tabs/v1@1.1.0', () => {
 });
 
 describe('sandbox-reading tabs', () => {
-  test('file, diff and other element tabs read the sandbox; terminals do not', () => {
+  test('file, diff and other element tabs read the sandbox; terminals and threads do not', () => {
     assert.equal(
       readsSandbox({ id: 'f', kind: 'file', path: 'a', projectId: 'p' }),
       true,
@@ -173,5 +190,6 @@ describe('sandbox-reading tabs', () => {
     assert.equal(readsSandbox(element), true);
     assert.equal(readsSandbox({ ...element, icon: 'file-diff' }), true);
     assert.equal(readsSandbox({ ...element, icon: 'terminal' }), false);
+    assert.equal(readsSandbox({ ...element, icon: 'thread' }), false);
   });
 });

@@ -39,6 +39,18 @@ export const projectColorSwatch: Record<ProjectColor, string> = {
   pink: 'bg-pink-500',
 };
 
+/** CSS colors for surfaces that use a Project mark as a border. */
+export const projectColorValue: Record<ProjectColor, string> = {
+  red: '#ef4444',
+  orange: '#f97316',
+  amber: '#f59e0b',
+  green: '#22c55e',
+  teal: '#14b8a6',
+  blue: '#3b82f6',
+  violet: '#8b5cf6',
+  pink: '#ec4899',
+};
+
 export type ProjectUpdate =
   | {
       readonly kind: 'snapshot';

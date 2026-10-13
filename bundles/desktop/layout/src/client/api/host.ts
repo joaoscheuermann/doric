@@ -16,6 +16,7 @@ export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');
 export type RuntimeHost = Pick<
   Runtime,
   | 'projects'
+  | 'projectActivity'
   | 'createProject'
   | 'renameProject'
   | 'setProjectColor'

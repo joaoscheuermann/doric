@@ -37,6 +37,11 @@ const origin = (file) =>
 const patches = {
   'components/sonner.tsx': [
     [
+      '/**\n * Follow the operating system, including changes while a window is open.\n */',
+      '/**\n * The shell is dark only — `index.html` sets `dark` once and nothing toggles it —\n * so the toast takes a dark theme by default instead of resolving one through a\n * provider this application does not have. Pass `theme` to override it.\n */',
+    ],
+    ["theme = 'system'", "theme = 'dark'"],
+    [
       "import { Toaster as Sonner, type ToasterProps, toast } from 'sonner';",
       "import { Toaster as Sonner, type ToasterProps } from 'sonner';",
     ],
