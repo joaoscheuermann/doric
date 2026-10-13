@@ -8,14 +8,18 @@ import {
   SortableContext,
 } from '@dnd-kit/sortable';
 import { XIcon } from 'lucide-react';
+import { Tabs as TabsPrimitive } from 'radix-ui';
 import type { ReactNode } from 'react';
 
 import { Button } from '../components/button.js';
-import { ScrollArea, ScrollBar } from '../components/scroll-area.js';
 import { TabsList, TabsTrigger } from '../components/tabs.js';
 import { Toggle } from '../components/toggle.js';
 import { cn } from '../lib/utils.js';
 import { useSortableTab, useTabStrip } from './use-tab-strip.js';
+
+/** Shared compact chrome for project and resource tabs. */
+export const compactTabClassName =
+  'relative flex h-[28px] items-center gap-[6px] rounded-[6px] px-[8px] text-[12px] leading-[16px] font-[500] text-[var(--paper-gray-3)] hover:bg-[color-mix(in_srgb,currentColor_7.5%,transparent)] hover:text-[var(--paper-gray-2)] data-[active=true]:bg-[var(--paper-control)] data-[active=true]:text-[var(--paper-gray-1)] shadow-none data-[active=true]:hover:bg-[var(--paper-control)] [-webkit-app-region:no-drag] [&:has(:focus-visible)]:outline-2 [&:has(:focus-visible)]:-outline-offset-1 [&:has(:focus-visible)]:outline-[var(--paper-focus)]';
 
 export type StripTab = {
   readonly id: string;
@@ -71,47 +75,44 @@ export function TabStrip({
       <div
         ref={events.root}
         data-sorting={events.sorting}
-        className={cn('min-w-0 flex-1', variant === 'project' && 'h-[28px]')}
+        className={cn(
+          'min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [-webkit-app-region:drag]',
+          variant === 'project' && 'h-[28px]',
+        )}
       >
-        <ScrollArea className="w-full" type="auto">
-          <div>
-            <List
-              {...(variant === 'toggle'
-                ? { role: 'group' }
-                : { variant: variant === 'project' ? 'default' : variant })}
-              aria-label={label}
-              className={cn(
-                'w-max justify-start',
-                variant === 'toggle' && 'flex items-center gap-1',
-                variant === 'line' &&
-                  'gap-1 p-0 group-data-horizontal/tabs:h-9',
-                variant === 'project' &&
-                  'gap-[4px] bg-transparent p-0 group-data-horizontal/tabs:h-[28px]',
-              )}
-            >
-              <SortableContext
-                items={items.map((item) => item.id)}
-                strategy={horizontalListSortingStrategy}
-              >
-                {items.map((item) => (
-                  <SortableTab
-                    key={item.id}
-                    item={item}
-                    selected={selected}
-                    events={events}
-                    onClose={onClose}
-                    onReselect={onReselect}
-                    onSelect={onSelect}
-                    toggle={variant === 'toggle'}
-                    line={variant === 'line'}
-                    project={variant === 'project'}
-                  />
-                ))}
-              </SortableContext>
-            </List>
-          </div>
-          {variant === 'line' && <ScrollBar orientation="horizontal" />}
-        </ScrollArea>
+        <List
+          {...(variant === 'toggle'
+            ? { role: 'group' }
+            : { variant: variant === 'project' ? 'default' : variant })}
+          aria-label={label}
+          className={cn(
+            'w-max justify-start',
+            variant === 'toggle' && 'flex items-center gap-1',
+            variant === 'line' && 'gap-1 p-0 group-data-horizontal/tabs:h-9',
+            variant === 'project' &&
+              'gap-[4px] bg-transparent p-0 group-data-horizontal/tabs:h-[28px]',
+          )}
+        >
+          <SortableContext
+            items={items.map((item) => item.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            {items.map((item) => (
+              <SortableTab
+                key={item.id}
+                item={item}
+                selected={selected}
+                events={events}
+                onClose={onClose}
+                onReselect={onReselect}
+                onSelect={onSelect}
+                toggle={variant === 'toggle'}
+                line={variant === 'line'}
+                project={variant === 'project'}
+              />
+            ))}
+          </SortableContext>
+        </List>
       </div>
     </DndContext>
   );
@@ -139,14 +140,18 @@ function SortableTab({
   readonly project: boolean;
 }) {
   const sortable = useSortableTab(item.id, events.frozen?.get(item.id));
-  const Control = toggle ? Toggle : TabsTrigger;
+  const Control = toggle
+    ? Toggle
+    : project
+      ? TabsPrimitive.Trigger
+      : TabsTrigger;
   const Item = toggle ? 'button' : 'div';
   return (
     <Control
       asChild
       {...(toggle ? { pressed: selected === item.id } : {})}
       value={item.id}
-      data-active={selected === item.id ? '' : undefined}
+      data-active={selected === item.id ? 'true' : undefined}
       aria-label={item.ariaLabel ?? item.label}
       aria-keyshortcuts="Space Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
       aria-describedby={sortable.attributes['aria-describedby']}
@@ -163,12 +168,15 @@ function SortableTab({
         }
       }}
       className={cn(
-        'group/tab shrink-0 touch-none flex-none select-none motion-reduce:transition-none! motion-reduce:after:transition-none',
+        'group/tab shrink-0 touch-none flex-none select-none [-webkit-app-region:no-drag] motion-reduce:transition-none! motion-reduce:after:transition-none',
         toggle && 'text-xs font-normal',
         line &&
           'h-full after:pointer-events-none group-data-horizontal/tabs:after:bottom-0 data-[state=inactive]:hover:after:opacity-30',
         project &&
-          'relative h-[28px] min-w-[100px] max-w-[280px] justify-start gap-[6px] rounded-[6px] border-0 px-[8px] py-0 text-[12px] leading-[16px] font-[500] text-[var(--paper-gray-3)]! hover:bg-[color-mix(in_srgb,currentColor_7.5%,transparent)] hover:text-[var(--paper-gray-2)]! data-active:bg-[var(--paper-control)]! data-active:text-[var(--paper-gray-1)]! data-active:shadow-[var(--paper-shadow-control)]! after:hidden [-webkit-app-region:no-drag] focus-visible:ring-0 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-[var(--paper-focus)] [&:has(:focus-visible)]:outline-2 [&:has(:focus-visible)]:-outline-offset-1 [&:has(:focus-visible)]:outline-[var(--paper-focus)]',
+          cn(
+            compactTabClassName,
+            'min-w-[100px] max-w-[280px] focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-[var(--paper-focus)]',
+          ),
       )}
     >
       <Item
@@ -185,7 +193,13 @@ function SortableTab({
           if (!event.defaultPrevented) sortable.listeners?.onKeyDown?.(event);
         }}
       >
-        {item.icon}
+        {project ? (
+          <span className="flex size-[16px] shrink-0 items-center justify-center [&>svg]:size-[16px]">
+            {item.icon}
+          </span>
+        ) : (
+          item.icon
+        )}
         {!item.iconOnly && (
           <span
             className={
@@ -201,7 +215,10 @@ function SortableTab({
             type="button"
             data-slot="tab-close"
             style={sortable.closeStyle}
-            className="relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center opacity-0 before:absolute before:inset-[4px] before:rounded-[4px] hover:opacity-100! hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover/tab:opacity-50 group-data-active/tab:opacity-50 focus-visible:opacity-100"
+            className={cn(
+              'relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center before:absolute before:inset-[4px] before:rounded-[4px] hover:opacity-100! hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover/tab:opacity-50 focus-visible:opacity-100',
+              selected === item.id ? 'opacity-50' : 'opacity-0',
+            )}
             aria-label={`Close ${item.ariaLabel ?? item.label}`}
             tabIndex={selected === item.id ? 0 : -1}
             disabled={events.sorting}

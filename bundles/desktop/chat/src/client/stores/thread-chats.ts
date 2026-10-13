@@ -231,7 +231,9 @@ export const createThreadChatsStore = (
         for (const listener of queueListeners.get(id) ?? []) listener();
       observe(id, update);
       if (update.kind === 'event') {
-        queued.set(id, [...(queued.get(id) ?? []), update.event]);
+        const batch = queued.get(id);
+        if (batch === undefined) queued.set(id, [update.event]);
+        else batch.push(update.event);
         schedule(id);
         return;
       }

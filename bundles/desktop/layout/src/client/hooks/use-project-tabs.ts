@@ -1,5 +1,5 @@
 import { NavigationV1 } from 'bundle/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   closeProjectTabs,
@@ -27,7 +27,7 @@ export const useProjectTabs = (
   projects: readonly Project[],
   loaded: boolean,
 ) => {
-  const navigation = layoutServices().use(NavigationV1);
+  const navigation = useMemo(() => layoutServices().use(NavigationV1), []);
   const [state, setState] = useState(read);
   const [path, setPath] = useState(() => navigation.current()?.path ?? '/');
 
