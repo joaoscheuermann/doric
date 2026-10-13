@@ -10,7 +10,7 @@ import {
   SidebarGroupContent,
 } from 'desktop/ui/sidebar';
 import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
-import { createElement, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { movedPanelOrder, panelOrder } from '../../domain/panel-order.js';
 import { ElementHost } from '../molecules/element-host.js';
@@ -42,10 +42,6 @@ export const panelIcon = (name: unknown): ReactNode => {
 const text = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 
-/** A `<core-region name>`: `display: contents`, no role of its own. */
-const Region = ({ name }: { readonly name: string }) =>
-  createElement('core-region', { name });
-
 type ProjectPanelProps = {
   readonly active: string;
   readonly builtIns?: readonly PanelBuiltIn[];
@@ -53,8 +49,6 @@ type ProjectPanelProps = {
   readonly builtInContent?: ReactNode;
   /** The `layout.panel` region items. */
   readonly items: readonly RegionEntry[];
-  /** The footer's built-in content, before the `layout.panel.footer` region. */
-  readonly footer?: ReactNode;
 };
 
 /** Compact, reorderable view controls for the workspace's top tab bar. */
@@ -120,7 +114,6 @@ export function ProjectPanel({
   builtIns = [],
   builtInContent,
   items,
-  footer,
 }: ProjectPanelProps) {
   const item = items.find((entry) => entry.id === active);
   const builtIn = builtIns.some((view) => view.id === active);
@@ -142,13 +135,6 @@ export function ProjectPanel({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <footer
-        data-slot="project-files-footer"
-        className="flex chrome-bar shrink-0 items-center gap-1 border-t bg-sidebar px-2 text-xs"
-      >
-        {footer}
-        <Region name="layout.panel.footer" />
-      </footer>
     </Sidebar>
   );
 }

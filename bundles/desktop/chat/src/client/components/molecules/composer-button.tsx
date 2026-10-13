@@ -39,7 +39,7 @@ export function ComposerButton({
             disabled || ((action === 'send' || action === 'save') && !canSend)
           }
           size="icon-sm"
-          variant="ghost"
+          variant="solid"
           onClick={
             { send: onSend, resume: onResume, pause: onStop, save: onSend }[
               action

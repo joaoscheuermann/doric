@@ -38,7 +38,7 @@ import {
   type SidebarModel,
 } from '../components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../components/organisms/project-tabs.js';
-import { WorkspaceSidebarFooter } from '../components/organisms/workspace-footer.js';
+import { WorkspaceGlobalFooter } from '../components/organisms/workspace-footer.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
@@ -190,6 +190,7 @@ function Workspace() {
             projectTabs.navigate(path);
           }}
         />
+        <WorkspaceGlobalFooter onOpenSettings={openSettings} />
         <DeleteDialog
           entity={workspace.deleting}
           pending={workspace.deletingPending}
@@ -242,14 +243,6 @@ function Workspace() {
                 <WorkspaceTabs state={tabs} />
               )
             }
-            footer={
-              <footer
-                data-slot="workspace-footer"
-                className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-xs"
-              >
-                <Region name="layout.footer" />
-              </footer>
-            }
             onFilesOpenChange={panel.setOpen}
             sidebar={
               <ProjectSidebar
@@ -257,9 +250,6 @@ function Workspace() {
                 after={<Region name="layout.sidebar" />}
                 model={model}
               />
-            }
-            sidebarFooter={
-              <WorkspaceSidebarFooter onOpenSettings={openSettings} />
             }
           >
             <SidebarInset className="min-h-0">
@@ -294,6 +284,12 @@ function Workspace() {
                   )}
                 </ThreadPane>
               </ConversationTerminals>
+              <footer
+                data-slot="workspace-footer"
+                className="flex chrome-bar shrink-0 items-center justify-end gap-1 border-t bg-sidebar px-2 text-[11px] font-light text-muted-foreground"
+              >
+                <Region name="layout.footer" />
+              </footer>
             </SidebarInset>
           </WorkspaceLayout>
         </Tabs>
@@ -306,6 +302,7 @@ function Workspace() {
           }}
         />
       </SidebarProvider>
+      <WorkspaceGlobalFooter onOpenSettings={openSettings} />
     </div>
   );
 }

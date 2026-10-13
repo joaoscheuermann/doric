@@ -45,7 +45,7 @@ export function ComposerControls({
       {edit && running && (
         <Button
           size="icon-sm"
-          variant="ghost"
+          variant="solid"
           aria-label="Pause execution"
           onClick={onStop}
         >

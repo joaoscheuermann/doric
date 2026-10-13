@@ -1,12 +1,20 @@
 import { Button } from 'desktop/ui/button';
 import { SettingsIcon } from 'lucide-react';
+import { createElement } from 'react';
 
 import { connectionLabel } from '../../domain/connection.js';
 import { useConnectionStatus } from '../../hooks/use-connection-status.js';
 
-// The content footer of the old renderer is now the `layout.footer` region
-// (stage 9 §5.4): its cells are the region's items (cwd 10, execution 20,
-// usage 30, composer 40). What stays here is the sidebar's status line.
+// The window's single footer: one bar across the whole workspace, on the
+// dashboard and on every project screen, where what the reader reaches for
+// from anywhere lives — the host connection, the machine and sandbox
+// resources (`layout.global-footer`) and the settings trigger at its far
+// end. The conversation keeps its own bar inside its container, and the
+// sidebars and the sandbox panel carry no footer of their own anymore.
+
+/** A `<core-region name>`: `display: contents`, no role of its own. */
+const Region = ({ name }: { readonly name: string }) =>
+  createElement('core-region', { name });
 
 /** The main process's Socket.IO connection status, as the reader reads it. */
 function ConnectionStatus() {
@@ -15,35 +23,33 @@ function ConnectionStatus() {
   return <span className="px-1">{connectionLabel(status)}</span>;
 }
 
-type WorkspaceSidebarFooterProps = {
+type WorkspaceGlobalFooterProps = {
   readonly onOpenSettings: () => void;
 };
 
 /**
- * The sidebar's own status line, sharing the footer's geometry on the menu side.
- * It states the connection to the host, so the content footer is free for what a
- * prompt runs with, and it carries the settings trigger at its far end, where a
- * menu's gear belongs — reachable while the sidebar is open and out of the way of
- * the composer.
+ * The window's own status line: connection, hardware, settings, all at the
+ * right end — reachable on every screen, dashboard included, because a
+ * reader checks these wherever they are, not only while a project is open.
  */
-export function WorkspaceSidebarFooter({
+export function WorkspaceGlobalFooter({
   onOpenSettings,
-}: WorkspaceSidebarFooterProps) {
+}: WorkspaceGlobalFooterProps) {
   return (
-    <div
-      data-slot="workspace-sidebar-footer"
-      className="flex chrome-bar shrink-0 items-center border-t bg-sidebar px-1 text-xs text-muted-foreground"
+    <footer
+      data-slot="workspace-global-footer"
+      className="flex chrome-bar shrink-0 items-center justify-end gap-1.5 border-t bg-sidebar px-2 text-xs text-muted-foreground"
     >
       <ConnectionStatus />
+      <Region name="layout.global-footer" />
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label="Settings"
-        className="ml-auto"
         onClick={onOpenSettings}
       >
         <SettingsIcon />
       </Button>
-    </div>
+    </footer>
   );
 }

@@ -12,7 +12,7 @@
 
 The client part defines `<resources-monitor>`, the footer monitor for the
 selected Project's sandbox and for the machine. `registerResourcesRegion` adds
-it to `layout.panel.footer`; WP-10N calls it when the layout's provisional
+it to `layout.global-footer`; WP-10N calls it when the layout's provisional
 monitor goes away.
 
 ```console
