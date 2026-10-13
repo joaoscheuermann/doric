@@ -79,6 +79,10 @@ it compares:
   without the wrapper element or the shortcut, for a bundle element that draws
   sidebar rows inside the layout's sidebar from its own React root (stage 10,
   WP-10N).
+- `button.tsx`: also defines the `solid` variant, the composer's white control: a
+  white fill with an icon that stays dark on it in either theme. Filling a
+  primary button white would have meant turning the theme's `--primary` into
+  white, which every other primary surface reads.
 
 ## Fonts
 

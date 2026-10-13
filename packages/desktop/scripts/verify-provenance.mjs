@@ -35,6 +35,14 @@ const origin = (file) =>
  * the text changed, so the hash check reports the file.
  */
 const patches = {
+  // The composer's white control: a fill the theme's blue `--primary` cannot
+  // give, with an icon that stays dark on it in either theme.
+  'components/button.tsx': [
+    [
+      "        solid:\n          'border-[var(--border)] bg-white text-[#101010] shadow-sm hover:bg-[#fafafa]',\n",
+      '',
+    ],
+  ],
   'components/sonner.tsx': [
     [
       '/**\n * Follow the operating system, including changes while a window is open.\n */',
