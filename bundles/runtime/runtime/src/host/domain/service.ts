@@ -6,6 +6,7 @@ import {
 } from 'sandbox';
 
 import {
+  type CompactResult,
   isTerminal,
   type Project,
   type ProjectChanges,
@@ -174,6 +175,24 @@ export const createWorkspaceService = ({
     redactor,
     bindings,
     executor: ports.executor,
+    // The compaction policy the configuration in force names, read where
+    // the runner needs it (one on-demand compaction at a time reads it).
+    compactionPolicy: async () => {
+      const { configuration } = await ports.configuration();
+      const value = (
+        configuration.execution as {
+          readonly contextCompaction?: Partial<{
+            readonly enabled: boolean;
+            readonly tailMinMessages: number;
+            readonly summaryMaxChars: number;
+          }>;
+        }
+      ).contextCompaction;
+      return {
+        tailMinMessages: value?.tailMinMessages ?? 6,
+        summaryMaxChars: value?.summaryMaxChars ?? 6000,
+      };
+    },
     checkStorage: ports.checkStorage,
     ...(ports.hooks.threadsClosing === undefined
       ? {}
@@ -1204,6 +1223,17 @@ export const createWorkspaceService = ({
           if (project === undefined || thread === undefined)
             return Promise.resolve({ status: 'inactive' as const });
           return runner.rewind(project, thread, promptId, prompt);
+        });
+      },
+      compact: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        return exclusive<CompactResult>(record.projectId, () => {
+          const project = runtimes.get(record.projectId);
+          const thread = project?.threads.get(id);
+          if (project === undefined || thread === undefined)
+            return Promise.resolve({ status: 'inactive' as const });
+          return runner.compact(project, thread);
         });
       },
       events: async (id, afterSequence) => {

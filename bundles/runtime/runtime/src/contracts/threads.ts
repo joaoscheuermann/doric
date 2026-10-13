@@ -7,7 +7,9 @@ import {
 import { z } from 'zod';
 
 import {
+  type CompactResult,
   type CwdResult,
+  compactResultSchema,
   cwdResultSchema,
   type DeleteResult,
   deleteResultSchema,
@@ -281,6 +283,11 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     },
     call?: CallArg,
   ): Promise<RewindResult>;
+  /** service.threads.compact: the on-demand context compaction. */
+  compact(
+    input: { readonly id: string },
+    call?: CallArg,
+  ): Promise<CompactResult>;
   /** service.threads.events: the whole log after the cursor. */
   threadEvents(
     input: { readonly id: string; readonly afterSequence: number },
@@ -437,6 +444,10 @@ export const runtimeThreadsMethods = {
       .object({ id: z.string(), promptId: z.string(), prompt: z.string() })
       .strict(),
     output: rewindResultSchema,
+  },
+  compact: {
+    input: z.object({ id: z.string() }).strict(),
+    output: compactResultSchema,
   },
   threadEvents: {
     input: afterSequence,

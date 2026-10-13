@@ -133,6 +133,27 @@ export type FailureTurn = TurnBase & {
   readonly failure: PromptFailure;
 };
 
+/**
+ * One compaction of the thread's history, from the bracket its events span: the
+ * run that condensed older turns into a summary, or the attempt that failed to.
+ * The bracket belongs to one prompt, so the row stands where that prompt's log
+ * holds it.
+ */
+export type CompactionTurn = TurnBase & {
+  readonly summaryId?: string;
+  readonly summary?: string;
+  readonly type: 'compaction';
+  /** What asked for the compaction: the job's own budget, or the reader. */
+  readonly trigger: 'automatic' | 'manual';
+  readonly status: 'open' | 'completed' | 'failed';
+  /** How many messages the summary condensed, once the bracket has closed. */
+  readonly condensedMessages?: number;
+  /** How many tokens condensing the history gave back, once it has closed. */
+  readonly tokensFreed?: number;
+  /** Why a failed compaction failed, as the log named it. */
+  readonly code?: 'summarizer_failed' | 'unsafe_boundary';
+};
+
 /** One block of the conversation, in the order the log produced it. */
 export type Turn =
   | UserTurn
@@ -142,6 +163,7 @@ export type Turn =
   | ToolTurn
   | ActivityTurn
   | LifecycleTurn
+  | CompactionTurn
   | FailureTurn;
 
 export type Projection = {
@@ -229,10 +251,28 @@ export type Draft =
       promptId: string;
       events: ThreadEvent[];
       failure: PromptFailure;
+    }
+  | {
+      type: 'compaction';
+      promptId: string;
+      events: ThreadEvent[];
+      trigger: 'automatic' | 'manual';
+      /**
+       * `open` shows progress until the bracket's closing event arrives.
+       */
+      status: 'open' | 'completed' | 'failed';
+      summaryId?: string;
+      summary?: string;
+      condensedMessages?: number;
+      tokensFreed?: number;
+      code?: 'summarizer_failed' | 'unsafe_boundary';
     };
 
 /** The draft a completed burst groups: a run of reasoning, or a tool call. */
 type BurstDraft = Extract<Draft, { type: 'thinking' | 'tool_call' }>;
+
+/** The draft a compaction bracket holds while the log has not closed it. */
+type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
 const isBurstDraft = (turn: Draft): turn is BurstDraft =>
   turn.type === 'thinking' || turn.type === 'tool_call';
@@ -321,6 +361,27 @@ const grouped = (
   }
 
   return result;
+};
+
+/**
+ * The compaction bracket a `compaction.finished`/`compaction.failed` closes, by
+ * prompt: the bracket the log opened and has not closed yet, wherever the work
+ * the run went on with sits between the two halves.
+ */
+const findOpenCompaction = (
+  turns: readonly Draft[],
+  promptId: string,
+): CompactionDraft | undefined => {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (
+      turn?.type === 'compaction' &&
+      turn.promptId === promptId &&
+      turn.status === 'open'
+    )
+      return turn;
+  }
+  return undefined;
 };
 
 /** The tool turn a `tool.finished`/`tool.failed` belongs to, by call id. */
@@ -570,6 +631,44 @@ const readEvent = (
     status.set(promptId, 'failed');
   } else if (event?.type === 'agent.cancelled') {
     status.set(promptId, 'cancelled');
+  } else if (event?.type === 'compaction.started') {
+    // Show progress immediately; the closing event updates this same row.
+    turns.push({
+      type: 'compaction',
+      promptId,
+      events: [item],
+      trigger: event.trigger === 'manual' ? 'manual' : 'automatic',
+      status: 'open',
+    });
+  } else if (event?.type === 'compaction.finished') {
+    // The closing half completes the bracket it belongs to, wherever the work
+    // the run went on with sits between the two halves. A closing half without
+    // the started one names no bracket, so it reads as nothing.
+    const opened = findOpenCompaction(turns, promptId);
+    if (opened !== undefined) {
+      opened.status = 'completed';
+      opened.summaryId =
+        typeof event.summaryId === 'string' ? event.summaryId : undefined;
+      opened.summary =
+        typeof event.summary === 'string' ? event.summary : undefined;
+      opened.condensedMessages =
+        typeof event.condensedMessages === 'number'
+          ? event.condensedMessages
+          : undefined;
+      opened.tokensFreed =
+        typeof event.tokensFreed === 'number' ? event.tokensFreed : undefined;
+      opened.events.push(item);
+    }
+  } else if (event?.type === 'compaction.failed') {
+    const opened = findOpenCompaction(turns, promptId);
+    if (opened !== undefined) {
+      opened.status = 'failed';
+      opened.code =
+        event.code === 'unsafe_boundary'
+          ? 'unsafe_boundary'
+          : 'summarizer_failed';
+      opened.events.push(item);
+    }
   }
 };
 

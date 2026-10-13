@@ -489,6 +489,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
       resume: (id, promptId) => threadsApi.resume({ id, promptId }),
       rewind: (id, promptId, prompt) =>
         threadsApi.rewind({ id, promptId, prompt }),
+      compact: (id) => threadsApi.compact({ id }),
       events: (id, afterSequence) =>
         threadsApi.threadEvents({ id, afterSequence }),
       interrupt: (id, promptId) => threadsApi.pause({ id, promptId }),

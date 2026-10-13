@@ -24,6 +24,28 @@ export interface ConfigurationProvider {
   readonly models?: readonly ConfigurationModel[];
 }
 
+/**
+ * The context-compaction policy one execution carries. The field is optional and
+ * this contract carries it unchanged: the consumer applies the defaults an
+ * absent policy stands for.
+ */
+export interface ContextCompactionConfig {
+  readonly enabled: boolean;
+  readonly pressurePercent: number;
+  readonly tailMinMessages: number;
+  readonly summaryMaxChars: number;
+  readonly charBudget: number;
+}
+
+/** The policy an absent `execution.contextCompaction` stands for. */
+export const defaultContextCompaction: ContextCompactionConfig = {
+  enabled: true,
+  pressurePercent: 80,
+  tailMinMessages: 6,
+  summaryMaxChars: 6000,
+  charBudget: 200000,
+};
+
 export interface ConfigurationValue {
   readonly providers: readonly ConfigurationProvider[];
   readonly models: {
@@ -36,6 +58,7 @@ export interface ConfigurationValue {
   readonly execution: {
     readonly maxTurns: number;
     readonly maxToolResultChars?: number;
+    readonly contextCompaction?: ContextCompactionConfig;
   };
   readonly tools?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly gitCredentialId?: string;
@@ -96,6 +119,15 @@ export const configurationValueSchema: z.ZodType<
   execution: z.looseObject({
     maxTurns: z.number(),
     maxToolResultChars: z.number().optional(),
+    contextCompaction: z
+      .looseObject({
+        enabled: z.boolean(),
+        pressurePercent: z.number(),
+        tailMinMessages: z.number(),
+        summaryMaxChars: z.number(),
+        charBudget: z.number(),
+      })
+      .optional(),
   }),
   tools: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   gitCredentialId: z.string().optional(),

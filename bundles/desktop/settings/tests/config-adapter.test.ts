@@ -63,6 +63,36 @@ describe('saving the configuration', () => {
     assert.deepEqual(sent, configuration);
   });
 
+  test('never sends the context-compaction policy to the host', async () => {
+    let sent: unknown;
+
+    await settingsOver(
+      {
+        replace: (input) => {
+          sent = input;
+          return { status: 'replaced', config: stored(configuration, 5) };
+        },
+      },
+      async (api) => {
+        await api.config.update({
+          ...configuration,
+          execution: {
+            maxTurns: 32,
+            contextCompaction: {
+              enabled: true,
+              pressurePercent: 80,
+              tailMinMessages: 6,
+              summaryMaxChars: 6000,
+              charBudget: 200000,
+            },
+          },
+        });
+      },
+    );
+
+    assert.deepEqual(sent, configuration);
+  });
+
   test('sends an empty or null credential choice as none, and a named one as itself', async () => {
     const sent: unknown[] = [];
 
@@ -212,6 +242,26 @@ describe('reading the configuration', () => {
       execution: { maxTurns: 32, maxToolResultChars: 4000 },
       tools: { web: { apiKey: token } },
       githubCredentialId: token,
+    };
+
+    await settingsOver({ current: () => stored(value, 3) }, async (api) => {
+      assert.deepEqual(await api.config.get(), stored(value, 3));
+    });
+  });
+
+  test('carries the context-compaction policy the host stores through', async () => {
+    const value = {
+      ...configuration,
+      execution: {
+        maxTurns: 32,
+        contextCompaction: {
+          enabled: true,
+          pressurePercent: 80,
+          tailMinMessages: 6,
+          summaryMaxChars: 6000,
+          charBudget: 200000,
+        },
+      },
     };
 
     await settingsOver({ current: () => stored(value, 3) }, async (api) => {

@@ -213,6 +213,20 @@ export type CredentialUpdate = {
   readonly secret?: string | null;
 };
 
+/**
+ * The context-compaction policy, mirrored: the host owns the ranges and reads a
+ * stored one back unchanged. A draft that names none is the host's own default —
+ * `enabled: true`, `pressurePercent: 80`, `tailMinMessages: 6`,
+ * `summaryMaxChars: 6000`, `charBudget: 200000`.
+ */
+export type ContextCompactionConfig = {
+  readonly enabled: boolean;
+  readonly pressurePercent: number;
+  readonly tailMinMessages: number;
+  readonly summaryMaxChars: number;
+  readonly charBudget: number;
+};
+
 export type Configuration = {
   readonly providers: readonly ProviderConfiguration[];
   readonly models: {
@@ -222,6 +236,11 @@ export type Configuration = {
     readonly maxTurns: number;
     /** The most one tool result may carry into the model, in characters. */
     readonly maxToolResultChars?: number;
+    /**
+     * The context-compaction policy the host carries; absent is the host's own
+     * default, so a draft need not name one.
+     */
+    readonly contextCompaction?: ContextCompactionConfig;
   };
   /**
    * Per-tool values, keyed by tool name and then by the tool's own field keys.
@@ -426,10 +445,49 @@ export const updatedAtLabel = (updatedAt: string): string => {
 };
 
 /**
+ * The first reason a context-compaction policy falls outside what the host
+ * stores, or `undefined`. These are the host's own ranges, so a policy this rule
+ * passes is one the host answers for.
+ */
+const contextCompactionIssue = (
+  compaction: ContextCompactionConfig,
+): string | undefined => {
+  if (typeof compaction.enabled !== 'boolean')
+    return 'Choose whether context compaction runs.';
+  if (
+    !Number.isInteger(compaction.pressurePercent) ||
+    compaction.pressurePercent < 50 ||
+    compaction.pressurePercent > 95
+  ) {
+    return 'Enter a compaction pressure between 50 and 95 percent.';
+  }
+  if (
+    !Number.isInteger(compaction.tailMinMessages) ||
+    compaction.tailMinMessages < 1
+  ) {
+    return 'Enter a compaction tail of 1 or more messages.';
+  }
+  if (
+    !Number.isInteger(compaction.summaryMaxChars) ||
+    compaction.summaryMaxChars < 200
+  ) {
+    return 'Enter a compaction summary limit of 200 or more characters.';
+  }
+  if (
+    !Number.isInteger(compaction.charBudget) ||
+    compaction.charBudget < 1000
+  ) {
+    return 'Enter a compaction context budget of 1000 or more characters.';
+  }
+  return undefined;
+};
+
+/**
  * The first reason the host would refuse this configuration, in the voice the
  * rest of the surface uses, or `undefined` when it would accept it. The rules
  * are the host's, in the order a person would fix them: a usable provider list
- * first, then the model that runs against it, then the turn limit.
+ * first, then the model that runs against it, then the turn limit, then a
+ * context-compaction policy the draft names.
  *
  * The kind catalog travels in because a provider's fields and lists are the
  * kind's to declare: without it this module cannot say what a provider must
@@ -489,6 +547,11 @@ export const configurationIssue = (
     (!Number.isInteger(toolResultChars) || toolResultChars < 1)
   ) {
     return 'Enter a tool result limit of 1 or more, or leave it empty.';
+  }
+  const compaction = configuration.execution.contextCompaction;
+  if (compaction !== undefined) {
+    const issue = contextCompactionIssue(compaction);
+    if (issue !== undefined) return issue;
   }
   return undefined;
 };
@@ -891,6 +954,10 @@ export const isSameConfiguration = (
   left.models.execution.effort === right.models.execution.effort &&
   left.execution.maxTurns === right.execution.maxTurns &&
   left.execution.maxToolResultChars === right.execution.maxToolResultChars &&
+  isSameContextCompaction(
+    left.execution.contextCompaction,
+    right.execution.contextCompaction,
+  ) &&
   isSameToolValues(left.tools, right.tools) &&
   left.gitCredentialId === right.gitCredentialId &&
   left.githubCredentialId === right.githubCredentialId;
@@ -922,6 +989,23 @@ const isSameToolValues = (
     );
   });
 };
+
+/**
+ * Whether two context-compaction policies describe the same state. A policy is
+ * whole or absent, so absent equals absent and nothing else.
+ */
+const isSameContextCompaction = (
+  left: ContextCompactionConfig | undefined,
+  right: ContextCompactionConfig | undefined,
+): boolean =>
+  left === right ||
+  (left !== undefined &&
+    right !== undefined &&
+    left.enabled === right.enabled &&
+    left.pressurePercent === right.pressurePercent &&
+    left.tailMinMessages === right.tailMinMessages &&
+    left.summaryMaxChars === right.summaryMaxChars &&
+    left.charBudget === right.charBudget);
 
 /**
  * The configuration as a save sends it. The body is a plain replacement, so the

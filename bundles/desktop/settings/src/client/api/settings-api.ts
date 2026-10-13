@@ -5,8 +5,8 @@
 //
 // - the guards of `app/desktop/doric/src/workspace/validation.ts` (the IPC boundary),
 //   with their messages; `desktopConfiguration` is its `configuration()` and
-//   keeps its quirk: Tools values and `execution.maxToolResultChars` never
-//   reach the host;
+//   keeps its quirk: Tools values, `execution.maxToolResultChars` and
+//   `execution.contextCompaction` never reach the host;
 // - the checks of the REST routes the old path went through
 //   (`bundles/foundation/transport/src/host/routes/*`), with their envelope messages;
 // - the response readers of `app/desktop/doric/src/workspace/api.ts`, with
@@ -33,6 +33,7 @@ import {
   type CatalogModel,
   type Configuration,
   type ConfigurationInput,
+  type ContextCompactionConfig,
   type Credential,
   type CredentialCreate,
   type CredentialKind,
@@ -264,9 +265,9 @@ const guardedReference = (value: unknown): string | undefined => {
 /**
  * The configuration a settings save sends to the host: the former IPC guard,
  * unchanged. It keeps only the providers, the execution model, the turn limit
- * and the two credential references, so the Tools section's values and
- * `execution.maxToolResultChars` never reach the host (a kept quirk), and an
- * empty or `null` reference is sent as none.
+ * and the two credential references, so the Tools section's values,
+ * `execution.maxToolResultChars` and `execution.contextCompaction` never reach
+ * the host (a kept quirk), and an empty or `null` reference is sent as none.
  */
 export const desktopConfiguration = (value: unknown): ConfigurationInput => {
   if (!isPlainRecord(value) || !Array.isArray(value.providers)) {
@@ -645,6 +646,17 @@ const toolValuesFrom = (
   return tools;
 };
 
+/** Whether an execution answer carries a whole context-compaction policy. */
+const isContextCompaction = (
+  value: unknown,
+): value is ContextCompactionConfig =>
+  isPlainRecord(value) &&
+  typeof value.enabled === 'boolean' &&
+  typeof value.pressurePercent === 'number' &&
+  typeof value.tailMinMessages === 'number' &&
+  typeof value.summaryMaxChars === 'number' &&
+  typeof value.charBudget === 'number';
+
 const configurationFrom = (value: unknown): Configuration => {
   if (
     !isRecord(value) ||
@@ -654,7 +666,9 @@ const configurationFrom = (value: unknown): Configuration => {
     !isRecord(value.execution) ||
     typeof value.execution.maxTurns !== 'number' ||
     (value.execution.maxToolResultChars !== undefined &&
-      typeof value.execution.maxToolResultChars !== 'number')
+      typeof value.execution.maxToolResultChars !== 'number') ||
+    (value.execution.contextCompaction !== undefined &&
+      !isContextCompaction(value.execution.contextCompaction))
   ) {
     return invalidResponse();
   }
@@ -685,6 +699,9 @@ const configurationFrom = (value: unknown): Configuration => {
       ...(value.execution.maxToolResultChars === undefined
         ? {}
         : { maxToolResultChars: value.execution.maxToolResultChars }),
+      ...(value.execution.contextCompaction === undefined
+        ? {}
+        : { contextCompaction: value.execution.contextCompaction }),
     },
     ...(tools === undefined ? {} : { tools }),
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),

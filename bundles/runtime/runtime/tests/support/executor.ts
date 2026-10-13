@@ -47,6 +47,7 @@ export interface ScriptedRun extends ExecutorRunInput {
 export type Script = (run: ScriptedRun) => Promise<string>;
 
 export interface ScriptedExecutorOptions {
+  readonly compact?: Executor['compact'];
   /** The formats `formats()` answers; the test format by default. */
   readonly formats?: readonly string[];
 }
@@ -91,6 +92,11 @@ export const scriptedExecutor =
         },
       };
     },
+    // The scripted executor does not condense: an on-demand compaction of a
+    // Thread it owns reads as a refusal with nothing to condense.
+    compact:
+      options.compact ??
+      (async () => ({ status: 'refused', reason: 'nothing_to_compact' })),
     rewind: async ({ history, promptId, removedPromptIds }) => {
       const meta = await metaOf(history);
       const boundary = meta.checkpoints[promptId];
@@ -143,6 +149,10 @@ export const executorProvider = (
     checkpoint: defineMethod({
       ...executorMethods.checkpoint,
       execute: (input, call) => executor(scopeOf(call)).checkpoint(input),
+    }),
+    compact: defineMethod({
+      ...executorMethods.compact,
+      execute: (input, call) => executor(scopeOf(call)).compact(input, call),
     }),
     rewind: defineMethod({
       ...executorMethods.rewind,

@@ -54,6 +54,7 @@ import {
   ChatBlockNode,
   ChatBlocksContext,
 } from './nodes/chat-block-node.js';
+import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
 import { FailureTurnNode } from './nodes/failure-turn-node.js';
 import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
@@ -219,6 +220,7 @@ const defineConversationExtension = (
       TurnAuthorNode,
       ActivityTurnNode,
       LifecycleTurnNode,
+      CompactionTurnNode,
       QueueNode,
       PromptEditNode,
       QueuedTurnNode,

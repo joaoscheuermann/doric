@@ -7,6 +7,7 @@ import {
   applyProviderDraft,
   type CatalogModel,
   type Configuration,
+  type ContextCompactionConfig,
   type Credential,
   catalogFeatures,
   configurationIssue,
@@ -480,6 +481,72 @@ describe('configuration rules', () => {
       );
     }
   });
+
+  /** The policy the cases below bend one field of at a time. */
+  const whole: ContextCompactionConfig = {
+    enabled: true,
+    pressurePercent: 80,
+    tailMinMessages: 6,
+    summaryMaxChars: 6000,
+    charBudget: 200000,
+  };
+
+  test('carries the context-compaction policy the host would store', () => {
+    assert.equal(
+      configurationIssue(
+        configuration({
+          execution: { maxTurns: 8, contextCompaction: whole },
+        }),
+        kinds,
+      ),
+      undefined,
+    );
+  });
+
+  test('requires a context-compaction policy within the ranges the host stores', () => {
+    const cases: readonly [Partial<ContextCompactionConfig>, string][] = [
+      [
+        { pressurePercent: 40 },
+        'Enter a compaction pressure between 50 and 95 percent.',
+      ],
+      [
+        { pressurePercent: 96 },
+        'Enter a compaction pressure between 50 and 95 percent.',
+      ],
+      [
+        { pressurePercent: 80.5 },
+        'Enter a compaction pressure between 50 and 95 percent.',
+      ],
+      [
+        { tailMinMessages: 0 },
+        'Enter a compaction tail of 1 or more messages.',
+      ],
+      [
+        { summaryMaxChars: 199 },
+        'Enter a compaction summary limit of 200 or more characters.',
+      ],
+      [
+        { charBudget: 999 },
+        'Enter a compaction context budget of 1000 or more characters.',
+      ],
+      [
+        { enabled: 'yes' as unknown as boolean },
+        'Choose whether context compaction runs.',
+      ],
+    ];
+
+    for (const [patch, issue] of cases) {
+      assert.equal(
+        configurationIssue(
+          configuration({
+            execution: { maxTurns: 8, contextCompaction: { ...whole, ...patch } },
+          }),
+          kinds,
+        ),
+        issue,
+      );
+    }
+  });
 });
 
 describe('the catalog a provider page offers', () => {
@@ -885,6 +952,33 @@ describe('configuration comparison', () => {
         configuration(),
         configuration({ gitCredentialId: undefined }),
       ),
+    );
+  });
+
+  test('breaks when the context-compaction policy changes, and holds for the same one', () => {
+    const base = configuration();
+    const policy: ContextCompactionConfig = {
+      enabled: true,
+      pressurePercent: 80,
+      tailMinMessages: 6,
+      summaryMaxChars: 6000,
+      charBudget: 200000,
+    };
+    const withPolicy: Configuration = {
+      ...base,
+      execution: { ...base.execution, contextCompaction: policy },
+    };
+
+    assert.equal(isSameConfiguration(base, withPolicy), false);
+    assert.equal(isSameConfiguration(withPolicy, base), false);
+    assert.ok(
+      isSameConfiguration(withPolicy, {
+        ...withPolicy,
+        execution: {
+          ...withPolicy.execution,
+          contextCompaction: { ...policy },
+        },
+      }),
     );
   });
 });

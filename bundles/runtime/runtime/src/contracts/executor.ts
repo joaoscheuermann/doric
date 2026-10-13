@@ -59,6 +59,40 @@ export interface ExecutorRunResult {
   readonly text: string;
 }
 
+/** The executor's plain compaction policy, carried in the contract. */
+export interface CompactionPolicyValue {
+  /** How many recent messages stay out of every condensation. */
+  readonly tailMinMessages: number;
+  /** The summary's character budget. */
+  readonly summaryMaxChars: number;
+}
+
+export type ExecutorCompactionResult =
+  | {
+      readonly status: 'compacted';
+      readonly summaryId: string;
+      readonly condensedMessages: number;
+      readonly retainedMessages: number;
+      /** An estimate, not a measurement. */
+      readonly tokensFreed: number;
+    }
+  | {
+      readonly status: 'refused';
+      readonly reason: 'disabled' | 'missing_history' | 'nothing_to_compact';
+    }
+  | {
+      /** A post-bracket failure the executor already recorded as failed. */
+      readonly status: 'failed';
+      readonly code: 'summarizer_failed' | 'unsafe_boundary';
+    };
+
+/** The executor's `compact` input, without a prompt job. */
+export interface ExecutorCompactionInput {
+  readonly thread: Thread;
+  readonly session: PromptSession;
+  readonly policy: CompactionPolicyValue;
+}
+
 export interface Executor {
   /** One prompt. call.scope = { projectId, threadId, promptId }; call.signal aborts it. */
   run(input: ExecutorRunInput, call?: CallArg): Promise<ExecutorRunResult>;
@@ -78,6 +112,15 @@ export interface Executor {
   ): Promise<HistoryPatch | undefined>;
   /** History formats this executor reads. */
   formats(call?: CallArg): readonly string[];
+  /**
+   * On-demand compaction of an idle Thread: condenses the oldest safe span
+   * into one summary message and records it. call.scope carries the
+   * compaction's own promptId; call.signal aborts the summarization.
+   */
+  compact(
+    input: ExecutorCompactionInput,
+    call?: CallArg,
+  ): Promise<ExecutorCompactionResult>;
 }
 
 const local = <T>(test: (value: unknown) => boolean, message: string) =>
@@ -139,6 +182,28 @@ export const executorMethods = {
     output: historyPatchSchema.optional(),
   },
   formats: { input: z.tuple([]), output: z.array(z.string()) },
+  compact: {
+    input: z
+      .object({
+        thread: threadSchema,
+        session: promptSessionSchema,
+        policy: z
+          .object({ tailMinMessages: z.number(), summaryMaxChars: z.number() })
+          .strict(),
+      })
+      .strict(),
+    output: z.looseObject({
+      status: z.enum(['compacted', 'refused', 'failed']),
+      summaryId: z.string().optional(),
+      condensedMessages: z.number().optional(),
+      retainedMessages: z.number().optional(),
+      tokensFreed: z.number().optional(),
+      reason: z
+        .enum(['disabled', 'missing_history', 'nothing_to_compact'])
+        .optional(),
+      code: z.string().optional(),
+    }),
+  },
 } as const;
 
 export const ExecutorV1 = ref<Executor>('executor/v1');

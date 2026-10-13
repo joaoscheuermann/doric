@@ -53,6 +53,7 @@
       "watchProject"
     ],
     "runtime.threads/v1": [
+      "compact",
       "createThread",
       "deleteThread",
       "editQueued",
@@ -83,7 +84,7 @@
       "watchProject"
     ],
     "tools/v1": ["catalog"],
-    "usage/v1": ["thread"]
+    "usage/v1": ["compact", "compactionTarget", "setCompactionTarget", "thread"]
   },
   "scopeKeys": ["projectId", "threadId", "promptId"]
 }

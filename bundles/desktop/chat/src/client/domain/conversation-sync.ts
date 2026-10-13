@@ -36,10 +36,12 @@ const turnKey = (turn: Turn): string =>
 
 /**
  * A block that reads as chrome between the run's turns rather than as a turn of
- * its own story: a lifecycle row, or the failure a prompt was closed with.
+ * its own story: a lifecycle row, a compaction row, or the failure a prompt was
+ * closed with.
  */
 const isChrome = (turn: Turn): boolean =>
   turn.type === 'lifecycle' ||
+  turn.type === 'compaction' ||
   turn.type === 'failure' ||
   turn.type === 'queued';
 

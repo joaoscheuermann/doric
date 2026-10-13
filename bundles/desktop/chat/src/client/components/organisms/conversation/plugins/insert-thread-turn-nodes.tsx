@@ -35,6 +35,11 @@ import {
   type ChatBlockNode,
 } from '../nodes/chat-block-node.js';
 import {
+  $createCompactionTurnNode,
+  $isCompactionTurnNode,
+  type CompactionTurnNode,
+} from '../nodes/compaction-turn-node.js';
+import {
   $createDelegatedTurnNode,
   $isDelegatedTurnNode,
   type DelegatedTurnNode,
@@ -97,6 +102,7 @@ type TurnBlock =
   | ToolTurnNode
   | ActivityTurnNode
   | LifecycleTurnNode
+  | CompactionTurnNode
   | FailureTurnNode;
 
 /**
@@ -120,6 +126,7 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isToolTurnNode(node) ||
   $isActivityTurnNode(node) ||
   $isLifecycleTurnNode(node) ||
+  $isCompactionTurnNode(node) ||
   $isFailureTurnNode(node);
 
 /** The block a turn becomes: one node class per kind of turn. */
@@ -180,6 +187,17 @@ const $createBlock = (
       );
     case 'failure':
       return $createFailureTurnNode(key, turn.promptId, turn.failure);
+    case 'compaction':
+      return $createCompactionTurnNode(
+        key,
+        turn.promptId,
+        turn.trigger,
+        turn.status,
+        turn.condensedMessages,
+        turn.tokensFreed,
+        turn.code,
+        turn.summary,
+      );
   }
 };
 
@@ -233,6 +251,8 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   else if (turn.type === 'activity' && $isActivityTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'lifecycle' && $isLifecycleTurnNode(block))
+    block.setTurn(turn);
+  else if (turn.type === 'compaction' && $isCompactionTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'failure' && $isFailureTurnNode(block))
     block.setTurn(turn);

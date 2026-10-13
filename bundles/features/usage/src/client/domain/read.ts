@@ -5,7 +5,11 @@
 
 import { isContractError } from 'bundle/contracts';
 
-import type { ThreadUsage, Usage } from '../../contracts/index.js';
+import type {
+  CompactResult,
+  ThreadUsage,
+  Usage,
+} from '../../contracts/index.js';
 
 export const usageMessages = {
   unavailable: 'Doric backend is unavailable.',
@@ -19,7 +23,7 @@ export const usageMessages = {
 export const usageQueryKey = (threadId: string | undefined) =>
   ['thread', threadId, 'usage'] as const;
 
-/** Every non-terminal bridge call carries a 10 s deadline [D10-2]. */
+/** Reads and settings writes use the usual 10 s bridge deadline. */
 const deadline = () => ({ deadline: Date.now() + 10_000 });
 
 const identifier = (value: unknown): string => {
@@ -64,4 +68,68 @@ export const readThreadUsage = async (
   }
   if (value === undefined) throw new Error(usageMessages.threadNotFound);
   return value;
+};
+
+/** The context fraction the executor condenses at, or an `Error` as above. */
+export const readCompactionTarget = async (
+  usage: Usage,
+): Promise<{ readonly pressurePercent: number }> => {
+  try {
+    return await usage.compactionTarget(deadline());
+  } catch (error) {
+    throw failure(error);
+  }
+};
+
+/** Moves the pressure line; the validated answer is what the host kept. */
+export const writeCompactionTarget = async (
+  usage: Usage,
+  pressurePercent: number,
+): Promise<{ readonly pressurePercent: number }> => {
+  if (
+    !Number.isInteger(pressurePercent) ||
+    pressurePercent < 50 ||
+    pressurePercent > 95
+  ) {
+    throw new Error('The compaction target must be a whole 50–95 percent.');
+  }
+  try {
+    return await usage.setCompactionTarget({ pressurePercent }, deadline());
+  } catch (error) {
+    throw failure(error);
+  }
+};
+
+/** One on-demand compaction, as the workspace REST path answers it. */
+export const compactThread = async (
+  usage: Usage,
+  threadId: string,
+): Promise<CompactResult> => {
+  const id = identifier(threadId);
+  try {
+    // Summarizing a long conversation is a model generation, not a quick read.
+    return await usage.compact(id, { deadline: Date.now() + 5 * 60_000 });
+  } catch (error) {
+    throw failure(error);
+  }
+};
+
+/** The sentence each `compact` answer reads as on the footer. */
+export const compactResultMessage = (result: CompactResult): string => {
+  switch (result.status) {
+    case 'compacted':
+      return `Compacted ${result.condensedMessages} ${result.condensedMessages === 1 ? 'message' : 'messages'} into one summary (about ${result.tokensFreed} tokens freed).`;
+    case 'refused':
+      return result.reason === 'disabled'
+        ? 'Context compaction is disabled in the settings.'
+        : result.reason === 'missing_history'
+          ? 'This thread has no conversation to compact yet.'
+          : 'Nothing condenses here: the recent conversation is already the smallest safe span.';
+    case 'failed':
+      return `The compaction failed (${result.code}); the log carries the attempt.`;
+    case 'busy':
+      return 'Wait for the active run (and the queued input) to finish.';
+    default:
+      return 'This thread cannot be compacted.';
+  }
 };
