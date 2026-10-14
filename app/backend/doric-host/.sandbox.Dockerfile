@@ -62,10 +62,16 @@ RUN set -eux; \
 # `libjs-jquery`, which `xpra` only *recommends*: under
 # `--no-install-recommends` that link dangles and the screen panel embeds a
 # client that never boots, so the library is listed and its asset checked
-# below. `x11-apps` adds a known-good X client (`xclock`, `xeyes`) to prove a
+# below. `python3-pil` is the same gap on the server side and a fatal one: a
+# client that says hello makes xpra import
+# `xpra.server.source.client_connection`, that module imports
+# `xpra.codecs.pillow.decoder`, and without Pillow every client — the panel's
+# iframe included — is dropped with `error accepting new connection` right
+# after its handshake, so the package is listed and its import checked below.
+# `x11-apps` adds a known-good X client (`xclock`, `xeyes`) to prove a
 # display serves. The checks fail the build on a missing soname, display,
-# binary, client page or client asset rather than leaving a sandbox that
-# cannot start a desktop app or serve the screen panel.
+# binary, client page, client asset or client-connection import rather than
+# leaving a sandbox that cannot start a desktop app or serve the screen panel.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libasound2 \
@@ -84,6 +90,7 @@ RUN apt-get update \
       libxfixes3 \
       libxkbcommon0 \
       libxrandr2 \
+      python3-pil \
       x11-apps \
       xauth \
       xpra \
@@ -93,7 +100,8 @@ RUN apt-get update \
  && xvfb-run -a true \
  && xpra --version \
  && test -f /usr/share/xpra/www/index.html \
- && test -f /usr/share/xpra/www/js/lib/jquery.js
+ && test -f /usr/share/xpra/www/js/lib/jquery.js \
+ && python3 -c 'from xpra.server.source.client_connection import ClientConnection'
 
 # Debian's own `docker.io` is used rather than Docker's apt repository, which
 # would add a third-party trust root this repository uses nowhere else; the
