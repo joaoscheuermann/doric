@@ -102,6 +102,9 @@ await build(1);
 
 const workspace = createWorkspace();
 const contracts = createContracts({ workspace, catalog, log });
+
+// A port already held is the common failure — a real host, or a fake host from
+// an earlier shell. Say so, with the way out, instead of a bare stack trace.
 const server = await startFakeHost({
   port,
   host,
@@ -111,6 +114,19 @@ const server = await startFakeHost({
   log,
   version: 'dev',
   reload: catalog.reload,
+}).catch((error) => {
+  if (error?.code === 'EADDRINUSE') {
+    process.stderr.write(
+      `[fake-host] ${host}:${port} is already in use: another host (or a fake ` +
+        'host from an earlier shell) holds it.\n' +
+        '[fake-host] Free the port, or start this one elsewhere: ' +
+        'DORIC_FAKE_PORT=3010 npm run doric:fake-host\n',
+    );
+
+    return exit(1);
+  }
+
+  throw error;
 });
 
 log.note(
