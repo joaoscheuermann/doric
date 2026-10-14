@@ -12,8 +12,8 @@ import { z } from 'zod';
 
 /*
  * screen.sessions/v2: the HTML5 screen of a Project's sandbox — an xpra
- * server on an internal display, served to the app through a relay the
- * `screen` bundle mounts on the host's own origin.
+ * server on an internal display, served to the app through the relay the
+ * `screen-relay` bundle mounts on the host's own origin.
  *
  * The call is Project-scoped: every Thread of a Project shares the Project's
  * one sandbox, and therefore its one screen. `attach` is an idempotent

@@ -501,11 +501,14 @@ host part provides `screen.sessions/v2`: `attach(projectId)` runs on the
 Project's runtime lease, ensures one xpra server inside the Project sandbox
 (`:100` and up, ports `14500`–`14502`, a `/tmp/doric-screen.json` marker that
 reuses the same display, port and token after a host restart) and answers the
-host-relative path (`/screen/<token>/`) of that screen; its relay is served on
-the host's own origin — mounted on the request router the bundles share and on
-the host's `http.Server` for the upgrade, which is why an engine that also owns
-that listener must not end upgrades it does not recognise — and forwards that
-token tree to the sandbox's xpra server only, assets over HTTP and the live
+host-relative path (`/screen/<token>/`) of that screen. The relay that answers
+that path is the `screen-relay` bundle's, which the composition runs resident in
+the kernel because mounting on the host's shared request router and `http.Server`
+takes native handles only a resident bundle is handed — an engine that also owns
+that listener must not end upgrades it does not recognise. The `screen` bundle
+holds no listener: it publishes each live session's upstream through
+`screen.relay/v1`, and the resident half forwards that token tree to the
+sandbox's xpra server only — assets over HTTP and the live
 stream over a transparent WebSocket that keeps the browser's own handshake, so
 negotiated subprotocols and frames reach xpra unchanged; an image without xpra
 answers `unavailable` with `missing-xpra`. The views persist across restarts,
@@ -842,15 +845,17 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `app/backend/doric-host/composition.json`, which
 names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
-`git`, `threads`, `terminal`, `usage`, `resources`, `screen`, `runtime`,
+`git`, `threads`, `terminal`, `usage`, `resources`, `screen`, `screen-relay`,
+`runtime`,
 `direct`,
 `openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
 `settings`, `chat` and `history`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
 than in a generation process: `host-config`, which owns the configuration's
-`settings/v1` space and provides `host-config/v1`, and `transport`, which
-registers the REST and Socket.IO routes. Its `required` block names the
+`settings/v1` space and provides `host-config/v1`; `transport`, which
+registers the REST and Socket.IO routes; and `screen-relay`, which serves the
+screen relay on that same listener. Its `required` block names the
 contracts and bundles the host refuses to serve without, and its `alternatives`
 block names the sandbox choice that `DORIC_SANDBOX_PROVIDER` makes. A
 composition that chooses no backend for either contract puts the host in
@@ -870,7 +875,7 @@ mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
 and for each prompt; `Bundles loaded`
-reports the activated installed bundles (23 in the shipped composition; the
+reports the activated installed bundles (24 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, so the startup work runs in the start hooks.
 `onHostStartHook` runs in activation order after the bundles load and the

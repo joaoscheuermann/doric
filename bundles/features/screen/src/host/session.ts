@@ -1,8 +1,9 @@
 // The Project screen sessions: one xpra server per Project sandbox, ensured
-// on demand and reached through the loopback relay. Everything here runs in
-// a host generation, next to the runtime the lease comes from, so the
-// process-local `runtime.lease/v1.withLease` task can hand over the sandbox
-// directly.
+// on demand and reached through the relay. Everything here runs in a host
+// generation, next to the runtime the lease comes from, so the process-local
+// `runtime.lease/v1.withLease` task can hand over the sandbox directly; the
+// session is published on `screen.relay/v1`, which the resident `screen-relay`
+// bundle serves on the host's own origin.
 //
 // The session record is recoverable: it lives in a marker file inside the
 // sandbox, so a respawned host generation (or a restarted host) finds the

@@ -24,6 +24,9 @@
     },
     {
       "path": "../../../packages/desktop"
+    },
+    {
+      "path": "../screen-relay"
     }
   ],
   "exclude": ["src/client/**", "src/desktop/**"]

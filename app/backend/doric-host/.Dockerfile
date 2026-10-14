@@ -65,6 +65,7 @@ RUN npm ci --ignore-scripts \
       bundles/foundation/host-config/tsconfig.json \
       bundles/features/resources/tsconfig.json \
       bundles/features/screen/tsconfig.json \
+      bundles/features/screen-relay/tsconfig.json \
       bundles/desktop/layout/tsconfig.json \
       bundles/desktop/chat/tsconfig.json \
       bundles/desktop/history/tsconfig.json \
@@ -78,7 +79,7 @@ RUN npm ci --ignore-scripts \
       bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads \
       bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter \
       bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
-      bundles/features/terminal bundles/features/usage bundles/features/resources bundles/features/screen bundles/desktop/notifications \
+      bundles/features/terminal bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications \
       bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config \
  && mkdir -p app/backend/doric-host/dist/src \
  && mv app/backend/doric-host/dist/index.* app/backend/doric-host/dist/src/ \

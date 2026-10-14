@@ -24,6 +24,7 @@
   "references": [
     { "path": "../../../packages/bundle/tsconfig.lib.json" },
     { "path": "../../../packages/sandbox/tsconfig.lib.json" },
-    { "path": "../../runtime/runtime" }
+    { "path": "../../runtime/runtime" },
+    { "path": "../screen-relay" }
   ]
 }

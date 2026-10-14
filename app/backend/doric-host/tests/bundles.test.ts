@@ -251,9 +251,11 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // have no host part, and since the stage-10 host switch the provider-kind
     // bundles, the `docker` sandbox and the `terminal`, `usage`,
     // `resources` and `screen` features, and since the desktop switch (WP-10N) the
-    // `notifications` bundle, which has no host part, and the `web` bundle. No bundle is
+    // `notifications` bundle, which has no host part, and the `web` bundle. The
+    // `screen-relay` bundle is one too: it is the resident half of the screen,
+    // which serves the relay on the host's own listener. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 23);
+    assert.equal(host.bundleCount, 24);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -276,6 +278,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         usage: ['active', 'others'],
         resources: ['active', 'others'],
         screen: ['active', 'others'],
+        'screen-relay': ['active', 'others'],
         runtime: ['active', 'others'],
         direct: ['active', 'others'],
         openai: ['active', 'others'],
@@ -309,6 +312,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'usage'],
       ['runtime', 'resources'],
       ['runtime', 'screen'],
+      ['screen-relay', 'screen'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),

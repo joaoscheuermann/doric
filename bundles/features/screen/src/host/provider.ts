@@ -1,25 +1,23 @@
 // The `screen.sessions/v2` provider: `attach` runs the ensure task on the
 // calling Project's lease, then publishes the session on the relay and answers
-// the host-relative path the window loads. The relay is mounted on the host's
-// shared origin through `doric.network/v1`; the provider owns the relay's
-// lifetime and nowhere binds an address. Lease states map one to one onto the
-// contract's answer, and a session that cannot be served reports why instead
-// of failing the bridge call.
+// the host-relative path the window loads. The relay itself belongs to the
+// `screen-relay` bundle, which the composition runs resident in the kernel
+// because mounting on the host's shared listener takes native handles this
+// generation cannot reach; here the session is only published and forgotten
+// through `screen.relay/v1`. Lease states map one to one onto the contract's
+// answer, and a session that cannot be served reports why instead of failing
+// the bridge call.
 
 import type { Log } from 'bundle/contracts';
 import { type Call, defineMethod, defineService } from 'bundle/contracts';
 import { type RuntimeLease, RuntimeLeaseV1 } from 'runtime/contracts';
+import type { ScreenRelay } from 'screen-relay/contracts';
 
 import {
   type ScreenAttach,
   ScreenSessionsV2,
   screenSessionsMethods,
 } from '../contracts/index.js';
-import {
-  createScreenRelay,
-  type ScreenRelay,
-  type ScreenRelayResources,
-} from './relay.js';
 import {
   createScreenSessionManager,
   type ScreenSession,
@@ -37,30 +35,29 @@ export interface ScreenAttachInput {
 export interface ScreenSessions {
   /** Deduplicated per Project while a call is in flight. */
   attach(input: ScreenAttachInput): Promise<ScreenAttach>;
-  /**
-   * Mounts the relay on the host's shared router and `http.Server`. Called by
-   * the host part during activation, from the `doric.network/v1` listener.
-   */
-  mount(resources: ScreenRelayResources): () => void;
-  dispose(): void;
+  /** Forgets the tokens this generation published, then closes. */
+  dispose(): Promise<void>;
 }
 
 export interface ScreenSessionsDeps {
   readonly log: () => Log;
-  /** Injectable for tests: the relay both ends speak to. */
-  readonly relay?: () => ScreenRelay;
+  /**
+   * The relay the sessions publish on: `screen.relay/v1`, whose provider the
+   * resident `screen-relay` bundle owns. Taken through a function so a call
+   * that never reaches a session creates no relay handle.
+   */
+  readonly relay: () => ScreenRelay;
   readonly manager?: () => ScreenSessionManager;
 }
 
 export const createScreenSessions = (
   deps: ScreenSessionsDeps,
 ): ScreenSessions => {
-  let relay: ScreenRelay | undefined;
   let manager: ScreenSessionManager | undefined;
   const sessions = new Map<string, ScreenSession>();
   const inFlight = new Map<string, Promise<ScreenAttach>>();
 
-  const relayOf = () => (relay ??= (deps.relay ?? createScreenRelay)());
+  const relayOf = () => deps.relay();
   const managerOf = () =>
     (manager ??= (
       deps.manager ?? (() => createScreenSessionManager({ log: deps.log }))
@@ -86,10 +83,11 @@ export const createScreenSessions = (
       const previous = sessions.get(projectId);
 
       if (previous !== undefined && previous.token !== session.token) {
-        current.forget(previous.token);
+        await current.forget({ token: previous.token });
       }
 
-      current.expose(session.token, {
+      await current.expose({
+        token: session.token,
         host: session.host,
         port: session.port,
       });
@@ -128,8 +126,22 @@ export const createScreenSessions = (
 
       return run;
     },
-    mount: (resources) => relayOf().mount(resources),
-    dispose: () => relay?.dispose(),
+    dispose: async () => {
+      if (sessions.size === 0) {
+        return;
+      }
+
+      // A relay that is already gone (a kernel restart) has nothing to forget,
+      // and a failure here must not fail deactivation.
+      const relay = relayOf();
+
+      await Promise.all(
+        [...sessions.values()].map((session) =>
+          relay.forget({ token: session.token }).catch(() => undefined),
+        ),
+      );
+      sessions.clear();
+    },
   };
 };
 

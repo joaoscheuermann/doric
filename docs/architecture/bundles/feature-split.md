@@ -46,12 +46,15 @@ O `bundles/foundation/core` atual é renomeado para `files` na primeira etapa, s
 
 ## Bundles residentes no host
 
-Dois bundles instalados rodam no processo nativo do host, e não num processo de geração. Eles estão no bloco `resident` da composição:
+Três bundles instalados rodam no processo nativo do host, e não num processo de geração. Eles estão no bloco `resident` da composição:
 
-| Bundle        | Papel                                                                                                                                                 |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host-config` | Configuração do host: o `settings/v1` de `host-config.configuration/v1`, `host-config/v1` e o `PUT /config` pipeline.                                 |
-| `transport`   | Rotas REST e namespaces Socket.IO, registrados nos listeners nativos por `doric.network/v1.register`; lê as funcionalidades opcionais por `optional`. |
+| Bundle         | Papel                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host-config`  | Configuração do host: o `settings/v1` de `host-config.configuration/v1`, `host-config/v1` e o `PUT /config` pipeline.                                                           |
+| `transport`    | Rotas REST e namespaces Socket.IO, registrados nos listeners nativos por `doric.network/v1.register`; lê as funcionalidades opcionais por `optional`.                           |
+| `screen-relay` | O relay das telas dos Projects: serve `/screen/<token>/` no router e no `http.Server` do host pelo mesmo `register`, e publica o upstream de cada sessão por `screen.relay/v1`. |
+
+O `screen-relay` existe porque `doric.network/v1.register` é local ao processo: o bundle que serve um protocolo nos listeners nativos precisa rodar residente, enquanto as sessões xpra do bundle `screen` precisam da geração, onde `runtime.lease/v1.withLease` entrega o sandbox.
 
 Nenhum deles conhece conceitos do outro. O `transport` lê a configuração pelo contrato `host-config/v1`, e os demais contratos de funcionalidade que ele usa são opcionais.
 

@@ -14,13 +14,13 @@ import {
   RuntimeLeaseV1,
   runtimeLeaseMethods,
 } from 'runtime/contracts';
+import type { ScreenRelay } from 'screen-relay/contracts';
 
 import { ScreenSessionsV2 } from '../src/contracts/index.js';
 import {
   createScreenSessions,
   screenSessionsService,
 } from '../src/host/provider.js';
-import type { ScreenRelay, ScreenRelayTarget } from '../src/host/relay.js';
 import { type ScreenSession, ScreenSessionError } from '../src/host/session.js';
 
 const quietLog = (): Log =>
@@ -56,18 +56,19 @@ const leaseOf = (
   }) as unknown as RuntimeLease;
 
 const relayOf = () => {
-  const exposed = new Map<string, ScreenRelayTarget>();
+  const exposed = new Map<
+    string,
+    { readonly host: string; readonly port: number }
+  >();
   const forgotten: string[] = [];
   const relay: ScreenRelay = {
-    expose: (token, target) => {
-      exposed.set(token, target);
+    expose: async (input) => {
+      exposed.set(input.token, { host: input.host, port: input.port });
     },
-    forget: (token) => {
-      forgotten.push(token);
-      exposed.delete(token);
+    forget: async (input) => {
+      forgotten.push(input.token);
+      exposed.delete(input.token);
     },
-    mount: () => () => undefined,
-    dispose: () => undefined,
   };
 
   return { relay, exposed, forgotten };
@@ -265,6 +266,7 @@ test('attach hands the call Project scope to the lease', async () => {
 test('a failure that is not a screen session failure reaches the caller', async () => {
   const sessions = createScreenSessions({
     log: () => quietLog(),
+    relay: () => relayOf().relay,
     manager: () => ({
       ensure: async () => {
         throw new Error('boom');
@@ -279,4 +281,47 @@ test('a failure that is not a screen session failure reaches the caller', async 
     }),
     /boom/,
   );
+});
+
+test('dispose forgets every token this generation published', async () => {
+  const fake = relayOf();
+  let token = 'token-1';
+  const sessions = createScreenSessions({
+    log: () => quietLog(),
+    relay: () => fake.relay,
+    manager: () => ({ ensure: async () => session(token) }),
+  });
+
+  await sessions.attach({
+    projectId: 'p1',
+    lease: leaseOf({ status: 'ready', value: session(token) }),
+  });
+  token = 'token-2';
+  await sessions.attach({
+    projectId: 'p2',
+    lease: leaseOf({ status: 'ready', value: session(token) }),
+  });
+  assert.deepEqual([...fake.exposed.keys()].sort(), ['token-1', 'token-2']);
+
+  await sessions.dispose();
+
+  assert.deepEqual(fake.forgotten.sort(), ['token-1', 'token-2']);
+  assert.equal(fake.exposed.size, 0);
+});
+
+test('dispose on a generation that never served a screen touches no relay', async () => {
+  let relays = 0;
+  const sessions = createScreenSessions({
+    log: () => quietLog(),
+    relay: () => {
+      relays += 1;
+
+      return relayOf().relay;
+    },
+    manager: () => ({ ensure: async () => session('token-1') }),
+  });
+
+  await sessions.dispose();
+
+  assert.equal(relays, 0);
 });

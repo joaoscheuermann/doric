@@ -20,8 +20,8 @@ import test, { after } from 'node:test';
 import {
   createScreenRelay,
   relayTarget,
-  type ScreenRelay,
   type ScreenRelayRouter,
+  type ScreenRelayServer,
 } from '../src/host/relay.js';
 
 const MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -110,7 +110,7 @@ const upstreamReady = listen(upstream).then((port) => {
   upstreamPort = port;
 });
 
-const relays: ScreenRelay[] = [];
+const relays: ScreenRelayServer[] = [];
 const servers: Server[] = [];
 
 /**
@@ -147,7 +147,7 @@ const hostListener = async (): Promise<{
 
 /** Mounts a fresh relay on a fresh shared host and returns both. */
 const relayOnHost = async (): Promise<{
-  relay: ScreenRelay;
+  relay: ScreenRelayServer;
   port: number;
   unmount: () => void;
 }> => {

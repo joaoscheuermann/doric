@@ -10,7 +10,8 @@
     "runtime.lease/v1@^1.1.0",
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",
-    "layout.workspace/v1@^1.1.0"
+    "layout.workspace/v1@^1.1.0",
+    "screen.relay/v1@^1.0.0"
   ],
   "desktopScope": {
     "screen.sessions/v2": ["projectId", "threadId", "promptId"]

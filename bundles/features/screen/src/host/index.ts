@@ -1,27 +1,22 @@
 // The `screen` bundle's host part: provides `screen.sessions/v2` over the
-// session manager, and mounts the relay on the host's own origin through
-// `doric.network/v1`. Both live for this generation.
+// session manager, and publishes each session's upstream through
+// `screen.relay/v1`. The relay itself is the `screen-relay` bundle's, because
+// it mounts on the host's native listeners, which only a resident bundle is
+// handed; this part runs in a generation, where `runtime.lease/v1.withLease`
+// can hand it the Project's sandbox.
 
-import { DoricNetworkV1, type HostContext, LogV1 } from 'bundle/contracts';
+import { type HostContext, LogV1 } from 'bundle/contracts';
+import { ScreenRelayV1 } from 'screen-relay/contracts';
 
 import { createScreenSessions, screenSessionsService } from './provider.js';
 
 export const activate = ({ services }: HostContext) => {
   const sessions = createScreenSessions({
     log: () => services.use(LogV1),
+    relay: () => services.use(ScreenRelayV1),
   });
-  // The relay is served by the host's shared router and `http.Server`; the
-  // registration is dropped, and the relay disposed, when the bundle
-  // deactivates.
-  const registration = services
-    .use(DoricNetworkV1)
-    .register(({ http, server }) => sessions.mount({ http, server }));
 
   services.provide(screenSessionsService(sessions));
 
-  return () => {
-    registration.dispose();
-
-    return sessions.dispose();
-  };
+  return () => sessions.dispose();
 };

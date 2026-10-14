@@ -1,17 +1,18 @@
-// The screen relay: the HTTP + WebSocket forwarding of the `screen` bundle,
+// The screen relay: the HTTP + WebSocket forwarding of the Project screens,
 // mounted on the origin the host already exposes. The app embeds
 // `/screen/<token>/` on that origin, and the relay forwards every request of
 // that token tree to the Project sandbox's xpra server — assets over plain
 // HTTP, the live stream over a WebSocket.
 //
-// The relay no longer binds a server of its own. A loopback URL that only the
-// host machine can answer is exactly what breaks the product when the host
-// runs on a remote server while the app runs on a laptop: the app has to reach
-// the screen on the same origin it reaches the host on. A bundle receives the
-// host's shared request router and `http.Server` through
-// `doric.network/v1.register`, so the relay mounts the token tree as a router
-// middleware and its transparent upgrade handling as a second `upgrade`
-// listener.
+// The relay binds no server of its own. A loopback URL that only the host
+// machine can answer is exactly what breaks the product when the host runs on
+// a remote server while the app runs on a laptop: the app has to reach the
+// screen on the same origin it reaches the host on. `doric.network/v1` hands
+// the host's shared request router and `http.Server` to a bundle the
+// composition runs resident in the kernel — which is why this file belongs to
+// `screen-relay` and not to the generation-side `screen` — so the relay mounts
+// the token tree as a router middleware and its transparent upgrade handling
+// as a second `upgrade` listener.
 //
 // The WebSocket is forwarded transparently: the relay terminates the upgrade
 // with the browser and performs its own upgrade with xpra, both with the
@@ -35,11 +36,7 @@ import {
 } from 'node:http';
 import { connect, type Socket } from 'node:net';
 
-/** Where one screen session's xpra server listens, as the host reaches it. */
-export interface ScreenRelayTarget {
-  readonly host: string;
-  readonly port: number;
-}
+import type { ScreenRelayTarget } from '../contracts/index.js';
 
 /**
  * The host's shared request router, as this relay uses it: an Express-style
@@ -61,7 +58,13 @@ export interface ScreenRelayResources {
   readonly server: object;
 }
 
-export interface ScreenRelay {
+/**
+ * The relay itself: the local face `screen.relay/v1` is defined over, plus its
+ * native mount. The token argument comes first here because this is the object
+ * the host part owns; the contract's single-object `expose` is what crosses
+ * processes, and `service.ts` adapts one to the other.
+ */
+export interface ScreenRelayServer {
   /** Registers (or replaces) the upstream of one session token. */
   expose(token: string, target: ScreenRelayTarget): void;
   /** Drops a token; its requests answer 404 afterwards. */
@@ -162,7 +165,7 @@ const forwardHeaders = (
 /** Headers an upgrade must keep: the handshake is the payload. */
 const NOTHING_DROPPED: ReadonlySet<string> = new Set();
 
-export const createScreenRelay = (): ScreenRelay => {
+export const createScreenRelay = (): ScreenRelayServer => {
   const sessions = new Map<string, ScreenRelayTarget>();
   const open = new Set<Socket>();
   let mounted = false;

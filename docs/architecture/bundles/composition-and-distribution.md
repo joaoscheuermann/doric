@@ -49,7 +49,7 @@ Neste exemplo, `myhooks` e o core fornecem `hooks/v1`, e a composição escolhe 
 
 A composição distribuída, em `agents/doric/composition.json`, tem três blocos genéricos além de `core`, `enabled` e `providers`:
 
-- `resident` lista bundles instalados que rodam no processo nativo do host, e não num processo de geração. Na composição distribuída são `host-config` (configuração e `settings/v1` de `host-config.configuration/v1`) e `transport` (rotas REST e namespaces Socket.IO).
+- `resident` lista bundles instalados que rodam no processo nativo do host, e não num processo de geração. Na composição distribuída são `host-config` (configuração e `settings/v1` de `host-config.configuration/v1`), `transport` (rotas REST e namespaces Socket.IO) e `screen-relay` (o relay das telas dos Projects, servido no mesmo router e `http.Server`).
 - `required` lista `contracts` e `bundles` sem os quais o host não serve. Sem o bloco, nada é exigido. A checagem roda em `bundle_load`, e a falha põe o host em modo de recuperação com o motivo.
 - `alternatives` escolhe entre bundles que preenchem o mesmo papel. Cada alternativa nomeia a variável de ambiente que a escolhe (`env`), uma opção `default` e as `options`. Hoje há uma só, `sandbox`: `docker` por padrão, `firecracker` com `DORIC_SANDBOX_PROVIDER`. O kernel registra a escolha como `alternatives` no log de startup.
 

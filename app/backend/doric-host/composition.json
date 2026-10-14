@@ -13,6 +13,7 @@
     "usage",
     "resources",
     "screen",
+    "screen-relay",
     "runtime",
     "direct",
     "openai",
@@ -29,7 +30,7 @@
     "storage.backend/v1": "postgres",
     "secrets.backend/v1": "postgres"
   },
-  "resident": ["host-config", "transport"],
+  "resident": ["host-config", "transport", "screen-relay"],
   "required": {
     "contracts": [
       "runtime/v1",
