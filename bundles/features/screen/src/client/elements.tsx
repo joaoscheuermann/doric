@@ -18,6 +18,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarScope,
 } from 'desktop/ui/sidebar';
 import {
   CircleAlertIcon,
@@ -35,11 +36,7 @@ import {
   ScreenViewsV1,
 } from '../contracts/index.js';
 import { useService, useSubscribed } from './hooks.js';
-import {
-  type LayoutWorkspace,
-  LayoutWorkspaceV1,
-  type WorkspaceSelection,
-} from './peers.js';
+import { type LayoutWorkspace, LayoutWorkspaceV1 } from './peers.js';
 import type { ScreenViewsStore } from './store.js';
 
 export const SCREEN_SIDEBAR_TAG = 'screen-sidebar';
@@ -49,15 +46,38 @@ export interface ScreenClient {
 }
 
 const NO_VIEWS: readonly ScreenView[] = Object.freeze([]);
-const NO_SELECTION: WorkspaceSelection = Object.freeze({});
 
-const selectedThreadOf = (workspace: LayoutWorkspace | undefined) =>
-  workspace === undefined ? undefined : workspace.selectedThread();
-
-const selectionOf = (
+/**
+ * The Project of the selected Thread, read as the id the reads below key on.
+ *
+ * Every snapshot a subscribed read returns must keep its identity while
+ * nothing changed: the layout builds a new selection record on every call, and
+ * a snapshot whose identity changes on every read makes `useSyncExternalStore`
+ * re-render without end (React's "Maximum update depth exceeded"). A field of
+ * a record the layout rebuilds is a primitive, so it is what a read returns.
+ */
+const selectedProjectIdOf = (
   workspace: LayoutWorkspace | undefined,
-): WorkspaceSelection =>
-  workspace === undefined ? NO_SELECTION : workspace.selection();
+): string | undefined =>
+  workspace === undefined ? undefined : workspace.selectedThread()?.projectId;
+
+/**
+ * The name of the selected Project while it is the Project a new view would
+ * watch, else undefined: the selection is what knows a Project's name, and
+ * only when it is that same Project.
+ */
+const projectLabelOf = (
+  workspace: LayoutWorkspace | undefined,
+  projectId: string | undefined,
+): string | undefined => {
+  if (workspace === undefined || projectId === undefined) return undefined;
+
+  const { project } = workspace.selection();
+
+  return project !== undefined && project.id === projectId
+    ? project.name
+    : undefined;
+};
 
 /**
  * What a status reads as in the row: its glyph, the one-line state and whether
@@ -172,54 +192,55 @@ export const defineScreenElements = (client: ScreenClient) => {
     const views = useSubscribed(store, () => store.views(), NO_VIEWS);
     const screens = useService(services, ScreenViewsV1);
     const workspace = useService(services, LayoutWorkspaceV1);
-    const thread = useSubscribed(
+    const projectId = useSubscribed(
       workspace,
-      () => selectedThreadOf(workspace),
+      () => selectedProjectIdOf(workspace),
       undefined,
     );
-    const selection = useSubscribed(
+    // The label names the Project the view watches, and only while the
+    // selection is that same Project.
+    const label = useSubscribed(
       workspace,
-      () => selectionOf(workspace),
-      NO_SELECTION,
+      () => projectLabelOf(workspace, projectId),
+      undefined,
     );
-    const projectId = thread?.projectId;
-    // The label names the Project the view watches; the selection is what
-    // knows a Project's name, and only when it is that same Project.
-    const label =
-      selection.project !== undefined && selection.project.id === projectId
-        ? selection.project.name
-        : undefined;
 
     return (
-      <SidebarGroup className="p-0">
-        <div className="group/group-label relative">
-          <SidebarGroupLabel className="h-7 rounded-none px-3 text-xs font-normal">
-            Screens
-          </SidebarGroupLabel>
-          <SidebarGroupAction
-            className="top-1 right-1"
-            aria-label="New screen view"
-            title="Open the selected project's screen"
-            disabled={projectId === undefined || screens === undefined}
-            onClick={() => {
-              if (projectId === undefined || screens === undefined) return;
+      // The element's root is its own: the sidebar's scope does not reach it
+      // from the layout, so the group brings one (as `git` and `files` do).
+      <SidebarScope>
+        <SidebarGroup className="p-0">
+          <div className="group/group-label relative">
+            <SidebarGroupLabel className="h-7 rounded-none px-3 text-xs font-normal">
+              Screens
+            </SidebarGroupLabel>
+            <SidebarGroupAction
+              className="top-1 right-1"
+              aria-label="New screen view"
+              title="Open the selected project's screen"
+              disabled={projectId === undefined || screens === undefined}
+              onClick={() => {
+                if (projectId === undefined || screens === undefined) return;
 
-              void screens
-                .add(label === undefined ? { projectId } : { projectId, label })
-                .catch(() => undefined);
-            }}
-          >
-            <PlusIcon />
-          </SidebarGroupAction>
-        </div>
-        <SidebarGroupContent className="w-full">
-          <SidebarMenu className="w-full gap-0">
-            {views.map((view) => (
-              <ScreenRow key={view.id} view={view} screens={screens} />
-            ))}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+                void screens
+                  .add(
+                    label === undefined ? { projectId } : { projectId, label },
+                  )
+                  .catch(() => undefined);
+              }}
+            >
+              <PlusIcon />
+            </SidebarGroupAction>
+          </div>
+          <SidebarGroupContent className="w-full">
+            <SidebarMenu className="w-full gap-0">
+              {views.map((view) => (
+                <ScreenRow key={view.id} view={view} screens={screens} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarScope>
     );
   }
 

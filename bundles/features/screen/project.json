@@ -38,7 +38,8 @@
         "commands": [
           "rm -rf bundles/features/screen/dist-tests",
           "tsc -p bundles/features/screen/tsconfig.spec.json",
-          "node --test bundles/features/screen/dist-tests/tests/*.test.js"
+          "tsc -p bundles/features/screen/tsconfig.client-spec.json",
+          "node --test bundles/features/screen/dist-tests/tests/*.test.js bundles/features/screen/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

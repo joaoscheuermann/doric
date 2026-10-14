@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "desktop": "1.0.0",
+    "happy-dom": "20.8.9",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

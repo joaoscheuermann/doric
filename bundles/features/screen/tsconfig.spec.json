@@ -18,7 +18,8 @@
     "src/client/dial.ts",
     "src/client/peers.ts",
     "src/client/store.ts",
-    "tests/**/*.ts"
+    "tests/*.ts",
+    "tests/support/**/*.ts"
   ],
   "exclude": [],
   "references": [
