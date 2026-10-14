@@ -1,6 +1,8 @@
-// The `screen.sessions/v1` provider: `attach` runs the ensure task on the
-// calling Project's lease, then publishes the session on the loopback relay
-// and answers the URL the panel embeds. Lease states map one to one onto the
+// The `screen.sessions/v2` provider: `attach` runs the ensure task on the
+// calling Project's lease, then publishes the session on the relay and answers
+// the host-relative path the window loads. The relay is mounted on the host's
+// shared origin through `doric.network/v1`; the provider owns the relay's
+// lifetime and nowhere binds an address. Lease states map one to one onto the
 // contract's answer, and a session that cannot be served reports why instead
 // of failing the bridge call.
 
@@ -10,10 +12,14 @@ import { type RuntimeLease, RuntimeLeaseV1 } from 'runtime/contracts';
 
 import {
   type ScreenAttach,
-  ScreenSessionsV1,
+  ScreenSessionsV2,
   screenSessionsMethods,
 } from '../contracts/index.js';
-import { createScreenRelay, type ScreenRelay } from './relay.js';
+import {
+  createScreenRelay,
+  type ScreenRelay,
+  type ScreenRelayResources,
+} from './relay.js';
 import {
   createScreenSessionManager,
   type ScreenSession,
@@ -31,20 +37,25 @@ export interface ScreenAttachInput {
 export interface ScreenSessions {
   /** Deduplicated per Project while a call is in flight. */
   attach(input: ScreenAttachInput): Promise<ScreenAttach>;
-  dispose(): Promise<void>;
+  /**
+   * Mounts the relay on the host's shared router and `http.Server`. Called by
+   * the host part during activation, from the `doric.network/v1` listener.
+   */
+  mount(resources: ScreenRelayResources): () => void;
+  dispose(): void;
 }
 
 export interface ScreenSessionsDeps {
   readonly log: () => Log;
   /** Injectable for tests: the relay both ends speak to. */
-  readonly relay?: () => Promise<ScreenRelay>;
+  readonly relay?: () => ScreenRelay;
   readonly manager?: () => ScreenSessionManager;
 }
 
 export const createScreenSessions = (
   deps: ScreenSessionsDeps,
 ): ScreenSessions => {
-  let relay: Promise<ScreenRelay> | undefined;
+  let relay: ScreenRelay | undefined;
   let manager: ScreenSessionManager | undefined;
   const sessions = new Map<string, ScreenSession>();
   const inFlight = new Map<string, Promise<ScreenAttach>>();
@@ -71,7 +82,7 @@ export const createScreenSessions = (
       }
 
       const session = outcome.value;
-      const current = await relayOf();
+      const current = relayOf();
       const previous = sessions.get(projectId);
 
       if (previous !== undefined && previous.token !== session.token) {
@@ -86,7 +97,7 @@ export const createScreenSessions = (
 
       return {
         status: 'ready',
-        url: `${current.origin}/screen/${session.token}/`,
+        path: `/screen/${session.token}/`,
         display: `:${session.display}`,
       };
     } catch (error) {
@@ -117,17 +128,14 @@ export const createScreenSessions = (
 
       return run;
     },
-    dispose: async () => {
-      if (relay !== undefined) {
-        await (await relay).dispose();
-      }
-    },
+    mount: (resources) => relayOf().mount(resources),
+    dispose: () => relay?.dispose(),
   };
 };
 
-/** The `screen.sessions/v1` definition over one sessions owner. */
+/** The `screen.sessions/v2` definition over one sessions owner. */
 export const screenSessionsService = (sessions: ScreenSessions) =>
-  defineService(ScreenSessionsV1, {
+  defineService(ScreenSessionsV2, {
     attach: defineMethod({
       expose: 'desktop',
       ...screenSessionsMethods.attach,

@@ -42,7 +42,7 @@ const boot = async (hostBoot: string): Promise<Host> => {
     bundlesPath: root,
     compositionPath,
     compositionOverridesPath: join(root, 'composition.overrides.json'),
-    network: { http: app, sockets: io },
+    network: { http: app, server, sockets: io },
     logger,
     hostBoot,
   });

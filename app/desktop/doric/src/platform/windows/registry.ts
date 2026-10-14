@@ -1,8 +1,11 @@
 // The windows main opened for bundles, by key and by webContents.
 
-import type { BrowserWindow } from 'electron';
+import type { BaseWindow, WebContents } from 'electron';
 
 import type { ParsedAppearance } from './appearance';
+
+/** A window whose content is an app route, or a page on the host (1.1.0). */
+export type WindowKind = 'path' | 'view';
 
 export interface WindowContext {
   path: string | null;
@@ -11,7 +14,14 @@ export interface WindowContext {
 
 export interface WindowEntry {
   readonly key: string;
-  readonly window: BrowserWindow;
+  readonly kind: WindowKind;
+  /**
+   * The window itself: a `BrowserWindow` for an app route, a `BaseWindow` for a
+   * view (which owns no web contents of its own).
+   */
+  readonly window: BaseWindow;
+  /** The web contents that serves this window: the window's own, or the view's. */
+  readonly contents: WebContents;
   readonly appearance: ParsedAppearance;
   /** Opened as the primary window: its core failures are core failures. */
   readonly primary: boolean;
@@ -28,7 +38,7 @@ export class WindowRegistry {
 
   add(entry: WindowEntry): void {
     this.#byKey.set(entry.key, entry);
-    this.#byContents.set(entry.window.webContents.id, entry);
+    this.#byContents.set(entry.contents.id, entry);
   }
 
   remove(entry: WindowEntry, contentsId: number): void {

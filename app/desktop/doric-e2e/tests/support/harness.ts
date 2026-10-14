@@ -373,7 +373,7 @@ export const bootPlatform = async (input: {
         `the "${key}" window`,
         timeoutMs,
       );
-      const contents = entry.window.webContents;
+      const contents = entry.contents;
 
       await until(
         async () =>
@@ -386,7 +386,7 @@ export const bootPlatform = async (input: {
         timeoutMs,
       );
 
-      return entry.window;
+      return entry.window as BrowserWindow;
     },
     dispose: async () => {
       await platform.dispose();

@@ -22,7 +22,7 @@
     "host-config/v1": ["current", "replace"],
     "models/v1": ["catalog", "kind", "kinds"],
     "resources/v1": ["host", "project"],
-    "screen.sessions/v1": ["attach"],
+    "screen.sessions/v2": ["attach"],
     "runtime/v1": [
       "createProject",
       "deleteProject",

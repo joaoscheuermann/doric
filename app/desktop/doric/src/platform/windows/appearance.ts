@@ -22,17 +22,25 @@ export interface WorkArea {
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.max(minimum, Math.min(value, maximum));
 
-/** The constructor options of a window with this appearance. */
-export const nativeOptions = (
+/**
+ * The constructor options every window shares, without web preferences: a
+ * `BaseWindow` has none of its own, and a view window's belong to its
+ * `WebContentsView`. The `titleBar` intent is applied here — `'native'` leaves
+ * Electron's default frame and title bar in place, `'integrated'` hides the
+ * bar over the reserved traffic-light space on macOS, and `'none'` drops the
+ * frame — so a view window that asks for `'native'` gets the OS title bar and
+ * its controls and nothing else.
+ */
+export const windowOptions = (
   appearance: ParsedAppearance,
   tokens: WindowTokens,
   platform: NodeJS.Platform,
   workArea: WorkArea,
-  preload: string,
   dark = true,
-): Electron.BrowserWindowConstructorOptions => {
+): Electron.BaseWindowConstructorOptions => {
   const size = appearance.size ?? PLATFORM_DEFAULT_SIZE;
-  const options: Electron.BrowserWindowConstructorOptions = {
+
+  return {
     width: clamp(
       size.width,
       FIXED_MINIMUM.width,
@@ -61,16 +69,26 @@ export const nativeOptions = (
         }
       : {}),
     ...(appearance.titleBar === 'none' ? { frame: false } : {}),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload,
-      sandbox: true,
-    },
   };
-
-  return options;
 };
+
+/** The constructor options of a window with this appearance and its preload. */
+export const nativeOptions = (
+  appearance: ParsedAppearance,
+  tokens: WindowTokens,
+  platform: NodeJS.Platform,
+  workArea: WorkArea,
+  preload: string,
+  dark = true,
+): Electron.BrowserWindowConstructorOptions => ({
+  ...windowOptions(appearance, tokens, platform, workArea, dark),
+  webPreferences: {
+    contextIsolation: true,
+    nodeIntegration: false,
+    preload,
+    sandbox: true,
+  },
+});
 
 /** Whether the window buttons are kept visible after construction. */
 export const keepsWindowButtons = (

@@ -303,9 +303,11 @@ beforeEach(() => {
   window = fakeContents(11, 'doric://app/projects/p1/threads/t1');
   workspace = {
     key: 'workspace',
+    kind: 'path',
     window: {
       webContents: window.contents,
     } as unknown as WindowEntry['window'],
+    contents: window.contents as unknown as WindowEntry['contents'],
     appearance: { titleBar: 'integrated', background: 'window' },
     primary: true,
     pinnedGeneration: null,
@@ -557,9 +559,11 @@ describe('desktop IPC dispatcher', () => {
 
     registry.add({
       key: 'settings',
+      kind: 'path',
       window: {
         webContents: settings.contents,
       } as unknown as WindowEntry['window'],
+      contents: settings.contents as unknown as WindowEntry['contents'],
       appearance: { titleBar: 'integrated', background: 'window' },
       primary: false,
       pinnedGeneration: null,

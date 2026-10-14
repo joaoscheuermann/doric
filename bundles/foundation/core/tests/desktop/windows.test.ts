@@ -47,6 +47,12 @@ void test('onBeforeOpenWindowHook sees the unprefixed request and the calling wi
         .onBeforeOpenWindowHook((request, call) => {
           seen.push({ request, windowKey: call.scope?.windowKey });
 
+          // A hook adjusts the content of a window it knows; a view window's
+          // foreign URL is main's to navigate, so it goes back untouched.
+          if (!('path' in request)) {
+            return request;
+          }
+
           return {
             ...request,
             key: 'stolen',

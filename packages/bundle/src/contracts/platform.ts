@@ -619,6 +619,12 @@ export interface DoricLog {
   write(record: LogRecord, call?: CallArg): void;
 }
 
+/**
+ * The native window API (desktopMain): `open` receives the request the core's
+ * policy let through, either an app route (`path`, loaded by the shell with
+ * the app's preload and contracts) or a foreign URL (`url` and `partition`)
+ * rendered in its own session.
+ */
 export interface DoricWindows {
   open(request: OpenWindowRequest, call?: CallArg): Promise<void>;
   focusOrOpen(key: string, call?: CallArg): Promise<void>;
@@ -629,6 +635,12 @@ export interface DoricWindows {
    * when such a window existed and was focused.
    */
   focus(key: string, call?: CallArg): Promise<boolean>;
+  /**
+   * 1.1.0: for a view window, loads the host-relative `path` resolved against
+   * the origin the app reaches the host on. A path window is not navigable this
+   * way and fails `invalid_input`; a key that is not open fails `not_found`.
+   */
+  navigate(input: { key: string; path: string }, call?: CallArg): Promise<void>;
 }
 
 export interface DoricMenus {
@@ -927,6 +939,12 @@ export const platformContracts = Object.freeze({
       focusOrOpen: { input: z.string(), output: z.void() },
       lastPath: { input: z.string(), output: z.union([z.string(), z.null()]) },
       focus: { input: z.string(), output: z.boolean() },
+      navigate: {
+        input: z
+          .object({ key: z.string(), path: z.string().startsWith('/') })
+          .strict(),
+        output: z.void(),
+      },
     },
   },
   'doric.menus/v1': {

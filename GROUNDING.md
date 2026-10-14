@@ -159,9 +159,12 @@ model listing, validation and execution: 15-minute freshness, one concurrent
 refresh, a 5-second request timeout, stale fallback and 30-second failure backoff.
 Deleting a Thread deletes its accounting along with it. Costs not returned by an
 interrupted provider call remain unknown; the host makes no generation audit call.
-The main process alone communicates with Doric at `127.0.0.1:3000`: the window
+The main process alone communicates with Doric, at the origin the deployment
+names (`127.0.0.1:3000` by default, `DORIC_HOST_URL` otherwise): an app window
 never opens HTTP or Socket.IO, and its preload exposes only
-`window.doric.desktop`. Since migration stage 9 every Project, Thread,
+`window.doric.desktop`. A screen view window is not an app window and is the
+exception: it carries no preload, and its own `WebContents` loads that origin's
+page. Since migration stage 9 every Project, Thread,
 configuration, terminal and usage operation, each Thread watch, the
 selected-Project tree watch, connection status and the native-notification
 write are contract calls and streams that main's one `doric:desktop`
@@ -185,9 +188,13 @@ Thread's own log still states.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, renderer, Monaco and
 notifications follow the system light or dark preference, including changes
-while a window is open. The compact, resizable shadcn sidebar lists only the
-selected Project's recursive Threads under a Threads label and an add action.
-It has no separate header or collapse button. Threads start open over their
+while a window is open. The compact, resizable shadcn sidebar stacks two
+groups behind a draggable divider: the selected Project's recursive Threads
+under a Threads label and an add action, and whatever other bundles contribute
+through the layout's `layout.sidebar` region — today the `screen` bundle's
+views, each row carrying that view's state. A region with no items leaves the
+Threads group the whole sidebar and the divider inert. Neither the sidebar nor
+a group has a separate header or collapse button. Threads start open over their
 children and retain their independent expansion state. The sidebar supports
 inline create and rename and context actions for child creation,
 lifecycle-aware delete, and copying Thread IDs. Projects retain the color the
@@ -283,8 +290,9 @@ a Project in the desktop also creates an initial unnamed Thread and opens it
 selected. Its stored name is empty and the tree displays Untitled until rename.
 If that Thread creation fails after the Project was saved, the desktop opens the
 saved Project and reports the failure without resubmitting Project creation. One
-full-height resize handle owns the sidebar boundary; the sidebar stays expanded
-and the handle draws no grip of its own. A segmented
+full-height resize handle owns the sidebar boundary, and a second vertical one
+divides the sidebar's own groups inside it; the sidebar stays expanded and
+neither handle draws a grip of its own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to and its reasoning effort — beside the
@@ -481,24 +489,31 @@ reconcile transcript reads with live output on opening or reconnecting. Buffers
 are discarded with the session, and truncation of an active session's transcript
 is explicit. Terminal data is not written to operational logs.
 
-The header's screen button beside the new-terminal button opens the selected
-Thread's Project screen as a floating panel over the conversation — the
-`layout` bundle's `layout.overlay` region, whose items place themselves while
-the layer never intercepts a pointer — embedding the sandbox's xpra HTML5
-client in the only foreign frame a window draws. The panel is dragged by its
-header, resized from its corner and closed to the header, and while the
-sandbox starts it reports the state and retries on its own. The `screen`
-bundle's host part provides `screen.sessions/v1`: `attach(projectId)` runs on
-the Project's runtime lease, ensures one xpra server inside the Project
-sandbox (`:100` and up, ports `14500`–`14502`, a `/tmp/doric-screen.json`
-marker that reuses the same display, port and token after a host restart) and
-answers a loopback URL (`http://127.0.0.1:<port>/screen/<token>/`) the panel
-frames; its relay forwards that token tree to the sandbox's xpra server only —
-assets over HTTP and the live stream over a transparent WebSocket that keeps
-the browser's own handshake, so negotiated subprotocols and frames reach xpra
-unchanged — and an image without xpra answers `unavailable` with
-`missing-xpra`. One Project has one screen, shared by its Threads; closing the
-panel hides it while its iframe stays mounted for the window.
+The left sidebar's screens group — the layout's `layout.sidebar` region, below
+the Threads tree — lists the screens the reader spawned, and clicking one opens
+or focuses a real window of its own: an Electron `BaseWindow` whose single
+`WebContentsView` loads the sandbox's xpra HTML5 client in its own session
+partition, drawing the native title bar and controls, a page and nothing else —
+no preload, no bundle contracts, no frame. The row carries that view's state
+(working on it, ready with its display, unavailable with its reason, or a
+retryable failure) and retries while a sandbox starts. The `screen` bundle's
+host part provides `screen.sessions/v2`: `attach(projectId)` runs on the
+Project's runtime lease, ensures one xpra server inside the Project sandbox
+(`:100` and up, ports `14500`–`14502`, a `/tmp/doric-screen.json` marker that
+reuses the same display, port and token after a host restart) and answers the
+host-relative path (`/screen/<token>/`) of that screen; its relay is served on
+the host's own origin — mounted on the request router the bundles share and on
+the host's `http.Server` for the upgrade, which is why an engine that also owns
+that listener must not end upgrades it does not recognise — and forwards that
+token tree to the sandbox's xpra server only, assets over HTTP and the live
+stream over a transparent WebSocket that keeps the browser's own handshake, so
+negotiated subprotocols and frames reach xpra unchanged; an image without xpra
+answers `unavailable` with `missing-xpra`. The views persist across restarts,
+the desktop owns their windows, and while a window is open the desktop keeps
+asking the host for that screen and re-points the window at the path it
+answers, so a screen that moved is followed rather than lost. One Project has
+one screen, shared by its Threads, and two views of one Project are two windows
+onto it.
 
 The terminal tool waits in foreground by default. Explicit background execution
 returns its terminal ID immediately and, after the process settles, enqueues one
@@ -677,8 +692,10 @@ payload)` to the same bundle in every other live generation. The kernel names
   contract with no active provider keeps the caller's own unavailable behavior;
   the transport's feature reads are the example.
 - **Native handles.** `doric.network/v1.register(listener)` gives a resident
-  bundle the host's native HTTP and Socket.IO handles, locally and never
-  serialized; the listener's cleanup runs when the bundle deactivates. The
+  bundle the host's native HTTP and Socket.IO handles plus the `http.Server`
+  both are attached to — where a bundle serves a protocol the request router
+  cannot express, a WebSocket upgrade — locally and never serialized; the
+  listener's cleanup runs when the bundle deactivates. The
   kernel owns the listener and the generic `/doric/bridge` bridge, and the
   `transport` bundle registers every product route and namespace through it.
 - **Event sinks.** `events/v1` has one sink per provider, registered with
@@ -699,7 +716,12 @@ payload)` to the same bundle in every other live generation. The kernel names
   unavailable. The exposed set is pinned by a permanent snapshot test,
   `app/backend/doric-host/tests/bridge-exposure.snapshot.json`, so a change to what
   windows may reach is an explicit change in review.
-- **Windows.** A window descriptor may set `primary`. The main process accepts
+- **Windows.** A window descriptor names one of two contents: an app route
+  (`path`) the window's shell renders, or a page on the host (`view`, naming the
+  path main resolves against the host origin and the session partition the
+  page's own `WebContents` keeps to itself). `doric.windows/v1` focuses a key's
+  window and, since 1.1.0, navigates a view window to another host path. A
+  descriptor may also set `primary`: the main process accepts
   one primary window per catalog and refuses a primary request for an already
   open window that was opened without the flag, with `registration_conflict`.
   The core marks `workspace` primary. The platform has no `openSettings()`; a
@@ -967,11 +989,12 @@ empty legacy tables are dropped by a later migration.
 
 Migration stage 8 ("Plataforma desktop") moves the desktop onto the bundle
 platform; decisions S8-1 to S8-23 are recorded in `implementation-decisions.md`.
-Every window loads only `doric://app/<path>`, a privileged standard scheme whose
+Every app window loads only `doric://app/<path>`, a privileged standard scheme whose
 handler serves the shell, the platform files under `/platform/`, verified bundle
 artifacts from the local cache and their schemas, and answers 404, never the
 shell, for missing files; sender checks compare protocol `doric:` and host `app`
-(S8-1). In development the windows still open through `doric://app` and the
+(S8-1). A view window loads the host's own origin instead and carries no
+preload, so no sender check applies to it. In development the windows still open through `doric://app` and the
 handler forwards the shell and its assets to the renderer dev server
 (`http://localhost:4200`, overridden by `DORIC_RENDERER_DEV_URL`). Before any
 window, a splash downloads the host's `doric.catalog/v1.distribution()` over the
@@ -995,10 +1018,9 @@ the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
 theme, fonts and shadcn/ui components; `desktop/client` runs the window;
 `desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
 window-main API. `app/desktop/doric-platform` builds the platform files and import map.
-The CSP adds `worker-src 'self'`, the import
-map's script hash and the screen panel's loopback frame origin
-(`frame-src http://127.0.0.1:*`), the only foreign origin a window may
-frame. The renderer's local storage, including the selected Thread,
+The CSP adds `worker-src 'self'` and the import
+map's script hash, and carves out no frame origin: no window frames a foreign
+origin any more, so frames fall back to the default source. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`: the core's
 `onAppReadyHook` asks the platform through `doric.migrations/v1.storage` to copy
 its own key, and awaits the answer before it opens the primary window. The
@@ -1024,7 +1046,8 @@ composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1` and
 and the execution picker as a `layout.footer` item; `history` (desktopMain)
 keeps the per-Thread snapshot cache over `doric.cache/v1`. The new platform
 contracts are `doric.elements/v1`, `doric.connection/v1`, the transitional
-client form of `doric.notifications/v1` and `doric.windows/v1.focus`. The
+client form of `doric.notifications/v1` and `doric.windows/v1`, whose focus and
+`navigate` (1.1.0) re-point the window a key names. The
 selected Thread is the window path; the old `localStorage['doric.selection']`
 is converted once into a path and removed. The shell's stylesheet keeps only the
 window-wide rules and the sorted utility set; each UI bundle ships its own

@@ -72,7 +72,14 @@ async function main() {
   startup.info({ host, port, alternatives }, 'Doric starting');
   const app = express();
   const server = createServer(app);
-  const io = new SocketServer(server);
+  // `destroyUpgrade: false` because the shared `http.Server` carries more than
+  // one upgrade protocol: the `screen` bundle attaches its own transparent
+  // `upgrade` listener for `/screen/<token>/`. Engine.IO's default would end
+  // any non-Socket.IO upgrade that has not written bytes within
+  // `destroyUpgradeTimeout`, so a relayed handshake waiting on xpra could be
+  // killed by a timer that does not own it. The relay answers and enforces its
+  // own token tree; Socket.IO still handles `/socket.io/` alone.
+  const io = new SocketServer(server, { destroyUpgrade: false });
 
   // The enabled bundles build their own pools in the generation process, from
   // their own environment, and log them at their start steps.
@@ -81,7 +88,7 @@ async function main() {
   const bundles = await startBundles({
     ...paths,
     composition,
-    network: { http: app, sockets: io },
+    network: { http: app, server, sockets: io },
     logger,
     startup: startupRecord,
   });

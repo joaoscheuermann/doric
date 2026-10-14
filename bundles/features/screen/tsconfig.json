@@ -26,5 +26,5 @@
       "path": "../../../packages/desktop"
     }
   ],
-  "exclude": ["src/client/**"]
+  "exclude": ["src/client/**", "src/desktop/**"]
 }

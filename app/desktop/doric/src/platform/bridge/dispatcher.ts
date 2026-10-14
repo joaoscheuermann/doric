@@ -932,7 +932,7 @@ export class Dispatcher {
 
   /** Pushes the window's table when it changed. */
   bindingsChanged(entry: WindowEntry): void {
-    const contents = entry.window.webContents.id;
+    const contents = entry.contents.id;
     const streams = this.#keybindingStreams.get(contents);
 
     if (streams === undefined || streams.size === 0) {
@@ -955,9 +955,7 @@ export class Dispatcher {
 
   /** Whether the window serves client commands (its shell subscribed). */
   servesCommands(entry: WindowEntry): boolean {
-    return (
-      (this.#commandStreams.get(entry.window.webContents.id)?.size ?? 0) > 0
-    );
+    return (this.#commandStreams.get(entry.contents.id)?.size ?? 0) > 0;
   }
 
   /** Asks a window to run a client command (section 18.3 step 2). */
@@ -965,7 +963,7 @@ export class Dispatcher {
     entry: WindowEntry,
     command: string,
   ): Promise<{ ok: true } | { ok: false; error: BridgeError }> {
-    const streams = this.#commandStreams.get(entry.window.webContents.id);
+    const streams = this.#commandStreams.get(entry.contents.id);
 
     if (streams === undefined || streams.size === 0) {
       return Promise.resolve({

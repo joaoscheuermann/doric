@@ -13,11 +13,14 @@
   "include": [
     "src/host/**/*.ts",
     "src/contracts/**/*.ts",
+    "src/desktop/**/*.ts",
     "src/client/api.ts",
+    "src/client/dial.ts",
+    "src/client/peers.ts",
     "src/client/store.ts",
-    "src/client/domain/**/*.ts",
     "tests/**/*.ts"
   ],
+  "exclude": [],
   "references": [
     { "path": "../../../packages/bundle/tsconfig.lib.json" },
     { "path": "../../../packages/sandbox/tsconfig.lib.json" },

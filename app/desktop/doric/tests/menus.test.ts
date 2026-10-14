@@ -65,7 +65,9 @@ let workspace: WindowEntry;
 
 const entry = (key: string, id: number): WindowEntry => ({
   key,
+  kind: 'path',
   window: { webContents: { id } } as unknown as WindowEntry['window'],
+  contents: { id } as unknown as WindowEntry['contents'],
   appearance: { titleBar: 'integrated', background: 'window' },
   primary: key === 'workspace',
   pinnedGeneration: 1,
@@ -275,6 +277,7 @@ describe('doric.notifications/v1 (broker)', () => {
         focusOrOpen: async () => undefined,
         lastPath: () => null,
         focus: () => false,
+        navigate: async () => undefined,
       },
       menus,
       cacheDirectory: async () => '/cache',
@@ -345,6 +348,7 @@ describe('doric.windows/v1 focus (broker)', () => {
 
           return key === 'settings';
         },
+        navigate: async () => undefined,
       },
       menus,
       cacheDirectory: async () => '/cache',

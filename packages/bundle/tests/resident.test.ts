@@ -30,9 +30,13 @@ void test('a composition loads a resident bundle on native listeners and release
         import { z } from ${JSON.stringify(zodUrl)};
         import { DoricNetworkV1, defineService, defineMethod, ref } from ${JSON.stringify(contractsUrl)};
         export const activate = ({ services }) => {
-          services.use(DoricNetworkV1).register(({ http }) => {
+          services.use(DoricNetworkV1).register(({ http, server }) => {
             http.attached = process.pid;
-            return () => { http.attached = null; };
+            server.upgrade = process.pid;
+            return () => {
+              http.attached = null;
+              server.upgrade = null;
+            };
           });
           const optional = services.use(ref('optional/v1'));
           services.provide(defineService('routes/v1', {
@@ -51,17 +55,19 @@ void test('a composition loads a resident bundle on native listeners and release
     };
     await writeFile(path, JSON.stringify(composition));
     const http: { attached?: number | null } = {};
+    const server: { upgrade?: number | null } = {};
     const platform = await startKernel({
       bundlesPath: root,
       composition: { path },
       embedded: [minimalCore()],
       log: captureLog(),
       sink: captureSink(),
-      network: { http, sockets: {} },
+      network: { http, server, sockets: {} },
     });
     try {
       assert.equal(platform.mode, 'normal');
       assert.equal(http.attached, process.pid);
+      assert.equal(server.upgrade, process.pid);
       assert.equal(
         await platform.services
           .use(ref<{ read(): Promise<string> }>('routes/v1'))
@@ -77,5 +83,6 @@ void test('a composition loads a resident bundle on native listeners and release
       await platform.stop();
     }
     assert.equal(http.attached, null);
+    assert.equal(server.upgrade, null);
   });
 });

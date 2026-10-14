@@ -1,79 +1,74 @@
-// The screen bundle's client part: the header's "New screen" button and the
-// floating panel of the selected Thread's Project, both over
-// `screen.sessions/v1`. All state lives in the activation's store (D9-17), so
-// a route change keeps the panel and its iframe.
+// The screen bundle's client part: the sidebar's Screens group, over
+// `screen.views/v1`. One item in the `layout.sidebar` region is what makes the
+// group appear; the rows it draws come from the desktop part's mirrored views.
+//
+// This part is also the app's only route to the host: it subscribes to the
+// dials the desktop part asks for, calls `screen.sessions/v2.attach` for the
+// Project in scope and hands the answer back, which is how a view gets opened
+// and how a window left on a screen that moved is re-pointed.
 
 import {
   type Cleanup,
   type ClientContext,
   type Disposable,
-  type RegionItem,
-  type Regions,
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
 
-import { ScreenSessionsV1 } from '../contracts/index.js';
+import { ScreenSessionsV2, ScreenViewsV1 } from '../contracts/index.js';
 import { createScreenApi } from './api.js';
-import {
-  defineScreenElements,
-  SCREEN_NEW_BUTTON_TAG,
-  SCREEN_PANEL_TAG,
-} from './elements.js';
-import { createScreenStore } from './store.js';
+import { createScreenDialer } from './dial.js';
+import { defineScreenElements, SCREEN_SIDEBAR_TAG } from './elements.js';
+import { createScreenViewsStore } from './store.js';
 
-/** The region items of the header's new-screen button and the panel. */
-export const screenRegions: readonly {
-  readonly region: string;
-  readonly item: RegionItem;
-}[] = [
-  {
-    region: 'layout.header',
-    item: { id: 'screen-new', tag: SCREEN_NEW_BUTTON_TAG, order: 20 },
-  },
-  {
-    region: 'layout.overlay',
-    item: { id: 'screen-panel', tag: SCREEN_PANEL_TAG, order: 10 },
-  },
-];
-
-/** Adds the header button and the floating panel to the layout's regions. */
-export const registerScreenSurfaces = (
-  regions: Pick<Regions, 'add'>,
-): Disposable => {
-  const added = screenRegions.map(({ region, item }) =>
-    regions.add(region, item),
-  );
-
-  return {
-    dispose: () => {
-      for (const item of added.reverse()) item.dispose();
-    },
-  };
-};
+/** The one region item of the Screens group, under the Threads tree. */
+export const screenSidebarItem = {
+  id: 'screen-sidebar',
+  tag: SCREEN_SIDEBAR_TAG,
+  order: 10,
+} as const;
 
 export function activate({ services }: ClientContext): Cleanup {
-  // The call is Project-scoped: `attach` runs on that Project's runtime
-  // lease, which resolves from `call.scope.projectId` — the scope key the
-  // provider's manifest declares for this contract.
-  const sessions = (projectId: string) =>
-    services.use(ScreenSessionsV1, { projectId });
-  const api = createScreenApi(sessions);
-  const store = createScreenStore({
-    attach: (projectId) => api.attach(projectId),
-  });
-
+  const store = createScreenViewsStore();
   const ui = services.use(UiV1);
-  const elements = defineScreenElements({ api, store });
-  const defined = [
-    ui.define(SCREEN_NEW_BUTTON_TAG, elements.newButton),
-    ui.define(SCREEN_PANEL_TAG, elements.panel),
-  ];
-  const surfaces = registerScreenSurfaces(services.use(RegionsV1));
+  const element = ui.define(
+    SCREEN_SIDEBAR_TAG,
+    defineScreenElements({ store }).sidebar,
+  );
+  const item = services.use(RegionsV1).add('layout.sidebar', screenSidebarItem);
+
+  // The desktop part may not be active yet (or at all, in a composition
+  // without it), so the binding is taken whenever it appears.
+  const binding: Disposable = services.whenAvailable(
+    ScreenViewsV1,
+    (screens) => {
+      const dialer = createScreenDialer({
+        attach: createScreenApi((projectId) =>
+          services.use(ScreenSessionsV2, { projectId }),
+        ).attach,
+        deliver: (report) => screens.deliver(report),
+      });
+      // The cursor starts at 0: this window holds none of the state yet, so the
+      // first push is always the current one.
+      const watching = screens.watch(0, (state) => {
+        store.set(state.views);
+
+        for (const request of state.dials) {
+          void dialer.dial(request).catch(() => undefined);
+        }
+      });
+
+      return () => {
+        watching.dispose();
+        store.reset();
+      };
+    },
+  );
 
   return () => {
-    surfaces.dispose();
-    for (const element of defined.reverse()) element.dispose();
-    store.dispose();
+    binding.dispose();
+    item.dispose();
+    element.dispose();
+    store.reset();
   };
 }

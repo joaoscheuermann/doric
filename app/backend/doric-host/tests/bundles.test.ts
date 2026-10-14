@@ -89,7 +89,7 @@ const boot = async (
     bundlesPath: options.bundles ?? bundlesPath,
     compositionPath: options.composition ?? compositionPath,
     ...(options.derived === undefined ? {} : { composition: options.derived }),
-    network: { http: app, sockets: io },
+    network: { http: app, server, sockets: io },
     logger,
   }).catch(async (error: unknown) => {
     await io.close();

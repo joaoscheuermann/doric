@@ -1,10 +1,10 @@
 {
   "manifestVersion": 1,
   "id": "screen",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "engines": { "doric": "^1.0.0" },
   "description": "The xpra HTML5 screen of a Project's sandbox.",
-  "provides": ["screen.sessions/v1@1.0.0"],
+  "provides": ["screen.sessions/v2@2.0.0", "screen.views/v1@1.0.0"],
   "requires": [
     "log/v1@^1.0.0",
     "runtime.lease/v1@^1.1.0",
@@ -13,6 +13,6 @@
     "layout.workspace/v1@^1.1.0"
   ],
   "desktopScope": {
-    "screen.sessions/v1": ["projectId", "threadId", "promptId"]
+    "screen.sessions/v2": ["projectId", "threadId", "promptId"]
   }
 }

@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/features/screen/tsconfig.json",
+          "tsc -p bundles/features/screen/tsconfig.parts.json",
           "tsc -p bundles/features/screen/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/features/screen"
         ],
@@ -23,6 +24,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/features/screen/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/screen/tsconfig.parts.json",
           "tsc -p bundles/features/screen/tsconfig.client.json"
         ],
         "parallel": false

@@ -93,6 +93,7 @@ const bootGeneration = async (
       },
       lastPath: (key) => lastPaths.get(key) ?? null,
       focus: () => false,
+      navigate: async () => undefined,
     },
     menus: {
       setSkeleton: (generation, skeleton) =>
@@ -200,7 +201,11 @@ describe('a desktopMain generation (core part, real runner)', () => {
       await main.process.lifecycle('onAppActivateHook', {});
 
       assert.deepEqual(
-        main.opened.map(({ key, path }) => ({ key, path })),
+        main.opened.map((request) => {
+          assert.ok('path' in request);
+
+          return { key: request.key, path: request.path };
+        }),
         [
           { key: 'workspace', path: '/projects/p1/threads/t1' },
           { key: 'workspace', path: 'focus:workspace' },

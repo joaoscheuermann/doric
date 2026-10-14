@@ -1,24 +1,73 @@
-// The relay through real sockets: its path mapping, the HTTP proxy, the
-// transparent WebSocket passthrough (including the handshake the browser
-// offered), the 404s and disposal. The upstream is a stub that echoes what it
-// received; no frame is ever parsed by either side.
+// The relay through real sockets, mounted on the host's shared router and
+// server: its path mapping, the HTTP proxy, the transparent WebSocket
+// passthrough (including the handshake the browser offered), the 404s, the
+// pass-through of the host's other routes, coexistence with a second upgrade
+// protocol and disposal. The upstream is a stub that echoes what it received;
+// no frame is ever parsed by either side.
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createServer, request as httpRequest, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
 import test, { after } from 'node:test';
 
 import {
   createScreenRelay,
   relayTarget,
   type ScreenRelay,
+  type ScreenRelayRouter,
 } from '../src/host/relay.js';
 
 const MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const acceptOf = (key: string): string =>
   createHash('sha1').update(`${key}${MAGIC}`, 'binary').digest('base64');
+
+type Middleware = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  next: (error?: unknown) => void,
+) => void;
+
+/**
+ * The host's shared router, reduced to the `use` the relay mounts through:
+ * middleware runs in order and `next()` continues, as on the host's Express
+ * app.
+ */
+class Router implements ScreenRelayRouter {
+  readonly #stack: Middleware[] = [];
+
+  use(handler: Middleware): unknown {
+    this.#stack.push(handler);
+
+    return undefined;
+  }
+
+  handle(request: IncomingMessage, response: ServerResponse): void {
+    let index = 0;
+    const next = (): void => {
+      const handler = this.#stack[index];
+      index += 1;
+
+      if (handler === undefined) {
+        response.writeHead(404);
+        response.end();
+
+        return;
+      }
+
+      handler(request, response, next);
+    };
+
+    next();
+  }
+}
 
 const listen = async (server: Server): Promise<number> => {
   await new Promise<void>((resolve) =>
@@ -62,19 +111,55 @@ const upstreamReady = listen(upstream).then((port) => {
 });
 
 const relays: ScreenRelay[] = [];
+const servers: Server[] = [];
 
-const relayWith = async (): Promise<ScreenRelay> => {
+/**
+ * The host's shared listener with one marker route the relay must not swallow,
+ * and the ephemeral port the client reaches it on.
+ */
+const hostListener = async (): Promise<{
+  router: Router;
+  server: Server;
+  port: number;
+}> => {
   await upstreamReady;
-  const relay = await createScreenRelay();
+  const router = new Router();
+
+  router.use((request, response, next) => {
+    if (request.url === '/host-route') {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('host');
+
+      return;
+    }
+
+    next();
+  });
+
+  const server = createServer((request, response) =>
+    router.handle(request, response),
+  );
+
+  servers.push(server);
+
+  return { router, server, port: await listen(server) };
+};
+
+/** Mounts a fresh relay on a fresh shared host and returns both. */
+const relayOnHost = async (): Promise<{
+  relay: ScreenRelay;
+  port: number;
+  unmount: () => void;
+}> => {
+  const host = await hostListener();
+  const relay = createScreenRelay();
 
   relays.push(relay);
 
-  return relay;
-};
+  const unmount = relay.mount({ http: host.router, server: host.server });
 
-/** The relay's ephemeral port, as its own origin spells it. */
-const portOf = (relay: ScreenRelay): number =>
-  Number(new URL(relay.origin).port);
+  return { relay, port: host.port, unmount };
+};
 
 const requestOver = (
   port: number,
@@ -124,11 +209,11 @@ test('relayTarget maps token trees and refuses everything else', () => {
 });
 
 test('the HTTP proxy forwards the path, method and rewritten host', async () => {
-  const relay = await relayWith();
+  const { relay, port } = await relayOnHost();
 
   relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
 
-  const answer = await requestOver(portOf(relay), '/screen/t1/hello?q=1');
+  const answer = await requestOver(port, '/screen/t1/hello?q=1');
 
   assert.equal(answer.status, 200);
   assert.equal(answer.headers['x-seen-path'], '/hello?q=1');
@@ -137,15 +222,28 @@ test('the HTTP proxy forwards the path, method and rewritten host', async () => 
 });
 
 test('an unknown token answers 404 without reaching the upstream', async () => {
-  const relay = await relayWith();
+  const { relay, port } = await relayOnHost();
 
-  const answer = await requestOver(portOf(relay), '/screen/unknown/');
+  relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
+
+  const answer = await requestOver(port, '/screen/unknown/');
 
   assert.equal(answer.status, 404);
 });
 
+test("the relay leaves the host's other routes alone", async () => {
+  const { relay, port } = await relayOnHost();
+
+  relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
+
+  const answer = await requestOver(port, '/host-route');
+
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body, 'host');
+});
+
 test('the WebSocket upgrade is passed through with the browser handshake', async () => {
-  const relay = await relayWith();
+  const { relay, port } = await relayOnHost();
 
   relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
 
@@ -153,7 +251,7 @@ test('the WebSocket upgrade is passed through with the browser handshake', async
   const echoed = await new Promise<string>((resolve, reject) => {
     const client = httpRequest({
       host: '127.0.0.1',
-      port: portOf(relay),
+      port,
       path: '/screen/t1/ws?v=1',
       headers: {
         connection: 'Upgrade',
@@ -181,12 +279,12 @@ test('the WebSocket upgrade is passed through with the browser handshake', async
 });
 
 test('an unknown token refuses the upgrade', async () => {
-  const relay = await relayWith();
+  const { port } = await relayOnHost();
 
   const status = await new Promise<number>((resolve, reject) => {
     const client = httpRequest({
       host: '127.0.0.1',
-      port: portOf(relay),
+      port,
       path: '/screen/unknown/',
       headers: {
         connection: 'Upgrade',
@@ -207,20 +305,95 @@ test('an unknown token refuses the upgrade', async () => {
   assert.equal(status, 404);
 });
 
-test('dispose closes the listener', async () => {
-  const relay = await relayWith();
+test('an engine.io-style destroy timer does not end a relayed upgrade', async () => {
+  const host = await hostListener();
 
-  await relay.dispose();
+  // Engine.IO attaches its own `upgrade` listener to the shared server; for a
+  // path that is not its own it ends a socket that has not written bytes
+  // within `destroyUpgradeTimeout`. The host disables that
+  // (`destroyUpgrade: false`); a hostile default would still not end a relayed
+  // upgrade that writes its handshake promptly.
+  host.server.on('upgrade', (request, socket) => {
+    if (request.url?.startsWith('/socket.io')) {
+      return;
+    }
 
-  await assert.rejects(requestOver(portOf(relay), '/screen/t1/'));
+    const peer = socket as Socket;
+
+    setTimeout(() => {
+      if (peer.writable && peer.bytesWritten <= 0) {
+        peer.end();
+      }
+    }, 20);
+  });
+
+  const relay = createScreenRelay();
+
+  relays.push(relay);
+  relay.mount({ http: host.router, server: host.server });
+  relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
+
+  const key = 'dGhlIHNhbXBsZSBub25jZQ==';
+  const echoed = await new Promise<string>((resolve, reject) => {
+    const client = httpRequest({
+      host: '127.0.0.1',
+      port: host.port,
+      path: '/screen/t1/ws',
+      headers: {
+        connection: 'Upgrade',
+        upgrade: 'websocket',
+        'sec-websocket-key': key,
+        'sec-websocket-version': '13',
+      },
+    });
+
+    client.on('error', reject);
+    client.on('upgrade', (response, socket) => {
+      assert.equal(response.statusCode, 101);
+
+      socket.on('data', (chunk: Buffer) => resolve(chunk.toString('utf8')));
+      socket.write('still-here');
+    });
+    client.end();
+  });
+
+  assert.equal(echoed, 'still-here');
+});
+
+test('forget stops answering a token', async () => {
+  const { relay, port } = await relayOnHost();
+
+  relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
+  assert.equal((await requestOver(port, '/screen/t1/')).status, 200);
+
+  relay.forget('t1');
+  assert.equal((await requestOver(port, '/screen/t1/')).status, 404);
+});
+
+test('unmounting stops the relay answering while the host keeps serving', async () => {
+  const { relay, port, unmount } = await relayOnHost();
+
+  relay.expose('t1', { host: '127.0.0.1', port: upstreamPort });
+  assert.equal((await requestOver(port, '/screen/t1/')).status, 200);
+
+  unmount();
+
+  assert.equal((await requestOver(port, '/screen/t1/')).status, 404);
+  assert.equal((await requestOver(port, '/host-route')).status, 200);
 });
 
 after(async () => {
   await upstreamReady;
 
   for (const relay of relays) {
-    await relay.dispose();
+    relay.dispose();
   }
+
+  await Promise.all(
+    servers.map(
+      (server) => new Promise<void>((resolve) => server.close(() => resolve())),
+    ),
+  );
 
   await new Promise<void>((resolve) => upstream.close(() => resolve()));
 });

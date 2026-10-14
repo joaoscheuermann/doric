@@ -32,7 +32,9 @@ void app.whenReady().then(async () => {
   const platform = new DesktopPlatform({
     mainDir: __dirname,
     userData: app.getPath('userData'),
-    hostUrl: HOST_URL,
+    // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
+    // that is not on the app's own loopback, the loopback default otherwise.
+    hostUrl: process.env.DORIC_HOST_URL ?? HOST_URL,
     packaged: app.isPackaged,
     argv: process.argv,
     notifications: electronNotifications,

@@ -1,6 +1,7 @@
 // The window's screen call: every attach resolves the contract bound to the
 // Project's scope — what `runtime.lease/v1` reads on the host — the identifier
-// is validated before any call, and a failed bridge answers one sentence.
+// is validated before any call, and everything that is not a status reads as
+// "no answer", which the desktop part shows as a retryable failure.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -12,11 +13,11 @@ import type { ScreenAttach } from '../src/contracts/index.js';
 
 const ready = (projectId: string): ScreenAttach => ({
   status: 'ready',
-  url: `http://127.0.0.1:5555/screen/${projectId}/`,
+  path: `/screen/${projectId}/`,
   display: ':100',
 });
 
-test('attach resolves the contract bound to the Project scope', async () => {
+void test('attach resolves the contract bound to the Project scope', async () => {
   const scopes: string[] = [];
   const calls: string[] = [];
   const api = createScreenApi((projectId) => {
@@ -38,7 +39,7 @@ test('attach resolves the contract bound to the Project scope', async () => {
   assert.deepEqual(answer, ready('p1'));
 });
 
-test('each attach of a Project resolves its own scope', async () => {
+void test('each attach of a Project resolves its own scope', async () => {
   const scopes: string[] = [];
   const api = createScreenApi((projectId) => {
     scopes.push(projectId);
@@ -52,7 +53,7 @@ test('each attach of a Project resolves its own scope', async () => {
   assert.deepEqual(scopes, ['p1', 'p2']);
 });
 
-test('an invalid identifier never reaches the host', async () => {
+void test('an invalid identifier never reaches the host', async () => {
   let resolutions = 0;
   const api = createScreenApi(() => {
     resolutions += 1;
@@ -70,28 +71,31 @@ test('an invalid identifier never reaches the host', async () => {
   assert.equal(resolutions, 0);
 });
 
-test('a lost bridge answers the sentence the panel shows', async () => {
+void test('a lost bridge answers no answer', async () => {
   const api = createScreenApi(() => ({
     attach: async () => {
       throw new ContractError('unavailable', 'the bridge is gone');
     },
   }));
 
-  await assert.rejects(
-    api.attach('p1'),
-    new RegExp(screenApiMessages.unavailable),
-  );
+  assert.equal(await api.attach('p1'), null);
 });
 
-test('any other failure answers the generic sentence', async () => {
+void test('any other failure answers no answer too', async () => {
   const api = createScreenApi(() => ({
     attach: async () => {
       throw new Error('boom');
     },
   }));
 
-  await assert.rejects(
-    api.attach('p1'),
-    new RegExp(screenApiMessages.screenFailed),
-  );
+  assert.equal(await api.attach('p1'), null);
+});
+
+void test('an answer that is not a status is dropped', async () => {
+  const api = createScreenApi(() => ({
+    attach: async () =>
+      ({ status: 'ready', url: 'http://127.0.0.1:1/' }) as never,
+  }));
+
+  assert.equal(await api.attach('p1'), null);
 });

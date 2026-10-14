@@ -171,7 +171,7 @@ export interface ScreenSessionsOptions {
   ) => Promise<boolean>;
 }
 
-/** The session manager behind `screen.sessions/v1.attach`. */
+/** The session manager behind `screen.sessions/v2.attach`. */
 export interface ScreenSessionManager {
   /**
    * Ensures the Project's session on the given lease and answers the record

@@ -274,6 +274,7 @@ export class DesktopPlatform {
       },
       tokens: this.tokens,
       preload: this.#preload,
+      hostUrl: options.hostUrl,
       answers: this.answers,
       quitting: () => this.lifecycle.quitting,
       log: this.log,
@@ -294,7 +295,7 @@ export class DesktopPlatform {
         },
         focused: () => this.menus.rebuild(),
         navigating: (entry) => {
-          this.dispatcher.navigating(entry.window.webContents.id);
+          this.dispatcher.navigating(entry.contents.id);
           this.#unpin(entry);
         },
       },
@@ -971,7 +972,7 @@ export class DesktopPlatform {
 
     const pins = this.#pins.get(generation) ?? new Set<number>();
 
-    pins.add(entry.window.webContents.id);
+    pins.add(entry.contents.id);
     this.#pins.set(generation, pins);
     this.menus.rebuild();
     this.dispatcher.bindingsChanged(entry);

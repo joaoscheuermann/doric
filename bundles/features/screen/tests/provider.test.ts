@@ -1,4 +1,4 @@
-// `screen.sessions/v1` through the sessions owner: lease states map to the
+// `screen.sessions/v2` through the sessions owner: lease states map to the
 // contract's answer, a session is published on the relay, tokens are replaced
 // cleanly, and concurrent attaches share one ensure.
 
@@ -15,7 +15,7 @@ import {
   runtimeLeaseMethods,
 } from 'runtime/contracts';
 
-import { ScreenSessionsV1 } from '../src/contracts/index.js';
+import { ScreenSessionsV2 } from '../src/contracts/index.js';
 import {
   createScreenSessions,
   screenSessionsService,
@@ -59,7 +59,6 @@ const relayOf = () => {
   const exposed = new Map<string, ScreenRelayTarget>();
   const forgotten: string[] = [];
   const relay: ScreenRelay = {
-    origin: 'http://127.0.0.1:5555',
     expose: (token, target) => {
       exposed.set(token, target);
     },
@@ -67,7 +66,8 @@ const relayOf = () => {
       forgotten.push(token);
       exposed.delete(token);
     },
-    dispose: async () => undefined,
+    mount: () => () => undefined,
+    dispose: () => undefined,
   };
 
   return { relay, exposed, forgotten };
@@ -78,7 +78,7 @@ test('a lease still coming up answers pending and opens no relay', async () => {
   let relays = 0;
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => {
+    relay: () => {
       relays += 1;
 
       return fake.relay;
@@ -100,7 +100,7 @@ test('a lease that cannot run answers unavailable', async () => {
   let ensures = 0;
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => fake.relay,
+    relay: () => fake.relay,
     manager: () => ({
       ensure: async () => {
         ensures += 1;
@@ -126,7 +126,7 @@ test('an image without xpra answers the missing-xpra reason', async () => {
   const fake = relayOf();
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => fake.relay,
+    relay: () => fake.relay,
     manager: () => ({
       ensure: async () => {
         throw new ScreenSessionError('missing-xpra');
@@ -142,11 +142,11 @@ test('an image without xpra answers the missing-xpra reason', async () => {
   assert.deepEqual(answer, { status: 'unavailable', reason: 'missing-xpra' });
 });
 
-test('a live session answers its relay URL and publishes the upstream', async () => {
+test('a live session answers its relay path and publishes the upstream', async () => {
   const fake = relayOf();
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => fake.relay,
+    relay: () => fake.relay,
     manager: () => ({ ensure: async () => session('token-1') }),
   });
 
@@ -160,7 +160,7 @@ test('a live session answers its relay URL and publishes the upstream', async ()
 
   assert.deepEqual(answer, {
     status: 'ready',
-    url: 'http://127.0.0.1:5555/screen/token-1/',
+    path: '/screen/token-1/',
     display: ':100',
   });
   assert.deepEqual(fake.exposed.get('token-1'), {
@@ -175,7 +175,7 @@ test('a replaced session forgets the token it replaced', async () => {
   let token = 'token-1';
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => fake.relay,
+    relay: () => fake.relay,
     manager: () => ({ ensure: async () => session(token) }),
   });
 
@@ -187,7 +187,7 @@ test('a replaced session forgets the token it replaced', async () => {
 
   assert.deepEqual(second, {
     status: 'ready',
-    url: 'http://127.0.0.1:5555/screen/token-2/',
+    path: '/screen/token-2/',
     display: ':100',
   });
   assert.deepEqual(fake.forgotten, ['token-1']);
@@ -203,7 +203,7 @@ test('concurrent attaches share one ensure', async () => {
   });
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => fake.relay,
+    relay: () => fake.relay,
     manager: () => ({
       ensure: async () => {
         ensures += 1;
@@ -233,7 +233,7 @@ test('attach hands the call Project scope to the lease', async () => {
   const scopes: (string | undefined)[] = [];
   const sessions = createScreenSessions({
     log: () => quietLog(),
-    relay: async () => relayOf().relay,
+    relay: () => relayOf().relay,
     manager: () => ({ ensure: async () => session('token-1') }),
   });
 
@@ -255,7 +255,7 @@ test('attach hands the call Project scope to the lease', async () => {
   });
 
   const answer = await harness.services
-    .use(ScreenSessionsV1, { projectId: 'p1' })
+    .use(ScreenSessionsV2, { projectId: 'p1' })
     .attach('p1');
 
   assert.equal(answer.status, 'ready');

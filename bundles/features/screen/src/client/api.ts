@@ -1,27 +1,26 @@
-// The window's screen call over the client → host bridge: `attach` ensures
-// the Project's session and answers where the panel embeds it. Each call
-// resolves the contract bound to that Project's scope, which is what the
-// host's `runtime.lease/v1` reads. The old renderer's host calls reported one
-// fallback sentence for a lost bridge and another for a failed request; both
-// live here.
-
-import { isContractError } from 'bundle/contracts';
+// The window's screen call over the client → host bridge: `attach` ensures the
+// Project's session and answers where the window embeds it. Each call resolves
+// the contract bound to that Project's scope, which is what the host's
+// `runtime.lease/v1` reads.
+//
+// Nothing here throws at the caller but an invalid identifier: a lost bridge, a
+// failed request and an answer that is not a status all read as "no answer",
+// which the desktop part shows as a retryable failure.
 
 import type { ScreenAttach, ScreenSessions } from '../contracts/index.js';
+import { screenAttachSchema } from '../contracts/index.js';
 
 export const screenApiMessages = {
-  /** A lost bridge, as for every other host call (stage 8 §14.3). */
-  unavailable: 'Doric backend is unavailable.',
+  /** The identifier a Project id must be before it reaches the host. */
   invalidIdentifier: 'The item identifier is invalid.',
-  /** Any failed screen request. */
-  screenFailed: 'Doric could not complete the screen request.',
 } as const;
 
 export interface ScreenApi {
-  attach(projectId: string): Promise<ScreenAttach>;
+  /** The host's answer for a Project, or `null` when it could not be reached. */
+  attach(projectId: string): Promise<ScreenAttach | null>;
 }
 
-/** The contract bound to the scope of the Project the panel shows. */
+/** The contract bound to the scope of the Project a view watches. */
 export type ScreenHost = (projectId: string) => Pick<ScreenSessions, 'attach'>;
 
 const identifier = (value: unknown): string => {
@@ -42,18 +41,14 @@ export const createScreenApi = (sessions: ScreenHost): ScreenApi => ({
     const id = identifier(projectId);
 
     try {
-      return await sessions(id).attach(id);
-    } catch (error) {
-      if (
-        isContractError(error) &&
-        (error.code === 'unavailable' ||
-          error.code === 'disconnected' ||
-          error.code === 'generation_lost')
-      ) {
-        throw new Error(screenApiMessages.unavailable);
-      }
+      const answer = await sessions(id).attach(id);
+      const parsed = screenAttachSchema.safeParse(answer);
 
-      throw new Error(screenApiMessages.screenFailed);
+      return parsed.success ? parsed.data : null;
+    } catch {
+      // A lost bridge, an unreachable host or a failed request: one state, and
+      // one the reader can retry.
+      return null;
     }
   },
 });

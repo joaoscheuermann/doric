@@ -1,188 +1,102 @@
-// The window store through its public reads: open/close/toggle, the attach
-// status mapping, retries, per-Project isolation and the stable snapshot
-// `useSyncExternalStore` needs.
+// The window's mirror of the desktop part's views: what it holds, the snapshot
+// identity `useSyncExternalStore` needs, and when it notifies.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  createScreenStore,
-  type ScreenStoreOptions,
-} from '../src/client/store.js';
-import type { ScreenAttach } from '../src/contracts/index.js';
+import { createScreenViewsStore } from '../src/client/store.js';
+import type { ScreenView } from '../src/contracts/index.js';
 
-const settled = () => new Promise((done) => setTimeout(done, 0));
-
-const ready: ScreenAttach = {
-  status: 'ready',
-  url: 'http://127.0.0.1:5555/screen/token/',
-  display: ':100',
-};
-
-const storeWith = (attach: ScreenStoreOptions['attach']) =>
-  createScreenStore({ attach });
-
-test('opening a Project mounts its panel, attaches and shows the screen', async () => {
-  const store = storeWith(async () => ready);
-
-  store.open('p1');
-
-  assert.deepEqual(store.mounted(), ['p1']);
-  assert.equal(store.panel('p1')?.open, true);
-  assert.deepEqual(store.panel('p1')?.status, { kind: 'loading' });
-
-  await settled();
-
-  assert.deepEqual(store.panel('p1')?.status, {
-    kind: 'ready',
-    url: ready.url,
-    display: ':100',
-  });
+const waiting = (id: string): ScreenView => ({
+  id,
+  label: `Screen ${id}`,
+  projectId: `p-${id}`,
+  status: { kind: 'waiting' },
 });
 
-test('closing keeps the panel mounted and its last status', async () => {
-  const store = storeWith(async () => ready);
-
-  store.open('p1');
-  await settled();
-  store.close('p1');
-
-  assert.deepEqual(store.mounted(), ['p1']);
-  assert.equal(store.panel('p1')?.open, false);
-  assert.equal(store.panel('p1')?.status.kind, 'ready');
+const withStatus = (
+  view: ScreenView,
+  status: ScreenView['status'],
+): ScreenView => ({
+  ...view,
+  status,
 });
 
-test('a pending sandbox is reported as pending and a later retry can succeed', async () => {
-  let attach: ScreenStoreOptions['attach'] = async () => ({
-    status: 'pending',
-  });
-  const store = storeWith((projectId) => attach(projectId));
+void test('the snapshot keeps its identity until the list changes', () => {
+  const store = createScreenViewsStore();
+  const view = waiting('1');
 
-  store.open('p1');
-  await settled();
-  assert.deepEqual(store.panel('p1')?.status, { kind: 'pending' });
+  store.set([view]);
 
-  attach = async () => ready;
-  store.retry('p1');
-  await settled();
-  assert.equal(store.panel('p1')?.status.kind, 'ready');
+  const first = store.views();
+
+  store.set([view]);
+
+  assert.equal(store.views(), first);
+
+  store.set([
+    withStatus(view, { kind: 'ready', path: '/screen/a/', display: ':100' }),
+  ]);
+
+  assert.notEqual(store.views(), first);
 });
 
-test('an unavailable note reports its reason', async () => {
-  const store = storeWith(async () => ({
-    status: 'unavailable',
-    reason: 'missing-xpra',
-  }));
+void test('a ready view carries the host-relative path and its display', () => {
+  const store = createScreenViewsStore();
 
-  store.open('p1');
-  await settled();
+  store.set([
+    withStatus(waiting('1'), {
+      kind: 'ready',
+      path: '/screen/token/',
+      display: ':100',
+    }),
+  ]);
 
-  assert.deepEqual(store.panel('p1')?.status, {
-    kind: 'unavailable',
-    reason: 'missing-xpra',
-  });
+  assert.deepEqual(store.views(), [
+    {
+      id: '1',
+      label: 'Screen 1',
+      projectId: 'p-1',
+      status: { kind: 'ready', path: '/screen/token/', display: ':100' },
+    },
+  ]);
 });
 
-test('a failed attach is reported, and a ready screen is never blanked by one', async () => {
-  let fail = false;
-  const store = storeWith(async () => {
-    if (fail) {
-      throw new Error('Doric backend is unavailable.');
-    }
-
-    return ready;
+void test('an unchanged list notifies nobody, a changed one notifies once', () => {
+  const store = createScreenViewsStore();
+  const view = waiting('1');
+  let notified = 0;
+  const subscription = store.subscribe(() => {
+    notified += 1;
   });
 
-  store.open('p1');
-  await settled();
-  assert.equal(store.panel('p1')?.status.kind, 'ready');
+  store.set([view]);
+  store.set([{ ...view }]);
 
-  fail = true;
-  store.retry('p1');
-  await settled();
-  assert.equal(store.panel('p1')?.status.kind, 'ready');
+  assert.equal(notified, 1);
 
-  store.close('p1');
-  fail = false;
-  store.open('p2');
-  await settled();
-  assert.equal(store.panel('p2')?.status.kind, 'ready');
+  store.set([withStatus(view, { kind: 'failed' })]);
+
+  assert.equal(notified, 2);
+
+  subscription.dispose();
+  store.set([view]);
+
+  assert.equal(notified, 2);
 });
 
-test('a re-attach that answers a new relay URL replaces the embedded screen', async () => {
-  let attach: ScreenStoreOptions['attach'] = async () => ready;
-  const store = storeWith((projectId) => attach(projectId));
+void test('reset clears the list and notifies', () => {
+  const store = createScreenViewsStore();
+  let notified = 0;
 
-  store.open('p1');
-  await settled();
-  assert.deepEqual(store.panel('p1')?.status, {
-    kind: 'ready',
-    url: ready.url,
-    display: ':100',
+  store.subscribe(() => {
+    notified += 1;
   });
 
-  // The backend restarted, so its relay answers a new loopback port.
-  const moved: ScreenAttach = {
-    status: 'ready',
-    url: 'http://127.0.0.1:6666/screen/token/',
-    display: ':100',
-  };
-  attach = async () => moved;
-  store.retry('p1');
-  await settled();
+  store.set([waiting('1')]);
+  store.reset();
+  store.reset();
 
-  assert.deepEqual(store.panel('p1')?.status, {
-    kind: 'ready',
-    url: moved.url,
-    display: ':100',
-  });
-});
-
-test('toggle closes an open panel and reopens it', async () => {
-  const store = storeWith(async () => ready);
-
-  store.toggle('p1');
-  await settled();
-  assert.equal(store.panel('p1')?.open, true);
-
-  store.toggle('p1');
-  assert.equal(store.panel('p1')?.open, false);
-
-  store.toggle('p1');
-  assert.equal(store.panel('p1')?.open, true);
-});
-
-test('panels and their geometry are per Project', async () => {
-  const store = storeWith(async () => ready);
-
-  store.open('p1');
-  store.open('p2');
-  await settled();
-
-  store.setGeometry('p1', { x: 10, y: 20, width: 300, height: 200 });
-
-  assert.deepEqual(store.panel('p1')?.geometry, {
-    x: 10,
-    y: 20,
-    width: 300,
-    height: 200,
-  });
-  assert.equal(store.panel('p2')?.geometry, undefined);
-  assert.deepEqual(store.mounted(), ['p1', 'p2']);
-});
-
-test('the mounted snapshot is stable between changes', async () => {
-  const store = storeWith(async () => ready);
-
-  store.open('p1');
-
-  const first = store.mounted();
-
-  assert.equal(store.mounted(), first);
-
-  await settled();
-
-  const second = store.mounted();
-
-  assert.equal(second, first);
+  assert.deepEqual(store.views(), []);
+  assert.equal(notified, 2);
 });
