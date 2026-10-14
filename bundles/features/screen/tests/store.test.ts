@@ -109,6 +109,35 @@ test('a failed attach is reported, and a ready screen is never blanked by one', 
   assert.equal(store.panel('p2')?.status.kind, 'ready');
 });
 
+test('a re-attach that answers a new relay URL replaces the embedded screen', async () => {
+  let attach: ScreenStoreOptions['attach'] = async () => ready;
+  const store = storeWith((projectId) => attach(projectId));
+
+  store.open('p1');
+  await settled();
+  assert.deepEqual(store.panel('p1')?.status, {
+    kind: 'ready',
+    url: ready.url,
+    display: ':100',
+  });
+
+  // The backend restarted, so its relay answers a new loopback port.
+  const moved: ScreenAttach = {
+    status: 'ready',
+    url: 'http://127.0.0.1:6666/screen/token/',
+    display: ':100',
+  };
+  attach = async () => moved;
+  store.retry('p1');
+  await settled();
+
+  assert.deepEqual(store.panel('p1')?.status, {
+    kind: 'ready',
+    url: moved.url,
+    display: ':100',
+  });
+});
+
 test('toggle closes an open panel and reopens it', async () => {
   const store = storeWith(async () => ready);
 

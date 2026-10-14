@@ -151,6 +151,22 @@ function ScreenPanelView({
     return () => clearInterval(timer);
   }, [waiting, store, projectId]);
 
+  // A screen that is up is still re-asked: the relay a panel embeds is the one
+  // its host generation bound, so a restarted backend leaves the iframe asking
+  // a port nothing answers. A fresh attach answers the current URL, and the
+  // iframe reloads by itself when it changes.
+  const live = panel?.open === true && active && panel?.status.kind === 'ready';
+
+  useEffect(() => {
+    if (!live) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => store.retry(projectId), 15_000);
+
+    return () => clearInterval(timer);
+  }, [live, store, projectId]);
+
   if (panel === undefined) {
     return null;
   }
