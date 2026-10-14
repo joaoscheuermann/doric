@@ -11,6 +11,10 @@
 # GitHub CLI is downloaded from its pinned release and checksum-checked the way
 # the host `.Dockerfile` pins its own downloads, so a changed archive fails the
 # build instead of entering the sandbox.
+#
+# Electron's runtime libraries and Xvfb installed at the end let a sandbox
+# build and run Electron desktop apps, the Doric desktop app among them, with
+# no display of its own.
 FROM node:22-bookworm
 
 ARG GH_VERSION=2.101.0
@@ -37,3 +41,32 @@ RUN set -eux; \
     rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${arch}"; \
     git --version; \
     gh --version
+
+# Electron embeds Chromium, which links these system libraries at runtime;
+# `xvfb-run` needs `xauth` under `--no-install-recommends` and gives a
+# container with no display a headless X server. A root container starts
+# Electron with `--no-sandbox`, as Chromium's setuid helper cannot be used
+# there. The checks fail the build on a missing soname or display rather than
+# leaving a sandbox that cannot start a desktop app.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libasound2 \
+      libatk1.0-0 \
+      libatk-bridge2.0-0 \
+      libatspi2.0-0 \
+      libcups2 \
+      libdbus-1-3 \
+      libgbm1 \
+      libgtk-3-0 \
+      libnspr4 \
+      libnss3 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxfixes3 \
+      libxkbcommon0 \
+      libxrandr2 \
+      xauth \
+      xvfb \
+ && rm -rf /var/lib/apt/lists/* \
+ && ldconfig -p | grep -qE 'lib(nspr4|nss3|gtk-3|gbm|asound)\.so' \
+ && xvfb-run -a true

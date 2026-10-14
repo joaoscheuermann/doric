@@ -423,7 +423,8 @@ from the host log (`Bundles loaded` reports bundle, tool, and skill counts) and
 
 The Docker profile runs sandboxes from the sandbox image built from
 [`.sandbox.Dockerfile`](.sandbox.Dockerfile), which adds the GitHub CLI to the
-base image's Git. Compose selects it through `DORIC_SANDBOX_IMAGE`
+base image's Git and the runtime libraries Electron needs, with Xvfb for
+headless runs. Compose selects it through `DORIC_SANDBOX_IMAGE`
 (`doric-sandbox:local` by default) and the host otherwise provisions the plain
 `node:22-bookworm` image, so build the tag before `up`:
 
