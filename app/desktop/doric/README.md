@@ -75,6 +75,11 @@ the repository root:
 npm run doric:dev
 ```
 
+Chromium cannot use its setuid sandbox helper as root, so when the process runs
+as root — a root container, for instance — the `serve` target starts Electron
+with `--no-sandbox`; a normal user keeps the sandbox. Set
+`DORIC_ELECTRON_NO_SANDBOX=1` to opt out without being root.
+
 Build, test, or package the desktop boundary directly:
 
 ```console

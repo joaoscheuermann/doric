@@ -113,7 +113,7 @@ concept, and the bundles own their own.
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
-`app/desktop/doric` is the Electron desktop application. Its sandboxed, context-isolated
+`app/desktop/doric` is the Electron desktop application. Serving it — the `serve` target `nx serve doric-app`, which `npm run doric:dev` drives through `nxe:serve:backend` — launches Electron with Chromium's sandbox disabled (`--no-sandbox`) only when the process runs as root, the case a root container is, or when `DORIC_ELECTRON_NO_SANDBOX=1` opts in explicitly; a normal user keeps the sandbox. Its sandboxed, context-isolated
 windows load the shell built by `app/desktop/doric-renderer`, which since migration
 stage 9 only boots the client bundles; the UI described below is drawn by the
 `layout`, `chat` and `settings` client bundles, the feature bundles' client parts

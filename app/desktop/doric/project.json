@@ -54,10 +54,16 @@
         "command": "node app/desktop/doric/build-runner.mjs --out dist/app/desktop/doric/assets"
       }
     },
-    "serve": {
+    "serve-electron": {
       "executor": "nx-electron:execute",
       "options": {
         "buildTarget": "doric-app:build"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node app/desktop/doric/serve.mjs"
       }
     },
     "package": {
