@@ -95,6 +95,10 @@ describe('doric:// privileges', () => {
     const shellRoot = join(root, 'shell');
     const part = join(root, 'bundles', 'probe@1.0.0', 'client', 'index.js');
 
+    const resources = { ...resourcesFor(MAIN_DIR), shellRoot };
+    const importMap = platformImportMap(resources.platformRoot);
+    const zodPath = new URL(importMap.imports['zod']).pathname;
+
     await mkdir(shellRoot, { recursive: true });
     await mkdir(join(root, 'bundles', 'probe@1.0.0', 'client'), {
       recursive: true,
@@ -104,12 +108,9 @@ describe('doric:// privileges', () => {
     await writeFile(join(shellRoot, 'classic.js'), `postMessage('classic');`);
     await writeFile(
       join(shellRoot, 'module.js'),
-      `import { z } from '/platform/zod@4.4.3/index.js'; postMessage(z.literal('module').parse('module'));`,
+      `import { z } from '${zodPath}'; postMessage(z.literal('module').parse('module'));`,
     );
     await writeFile(part, 'export const value = "part";');
-
-    const resources = { ...resourcesFor(MAIN_DIR), shellRoot };
-    const importMap = platformImportMap(resources.platformRoot);
 
     protocol.handle('doric', (request) =>
       respond(request, {

@@ -8,6 +8,7 @@
       "executor": "nx:run-commands",
       "dependsOn": [
         { "projects": "doric-app", "target": "build" },
+        { "projects": "doric-app", "target": "typecheck" },
         { "projects": "bundle-core", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
