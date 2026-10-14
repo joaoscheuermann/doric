@@ -77,6 +77,11 @@ services:
       # plain Node image; publish the tag or set DORIC_SANDBOX_IMAGE to override.
       DORIC_SANDBOX_IMAGE: ${DORIC_SANDBOX_IMAGE:-doric-sandbox:local}
       DORIC_SANDBOX_SSH: '${DORIC_SANDBOX_SSH:-true}'
+      # Shares the host's Docker socket with every Project sandbox, so a sandbox
+      # can build and run the images its Project describes. Holding the socket
+      # gives a sandbox the daemon's authority on the host, so it is off unless
+      # a local, trusted deployment opts in through the environment file.
+      DORIC_SANDBOX_DOCKER_SOCKET: '${DORIC_SANDBOX_DOCKER_SOCKET:-false}'
       # Encrypts stored credential secrets; required once a credential holds one.
       DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:

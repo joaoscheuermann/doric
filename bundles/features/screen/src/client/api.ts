@@ -1,7 +1,9 @@
 // The window's screen call over the client → host bridge: `attach` ensures
-// the Project's session and answers where the panel embeds it. The old
-// renderer's host calls reported one fallback sentence for a lost bridge and
-// another for a failed request; both live here.
+// the Project's session and answers where the panel embeds it. Each call
+// resolves the contract bound to that Project's scope, which is what the
+// host's `runtime.lease/v1` reads. The old renderer's host calls reported one
+// fallback sentence for a lost bridge and another for a failed request; both
+// live here.
 
 import { isContractError } from 'bundle/contracts';
 
@@ -19,7 +21,8 @@ export interface ScreenApi {
   attach(projectId: string): Promise<ScreenAttach>;
 }
 
-export type ScreenHost = Pick<ScreenSessions, 'attach'>;
+/** The contract bound to the scope of the Project the panel shows. */
+export type ScreenHost = (projectId: string) => Pick<ScreenSessions, 'attach'>;
 
 const identifier = (value: unknown): string => {
   if (
@@ -34,14 +37,12 @@ const identifier = (value: unknown): string => {
   return value;
 };
 
-export const createScreenApi = (
-  sessions: () => ScreenHost,
-): ScreenApi => ({
+export const createScreenApi = (sessions: ScreenHost): ScreenApi => ({
   attach: async (projectId) => {
     const id = identifier(projectId);
 
     try {
-      return await sessions().attach(id);
+      return await sessions(id).attach(id);
     } catch (error) {
       if (
         isContractError(error) &&

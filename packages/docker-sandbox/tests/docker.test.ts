@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  type CreateDockerClientOptions,
   createDockerClient,
   type DockerClient,
   DockerHttpError,
@@ -394,6 +395,83 @@ void test('mounts a durable workspace volume and labels the container', async ()
   await discardWorkspace(client, 'project-a');
 
   assert.deepEqual(requests.at(-1)?.path, '/volumes/doric-workspace-project-a');
+});
+
+/**
+ * The binds a client with these options asks the daemon for, read from the
+ * create body of one durable workspace.
+ */
+const provisionedBinds = async (
+  options: CreateDockerClientOptions,
+): Promise<readonly string[]> => {
+  const requests: DockerTransportRequest[] = [];
+
+  const client = createDockerClient({
+    ...options,
+    request: async (request) => {
+      requests.push(request);
+
+      if (request.path === '/containers/create') {
+        return jsonResponse(201, { Id: 'sandbox-1' });
+      }
+
+      if (request.path === '/containers/json') {
+        return jsonResponse(200, []);
+      }
+
+      if (request.path === '/volumes/create') {
+        return jsonResponse(201, { Name: 'doric-workspace-project-a' });
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  const runtime = await client.provision({
+    image: 'node:22-slim',
+    root: '/workspace',
+    workspace: 'project-a',
+    resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+    network: { mode: 'disabled', ssh: false },
+  });
+
+  await runtime.dispose();
+
+  const create = requests.find(({ path }) => path === '/containers/create');
+
+  assert.ok(create);
+
+  const body = create.body as {
+    readonly HostConfig: { readonly Binds: readonly string[] };
+  };
+
+  return body.HostConfig.Binds;
+};
+
+void test('shares the daemon socket with a sandbox when the deployment asks', async () => {
+  const binds = await provisionedBinds({
+    connection: { kind: 'unix', socketPath: '/run/user/1000/docker.sock' },
+    exposeDockerSocket: true,
+  });
+
+  // The workspace volume, then the socket where a Docker client looks for one.
+  assert.deepEqual(binds, [
+    'doric-workspace-project-a:/workspace',
+    '/run/user/1000/docker.sock:/var/run/docker.sock',
+  ]);
+});
+
+void test('leaves a sandbox without a daemon when the connection cannot carry one', async () => {
+  const binds = await provisionedBinds({
+    connection: { kind: 'namedPipe', pipePath: '//./pipe/doric-test' },
+    exposeDockerSocket: true,
+  });
+
+  assert.deepEqual(binds, ['doric-workspace-project-a:/workspace']);
 });
 
 void test('leaves a sandbox without a workspace unbound', async () => {

@@ -134,6 +134,26 @@ void test('does not reuse a container whose metadata omits its labels', () => {
   );
 });
 
+void test('does not reuse a container that binds a different Docker socket', () => {
+  const shared = '/run/user/1000/docker.sock:/var/run/docker.sock';
+
+  assert.equal(
+    reusable(
+      request({ Binds: ['doric-workspace-project-a:/workspace', shared] }),
+      reported(),
+    ),
+    false,
+  );
+
+  assert.equal(
+    reusable(
+      request(),
+      reported({}, { Binds: ['doric-workspace-project-a:/workspace', shared] }),
+    ),
+    false,
+  );
+});
+
 void test('does not reuse a container whose metadata omits its memory limit', () => {
   assert.equal(reusable(request(), reported({}, { Memory: undefined })), false);
 });

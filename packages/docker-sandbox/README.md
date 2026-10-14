@@ -35,6 +35,12 @@ By default the client uses `/var/run/docker.sock` on Unix and Docker's named
 pipe on Windows. Pass `connection` to `createDockerClient` to override it.
 `DOCKER_HOST=unix://...` is also honored on Unix.
 
+Pass `exposeDockerSocket: true` to mount the daemon's Unix socket into every
+sandbox the client provisions, at `/var/run/docker.sock`, so code inside a
+sandbox can build and run images with the same daemon. It is off by default: a
+sandbox that holds the socket has the daemon's authority on the host. A
+connection that is not a Unix socket has no socket to share.
+
 Networking is disabled unless the caller requests egress. Linux egress and SSH
 need the host firewall and pinned Dropbear assets described by the Direct
 runtime; Docker Desktop on macOS and Windows uses its native bridge/NAT path.

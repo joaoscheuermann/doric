@@ -4,9 +4,9 @@
 // contract's answer, and a session that cannot be served reports why instead
 // of failing the bridge call.
 
-import { type Call, defineMethod, defineService } from 'bundle/contracts';
 import type { Log } from 'bundle/contracts';
-import { RuntimeLeaseV1, type RuntimeLease } from 'runtime/contracts';
+import { type Call, defineMethod, defineService } from 'bundle/contracts';
+import { type RuntimeLease, RuntimeLeaseV1 } from 'runtime/contracts';
 
 import {
   type ScreenAttach,
@@ -51,8 +51,9 @@ export const createScreenSessions = (
 
   const relayOf = () => (relay ??= (deps.relay ?? createScreenRelay)());
   const managerOf = () =>
-    (manager ??= (deps.manager ??
-      (() => createScreenSessionManager({ log: deps.log })))());
+    (manager ??= (
+      deps.manager ?? (() => createScreenSessionManager({ log: deps.log }))
+    )());
 
   const attach = async (input: ScreenAttachInput): Promise<ScreenAttach> => {
     const { projectId, lease, call } = input;
@@ -110,9 +111,7 @@ export const createScreenSessions = (
         return pending;
       }
 
-      const run = attach(input).finally(() =>
-        inFlight.delete(input.projectId),
-      );
+      const run = attach(input).finally(() => inFlight.delete(input.projectId));
 
       inFlight.set(input.projectId, run);
 

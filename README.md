@@ -63,8 +63,8 @@ Edit `app/backend/doric-host/.env`: use the first generated value for
 default database and username (`doric`). This file is ignored by Git. Keep the
 credential key across restarts: stored secrets cannot be decrypted without it.
 
-Build the sandbox image, which includes Node.js, Git, the GitHub CLI, and the
-system libraries Electron needs, with Xvfb for headless runs:
+Build the sandbox image, which includes Node.js, Git, the GitHub CLI, Docker,
+and the system libraries Electron needs, with Xvfb for headless runs:
 
 ```sh
 docker build -f app/backend/doric-host/.sandbox.Dockerfile -t doric-sandbox:local app/backend/doric-host
@@ -98,6 +98,7 @@ export DORIC_HOST=127.0.0.1
 export DORIC_SANDBOX_PROVIDER=docker
 export DORIC_SANDBOX_IMAGE=doric-sandbox:local
 export DORIC_SANDBOX_SSH=false
+export DORIC_SANDBOX_DOCKER_SOCKET=true
 npx nx run doric-host:migrate
 npx nx serve doric-host
 ```

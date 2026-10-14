@@ -1360,7 +1360,12 @@ diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled
 by default, optional SSH is key-only and loopback-bound by default, and
-effective egress requires IP-literal DNS. Doric provisions Docker sandboxes
+effective egress requires IP-literal DNS. A sandbox holds no Docker socket by
+default; `DORIC_SANDBOX_DOCKER_SOCKET=true` mounts the host daemon's socket
+into every Docker sandbox, at `/var/run/docker.sock`, so its Docker CLI can
+build and run the images a Project describes. That socket carries the daemon's
+authority on the host, so the setting is for a local, trusted deployment rather
+than the default. Doric provisions Docker sandboxes
 with one CPU, 2048 MiB of memory, and a 4096 MiB writable layer; Firecracker
 keeps its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
 Docker from the daemon's own container statistics, Firecracker from its guest's
@@ -1374,7 +1379,8 @@ selected Git skills can reach public remotes. That default ships Git; the
 sandbox image Doric builds from `app/backend/doric-host/.sandbox.Dockerfile` ships Git,
 the GitHub CLI, Electron's runtime libraries, Xvfb and the xpra screen
 server with its HTML5 client, the display stack a sandbox needs to build
-a desktop app and serve its Project screen. The image is a deployment choice the host reads from its
+a desktop app and serve its Project screen, and Docker's engine and CLI,
+which build the images a Project describes given a daemon an operator exposes. The image is a deployment choice the host reads from its
 environment rather than a compiled-in value, and Firecracker resolves an
 anonymous public OCI image, so a locally built tag needs publishing, or the
 variable pointed at a public image, before that provider can use it.

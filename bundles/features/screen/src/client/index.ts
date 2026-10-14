@@ -53,7 +53,11 @@ export const registerScreenSurfaces = (
 };
 
 export function activate({ services }: ClientContext): Cleanup {
-  const sessions = () => services.use(ScreenSessionsV1);
+  // The call is Project-scoped: `attach` runs on that Project's runtime
+  // lease, which resolves from `call.scope.projectId` — the scope key the
+  // provider's manifest declares for this contract.
+  const sessions = (projectId: string) =>
+    services.use(ScreenSessionsV1, { projectId });
   const api = createScreenApi(sessions);
   const store = createScreenStore({
     attach: (projectId) => api.attach(projectId),

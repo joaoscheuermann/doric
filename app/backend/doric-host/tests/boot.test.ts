@@ -66,6 +66,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
         'docker',
       );
       assert.equal(line('Sandbox pool configured')?.networkMode, 'egress');
+      assert.equal(line('Sandbox pool configured')?.dockerSocketShared, false);
       assert.deepEqual(
         line('Network interfaces configured')?.socketNamespaces,
         ['/status', '/projects', '/threads'],

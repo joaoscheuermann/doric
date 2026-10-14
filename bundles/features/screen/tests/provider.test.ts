@@ -5,11 +5,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Log } from 'bundle/contracts';
-import type { LeaseOutcome, RuntimeLease } from 'runtime/contracts';
+import { defineMethod, defineService, type Log } from 'bundle/contracts';
+import { createTestServices } from 'bundle/testing';
+import {
+  type LeaseOutcome,
+  type LeaseTask,
+  type RuntimeLease,
+  RuntimeLeaseV1,
+  runtimeLeaseMethods,
+} from 'runtime/contracts';
 
+import { ScreenSessionsV1 } from '../src/contracts/index.js';
+import {
+  createScreenSessions,
+  screenSessionsService,
+} from '../src/host/provider.js';
 import type { ScreenRelay, ScreenRelayTarget } from '../src/host/relay.js';
-import { createScreenSessions } from '../src/host/provider.js';
 import { type ScreenSession, ScreenSessionError } from '../src/host/session.js';
 
 const quietLog = (): Log =>
@@ -27,7 +38,10 @@ const session = (token: string): ScreenSession => ({
   host: '172.17.0.2',
 });
 
-const leaseOf = (outcome: LeaseOutcome<ScreenSession>, onTask?: () => void): RuntimeLease =>
+const leaseOf = (
+  outcome: LeaseOutcome<ScreenSession>,
+  onTask?: () => void,
+): RuntimeLease =>
   ({
     withLease: async (task: (sandbox: unknown) => Promise<ScreenSession>) => {
       if (outcome.status !== 'ready') {
@@ -213,6 +227,39 @@ test('concurrent attaches share one ensure', async () => {
   assert.equal(ensures, 1);
   assert.deepEqual(one, two);
   assert.equal(one.status, 'ready');
+});
+
+test('attach hands the call Project scope to the lease', async () => {
+  const scopes: (string | undefined)[] = [];
+  const sessions = createScreenSessions({
+    log: () => quietLog(),
+    relay: async () => relayOf().relay,
+    manager: () => ({ ensure: async () => session('token-1') }),
+  });
+
+  const harness = createTestServices({
+    bundle: { id: 'screen' },
+    provide: [
+      defineService(RuntimeLeaseV1.id, {
+        withLease: defineMethod({
+          ...runtimeLeaseMethods.withLease,
+          execute: async (task: LeaseTask<unknown>, call) => {
+            scopes.push(call.scope?.projectId);
+
+            return { status: 'ready' as const, value: await task({} as never) };
+          },
+        }),
+      }),
+      screenSessionsService(sessions),
+    ],
+  });
+
+  const answer = await harness.services
+    .use(ScreenSessionsV1, { projectId: 'p1' })
+    .attach('p1');
+
+  assert.equal(answer.status, 'ready');
+  assert.deepEqual(scopes, ['p1']);
 });
 
 test('a failure that is not a screen session failure reaches the caller', async () => {

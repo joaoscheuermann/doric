@@ -12,14 +12,18 @@ import {
   SCREEN_LOG_PATH,
   SCREEN_MARKER_PATH,
   ScreenSessionError,
+  type ScreenSessionsOptions,
   screenDisplay,
   screenDisplays,
   screenHost,
   screenPortTaken,
   screenStartCommand,
-  type ScreenSessionsOptions,
 } from '../src/host/session.js';
-import { fakeProbe, fakeSandbox, type FakeSandboxState } from './support/sandbox.js';
+import {
+  type FakeSandboxState,
+  fakeProbe,
+  fakeSandbox,
+} from './support/sandbox.js';
 
 const quietLog = (): Log =>
   ({
@@ -29,7 +33,10 @@ const quietLog = (): Log =>
     error: () => undefined,
   }) as unknown as Log;
 
-const managerOver = (state: FakeSandboxState, extra: Partial<ScreenSessionsOptions> = {}) => {
+const managerOver = (
+  state: FakeSandboxState,
+  extra: Partial<ScreenSessionsOptions> = {},
+) => {
   let clock = 0;
 
   return createScreenSessionManager({
@@ -67,7 +74,9 @@ test('a fresh sandbox starts a session, records the marker and answers its addre
     `--log-file=${SCREEN_LOG_PATH}`,
   ]);
 
-  const marker = JSON.parse(state.files.get(SCREEN_MARKER_PATH) ?? '{}') as Record<string, unknown>;
+  const marker = JSON.parse(
+    state.files.get(SCREEN_MARKER_PATH) ?? '{}',
+  ) as Record<string, unknown>;
   assert.equal(marker.display, 100);
   assert.equal(marker.port, 14500);
   assert.equal(marker.token, session.token);
@@ -90,6 +99,39 @@ test('a marker found by a respawned manager recovers the same session', async ()
   const recovered = await managerOver(state).ensure(sandbox);
 
   assert.equal(startCommands(state).length, 1);
+  assert.deepEqual(recovered, first);
+});
+
+test('the /tmp control files are reached through the sandbox shell', async () => {
+  const { sandbox, state } = fakeSandbox();
+
+  // The confined file API refuses the marker's own path, as the sandbox does.
+  await assert.rejects(
+    sandbox.writeFile(SCREEN_MARKER_PATH, '{}'),
+    /stay under/,
+  );
+  await assert.rejects(sandbox.readFile(SCREEN_MARKER_PATH), /stay under/);
+
+  const first = await managerOver(state).ensure(sandbox);
+
+  assert.ok(
+    state.commands.some(
+      (cmd) => cmd[0] === 'cat' && cmd[1] === SCREEN_MARKER_PATH,
+    ),
+    'the marker is read through the shell',
+  );
+  assert.ok(
+    state.commands.some(
+      (cmd) =>
+        cmd[0] === 'sh' &&
+        cmd[2] === 'printf %s "$1" > "$2"' &&
+        cmd[5] === SCREEN_MARKER_PATH,
+    ),
+    'the marker is written through the shell',
+  );
+  const recovered = await managerOver(state).ensure(sandbox);
+
+  assert.equal(startCommands(state).length, 1, 'the session is reused');
   assert.deepEqual(recovered, first);
 });
 
@@ -123,7 +165,9 @@ test('a live display whose port died is stopped before the restart', async () =>
   const restarted = await managerOver(state).ensure(sandbox);
 
   assert.ok(
-    state.commands.some((cmd) => cmd[0] === 'xpra' && cmd[1] === 'stop' && cmd[2] === ':100'),
+    state.commands.some(
+      (cmd) => cmd[0] === 'xpra' && cmd[1] === 'stop' && cmd[2] === ':100',
+    ),
   );
   assert.equal(restarted.port, 14500);
 });
@@ -143,14 +187,16 @@ test('a sandbox image without xpra reports the reason instead of starting', asyn
 
   await assert.rejects(
     managerOver(state).ensure(sandbox),
-    (error: unknown) => error instanceof ScreenSessionError && error.reason === 'missing-xpra',
+    (error: unknown) =>
+      error instanceof ScreenSessionError && error.reason === 'missing-xpra',
   );
   assert.equal(startCommands(state).length, 0);
 });
 
 test('a taken port is retried on the next candidate', async () => {
   const { sandbox, state } = fakeSandbox();
-  state.startLog = 'xpra initialization error:\n failed to setup tcp socket on 0.0.0.0:14500 [Errno 98] Address already in use';
+  state.startLog =
+    'xpra initialization error:\n failed to setup tcp socket on 0.0.0.0:14500 [Errno 98] Address already in use';
   state.onStart = (_display, port) => port === 14501;
 
   const session = await managerOver(state).ensure(sandbox);
@@ -160,14 +206,41 @@ test('a taken port is retried on the next candidate', async () => {
     startCommands(state).map((cmd) => cmd[4]),
     ['--bind-tcp=0.0.0.0:14500', '--bind-tcp=0.0.0.0:14501'],
   );
+  assert.ok(
+    state.commands.some(
+      (cmd) => cmd[0] === 'cat' && cmd[1] === SCREEN_LOG_PATH,
+    ),
+    'the daemon log is read through the shell',
+  );
+});
+
+test('a port another display already serves does not settle this start', async () => {
+  const { sandbox, state } = fakeSandbox();
+
+  // Another session holds 14500, so the new display fails to bind it while the
+  // address keeps answering for the session that already owned it.
+  state.displays.add(100);
+  state.ports.set(14500, true);
+  state.startLog =
+    'xpra initialization error:\n failed to setup tcp socket on 0.0.0.0:14500 [Errno 98] Address already in use';
+  state.onStart = (_display, port) => port !== 14500;
+
+  const session = await managerOver(state).ensure(sandbox);
+
+  assert.equal(session.display, 101);
+  assert.equal(session.port, 14501);
 });
 
 test('a start that never answers fails with start-failed and one attempt', async () => {
-  const { sandbox, state } = fakeSandbox({ onStart: () => false, startLog: 'something else' });
+  const { sandbox, state } = fakeSandbox({
+    onStart: () => false,
+    startLog: 'something else',
+  });
 
   await assert.rejects(
     managerOver(state).ensure(sandbox),
-    (error: unknown) => error instanceof ScreenSessionError && error.reason === 'start-failed',
+    (error: unknown) =>
+      error instanceof ScreenSessionError && error.reason === 'start-failed',
   );
   assert.equal(startCommands(state).length, 1);
 });
@@ -184,7 +257,14 @@ test('the pure helpers read xpra listings, pick displays and names', () => {
   assert.equal(screenDisplay([100, 101, 103]), 102);
   assert.equal(screenHost('127.0.0.1 172.17.0.2 \n'), '172.17.0.2');
   assert.equal(screenHost('127.0.0.1 only here'), undefined);
-  assert.ok(screenPortTaken('failed to setup tcp socket [Errno 98] Address already in use'));
+  assert.ok(
+    screenPortTaken(
+      'failed to setup tcp socket [Errno 98] Address already in use',
+    ),
+  );
   assert.ok(!screenPortTaken('xpra initialization error: something else'));
-  assert.deepEqual(screenStartCommand({ display: 100, port: 14500 })[0], 'xpra');
+  assert.deepEqual(
+    screenStartCommand({ display: 100, port: 14500 })[0],
+    'xpra',
+  );
 });

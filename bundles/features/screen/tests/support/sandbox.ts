@@ -52,12 +52,44 @@ export const fakeSandbox = (input: Partial<FakeSandboxState> = {}) => {
     hostname: '172.17.0.2 \n',
     ...input,
   };
+  const root = '/workspace';
+
+  /**
+   * The sandbox package keeps every `readFile`/`writeFile` path under the
+   * workspace root and refuses the rest. The fake refuses them too, so a
+   * control file the manager routed through that API instead of the shell
+   * fails here rather than passing on a fake that accepted any path.
+   */
+  const confined = (path: string): void => {
+    if (!path.startsWith(`${root}/`)) {
+      throw new Error(`Sandbox paths must stay under ${root}: ${path}`);
+    }
+  };
 
   const exec = async ({ cmd }: SandboxExecInput) => {
     state.commands.push([...cmd]);
 
     if (cmd[0] === 'sh' && cmd[1] === '-c' && cmd[2] === 'command -v xpra') {
       return state.xpra ? result(0, '/usr/bin/xpra\n') : result(1);
+    }
+
+    // The marker and the daemon log live outside the workspace root, so the
+    // manager reads them with `cat` and writes the marker with `printf`.
+    if (cmd[0] === 'cat' && cmd.length === 2) {
+      const value = state.files.get(cmd[1] ?? '');
+
+      return value === undefined ? result(1) : result(0, value);
+    }
+
+    if (
+      cmd[0] === 'sh' &&
+      cmd[1] === '-c' &&
+      cmd[2] === 'printf %s "$1" > "$2"' &&
+      cmd.length === 6
+    ) {
+      state.files.set(cmd[5] ?? '', cmd[4] ?? '');
+
+      return result(0);
     }
 
     if (cmd[0] === 'xpra' && cmd[1] === 'list') {
@@ -101,9 +133,11 @@ export const fakeSandbox = (input: Partial<FakeSandboxState> = {}) => {
 
   const sandbox = {
     id: 'sandbox-1',
-    root: '/workspace',
+    root,
     exec,
     readFile: async (path: string) => {
+      confined(path);
+
       const value = state.files.get(path);
 
       if (value === undefined) {
@@ -113,6 +147,8 @@ export const fakeSandbox = (input: Partial<FakeSandboxState> = {}) => {
       return value;
     },
     writeFile: async (path: string, content: string) => {
+      confined(path);
+
       state.files.set(path, content);
     },
   } as unknown as Sandbox;

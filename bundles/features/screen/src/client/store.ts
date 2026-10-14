@@ -6,7 +6,10 @@
 
 import type { Disposable } from 'bundle/contracts';
 
-import type { ScreenAttach, ScreenUnavailableReason } from '../contracts/index.js';
+import type {
+  ScreenAttach,
+  ScreenUnavailableReason,
+} from '../contracts/index.js';
 import type { ScreenGeometry } from './domain/geometry.js';
 
 export type ScreenStatus =
@@ -52,9 +55,7 @@ const statusOf = (attach: ScreenAttach): ScreenStatus => {
     : { kind: 'unavailable', reason: attach.reason };
 };
 
-export const createScreenStore = (
-  options: ScreenStoreOptions,
-): ScreenStore => {
+export const createScreenStore = (options: ScreenStoreOptions): ScreenStore => {
   const panels = new Map<string, ScreenPanel>();
   const order: string[] = [];
   const listeners = new Set<() => void>();
@@ -63,7 +64,10 @@ export const createScreenStore = (
   const changed = () => {
     // The mounted list keeps its identity while the Projects do not change,
     // so a panel's status update re-renders only that panel.
-    if (mounted.length !== order.length || order.some((id, index) => mounted[index] !== id)) {
+    if (
+      mounted.length !== order.length ||
+      order.some((id, index) => mounted[index] !== id)
+    ) {
       mounted = Object.freeze([...order]);
     }
 
@@ -114,7 +118,10 @@ export const createScreenStore = (
       const now = panels.get(projectId);
 
       // A background refresh never blanks a screen that is already up.
-      if (now === undefined || (now.status.kind === 'ready' && status.kind !== 'ready')) {
+      if (
+        now === undefined ||
+        (now.status.kind === 'ready' && status.kind !== 'ready')
+      ) {
         return;
       }
 

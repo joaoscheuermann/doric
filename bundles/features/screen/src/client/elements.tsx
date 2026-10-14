@@ -10,8 +10,8 @@ import { MonitorIcon } from 'lucide-react';
 
 import type { ScreenApi } from './api.js';
 import { useService, useSubscribed } from './hooks.js';
-import { LayoutWorkspaceV1, type ThreadRecord } from './peers.js';
 import { ScreenPanels } from './panel/screen-panel.js';
+import { LayoutWorkspaceV1, type ThreadRecord } from './peers.js';
 import type { ScreenStore } from './store.js';
 
 export const SCREEN_NEW_BUTTON_TAG = 'screen-new-button';
@@ -27,7 +27,10 @@ const useSelectedThread = (services: Services): ThreadRecord | undefined => {
 
   return useSubscribed(
     workspace,
-    () => (workspace as { selectedThread(): ThreadRecord | undefined }).selectedThread(),
+    () =>
+      (
+        workspace as { selectedThread(): ThreadRecord | undefined }
+      ).selectedThread(),
     undefined,
   );
 };
@@ -47,7 +50,9 @@ export const defineScreenElements = (client: ScreenClient) => {
         aria-label="New screen"
         title="Open screen"
         disabled={projectId === undefined}
-        onClick={projectId === undefined ? undefined : () => store.open(projectId)}
+        onClick={
+          projectId === undefined ? undefined : () => store.open(projectId)
+        }
       >
         <MonitorIcon />
       </Button>

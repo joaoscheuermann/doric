@@ -27,6 +27,12 @@ export interface DockerHostConfig {
   readonly dropbearPath: string;
   readonly statePath: string;
   readonly platform: NodeJS.Platform;
+  /**
+   * The daemon socket to mount into every sandbox this host serves, where a
+   * Docker client looks for one by default. Undefined leaves sandboxes with no
+   * daemon of their own, which is the default.
+   */
+  readonly dockerSocketPath?: string;
 }
 
 export interface DockerHostResources {

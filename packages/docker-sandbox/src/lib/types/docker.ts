@@ -14,6 +14,15 @@ export interface CreateDockerClientOptions {
   readonly timeoutMs?: number;
   readonly dropbearPath?: string;
   readonly statePath?: string;
+  /**
+   * Mounts the daemon's Unix socket into every sandbox this client
+   * provisions, at `/var/run/docker.sock`, so code inside a sandbox can build
+   * and run images with the deployment's own daemon. Holding the socket gives
+   * a sandbox the daemon's authority on the host, so it is off unless a
+   * trusted deployment asks for it. A connection that is not a Unix socket
+   * has no socket to share and is left alone.
+   */
+  readonly exposeDockerSocket?: boolean;
 }
 
 export type DockerRequestQuery = Readonly<

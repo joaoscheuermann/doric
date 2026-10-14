@@ -15,7 +15,10 @@ import { z } from 'zod';
  */
 
 /** Why a Project's screen cannot be served right now. */
-export type ScreenUnavailableReason = 'sandbox' | 'missing-xpra' | 'start-failed';
+export type ScreenUnavailableReason =
+  | 'sandbox'
+  | 'missing-xpra'
+  | 'start-failed';
 
 /**
  * The answer of `attach`:

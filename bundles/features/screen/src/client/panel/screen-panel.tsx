@@ -13,6 +13,7 @@ import {
   useRef,
 } from 'react';
 
+import type { ScreenUnavailableReason } from '../../contracts/index.js';
 import { clampGeometry } from '../domain/geometry.js';
 import { useSubscribed } from '../hooks.js';
 import type { ScreenStatus, ScreenStore } from '../store.js';
@@ -56,22 +57,33 @@ const gesture = (
   target.addEventListener('pointercancel', done);
 };
 
-const messageOf = (status: ScreenStatus): { readonly text: string; readonly retry: boolean } => {
+/** What one unavailable reason reads as, and whether retrying may help. */
+const unavailableMessage = (
+  reason: ScreenUnavailableReason,
+): { readonly text: string; readonly retry: boolean } => {
+  switch (reason) {
+    case 'missing-xpra':
+      return {
+        text: 'This sandbox image has no xpra to serve a screen.',
+        retry: false,
+      };
+    case 'sandbox':
+      return { text: "The project's sandbox is unavailable.", retry: true };
+    case 'start-failed':
+      return { text: 'The screen could not start.', retry: true };
+  }
+};
+
+const messageOf = (
+  status: ScreenStatus,
+): { readonly text: string; readonly retry: boolean } => {
   switch (status.kind) {
     case 'loading':
       return { text: "Connecting to the project's screen…", retry: false };
     case 'pending':
       return { text: "The project's sandbox is starting…", retry: false };
     case 'unavailable':
-      switch (status.reason) {
-        case 'missing-xpra':
-          return { text: 'This sandbox image has no xpra to serve a screen.', retry: false };
-        case 'sandbox':
-          return { text: "The project's sandbox is unavailable.", retry: true };
-        case 'start-failed':
-          return { text: 'The screen could not start.', retry: true };
-      }
-    // falls through
+      return unavailableMessage(status.reason);
     case 'failed':
       return { text: 'Doric backend is unavailable.', retry: true };
     case 'ready':
@@ -96,7 +108,11 @@ function StatusMessage({
       {waiting && <Loader2Icon className="size-4 animate-spin" />}
       <p className="m-0">{text}</p>
       {retry && (
-        <Button variant="outline" size="sm" onClick={() => store.retry(projectId)}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => store.retry(projectId)}
+        >
           <RotateCcwIcon />
           Retry
         </Button>
@@ -121,10 +137,9 @@ function ScreenPanelView({
   // While the sandbox comes up — or the backend is down — the panel keeps
   // asking, so it comes up by itself once the session exists.
   const waiting =
-    panel !== undefined &&
-    panel.open &&
+    panel?.open === true &&
     active &&
-    (panel.status.kind === 'pending' || panel.status.kind === 'failed');
+    (panel?.status.kind === 'pending' || panel?.status.kind === 'failed');
 
   useEffect(() => {
     if (!waiting) {
@@ -249,7 +264,11 @@ function ScreenPanelView({
             allow="clipboard-read; clipboard-write"
           />
         ) : (
-          <StatusMessage projectId={projectId} status={panel.status} store={store} />
+          <StatusMessage
+            projectId={projectId}
+            status={panel.status}
+            store={store}
+          />
         )}
       </div>
       <div

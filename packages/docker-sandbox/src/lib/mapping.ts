@@ -240,11 +240,14 @@ export const withDefaultTimeout = (
 export const defaultConnection = (): DockerConnection =>
   process.platform === 'win32' ? { kind: 'namedPipe' } : { kind: 'unix' };
 
+/** Where a Docker client looks for a Unix daemon socket by default. */
+export const defaultSocketPath = '/var/run/docker.sock';
+
 export const socketPath = (connection: DockerConnection): string =>
   connection.kind === 'unix'
     ? (connection.socketPath ??
       dockerHostSocketPath(process.env.DOCKER_HOST) ??
-      '/var/run/docker.sock')
+      defaultSocketPath)
     : (connection.pipePath ?? '//./pipe/docker_engine');
 
 export const pathWithQuery = (request: DockerTransportRequest): string => {

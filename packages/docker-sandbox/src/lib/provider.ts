@@ -8,6 +8,7 @@ import {
   preflightDockerHost,
   removeDockerHostState,
 } from './host.js';
+import { defaultSocketPath } from './mapping.js';
 import { reusable } from './reuse.js';
 import type {
   ContainerInspect,
@@ -56,7 +57,12 @@ export const provisionDocker = async (
   await ensureImage(client, input);
 
   if (input.workspace === undefined) {
-    const container = await createSandboxContainer(client, input, undefined);
+    const container = await createSandboxContainer(
+      client,
+      input,
+      undefined,
+      config.dockerSocketPath,
+    );
     const host = await bringUp(client, input, config, container, false);
 
     return runtimeFor(client, input, { container, host }, () =>
@@ -101,13 +107,18 @@ const attach = async (
   const kept = await keepOneContainer(
     client,
     config,
-    containerInput(input, workspace, true),
+    containerInput(input, workspace, true, config.dockerSocketPath),
     identity,
     input.timeoutMs,
   );
   const container: ContainerRef =
     kept === undefined
-      ? await createSandboxContainer(client, input, workspace)
+      ? await createSandboxContainer(
+          client,
+          input,
+          workspace,
+          config.dockerSocketPath,
+        )
       : { id: kept.id, warnings: [] };
   const host = await bringUp(
     client,
@@ -275,6 +286,22 @@ const bringUp = async (
 };
 
 /**
+ * The binds of a sandbox container: its durable workspace volume, and the
+ * Docker socket the deployment shares with it when it exposes one. A client
+ * inside the sandbox reaches the daemon at the path it looks for by default.
+ */
+const containerBinds = (
+  input: SandboxProvisionInput,
+  workspace: Workspace | undefined,
+  dockerSocket: string | undefined,
+): string[] => [
+  ...(workspace === undefined ? [] : [`${workspace.volume}:${input.root}`]),
+  ...(dockerSocket === undefined
+    ? []
+    : [`${dockerSocket}:${defaultSocketPath}`]),
+];
+
+/**
  * The create body of a sandbox container. Reuse compares a container against
  * this same body, so the settings it names are defined in one place.
  */
@@ -282,6 +309,7 @@ const containerInput = (
   input: SandboxProvisionInput,
   workspace: Workspace | undefined,
   diskQuota: boolean,
+  dockerSocket: string | undefined,
 ): CreateContainerInput => {
   const ssh = input.network.ssh;
 
@@ -299,8 +327,7 @@ const containerInput = (
     },
     hostConfig: {
       AutoRemove: false,
-      Binds:
-        workspace === undefined ? [] : [`${workspace.volume}:${input.root}`],
+      Binds: containerBinds(input, workspace, dockerSocket),
       NetworkMode: input.network.mode === 'disabled' ? 'none' : 'bridge',
       Memory: input.resources.memoryMiB * 1024 * 1024,
       NanoCpus: input.resources.cpuCount * 1_000_000_000,
@@ -332,11 +359,15 @@ const createSandboxContainer = async (
   client: DockerClient,
   input: SandboxProvisionInput,
   workspace: Workspace | undefined,
+  dockerSocket: string | undefined,
 ): Promise<ContainerRef> => {
   const create = (diskQuota: boolean): Promise<ContainerRef> =>
-    client.createContainer(containerInput(input, workspace, diskQuota), {
-      timeoutMs: input.timeoutMs,
-    });
+    client.createContainer(
+      containerInput(input, workspace, diskQuota, dockerSocket),
+      {
+        timeoutMs: input.timeoutMs,
+      },
+    );
 
   try {
     return await create(true);

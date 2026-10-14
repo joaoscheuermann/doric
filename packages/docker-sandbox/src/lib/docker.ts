@@ -41,14 +41,26 @@ import { demuxDockerOutput } from './utils/demux.js';
 
 const decoder = new TextDecoder();
 
+/**
+ * The daemon socket this client hands to its sandboxes when the deployment
+ * shares it, or undefined to provision sandboxes without one.
+ */
+const sharedSocketPath = (
+  options: CreateDockerClientOptions,
+  connection: DockerConnection,
+): string | undefined =>
+  options.exposeDockerSocket === true && connection.kind === 'unix'
+    ? socketPath(connection)
+    : undefined;
+
 /** Creates a Docker Engine API client over Unix sockets or Windows named pipes. */
 export const createDockerClient = (
   options: CreateDockerClientOptions = {},
 ): DockerClient => {
-  const request =
-    options.request ??
-    createNodeTransport(options.connection ?? defaultConnection());
+  const connection = options.connection ?? defaultConnection();
+  const request = options.request ?? createNodeTransport(connection);
   const timeoutMs = options.timeoutMs;
+  const dockerSocketPath = sharedSocketPath(options, connection);
 
   const send = (
     input: DockerTransportRequest,
@@ -69,7 +81,7 @@ export const createDockerClient = (
     start: (container, input) =>
       startDockerProcess(
         client,
-        options.connection ?? defaultConnection(),
+        connection,
         async (request, status) => {
           const response = await send(request, status);
           return response.body.length === 0
@@ -81,11 +93,12 @@ export const createDockerClient = (
       ),
     provision: (input) =>
       provisionDocker(client, input, {
-        connection: options.connection ?? defaultConnection(),
+        connection,
         dropbearPath:
           options.dropbearPath ?? '/opt/doric/firecracker/dropbearmulti',
         statePath: options.statePath ?? '/var/lib/doric/docker',
         platform: process.platform,
+        ...(dockerSocketPath === undefined ? {} : { dockerSocketPath }),
       }),
     async ping(control = {}) {
       await send({ method: 'GET', path: '/_ping', ...control }, 200);

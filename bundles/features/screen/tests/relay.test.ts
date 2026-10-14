@@ -21,7 +21,9 @@ const acceptOf = (key: string): string =>
   createHash('sha1').update(`${key}${MAGIC}`, 'binary').digest('base64');
 
 const listen = async (server: Server): Promise<number> => {
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  await new Promise<void>((resolve) =>
+    server.listen(0, '127.0.0.1', () => resolve()),
+  );
 
   return (server.address() as AddressInfo).port;
 };
@@ -43,7 +45,9 @@ upstream.on('upgrade', (request, socket, head) => {
       'upgrade: websocket\r\n' +
       'connection: Upgrade\r\n' +
       `sec-websocket-accept: ${acceptOf(key)}\r\n` +
-      (protocol === undefined ? '' : `sec-websocket-protocol: ${protocol}\r\n`) +
+      (protocol === undefined
+        ? ''
+        : `sec-websocket-protocol: ${protocol}\r\n`) +
       '\r\n',
   );
   for (const chunk of [head]) {
@@ -69,38 +73,41 @@ const relayWith = async (): Promise<ScreenRelay> => {
 };
 
 /** The relay's ephemeral port, as its own origin spells it. */
-const portOf = (relay: ScreenRelay): number => Number(new URL(relay.origin).port);
+const portOf = (relay: ScreenRelay): number =>
+  Number(new URL(relay.origin).port);
 
 const requestOver = (
   port: number,
   path: string,
   headers: Record<string, string> = {},
 ) =>
-  new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }>(
-    (resolve, reject) => {
-      const client = httpRequest(
-        { host: '127.0.0.1', port, path, headers },
-        (response) => {
-          let body = '';
+  new Promise<{
+    status: number;
+    headers: Record<string, string | string[] | undefined>;
+    body: string;
+  }>((resolve, reject) => {
+    const client = httpRequest(
+      { host: '127.0.0.1', port, path, headers },
+      (response) => {
+        let body = '';
 
-          response.setEncoding('utf8');
-          response.on('data', (chunk: string) => {
-            body += chunk;
-          });
-          response.on('end', () =>
-            resolve({
-              status: response.statusCode ?? 0,
-              headers: response.headers,
-              body,
-            }),
-          );
-        },
-      );
+        response.setEncoding('utf8');
+        response.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body,
+          }),
+        );
+      },
+    );
 
-      client.on('error', reject);
-      client.end();
-    },
-  );
+    client.on('error', reject);
+    client.end();
+  });
 
 test('relayTarget maps token trees and refuses everything else', () => {
   const sessions = new Map([['t1', { host: '172.17.0.2', port: 14500 }]]);

@@ -9,7 +9,7 @@ import {
   logMethods,
 } from 'bundle/contracts';
 import { createMinimalHooks, createTestServices } from 'bundle/testing';
-import type { DockerClient } from 'docker-sandbox';
+import type { CreateDockerClientOptions, DockerClient } from 'docker-sandbox';
 import { SandboxV1 } from 'runtime/contracts';
 import type {
   SandboxProvider,
@@ -17,7 +17,10 @@ import type {
   SandboxRuntime,
 } from 'sandbox';
 
-import { activateDockerSandbox } from '../src/host/sandbox.js';
+import {
+  activateDockerSandbox,
+  dockerSandboxSettings,
+} from '../src/host/sandbox.js';
 
 interface LogEntry {
   readonly level: string;
@@ -77,6 +80,8 @@ const start = async (options: {
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly provider: SandboxProvider;
   readonly removedVolumes?: string[];
+  /** Observes the client options the deployment's settings produce. */
+  readonly client?: (options: CreateDockerClientOptions) => void;
 }) => {
   const logs: LogEntry[] = [];
   const level = (name: string) =>
@@ -111,7 +116,11 @@ const start = async (options: {
   } as unknown as DockerClient;
   const cleanup = activateDockerSandbox({
     environment: options.environment,
-    client: () => docker,
+    client: (clientOptions) => {
+      options.client?.(clientOptions);
+
+      return docker;
+    },
   })({ services: harness.services });
   return {
     sandbox: harness.services.use(SandboxV1),
@@ -194,6 +203,38 @@ void test('only an exact "true" enables SSH', async () => {
 
     assert.equal(fake.provisioned[0]?.network.ssh, false);
     await lease.release();
+  } finally {
+    await bundle.stop();
+  }
+});
+
+void test('only an exact "true" shares the Docker socket', () => {
+  assert.equal(dockerSandboxSettings({}).dockerSocket, false);
+
+  assert.equal(
+    dockerSandboxSettings({ DORIC_SANDBOX_DOCKER_SOCKET: 'TRUE' }).dockerSocket,
+    false,
+  );
+
+  assert.equal(
+    dockerSandboxSettings({ DORIC_SANDBOX_DOCKER_SOCKET: 'true' }).dockerSocket,
+    true,
+  );
+});
+
+void test('hands the deployment socket sharing to the Docker client', async () => {
+  const seen: CreateDockerClientOptions[] = [];
+  const fake = fakeProvider();
+  const bundle = await start({
+    environment: { DORIC_SANDBOX_DOCKER_SOCKET: 'true' },
+    provider: fake.provider,
+    client: (options) => seen.push(options),
+  });
+
+  try {
+    await bundle.sandbox.describe();
+
+    assert.deepEqual(seen, [{ exposeDockerSocket: true }]);
   } finally {
     await bundle.stop();
   }

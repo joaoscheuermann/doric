@@ -422,9 +422,14 @@ from the host log (`Bundles loaded` reports bundle, tool, and skill counts) and
 `GET /projects`.
 
 The Docker profile runs sandboxes from the sandbox image built from
-[`.sandbox.Dockerfile`](.sandbox.Dockerfile), which adds the GitHub CLI to the
-base image's Git and the runtime libraries Electron needs, with Xvfb for
-headless runs. Compose selects it through `DORIC_SANDBOX_IMAGE`
+[`.sandbox.Dockerfile`](.sandbox.Dockerfile), which adds the GitHub CLI and
+Docker's engine and CLI to the base image's Git and the runtime libraries
+Electron needs, with Xvfb for headless runs. Its Docker CLI reaches a daemon
+only where the sandbox is given `/var/run/docker.sock` or the privileges
+`dockerd` needs, as Compose does for the host itself: set
+`DORIC_SANDBOX_DOCKER_SOCKET=true` in the environment file to mount that socket
+into every Project sandbox. It is off by default, because a sandbox holding the
+socket can drive the host's Docker daemon. Compose selects it through `DORIC_SANDBOX_IMAGE`
 (`doric-sandbox:local` by default) and the host otherwise provisions the plain
 `node:22-bookworm` image, so build the tag before `up`:
 

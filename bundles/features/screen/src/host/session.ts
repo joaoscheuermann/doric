@@ -154,7 +154,8 @@ export const screenHost = (output: string): string | undefined =>
     .trim()
     .split(/\s+/)
     .find(
-      (value) => /^\d{1,3}(\.\d{1,3}){3}$/.test(value) && !value.startsWith('127.'),
+      (value) =>
+        /^\d{1,3}(\.\d{1,3}){3}$/.test(value) && !value.startsWith('127.'),
     );
 
 export interface ScreenSessionsOptions {
@@ -224,14 +225,46 @@ export const createScreenSessionManager = (
     return result;
   };
 
-  const readMarker = async (sandbox: Sandbox): Promise<ScreenMarker | undefined> =>
-    markerOf(await sandbox.readFile(SCREEN_MARKER_PATH).catch(() => ''));
+  /**
+   * The marker and the daemon's log live in the sandbox's `/tmp`, which
+   * `sandbox.readFile` and `sandbox.writeFile` refuse: both keep every path
+   * under the workspace root. Control files are therefore read and written
+   * through the sandbox shell, the content travelling as an argument so no
+   * value is interpolated into the command text.
+   */
+  const readControlFile = async (
+    sandbox: Sandbox,
+    path: string,
+  ): Promise<string> => {
+    const result = await exec(sandbox, ['cat', path], 10_000).catch(
+      () => undefined,
+    );
+
+    return result?.exitCode === 0 ? result.stdout : '';
+  };
+
+  const writeControlFile = async (
+    sandbox: Sandbox,
+    path: string,
+    content: string,
+  ): Promise<void> => {
+    await exec(
+      sandbox,
+      ['sh', '-c', 'printf %s "$1" > "$2"', 'sh', content, path],
+      10_000,
+    );
+  };
+
+  const readMarker = async (
+    sandbox: Sandbox,
+  ): Promise<ScreenMarker | undefined> =>
+    markerOf(await readControlFile(sandbox, SCREEN_MARKER_PATH));
 
   const writeMarker = async (
     sandbox: Sandbox,
     marker: ScreenMarker,
   ): Promise<void> => {
-    await sandbox.writeFile(SCREEN_MARKER_PATH, JSON.stringify(marker));
+    await writeControlFile(sandbox, SCREEN_MARKER_PATH, JSON.stringify(marker));
   };
 
   const hostOf = async (sandbox: Sandbox): Promise<string> => {
@@ -273,6 +306,41 @@ export const createScreenSessionManager = (
     }
   };
 
+  /** The displays `xpra list` reports as live, read through the sandbox shell. */
+  const liveDisplays = async (sandbox: Sandbox): Promise<readonly number[]> => {
+    const listed = await exec(sandbox, ['xpra', 'list'], 10_000).catch(
+      () => undefined,
+    );
+
+    return listed === undefined ? [] : screenDisplays(listed.stdout);
+  };
+
+  /**
+   * Whether the display this start asked for is the one that came up. A port
+   * that answers is not proof on its own: another session's server may hold
+   * the address while `xpra start` failed to bind it, which would otherwise
+   * settle a session the relay cannot reach as the one that started.
+   */
+  const waitForDisplay = async (
+    sandbox: Sandbox,
+    display: number,
+    timeoutMs: number,
+  ): Promise<boolean> => {
+    const started = now();
+
+    for (;;) {
+      if ((await liveDisplays(sandbox)).includes(display)) {
+        return true;
+      }
+
+      if (now() - started >= timeoutMs) {
+        return false;
+      }
+
+      await sleep(250);
+    }
+  };
+
   const start = async (
     sandbox: Sandbox,
     input: {
@@ -289,11 +357,18 @@ export const createScreenSessionManager = (
         30_000,
       );
 
-      if (await waitForPort(host, port, SCREEN_READY_TIMEOUT_MS)) {
+      const ready =
+        (await waitForDisplay(
+          sandbox,
+          input.display,
+          SCREEN_READY_TIMEOUT_MS,
+        )) && (await waitForPort(host, port, SCREEN_READY_TIMEOUT_MS));
+
+      if (ready) {
         return { display: input.display, port, host };
       }
 
-      const log = await sandbox.readFile(SCREEN_LOG_PATH).catch(() => '');
+      const log = await readControlFile(sandbox, SCREEN_LOG_PATH);
       const last = input.ports.length - 1;
 
       if (index === last || !screenPortTaken(tailOf(log))) {
@@ -333,9 +408,11 @@ export const createScreenSessionManager = (
       if (marker !== undefined && displays.includes(marker.display)) {
         // The marker's own session no longer listens: stop it so the display
         // is free for the restart.
-        await exec(sandbox, ['xpra', 'stop', `:${marker.display}`], 10_000).catch(
-          () => undefined,
-        );
+        await exec(
+          sandbox,
+          ['xpra', 'stop', `:${marker.display}`],
+          10_000,
+        ).catch(() => undefined);
       }
 
       const display =
@@ -352,11 +429,18 @@ export const createScreenSessionManager = (
       // that was open across the restart reconnects to the same URL.
       const token = marker?.token ?? randomUUID();
 
+      // A lost marker only costs reuse after a restart, but silence here once
+      // hid a sandbox that refused the path.
       await writeMarker(sandbox, {
         display: started.display,
         port: started.port,
         token,
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        options.log().warn('The screen marker could not be written', {
+          display: started.display,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
       return { ...started, token };
     },

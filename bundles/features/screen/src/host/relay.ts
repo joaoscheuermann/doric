@@ -13,8 +13,8 @@
 // server only ever binds `127.0.0.1`.
 
 import { createServer, request as httpRequest, type Server } from 'node:http';
-import { connect, type Socket } from 'node:net';
 import type { AddressInfo } from 'node:net';
+import { connect, type Socket } from 'node:net';
 
 /** Where one screen session's xpra server listens, as the host reaches it. */
 export interface ScreenRelayTarget {

@@ -5,8 +5,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import {
+  createScreenStore,
+  type ScreenStoreOptions,
+} from '../src/client/store.js';
 import type { ScreenAttach } from '../src/contracts/index.js';
-import { createScreenStore, type ScreenStoreOptions } from '../src/client/store.js';
 
 const settled = () => new Promise((done) => setTimeout(done, 0));
 
@@ -50,7 +53,9 @@ test('closing keeps the panel mounted and its last status', async () => {
 });
 
 test('a pending sandbox is reported as pending and a later retry can succeed', async () => {
-  let attach: ScreenStoreOptions['attach'] = async () => ({ status: 'pending' });
+  let attach: ScreenStoreOptions['attach'] = async () => ({
+    status: 'pending',
+  });
   const store = storeWith((projectId) => attach(projectId));
 
   store.open('p1');
