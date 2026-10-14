@@ -249,11 +249,11 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // The installed bundles: the `postgres` foundation is one of them, the
     // stage-9 desktop bundles (`layout`, `settings`, `chat`, `history`), which
     // have no host part, and since the stage-10 host switch the provider-kind
-    // bundles, the `docker` sandbox and the `terminal`, `usage` and
-    // `resources` features, and since the desktop switch (WP-10N) the
+    // bundles, the `docker` sandbox and the `terminal`, `usage`,
+    // `resources` and `screen` features, and since the desktop switch (WP-10N) the
     // `notifications` bundle, which has no host part, and the `web` bundle. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 22);
+    assert.equal(host.bundleCount, 23);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -275,6 +275,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         terminal: ['active', 'others'],
         usage: ['active', 'others'],
         resources: ['active', 'others'],
+        screen: ['active', 'others'],
         runtime: ['active', 'others'],
         direct: ['active', 'others'],
         openai: ['active', 'others'],
@@ -307,6 +308,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'terminal'],
       ['runtime', 'usage'],
       ['runtime', 'resources'],
+      ['runtime', 'screen'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),

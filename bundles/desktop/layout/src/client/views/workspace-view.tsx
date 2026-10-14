@@ -1,7 +1,8 @@
 // `<layout-workspace>` (stage 9 §5.4): the old renderer's `views/app.tsx`
 // with the same hooks and props. The conversation is the child route in the
 // inner `<core-outlet>`, the content footer is the `layout.footer` region and
-// the header's actions are the `layout.header` region.
+// the header's actions are the `layout.header` region. The `layout.overlay`
+// region is the floating layer over the conversation area.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { CommandsV1 } from 'bundle/contracts';
@@ -290,6 +291,17 @@ function Workspace() {
               >
                 <Region name="layout.footer" />
               </footer>
+              {/*
+                The floating layer over the conversation area: `layout.overlay`
+                items place themselves, and the layer itself never intercepts
+                a pointer.
+              */}
+              <div
+                data-slot="workspace-overlay"
+                className="pointer-events-none absolute inset-0 z-20"
+              >
+                <Region name="layout.overlay" />
+              </div>
             </SidebarInset>
           </WorkspaceLayout>
         </Tabs>

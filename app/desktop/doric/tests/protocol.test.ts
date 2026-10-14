@@ -21,12 +21,12 @@ import {
   renderShell,
 } from '../src/platform/protocol/shell';
 
-/** Today's packaged policy, verbatim (CD §A.3). */
+/** Today's packaged policy, verbatim (CD §A.3), plus the screen relay's frame. */
 const TODAY_PACKAGED =
-  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-/** Today's development policy, verbatim. */
+  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; frame-src http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+/** Today's development policy, verbatim, plus the screen relay's frame. */
 const TODAY_DEVELOPMENT =
-  "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://localhost:4200; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+  "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://localhost:4200; frame-src http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const TEMPLATE = `<!doctype html>
 <html lang="en" class="dark">
@@ -242,6 +242,15 @@ describe('content security policy', () => {
     assert.equal(
       developmentCsp('HASH', 'http://localhost:4200'),
       TODAY_DEVELOPMENT.replace("'unsafe-eval'", "'unsafe-eval' 'sha256-HASH'"),
+    );
+  });
+
+  test('both policies frame the loopback screen relay only', () => {
+    assert.ok(packagedCsp('HASH').includes('frame-src http://127.0.0.1:*'));
+    assert.ok(
+      developmentCsp('HASH', 'http://localhost:4200').includes(
+        'frame-src http://127.0.0.1:*',
+      ),
     );
   });
 

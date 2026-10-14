@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-screen",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/screen/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/screen/tsconfig.json",
+          "tsc -p bundles/features/screen/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/screen"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/screen/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/screen/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/screen/dist-tests",
+          "tsc -p bundles/features/screen/tsconfig.spec.json",
+          "node --test bundles/features/screen/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

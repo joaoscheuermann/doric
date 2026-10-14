@@ -143,6 +143,9 @@
     },
     {
       "path": "./app/desktop/doric-e2e"
+    },
+    {
+      "path": "./bundles/features/screen"
     }
   ]
 }

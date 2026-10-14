@@ -14,7 +14,9 @@
 #
 # Electron's runtime libraries and Xvfb installed at the end let a sandbox
 # build and run Electron desktop apps, the Doric desktop app among them, with
-# no display of its own.
+# no display of its own. Xpra is installed there too: it serves a display plus
+# its own HTML5 client, which the desktop's screen panel embeds, so the panel
+# can watch and drive the GUI apps a sandbox builds.
 FROM node:22-bookworm
 
 ARG GH_VERSION=2.101.0
@@ -46,8 +48,11 @@ RUN set -eux; \
 # `xvfb-run` needs `xauth` under `--no-install-recommends` and gives a
 # container with no display a headless X server. A root container starts
 # Electron with `--no-sandbox`, as Chromium's setuid helper cannot be used
-# there. The checks fail the build on a missing soname or display rather than
-# leaving a sandbox that cannot start a desktop app.
+# there. `xpra` brings its own Xvfb-style display, X server utilities and the
+# HTML5 client under `/usr/share/xpra/www`, and both architectures publish it
+# for bookworm. The checks fail the build on a missing soname, display, binary
+# or client page rather than leaving a sandbox that cannot start a desktop app
+# or serve the screen panel.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libasound2 \
@@ -66,7 +71,10 @@ RUN apt-get update \
       libxkbcommon0 \
       libxrandr2 \
       xauth \
+      xpra \
       xvfb \
  && rm -rf /var/lib/apt/lists/* \
  && ldconfig -p | grep -qE 'lib(nspr4|nss3|gtk-3|gbm|asound)\.so' \
- && xvfb-run -a true
+ && xvfb-run -a true \
+ && xpra --version \
+ && test -f /usr/share/xpra/www/index.html

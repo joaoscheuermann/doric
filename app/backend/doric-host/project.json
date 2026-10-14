@@ -20,7 +20,7 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/usage bundles/features/resources bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config"
+          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/usage bundles/features/resources bundles/features/screen bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/foundation/transport bundles/foundation/host-config"
         ],
         "parallel": false
       },
@@ -44,6 +44,7 @@
             "bundle-terminal",
             "bundle-usage",
             "bundle-resources",
+            "bundle-screen",
             "bundle-notifications",
             "bundle-layout",
             "bundle-settings",

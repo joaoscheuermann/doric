@@ -481,6 +481,25 @@ reconcile transcript reads with live output on opening or reconnecting. Buffers
 are discarded with the session, and truncation of an active session's transcript
 is explicit. Terminal data is not written to operational logs.
 
+The header's screen button beside the new-terminal button opens the selected
+Thread's Project screen as a floating panel over the conversation — the
+`layout` bundle's `layout.overlay` region, whose items place themselves while
+the layer never intercepts a pointer — embedding the sandbox's xpra HTML5
+client in the only foreign frame a window draws. The panel is dragged by its
+header, resized from its corner and closed to the header, and while the
+sandbox starts it reports the state and retries on its own. The `screen`
+bundle's host part provides `screen.sessions/v1`: `attach(projectId)` runs on
+the Project's runtime lease, ensures one xpra server inside the Project
+sandbox (`:100` and up, ports `14500`–`14502`, a `/tmp/doric-screen.json`
+marker that reuses the same display, port and token after a host restart) and
+answers a loopback URL (`http://127.0.0.1:<port>/screen/<token>/`) the panel
+frames; its relay forwards that token tree to the sandbox's xpra server only —
+assets over HTTP and the live stream over a transparent WebSocket that keeps
+the browser's own handshake, so negotiated subprotocols and frames reach xpra
+unchanged — and an image without xpra answers `unavailable` with
+`missing-xpra`. One Project has one screen, shared by its Threads; closing the
+panel hides it while its iframe stays mounted for the window.
+
 The terminal tool waits in foreground by default. Explicit background execution
 returns its terminal ID immediately and, after the process settles, enqueues one
 correlated terminal result into the owning Thread's existing FIFO input queue.
@@ -801,7 +820,8 @@ loader (`startHost`), the build CLI and `bundle/testing`. At boot, in the same
 `DORIC_BUNDLES_PATH` (default: its staged `dist/bundles`) and the composition
 JSON at `DORIC_COMPOSITION` (default: `app/backend/doric-host/composition.json`, which
 names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
-`git`, `threads`, `terminal`, `usage`, `resources`, `runtime`, `direct`,
+`git`, `threads`, `terminal`, `usage`, `resources`, `screen`, `runtime`,
+`direct`,
 `openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
 `settings`, `chat` and `history`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
@@ -828,7 +848,7 @@ mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
 and for each prompt; `Bundles loaded`
-reports the activated installed bundles (19 in the shipped composition; the
+reports the activated installed bundles (23 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, so the startup work runs in the start hooks.
 `onHostStartHook` runs in activation order after the bundles load and the
@@ -975,8 +995,10 @@ the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
 theme, fonts and shadcn/ui components; `desktop/client` runs the window;
 `desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
 window-main API. `app/desktop/doric-platform` builds the platform files and import map.
-The CSP adds `worker-src 'self'` and the import
-map's script hash. The renderer's local storage, including the selected Thread,
+The CSP adds `worker-src 'self'`, the import
+map's script hash and the screen panel's loopback frame origin
+(`frame-src http://127.0.0.1:*`), the only foreign origin a window may
+frame. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`: the core's
 `onAppReadyHook` asks the platform through `doric.migrations/v1.storage` to copy
 its own key, and awaits the answer before it opens the primary window. The
@@ -1349,8 +1371,10 @@ unknown instead of failing one. Both use the image named by
 `DORIC_SANDBOX_IMAGE`, which defaults to the
 multi-architecture `node:22-bookworm` image, with the `1.1.1.1` DNS resolver so
 selected Git skills can reach public remotes. That default ships Git; the
-sandbox image Doric builds from `app/backend/doric-host/.sandbox.Dockerfile` ships Git and
-the GitHub CLI. The image is a deployment choice the host reads from its
+sandbox image Doric builds from `app/backend/doric-host/.sandbox.Dockerfile` ships Git,
+the GitHub CLI, Electron's runtime libraries, Xvfb and the xpra screen
+server with its HTML5 client, the display stack a sandbox needs to build
+a desktop app and serve its Project screen. The image is a deployment choice the host reads from its
 environment rather than a compiled-in value, and Firecracker resolves an
 anonymous public OCI image, so a locally built tag needs publishing, or the
 variable pointed at a public image, before that provider can use it.
