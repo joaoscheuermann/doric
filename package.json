@@ -9,6 +9,7 @@
     "format": "biome format . --write && prettier . --write",
     "format:check": "biome format . && prettier . --check",
     "doric:spawn-agent": "node scripts/spawn-agent.mjs",
+    "doric:fake-host": "node scripts/fake-host/main.mjs",
     "codex:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/codex-oauth.mjs",
     "okf": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/okf.mjs",
     "doric:dev": "concurrently --kill-others --success first --names renderer,electron \"npm run nxe:serve:frontend\" \"wait-on tcp:127.0.0.1:4200 && npm run nxe:serve:backend\"",

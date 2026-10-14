@@ -119,6 +119,26 @@ curl --fail http://127.0.0.1:3000/projects
 Port `3000` serves the API. The desktop app connects to that address; it is not
 a browser interface.
 
+### 2b. Or run the development fake host
+
+`npm run doric:fake-host` starts a **development-only** host inside the
+repository: the `doric.catalog/v1` distribution the desktop downloads is the
+staged bundle build (`app/backend/doric-host/dist/bundles`, staged on demand
+when absent), and the app-level contracts it answers come from an in-memory
+workspace — no Postgres, no Docker sandbox, no agent runtime. It listens on
+`127.0.0.1:3000`, the address the desktop already uses, so the app needs no
+configuration:
+
+```sh
+npm run doric:fake-host   # one terminal
+npm run doric:dev         # another
+```
+
+It prints every contract call and refuses what it does not serve with
+`unavailable`, logged as `?? UNKNOWN <contract> <method>`, so the gap is
+visible while working on a bundle. `GET /reload` republishes the catalog after
+a bundle rebuild. See `scripts/fake-host/README.md`.
+
 ### 3. Open the desktop app
 
 In a separate terminal at the repository root:
