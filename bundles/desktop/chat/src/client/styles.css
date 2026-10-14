@@ -100,8 +100,14 @@
 }
 
 /* Isolate layout and style recalculation to individual conversation blocks so
-   expanding a diff or resizing the pane does not force every turn to relayout. */
+   expanding a diff or resizing the pane does not force every turn to relayout.
+   Off-screen blocks skip laying out and painting their contents entirely:
+   `content-visibility: auto` lets them do that, and `contain-intrinsic-size`
+   keeps their place with the height remembered from their last rendering,
+   120px until the first. */
 .conversation-scroll [data-lexical-editor] > :not([data-prompt-input]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
   contain: layout style;
 }
 
