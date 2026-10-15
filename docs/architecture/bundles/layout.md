@@ -8,16 +8,16 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 
 ## O que o layout fornece
 
-| Funcionalidade           | Como os outros bundles usam                                                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- |
-| Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                               |
-| Sidebar                  | Mostra Projects e Threads; clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.     |
-| Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.    |
-| Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje). |
-| Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                         |
-| Seções extras da sidebar | Itens da região `layout.sidebar`, abaixo da árvore.                                                     |
-| Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.              |
-| Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                |
+| Funcionalidade           | Como os outros bundles usam                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                                     |
+| Sidebar                  | Mostra Projects e Threads; clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.           |
+| Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.          |
+| Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje).       |
+| Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                               |
+| Grupos extras da sidebar | Panes registrados em `layout.stack/v1`, abaixo da árvore; o layout desenha o painel e o cabeçalho de cada um. |
+| Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.                    |
+| Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                      |
 
 ## Como funciona
 
@@ -56,7 +56,8 @@ export function activate({ services }: ClientContext) {
 <layout-workspace>
   <aside>                                   sidebar
     árvore de Projects e Threads            (do layout, dados de runtime.threads/v1)
-    <core-region name="layout.sidebar">     seções extras
+    painéis dos grupos                     panes de `layout.stack/v1`
+    (Threads, telas, …)                    o Threads é do próprio layout
     botão Settings                          (despacha core.open-settings/v1)
   <header>
     Project / Thread da rota ativa

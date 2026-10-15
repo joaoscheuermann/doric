@@ -245,13 +245,7 @@ function Workspace() {
               )
             }
             onFilesOpenChange={panel.setOpen}
-            sidebar={
-              <ProjectSidebar
-                actions={sidebarActions}
-                after={<Region name="layout.sidebar" />}
-                model={model}
-              />
-            }
+            sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
           >
             <SidebarInset className="min-h-0">
               <ConversationTerminals

@@ -9,8 +9,8 @@
     "log/v1@^1.0.0",
     "runtime.lease/v1@^1.1.0",
     "ui/v1@^1.0.0",
-    "regions/v1@^1.0.0",
     "layout.workspace/v1@^1.1.0",
+    "layout.stack/v1@^1.0.0",
     "screen.relay/v1@^1.0.0"
   ],
   "desktopScope": {

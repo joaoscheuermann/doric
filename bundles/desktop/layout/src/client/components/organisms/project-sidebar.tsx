@@ -15,12 +15,23 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
-import { AlertCircleIcon, PlusIcon } from 'lucide-react';
-import { type ReactNode, useLayoutEffect, useState } from 'react';
+import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
+import {
+  Fragment,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 
+import type { StackPane } from '../../../contracts/index.js';
 import { threadIconKind } from '../../domain/sidebar.js';
-import { showsSidebarRegion } from '../../domain/sidebar-stack.js';
+import {
+  PANE_HEADER,
+  paneExpanded,
+  THREADS_PANE_ID,
+} from '../../domain/sidebar-stack.js';
 import { threadLevel } from '../../domain/thread-tree.js';
 import type {
   Draft,
@@ -29,7 +40,9 @@ import type {
   ProjectColor,
   Thread,
 } from '../../domain/workspace.js';
-import { useRegionItems } from '../../hooks/use-region-items.js';
+import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
+import { setPaneOpen, togglePane } from '../../stores/stack.js';
+import { ElementHost } from '../molecules/element-host.js';
 import {
   ThreadBranches,
   type ThreadBranchesActions,
@@ -69,25 +82,110 @@ export type SidebarActions = {
   readonly startRename: (entity: Entity) => void;
 };
 
-/**
- * The region the stack draws as its second group. It belongs to the layout
- * (stage 9 §5.4) and is contributed by whichever bundle wants a group of its
- * own under the Threads tree.
- */
-const SIDEBAR_REGION = 'layout.sidebar';
-
 type ProjectSidebarProps = {
   readonly actions: SidebarActions;
   readonly model: SidebarModel;
-  /** The `layout.sidebar` region, below the tree (stage 9 §5.4). */
-  readonly after?: ReactNode;
 };
 
-export function ProjectSidebar({ after, actions, model }: ProjectSidebarProps) {
+/**
+ * One group of the sidebar's stack (`layout.stack/v1`): the panel, the divider
+ * after it, and the header the layout draws — the pane's title, its collapse
+ * control and its own action element. A collapsed pane keeps its header, so no
+ * resize of the stack can make the group vanish; the panel's open state is the
+ * stack's, and a drag that reaches the header reports it collapsed.
+ */
+function PanePanel({
+  action,
+  children,
+  pane,
+}: {
+  readonly action?: ReactNode;
+  readonly children?: ReactNode;
+  readonly pane: StackPane;
+}) {
+  const open = usePaneOpen(pane.id);
+  const panel = usePanelRef();
+  const header = useRef<HTMLDivElement>(null);
+  const collapsible = pane.collapsible !== false;
+
+  useLayoutEffect(() => {
+    const target = panel.current;
+    if (target === null) return;
+
+    if (open) target.expand();
+    else target.collapse();
+  }, [open, panel]);
+
+  return (
+    <ResizablePanel
+      panelRef={panel}
+      className="no-scrollbar"
+      collapsible={collapsible}
+      collapsedSize={PANE_HEADER}
+      defaultSize={open ? pane.defaultSize : PANE_HEADER}
+      maxSize={pane.maxSize ?? '100%'}
+      minSize={pane.minSize ?? '20%'}
+      onResize={
+        collapsible
+          ? (size) => {
+              const headerPixels = header.current?.offsetHeight ?? 0;
+              if (headerPixels === 0) return;
+
+              setPaneOpen(pane.id, paneExpanded(size.inPixels, headerPixels));
+            }
+          : undefined
+      }
+    >
+      <SidebarGroup className="flex h-full min-h-0 flex-col p-0">
+        <div ref={header} className="relative">
+          <SidebarGroupLabel className="h-7 gap-1 rounded-none px-3 text-xs font-normal">
+            {collapsible ? (
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
+                className="flex min-w-0 flex-1 items-center gap-1 pr-8 text-left outline-hidden focus-visible:ring-2"
+                onClick={() => togglePane(pane.id)}
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  className={
+                    open
+                      ? 'rotate-90 transition-transform duration-[50ms] ease-out'
+                      : 'rotate-0 transition-transform duration-[50ms] ease-out'
+                  }
+                />
+                <span className="truncate">{pane.title}</span>
+              </button>
+            ) : (
+              <span className="min-w-0 flex-1 truncate pr-8">{pane.title}</span>
+            )}
+          </SidebarGroupLabel>
+          {action}
+        </div>
+        {open && (
+          <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto">
+            {pane.tag === undefined ? (
+              (children ?? null)
+            ) : (
+              <ElementHost
+                tag={pane.tag}
+                {...(pane.props === undefined ? {} : { props: pane.props })}
+              />
+            )}
+          </SidebarGroupContent>
+        )}
+      </SidebarGroup>
+    </ResizablePanel>
+  );
+}
+
+export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
   // Threads start open; selection never closes another branch.
   const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const panes = useStackPanes();
   const projectId = model.selectedProjectId;
   const threads = projectId ? (model.threadsByProject[projectId] ?? []) : [];
   const loading =
@@ -121,101 +219,79 @@ export function ProjectSidebar({ after, actions, model }: ProjectSidebarProps) {
       actions.startRename({ kind: 'thread', value: thread }),
   };
 
-  // The stack's second group is the `layout.sidebar` region: it shows the items
-  // other bundles registered there. Like the files panel, it stays in its group
-  // and is collapsed rather than unmounted while the region has none, so an
-  // empty region leaves the Threads group the whole sidebar and the handle
-  // between them inert — the sidebar as it was before the stack existed.
-  const regionItems = useRegionItems(SIDEBAR_REGION);
-  const regionOpen = showsSidebarRegion(regionItems);
-  const regionPanel = usePanelRef();
-  useLayoutEffect(() => {
-    if (regionOpen) regionPanel.current?.expand();
-    else regionPanel.current?.collapse();
-  }, [regionOpen, regionPanel]);
+  // The Threads pane is the layout's own: its rows are this tree, and its header
+  // action creates a Thread of the selected Project. Every other pane names the
+  // element that draws its content and the one that draws its header action.
+  const threadsContent = (
+    <>
+      {model.error && (
+        <Alert variant="destructive" className="mx-2 mb-2 w-auto">
+          <AlertCircleIcon />
+          <AlertTitle>Unable to update</AlertTitle>
+          <AlertDescription>{model.error}</AlertDescription>
+        </Alert>
+      )}
+      <SidebarMenu className="w-full gap-0">
+        {loading &&
+          THREAD_SKELETON_ROWS.map((row) => (
+            <SidebarMenuItem key={row}>
+              <SidebarMenuSkeleton showIcon />
+            </SidebarMenuItem>
+          ))}
+        {projectId !== undefined && (
+          <ThreadBranches
+            actions={threadActions}
+            collapsed={collapsedThreads}
+            depth={0}
+            editingThreadId={
+              model.editing?.kind === 'thread'
+                ? model.editing.value.id
+                : undefined
+            }
+            icon={threadIconKind}
+            level={threadLevel(threads, model.draft, projectId)}
+            onExpand={expandThread}
+            onToggle={toggleThread}
+            selectedThreadId={model.selectedThreadId}
+          />
+        )}
+      </SidebarMenu>
+    </>
+  );
+
+  const paneAction = (pane: StackPane): ReactNode => {
+    if (pane.id !== THREADS_PANE_ID) {
+      return pane.headerTag === undefined ? null : (
+        <ElementHost tag={pane.headerTag} />
+      );
+    }
+
+    return (
+      <SidebarGroupAction
+        className="top-1 right-1"
+        aria-label="New thread"
+        disabled={projectId === undefined}
+        onClick={() => {
+          if (projectId !== undefined) actions.beginThread(projectId);
+        }}
+      >
+        <PlusIcon />
+      </SidebarGroupAction>
+    );
+  };
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
       <SidebarContent className="overflow-hidden p-0">
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel className="no-scrollbar" minSize="20%">
-            <SidebarGroup className="p-0">
-              <div className="group/group-label relative">
-                <SidebarGroupLabel className="h-7 rounded-none px-3 text-xs font-normal">
-                  Threads
-                </SidebarGroupLabel>
-                <SidebarGroupAction
-                  className="pointer-events-none top-1 right-1 opacity-0 group-hover/group-label:pointer-events-auto group-hover/group-label:opacity-100 group-focus-within/group-label:pointer-events-auto group-focus-within/group-label:opacity-100"
-                  aria-label="New thread"
-                  disabled={projectId === undefined}
-                  onClick={() => {
-                    if (projectId !== undefined) actions.beginThread(projectId);
-                  }}
-                >
-                  <PlusIcon />
-                </SidebarGroupAction>
-              </div>
-              <SidebarGroupContent className="w-full">
-                {model.error && (
-                  <Alert variant="destructive" className="mx-2 mb-2 w-auto">
-                    <AlertCircleIcon />
-                    <AlertTitle>Unable to update</AlertTitle>
-                    <AlertDescription>{model.error}</AlertDescription>
-                  </Alert>
-                )}
-                <SidebarMenu className="w-full gap-0">
-                  {loading &&
-                    THREAD_SKELETON_ROWS.map((row) => (
-                      <SidebarMenuItem key={row}>
-                        <SidebarMenuSkeleton showIcon />
-                      </SidebarMenuItem>
-                    ))}
-                  {projectId !== undefined && (
-                    <ThreadBranches
-                      actions={threadActions}
-                      collapsed={collapsedThreads}
-                      depth={0}
-                      editingThreadId={
-                        model.editing?.kind === 'thread'
-                          ? model.editing.value.id
-                          : undefined
-                      }
-                      icon={threadIconKind}
-                      level={threadLevel(threads, model.draft, projectId)}
-                      onExpand={expandThread}
-                      onToggle={toggleThread}
-                      selectedThreadId={model.selectedThreadId}
-                    />
-                  )}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </ResizablePanel>
-          {/*
-            The divider between the two groups: dragging it is what resizes
-            them. An empty region has nothing under it, so the handle is
-            disabled and zero-sized — `h-0!` zeroes this stack's axis, where
-            the files panel's `w-0!` zeroes the horizontal one.
-          */}
-          <ResizableHandle
-            disabled={!regionOpen}
-            className={
-              regionOpen
-                ? ''
-                : 'pointer-events-none w-0! h-0! bg-transparent after:hidden'
-            }
-          />
-          <ResizablePanel
-            panelRef={regionPanel}
-            className="no-scrollbar"
-            collapsible
-            collapsedSize={0}
-            defaultSize="40%"
-            minSize="20%"
-            maxSize="80%"
-          >
-            {after}
-          </ResizablePanel>
+          {panes.map((pane, index) => (
+            <Fragment key={pane.id}>
+              {index > 0 && <ResizableHandle />}
+              <PanePanel action={paneAction(pane)} pane={pane}>
+                {pane.id === THREADS_PANE_ID ? threadsContent : undefined}
+              </PanePanel>
+            </Fragment>
+          ))}
         </ResizablePanelGroup>
       </SidebarContent>
     </Sidebar>

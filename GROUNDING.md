@@ -188,14 +188,20 @@ Thread's own log still states.
 The macOS workspace window retains always-visible native traffic lights over a
 renderer-owned draggable title bar. Splash, native theme, renderer, Monaco and
 notifications follow the system light or dark preference, including changes
-while a window is open. The compact, resizable shadcn sidebar stacks two
-groups behind a draggable divider: the selected Project's recursive Threads
-under a Threads label and an add action, and whatever other bundles contribute
-through the layout's `layout.sidebar` region — today the `screen` bundle's
-views, each row carrying that view's state. A region with no items leaves the
-Threads group the whole sidebar and the divider inert. Neither the sidebar nor
-a group has a separate header or collapse button. Threads start open over their
-children and retain their independent expansion state. The sidebar supports
+while a window is open. The compact, resizable shadcn sidebar stacks its
+groups behind draggable dividers: each is a pane a bundle registers through the
+layout's `layout.stack/v1` — today the `screen` bundle's views, each row
+carrying that view's state — above the selected Project's recursive Threads,
+which the layout draws itself under a Threads label and an add action that is
+always visible. A pane declares its title, its order, its minimum size and
+whether the reader can collapse it; the layout draws the header, the collapse
+control and one resizable panel per pane, and collapses a pane to its header and
+never past it, so resizing the sidebar cannot make a group vanish. A pane that
+declares no default size takes what the others leave, as the Threads pane does,
+and a pane that cannot collapse draws no control and stays open. The Screens
+pane starts collapsed and opens at its minimum size, listing only the current
+Project's views. Threads start open over their children and retain their
+independent expansion state. The sidebar supports
 inline create and rename and context actions for child creation,
 lifecycle-aware delete, and copying Thread IDs. Projects retain the color the
 host assigns from a fixed palette; their navigation and actions live in the
@@ -489,8 +495,8 @@ reconcile transcript reads with live output on opening or reconnecting. Buffers
 are discarded with the session, and truncation of an active session's transcript
 is explicit. Terminal data is not written to operational logs.
 
-The left sidebar's screens group — the layout's `layout.sidebar` region, below
-the Threads tree — lists the screens the reader spawned, and clicking one opens
+The left sidebar's screens group — a pane of the layout's stack, below the
+Threads tree — lists the screens the reader spawned, and clicking one opens
 or focuses a real window of its own: an Electron `BaseWindow` whose single
 `WebContentsView` loads the sandbox's xpra HTML5 client in its own session
 partition, drawing the native title bar and controls, a page and nothing else —
@@ -1041,8 +1047,8 @@ window's shell calls `bootstrapWindow({})` and shows `<core-outlet>`; the core's
 client part provides `ui/v1`, `navigation/v1` (routes are URL paths matched on
 `pathname`), `regions/v1`, `commands/v1` and the outlet, region, not-found and
 unavailable elements. `layout` registers `/` with the workspace frame, its
-`layout.sidebar`, `layout.header` and `layout.footer` regions,
-`layout.tabs/v1` and `layout.workspace/v1`, and kept the files, changes,
+`layout.header` and `layout.footer` regions,
+`layout.tabs/v1`, `layout.workspace/v1` and `layout.stack/v1`, and kept the files, changes,
 terminals, usage, resources, working-directory and branch UI under
 `src/client/provisional/` until stage 10 moved them to their bundles; `chat` registers
 `/projects/:projectId/threads/:threadId` (child of `/`) with `<chat-view>`, its
@@ -1065,8 +1071,9 @@ icon, aria label and tooltip, closing in a named owner, the current tab), the
 new `layout.panel/v1` (the Project panel over `layout.panel` region items, with
 `layout.panel.header` and `layout.panel.footer`) and `layout.sidebar/v1` (rows
 under each Thread), `chat.hooks/v1@1.1.0.onThreadUpdateHook`, a
-`chat.delegated-input/v1` renderer slot and `<chat-readonly-markdown>`, and
-`settings.config/v1` (the settings window's one autosave draft). The layout
+`chat.delegated-input/v1` renderer slot and `<chat-readonly-markdown>`, the
+`settings.config/v1` (the settings window's one autosave draft), and the new
+`layout.stack/v1@1.0.0` (the sidebar's groups as panes a bundle registers). The layout
 imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is

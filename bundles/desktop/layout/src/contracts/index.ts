@@ -241,3 +241,94 @@ export const layoutSidebarMethods = {
 } as const;
 
 export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
+
+/**
+ * A group of the sidebar's vertical stack (1.0.0). The layout draws one
+ * resizable panel per pane, in `order`, plus the pane's header: its title, the
+ * collapse control and the element `headerTag` names for the group's own action
+ * (its add or hide control). The pane's own element (`tag`) draws only what is
+ * inside the group.
+ */
+export interface StackPane {
+  /** Unique in the stack; a duplicate fails with `registration_conflict`. */
+  readonly id: string;
+  /** Top to bottom: ascending, absent last, then registration order. */
+  readonly order?: number;
+  /** The header text the layout draws. */
+  readonly title: string;
+  /** The custom element `ui/v1` creates for the group's content (`sidebar-menu` rows). */
+  readonly tag?: string;
+  /** The props that element is created with. */
+  readonly props?: Readonly<Record<string, unknown>>;
+  /** An element drawn inside the header, where the group's action belongs. */
+  readonly headerTag?: string;
+  /**
+   * Whether the reader can collapse the pane (default `true`). A pane that
+   * cannot collapse draws no control and stays open.
+   */
+  readonly collapsible?: boolean;
+  /**
+   * Whether the pane starts expanded (default `true`). A collapsed pane starts
+   * at its header and expands to `minSize`.
+   */
+  readonly initiallyOpen?: boolean;
+  /** Size when expanded; absent, the pane takes what the others leave. */
+  readonly defaultSize?: number | string;
+  /** Smallest size while expanded (for example `'20%'`). */
+  readonly minSize?: string;
+  /** Largest size (for example `'80%'`). */
+  readonly maxSize?: string;
+}
+
+/**
+ * The sidebar's stack of panes other bundles own. A pane never collapses past
+ * its header, so resizing the sidebar cannot make a group vanish.
+ */
+export interface LayoutStack {
+  /** A duplicate id fails with `registration_conflict`. */
+  register(pane: StackPane, call?: CallArg): Disposable;
+  /** The panes top to bottom; the same array until the stack changes. */
+  panes(call?: CallArg): readonly StackPane[];
+  /** Whether the pane is expanded; a pane that cannot collapse always is. */
+  isOpen(paneId: string, call?: CallArg): boolean;
+  /** Opens or collapses the pane, as its header control does. */
+  setOpen(paneId: string, open: boolean, call?: CallArg): void;
+  toggle(paneId: string, call?: CallArg): void;
+  /** Called after every change of the panes or of one pane's state. */
+  subscribe(listener: () => void, call?: CallArg): Disposable;
+}
+
+export const stackPaneSchema = z
+  .object({
+    id: z.string().min(1),
+    order: z.number().optional(),
+    title: z.string(),
+    tag: z.string().min(1).optional(),
+    props: z.record(z.string(), z.unknown()).optional(),
+    headerTag: z.string().min(1).optional(),
+    collapsible: z.boolean().optional(),
+    initiallyOpen: z.boolean().optional(),
+    defaultSize: z.union([z.number(), z.string()]).optional(),
+    minSize: z.string().optional(),
+    maxSize: z.string().optional(),
+  })
+  .strict();
+
+const stackPanesSchema = z.custom<readonly StackPane[]>(
+  (value) => Array.isArray(value),
+  { message: 'Expected the stack panes.' },
+);
+
+export const layoutStackMethods = {
+  register: { input: stackPaneSchema, output: disposableSchema },
+  panes: { input: noInput, output: stackPanesSchema },
+  isOpen: { input: z.string().min(1), output: z.boolean() },
+  setOpen: {
+    input: z.tuple([z.string().min(1), z.boolean()]),
+    output: z.void(),
+  },
+  toggle: { input: z.string().min(1), output: z.void() },
+  subscribe: { input: listenerSchema, output: disposableSchema },
+} as const;
+
+export const LayoutStackV1 = ref<LayoutStack>('layout.stack/v1');

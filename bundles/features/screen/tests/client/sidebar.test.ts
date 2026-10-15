@@ -1,11 +1,13 @@
-// The Screens group as the sidebar mounts it: the element's own React root,
-// its reads of `layout.workspace/v1` and of the views mirror, and the row it
-// draws.
+// The Screens pane as the sidebar mounts it: the element's own React root and
+// its reads of `layout.workspace/v1`, the rows of the current Project's views,
+// and the header element that opens another view.
 //
-// The layout rebuilds its records on every read, so a read whose snapshot
-// identity changes on every call makes `useSyncExternalStore` re-render
-// without end — React's "Maximum update depth exceeded" (#185) — and a
-// sidebar row's own controls need the sidebar scope the element's root does
+// The layout draws the group's frame — header, collapse control and panel
+// (`layout.stack/v1`) — so these elements draw only the rows and the add
+// control. The layout rebuilds its records on every read, so a read whose
+// snapshot identity changes on every call makes `useSyncExternalStore`
+// re-render without end — React's "Maximum update depth exceeded" (#185) — and
+// a sidebar row's own controls need the sidebar scope the element's root does
 // not inherit from the layout (D9-17, as `git` and `files` wrap theirs).
 
 import assert from 'node:assert/strict';
@@ -60,7 +62,7 @@ after(async () => {
   await window.happyDOM.close();
 });
 
-/** The services stub: only what the element's hooks reach, by contract. */
+/** The services stub: only what the elements' hooks reach, by contract. */
 const servicesFor = (apiOf: (contract: unknown) => unknown): Services =>
   ({
     provide: () => ({ dispose: () => undefined }),
@@ -89,24 +91,51 @@ const view: ScreenView = {
   status: { kind: 'ready', path: '/screen/token/', display: ':1' },
 };
 
-test('the Screens group mounts, settles and names a new view', async () => {
-  const store = createScreenViewsStore();
-  store.set([view]);
+const other: ScreenView = {
+  id: 'v2',
+  label: 'Elsewhere',
+  projectId: 'p2',
+  status: { kind: 'waiting' },
+};
 
-  const thread = { id: 't1', projectId: 'p1' };
+/** The layout's records: a fresh object per read, as it builds them. */
+const workspaceFor = (project?: {
+  readonly id: string;
+  readonly name: string;
+}) => {
   let selections = 0;
-  const workspace = {
-    // The layout's records: a fresh object per read, as it builds them.
-    selectedThread: () => ({ ...thread }),
+
+  return {
+    selectedThread: () =>
+      project === undefined ? undefined : { id: 't1', projectId: project.id },
     selection: () => {
       selections += 1;
 
-      return { project: { id: 'p1', name: 'Doric' }, thread: { ...thread } };
+      return project === undefined
+        ? {}
+        : { project, thread: { id: 't1', projectId: project.id } };
     },
     subscribe: () => ({ dispose: () => undefined }),
+    reads: () => selections,
   };
+};
 
-  const added: unknown[] = [];
+let tag = 0;
+
+type ElementName = 'sidebar' | 'groupAction';
+
+const mount = (
+  render: ElementName,
+  options: {
+    readonly added?: unknown[];
+    readonly views: readonly ScreenView[];
+    readonly workspace: ReturnType<typeof workspaceFor>;
+  },
+) => {
+  const { added = [], views, workspace } = options;
+  const store = createScreenViewsStore();
+  store.set(views);
+
   const screens = {
     add: async (input: unknown) => {
       added.push(input);
@@ -117,38 +146,115 @@ test('the Screens group mounts, settles and names a new view', async () => {
     remove: async () => undefined,
     retry: async () => undefined,
   };
-
   const services = servicesFor((contract) =>
     contract === LayoutWorkspaceV1 ? workspace : screens,
   );
-  const tag = 'screen-sidebar-test';
+  const name = `screen-pane-${tag++}`;
   window.customElements.define(
-    tag,
-    defineScreenElements({ store }).sidebar as never,
+    name,
+    defineScreenElements({ store })[render] as never,
   );
   const element = window.document.createElement(
-    tag,
+    name,
   ) as unknown as ReactElementInstance;
   element.services = services;
 
+  return { added, element, name, workspace };
+};
+
+const mountIn = async (
+  render: ElementName,
+  options: Parameters<typeof mount>[1],
+) => {
+  const mounted = mount(render, options);
+
+  await act(() => {
+    (window.document.body as unknown as HTMLElement).appendChild(
+      mounted.element,
+    );
+  });
+
+  return mounted;
+};
+
+test('the rows element draws the current Project views only', async () => {
+  const workspace = workspaceFor({ id: 'p1', name: 'Doric' });
+  const { element } = await mountIn('sidebar', {
+    views: [view, other],
+    workspace,
+  });
+
   try {
-    await act(() => {
-      (window.document.body as unknown as HTMLElement).appendChild(element);
-    });
-
-    assert.match(element.textContent ?? '', /Screens/);
+    // The pane carries no header of its own: the layout draws it.
+    assert.doesNotMatch(element.textContent ?? '', /Screens/);
     assert.match(element.textContent ?? '', /Doric/);
-    // A read that keeps its identity settles after a handful of them; the
-    // loop this guards against reads thousands.
-    assert.ok(selections < 50, `selection() was read ${selections} times`);
+    assert.doesNotMatch(element.textContent ?? '', /Elsewhere/);
+    // A read that keeps its identity settles after a handful of them; the loop
+    // this guards against reads thousands.
+    assert.ok(
+      workspace.reads() < 50,
+      `selection() was read ${workspace.reads()} times`,
+    );
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+});
 
+test('the rows element shows nothing without a selected Project', async () => {
+  const { element } = await mountIn('sidebar', {
+    views: [view, other],
+    workspace: workspaceFor(undefined),
+  });
+
+  try {
+    assert.doesNotMatch(element.textContent ?? '', /Doric|Elsewhere/);
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+});
+
+test('the header element opens the selected Project screen', async () => {
+  const added: unknown[] = [];
+  const { element } = await mountIn('groupAction', {
+    added,
+    views: [view],
+    workspace: workspaceFor({ id: 'p1', name: 'Doric' }),
+  });
+
+  try {
+    assert.equal(ScreenViewsV1.id, 'screen.views/v1');
     const action = element.querySelector('[aria-label="New screen view"]');
     assert.notEqual(action, null);
+
     await act(() => {
       (action as unknown as { click(): void }).click();
     });
+
     assert.deepEqual(added, [{ projectId: 'p1', label: 'Doric' }]);
-    assert.equal(ScreenViewsV1.id, 'screen.views/v1');
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+});
+
+test('the header element cannot open a screen without a Project', async () => {
+  const added: unknown[] = [];
+  const { element } = await mountIn('groupAction', {
+    added,
+    views: [view],
+    workspace: workspaceFor(undefined),
+  });
+
+  try {
+    const action = element.querySelector(
+      '[aria-label="New screen view"]',
+    ) as unknown as { disabled: boolean; click(): void };
+
+    assert.equal(action.disabled, true);
+    await act(() => action.click());
+    assert.deepEqual(added, []);
   } finally {
     await act(() => element.dispose());
     window.document.body.replaceChildren();
