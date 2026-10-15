@@ -170,6 +170,7 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 
 - [Isolamento por processo](./bundles/process-isolation.md): a opção B aprovada, com kernel, um processo por geração e o envelope RPC único.
 - [Observabilidade e diagnóstico](./bundles/observability.md): `log/v1` por bundle com identidade vinda de `call.caller`, o log próprio da plataforma, rastreio, métricas, o serviço de diagnóstico e a saída em arquivos.
+- [Port forwarding](./bundles/port-forwarding.md): como o host serve uma porta que o sandbox do Project escuta, na própria origem, pelo par `ports`/`ports-relay`, com descoberta, sessões por Project e a janela que abre a URL.
 
 ### Interface
 
