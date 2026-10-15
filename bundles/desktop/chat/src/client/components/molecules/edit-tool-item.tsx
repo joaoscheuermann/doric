@@ -120,10 +120,7 @@ export const EditToolItem = memo(function EditToolItem({
               </div>
             ) : null}
             {parsed.diffLines.length > 0 ? (
-              <div
-                data-slot="edit-diff"
-                className="font-mono text-sm [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
-              >
+              <div data-slot="edit-diff" className="font-mono text-sm">
                 {visibleLines.map((line, index) => (
                   <div
                     // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static positional rows of one tool result
