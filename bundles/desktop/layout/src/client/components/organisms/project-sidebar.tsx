@@ -15,14 +15,9 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
-import {
-  Fragment,
-  type ReactNode,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 
 import type { StackPane } from '../../../contracts/index.js';
@@ -108,13 +103,23 @@ function PanePanel({
   const header = useRef<HTMLDivElement>(null);
   const collapsible = pane.collapsible !== false;
 
-  useLayoutEffect(() => {
-    const target = panel.current;
-    if (target === null) return;
+  const mounted = useRef(false);
 
-    if (open) target.expand();
-    else target.collapse();
-  }, [open, panel]);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    const target = panel.current;
+    if (target === null || !collapsible) return;
+
+    try {
+      if (open) target.expand();
+      else target.collapse();
+    } catch {
+      // The group or panel may be unmounting or not registered yet.
+    }
+  }, [collapsible, open, panel]);
 
   return (
     <ResizablePanel
@@ -138,27 +143,26 @@ function PanePanel({
     >
       <SidebarGroup className="flex h-full min-h-0 flex-col p-0">
         <div ref={header} className="relative">
-          <SidebarGroupLabel className="h-7 gap-1 rounded-none px-3 text-xs font-normal">
+          <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
             {collapsible ? (
               <button
                 type="button"
                 aria-expanded={open}
                 aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
-                className="flex min-w-0 flex-1 items-center gap-1 pr-8 text-left outline-hidden focus-visible:ring-2"
+                className="flex min-w-0 flex-1 items-center gap-1 text-left outline-hidden focus-visible:ring-2"
                 onClick={() => togglePane(pane.id)}
               >
                 <ChevronRightIcon
                   aria-hidden
-                  className={
-                    open
-                      ? 'rotate-90 transition-transform duration-[50ms] ease-out'
-                      : 'rotate-0 transition-transform duration-[50ms] ease-out'
-                  }
+                  className={cn(
+                    'size-4 shrink-0 transition-transform duration-[50ms] ease-out',
+                    open ? 'rotate-90' : 'rotate-0',
+                  )}
                 />
                 <span className="truncate">{pane.title}</span>
               </button>
             ) : (
-              <span className="min-w-0 flex-1 truncate pr-8">{pane.title}</span>
+              <span className="min-w-0 flex-1 truncate">{pane.title}</span>
             )}
           </SidebarGroupLabel>
           {action}
@@ -235,7 +239,10 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
         {loading &&
           THREAD_SKELETON_ROWS.map((row) => (
             <SidebarMenuItem key={row}>
-              <SidebarMenuSkeleton showIcon />
+              <SidebarMenuSkeleton
+                showIcon
+                className="h-7 rounded-none pl-3 pr-8"
+              />
             </SidebarMenuItem>
           ))}
         {projectId !== undefined && (

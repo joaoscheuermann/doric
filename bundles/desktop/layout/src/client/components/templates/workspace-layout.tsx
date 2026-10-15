@@ -53,8 +53,12 @@ export function WorkspaceLayout({
   const mac = navigator.userAgent.includes('Mac');
 
   useLayoutEffect(() => {
-    if (filesOpen) filesPanel.current?.expand();
-    else filesPanel.current?.collapse();
+    try {
+      if (filesOpen) filesPanel.current?.expand();
+      else filesPanel.current?.collapse();
+    } catch {
+      // The group or panel may be unmounting or not registered yet.
+    }
   }, [filesOpen, filesPanel]);
 
   return (

@@ -18,6 +18,7 @@ import {
   SidebarMenuItem,
   SidebarScope,
 } from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
 import {
   CircleAlertIcon,
   Loader2Icon,
@@ -147,7 +148,10 @@ function ScreenRow({
     <SidebarMenuItem>
       <SidebarMenuButton
         size="sm"
-        className="h-7 w-full translate-x-0 rounded-none pr-14"
+        className={cn(
+          'h-7 w-full translate-x-0 rounded-none pl-3',
+          state.retry ? 'pr-14' : 'pr-8',
+        )}
         disabled={absent}
         title={`${view.label} — ${state.text}`}
         onClick={() => {

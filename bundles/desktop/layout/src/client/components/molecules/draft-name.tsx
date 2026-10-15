@@ -32,13 +32,17 @@ export function DraftName({
 
   return (
     <div
-      className="relative flex min-h-7 w-full items-center gap-2 pr-3 text-xs"
+      className="relative flex min-h-7 w-full items-center gap-2 pr-8 text-xs"
       style={{
         paddingLeft: depth === undefined ? '0.75rem' : indentation(depth),
       }}
     >
       <TreeGuides depth={depth ?? 0} />
-      {draft ? <ProjectAvatar /> : <MessageSquareIcon className="size-3.5" />}
+      {draft ? (
+        <ProjectAvatar />
+      ) : (
+        <MessageSquareIcon className="size-4 shrink-0" />
+      )}
       <EditableName
         creating
         editing
