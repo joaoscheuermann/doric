@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  blockEquals,
+  commonBlocks,
   lineSource,
   type MarkdownBlock,
   type MarkdownLine,
@@ -284,5 +286,84 @@ describe('reading markdown as blocks', () => {
       [{ kind: 'bold', source: '**b**' }],
     );
     assert.equal(cellSource(table.header[1] ?? []), 'c');
+  });
+});
+
+describe('blocks shared between two reads of a growing source', () => {
+  test('counts every block when both reads parse the same source', () => {
+    const text = [
+      '# Heavy',
+      '',
+      'A line with **bold** and `code`.',
+      '',
+      '- one',
+      '- two',
+      '',
+      '| a | b |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+    ].join('\n');
+    const blocks = markdownBlocks(text);
+    const reread = markdownBlocks(text);
+
+    assert.equal(commonBlocks(blocks, reread), blocks.length);
+    for (let index = 0; index < blocks.length; index += 1) {
+      const left = blocks[index];
+      const right = reread[index];
+      if (left === undefined || right === undefined)
+        return assert.fail('a block went missing');
+      assert.ok(blockEquals(left, right), `block ${index} equals its reread`);
+    }
+  });
+
+  test('keeps the whole finished answer when the stream only appends blocks', () => {
+    const before = markdownBlocks('one\n\ntwo');
+    const after = markdownBlocks('one\n\ntwo\n\nthree');
+
+    assert.equal(commonBlocks(before, after), before.length);
+  });
+
+  test('shares only the blocks before the one the delta lands in', () => {
+    const before = markdownBlocks('one\n\ntwo');
+    const after = markdownBlocks('one\n\ntwo grows');
+
+    assert.equal(commonBlocks(before, after), before.length - 1);
+    // A delta inside the only block there is shares nothing with it.
+    assert.equal(
+      commonBlocks(markdownBlocks('one'), markdownBlocks('one two')),
+      0,
+    );
+  });
+
+  test('holds a list and its new item as one block, rebuilt together', () => {
+    const before = markdownBlocks('- one');
+    const after = markdownBlocks('- one\n- two');
+
+    assert.equal(commonBlocks(before, after), 0);
+  });
+
+  test('keeps a closed fence while the stream writes what follows it', () => {
+    const before = markdownBlocks('```ts\nconst a = 1;\n```');
+    const after = markdownBlocks('```ts\nconst a = 1;\n```\nafter');
+
+    assert.equal(commonBlocks(before, after), before.length);
+  });
+
+  test('tells blocks apart by kind, heading depth and table cells', () => {
+    const first = (text: string): MarkdownBlock => {
+      const block = markdownBlocks(text)[0];
+      if (block === undefined) return assert.fail('no block');
+      return block;
+    };
+    const differs = (left: string, right: string): void => {
+      assert.ok(!blockEquals(first(left), first(right)));
+    };
+
+    differs('plain', '> plain');
+    differs('# One', '## One');
+    differs(
+      '| a | b |\n| --- | --- |\n| 1 | 2 |',
+      '| a | b |\n| --- | --- |\n| 1 | 3 |',
+    );
   });
 });

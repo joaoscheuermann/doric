@@ -9,7 +9,7 @@ import {
 import { AGENT_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { AgentTurn, PromptStatus } from '../../../../domain/projector.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
-import { $appendMarkdown } from './markdown-blocks.js';
+import { $appendMarkdown, $setMarkdown } from './markdown-blocks.js';
 
 export type SerializedAgentTurnNode = Spread<
   { turnKey: string; promptId: string; status: PromptStatus },
@@ -89,10 +89,12 @@ export class AgentTurnNode extends ElementNode {
   }
 
   /**
-   * Take the chat's latest markdown. The children are rebuilt from the source as
-   * the markdown says they should be, never rewritten: what the block holds is
-   * still what the model wrote. A sync that says nothing new touches nothing, so
-   * the editor keeps its own text and the reader keeps the caret where it was.
+   * Take the chat's latest markdown. The children the new source still starts
+   * with stay where they are and only the tail the source outgrew is built
+   * again — a sync that says nothing new touches nothing, and a sync that adds
+   * a delta to a streamed answer pays for the delta, not the answer. The source
+   * is read, never rewritten: what the block holds is still what the model
+   * wrote, and the reader keeps the caret where it was.
    */
   setTurn(turn: AgentTurn): void {
     const value = turn.text.trim();
@@ -103,9 +105,10 @@ export class AgentTurnNode extends ElementNode {
     if (writable.__status !== turn.status) writable.__status = turn.status;
     if (!textChanged) return;
 
-    writable.clear();
+    const previous = writable.__synced;
     writable.__synced = value;
-    if (value.length > 0) $appendMarkdown(writable, value);
+    if (value.length > 0) $setMarkdown(writable, value, previous);
+    else writable.clear();
   }
 
   override exportJSON(): SerializedAgentTurnNode {

@@ -473,6 +473,124 @@ export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
   return blocks;
 };
 
+/** Whether two lines read the same: the same runs in the same order. */
+const lineEquals = (left: MarkdownLine, right: MarkdownLine): boolean => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a === b) continue;
+    if (a === undefined || b === undefined || a.kind !== b.kind) return false;
+    if (a.source !== b.source) return false;
+  }
+  return true;
+};
+
+/** Whether two rows of a table read the same, cell for cell. */
+const rowEquals = (
+  left: readonly MarkdownCell[],
+  right: readonly MarkdownCell[],
+): boolean => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1)
+    if (!lineEquals(left[index] ?? [], right[index] ?? [])) return false;
+  return true;
+};
+
+/** Whether two lists of table rows read the same, row for row. */
+const rowsEqual = (
+  left: readonly MarkdownRow[],
+  right: readonly MarkdownRow[],
+): boolean => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1)
+    if (!rowEquals(left[index] ?? [], right[index] ?? [])) return false;
+  return true;
+};
+
+/**
+ * Whether two reads of a source made the same block: the same kind, and the
+ * same lines, items or cells the same runs make up. Blocks carry no place in
+ * the source — that is what lets one read be compared against another without
+ * holding the source between them.
+ */
+export const blockEquals = (
+  left: MarkdownBlock,
+  right: MarkdownBlock,
+): boolean => {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case 'paragraph':
+    case 'quote':
+    case 'code':
+      return linesEqual(
+        left.lines,
+        (right as { readonly lines: readonly MarkdownLine[] }).lines,
+      );
+    case 'heading': {
+      const other = right as {
+        readonly depth: number;
+        readonly lines: readonly MarkdownLine[];
+      };
+      return left.depth === other.depth && linesEqual(left.lines, other.lines);
+    }
+    case 'bullet':
+    case 'ordered': {
+      const other = right as { readonly items: readonly MarkdownItem[] };
+      if (left.items.length !== other.items.length) return false;
+      for (let index = 0; index < left.items.length; index += 1) {
+        if (!linesEqual(left.items[index] ?? [], other.items[index] ?? []))
+          return false;
+      }
+      return true;
+    }
+    case 'table': {
+      const other = right as {
+        readonly header: MarkdownRow;
+        readonly delimiter: MarkdownRow;
+        readonly rows: readonly MarkdownRow[];
+      };
+      return (
+        rowEquals(left.header, other.header) &&
+        rowEquals(left.delimiter, other.delimiter) &&
+        rowsEqual(left.rows, other.rows)
+      );
+    }
+  }
+};
+
+/** Whether two lists of lines read the same, line for line. */
+const linesEqual = (
+  left: readonly MarkdownLine[],
+  right: readonly MarkdownLine[],
+): boolean => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1)
+    if (!lineEquals(left[index] ?? [], right[index] ?? [])) return false;
+  return true;
+};
+
+/**
+ * How many blocks two reads of one growing source share, from the start: the
+ * prefix a block-wise rebuild can keep seated, because a rebuild of the same
+ * blocks would build them again exactly. A delta that extends the answer
+ * changes the blocks it lands in and the ones it opens, never the ones before
+ * them — a blank line, a fence's close and a delimiter row all end a block —
+ * so the shared prefix is all but the answer's growing tail.
+ */
+export const commonBlocks = (
+  previous: readonly MarkdownBlock[],
+  next: readonly MarkdownBlock[],
+): number => {
+  const most = Math.min(previous.length, next.length);
+  for (let index = 0; index < most; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (a === undefined || b === undefined || !blockEquals(a, b)) return index;
+  }
+  return most;
+};
+
 /** The source one line's runs join back to. */
 export const lineSource = (line: MarkdownLine): string =>
   line.map((run) => run.source).join('');

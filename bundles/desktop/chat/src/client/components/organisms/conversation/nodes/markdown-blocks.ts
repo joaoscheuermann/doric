@@ -41,6 +41,7 @@ import {
 } from 'lexical';
 
 import {
+  commonBlocks,
   lineSource,
   type MarkdownAlign,
   type MarkdownBlock,
@@ -190,4 +191,53 @@ const $blockNode = (block: MarkdownBlock): LexicalNode => {
  */
 export const $appendMarkdown = (parent: ElementNode, source: string): void => {
   for (const block of markdownBlocks(source)) parent.append($blockNode(block));
+};
+
+/**
+ * Sets one block to the markdown its source carries, keeping what the source it
+ * holds already built: the blocks the two reads share from the start are the
+ * children that stay where they are, and only the tail the source outgrew —
+ * the blocks a delta changed, opened or closed — is built again. A streamed
+ * answer lands as a few blocks per flush instead of the whole answer rebuilt,
+ * so the cost of a flush is the delta's size, not the answer's.
+ *
+ * The kept children are exactly what building the shared blocks again would
+ * build, because the comparison is block to block over the parsed sources, not
+ * text to text over the nodes: the editor's own normalization of a built table
+ * stays in place, the way it would in a full rebuild, and a sync that changes
+ * nothing above the tail touches nothing above it. A source that shrank, or one
+ * the new read no longer begins the same way, falls back to the full rebuild —
+ * the same children, cleared and built again — so whatever changed, the block
+ * ends holding exactly what its source says.
+ *
+ * `previous` is the source the block last built, not the nodes it holds: the
+ * editor may have normalized those, and comparing against the source is what
+ * keeps the two reads comparable. An empty `previous` is a first fill, and a
+ * `keep` the children cannot match (some other hand changed them since) falls
+ * back too.
+ */
+export const $setMarkdown = (
+  parent: ElementNode,
+  source: string,
+  previous: string,
+): void => {
+  const blocks = markdownBlocks(source);
+  const held = previous.length > 0 ? markdownBlocks(previous) : [];
+  const children = parent.getChildren();
+
+  // The children must be the ones the held source built, one per block, for a
+  // kept prefix to be the right prefix. Anything else is a full rebuild.
+  if (children.length !== held.length) {
+    parent.clear();
+    for (const block of blocks) parent.append($blockNode(block));
+    return;
+  }
+
+  const keep = commonBlocks(held, blocks);
+  for (let index = children.length - 1; index >= keep; index -= 1)
+    children[index]?.remove();
+  for (let index = keep; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block !== undefined) parent.append($blockNode(block));
+  }
 };
