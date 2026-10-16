@@ -996,6 +996,21 @@ importing a module, the window reads the revision's bytes through
 `doric://app/artifacts/<artifactId>@<revision>/index.js`, and the markup stands
 in when either step fails.
 
+Doric's own UI is previewed the same way. Every package with React components
+has a `.storybook/preview.tsx` harness at its root (a bundle's imports
+`desktop/ui/theme.css`, then its own client stylesheet) and CSF stories under
+`stories/`, mirroring the path under `src/` without a leading `client/`
+(`src/client/components/molecules/x.tsx` →
+`stories/components/molecules/x.stories.tsx`). Stories never live in `src/`,
+so they are not emitted and `packages/desktop/src/components` keeps passing
+`verify-provenance`. They import no `@storybook/*` package (Storybook is not
+installed), reach the shared components through `desktop/ui/*`, seed stores
+and providers with fixtures instead of a live host, and are typechecked by the
+package's client (or spec) tsconfig. Today only the stories whose imports stay
+within `desktop/ui` and plain packages compile in papercraft; a bundle story
+that reaches `bundle/contracts`, `bundle/runtime` or `desktop/*` outside
+`desktop/ui` is refused by the preview build, a known limit.
+
 `/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
 It owns the Prisma ORM 7 schema, the versioned migrations and the generated

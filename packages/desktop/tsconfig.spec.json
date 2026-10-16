@@ -12,7 +12,15 @@
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "stories/**/*.ts",
+    "stories/**/*.tsx",
+    ".storybook/**/*.tsx"
+  ],
   "references": [
     {
       "path": "../bundle/tsconfig.lib.json"

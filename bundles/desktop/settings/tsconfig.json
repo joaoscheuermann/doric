@@ -6,12 +6,18 @@
     "declarationMap": false,
     "emitDeclarationOnly": false,
     "noEmit": true,
-    "rootDir": "src",
+    "rootDir": ".",
     "jsx": "react-jsx",
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": []
   },
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
+  "include": [
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+    "stories/**/*.ts",
+    "stories/**/*.tsx",
+    ".storybook/**/*.tsx"
+  ],
   "references": [
     {
       "path": "../../../packages/desktop"
