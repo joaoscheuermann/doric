@@ -190,6 +190,12 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 - [Armazenamento genérico e histórico](./bundles/storage.md): `storage/v1` como fachada sobre `storage.backend/v1`, as primitivas, o backend `postgres` de `storage.backend/v1` e `secrets.backend/v1`, a divisão do histórico, o cache local do bundle `history` em `doric.cache/v1` e os tipos registrados com `defineStorageType`.
 - [Eventos e nodes](./bundles/events-and-nodes.md): eventos duráveis gravados por `events/v1`, o histórico do provider e as duas famílias de node.
 
+### Artefatos e revisão
+
+- [Artefatos](./bundles/artifacts.md): o entregável durável que o agente produz para mostrar uma mudança — identidade, revisões, âncoras, o contrato `artifacts/v1`, os tipos de `artifact.kind/v1`, o node, o armazenamento em `/workspace/.doric/`, a política de revisão com `proceed` como padrão e a comparação com o Antigravity.
+- [Comentários](./bundles/comments.md): o spec do conceito — o alvo, a âncora, os dois registros (o evento durável e o prompt), o rascunho no host e a regra de que um comentário orienta e nunca autoriza.
+- [Papercraft](./bundles/papercraft.md): o tipo `preview`, o canvas no node e na janela, os caminhos A, B e C, a barra de comandos e a skill `papercraft-preview`.
+
 ### Plano e referências
 
 - [Divisão das funcionalidades atuais](./bundles/feature-split.md): os bundles de destino das funcionalidades atuais, com os nomes mínimos, os cortes candidatos e a configuração.

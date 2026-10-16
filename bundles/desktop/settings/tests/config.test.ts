@@ -539,7 +539,10 @@ describe('configuration rules', () => {
       assert.equal(
         configurationIssue(
           configuration({
-            execution: { maxTurns: 8, contextCompaction: { ...whole, ...patch } },
+            execution: {
+              maxTurns: 8,
+              contextCompaction: { ...whole, ...patch },
+            },
           }),
           kinds,
         ),

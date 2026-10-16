@@ -1,3 +1,8 @@
+import {
+  COMMENTS_ADDED_EVENT,
+  type TurnComment,
+  turnCommentFrom,
+} from '../../contracts/index.js';
 import type { DelegatedInput } from './delegated.js';
 import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
@@ -37,6 +42,12 @@ export type UserTurn = TurnBase & {
   /** The prompt as written; empty when another Thread wrote it. */
   readonly text: string;
   readonly accepted: boolean;
+  /**
+   * The comments the send flushed with this prompt, in the order the log wrote
+   * them (`comments.added/v1`): the same lines the stack drew above the
+   * prompt, now durable above the words the reader sent.
+   */
+  readonly comments: readonly TurnComment[];
   /** Set when another Thread wrote this input rather than the human. */
   readonly delegated?: DelegatedInput;
   /**
@@ -182,6 +193,12 @@ export type Projection = {
   readonly status: ReadonlyMap<string, PromptStatus>;
   readonly executions: ReadonlyMap<string, PromptExecution>;
   readonly inputs: ReadonlyMap<string, PromptInput>;
+  /**
+   * The comments each prompt's log holds (`comments.added/v1`), kept per prompt
+   * until the prompt's user turn appears: the flush writes them just below the
+   * reader's words, and the turn wears them above those words.
+   */
+  readonly comments: ReadonlyMap<string, readonly TurnComment[]>;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -212,6 +229,7 @@ export type Draft =
       events: ThreadEvent[];
       text: string;
       accepted: boolean;
+      comments: TurnComment[];
       delegated?: DelegatedInput;
       awaiting: boolean;
     }
@@ -491,6 +509,7 @@ const readEvent = (
   status: Map<string, PromptStatus>,
   executions: Map<string, PromptExecution>,
   inputs: Map<string, PromptInput>,
+  comments: Map<string, TurnComment[]>,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -500,9 +519,29 @@ const readEvent = (
   const open =
     last !== undefined && last.promptId === promptId ? last : undefined;
   const recovery = readExecution(executions, item, event);
-  const input = readInput(inputs, item, event);
+  // The comments the log already wrote for this prompt are part of its user
+  // turn: the turn is the reader's words, and the comments their margin.
+  const input = readInput(inputs, comments, item, event);
   if (input !== undefined) {
     turns.push(input);
+    return;
+  }
+
+  if (item.type === COMMENTS_ADDED_EVENT) {
+    const comment = turnCommentFrom(event);
+    if (comment !== undefined) {
+      // The turn is shown: the comment joins it there. It is not: it waits
+      // where the flush wrote it, below the words the reader is still writing.
+      const turn =
+        open?.type === 'user' && open.promptId === promptId ? open : undefined;
+      const held = comments.get(promptId) ?? [];
+      if (turn === undefined) {
+        comments.set(promptId, [...held, comment]);
+        return;
+      }
+      turn.comments = [...turn.comments, comment];
+      turn.events.push(item);
+    }
     return;
   }
 
@@ -760,8 +799,9 @@ const project = (events: readonly ThreadEvent[]): Projection => {
   const status = new Map<string, PromptStatus>();
   const executions = new Map<string, PromptExecution>();
   const inputs = new Map<string, PromptInput>();
+  const comments = new Map<string, TurnComment[]>();
   for (const item of events)
-    readEvent(drafts, status, executions, inputs, item);
+    readEvent(drafts, status, executions, inputs, comments, item);
   settle(drafts, status, executions, inputs);
   return {
     events,
@@ -769,6 +809,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
     status,
     executions,
     inputs,
+    comments,
     turns: grouped(drafts, status),
   };
 };
@@ -791,8 +832,14 @@ const readInto = (
   const status = new Map(current.status);
   const executions = new Map(current.executions);
   const inputs = new Map(current.inputs);
+  const comments = new Map(
+    [...current.comments].map(([promptId, held]): [string, TurnComment[]] => [
+      promptId,
+      [...held],
+    ]),
+  );
   for (const item of incoming)
-    readEvent(drafts, status, executions, inputs, item);
+    readEvent(drafts, status, executions, inputs, comments, item);
   settle(drafts, status, executions, inputs);
   return {
     events: [...current.events, ...incoming],
@@ -800,6 +847,7 @@ const readInto = (
     status,
     executions,
     inputs,
+    comments,
     turns: grouped(drafts, status),
   };
 };
@@ -904,6 +952,7 @@ export const emptyProjection: Projection = {
   status: new Map(),
   executions: new Map(),
   inputs: new Map(),
+  comments: new Map(),
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */

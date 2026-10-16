@@ -1,9 +1,9 @@
 // The `doric://app` protocol handler (doric-protocol.md): technical assets
-// under `/platform/`, `/bundles/` and `/schemas/`, a 404 for any missing
-// file under them, and the shell for every other path.
+// under `/platform/`, `/bundles/`, `/schemas/` and `/artifacts/`, a 404 for
+// any missing file under them, and the shell for every other path.
 
 import { readFile } from 'node:fs/promises';
-import { relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 import { packagedCsp } from './csp';
 import type { DevProxy } from './dev-proxy';
@@ -26,6 +26,13 @@ export type RouteDecision =
       readonly type: 'bundle';
       readonly id: string;
       readonly version: string;
+      readonly segments: readonly string[];
+    }
+  /** `/artifacts/<artifactId>@<revision>/<path>`: a verified revision entry. */
+  | {
+      readonly type: 'artifact';
+      readonly id: string;
+      readonly revision: number;
       readonly segments: readonly string[];
     }
   | { readonly type: 'schema'; readonly segments: readonly string[] };
@@ -77,7 +84,12 @@ export const route = (
 
   const { pathname } = url;
 
-  for (const prefix of ['/platform/', '/bundles/', '/schemas/'] as const) {
+  for (const prefix of [
+    '/platform/',
+    '/bundles/',
+    '/schemas/',
+    '/artifacts/',
+  ] as const) {
     if (!pathname.startsWith(prefix)) {
       continue;
     }
@@ -90,6 +102,28 @@ export const route = (
 
     if (prefix === '/schemas/') {
       return { type: 'schema', segments };
+    }
+
+    if (prefix === '/artifacts/') {
+      const [folder, ...rest] = segments as [string, ...string[]];
+      const at = folder.lastIndexOf('@');
+
+      if (at <= 0 || at === folder.length - 1 || rest.length === 0) {
+        return notFound;
+      }
+
+      const revision = folder.slice(at + 1);
+
+      if (!/^[1-9][0-9]*$/u.test(revision)) {
+        return notFound;
+      }
+
+      return {
+        type: 'artifact',
+        id: folder.slice(0, at),
+        revision: Number(revision),
+        segments: rest,
+      };
     }
 
     if (prefix === '/bundles/') {
@@ -150,10 +184,23 @@ export interface ServedBundles {
   file(id: string, version: string, path: string): string | undefined;
 }
 
+/**
+ * The verified artifact revisions the protocol may serve under `/artifacts/`:
+ * `userData/artifacts/<artifactId>@<revision>/<path>`, written by the
+ * `artifacts` bundle's desktopMain part only after each file's SHA-256 is
+ * confirmed. Any path that resolves outside this root is a 404.
+ */
+export interface ServedArtifacts {
+  /** The cache root, `userData/artifacts/`. */
+  readonly root: string;
+}
+
 export interface ProtocolDeps {
   readonly resources: Resources;
   readonly shell: ShellRenderer;
   readonly bundles: ServedBundles;
+  /** Verified artifact revisions (`/artifacts/<artifactId>@<revision>/…`). */
+  readonly artifacts: ServedArtifacts;
   /** Unpackaged only. */
   readonly devProxy?: DevProxy;
   readonly readFile?: (path: string) => Promise<Uint8Array>;
@@ -248,6 +295,13 @@ export const respond = async (
           decision.id,
           decision.version,
           decision.segments.join('/'),
+        ),
+      );
+    case 'artifact':
+      return await serve(
+        insideRoot(
+          join(deps.artifacts.root, `${decision.id}@${decision.revision}`),
+          decision.segments,
         ),
       );
   }

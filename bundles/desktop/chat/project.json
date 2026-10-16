@@ -23,7 +23,8 @@
       "options": {
         "commands": [
           "tsc --build bundles/desktop/chat/tsconfig.json --emitDeclarationOnly",
-          "tsc -p bundles/desktop/chat/tsconfig.client.json"
+          "tsc -p bundles/desktop/chat/tsconfig.client.json",
+          "tsc -p bundles/desktop/chat/tsconfig.parts.json"
         ],
         "parallel": false
       }

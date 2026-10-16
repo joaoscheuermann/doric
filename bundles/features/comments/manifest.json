@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "comments",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Anchored comments on any target the app can address: the registry, its durable events and the review state an artifact revision carries.",
+  "provides": [
+    "comments/v1@1.0.0",
+    "comments.added/v1@1.0.0",
+    "comments.resolved/v1@1.0.0"
+  ],
+  "requires": ["events/v1@^1.0.0"],
+  "desktopScope": {
+    "comments/v1": ["projectId", "threadId", "promptId"]
+  }
+}

@@ -24,7 +24,10 @@
     "layout",
     "settings",
     "chat",
-    "history"
+    "history",
+    "artifacts",
+    "comments",
+    "papercraft"
   ],
   "providers": {
     "storage.backend/v1": "postgres",

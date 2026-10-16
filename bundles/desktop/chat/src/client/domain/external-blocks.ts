@@ -7,10 +7,14 @@
 // type nobody claims becomes one generic block per event.
 
 import type { ChatBlock, ProjectorSpec } from '../../contracts/index.js';
+import { COMMENTS_ADDED_EVENT } from '../../contracts/index.js';
 import type { ThreadEvent } from './workspace.js';
 
 /** `<owner>.<name>/vN`: an event type a bundle declared. */
 const versionedEventType = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+\/v[1-9][0-9]*$/;
+
+/** Versioned event types the built-in projection claims as its own. */
+const builtInVersionedTypes: readonly string[] = [COMMENTS_ADDED_EVENT];
 
 /** The block type of an event no projector claims. */
 export const GENERIC_BLOCK_TYPE = 'chat.generic';
@@ -25,12 +29,17 @@ export interface GenericBlockData {
 /**
  * Whether the built-in projection owns an event type. `aliases` are the
  * qualified types durable events are also read as (`runtime/contracts`
- * `legacyEventTypes` values, such as `runtime.prompt-finished/v1`).
+ * `legacyEventTypes` values, such as `runtime.prompt-finished/v1`). The
+ * comments of a send are claimed too: the user turn wears them above the
+ * reader's words, so they never become the payload dump a generic block is.
  */
 export const builtInClaims = (
   type: string,
   aliases: readonly string[],
-): boolean => !versionedEventType.test(type) || aliases.includes(type);
+): boolean =>
+  !versionedEventType.test(type) ||
+  builtInVersionedTypes.includes(type) ||
+  aliases.includes(type);
 
 /**
  * Every external block of one event list, ordered by `sequence` (then the

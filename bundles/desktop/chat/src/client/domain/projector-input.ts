@@ -1,3 +1,4 @@
+import type { TurnComment } from '../../contracts/index.js';
 import { delegatedInput } from './delegated.js';
 import type { Draft } from './projector.js';
 import type { QueueItem } from './queue.js';
@@ -25,6 +26,7 @@ const sourceOf = (value: unknown): QueueItem['source'] => {
 /** Legacy logs render at acceptance; new logs render the full input at dispatch. */
 export const readInput = (
   inputs: Map<string, PromptInput>,
+  comments: ReadonlyMap<string, readonly TurnComment[]>,
   item: ThreadEvent,
   event: Record<string, unknown> | undefined,
 ): Extract<Draft, { type: 'user' | 'queued' }> | undefined => {
@@ -76,6 +78,10 @@ export const readInput = (
     events: [item],
     text: delegated === undefined ? input.text : '',
     accepted: true,
+    // The comments the log wrote below this input — the flush of a send —
+    // are the margin of the words it carries: they render above them, the
+    // same lines the stack drew before the reader sent.
+    comments: [...(comments.get(item.promptId) ?? [])],
     awaiting: false,
     ...(delegated === undefined ? {} : { delegated }),
   };

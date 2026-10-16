@@ -38,6 +38,7 @@ const user = (
   text,
   accepted: true,
   awaiting: false,
+  comments: [],
 });
 
 /** A prompt the reader sent that the log does not hold yet. */
@@ -48,6 +49,7 @@ const sent = (text: string): UserTurn => ({
   text,
   accepted: false,
   awaiting: false,
+  comments: [],
 });
 
 const delegatedInput: DelegatedInput = {

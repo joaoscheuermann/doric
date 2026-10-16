@@ -46,6 +46,7 @@ import {
   setChatViewsRegistry,
 } from './services/views.js';
 import { resetComposers } from './stores/composer.js';
+import { resetComposerStack } from './stores/composer-stack.js';
 import { resetConnectionStore } from './stores/connection.js';
 import {
   resetLiveTerminalsStore,
@@ -116,6 +117,7 @@ export function activate({ services }: ClientContext): Cleanup {
     resetLiveTerminalsStore();
     resetConnectionStore();
     resetComposers();
+    resetComposerStack();
     setChatLexicalRegistry(undefined);
     setChatViewsRegistry(undefined);
     setChatHooks(undefined);

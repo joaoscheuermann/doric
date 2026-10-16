@@ -19,11 +19,15 @@
     "src/client/services/**/*.ts",
     "src/client/stores/**/*.ts",
     "src/client/utility/**/*.ts",
+    "src/desktop/**/*.ts",
     "tests/*.ts"
   ],
   "references": [
     {
       "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../features/comments"
     },
     {
       "path": "../../runtime/runtime"

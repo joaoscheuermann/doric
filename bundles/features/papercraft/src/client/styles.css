@@ -1,0 +1,43 @@
+/*
+ * The papercraft bundle's client styles: the utilities its canvas frame uses,
+ * over the platform theme the window loads once.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities);
+@reference 'desktop/ui/tailwind.css';
+@source './';
+
+/*
+ * The shared components' classes too, so this sheet's utilities are the whole
+ * sorted set the window uses (as the threads sheet does).
+ */
+@source '../../../../../packages/desktop/src';
+
+/* The tree's depth indentation, one step per level, as the rows pad. */
+.papercraft-tree-indent {
+  padding-inline-start: calc(0.75rem * var(--papercraft-depth, 1) + 0.5rem);
+}
+
+.papercraft-tree-depth-1 {
+  --papercraft-depth: 1;
+}
+.papercraft-tree-depth-2 {
+  --papercraft-depth: 2;
+}
+.papercraft-tree-depth-3 {
+  --papercraft-depth: 3;
+}
+.papercraft-tree-depth-4 {
+  --papercraft-depth: 4;
+}
+.papercraft-tree-depth-5 {
+  --papercraft-depth: 5;
+}
+.papercraft-tree-depth-6 {
+  --papercraft-depth: 6;
+}
+.papercraft-tree-depth-7 {
+  --papercraft-depth: 7;
+}
+.papercraft-tree-depth-8 {
+  --papercraft-depth: 8;
+}

@@ -1,6 +1,18 @@
 {
   "$comment": "Frozen parity with the desktop bridge allowlist before declarative exposure (BWP-10). Any change to desktop exposure or accepted scope keys must update this file in review.",
   "methods": {
+    "artifact.kind/v1": ["list"],
+    "artifacts/v1": [
+      "apply",
+      "approve",
+      "create",
+      "list",
+      "policy",
+      "read",
+      "revise",
+      "setPolicy"
+    ],
+    "comments/v1": ["add", "list", "resolve"],
     "doric.catalog/v1": [
       "artifact",
       "disable",
@@ -21,18 +33,8 @@
     ],
     "host-config/v1": ["current", "replace"],
     "models/v1": ["catalog", "kind", "kinds"],
+    "papercraft.previews/v1": ["build", "read"],
     "resources/v1": ["host", "project"],
-    "screen.sessions/v2": ["attach"],
-    "runtime/v1": [
-      "createProject",
-      "deleteProject",
-      "projectActivity",
-      "projects",
-      "renameProject",
-      "setProjectColor",
-      "terminateProject",
-      "watchProject"
-    ],
     "runtime.lease/v1": [
       "branches",
       "changes",
@@ -74,6 +76,17 @@
       "usage",
       "watchThread"
     ],
+    "runtime/v1": [
+      "createProject",
+      "deleteProject",
+      "projectActivity",
+      "projects",
+      "renameProject",
+      "setProjectColor",
+      "terminateProject",
+      "watchProject"
+    ],
+    "screen.sessions/v2": ["attach"],
     "secrets/v1": ["create", "delete", "list", "update"],
     "terminal/v1": [
       "create",

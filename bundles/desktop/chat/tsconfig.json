@@ -15,6 +15,9 @@
   "include": ["src/contracts/**/*.ts"],
   "references": [
     {
+      "path": "../../features/comments"
+    },
+    {
       "path": "../../runtime/runtime"
     },
     {

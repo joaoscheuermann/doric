@@ -2,11 +2,15 @@
 //
 // Only the members the desktop actually calls for a workspace to come up are
 // implemented (`runtime/v1`, `runtime.threads/v1`, the catalog and its
-// diagnostics report). Everything else is refused with a clear `unavailable`
-// error and logged, so a boot that asks for something new says so instead of
-// hanging.
+// diagnostics report), plus the feature surfaces the dev host is here to show:
+// `artifacts/v1`, `comments/v1`, `papercraft.previews/v1` and the durable
+// event log `runtime.threads/v1.watchThread` streams. Everything else is
+// refused with a clear `unavailable` error and logged, so a boot that asks for
+// something new says so instead of hanging.
 //
 // A key is `<contract> <method>`, the pair every bridge message carries.
+
+import { randomUUID } from 'node:crypto';
 
 import { DevHostError } from './bundles.mjs';
 
@@ -24,8 +28,18 @@ export const unavailable = (contract, method) =>
  * The handler table of the fake host: a call handler takes the wire input and
  * answers the output; a stream handler takes the wire input and a sink
  * (`push`/`end`).
+ *
+ * `threads`, `artifacts` and `comments` are the in-memory feature state the
+ * fake host seeds at boot (see `thread-log.mjs`, `artifacts.mjs`, `seed.mjs`).
  */
-export const createContracts = ({ workspace, catalog, log }) => {
+export const createContracts = ({
+  workspace,
+  catalog,
+  log,
+  threads,
+  artifacts,
+  comments,
+}) => {
   const calls = new Map();
   const streams = new Map();
 
@@ -85,6 +99,91 @@ export const createContracts = ({ workspace, catalog, log }) => {
     workspace.deleteThread(first(input)),
   );
 
+  // The composer's send: accepted, then its own durable events, so the
+  // conversation shows the reader's turn. The fake host runs no agent, so the
+  // turn is opened and closed with no answer text — which is what happened.
+  calls.set('runtime.threads/v1 prompt', (input) => {
+    const { id, prompt } = first(input) ?? {};
+    const found = workspace.threadById(id);
+
+    if (found === undefined) return { status: 'missing' };
+
+    const text = String(prompt ?? '').trim();
+
+    if (text.length === 0) {
+      throw new DevHostError(
+        'invalid_input',
+        'A non-empty prompt is required.',
+      );
+    }
+
+    const promptId = randomUUID();
+    const scope = { projectId: found.projectId, threadId: id, promptId };
+
+    threads.appendMany({
+      ...scope,
+      values: [
+        {
+          type: 'prompt.accepted',
+          event: {
+            type: 'prompt.accepted',
+            text,
+            source: { kind: 'user' },
+            queued: false,
+          },
+        },
+        { type: 'prompt.started', event: { type: 'prompt.started' } },
+        {
+          type: 'prompt.finished',
+          event: {
+            type: 'prompt.finished',
+            status: 'completed',
+            text: '',
+            source: { kind: 'user' },
+          },
+        },
+      ],
+    });
+
+    log.note(
+      `prompt accepted on Thread ${id} as ${promptId}: the fake host runs no agent, so its turn completes with no answer text`,
+    );
+
+    return { status: 'accepted', promptId };
+  });
+
+  // artifacts/v1 -------------------------------------------------------------
+  calls.set('artifacts/v1 create', (input) =>
+    artifacts.create(first(input) ?? {}),
+  );
+  calls.set('artifacts/v1 revise', (input) =>
+    artifacts.revise(first(input) ?? {}),
+  );
+  calls.set('artifacts/v1 read', (input) => artifacts.read(first(input) ?? {}));
+  calls.set('artifacts/v1 list', (input) => artifacts.list(first(input) ?? {}));
+  calls.set('artifacts/v1 approve', (input) =>
+    artifacts.approve(first(input) ?? {}),
+  );
+  calls.set('artifacts/v1 apply', (input) =>
+    artifacts.apply(first(input) ?? {}),
+  );
+  calls.set('artifacts/v1 policy', () => artifacts.policy());
+
+  // comments/v1 --------------------------------------------------------------
+  calls.set('comments/v1 add', (input) => comments.add(first(input) ?? {}));
+  calls.set('comments/v1 list', (input) => comments.list(first(input) ?? {}));
+  calls.set('comments/v1 resolve', (input) =>
+    comments.resolve(first(input) ?? {}),
+  );
+
+  // papercraft.previews/v1 ---------------------------------------------------
+  calls.set('papercraft.previews/v1 build', (input) =>
+    artifacts.build(first(input) ?? {}),
+  );
+  calls.set('papercraft.previews/v1 read', (input) =>
+    artifacts.readPreview(first(input) ?? {}),
+  );
+
   // Streams ----------------------------------------------------------------
   streams.set('runtime/v1 watchProject', (input, sink) => {
     const { projectId } = first(input) ?? {};
@@ -99,8 +198,9 @@ export const createContracts = ({ workspace, catalog, log }) => {
     });
   });
   streams.set('runtime.threads/v1 watchThread', (input, sink) => {
-    const { threadId } = first(input) ?? {};
+    const { threadId, afterSequence } = first(input) ?? {};
     const found = workspace.threadById(threadId);
+    const from = typeof afterSequence === 'number' ? afterSequence : 0;
 
     sink.push({
       kind: 'snapshot',
@@ -111,8 +211,23 @@ export const createContracts = ({ workspace, catalog, log }) => {
           ? null
           : (workspace.projectById(found.projectId) ?? null),
       thread: found ?? null,
-      events: [],
+      // A replay after this sequence, exactly as the real watch answers: 0
+      // replays the whole log of the seeded conversation.
+      events: threads
+        .eventsOf(threadId)
+        .filter((event) => event.sequence > from),
     });
+
+    // Every event the feature appends while the app runs, as it happens.
+    const release = threads.watch(threadId, {
+      push: (event) => sink.push({ kind: 'event', event }),
+    });
+    const end = sink.end.bind(sink);
+
+    sink.end = (error) => {
+      release();
+      end(error);
+    };
   });
   streams.set('doric.catalog/v1 watch', (_input, sink) => {
     catalog.watch(sink);

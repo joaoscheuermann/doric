@@ -11,6 +11,7 @@
  */
 import {
   ACTIVITY_TURN_BLOCK,
+  COMPOSER_STACK_BLOCK,
   DELEGATED_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
@@ -20,6 +21,7 @@ import {
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
+  TURN_COMMENTS_BLOCK,
 } from './conversation-nodes.js';
 
 /** How the caret treats a block of the conversation. */
@@ -37,7 +39,9 @@ export const caretKind = (nodeType: string): CaretKind => {
     nodeType === TURN_AUTHOR_BLOCK ||
     nodeType === PROMPT_EDIT_BLOCK ||
     nodeType === LIFECYCLE_TURN_BLOCK ||
-    nodeType === QUEUED_TURN_BLOCK
+    nodeType === QUEUED_TURN_BLOCK ||
+    nodeType === TURN_COMMENTS_BLOCK ||
+    nodeType === COMPOSER_STACK_BLOCK
   )
     return 'furniture';
   if (

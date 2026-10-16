@@ -1107,5 +1107,125 @@
       "strict": true
     },
     "settings": []
+  },
+  {
+    "definition": {
+      "name": "papercraft_preview",
+      "description": "Publish a visual change as a live preview node of the conversation, built from real code, instead of describing it. Use it when the change is easier to judge by looking than by reading a diff: layout, spacing, a component states, a new screen. The preview is a window, not a gate: publish it and implement the change; the comments steer.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "html",
+              "component"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "snippet": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "source",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "kind": {
+            "type": "string",
+            "const": "preview"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "markup": {
+            "type": "string"
+          },
+          "derived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifactId",
+          "revision",
+          "kind",
+          "files",
+          "markup"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
   }
 ]

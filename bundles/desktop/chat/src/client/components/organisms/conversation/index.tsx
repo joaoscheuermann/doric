@@ -56,7 +56,9 @@ import {
   ChatBlockNode,
   ChatBlocksContext,
 } from './nodes/chat-block-node.js';
+import { CommentLinesNode } from './nodes/comment-lines-node.js';
 import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
+import { ComposerStackNode } from './nodes/composer-stack-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
 import { FailureTurnNode } from './nodes/failure-turn-node.js';
 import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
@@ -72,6 +74,8 @@ import {
 } from './nodes/user-prompt-node.js';
 import { UserTurnNode } from './nodes/user-turn-node.js';
 import { CaretNavigation } from './plugins/caret-navigation.js';
+import { CommentSelection } from './plugins/comment-selection.js';
+import { ComposerDraft } from './plugins/composer-draft.js';
 import { EditQueuePrompt } from './plugins/edit-queue-prompt.js';
 import { InsertThreadTurnNodes } from './plugins/insert-thread-turn-nodes.js';
 import { MarkdownPromptPlugin } from './plugins/markdown-prompt.js';
@@ -225,6 +229,8 @@ const defineConversationExtension = (
       LifecycleTurnNode,
       CompactionTurnNode,
       QueueNode,
+      ComposerStackNode,
+      CommentLinesNode,
       PromptEditNode,
       QueuedTurnNode,
       FailureTurnNode,
@@ -391,18 +397,20 @@ export function Conversation({
                 <PasteIntoPrompt />
                 <InsertThreadTurnNodes
                   autoFocus={autoFocus}
-                  threadId={thread.id}
+                  thread={thread}
                   turns={turns}
                   blocks={external.placed}
                   onResume={chat.resume}
                   navigating={navigating}
                   following={following}
                 />
+                <ComposerDraft thread={thread} />
                 <SendPrompt
                   canStop={running}
                   promptSignal={promptSignal}
                   send={chat.prompt}
                   sendRequest={sendRequest}
+                  threadId={thread.id}
                   onStop={stop}
                   onResumeQueue={
                     !queue.resuming &&
@@ -413,6 +421,7 @@ export function Conversation({
                   }
                 />
                 <EditQueuePrompt threadId={thread.id} />
+                <CommentSelection thread={thread} />
               </LexicalExtensionComposer>
             </ChatBlocksContext.Provider>
           </ConversationThreadContext.Provider>

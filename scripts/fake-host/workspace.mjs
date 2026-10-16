@@ -9,6 +9,17 @@ import { randomUUID } from 'node:crypto';
 /** A fixed moment, so every fake record reads the same on every boot. */
 const EPOCH = '2024-01-01T00:00:00.000Z';
 
+/**
+ * The Project and Thread the feature surfaces work in: the desktop's first
+ * project tab and its Thread, seeded with the scripted conversation. Every
+ * artifact, comment and prompt event belongs to them, since the bridge carries
+ * no call scope to read a different one from.
+ */
+export const MAIN_PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+export const MAIN_THREAD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+export const SANDBOX_PROJECT_ID = '22222222-2222-4222-8222-222222222222';
+export const SANDBOX_THREAD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
 const project = (id, name, color, index) => ({
   id,
   name,
@@ -35,12 +46,12 @@ const thread = (id, projectId, name, index) => ({
 /** The fake workspace: the Projects, their Threads and the mutations over them. */
 export const createWorkspace = () => {
   const projects = [
-    project('11111111-1111-4111-8111-111111111111', 'Doric', 'violet', 2),
-    project('22222222-2222-4222-8222-222222222222', 'Sandbox', 'teal', 1),
+    project(MAIN_PROJECT_ID, 'Doric', 'violet', 2),
+    project(SANDBOX_PROJECT_ID, 'Sandbox', 'teal', 1),
   ];
   const threads = [
-    thread('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', projects[0].id, 'Main', 2),
-    thread('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projects[1].id, 'Main', 1),
+    thread(MAIN_THREAD_ID, projects[0].id, 'Main', 2),
+    thread(SANDBOX_THREAD_ID, projects[1].id, 'Main', 1),
   ];
 
   const now = () => new Date().toISOString();

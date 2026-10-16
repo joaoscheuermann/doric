@@ -35,10 +35,18 @@ import {
   type ChatBlockNode,
 } from '../nodes/chat-block-node.js';
 import {
+  $createCommentLinesNode,
+  $isCommentLinesNode,
+} from '../nodes/comment-lines-node.js';
+import {
   $createCompactionTurnNode,
   $isCompactionTurnNode,
   type CompactionTurnNode,
 } from '../nodes/compaction-turn-node.js';
+import {
+  $createComposerStackNode,
+  $isComposerStackNode,
+} from '../nodes/composer-stack-node.js';
 import {
   $createDelegatedTurnNode,
   $isDelegatedTurnNode,
@@ -263,6 +271,13 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.accepted === other.accepted &&
         left.awaiting === other.awaiting &&
         left.text === other.text &&
+        // The comments are the turn's margin: they change when the log writes
+        // another one, so a new one repaints the block.
+        left.comments.length === other.comments.length &&
+        left.comments.every(
+          (comment, index) =>
+            comment.commentId === other.comments[index]?.commentId,
+        ) &&
         left.delegated?.kind === other.delegated?.kind &&
         left.delegated?.threadId === other.delegated?.threadId &&
         left.delegated?.text === other.delegated?.text
@@ -360,20 +375,53 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
 };
 
 /**
+ * Seats the comments a user turn wears — the `comments.added/v1` events the
+ * send flushed just below its words — directly above the turn block, where
+ * they read as the same lines the stack drew before the reader sent. A turn
+ * without comments keeps none, and a block that is not a user turn wears
+ * nothing.
+ */
+const $syncTurnComments = (block: LexicalNode, turn: Turn): void => {
+  if (!$isUserTurnNode(block)) return;
+  if (turn.type !== 'user') return;
+
+  const comments = [...turn.comments] as const;
+  const previous = block.getPreviousSibling();
+
+  if (comments.length === 0) {
+    if ($isCommentLinesNode(previous)) previous.remove();
+    return;
+  }
+
+  const node = $isCommentLinesNode(previous)
+    ? previous
+    : $createCommentLinesNode(turn.promptId);
+  if (node.getPreviousSibling() !== block) block.insertBefore(node);
+  node.setComments(comments);
+};
+
+/**
  * The prompt and the reader's author line that trails it, kept as the
  * conversation's last two blocks whatever an update did to the root. Only one
  * prompt is ever in the editor.
  *
- * In the steady state, the root's tail is `[..., QueueNode, PromptEditNode,
- * UserPromptNode, TurnAuthorNode('user')]`. Checking the last 4 siblings first
- * avoids scanning hundreds of historical turns on every RootNode transform.
+ * In the steady state, the root's tail is `[..., QueueNode,
+ * ComposerStackNode, PromptEditNode, UserPromptNode, TurnAuthorNode('user')]`:
+ * the queue and the draft comment stack both stand between the last turn and
+ * the prompt block. Checking the last 4 siblings first avoids scanning
+ * hundreds of historical turns on every RootNode transform.
  */
-const $settlePrompt = (threadId: string): UserPromptNode => {
+const $settlePrompt = (thread: {
+  readonly id: string;
+  readonly projectId: string;
+}): UserPromptNode => {
+  const threadId = thread.id;
   const root = $getRoot();
   const tailAuthor = root.getLastChild();
   const tailPrompt = tailAuthor?.getPreviousSibling() ?? null;
   const tailHeader = tailPrompt?.getPreviousSibling() ?? null;
-  const tailQueue = tailHeader?.getPreviousSibling() ?? null;
+  const tailStack = tailHeader?.getPreviousSibling() ?? null;
+  const tailQueue = tailStack?.getPreviousSibling() ?? null;
 
   if (
     $isTurnAuthorNode(tailAuthor) &&
@@ -381,6 +429,8 @@ const $settlePrompt = (threadId: string): UserPromptNode => {
     $isUserPromptNode(tailPrompt) &&
     $isPromptEditNode(tailHeader) &&
     tailHeader.__threadId === threadId &&
+    $isComposerStackNode(tailStack) &&
+    tailStack.__thread.id === threadId &&
     $isQueueNode(tailQueue) &&
     tailQueue.__threadId === threadId
   ) {
@@ -438,13 +488,19 @@ const $settlePrompt = (threadId: string): UserPromptNode => {
     queues.find((node) => node.__threadId === threadId) ??
     new QueueNode(threadId);
   for (const node of queues) if (node !== queue) node.remove();
+  const stacks = children.filter($isComposerStackNode);
+  const stack =
+    stacks.find((node) => node.__thread.id === threadId) ??
+    $createComposerStackNode(thread);
+  for (const node of stacks) if (node !== stack) node.remove();
   const headers = children.filter($isPromptEditNode);
   const header =
     headers.find((node) => node.__threadId === threadId) ??
     new PromptEditNode(threadId);
   for (const node of headers) if (node !== header) node.remove();
   if (prompt.getPreviousSibling() !== header) prompt.insertBefore(header);
-  if (header.getPreviousSibling() !== queue) header.insertBefore(queue);
+  if (header.getPreviousSibling() !== stack) header.insertBefore(stack);
+  if (stack.getPreviousSibling() !== queue) stack.insertBefore(queue);
   return prompt;
 };
 
@@ -553,7 +609,7 @@ const noBlocks: readonly PlacedBlock[] = Object.freeze([]);
  * with its newest content when that pass comes.
  */
 export function InsertThreadTurnNodes({
-  threadId,
+  thread,
   turns,
   onResume,
   navigating,
@@ -561,7 +617,8 @@ export function InsertThreadTurnNodes({
   blocks = noBlocks,
   autoFocus = true,
 }: {
-  readonly threadId: string;
+  /** The Thread whose transcript this is: its id and its Project's. */
+  readonly thread: { readonly id: string; readonly projectId: string };
   readonly autoFocus?: boolean;
   readonly turns: readonly Turn[];
   /** Other bundles' blocks, in log order (`chat.views/v1`). */
@@ -633,7 +690,7 @@ export function InsertThreadTurnNodes({
           }
 
           plan = syncPlan([...existing.keys()], turns, FILL_BATCH);
-          const prompt = $settlePrompt(threadId);
+          const prompt = $settlePrompt(thread);
 
           // The tail of every unit that stands as the pass runs — its author line
           // when it wears one — so a new block goes after the turn before it
@@ -665,6 +722,7 @@ export function InsertThreadTurnNodes({
                 $applyTurn(unit.block, step.turn);
               }
               const author = $syncAuthor(unit, step.author);
+              $syncTurnComments(unit.block, step.turn);
               tails.set(step.key, author ?? unit.block);
               syncedTurns.current.set(unit.block.getLatest(), {
                 turn: step.turn,
@@ -690,6 +748,7 @@ export function InsertThreadTurnNodes({
               }
             }
             const author = $syncAuthor({ author: null, block }, step.author);
+            $syncTurnComments(block, step.turn);
             tails.set(step.key, author ?? block);
             syncedTurns.current.set(block, {
               turn: step.turn,
@@ -700,6 +759,9 @@ export function InsertThreadTurnNodes({
 
           for (const key of plan.removals) {
             const unit = existing.get(key);
+            const comments =
+              unit === undefined ? undefined : unit.block.getPreviousSibling();
+            if ($isCommentLinesNode(comments)) comments.remove();
             unit?.author?.remove();
             unit?.block.remove();
           }
@@ -748,7 +810,7 @@ export function InsertThreadTurnNodes({
     following,
     navigating,
     onResume,
-    threadId,
+    thread,
     turns,
   ]);
 
@@ -762,9 +824,9 @@ export function InsertThreadTurnNodes({
   useEffect(
     () =>
       editor.registerNodeTransform(RootNode, () => {
-        $settlePrompt(threadId);
+        $settlePrompt(thread);
       }),
-    [editor, threadId],
+    [editor, thread],
   );
 
   return null;
