@@ -307,14 +307,30 @@ export const contentBounds = (
     : undefined;
 };
 
-/** The node an anchor's selector addresses, if the derivation still has it. */
-export const nodeOfSelector = (
+/**
+ * The box of what the artifact shows, for centring it: `contentBounds` without
+ * the page's own frame — the `body` and every container as wide as the page
+ * (a `main` that centres a card across `min-height: 100vh`) — whose box is
+ * the page, not the element on it. Falls back to `contentBounds` when only
+ * the frame is measurable.
+ */
+export const visualBounds = (
   graph: SceneGraph,
-  selector: string,
-): SceneNode | undefined => {
-  for (const node of graph.nodes) {
-    if (nodeLabel(node) === selector) return node;
-  }
+  boundsOf: BoundsOf,
+): Bounds | undefined => {
+  const page = graph.nodes.reduce(
+    (widest, node) => Math.max(widest, boundsOf(node).width),
+    0,
+  );
+  const shown = graph.nodes.filter((node) => {
+    if (node.tag === 'body' || node.tag === 'html') return false;
 
-  return undefined;
+    const container = (graph.childrenOf.get(node.id) ?? []).length > 0;
+
+    return !(container && boundsOf(node).width >= page * 0.99);
+  });
+
+  if (shown.length === 0) return contentBounds(graph, boundsOf);
+
+  return contentBounds({ ...graph, nodes: shown }, boundsOf);
 };

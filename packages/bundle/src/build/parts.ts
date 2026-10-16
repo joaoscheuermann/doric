@@ -19,6 +19,7 @@ import { Scanner } from '@tailwindcss/oxide';
 import { type BuildFailure, build, type Plugin } from 'esbuild';
 
 import { manifestV1Schema } from '../runtime/manifest.js';
+import { clientExternals, matchesExternal } from './externals.js';
 
 export class PartBuildError extends Error {
   override readonly name = 'PartBuildError';
@@ -36,22 +37,6 @@ export interface BuiltParts {
   readonly client?: string;
   readonly clientStyles?: string;
 }
-
-/** Import-map specifiers a client part leaves to the window (decision "Import map"). */
-const clientExternals = [
-  'react',
-  'react/*',
-  'react-dom',
-  'react-dom/*',
-  'lexical',
-  '@lexical/*',
-  'desktop/ui',
-  'desktop/ui/*',
-  'zod',
-  'zod/*',
-  'bundle/contracts',
-  '*/contracts',
-];
 
 /** What the desktopMain runner resolves (plus Node built-ins). */
 const desktopExternals = [
@@ -110,28 +95,6 @@ const inside = (root: string, path: string): boolean => {
  * [S8-18] Imports that resolve into the bundle's own `src/contracts/**`
  * become the external `<id>/contracts`, and forbidden imports fail.
  */
-/** Whether a specifier is one of esbuild-style `external` patterns. */
-const matchesExternal = (
-  external: readonly string[],
-  specifier: string,
-): boolean =>
-  external.some((pattern) => {
-    const star = pattern.indexOf('*');
-
-    if (star < 0) {
-      return pattern === specifier;
-    }
-
-    const prefix = pattern.slice(0, star);
-    const suffix = pattern.slice(star + 1);
-
-    return (
-      specifier.length >= prefix.length + suffix.length &&
-      specifier.startsWith(prefix) &&
-      specifier.endsWith(suffix)
-    );
-  });
-
 const EXTERNAL_REQUIRE = 'doric-external-require';
 
 const partPlugin = (input: {

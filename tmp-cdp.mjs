@@ -1,13 +1,17 @@
 // One-off dev helper: talk to the Electron page over CDP.
-import WebSocket from 'ws';
+
 import { writeFileSync } from 'node:fs';
+
+import WebSocket from 'ws';
 
 const [action, ...rest] = process.argv.slice(2);
 
 const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
 const page = list.find((t) => t.type === 'page');
 if (!page) throw new Error('no page target');
-const ws = new WebSocket(page.webSocketDebuggerUrl, { maxPayload: 256 * 1024 * 1024 });
+const ws = new WebSocket(page.webSocketDebuggerUrl, {
+  maxPayload: 256 * 1024 * 1024,
+});
 await new Promise((res, rej) => {
   ws.once('open', res);
   ws.once('error', rej);
@@ -35,7 +39,8 @@ const evaluate = async (expression) => {
     returnByValue: true,
     awaitPromise: true,
   });
-  if (r.result?.exceptionDetails) return { error: r.result.exceptionDetails.text };
+  if (r.result?.exceptionDetails)
+    return { error: r.result.exceptionDetails.text };
   return r.result?.result?.value;
 };
 
@@ -48,8 +53,14 @@ if (action === 'text') {
 } else if (action === 'eval') {
   console.log(JSON.stringify(await evaluate(rest.join(' ')), null, 2));
 } else if (action === 'shot') {
-  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
-  writeFileSync(rest[0] ?? '/tmp/shot.png', Buffer.from(shot.result.data, 'base64'));
+  const shot = await send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+  });
+  writeFileSync(
+    rest[0] ?? '/tmp/shot.png',
+    Buffer.from(shot.result.data, 'base64'),
+  );
   console.log('saved', rest[0] ?? '/tmp/shot.png');
 }
 ws.close();

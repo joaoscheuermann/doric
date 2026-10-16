@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "core",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -22,6 +22,7 @@
     "windows/v1@1.1.0",
     "menus/v1@1.0.0",
     "core.hooks/v1@1.0.0",
+    "core.event-hooks/v1@1.0.0",
     "core.open-settings/v1@1.0.0",
     "ui/v1@1.0.0",
     "navigation/v1@1.0.0",

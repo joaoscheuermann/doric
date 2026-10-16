@@ -10,12 +10,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import type {
-  ArtifactCacheEnsureInput,
-  ArtifactCacheEnsureResult,
-  ArtifactCacheEntry,
-  ArtifactCacheEntryFailure,
-  ArtifactCacheEntryFailureReason,
+import {
+  type ArtifactCacheEnsureInput,
+  type ArtifactCacheEnsureResult,
+  type ArtifactCacheEntry,
+  type ArtifactCacheEntryFailure,
+  type ArtifactCacheEntryFailureReason,
+  artifactIdPattern,
 } from '../contracts/index.js';
 
 // The wire types this cache implements live with the bundle's other contracts
@@ -104,22 +105,39 @@ export class ArtifactRevisionsCache {
     return this.#root;
   }
 
-  /** The directory of one revision's verified files. */
-  directoryOf(artifactId: string, revision: number): string {
-    return join(this.#root, revisionFolderOf(artifactId, revision));
+  /**
+   * The directory of one revision's verified files, or undefined when the
+   * identity is not an artifact id or a positive revision — the folder name
+   * is built from both, so neither may carry a path of its own.
+   */
+  directoryOf(artifactId: string, revision: number): string | undefined {
+    if (
+      !artifactIdPattern.test(artifactId) ||
+      !Number.isInteger(revision) ||
+      revision <= 0
+    ) {
+      return undefined;
+    }
+
+    return insideRoot(this.#root, [revisionFolderOf(artifactId, revision)]);
   }
 
-  /** A file of one revision, or undefined when the path leaves its directory. */
+  /**
+   * A file of one revision, or undefined when the identity or the path would
+   * leave the revision's directory — and with it the cache root.
+   */
   pathOf(
     artifactId: string,
     revision: number,
     path: string,
   ): string | undefined {
+    const directory = this.directoryOf(artifactId, revision);
     const segments = segmentsOf(path);
 
-    return segments === undefined
-      ? undefined
-      : insideRoot(this.directoryOf(artifactId, revision), segments);
+    if (directory === undefined || segments === undefined) return undefined;
+
+    // The directory is inside the root, and the target inside the directory.
+    return insideRoot(directory, segments);
   }
 
   async #matches(path: string, expected: string): Promise<boolean> {
@@ -162,6 +180,20 @@ export class ArtifactRevisionsCache {
     let kept = 0;
     let written = 0;
     const failed: RevisionEntryFailure[] = [];
+
+    // An identity that is not one names no directory of this cache: every
+    // entry is refused before a byte is decoded.
+    if (this.directoryOf(input.artifactId, input.revision) === undefined) {
+      return {
+        kept,
+        written,
+        failed: input.entries.map((entry) => ({
+          path: entry.path,
+          reason: 'invalid_path',
+          message: `artifact revision is not one of this cache: ${input.artifactId}@${input.revision}`,
+        })),
+      };
+    }
 
     for (const entry of input.entries) {
       const target = this.pathOf(input.artifactId, input.revision, entry.path);

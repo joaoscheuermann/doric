@@ -6,11 +6,13 @@ import {
   type EventSinkSpec,
   EventsV1,
   eventsMethods,
+  type HookHandle,
   SecretsV1,
   StorageV1,
 } from 'bundle/contracts';
 import { parseStreamId } from 'storage';
 
+import type { CoreEventHooksV1 } from '../../contracts/hooks.js';
 import { describeIssues } from '../../shared/issues.js';
 import { viewOf } from '../../shared/partition.js';
 import { redactJson } from '../../shared/redact.js';
@@ -30,7 +32,15 @@ import { createEventSinks, streamOf } from './sinks.js';
  * The core knows no stream name, scope key or row shape of any bundle: the
  * sink owner supplies them through `sink`.
  */
-export const createEvents = (state: CoreState) => {
+export const createEvents = (
+  state: CoreState,
+  /**
+   * `core.event-hooks/v1` as the core defined it, when it could: every
+   * committed append fires `onEventAppendedHook` without waiting for it.
+   */
+  hooks: () => HookHandle<typeof CoreEventHooksV1> | undefined = () =>
+    undefined,
+) => {
   const events = createEventRegistry();
   const sinks = createEventSinks();
 
@@ -160,6 +170,12 @@ export const createEvents = (state: CoreState) => {
           },
           call,
         );
+
+        // After the commit, never failing it: the sink's owner reads the
+        // stream itself, so the hook names only where the row went.
+        hooks()
+          ?.onEventAppendedHook.execute({ stream, type: definition.type }, call)
+          .catch(() => undefined);
       },
     }),
   });

@@ -53,8 +53,9 @@ export interface ComposerFeed {
   /**
    * The send flush: the prompt was accepted, so each item of the stack runs
    * the flush its kind registered and the sender performs the comment writes
-   * it answered, in the scope of the accepted prompt. A refused send never
-   * reaches here, which is what keeps the stack where it was.
+   * it answered, in the scope of the accepted prompt. An item whose write
+   * fails goes back on the stack. A refused send never reaches here, which is
+   * what keeps the stack where it was.
    */
   flushAfterSend(input: {
     readonly threadId: string;
@@ -160,34 +161,45 @@ export const createComposerFeed = (
       // The flush answers the writes; the sender window performs them, in the
       // scope of the prompt the host just accepted, so the events land in this
       // Thread's log right below the reader's turn.
-      const writes = await attempt(async () =>
-        composerFor({
-          projectId: input.projectId,
-          threadId: input.threadId,
-        }).flush({
+      const scope = { projectId: input.projectId, threadId: input.threadId };
+      const flushed = await attempt(async () =>
+        composerFor(scope).flush({
           threadId: input.threadId,
           promptId: input.promptId,
         }),
       );
 
-      if (writes === undefined || writes.length === 0) return;
+      if (flushed === undefined || flushed.length === 0) return;
 
       const comments = services().use(CommentsV1, {
-        projectId: input.projectId,
-        threadId: input.threadId,
+        ...scope,
         promptId: input.promptId,
       });
 
-      for (const write of writes) {
-        // The stack has already handed its items over; a write that fails is
-        // reported and the rest still land, so a single comment never keeps
-        // the batch of a send behind it.
+      for (const { item, writes } of flushed) {
+        // Each item's writes land on their own: one that fails never keeps
+        // the rest of the send behind it. The stack has already handed the
+        // item over, so an item whose write failed goes back on the stack —
+        // a comment the log never received stays a draft to send again, under
+        // the same comment id (the write is idempotent on it, and a reply
+        // still names it).
         try {
-          await comments.add(write);
+          for (const write of writes) await comments.add(write);
         } catch (error) {
           console.error(
             'Doric: a flushed comment could not be written:',
             error,
+          );
+          await attempt(async () =>
+            composerFor(scope).addItem({
+              threadId: input.threadId,
+              id: item.id,
+              kind: item.kind,
+              elementTag: item.elementTag,
+              data: item.data,
+              ...(item.author === undefined ? {} : { author: item.author }),
+              note: item.note,
+            }),
           );
         }
       }

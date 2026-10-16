@@ -16,6 +16,7 @@ import {
   APPROVE_COMMAND,
   ArtifactsV1,
   COMMENT_COMMAND,
+  callScopeOf,
   ISOLATE_COMMAND,
   PAN_COMMAND,
   SELECT_COMMAND,
@@ -110,31 +111,31 @@ export const selectRevisionCommand = defineCommand({
  * `papercraft.approve/v1`: under the `request` policy, writes the approval of
  * the revision the canvas shows and refreshes it, so `Autorizar` becomes the
  * reading `Autorizado`. The window's bar owns the button; the node shows the
- * waiting as a reading only.
+ * waiting as a reading only. The `CmdOrCtrl+Enter` keybinding dispatches it
+ * with no input, so the canvas is the one named, else the one the reader last
+ * touched — and the call carries that canvas's Project and Thread as its scope.
  */
 export const approveCommand = defineCommand({
   id: APPROVE_COMMAND,
-  input: z
-    .object({
-      artifactId: z.string().min(1),
-      revision: z.number().int().positive().optional(),
-    })
-    .strict(),
+  input: canvasCommandInput,
   execute: async (
-    input: { readonly artifactId: string; readonly revision?: number },
+    input: CanvasCommandInput,
     call: Call,
     services: Services,
   ) => {
-    const revision =
-      input.revision ?? controllerFor(input.artifactId)?.currentRevision();
+    const canvas = of(input);
+    const artifactId = input.artifactId ?? canvas?.artifactId;
+    const revision = input.revision ?? canvas?.currentRevision();
+    const scope = canvas?.scope;
 
-    if (revision === undefined) return;
+    if (artifactId === undefined || revision === undefined) return;
+    if (scope === undefined) return;
 
     await services
-      .use(ArtifactsV1)
-      .approve({ artifactId: input.artifactId, revision }, call);
+      .use(ArtifactsV1, callScopeOf(scope))
+      .approve({ artifactId, revision }, call);
 
-    controllerFor(input.artifactId)?.reload();
+    canvas?.reload();
   },
 });
 

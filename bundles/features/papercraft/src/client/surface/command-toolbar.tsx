@@ -95,7 +95,12 @@ function ShortcutTooltip({
 
 /** A divider between two groups, shorter than the bar. */
 function ToolbarDivider() {
-  return <Separator orientation="vertical" className="mx-1 h-4 self-center" />;
+  return (
+    <Separator
+      orientation="vertical"
+      className="mx-1 h-4 data-vertical:self-center"
+    />
+  );
 }
 
 /** What one command control is: a ghost icon button with a tooltip. */

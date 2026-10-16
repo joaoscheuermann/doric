@@ -1,23 +1,40 @@
 // `artifacts/v1` (host): the registry of the Project's reviewable deliverables.
 //
 // A revision is immutable: `revise` appends, never rewrites, so the node and
-// the comments of an earlier revision stay valid. The work copy lives in the
-// Project's sandbox (`store.ts`) and every transition publishes one durable
-// event through `events/v1`, which appends to the Thread log the runtime
-// already owns. The registry never interprets the payload of a kind: the
-// anchors and the ready entries are the caller's, and a payload is the kind's
-// own, validated by the schema the kind registered and materialized by the
-// provider the kind declared. The bytes of a revision reach the work copy
-// once — through `files` or the kind's materialization — always verified
-// against the entry's hash, and never inside an event.
+// the comments of an earlier revision stay valid — and its bytes live in a
+// directory of their own. The work copy lives in the Project's sandbox
+// (`store.ts`) and every transition publishes one durable event through
+// `events/v1`, which appends to the Thread log the runtime already owns. The
+// registry never interprets the payload of a kind: the anchors and the ready
+// entries are the caller's, and a payload is the kind's own, validated by the
+// schema the kind registered and materialized by the provider the kind
+// declared. The bytes of a revision reach the work copy once — through
+// `files` or the kind's materialization — always verified against the entry's
+// hash, as bytes, and never inside an event.
+//
+// A transition is all or nothing. Everything that can be refused — the call
+// scope the event needs, the input, the kind's payload, the hashes and the
+// event body — is checked before the first write; then the revision's files,
+// the manifest and the event follow, and a failure after a write undoes what
+// that transition wrote. Transitions of one artifact run one at a time.
+//
+// The review state is per revision: under `request`, `approve` makes that one
+// revision `approved` and a new revision starts `open`; under `proceed` there
+// is no approval at all. `awaitApproval` is the seam a kind's tool waits on
+// before it writes into the Project's code, and `apply` refuses, under
+// `request`, a revision nobody approved.
+
+import { Buffer } from 'node:buffer';
 
 import {
   type Call,
+  type CallScope,
   ContractError,
   defineMethod,
   defineService,
-  type Events,
+  type EventDefinition,
   EventsV1,
+  type Services,
   SettingsV1,
 } from 'bundle/contracts';
 import { readRuntimeScope } from 'runtime/contracts';
@@ -25,9 +42,9 @@ import { readRuntimeScope } from 'runtime/contracts';
 import {
   type ArtifactEntry,
   type ArtifactFile,
-  type ArtifactMaterialization,
   type ArtifactReadEntry,
   type ArtifactRecord,
+  type ArtifactReviewPolicySettings,
   type ArtifactReviewPolicyValue,
   type ArtifactRevisionRead,
   ArtifactsV1,
@@ -39,19 +56,20 @@ import {
   artifactsCreatedEvent,
   artifactsMethods,
   artifactsRevisedEvent,
+  isArtifactEntryPath,
+  reviewPolicyOf,
 } from '../contracts/index.js';
 import { artifactIdPattern, newArtifactId } from './ids.js';
 import type { ArtifactKindRegistryState } from './kinds.js';
 import {
   createArtifactStore,
   DOT_DORIC_IGNORE,
+  isLeaseUnavailable,
+  type RevisionFile,
   type StoredArtifact,
   type StoredArtifactRevision,
   sha256Of,
 } from './store.js';
-
-const hasRevision = (artifact: StoredArtifact, revision: number): boolean =>
-  artifact.revisions.some((entry) => entry.revision === revision);
 
 /**
  * A record or a payload without the keys whose value is `undefined`: an absent
@@ -62,40 +80,21 @@ const definedFields = <T extends object>(value: T): T =>
     Object.entries(value).filter(([, entry]) => entry !== undefined),
   ) as T;
 
-const newestRevision = (artifact: StoredArtifact): StoredArtifactRevision => {
-  const newest = artifact.revisions.at(-1);
+const revisionIn = (
+  artifact: StoredArtifact,
+  revision: number,
+): StoredArtifactRevision | undefined =>
+  artifact.revisions.find((candidate) => candidate.revision === revision);
 
-  if (newest === undefined) {
-    throw new ContractError(
-      'internal',
-      `Artifact "${artifact.artifactId}" has no revision.`,
-      {
-        artifactId: artifact.artifactId,
-      },
-    );
-  }
-
-  return newest;
-};
+const newestRevision = (artifact: StoredArtifact): StoredArtifactRevision =>
+  artifact.revisions.at(-1) as StoredArtifactRevision;
 
 /** The artifact as one of its revisions reads, which is what every caller sees. */
 const recordOf = (
   artifact: StoredArtifact,
-  revision: number,
-): ArtifactRecord => {
-  const entry = artifact.revisions.find(
-    (candidate) => candidate.revision === revision,
-  );
-
-  if (entry === undefined) {
-    throw new ContractError(
-      'internal',
-      `Artifact "${artifact.artifactId}" has no revision ${revision}.`,
-      { artifactId: artifact.artifactId, revision },
-    );
-  }
-
-  return definedFields({
+  entry: StoredArtifactRevision,
+): ArtifactRecord =>
+  definedFields({
     artifactId: artifact.artifactId,
     kind: artifact.kind,
     title: artifact.title,
@@ -108,33 +107,10 @@ const recordOf = (
     entry: entry.entry,
     notes: entry.notes,
     changeNote: entry.changeNote,
-    state: artifact.state,
+    state: entry.approved === true ? 'approved' : 'open',
     createdAt: artifact.createdAt,
     createdBy: artifact.createdBy,
   });
-};
-
-/** One entry as `read` serves it: the hash, and the bytes when they hold. */
-const readEntryOf = async (
-  entry: ArtifactEntry,
-  read: (path: string) => Promise<string | undefined>,
-): Promise<ArtifactReadEntry> => {
-  const content = await read(entry.path);
-
-  // The event is the durable truth; the work copy serves bytes only when they
-  // still hash to the entry. A derived kind (a `preview`) reconstructs its
-  // form elsewhere, so its bytes may be gone — the entry still names what
-  // existed.
-  if (content === undefined || sha256Of(content) !== entry.sha256) {
-    return { path: entry.path, sha256: entry.sha256 };
-  }
-
-  return {
-    path: entry.path,
-    sha256: entry.sha256,
-    base64: Buffer.from(content, 'utf8').toString('base64'),
-  };
-};
 
 /** What a revision keeps of the caller's declaration; absent stays absent. */
 interface RevisionInput {
@@ -145,42 +121,97 @@ interface RevisionInput {
   readonly source?: ArtifactRecord['source'];
   readonly path?: string;
   readonly entry?: string;
-  readonly notes?: string;
-  readonly changeNote?: string;
 }
 
 /** One revision fully resolved: anchors, entries, bytes and payload place. */
 interface ResolvedRevision {
   readonly targets: readonly ArtifactTarget[];
   readonly entries: readonly ArtifactEntry[];
-  readonly files: readonly ArtifactFile[];
+  readonly files: readonly RevisionFile[];
+  /** The kind's payload as its schema parsed it, when one was sent. */
+  readonly payload?: unknown;
   readonly source?: ArtifactRecord['source'];
   readonly path?: string;
   readonly entry?: string;
 }
 
 /**
+ * The bytes of a revision's files, each verified against the entry of the
+ * same path: a file that names no entry, or whose bytes hash otherwise, is
+ * refused before anything is written.
+ */
+const verifiedFiles = (
+  artifactId: string,
+  entries: readonly ArtifactEntry[],
+  files: readonly ArtifactFile[],
+): RevisionFile[] =>
+  files.map((file) => {
+    const entry = entries.find((candidate) => candidate.path === file.path);
+
+    if (entry === undefined) {
+      throw new ContractError(
+        'invalid_input',
+        `File "${file.path}" names no entry of the revision.`,
+        { artifactId, path: file.path },
+      );
+    }
+
+    const bytes = new Uint8Array(Buffer.from(file.base64, 'base64'));
+
+    if (sha256Of(bytes) !== entry.sha256) {
+      throw new ContractError(
+        'invalid_input',
+        `File "${file.path}" does not hash to the entry it names.`,
+        { artifactId, path: file.path, sha256: entry.sha256 },
+      );
+    }
+
+    return { path: file.path, bytes };
+  });
+
+/** Refuses entries a kind's own materialization named outside the revision. */
+const checkedEntries = (
+  artifactId: string,
+  entries: readonly ArtifactEntry[],
+): readonly ArtifactEntry[] => {
+  for (const entry of entries) {
+    if (!isArtifactEntryPath(entry.path)) {
+      throw new ContractError(
+        'invalid_input',
+        `Entry path "${entry.path}" leaves the artifact's directory.`,
+        { artifactId, path: entry.path },
+      );
+    }
+  }
+
+  return entries;
+};
+
+/**
  * Resolves one revision's anchors, entries and bytes. Ready entries win; a
- * payload is the kind's own — validated against the schema the kind
- * registered and materialized by the provider it declared — and fills in the
+ * payload is the kind's own — parsed by the schema the kind registered and
+ * materialized, as parsed, by the provider it declared — and fills in the
  * entries (and the bytes) the caller did not give. Absent anchors, entries
  * and payload places carry over from the previous revision, as `revise`
- * promises. The bytes are verified against the entries they name, so the
- * hashes of the durable event always verify the work copy.
+ * promises.
  */
 const resolveRevision = async (
   input: RevisionInput,
-  kindId: string,
-  artifactId: string,
-  revision: number,
-  title: string,
-  previous: ArtifactRecord | undefined,
+  identity: {
+    readonly kind: string;
+    readonly artifactId: string;
+    readonly revision: number;
+    readonly title: string;
+  },
+  previous: StoredArtifactRevision | undefined,
   kinds: ArtifactKindRegistryState,
   call: Call,
 ): Promise<ResolvedRevision> => {
+  const { kind: kindId, artifactId } = identity;
   let targets = input.targets;
   let entries = input.entries;
   let files = input.files ?? [];
+  let payload: unknown;
 
   if (input.payload !== undefined) {
     const kind = kinds.find(kindId);
@@ -192,6 +223,8 @@ const resolveRevision = async (
         { kind: kindId },
       );
     }
+
+    payload = input.payload;
 
     if (kind.payload !== undefined) {
       const parsed = kind.payload.safeParse(input.payload);
@@ -205,15 +238,17 @@ const resolveRevision = async (
           { kind: kindId, payload: input.payload },
         );
       }
+
+      payload = parsed.data;
     }
 
     if (kind.materialize !== undefined) {
-      const materialized: ArtifactMaterialization = await kind.materialize(
-        { payload: input.payload, artifactId, revision, title },
+      const materialized = await kind.materialize(
+        { ...identity, payload },
         call,
       );
 
-      entries = entries ?? materialized.entries;
+      entries = entries ?? checkedEntries(artifactId, materialized.entries);
       targets = targets ?? materialized.targets;
       files = input.files ?? materialized.files ?? [];
     } else if (entries === undefined) {
@@ -225,231 +260,364 @@ const resolveRevision = async (
     }
   }
 
+  const resolvedEntries = entries ?? previous?.entries ?? [];
+
   return {
     targets: targets ?? previous?.targets ?? [],
-    entries: entries ?? previous?.entries ?? [],
-    files,
+    entries: resolvedEntries,
+    files: verifiedFiles(artifactId, resolvedEntries, files),
+    payload,
     source: input.source ?? previous?.source,
     path: input.path ?? previous?.path,
     entry: input.entry ?? previous?.entry,
   };
 };
 
-/** Writes one revision's bytes into the work copy, verifying their hashes. */
-const writeFiles = async (
-  artifactId: string,
-  entries: readonly ArtifactEntry[],
-  files: readonly ArtifactFile[],
-  writeEntry: (path: string, content: string) => Promise<void>,
-): Promise<void> => {
-  for (const file of files) {
-    const entry = entries.find((candidate) => candidate.path === file.path);
-
-    if (entry === undefined) {
-      throw new ContractError(
-        'invalid_input',
-        `File "${file.path}" names no entry of the revision.`,
-        { artifactId, path: file.path },
-      );
-    }
-
-    const content = Buffer.from(file.base64, 'base64').toString('utf8');
-
-    // The lease's `writeFile` carries text; the boundary is honest for the
-    // payloads the kinds of this delivery write (markup, documents).
-    if (sha256Of(content) !== entry.sha256) {
-      throw new ContractError(
-        'invalid_input',
-        `File "${file.path}" does not hash to the entry it names.`,
-        { artifactId, path: file.path, sha256: entry.sha256 },
-      );
-    }
-
-    await writeEntry(file.path, content);
-  }
-};
-
-/**
- * What the caller declared, as the revision keeps it; the resolved anchors,
- * entries and payload place plus the per-call notes, absent stays absent.
- */
+/** The stored revision of a resolved one, plus the per-call notes. */
 const revisionOf = (
   resolved: ResolvedRevision,
   notes: { readonly notes?: string; readonly changeNote?: string },
   revision: number,
   createdAt: string,
-): StoredArtifactRevision => ({
-  revision,
-  targets: resolved.targets,
-  entries: resolved.entries,
-  source: resolved.source,
-  path: resolved.path,
-  entry: resolved.entry,
-  notes: notes.notes,
-  changeNote: notes.changeNote,
-  createdAt,
-});
+): StoredArtifactRevision =>
+  definedFields({
+    revision,
+    targets: resolved.targets,
+    entries: resolved.entries,
+    source: resolved.source,
+    path: resolved.path,
+    entry: resolved.entry,
+    notes: notes.notes,
+    changeNote: notes.changeNote,
+    createdAt,
+  });
 
-const appendCreated = async (
-  events: Events,
-  artifact: StoredArtifact,
-  entry: StoredArtifactRevision,
+/**
+ * The scope the artifact's events are appended under: the Thread log sink
+ * needs `projectId`, `threadId` and `promptId`. A prompt's call carries all
+ * three; a window's call (an approval, an apply) carries the Project only, and
+ * the event then lands in the log of the Thread and prompt that created the
+ * artifact. Anything less is refused before a single write, as `events/v1`
+ * would refuse the append with `invalid_scope`.
+ */
+const eventScopeOf = (
   call: Call,
-): Promise<void> => {
-  await events.append(
-    artifactsCreatedEvent,
-    definedFields({
-      artifactId: artifact.artifactId,
-      revision: entry.revision,
-      kind: artifact.kind,
-      title: artifact.title,
-      targets: [...entry.targets],
-      entries: [...entry.entries],
-      source: entry.source,
-      path: entry.path,
-      entry: entry.entry,
-      notes: entry.notes,
-    }),
-    call,
+  artifact?: Pick<StoredArtifact, 'threadId' | 'promptId'>,
+): CallScope => {
+  const scope = readRuntimeScope(call);
+  const own = scope.threadId !== undefined && scope.promptId !== undefined;
+  const threadId = own ? scope.threadId : artifact?.threadId;
+  const promptId = own ? scope.promptId : artifact?.promptId;
+
+  if (
+    scope.projectId === undefined ||
+    threadId === undefined ||
+    promptId === undefined
+  ) {
+    throw new ContractError(
+      'invalid_scope',
+      'An artifact transition needs a call scoped to a Project, a Thread and a prompt.',
+      { scope: { ...scope } },
+    );
+  }
+
+  return { projectId: scope.projectId, threadId, promptId };
+};
+
+/** Parses an event body before any write, as `events/v1` would on append. */
+const checkedEvent = <P extends Record<string, unknown>>(
+  definition: EventDefinition,
+  payload: P,
+): P => {
+  const parsed = definition.payload.safeParse(payload);
+
+  if (!parsed.success) {
+    throw new ContractError(
+      'invalid_input',
+      `Invalid ${definition.type} payload: ${parsed.error.issues
+        .map((issue) => issue.message)
+        .join('; ')}.`,
+      { type: definition.type },
+    );
+  }
+
+  return payload;
+};
+
+/** Runs an undo step of a failed transition, keeping the original failure. */
+const undo = async (step: () => Promise<void>): Promise<void> => {
+  try {
+    await step();
+  } catch {
+    // The transition already failed; its own error is the one that matters.
+  }
+};
+
+const unknownArtifact = (artifactId: string): ContractError =>
+  new ContractError('invalid_input', `Unknown artifact "${artifactId}".`, {
+    artifactId,
+  });
+
+const unreadableArtifact = (artifactId: string): ContractError =>
+  new ContractError(
+    'unavailable',
+    `The manifest of artifact "${artifactId}" cannot be read.`,
+    { artifactId },
   );
+
+/** The review policy settings as their schema reads them, defaults included. */
+const policySettings = async (
+  services: Services,
+  call: Call,
+): Promise<ArtifactReviewPolicySettings> =>
+  artifactReviewPolicy.schema.parse(
+    await services.use(SettingsV1).get(artifactReviewPolicy, call),
+  );
+
+/** The policy the calling Project runs. */
+const policyOf = async (
+  services: Services,
+  call: Call,
+): Promise<ArtifactReviewPolicyValue['policy']> =>
+  reviewPolicyOf(
+    await policySettings(services, call),
+    readRuntimeScope(call).projectId,
+  );
+
+/** Read and list answer the lease state as "nothing there", never a failure. */
+const unlessUnleased = async <T>(
+  task: () => Promise<T>,
+  fallback: T,
+): Promise<T> => {
+  try {
+    return await task();
+  } catch (error) {
+    if (isLeaseUnavailable(error)) return fallback;
+    throw error;
+  }
 };
 
 /** The `artifacts/v1` service, over the Project's lease and the kind registry. */
-export const artifactsService = (kinds: ArtifactKindRegistryState) =>
-  defineService(ArtifactsV1, {
+export const artifactsService = (kinds: ArtifactKindRegistryState) => {
+  // One transition at a time per artifact of a Project.
+  const queues = new Map<string, Promise<unknown>>();
+  // The waits of `awaitApproval`, woken by an approval or a policy change.
+  const waiters = new Set<{
+    readonly key: string;
+    readonly wake: () => void;
+  }>();
+
+  const keyOf = (call: Call, artifactId: string): string =>
+    `${readRuntimeScope(call).projectId ?? ''}/${artifactId}`;
+
+  const exclusive = <T>(key: string, task: () => Promise<T>): Promise<T> => {
+    const previous = queues.get(key) ?? Promise.resolve();
+    const run = previous.then(task, task);
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    queues.set(key, settled);
+    void settled.then(() => {
+      if (queues.get(key) === settled) queues.delete(key);
+    });
+
+    return run;
+  };
+
+  const wake = (key?: string): void => {
+    for (const waiter of [...waiters]) {
+      if (key === undefined || waiter.key === key) waiter.wake();
+    }
+  };
+
+  const loaded = async (
+    services: Services,
+    call: Call,
+    artifactId: string,
+  ): Promise<StoredArtifact> => {
+    const found = await createArtifactStore(services, call).load(artifactId);
+
+    if (found.status === 'missing') throw unknownArtifact(artifactId);
+    if (found.status === 'unreadable') throw unreadableArtifact(artifactId);
+
+    return found.artifact;
+  };
+
+  /** The record of one revision when it may reach the code, else undefined. */
+  const approvalOf = async (
+    services: Services,
+    call: Call,
+    artifactId: string,
+    revision: number,
+  ): Promise<
+    | { readonly status: 'absent' }
+    | { readonly status: 'open' | 'cleared'; readonly record: ArtifactRecord }
+  > => {
+    const found = await createArtifactStore(services, call).load(artifactId);
+
+    if (found.status !== 'ok') return { status: 'absent' };
+
+    const entry = revisionIn(found.artifact, revision);
+
+    if (entry === undefined) return { status: 'absent' };
+
+    const record = recordOf(found.artifact, entry);
+    const cleared =
+      entry.approved === true || (await policyOf(services, call)) !== 'request';
+
+    return { status: cleared ? 'cleared' : 'open', record };
+  };
+
+  return defineService(ArtifactsV1, {
     create: defineMethod({
       expose: 'desktop',
       ...artifactsMethods.create,
       execute: async (input, call, services): Promise<ArtifactRecord> => {
-        const store = createArtifactStore(services, call);
+        const scope = eventScopeOf(call);
         const artifactId = input.artifactId ?? newArtifactId(input.title);
 
         if (!artifactIdPattern.test(artifactId)) {
           throw new ContractError(
             'invalid_input',
             `"${artifactId}" is not an artifact id.`,
-            {
-              artifactId,
-            },
+            { artifactId },
           );
         }
 
-        if ((await store.read(artifactId)) !== undefined) {
-          throw new ContractError(
-            'invalid_input',
-            `Artifact "${artifactId}" already exists.`,
-            {
-              artifactId,
-            },
+        return await exclusive(keyOf(call, artifactId), async () => {
+          const store = createArtifactStore(services, call);
+
+          if ((await store.load(artifactId)).status !== 'missing') {
+            throw new ContractError(
+              'invalid_input',
+              `Artifact "${artifactId}" already exists.`,
+              { artifactId },
+            );
+          }
+
+          const createdAt = new Date().toISOString();
+          const resolved = await resolveRevision(
+            input,
+            { kind: input.kind, artifactId, revision: 1, title: input.title },
+            undefined,
+            kinds,
+            call,
           );
-        }
+          const entry = revisionOf(resolved, input, 1, createdAt);
+          const artifact: StoredArtifact = definedFields({
+            manifestVersion: 1,
+            artifactId,
+            kind: input.kind,
+            title: input.title,
+            createdAt,
+            createdBy: call.caller.bundleId,
+            threadId: scope.threadId,
+            promptId: scope.promptId,
+            revisions: [entry],
+          });
+          const payload = checkedEvent(
+            artifactsCreatedEvent,
+            definedFields({
+              artifactId,
+              revision: 1,
+              kind: artifact.kind,
+              title: artifact.title,
+              targets: [...entry.targets],
+              entries: [...entry.entries],
+              source: entry.source,
+              path: entry.path,
+              entry: entry.entry,
+              notes: entry.notes,
+              payload: resolved.payload,
+            }),
+          );
 
-        const scope = readRuntimeScope(call);
-        const createdAt = new Date().toISOString();
-        const resolved = await resolveRevision(
-          input,
-          input.kind,
-          artifactId,
-          1,
-          input.title,
-          undefined,
-          kinds,
-          call,
-        );
+          try {
+            await store.writeRevision(artifactId, 1, resolved.files);
+            await store.writeManifest(artifactId, artifact);
+            await services
+              .use(EventsV1, scope)
+              .append(artifactsCreatedEvent, payload, call);
+          } catch (error) {
+            await undo(() => store.writeManifest(artifactId, undefined));
+            throw error;
+          }
 
-        await writeFiles(
-          artifactId,
-          resolved.entries,
-          resolved.files,
-          (path, content) => store.writeEntry(artifactId, path, content),
-        );
-
-        const entry = revisionOf(resolved, input, 1, createdAt);
-        const artifact: StoredArtifact = {
-          manifestVersion: 1,
-          artifactId,
-          kind: input.kind,
-          title: input.title,
-          state: 'open',
-          createdAt,
-          createdBy: call.caller.bundleId,
-          threadId: scope.threadId,
-          promptId: scope.promptId,
-          revisions: [entry],
-        };
-
-        await store.write(artifact);
-        await appendCreated(services.use(EventsV1), artifact, entry, call);
-
-        return recordOf(artifact, 1);
+          return recordOf(artifact, entry);
+        });
       },
     }),
     revise: defineMethod({
       expose: 'desktop',
       ...artifactsMethods.revise,
-      execute: async (input, call, services): Promise<ArtifactRecord> => {
-        const store = createArtifactStore(services, call);
-        const artifact = await store.read(input.artifactId);
-
-        if (artifact === undefined) {
-          throw new ContractError(
-            'invalid_input',
-            `Unknown artifact "${input.artifactId}".`,
+      execute: async (input, call, services): Promise<ArtifactRecord> =>
+        exclusive(keyOf(call, input.artifactId), async () => {
+          const store = createArtifactStore(services, call);
+          const artifact = await loaded(services, call, input.artifactId);
+          const scope = eventScopeOf(call, artifact);
+          const previous = newestRevision(artifact);
+          const revision = previous.revision + 1;
+          const resolved = await resolveRevision(
+            input,
             {
-              artifactId: input.artifactId,
+              kind: artifact.kind,
+              artifactId: artifact.artifactId,
+              revision,
+              title: artifact.title,
             },
+            previous,
+            kinds,
+            call,
           );
-        }
-
-        const previous = recordOf(artifact, newestRevision(artifact).revision);
-        const revision = previous.revision + 1;
-        const resolved = await resolveRevision(
-          input,
-          artifact.kind,
-          input.artifactId,
-          revision,
-          artifact.title,
-          previous,
-          kinds,
-          call,
-        );
-
-        await writeFiles(
-          input.artifactId,
-          resolved.entries,
-          resolved.files,
-          (path, content) => store.writeEntry(input.artifactId, path, content),
-        );
-
-        const entry = revisionOf(
-          resolved,
-          input,
-          revision,
-          new Date().toISOString(),
-        );
-        const next: StoredArtifact = {
-          ...artifact,
-          revisions: [...artifact.revisions, entry],
-        };
-
-        await store.write(next);
-        await services.use(EventsV1).append(
-          artifactsRevisedEvent,
-          definedFields({
-            artifactId: next.artifactId,
+          const entry = revisionOf(
+            resolved,
+            input,
             revision,
-            changeNote: input.changeNote,
-            // The log is the durable truth: the revision's resolved anchors
-            // and entries travel with the event, so replay rebuilds the
-            // revision without the work copy.
-            targets: [...entry.targets],
-            entries: [...entry.entries],
-          }),
-          call,
-        );
+            new Date().toISOString(),
+          );
+          const next: StoredArtifact = {
+            ...artifact,
+            revisions: [...artifact.revisions, entry],
+          };
+          const payload = checkedEvent(
+            artifactsRevisedEvent,
+            definedFields({
+              artifactId: artifact.artifactId,
+              revision,
+              changeNote: input.changeNote,
+              // The log is the durable truth: the revision's resolved anchors
+              // and entries travel with the event, so replay rebuilds the
+              // revision without the work copy.
+              targets: [...entry.targets],
+              entries: [...entry.entries],
+              payload: resolved.payload,
+            }),
+          );
 
-        return recordOf(next, revision);
-      },
+          try {
+            await store.writeRevision(
+              artifact.artifactId,
+              revision,
+              resolved.files,
+            );
+            await store.writeManifest(artifact.artifactId, next);
+            await services
+              .use(EventsV1, scope)
+              .append(artifactsRevisedEvent, payload, call);
+          } catch (error) {
+            await undo(() =>
+              store.writeManifest(artifact.artifactId, artifact),
+            );
+            await undo(() =>
+              store.removeRevision(artifact.artifactId, revision),
+            );
+            throw error;
+          }
+
+          return recordOf(next, entry);
+        }),
     }),
     read: defineMethod({
       expose: 'desktop',
@@ -458,34 +626,52 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) =>
         input,
         call,
         services,
-      ): Promise<ArtifactRevisionRead | undefined> => {
-        const store = createArtifactStore(services, call);
-        const artifact = await store.read(input.artifactId);
+      ): Promise<ArtifactRevisionRead | undefined> =>
+        unlessUnleased(async () => {
+          const store = createArtifactStore(services, call);
+          const found = await store.load(input.artifactId);
 
-        if (artifact === undefined) return undefined;
+          if (found.status !== 'ok') return undefined;
 
-        const revision = input.revision ?? newestRevision(artifact).revision;
+          const { artifact } = found;
+          const entry =
+            input.revision === undefined
+              ? newestRevision(artifact)
+              : revisionIn(artifact, input.revision);
 
-        if (!hasRevision(artifact, revision)) return undefined;
+          if (entry === undefined) return undefined;
 
-        const record = recordOf(artifact, revision);
-        const entry = artifact.revisions.find(
-          (candidate) => candidate.revision === revision,
-        ) as StoredArtifactRevision;
+          // The directories that may hold this revision's bytes: its own,
+          // then each earlier one (an entry carried over unchanged), newest
+          // first. The hash decides; the event is the durable truth, and an
+          // entry whose bytes are gone reads without them.
+          const revisions = artifact.revisions
+            .map((candidate) => candidate.revision)
+            .filter((candidate) => candidate <= entry.revision)
+            .reverse();
+          const entries: ArtifactReadEntry[] = [];
 
-        // `read` is the registry's `doric.catalog/v1.artifact`: the entry's
-        // hash plus the bytes, base64, when the work copy still holds them.
-        const entries: ArtifactReadEntry[] = [];
-        for (const stored of entry.entries) {
-          entries.push(
-            await readEntryOf(stored, (path) =>
-              store.readEntry(input.artifactId, path),
-            ),
-          );
-        }
+          for (const stored of entry.entries) {
+            const bytes = await store.readEntry(
+              artifact.artifactId,
+              stored.path,
+              stored.sha256,
+              revisions,
+            );
 
-        return { ...record, entries };
-      },
+            entries.push(
+              bytes === undefined
+                ? { path: stored.path, sha256: stored.sha256 }
+                : {
+                    path: stored.path,
+                    sha256: stored.sha256,
+                    base64: Buffer.from(bytes).toString('base64'),
+                  },
+            );
+          }
+
+          return { ...recordOf(artifact, entry), entries };
+        }, undefined),
     }),
     list: defineMethod({
       expose: 'desktop',
@@ -494,24 +680,44 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) =>
         input,
         call,
         services,
-      ): Promise<readonly ArtifactRecord[]> => {
-        const stored = await createArtifactStore(services, call).list();
+      ): Promise<readonly ArtifactRecord[]> =>
+        unlessUnleased(async () => {
+          const stored = await createArtifactStore(services, call).list();
+          // The spec's reading: a call scoped to a Thread lists that Thread's.
+          const threadId = input.threadId ?? readRuntimeScope(call).threadId;
 
-        return stored
-          .filter(
-            (artifact) =>
-              input.threadId === undefined ||
-              artifact.threadId === input.threadId,
-          )
-          .sort((left, right) =>
-            left.createdAt === right.createdAt
-              ? left.artifactId.localeCompare(right.artifactId)
-              : left.createdAt.localeCompare(right.createdAt),
-          )
-          .map((artifact) =>
-            recordOf(artifact, newestRevision(artifact).revision),
+          return stored
+            .filter(
+              (artifact) =>
+                threadId === undefined || artifact.threadId === threadId,
+            )
+            .sort((left, right) =>
+              left.createdAt === right.createdAt
+                ? left.artifactId.localeCompare(right.artifactId)
+                : left.createdAt.localeCompare(right.createdAt),
+            )
+            .map((artifact) => recordOf(artifact, newestRevision(artifact)));
+        }, []),
+    }),
+    revisions: defineMethod({
+      expose: 'desktop',
+      ...artifactsMethods.revisions,
+      execute: async (
+        input,
+        call,
+        services,
+      ): Promise<readonly ArtifactRecord[]> =>
+        unlessUnleased(async () => {
+          const found = await createArtifactStore(services, call).load(
+            input.artifactId,
           );
-      },
+
+          if (found.status !== 'ok') return [];
+
+          return found.artifact.revisions.map((entry) =>
+            recordOf(found.artifact, entry),
+          );
+        }, []),
     }),
     approve: defineMethod({
       expose: 'desktop',
@@ -520,62 +726,135 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) =>
         input,
         call,
         services,
-      ): Promise<ArtifactRecord | undefined> => {
-        const store = createArtifactStore(services, call);
-        const artifact = await store.read(input.artifactId);
+      ): Promise<ArtifactRecord | undefined> =>
+        exclusive(keyOf(call, input.artifactId), async () => {
+          const store = createArtifactStore(services, call);
+          const found = await store.load(input.artifactId);
 
-        if (artifact === undefined || !hasRevision(artifact, input.revision))
-          return undefined;
+          if (found.status === 'unreadable') {
+            throw unreadableArtifact(input.artifactId);
+          }
 
-        // Idempotent where the gesture exists: an approval already in force for
-        // this revision records nothing a second time.
-        if (
-          artifact.state === 'approved' &&
-          artifact.approvedRevision === input.revision
-        ) {
-          return recordOf(artifact, input.revision);
-        }
+          if (found.status === 'missing') return undefined;
 
-        await services.use(EventsV1).append(
-          artifactsApprovedEvent,
-          {
-            artifactId: input.artifactId,
+          const { artifact } = found;
+          const entry = revisionIn(artifact, input.revision);
+
+          if (entry === undefined) return undefined;
+
+          // No approval exists outside `request`, and one approval per
+          // revision: either way nothing is recorded.
+          if (
+            entry.approved === true ||
+            (await policyOf(services, call)) !== 'request'
+          ) {
+            return recordOf(artifact, entry);
+          }
+
+          const scope = eventScopeOf(call, artifact);
+          const approved: StoredArtifactRevision = { ...entry, approved: true };
+          const next: StoredArtifact = {
+            ...artifact,
+            revisions: artifact.revisions.map((candidate) =>
+              candidate.revision === input.revision ? approved : candidate,
+            ),
+          };
+          const payload = checkedEvent(artifactsApprovedEvent, {
+            artifactId: artifact.artifactId,
             revision: input.revision,
             scope: artifactApprovalScope,
-          },
-          call,
-        );
+          });
 
-        // Only `request` gates the write back into the Project's code, so only
-        // it moves the artifact to `approved`; `proceed` records the gesture
-        // and keeps going.
-        const { policy } = await services
-          .use(SettingsV1)
-          .get(artifactReviewPolicy, call);
+          try {
+            await store.writeManifest(artifact.artifactId, next);
+            await services
+              .use(EventsV1, scope)
+              .append(artifactsApprovedEvent, payload, call);
+          } catch (error) {
+            await undo(() =>
+              store.writeManifest(artifact.artifactId, artifact),
+            );
+            throw error;
+          }
 
-        if (policy !== 'request') return recordOf(artifact, input.revision);
+          wake(keyOf(call, artifact.artifactId));
 
-        const next: StoredArtifact = {
-          ...artifact,
-          state: 'approved',
-          approvedRevision: input.revision,
-        };
+          return recordOf(next, approved);
+        }),
+    }),
+    awaitApproval: defineMethod({
+      ...artifactsMethods.awaitApproval,
+      execute: async (
+        input,
+        call,
+        services,
+      ): Promise<ArtifactRecord | undefined> => {
+        const key = keyOf(call, input.artifactId);
+        const deadline =
+          input.timeoutMs === undefined
+            ? undefined
+            : Date.now() + input.timeoutMs;
 
-        await store.write(next);
+        for (;;) {
+          // Listen before reading, so an approval between the two still wakes.
+          let woken: () => void = () => undefined;
+          const signal = new Promise<void>((resolve) => {
+            woken = resolve;
+          });
+          const waiter = { key, wake: () => woken() };
 
-        return recordOf(next, input.revision);
+          waiters.add(waiter);
+
+          try {
+            const state = await approvalOf(
+              services,
+              call,
+              input.artifactId,
+              input.revision,
+            );
+
+            if (state.status === 'absent') return undefined;
+            if (state.status === 'cleared') return state.record;
+
+            const left =
+              deadline === undefined ? undefined : deadline - Date.now();
+
+            if (left !== undefined && left <= 0) return state.record;
+
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            let onAbort: (() => void) | undefined;
+
+            try {
+              await Promise.race([
+                signal,
+                new Promise<void>((resolve) => {
+                  if (left !== undefined) timer = setTimeout(resolve, left);
+                }),
+                new Promise<never>((_, reject) => {
+                  onAbort = () => reject(call.signal.reason);
+                  if (call.signal.aborted) onAbort();
+                  else call.signal.addEventListener('abort', onAbort);
+                }),
+              ]);
+            } finally {
+              if (timer !== undefined) clearTimeout(timer);
+              if (onAbort !== undefined) {
+                call.signal.removeEventListener('abort', onAbort);
+              }
+            }
+          } finally {
+            waiters.delete(waiter);
+          }
+        }
       },
     }),
     policy: defineMethod({
       expose: 'desktop',
       ...artifactsMethods.policy,
-      execute: async (_input: readonly [], call, services) => {
-        const { policy } = await services
-          .use(SettingsV1)
-          .get(artifactReviewPolicy, call);
-
-        return { policy } satisfies ArtifactReviewPolicyValue;
-      },
+      execute: async (_input: readonly [], call, services) =>
+        ({
+          policy: await policyOf(services, call),
+        }) satisfies ArtifactReviewPolicyValue,
     }),
     setPolicy: defineMethod({
       expose: 'desktop',
@@ -585,9 +864,44 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) =>
         call,
         services,
       ): Promise<ArtifactReviewPolicyValue> => {
-        await services
-          .use(SettingsV1)
-          .set(artifactReviewPolicy, { policy: input.policy }, undefined, call);
+        const projectId = readRuntimeScope(call).projectId;
+        const settings = services.use(SettingsV1);
+
+        // One value holds every Project's choice: write on the revision just
+        // read, and read again when another write got there first.
+        for (let attempt = 0; ; attempt += 1) {
+          const entry = await settings.entry(artifactReviewPolicy, call);
+          const current = artifactReviewPolicy.schema.parse(entry.value);
+          const next: ArtifactReviewPolicySettings =
+            projectId === undefined
+              ? { ...current, policy: input.policy }
+              : {
+                  ...current,
+                  projects: { ...current.projects, [projectId]: input.policy },
+                };
+
+          try {
+            await settings.set(
+              artifactReviewPolicy,
+              next,
+              { expectedRevision: entry.revision },
+              call,
+            );
+            break;
+          } catch (error) {
+            if (
+              attempt < 2 &&
+              error instanceof ContractError &&
+              error.code === 'settings_conflict'
+            ) {
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        // A wait for an approval may be over now that the gate moved.
+        wake();
 
         return { policy: input.policy } satisfies ArtifactReviewPolicyValue;
       },
@@ -599,27 +913,54 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) =>
         input,
         call,
         services,
-      ): Promise<ArtifactRecord | undefined> => {
-        const artifact = await createArtifactStore(services, call).read(
-          input.artifactId,
-        );
+      ): Promise<ArtifactRecord | undefined> =>
+        exclusive(keyOf(call, input.artifactId), async () => {
+          const found = await createArtifactStore(services, call).load(
+            input.artifactId,
+          );
 
-        if (artifact === undefined || !hasRevision(artifact, input.revision))
-          return undefined;
+          if (found.status === 'unreadable') {
+            throw unreadableArtifact(input.artifactId);
+          }
 
-        await services.use(EventsV1).append(
-          artifactsAppliedEvent,
-          {
-            artifactId: input.artifactId,
-            revision: input.revision,
-            files: [...input.files],
-          },
-          call,
-        );
+          if (found.status === 'missing') return undefined;
 
-        return recordOf(artifact, input.revision);
-      },
+          const { artifact } = found;
+          const entry = revisionIn(artifact, input.revision);
+
+          if (entry === undefined) return undefined;
+
+          if (
+            entry.approved !== true &&
+            (await policyOf(services, call)) === 'request'
+          ) {
+            throw new ContractError(
+              'invalid_input',
+              `Revision ${input.revision} of artifact "${artifact.artifactId}" is not approved; the Project's review policy asks for an approval before the code is written.`,
+              {
+                artifactId: artifact.artifactId,
+                revision: input.revision,
+                reason: 'not_approved',
+              },
+            );
+          }
+
+          const scope = eventScopeOf(call, artifact);
+
+          await services.use(EventsV1, scope).append(
+            artifactsAppliedEvent,
+            checkedEvent(artifactsAppliedEvent, {
+              artifactId: artifact.artifactId,
+              revision: input.revision,
+              files: [...input.files],
+            }),
+            call,
+          );
+
+          return recordOf(artifact, entry);
+        }),
     }),
   });
+};
 
 export { DOT_DORIC_IGNORE };

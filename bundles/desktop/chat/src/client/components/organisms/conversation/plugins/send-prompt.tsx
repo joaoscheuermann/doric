@@ -8,10 +8,10 @@ import {
 import { useCallback, useEffect, useRef } from 'react';
 
 import type { ComposerItem } from '../../../../../contracts/index.js';
-import { stackPromptText } from '../../../../domain/composer-stack.js';
+import { promptEnvelope } from '../../../../domain/prompt-envelope.js';
 import { composerStackStore } from '../../../../stores/composer-stack.js';
 import type { PromptSignal } from '../../../../utility/prompt-signal.js';
-import { SAVE_QUEUE_EDIT_COMMAND } from '../commands.js';
+import { SAVE_QUEUE_EDIT_COMMAND, SEND_PROMPT_COMMAND } from '../commands.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
 /**
@@ -57,12 +57,13 @@ type SendPromptProps = {
  * send leaves, so the transcript shows the turn the host accepted rather than a
  * copy still in the input; a send the host refuses puts the words back.
  *
- * The comment stack counts too. A send with an empty editor and a stack that
- * carries words goes out with the stack's own Markdown — one line per comment
- * with its anchor — because a comment alone is already something to send, and
- * its words are the ones the stack wrote. A refused send restores only the
- * reader's words, never the ones the stack composed: they stay in the stack,
- * which is where they still are.
+ * The comment stack counts too. Every send is the prompt envelope — the
+ * stack's comments with their targets and anchors in `<comments>`, the
+ * reader's words in `<message>` — because the prompt is the only thing the
+ * agent reads; and a send with an empty editor still goes out when the stack
+ * carries words, because a comment alone is already something to send. A refused send restores only the reader's
+ * words, never the ones the stack composed: they stay in the stack, which is
+ * where they still are.
  *
  * `sendRequest` is a value and not a callback because the shell cannot reach the
  * editor: it counts requests, this plugin answers the ones it has not seen, and
@@ -126,17 +127,19 @@ export function SendPrompt({
     editor.read(() => {
       words = $getUserPromptNode()?.getTextContent().trim() ?? '';
     });
+    // The stack's comments travel with every send: the prompt is the only
+    // thing the agent reads, so the anchors go in it with the reader's words.
+    const stack: readonly ComposerItem[] = composerStackStore
+      .getState()
+      .stack(threadId);
+    const prompt = promptEnvelope(words, stack);
+
     if (words.length === 0) {
       // The stack carries words of its own — a comment alone is already
-      // something to send, so the send goes out with the Markdown its lines
-      // read. Only a stack with nothing written waits for the queue instead.
-      const stack: readonly ComposerItem[] = composerStackStore
-        .getState()
-        .stack(threadId);
-      const composed = stackPromptText(stack);
-
-      if (composed.length > 0) {
-        void latest.current.send(composed);
+      // something to send. Only a stack with nothing written waits for the
+      // queue instead.
+      if (prompt.length > 0) {
+        void latest.current.send(prompt);
         return;
       }
 
@@ -150,7 +153,7 @@ export function SendPrompt({
         return;
       prompt.clear();
     });
-    void latest.current.send(words).then((accepted) => {
+    void latest.current.send(prompt).then((accepted) => {
       // A refused send gives the reader's own words back; the ones the stack
       // composed were never in the editor, and the stack still holds them.
       if (!accepted) editor.update(() => $restore(words));
@@ -174,6 +177,21 @@ export function SendPrompt({
           // whether or not the prompt holds words to send.
           event.preventDefault();
           if (!event.repeat) sendNow();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+    [editor, sendNow],
+  );
+
+  // A stack note's own Cmd/Ctrl+Enter: the note is an editing host of its own,
+  // so its keys never reach the editor's, and it asks for the send instead.
+  useEffect(
+    () =>
+      editor.registerCommand(
+        SEND_PROMPT_COMMAND,
+        () => {
+          sendNow();
           return true;
         },
         COMMAND_PRIORITY_HIGH,

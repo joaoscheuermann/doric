@@ -19,7 +19,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "desktop": "1.0.0",
     "happy-dom": "20.8.9"
   }
 }

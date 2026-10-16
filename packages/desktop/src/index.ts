@@ -1,6 +1,11 @@
 export { ChromeBar, type ChromeBarProps } from './chrome-bar.js';
 export { cn } from './lib/utils.js';
 export {
+  PortalContainerProvider,
+  type PortalContainerProviderProps,
+  usePortalContainer,
+} from './portal-container.js';
+export {
   defineReactElement,
   type PortalHost,
   type PortalHosts,

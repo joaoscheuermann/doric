@@ -1,17 +1,19 @@
 // The `preview` artifact kind: its declaration for `artifact.kind/v1`, as the
 // `artifacts` bundle's registry takes it — the name, the zod schema of its
-// payload, its own `materialize` and the `blockType` its renderer draws.
+// payload, its own `materialize`, and the `blockType`/`bodyTag` of its body.
 //
 // The payload is what the `papercraft_preview` tool sends: the source kind,
-// the Project-relative source path and, for a `component`, its entry. The
-// materialization is the bundle's own path A over `files/v1`: the source is
-// read, derived into self-contained markup and hashed into the revision's
-// entries, and the markup's bytes are handed back so the registry writes them
-// into the work copy — `read` then serves them, and the event carries the hash
-// only. The `blockType` is the one the bundle's own projector and renderer
-// speak (`papercraft.preview/v1`): a kind that declares one owns its node
-// surface, so the `artifacts` bundle's client leaves the `artifacts.*` pair to
-// this bundle's client.
+// the Project-relative source path and, for a `component`, the export to
+// mount. The materialization is the bundle's own build over `files/v1`: an
+// `html` source becomes self-contained markup (path A), a `component` is
+// compiled into `index.js` and `index.css` beside its fallback markup (path
+// B); each file is hashed into the revision's entries, and the bytes are
+// handed back so the registry writes them into the work copy — `read` then
+// serves them, and the event carries the hashes only. "The frame is the registry's, the body is the kind's": the registry's
+// frame draws the title, the revision reading, the review state and the comment
+// gesture, and creates `<papercraft-preview>` (`bodyTag`) inside it with its
+// block (`type` = `papercraft.preview/v1`, `data` = the frame's data) — the
+// canvas is the body.
 //
 // The types here are structural copies of the `artifacts` bundle's contracts
 // (`bundles/features/artifacts/src/contracts/index.ts`), as this bundle keeps
@@ -23,11 +25,12 @@ import type { Call, Services } from 'bundle/contracts';
 import { z } from 'zod';
 
 import {
+  PAPERCRAFT_PREVIEW_TAG,
   PREVIEW_BLOCK_TYPE,
   type previewFileSchema,
   previewSourceSchema,
 } from '../contracts/index.js';
-import { builtFiles, deriveMarkup, readSource } from './previews.js';
+import { snapshotPreview } from './previews.js';
 
 /**
  * The closed schema of what a `preview` payload is: the source kind, the
@@ -76,6 +79,8 @@ export const previewKind = (
   readonly payload: typeof previewKindPayloadSchema;
   readonly materialize: PreviewKindMaterialize;
   readonly blockType: typeof PREVIEW_BLOCK_TYPE;
+  readonly bodyTag: typeof PAPERCRAFT_PREVIEW_TAG;
+  readonly header: 'body';
 } => ({
   id: 'preview',
   title: 'Preview',
@@ -91,18 +96,13 @@ export const previewKind = (
       );
     }
 
-    const content = await readSource(services, call, payload.path);
-    const markup = deriveMarkup(payload.source, payload.path, content);
-    const { files: entries } = builtFiles(markup);
+    const { entries, files } = await snapshotPreview(services, call, payload);
 
-    return {
-      entries,
-      targets: [{ path: payload.path }],
-      files: entries.map((entry) => ({
-        path: entry.path,
-        base64: Buffer.from(markup, 'utf8').toString('base64'),
-      })),
-    };
+    return { entries, targets: [{ path: payload.path }], files };
   },
   blockType: PREVIEW_BLOCK_TYPE,
+  bodyTag: PAPERCRAFT_PREVIEW_TAG,
+  // The canvas overlays its own header (title, revision, comment control):
+  // the frame draws no bar, and keeps `Autorizar` and the revisions below.
+  header: 'body',
 });

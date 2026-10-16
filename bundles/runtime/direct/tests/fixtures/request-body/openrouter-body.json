@@ -15,7 +15,7 @@
   },
   "nonSystemMessages": [
     {
-      "content": "# User request\n\n[[plain]] Say hello.",
+      "content": "<user-request>\n[[plain]] Say hello.\n</user-request>",
       "role": "user"
     }
   ],

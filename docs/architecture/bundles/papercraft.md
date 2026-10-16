@@ -1,6 +1,6 @@
-# Papercraft — proposta
+# Papercraft
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual. Os caminhos citados como evidência existem hoje no repositório.
+**Estado:** parcialmente implementado. Parte da [arquitetura de bundles](../bundles.md); `GROUNDING.md` continua sendo o contrato da implementação atual. Já existem: o bundle `papercraft` (`bundles/features/papercraft`) com o tipo `preview`, `papercraft.previews/v1`, a tool `papercraft_preview` (que revisa com `artifact_id` e devolve os comentários pendentes e o estado de revisão) e a skill; no desktop, o corpo `papercraft-preview` dentro da moldura do [registro de artefatos](./artifacts.md) (com `header: 'body'`), o node quadrado com cabeçalho overlay, o fluxo de comentário do Figma (campo no pino, rascunho na pilha, `Cmd/Ctrl+Enter` envia por `chat.send/v1`), os pinos de rascunhos e de comentários enviados — com o estado da thread (rascunho, aberto, esperando resposta, resolvido) —, o popover da thread (mensagens, campo de resposta, resolver e reabrir), as linhas da pilha desenhadas pelo `chat-comment-line` do `chat`, as respostas do agente pela tool `comment_reply` do [registro de comentários](./comments.md), e a janela, que acompanha a Thread ao vivo. Diferenças em relação ao texto abaixo: a rota da janela é `/papercraft/:projectId/:threadId/:artifactId`; sob `request` a tool não bloqueia — devolve `review.pending` e a skill manda o agente esperar a autorização antes de escrever código; sem o compositor do chat o gesto de comentar fica desabilitado, sem gravação direta no log; o ajuste ao canvas nunca passa de 100%; e a janela do canvas, que é outro documento, não recebe o evento DOM `doric:comment-thread-open` do `chat` (abrir o pino a partir de um bloco de resposta da conversa só funciona no node). O caminho B existe para a fonte `component`: o host compila com esbuild lendo o Project por `files/v1` (`src/host/compile.ts`), com os externals do import map (`bundle/externals`) — `lucide-react` não está no import map e é embutido no `index.js` —, gera o `index.css` com Tailwind e publica `index.html` (fallback), `index.js` e `index.css`; um erro de compilação falha a chamada antes de publicar. Providers, props e CSS vêm do Project: um harness versionado (`.storybook/preview.*` ou `.papercraft/preview.*`) e stories CSF — as do Project ou uma story de rascunho em `.doric/artifacts/drafts/` —, e os overlays portalados ficam dentro do shadow root — os de `desktop/ui` automaticamente, os de terceiros pelo `context.papercraft.portalContainer` (ver [Harness, stories e portais](#harness-stories-e-portais)). Quem busca os bytes para o cache é a janela (`artifacts/v1.read` → `artifacts.cache/v1.ensure`), não o `desktopMain`. Ainda não existem: o caminho B para a fonte `html`, a chave de cache com `PLATFORM_VERSION`, a fonte `site` e o caminho C, e a escrita de volta (`artifacts.applied/v1`).
 
 ## Resumo
 
@@ -63,7 +63,7 @@ Os fatos da plataforma que restringem a resposta:
 - A shell de cada janela é servida por `doric://app`, com o import map e o tema injetados por requisição (`app/desktop/doric/src/platform/protocol/shell.ts:31-52`); o handler serve `/platform/`, `/bundles/` e `/schemas/` do disco e devolve a shell para qualquer outro path (`app/desktop/doric/src/platform/protocol/handler.ts:1-3,15-31`).
 - A CSP empacotada é `default-src 'none'`, `script-src 'self' '<hash do import map>'`, `style-src 'self' 'unsafe-inline'`, `connect-src 'none'`, `frame-ancestors 'none'` (`app/desktop/doric/src/platform/protocol/csp.ts:10-24`). Ou seja: estilo inline é permitido, script dinâmico não é, e nada é enquadrado.
 - A shell **nunca abre HTTP ou Socket.IO**: o preload expõe só `window.doric.desktop`, e toda chamada ao host ou ao desktop é uma chamada de contrato roteada pelo dispatcher do main (`app/desktop/doric-renderer/AGENTS.md:28-33`). O conteúdo do preview chega ao node por contrato, não por `fetch`.
-- O app fornece React, ReactDOM, o registro shadcn, Radix, lucide, `@tanstack/react-query` e `bundle/contracts` por import map, e o `desktop/ui/theme.css` emite uma vez o preflight, os tokens e as classes dos componentes; cada bundle compila só os utilitários das próprias classes (`docs/architecture/bundles/platform-packages.md`).
+- O app fornece React, ReactDOM, o registro shadcn, Radix, `@tanstack/react-query` e `bundle/contracts` por import map (o `lucide-react` não: o build do artefato o embute), e o `desktop/ui/theme.css` emite uma vez o preflight, os tokens e as classes dos componentes; cada bundle compila só os utilitários das próprias classes (`docs/architecture/bundles/platform-packages.md`).
 - O build da plataforma já usa esbuild e o compilador do Tailwind (`app/desktop/doric-platform/build.mjs:16-17,484-492`), então compilar um artefato no host não introduz dependência nova no workspace.
 
 Com isso, três caminhos, em ordem de custo:
@@ -123,11 +123,11 @@ As duas casas do preview — o node da conversa e a janela do canvas — compart
 
 O que desenha o preview vive em `bundles/features/papercraft/src/client/surface/`:
 
-- `preview-container.tsx` — o container do preview: o cabeçalho overlay, o canvas que rola por trás e o botão de comentários no canto.
+- `preview-container.tsx` — o container do preview: o canvas que rola por trás do cabeçalho overlay (`preview-header.tsx`) e o fluxo do comentário.
 - `preview-surface.tsx` — o componente que hospeda o artefato: cria um shadow root (`attachShadow({ mode: 'open' })`), injeta o `index.css` da revisão por `<link rel="stylesheet">` (a CSP permite `'self'` e `'unsafe-inline'`), copia as variáveis de tema do app para o host do shadow (`resolvedVariables`, `packages/desktop/src/tokens/css.ts:33`) e faz `import('doric://app/artifacts/<artifactId>@<revision>/index.js')`.
 - `scene-graph.ts` — a árvore derivada: percorre o DOM dentro do shadow root, casa o carimbo `data-*` com as âncoras e guarda os bounds em cache. É o que permite hit-test com pan/zoom sem `document.elementFromPoint`, e é o que resolve o elemento sob um clique em espaço vazio.
-- `pins-layer.tsx` — os pinos numerados, em light DOM, por cima do shadow root.
-- `comment-card.tsx` — a linha do comentário: avatar, autor, a nota truncada com elipses e a âncora. É o mesmo elemento na pilha acima do prompt e no turno do usuário.
+- `pins-layer.tsx` — os pinos em gota (com o avatar do autor e o estado da thread) e o campo do comentário, em light DOM, por cima do shadow root; `comment-field.tsx` é o campo inline, `thread-popover.tsx` o popover da thread de um pino que já tem o primeiro comentário, e `thread-log.ts`/`threads-view.ts` agrupam os comentários do log em threads (um `watchThread` compartilhado por Thread e janela, com `comments/v1.list` de reserva).
+- A linha da pilha **não** é do papercraft: o cartão de comentário próprio foi removido, e a pilha usa o `chat-comment-line` do `chat`, o mesmo elemento no turno do usuário.
 - `command-toolbar.tsx` — a barra de comandos da janela: os quatro grupos de controles, os divisores e o armado da ferramenta ([abaixo](#a-barra-de-comandos)).
 - `tree-panel.tsx` — a árvore da janela, sobre a mesma `scene-graph`.
 - `domain/preview-state.ts` — o redutor puro dos eventos `artifacts.*` para um `PreviewState`, o mesmo usado pelo projetor do chat e pela janela.
@@ -136,11 +136,17 @@ A moldura do node usa `chrome: 'node'`; a da janela, `chrome: 'canvas'`.
 
 ### O node da conversa
 
-O container ocupa a largura do bloco da conversa, com altura fixa que o usuário pode arrastar. O **cabeçalho é overlay**: fica por cima do canvas, com o nome do arquivo à esquerda e o botão `[ abrir ]` à direita, que abre a janela naquele preview. O canvas ocupa o container inteiro e rola por trás do cabeçalho.
+O node é um **quadrado**: ocupa a largura do bloco da conversa e tem a mesma altura — não se redimensiona. Ele é o corpo da moldura do [registro de artefatos](./artifacts.md), e o tipo `preview` declara `header: 'body'`: a moldura não desenha a barra dela (título, tipo, revisão, `Comentar`) e mantém abaixo do corpo só o que é do registro — `Autorizar`, sob `request` e numa revisão aberta. Não há lista de revisões: a conversa, com as respostas do agente, é o histórico.
+
+O **cabeçalho é overlay**, no node e na janela: uma faixa transparente, por cima do canvas, que ocupa o container inteiro desde o topo e rola por trás dela. À esquerda, o nome do arquivo (ou o título) e a revisão em tom apagado (`rev 2`); à direita, só botões de ícone com tooltip e `aria-label` — `abrir` (`ExternalLink`, só no node), que abre a janela naquele preview, e `Comentar` (balão), pressionado (`aria-pressed`) enquanto o modo comentário está ligado, com um contador pequeno dos comentários pendentes e dos rascunhos. O chrome do canvas usa Noto Sans no peso 400, e não a fonte monoespaçada da conversa em volta.
+
+Cada revisão **abre centralizada**: quando o conteúdo é medido pela primeira vez, a vista enquadra o elemento — não a página em volta dele (o `body` e os containers da largura da página, como um `main` que centraliza um card) —, reduzindo para caber e nunca ampliando. Pan e zoom depois disso são do leitor.
+
+No rodapé do node, centralizado e flutuando sobre o canvas, ficam os controles de vista: diminuir o zoom, a leitura do zoom (o clique volta a 100%), aumentar o zoom e `Centralizar`, que enquadra o elemento de novo. A janela tem a barra de comandos própria e não mostra esse rodapé.
 
 ```text
 ╭──────────────────────────────────────────────────────────╮
-│ Checkout.tsx                                   [ abrir ] │
+│ Checkout.tsx  rev 1                              ⧉  💬 2 │
 │                                                          │
 │         Checkout                                         │
 │         ────────────────────                             │
@@ -152,66 +158,36 @@ O container ocupa a largura do bloco da conversa, com altura fixa que o usuário
 │         │     Pagar agora      │                         │
 │         └──────────────────────┘                         │
 │                                                          │
-│                                                      (o) │
-│                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ```
 
-No canto inferior direito, com uma margem do container, há **um único botão de comentários**. Ele arma o _modo comentário_: o ponteiro vira um **balão de comentário**, como no Figma, e o elemento sob ele ganha um contorno; o clique seguinte escolhe:
+**O fluxo do comentário é o do Figma.**
 
-- **um elemento** — a âncora vem do carimbo de origem, como `button#pay-button` em `Checkout.tsx:42`; ou
-- **uma posição livre** — o ponto ainda é resolvido contra a árvore derivada, então o comentário carrega o elemento mais próximo e as coordenadas. É isso que dá precisão sem obrigar o usuário a acertar o alvo.
+1. O botão `Comentar` — ou a tecla `C`, com o canvas em foco — liga e desliga o _modo comentário_; o ponteiro vira um **balão de comentário**, que continua balão sobre qualquer elemento do artefato, qualquer que seja o cursor que ele declare. `Esc` fecha o campo aberto e, sem campo aberto, sai do modo.
+2. Sob o ponteiro, o elemento que vai receber o comentário ganha um contorno **tracejado** com um leve tom da cor primária — distinto do contorno sólido da seleção. Em espaço vazio não há contorno: o comentário é uma posição livre, ancorada ao elemento mais próximo. Segurar `Alt` força a posição livre mesmo sobre um elemento.
+3. O clique põe no ponto um **pino em gota** (redondo, exceto o canto inferior esquerdo, que toca o ponto; na cor primária) e, à direita dele (à esquerda, quando o canvas não tem espaço — nunca por cima do pino), o **campo do comentário**, num popover com a mesma superfície do popover da thread (fundo, borda, raio e sombra de popover do tema): o campo (`Adicionar comentário`, em Noto Sans) com o botão de enviar **fora** dele, mas dentro do popover (↑, 28px, neutro e desabilitado enquanto vazio, primário com texto), já em foco. Enquanto o campo — ou uma thread — está aberto, o rótulo `elemento · arquivo:linha` do ponteiro some, para não cobrir o campo nem o pino. Vazio, é uma linha com o ↑ ao lado; escrito o primeiro caractere, a nota fica em cima e o ↑ embaixo, à direita. Pino e campo ficam numa camada acima do conteúdo transformado — não escalam, seguem o pan e o zoom e ficam dentro do canvas.
+4. `Enter` ou ↑ **confirmam**: só aí o comentário entra na pilha acima do prompt como rascunho ([abaixo](#comentários-acima-do-prompt-rascunho-no-host)). `Shift+Enter` quebra a linha; `Esc` cancela; clicar fora descarta um campo vazio e confirma um campo escrito. O modo continua ligado: o próximo clique começa outro comentário.
+5. Cada rascunho confirmado é um pino: a gota em relevo com o **avatar do autor** dentro — o mesmo identicon do nome que a conversa desenha (`ReaderAvatar`) — e o número no rótulo acessível. Clicar no pino reabre o mesmo campo, preenchido, para editar a nota ou remover o rascunho — e é o mesmo rascunho da pilha: editar na pilha muda o canvas, e vice-versa. Um comentário já enviado também é um pino, e o pino que já guarda o primeiro comentário abre o **popover da thread** ([abaixo](#threads-no-canvas)).
+6. Num elemento, o pino guarda onde o clique caiu dentro da caixa dele (frações, a chave extra `offset` da âncora), então acompanha o layout e o zoom, e guarda também o ponto do conteúdo clicado (`x`, `y`, chaves que toda forma aceita); uma posição livre guarda as coordenadas do conteúdo. Guarda ainda a identidade do elemento além do seletor: um trecho do texto (`text`, espaços colapsados) e `index`, a ordem dele entre os elementos do mesmo seletor (os carimbados do mesmo arquivo, quando carimbado). Numa revisão seguinte o agente pode ter editado o arquivo e mudado todas as linhas, então o pino só volta a um elemento do **mesmo seletor**: o `path:line` exato quando é o único ali; senão, entre os elementos do seletor carimbados do arquivo (ou todos os do seletor), o de texto igual, depois o do `index` gravado, o único, o que está sob o ponto `x`/`y` gravado (ou o mais perto dele) e, por fim, o de linha mais próxima; sem nenhum, o ponto gravado. Nunca um elemento de outro seletor. A âncora que o agente lê não muda de sentido: as formas `source`, `selector` e `point` e o carimbo `data-papercraft-source` são os mesmos.
 
-Com o gesto armado, o balão marca o ponto do clique e a âncora do elemento aparece ao lado dele:
-
-```text
-╭──────────────────────────────────────────────────────────╮
-│ Checkout.tsx                                   [ abrir ] │
-│                                                          │
-│         Checkout                                         │
-│         ────────────────────                             │
-│                                                          │
-│         Subtotal             R$ 128,00                   │
-│         Frete                R$  12,00                   │
-│                                                          │
-│         ╔══════════════════════╗                         │
-│         ║     Pagar agora      ║                         │
-│         ╚══════════════════════╝                         │
-│         ╭─╮                                              │
-│         │+│  Checkout.tsx:42                             │
-│         ╰─╯                                              │
-│                                                          │
-│                                                      (o) │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
-```
-
-O comentário **não abre popover no canvas**: o clique vira um elemento na pilha acima do prompt do usuário ([abaixo](#comentários-acima-do-prompt-rascunho-no-host)).
-
-Cada comentário vira um pino: `[1]` ancorado ao elemento, `[2]` numa posição livre; o botão passa a mostrar a contagem.
+**Rascunho até o envio.** Os comentários confirmados continuam rascunhos na pilha até um prompt ser enviado — o flush de sempre os grava como `comments.added/v1` e acorda o agente. `Cmd/Ctrl+Enter`, com o canvas ou o campo em foco, **envia agora**: o prompt sai com a pilha (pode sair só com ela), pelo mesmo caminho do botão de enviar do chat — os comentários da pilha no envelope `<comments>` do prompt ([comentários](./comments.md#o-prompt-o-envelope-xml)), o texto do rascunho que o host guarda, o flush depois do aceite e os itens cuja gravação falhou de volta na pilha. A janela, que não tem prompt, ganha no cabeçalho o botão `Enviar ao agente (n)` enquanto há rascunhos. O envio é o serviço de cliente `chat.send/v1` (`send({ projectId, threadId })`) que o `chat` provê em cada janela — ele inclui o texto de rascunho que o host guarda e o limpa depois do aceite: o `chat.composer/v1` roda no processo principal, que não chama os contratos do host.
 
 ```text
 ╭──────────────────────────────────────────────────────────╮
-│ Checkout.tsx                                   [ abrir ] │
+│ Checkout.tsx  rev 1                              ⧉  💬 1 │
 │                                                          │
 │         Checkout                                         │
 │         ────────────────────                             │
-│                                                          │
-│         Subtotal             R$ 128,00                   │
-│         Frete                R$  12,00                   │
-│                                                          │
 │         ┌──────────────────────┐                         │
-│         │     Pagar agora      │ [1]                     │
-│         └──────────────────────┘                         │
-│                                                          │
-│             [2]                                          │
-│                                                          │
-│                                                    (o) 2 │
+│         ┆     Pagar agora   ●  ┆ ╭───────────────────╮   │
+│         └──────────────────────┘ │ mais respiro…  (↑)│   │
+│                                  ╰───────────────────╯   │
+│             (1)                                          │
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ```
 
-**Pan com o espaço.** A altura do node é fixa e nem todo artefato cabe nela: segurando a barra de espaço o ponteiro vira `grab`/`grabbing` e o arrasto move o canvas, como no Figma; soltar a barra devolve o ponteiro ao modo anterior, sem perder o comentário em ar. O mesmo gesto vale no canvas da janela. Como o node vive dentro do editor da conversa, o espaço só é do canvas enquanto o ponteiro está sobre ele — o canvas toma o foco no ponteiro, e a barra de espaço continua sendo de quem está escrevendo o prompt.
+**Pan com o espaço.** O node é quadrado e nem todo artefato cabe nele: segurando a barra de espaço o ponteiro vira `grab`/`grabbing` e o arrasto move o canvas, como no Figma; soltar a barra devolve o ponteiro ao modo anterior, sem perder o comentário em ar. O mesmo gesto vale no canvas da janela. Como o node vive dentro do editor da conversa, o espaço só é do canvas enquanto o ponteiro está sobre ele — o canvas toma o foco no ponteiro, e a barra de espaço continua sendo de quem está escrevendo o prompt.
 
 Quando o módulo não carrega, o canvas não fica vazio: o aviso é uma linha discreta e o markup estático de A aparece no lugar (decisão 10).
 
@@ -238,7 +214,7 @@ Quando o módulo não carrega, o canvas não fica vazio: o aviso é uma linha di
 
 ### Comentários acima do prompt, rascunho no host
 
-O comentário tem um só lugar de escrita, e ele é a **pilha acima do prompt do usuário**: um elemento por comentário, **linha única**, um em cima do outro entre o último turno e o bloco do prompt — o mesmo padrão das linhas da fila de mensagens (`thread-queue.tsx:95-105`), que traz o autor e o texto truncado na mesma linha. Cada linha é o **avatar** de quem comentou — o jdenticon do nome, o mesmo `ReaderAvatar` da fila e da linha de autor do turno (`bundles/desktop/chat/src/client/components/molecules/prompt-author.tsx`) —, o **autor**, o **comentário truncado com elipses** e, no fim, o **arquivo e a linha** (ou a posição, no comentário de espaço vazio) com o número do pino.
+O comentário tem um só lugar de escrita, e ele é a **pilha acima do prompt do usuário**: um elemento por comentário, **linha única**, um em cima do outro entre o último turno e o bloco do prompt — o mesmo padrão das linhas da fila de mensagens (`thread-queue.tsx:95-105`), que traz o autor e o texto truncado na mesma linha. Cada linha é o `chat-comment-line` do `chat`: o **avatar** de quem comentou — o jdenticon do nome, o mesmo `ReaderAvatar` da fila e da linha de autor do turno (`bundles/desktop/chat/src/client/components/molecules/prompt-author.tsx`) —, o `↩` quando é uma resposta, o **autor**, a **nota** (um `contenteditable`, editada ali mesmo) e, no fim, o **arquivo e a linha** (ou a posição, no comentário de espaço vazio) com o `[pino]`.
 
 ```text
 ╭──────────────────────────────────────────────────────────────────────────────╮
@@ -252,11 +228,13 @@ O comentário tem um só lugar de escrita, e ele é a **pilha acima do prompt do
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-O clique no canvas — o botão do node, o controle `Comentar` da barra da janela — acrescenta uma linha à pilha; a nota se escreve ali e a linha mostra o começo dela com `…`. Nada entra no log enquanto é rascunho. Como na fila, a linha truncada abre o texto inteiro e é ali que a nota se edita (`Popover` + `Details`, o mesmo desenho de `thread-queue.tsx`).
+A nota se escreve no canvas, no campo ao lado do pino; confirmá-la (`Enter` ou ↑) acrescenta uma linha à pilha, com a nota. Nada toca a pilha enquanto a nota é escrita, e nada entra no log enquanto é rascunho. Depois disso a nota se edita **na própria linha**, sem popover nem botões, com o teclado da pilha: ↑/↓ andam entre as notas e o prompt, `Enter` vai à próxima, `Esc` volta ao prompt, `Cmd/Ctrl+Backspace` (ou `Backspace`/`Delete` numa nota vazia) apaga a linha e `Cmd/Ctrl+Enter` envia.
+
+O item da pilha guarda `{ target, pin, point, refs: { title, source }, inReplyTo? }`; o `id` dele é o `comment-<uuid>` que vira o `commentId` do evento. O flush grava `commentId` e `inReplyTo` na ordem da pilha — uma resposta espera enquanto a raiz é rascunho — e ainda lê os rascunhos no formato antigo.
 
 O envio é o **flush**: ao mandar o prompt, cada elemento vira um evento `comments.added/v1` ([comentários](./comments.md)) e a pilha se esvazia. O envio passa a contar também os elementos da pilha: hoje o botão só habilita com palavras no editor, e um comentário sozinho já é algo a mandar.
 
-No turno do usuário, os comentários aparecem **com o prompt**: as mesmas linhas, com o mesmo avatar, acima do texto que o usuário escreveu.
+No turno do usuário, os comentários aparecem **com o prompt**: as mesmas linhas, com o mesmo avatar, acima do texto que o usuário escreveu. Clicar numa linha leva ao preview mais recente do artefato, com a thread aberta.
 
 ```text
 ╭──────────────────────────────────────────────────────────────────────────────╮
@@ -269,13 +247,28 @@ No turno do usuário, os comentários aparecem **com o prompt**: as mesmas linha
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-Depois do flush, o que resta é o log. A linha do turno nasce do evento, pelo projetor, e não do estado do compositor — é o que faz replay e rewind reconstruírem os comentários como tudo o mais. E é o **mesmo elemento** nos dois lugares: `comment-card.tsx` o desenha com dois provedores, a pilha (ainda não durável) e o bloco do projetor (durável).
+Depois do flush, o que resta é o log. A linha do turno nasce do evento, pelo projetor, e não do estado do compositor — é o que faz replay e rewind reconstruírem os comentários como tudo o mais. E é o **mesmo elemento** nos dois lugares: o `chat-comment-line` o desenha com dois provedores, a pilha (ainda não durável) e o bloco do projetor (durável).
 
 **O rascunho mora no host.** O texto do prompt e a pilha de comentários são **um só estado**, e ele vive no processo principal, num serviço novo — `chat.composer/v1` —, com uma parte `desktop` do `chat` provendo (o mesmo desenho de `history`, que serve `history.snapshots/v1` a partir de `src/desktop`). O estado é chaveado por `(projectId, threadId)`, e toda janela o lê e o assina: `read({ threadId })` para o retrato e `watch(threadId, listener)` para os deltas, no formato do `runtime.threads/v1.watchThread` — retrato primeiro, depois os itens ao vivo, com `StreamListener<T>`. Assim o rascunho **sobrevive à navegação** (trocar de conversa, trocar de rota, abrir o canvas) e **é o mesmo em qualquer janela do front-end**: hoje ele vive só no `threadChatsStore` da janela que o escreveu (`stores/thread-chats.ts`), então uma segunda janela abre a conversa vazia.
 
 **Como a pilha é costurada.** O canvas é do `papercraft`; o compositor é do `chat`. O estado é do host, mas quem **desenha** o elemento e quem **grava** o evento são do bundle dono do tipo: o item guarda `{ id, kind, elementTag, data, author, note }` e o `chat` resolve o `elementTag` como resolve um bloco de conversa (`chat.views/v1.registerRenderer`); o `flush()` que o dono registra para o seu `kind` é o que o envio chama, e é ele que grava o evento pelo `artifacts/v1`, sem que o `chat` saiba o que é um comentário. Um segundo uso — comentar a resposta do agente, fora desta entrega — é outro `kind` na mesma pilha, com o mesmo elemento e o mesmo `flush`.
 
-O flush roda **depois** que o host aceita o prompt (`send(text)` devolve o aceite): um envio recusado devolve as palavras ao editor (`$restore`, `send-prompt.tsx`) e a pilha fica onde está. Os eventos entram no log na ordem em que foram gravados, e o bloco nasce ancorado pelo `sequence` logo abaixo do turno do usuário (`insert-thread-turn-nodes.tsx`).
+O flush roda **depois** que o host aceita o prompt (`send(text)` devolve o aceite) — também no envio do canvas (`Cmd/Ctrl+Enter`, `chat.send/v1`), que é o mesmo caminho sem as palavras do editor: um envio recusado devolve as palavras ao editor (`$restore`, `send-prompt.tsx`) e a pilha fica onde está. Os eventos entram no log na ordem em que foram gravados, e o bloco nasce ancorado pelo `sequence` logo abaixo do turno do usuário (`insert-thread-turn-nodes.tsx`).
+
+### Threads no canvas
+
+Os comentários do log são agrupados em **threads** (a raiz e as respostas dela, [comentários](./comments.md#threads-estados-e-respostas-do-agente)), e o pino mostra o estado da thread:
+
+| Estado   | Pino                                             |
+| -------- | ------------------------------------------------ |
+| Rascunho | Tracejado                                        |
+| `open`   | Primário, com a contagem de respostas            |
+| `await`  | Laranja, com `?` (o agente respondeu por último) |
+| `done`   | Verde apagado, com `✓`                           |
+
+As threads **atravessam as revisões**: o canvas mostra todas as threads do artefato (e os rascunhos dele) na revisão que está na tela — a mais nova, por padrão —, cada uma com o mesmo número em qualquer revisão. O pino se recoloca pela âncora na revisão da tela; quando o elemento não existe mais nela, o pino vai para o ponto que a âncora guardou e, sem ponto guardado (comentários antigos), fica **destacado**, empilhado na borda esquerda do conteúdo — continua contado e abre a thread. Um comentário novo é escrito contra a revisão da tela; uma resposta, contra o alvo da raiz (a revisão em que ela foi escrita), e resolver vale em qualquer revisão.
+
+Um controle mostra ou esconde as threads resolvidas, e, com a ferramenta de comentar armada, passar o ponteiro sobre um elemento mostra o rótulo `elemento · arquivo:linha`. **Abrir um pino que já guarda o primeiro comentário** mostra o popover da thread: o cabeçalho (`N Componente:linha`), o menu `⋯`, resolver ou reabrir (nas raízes já enviadas) e fechar; as mensagens, com avatar, nome e hora; e o campo de resposta. Uma resposta vai para a **pilha** com `inReplyTo` e sai no próximo envio, como qualquer rascunho (que continua editável e removível); resolver chama `comments/v1.resolve` na raiz, sob o `promptId` da própria raiz. O node escuta o evento DOM `doric:comment-thread-open` (`detail: { commentId, target }`) que o `chat` dispara dos blocos de resposta e dos marcadores, e abre a thread do pino correspondente: com `target.revision`, só o node daquela revisão responde; sem ela — a mais nova —, só o node da revisão mais nova do artefato (que ele pergunta ao registro). A janela do canvas não recebe esse evento.
 
 ### A janela do canvas
 
@@ -348,7 +341,7 @@ Regras que a barra segue:
 - **Um rótulo, uma vez.** `Autorizar` — quando a política o pede — é o único controle com texto além do ícone, porque é a ação que libera a escrita no código do Project; os demais se explicam pelo ícone e pelo tooltip, que mostra o nome e o atalho.
 - **Isolar é o verbo que o trail deixava solto e agora tem lugar.** Ele esconde os irmãos do nó selecionado e mantém a cadeia dele visível — a leitura de perto que a árvore sugere; `Mostrar tudo` desfaz o isolamento e as camadas escondidas à mão.
 - **Atalhos sem modificador são só desta janela.** O cliente registra cada atalho com `menus/v1.addKeybinding` (dono = bundle, como em [menus nativos e atalhos](./menus-and-keybindings.md)), apontando para o id do comando. `V`, `C`, `H` e `I` são teclas soltas e não colidem com nada: **a janela do canvas não tem campo de texto** — a nota do comentário se escreve na pilha acima do prompt, na conversa — e o core entrega a cada janela a tabela já filtrada para ela (`packages/desktop/src/client/keybindings.ts:1-3`).
-- **A barra é da janela; o node fica com um botão.** A moldura do node (`chrome: 'node'`) desenha só o botão de comentários no canto, porque a largura da conversa não comporta quatro grupos; a da janela (`chrome: 'canvas'`) desenha a barra inteira. É o `chrome` que decide quais grupos existem, e não uma segunda superfície.
+- **A barra é da janela; o node fica com o cabeçalho.** O node (`chrome: 'node'`) desenha só os botões de ícone do cabeçalho overlay, porque a largura da conversa não comporta quatro grupos; a janela (`chrome: 'canvas'`) desenha o mesmo cabeçalho e a barra inteira. É o `chrome` que decide quais grupos existem, e não uma segunda superfície.
 
 Com o chrome mínimo, o node mostra a revisão com que foi criado e a janela abre na mais nova; a leitura `rev 1/1` da barra é o único lugar da tela onde a revisão aparece, e é ela que troca a revisão na tela quando há mais de uma ([decisões em aberto](#decisões-em-aberto)).
 
@@ -381,29 +374,40 @@ export interface PapercraftModule {
 - `component` — o build embrulha o componente num `mount` que cria a raiz com o `createRoot` do import map: a mesma instância de React do app.
 - O módulo é ESM com os especificadores do import map externos, então `react` e `react-dom/client` resolvem pelo mapa da janela — e é por isso que o preview compartilha tema e componentes com o app.
 
+### Harness, stories e portais
+
+O preview roda numa raiz React própria, então nenhum provider do app chega até ele. O que o componente precisa vem do **Project**, em arquivos versionados no formato do Storybook:
+
+- **Harness.** O mais próximo subindo a partir do arquivo previewado (pulando `.doric/` e `node_modules/`): `.storybook/preview.{tsx,ts,jsx,js}`, senão `.papercraft/preview.{tsx,ts,jsx,js}`. Subconjunto suportado: o `default` `{ decorators, parameters, args }` e/ou os exports nomeados. Imports só de tipo de `@storybook/*` somem no build; `@storybook/addon-themes` tem um substituto embutido; os outros imports passam pela resolução do Project, e um harness que não compila fica de fora com um aviso — o preview compila sem ele.
+- **Stories CSF.** Um `*.stories.*` (ou um `default` com cara de meta CSF) monta uma story: `entry`, senão a primeira na ordem do fonte. Renderiza `story.render(args, context)`, senão `meta.render`, senão `<meta.component {...args} />`, com `args = { ...preview.args, ...meta.args, ...story.args }`; decorators na ordem do Storybook (story → meta → harness, o primeiro mais interno). `context` traz `args`, `parameters`, `globals.theme`, `viewMode: 'story'` e `papercraft.portalContainer`. Actions não são sintetizadas. Um componente comum também recebe os decorators do harness.
+- **CSS.** O CSS que o harness importa é o global do Project e substitui o tema do Doric: compilado com Tailwind v4, lido por `files/v1` (`tailwindcss` vem do host), com as regras `:root` valendo também em `:host` e no wrapper de tema do módulo. O CSS que os componentes importam é anexado. Tailwind v3 (`@tailwind`) ou uma folha que não compila cai no tema do Doric, com aviso; `@plugin`/`@config` em JS são ignorados com aviso.
+- **Portais.** O `mount` cria um container de portal ao lado da raiz React, dentro do shadow root, e o entrega em `context.papercraft.portalContainer`; o conteúdo da superfície é o bloco de contenção (`contain: layout`) dos overlays `fixed`. A árvore renderizada fica sob o `PortalContainerProvider` de `desktop/ui` (importado de `desktop/ui/portal-container`, resolvido pelo import map) com esse container, então os overlays de `desktop/ui` (Dialog, Sheet, AlertDialog, Popover, Tooltip, Select, DropdownMenu, ContextMenu, Combobox) caem nele sozinhos. O Radix não tem default global de container, então só os portais de terceiros — os componentes do próprio Project, inclusive cópias locais do shadcn — precisam que o harness ou a story passe `context.papercraft.portalContainer` ao `Portal` (`container`). O import do provider é do runtime, não do Project: não liga a varredura das classes de `desktop/ui` no `index.css`.
+
 ## Âncoras que o agente entende
 
 Um comentário solto ("esse botão está errado") obriga o agente a adivinhar a que elemento o usuário se refere. O carimbo de origem resolve isso, e é a peça mais barata de copiar do Glide: o build do preview anota cada elemento com o arquivo e a linha de onde ele veio, e a âncora do comentário guarda esse par mais o seletor.
 
-```md
-Revisão 3 do preview `checkout-1`:
-
-- "o botão primário some no tema escuro" — em `#pay-button`, de `src/components/Checkout.tsx:42`
-- "aqui deveria ter 8px de respiro" — em `.summary > .row`, de `src/components/Checkout.tsx:57`
+```xml
+<comments>
+<target kind="artifact" id="checkout-1" revision="3" title="Checkout" source="src/components/Checkout.tsx">
+<comment id="comment-…" pin="1" anchor="src/components/Checkout.tsx:42" element="button">o botão primário some no tema escuro</comment>
+<comment id="comment-…" pin="2" anchor="src/components/Checkout.tsx:57" element="div">aqui deveria ter 8px de respiro</comment>
+</target>
+</comments>
 ```
 
-Quando o preview é `html` novo, o carimbo aponta para o próprio arquivo do payload; quando é `component`, aponta para o código real do Project — o que faz o comentário valer como instrução de edição, e não como descrição. É esse texto que o flush monta a partir dos cards da pilha: a nota de cada card vira a linha da sua âncora.
+Quando o preview é `html` novo, o carimbo aponta para o próprio arquivo do payload; quando é `component`, aponta para o código real do Project — o que faz o comentário valer como instrução de edição, e não como descrição. É esse bloco que o `chat` monta a partir das linhas da pilha ([comentários](./comments.md#o-prompt-o-envelope-xml)): a nota de cada linha vira um `<comment>` com a sua âncora, agrupado pelo `<target>` (a revisão que o usuário viu).
 
 ## Comentários: dois registros, um dono
 
 O pedido diz que todos os comentários são atribuídos ao contexto da conversa e que o agente age sobre eles. Na arquitetura atual isso são dois registros, porque o log durável e o histórico do provider são contratos separados — e os dois nascem do mesmo gesto, o envio:
 
 1. **O evento** `comments.added/v1` ([comentários](./comments.md)) — durável, replayável, desenhado como pino no canvas e presente no transcript (com o prompt, acima do texto que o usuário escreveu, quando ele o enviou). É a memória do comentário.
-2. **O prompt** — o único canal que acorda o agente, enviado por `runtime.threads/v1.prompt({ id, prompt })`, o mesmo caminho do compositor da conversa (`bundles/desktop/chat/src/client/api/threads-api.ts:32`), com texto legível em Markdown, como pedem as regras de prompt do repositório.
+2. **O prompt** — o único canal que acorda o agente, enviado por `runtime.threads/v1.prompt({ id, prompt })`, o mesmo caminho do compositor da conversa (`bundles/desktop/chat/src/client/api/threads-api.ts:32`), num envelope XML (`<comments>` e `<message>`), exceção estreita às regras de prompt do repositório: o conteúdo de dentro continua texto legível.
 
-O comentário é rascunho na pilha acima do prompt e o envio faz o **flush**: grava o evento e manda o prompt com as âncoras (ver [Comentários acima do prompt, rascunho no host](#comentários-acima-do-prompt-rascunho-no-host)). Um comentário que nunca chega a ser enviado não vira evento — o rascunho é do host, não do log.
+O comentário é rascunho na pilha acima do prompt e o envio faz o **flush**: grava o evento e manda o prompt com os comentários e as âncoras (ver [Comentários acima do prompt, rascunho no host](#comentários-acima-do-prompt-rascunho-no-host)). Um comentário que nunca chega a ser enviado não vira evento — o rascunho é do host, não do log.
 
-O botão de comentários do node e o controle `Comentar` da barra da janela são, portanto, um **compositor de prompt com contexto espacial**: o comentário entra no input do usuário e sai com ele.
+O controle `Comentar` do cabeçalho e o da barra da janela são, portanto, um **compositor de prompt com contexto espacial**: o comentário é confirmado no canvas, entra na pilha acima do input do usuário como rascunho e sai com o próximo envio — ou já, com `Cmd/Ctrl+Enter`.
 
 ## Implementação e escrita de volta
 
@@ -430,7 +434,7 @@ Declarados em `contracts/` com `defineEvent` e registrados com `events/v1` na at
 | `artifacts.approved/v1` | `artifactId`, `revision`, `scope` — só sob a política `request`                  |
 | `artifacts.applied/v1`  | `artifactId`, `revision`, `files`                                                |
 
-O comentário não é um evento do artefato: ele é `comments.added/v1` ([comentários](./comments.md)), com a revisão como alvo. O comentário só entra no log no flush do envio; enquanto é rascunho, ele vive na pilha do compositor — estado do host, não do log.
+O comentário não é um evento do artefato: ele é `comments.added/v1` ([comentários](./comments.md)), com a revisão como alvo. O comentário só entra no log no flush do envio (e a resposta do agente, quando a `comment_reply` roda); enquanto é rascunho, ele vive na pilha do compositor — estado do host, não do log.
 
 ### Tool do agente
 
@@ -464,7 +468,7 @@ export const previewTool = defineTool({
 });
 ```
 
-A saída da tool é o **estado do preview**, não a confirmação da escrita: o modelo precisa saber a revisão atual e os comentários pendentes com a âncora. A tool também lê os comentários do log no escopo da chamada, para que a rodada de ajustes não dependa de o usuário repetir o texto no prompt.
+A saída da tool é o **estado do preview**, não a confirmação da escrita: o modelo precisa saber a revisão atual e os comentários pendentes com a âncora. A tool também lê os comentários do log no escopo da chamada, para que a rodada de ajustes não dependa de o usuário repetir o texto no prompt: ela devolve as **raízes não resolvidas** de cada thread, cada uma com as `replies` (as respostas, em ordem; a última pode ser a resposta do usuário a uma pergunta do agente).
 
 ### Skill do agente
 
@@ -476,6 +480,7 @@ name: papercraft-preview
 description: 'Publishes a visual change as a live preview node of the conversation, built from real code, instead of describing it. Use when the change is easier to judge by looking than by reading a diff, and the user should see it, comment on it and steer it.'
 allowed-tools:
   - papercraft_preview
+  - comment_reply
   - write
   - edit
 order: 3400
@@ -488,9 +493,9 @@ O corpo responde as três perguntas que a assinatura da tool não responde:
 - **quando usar**: mudança que é visual, usuário que ainda não decidiu, pedido explícito de ver/mock/protótipo, ou ajuste de um preview que já existe — que é **revisão** do mesmo preview, e não um preview novo;
 - **quando não usar**: mudança que não é visual, inspeção do app rodando, e artefato que precisaria de código que o agente não pode escrever — dizer o que falta em vez de previewar outra coisa.
 
-O procedimento fixa as decisões que o agente erraria sozinho: escolher a origem do preview pelo que a mudança toca (`component` para código real, porque o carimbo faz o comentário valer como instrução de edição; `html` para ideia nova; `site` só quando o servidor é o ponto), escrever o payload dentro do diretório do artefato, ler o estado que a tool devolve (revisão e comentários pendentes com a âncora), **implementar a mudança** com as ferramentas normais — o preview não é portão, o Doric segue direto — e tratar cada comentário como o pedido da revisão seguinte. Só sob a política `request` do Project o agente espera o `artifacts.approved/v1`.
+O procedimento fixa as decisões que o agente erraria sozinho: escolher a origem do preview pelo que a mudança toca (`component` para código real, porque o carimbo faz o comentário valer como instrução de edição; `html` para ideia nova; `site` só quando o servidor é o ponto), escrever o payload dentro do diretório do artefato, ler o estado que a tool devolve (revisão e comentários pendentes com a âncora), **implementar a mudança** com as ferramentas normais — o preview não é portão, o Doric segue direto — tratar cada comentário como o pedido da revisão seguinte e **respondê-lo com `comment_reply`** — dizendo o que mudou ou perguntando o que não entendeu — com `resolve` quando está atendido. Só sob a política `request` do Project o agente espera o `artifacts.approved/v1`.
 
-`allowed-tools` lista as três ferramentas que o procedimento nomeia: a tool do bundle e os dois utilitários de escrita do `files`. O registro as resolve contra o catálogo visto pela geração (`D10-6`), então um Project sem o `files` recusa a skill com `unavailable_tool`, em vez de falhar no meio do fluxo. `order: 3400` é a próxima faixa livre depois das skills do `threads` (3300), no mesmo esquema de faixas de 100 de `files` (100–1300) e `git` (2100–2600).
+`allowed-tools` lista as quatro ferramentas que o procedimento nomeia: a tool do bundle, a `comment_reply` do `comments` e os dois utilitários de escrita do `files`. O registro as resolve contra o catálogo visto pela geração (`D10-6`), então um Project sem o `files` recusa a skill com `unavailable_tool`, em vez de falhar no meio do fluxo. `order: 3400` é a próxima faixa livre depois das skills do `threads` (3300), no mesmo esquema de faixas de 100 de `files` (100–1300) e `git` (2100–2600).
 
 ### Serviço de host
 
@@ -506,14 +511,15 @@ Decidido: a janela é uma **rota do app** (`/papercraft/:artifactId`), aberta e 
 
 ## Fluxo do usuário, passo a passo
 
-| Passo | O usuário faz               | O que acontece                                                                                                               |
-| ----- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 1     | "corrige o componente X"    | Prompt comum. Nada de papercraft ainda.                                                                                      |
-| 2     | —                           | O agente lê o índice de componentes, escreve o payload e chama `papercraft_preview`; o evento entra no log e o node aparece. |
-| 3     | —                           | O agente implementa a mudança no código do Project — o preview **não** é portão.                                             |
-| 4     | Pede ajustes X, Y e Z       | No node ou na janela: cada comentário vira um card na pilha acima do prompt; o envio faz o flush (evento + prompt).          |
-| 5     | —                           | Nova revisão: o mesmo `artifact_id`, um evento novo, **um node novo**. O node antigo permanece, com seus comentários.        |
-| 6     | Autoriza (só sob `request`) | `papercraft.approve/v1` → `artifacts.approved/v1` + prompt, e o agente implementa.                                           |
+| Passo | O usuário faz               | O que acontece                                                                                                                     |
+| ----- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | "corrige o componente X"    | Prompt comum. Nada de papercraft ainda.                                                                                            |
+| 2     | —                           | O agente lê o índice de componentes, escreve o payload e chama `papercraft_preview`; o evento entra no log e o node aparece.       |
+| 3     | —                           | O agente implementa a mudança no código do Project — o preview **não** é portão.                                                   |
+| 4     | Pede ajustes X, Y e Z       | No node ou na janela: cada comentário vira uma linha na pilha acima do prompt; o envio faz o flush (evento + prompt).              |
+| 5     | —                           | Nova revisão: o mesmo `artifact_id`, um evento novo, **um node novo**. O node antigo permanece, com seus comentários.              |
+| 5b    | —                           | O agente responde cada comentário com `comment_reply` (e resolve o atendido); o pino muda de estado e a resposta aparece no turno. |
+| 6     | Autoriza (só sob `request`) | `papercraft.approve/v1` → `artifacts.approved/v1` + prompt, e o agente implementa.                                                 |
 
 O passo 5 é o requisito mais forte do pedido: um bloco por revisão faz o preview antigo continuar na conversa e aberto para comentários, sem nenhum estado extra, porque o replay reconstrói todos os blocos do log em ordem de sequência.
 
@@ -545,6 +551,8 @@ Os projetores de `chat.views/v1` são puros e rodam do estado inicial sobre a li
 15. **Um canal para todas as janelas.** Hoje o rascunho vive no `threadChatsStore` da janela que o escreveu; o serviço de host passa a ser o dono, e falta decidir o que uma janela faz quando o prompt é enviado em outra (a pilha se esvazia para todas, e o editor das demais se limpa).
 16. **O registro de artefatos.** O preview passa a ser um tipo do registro ([artefatos](./artifacts.md)); ficam em aberto, lá, a forma do `artifactId`, a política de revisão e o que acontece quando o alvo do carimbo muda entre revisões.
 17. **Decidido: o preview não é portão.** O Doric é YOLO por padrão: o agente publica e segue direto, o comentário corrige o rumo e a autorização é exceção, por política do Project ([artefatos](./artifacts.md#a-política-de-revisão)). A decisão 8 vira, então, uma pergunta sobre o caso `request`.
+18. **Decidido: a resolução.** Um comentário se resolve por thread: o usuário, no popover do pino, ou o agente, com `resolve` na `comment_reply`; o pino mostra o estado (`done`, `await`, `open`) e as threads resolvidas podem ser escondidas. Fecha o item 5 das decisões em aberto de [comentários](./comments.md#decisões-em-aberto).
+19. **Limitação conhecida: a janela do canvas e o evento de abertura.** O `doric:comment-thread-open` é um evento DOM do `chat`; a janela do canvas é outro documento e não o recebe, então só o node abre a thread a partir da conversa.
 
 ## Composição e partes
 

@@ -1,8 +1,20 @@
 import {
   COMMENTS_ADDED_EVENT,
+  COMMENTS_RESOLVED_EVENT,
   type TurnComment,
   turnCommentFrom,
 } from '../../contracts/index.js';
+import {
+  askedIn,
+  COMMENT_REPLY_TOOL,
+  type CommentThread,
+  type CommentThreads,
+  foldComment,
+  foldResolved,
+  isAgentComment,
+  resolvedFrom,
+  type ThreadComment,
+} from './comment-threads.js';
 import type { DelegatedInput } from './delegated.js';
 import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
@@ -165,6 +177,29 @@ export type CompactionTurn = TurnBase & {
   readonly code?: 'summarizer_failed' | 'unsafe_boundary';
 };
 
+/** One answer the agent wrote into a comment's thread (`comment_reply`). */
+export type CommentReply = {
+  /** The agent's reply, as `comments.added/v1` carried it. */
+  readonly reply: TurnComment;
+  /** The thread's root comment id. */
+  readonly rootId: string;
+  /**
+   * The comment it answers: the latest one the reader wrote in the thread
+   * before the reply — the root, or the reader's own reply after it.
+   */
+  readonly asked?: ThreadComment;
+};
+
+/**
+ * The agent's answers to the reader's comments, where it wrote them in its
+ * turn: consecutive replies (with only their own `comment_reply` calls
+ * between them) are one block.
+ */
+export type RepliesTurn = TurnBase & {
+  readonly type: 'replies';
+  readonly replies: readonly CommentReply[];
+};
+
 /** One block of the conversation, in the order the log produced it. */
 export type Turn =
   | UserTurn
@@ -175,7 +210,8 @@ export type Turn =
   | ActivityTurn
   | LifecycleTurn
   | CompactionTurn
-  | FailureTurn;
+  | FailureTurn
+  | RepliesTurn;
 
 export type Projection = {
   /** Every event the log holds, in durable order, deduplicated. */
@@ -199,6 +235,12 @@ export type Projection = {
    * reader's words, and the turn wears them above those words.
    */
   readonly comments: ReadonlyMap<string, readonly TurnComment[]>;
+  /**
+   * Every comment thread of the log by root id — `comments.added/v1` and
+   * `comments.resolved/v1` folded across the whole Thread — so a surface reads
+   * the state each comment is in now, wherever the comment was drawn.
+   */
+  readonly threads: CommentThreads;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -271,6 +313,12 @@ export type Draft =
       failure: PromptFailure;
     }
   | {
+      type: 'replies';
+      promptId: string;
+      events: ThreadEvent[];
+      replies: readonly CommentReply[];
+    }
+  | {
       type: 'compaction';
       promptId: string;
       events: ThreadEvent[];
@@ -288,6 +336,35 @@ export type Draft =
 
 /** The draft a completed burst groups: a run of reasoning, or a tool call. */
 type BurstDraft = Extract<Draft, { type: 'thinking' | 'tool_call' }>;
+
+/** The draft of a block of the agent's comment replies. */
+type RepliesDraft = Extract<Draft, { type: 'replies' }>;
+
+/**
+ * Whether a draft is a `comment_reply` call its reply block stands in for: one
+ * that has not failed. A failed call keeps its row, which states the error.
+ */
+const isReplyCall = (turn: Draft): boolean =>
+  turn.type === 'tool_call' &&
+  turn.name === COMMENT_REPLY_TOOL &&
+  turn.status !== 'failed';
+
+/**
+ * The reply block a new reply joins: the prompt's last one, while nothing but
+ * the `comment_reply` calls it stands in for was written after it.
+ */
+const openReplies = (
+  turns: readonly Draft[],
+  promptId: string,
+): RepliesDraft | undefined => {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn === undefined || turn.promptId !== promptId) return undefined;
+    if (turn.type === 'replies') return turn;
+    if (!isReplyCall(turn)) return undefined;
+  }
+  return undefined;
+};
 
 /** The draft a compaction bracket holds while the log has not closed it. */
 type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
@@ -333,9 +410,12 @@ const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
  * and the reader watches the live burst as it happens.
  */
 const grouped = (
-  turns: readonly Draft[],
+  drafts: readonly Draft[],
   status: ReadonlyMap<string, PromptStatus>,
 ): readonly Turn[] => {
+  // A `comment_reply` call draws no row of its own: its reply block says what
+  // it wrote, where it wrote it.
+  const turns = drafts.filter((turn) => !isReplyCall(turn));
   const last = turns.at(-1);
   const writing = last !== undefined && !status.has(last.promptId);
 
@@ -510,6 +590,7 @@ const readEvent = (
   executions: Map<string, PromptExecution>,
   inputs: Map<string, PromptInput>,
   comments: Map<string, TurnComment[]>,
+  threads: Map<string, CommentThread>,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -527,21 +608,56 @@ const readEvent = (
     return;
   }
 
+  if (item.type === COMMENTS_RESOLVED_EVENT) {
+    const resolved = resolvedFrom(event);
+    if (resolved !== undefined)
+      foldResolved(threads, resolved.commentId, resolved.resolved);
+    return;
+  }
+
   if (item.type === COMMENTS_ADDED_EVENT) {
     const comment = turnCommentFrom(event);
-    if (comment !== undefined) {
-      // The turn is shown: the comment joins it there. It is not: it waits
-      // where the flush wrote it, below the words the reader is still writing.
-      const turn =
-        open?.type === 'user' && open.promptId === promptId ? open : undefined;
-      const held = comments.get(promptId) ?? [];
-      if (turn === undefined) {
-        comments.set(promptId, [...held, comment]);
-        return;
+    if (comment === undefined) return;
+
+    // The agent's answer in a comment's thread is drawn where it wrote it, in
+    // its own turn: a reply block that names the comment it answers.
+    if (comment.inReplyTo !== undefined && isAgentComment(comment)) {
+      const thread = threads.get(comment.inReplyTo);
+      const asked = thread === undefined ? undefined : askedIn(thread);
+      foldComment(threads, comment);
+      const reply: CommentReply = {
+        reply: comment,
+        rootId: comment.inReplyTo,
+        ...(asked === undefined ? {} : { asked }),
+      };
+      const block = openReplies(turns, promptId);
+      if (block === undefined) {
+        turns.push({
+          type: 'replies',
+          promptId,
+          events: [item],
+          replies: [reply],
+        });
+      } else {
+        block.replies = [...block.replies, reply];
+        block.events.push(item);
       }
-      turn.comments = [...turn.comments, comment];
-      turn.events.push(item);
+      return;
     }
+
+    // The turn is shown: the comment joins it there. It is not: it waits
+    // where the flush wrote it, below the words the reader is still writing.
+    const turn =
+      open?.type === 'user' && open.promptId === promptId ? open : undefined;
+    const held = comments.get(promptId) ?? [];
+    const pin = (turn === undefined ? held.length : turn.comments.length) + 1;
+    foldComment(threads, { ...comment, pin });
+    if (turn === undefined) {
+      comments.set(promptId, [...held, comment]);
+      return;
+    }
+    turn.comments = [...turn.comments, comment];
+    turn.events.push(item);
     return;
   }
 
@@ -570,7 +686,10 @@ const readEvent = (
     if (open?.type === 'agent') {
       open.text += delta;
       open.events.push(item);
-    } else {
+    } else if (delta.trim().length > 0) {
+      // Blank lines alone are not an answer either: some models emit a lone
+      // "\n\n" between their reasoning and a tool call, which would draw an
+      // empty block and split the run. Inside an answer they still count.
       turns.push({
         type: 'agent',
         promptId,
@@ -800,8 +919,9 @@ const project = (events: readonly ThreadEvent[]): Projection => {
   const executions = new Map<string, PromptExecution>();
   const inputs = new Map<string, PromptInput>();
   const comments = new Map<string, TurnComment[]>();
+  const threads = new Map<string, CommentThread>();
   for (const item of events)
-    readEvent(drafts, status, executions, inputs, comments, item);
+    readEvent(drafts, status, executions, inputs, comments, threads, item);
   settle(drafts, status, executions, inputs);
   return {
     events,
@@ -810,6 +930,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
     executions,
     inputs,
     comments,
+    threads,
     turns: grouped(drafts, status),
   };
 };
@@ -838,8 +959,11 @@ const readInto = (
       [...held],
     ]),
   );
+  // A thread a batch changes is a new record in a copy of the map, so the
+  // projection returned before keeps the threads it was read with.
+  const threads = new Map(current.threads);
   for (const item of incoming)
-    readEvent(drafts, status, executions, inputs, comments, item);
+    readEvent(drafts, status, executions, inputs, comments, threads, item);
   settle(drafts, status, executions, inputs);
   return {
     events: [...current.events, ...incoming],
@@ -848,6 +972,7 @@ const readInto = (
     executions,
     inputs,
     comments,
+    threads,
     turns: grouped(drafts, status),
   };
 };
@@ -953,6 +1078,7 @@ export const emptyProjection: Projection = {
   executions: new Map(),
   inputs: new Map(),
   comments: new Map(),
+  threads: new Map(),
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */

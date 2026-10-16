@@ -6,22 +6,25 @@
 // The stack's items are drafts: nothing here touches the log. The flush is the
 // only way an item leaves the stack — the owner of the item's kind decides, in
 // the flush it registered, what durable write the draft becomes, and the state
-// collects those writes, empties the stack and hands the writes back to the
-// sender window (the main process cannot reach the host's contracts; see
+// collects those writes, takes the flushed items off the stack and hands each
+// item back with its writes to the sender window, which puts an item back when
+// its write fails (the main process cannot reach the host's contracts; see
 // `docs/architecture/bundles/comments.md`, "Dois registros, um dono").
 
 import { randomUUID } from 'node:crypto';
 
 import { ContractError, type Disposable } from 'bundle/contracts';
-import type { CommentAddInput } from 'comments/contracts';
 
-import type {
-  ComposerAddInput,
-  ComposerFlush,
-  ComposerFlushContext,
-  ComposerItem,
-  ComposerSnapshot,
-  ComposerWatchItem,
+import {
+  COMPOSER_ITEM_ID_PREFIX,
+  type ComposerAddInput,
+  type ComposerFlush,
+  type ComposerFlushContext,
+  type ComposerFlushed,
+  type ComposerItem,
+  type ComposerSnapshot,
+  type ComposerWatchItem,
+  READER_NAME,
 } from '../contracts/index.js';
 
 /** One Thread's held draft. */
@@ -49,7 +52,11 @@ export interface ComposerState {
   ): Disposable;
   /** Sets the Thread's words; every watch sees the delta. */
   setText(projectId: string | undefined, threadId: string, text: string): void;
-  /** Adds one item to the stack; the id is assigned here. */
+  /**
+   * Adds one item to the stack. The id is assigned here (`comment-<uuid>`),
+   * unless the input brings back a `comment-` id the stack does not hold —
+   * an item the sender puts back keeps the comment id it was sent with.
+   */
   addItem(projectId: string | undefined, input: ComposerAddInput): ComposerItem;
   /** Edits one item's note — a draft is free to change. */
   updateNote(
@@ -61,18 +68,27 @@ export interface ComposerState {
   /** Removes one item from the stack. */
   removeItem(projectId: string | undefined, threadId: string, id: string): void;
   /**
-   * Runs the flush each item's kind registered, empties the stack and answers
-   * the comment writes the sender performs. An item whose flush answers no
-   * write stays drafted, and so does an item whose kind has no flush: only
-   * the owner says how a draft becomes durable.
+   * Runs the flush each item's kind registered, takes the flushed items off
+   * the stack and answers each with the comment writes the sender performs.
+   * An item whose flush answers no write stays drafted, and so does an item
+   * whose kind has no flush: only the owner says how a draft becomes durable.
    */
-  flush(context: ComposerFlushContext): Promise<readonly CommentAddInput[]>;
+  flush(context: ComposerFlushContext): Promise<readonly ComposerFlushed[]>;
   /** The owner of a kind registers how its items flush; a second is a conflict. */
   registerFlush(kind: string, flush: ComposerFlush): Disposable;
 }
 
 const keyOf = (projectId: string | undefined, threadId: string): string =>
   `${projectId ?? ''}:${threadId}`;
+
+/** The root comment a reply item continues, when its data names one. */
+const rootOf = (item: ComposerItem): string | undefined => {
+  const data = item.data;
+  if (typeof data !== 'object' || data === null) return undefined;
+  const root = (data as { inReplyTo?: unknown }).inReplyTo;
+
+  return typeof root === 'string' && root.length > 0 ? root : undefined;
+};
 
 /** Creates the composer's state, with the flushes given already registered. */
 export const createComposerState = (
@@ -155,12 +171,18 @@ export const createComposerState = (
 
     addItem(projectId, input) {
       const draft = draftOf(projectId, input.threadId);
+      const wanted = input.id ?? '';
+      const kept =
+        wanted.startsWith(COMPOSER_ITEM_ID_PREFIX) &&
+        wanted.length > COMPOSER_ITEM_ID_PREFIX.length &&
+        !draft.items.some((held) => held.id === wanted);
       const item: ComposerItem = {
-        id: randomUUID(),
+        id: kept ? wanted : `${COMPOSER_ITEM_ID_PREFIX}${randomUUID()}`,
         kind: input.kind,
         elementTag: input.elementTag,
         data: input.data,
-        ...(input.author === undefined ? {} : { author: input.author }),
+        // An item nobody signed is the reader's own, as their prompt is.
+        author: input.author ?? READER_NAME,
         note: input.note ?? '',
       };
       draft.items.push(item);
@@ -191,11 +213,18 @@ export const createComposerState = (
       const draft = drafts.get(keyOf(context.projectId, context.threadId));
       if (draft === undefined || draft.items.length === 0) return [];
 
-      const writes: CommentAddInput[] = [];
-      const flushed: ComposerItem[] = [];
+      const flushed: ComposerFlushed[] = [];
       const held: ComposerItem[] = [];
 
+      // Stack order is flush order, so a root is written before its replies;
+      // a reply whose root stays drafted stays drafted with it, because the
+      // log never holds a reply to a comment it has not recorded.
       for (const item of draft.items) {
+        const root = rootOf(item);
+        if (root !== undefined && held.some((other) => other.id === root)) {
+          held.push(item);
+          continue;
+        }
         const flush = registered.get(item.kind);
         // A kind whose owner has registered no flush keeps its items: nothing
         // has said how they become durable, so they stay drafted.
@@ -211,17 +240,11 @@ export const createComposerState = (
           held.push(item);
           continue;
         }
-        writes.push(...answered);
-        flushed.push(item);
-      }
-
-      if (flushed.length === 0) {
-        draft.items = held;
-        return writes;
+        flushed.push({ item, writes: answered });
       }
 
       draft.items = held;
-      for (const item of [...flushed].reverse()) {
+      for (const { item } of [...flushed].reverse()) {
         emit(draft.key, {
           kind: 'removed',
           threadId: context.threadId,
@@ -229,7 +252,7 @@ export const createComposerState = (
         });
       }
 
-      return writes;
+      return flushed;
     },
 
     registerFlush(kind, flush) {

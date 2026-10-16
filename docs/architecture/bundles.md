@@ -193,8 +193,8 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 ### Artefatos e revisão
 
 - [Artefatos](./bundles/artifacts.md): o entregável durável que o agente produz para mostrar uma mudança — identidade, revisões, âncoras, o contrato `artifacts/v1`, os tipos de `artifact.kind/v1`, o node, o armazenamento em `/workspace/.doric/`, a política de revisão com `proceed` como padrão e a comparação com o Antigravity.
-- [Comentários](./bundles/comments.md): o spec do conceito — o alvo, a âncora, os dois registros (o evento durável e o prompt), o rascunho no host e a regra de que um comentário orienta e nunca autoriza.
-- [Papercraft](./bundles/papercraft.md): o tipo `preview`, o canvas no node e na janela, os caminhos A, B e C, a barra de comandos e a skill `papercraft-preview`.
+- [Comentários](./bundles/comments.md): o spec do conceito — o alvo, a âncora, os dois registros (o evento durável e o prompt em envelope XML), o rascunho no host, as threads com resposta do agente (`comment_reply`) e a regra de que um comentário orienta e nunca autoriza.
+- [Papercraft](./bundles/papercraft.md): o tipo `preview`, o canvas no node e na janela, os pinos e threads de comentário, os caminhos A, B e C, a barra de comandos e a skill `papercraft-preview`.
 
 ### Plano e referências
 

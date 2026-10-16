@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
   blockOpen,
   blockToggled,
+  replyOpenness,
   settledOpenness,
   thinkingOpenness,
   toolOpenness,
@@ -117,5 +118,19 @@ describe('what opens each block on its own', () => {
   test('an activity summary is folded until the reader opens it', () => {
     assert.equal(blockOpen(null, settledOpenness), false);
     assert.equal(blockToggled(null, settledOpenness), true);
+  });
+
+  test('a reply row is folded once its thread is resolved, and open while it waits for the reader or stays open', () => {
+    assert.equal(blockOpen(null, replyOpenness('done', 'Fixed.')), false);
+    assert.equal(blockOpen(null, replyOpenness('await', '40 or 48px?')), true);
+    assert.equal(blockOpen(null, replyOpenness('open', 'Looking.')), true);
+  });
+
+  test("the reader's choice on a reply row stands over its thread's state", () => {
+    assert.equal(blockOpen(true, replyOpenness('done', 'Fixed.')), true);
+    assert.equal(
+      blockOpen(false, replyOpenness('await', '40 or 48px?')),
+      false,
+    );
   });
 });

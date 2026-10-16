@@ -22,6 +22,13 @@ import { z } from 'zod';
  * loosest: the stamped source of a built preview, a selector of the target's
  * derived structure, a free position with the nearest element named, and a
  * range of the target's text.
+ *
+ * Each form requires the fields that make it point somewhere: `source` a
+ * `path` (its `line` is optional, a positive integer when given), `selector` a
+ * `selector`, `point` both `x` and `y`, and `range` the selected `text`. The
+ * other fields stay optional on every form — a stamped element also carries its
+ * selector and label — and the schema below refuses an anchor that lacks its
+ * form's own fields.
  */
 export interface CommentAnchor {
   readonly form: 'source' | 'selector' | 'point' | 'range';
@@ -56,12 +63,31 @@ export interface Comment {
   readonly author?: string;
   readonly resolved: boolean;
   readonly createdAt: string;
+  /**
+   * The root comment this one answers. Threads are flat: a reply always names
+   * the root, never another reply. Absent on a root comment.
+   */
+  readonly inReplyTo?: string;
 }
 
 export interface CommentAddInput {
   readonly target: CommentTarget;
   readonly text: string;
   readonly author?: string;
+  /**
+   * The id the comment is written under, chosen by the caller so it exists
+   * before the flush (the prompt carries it). Matches `COMMENT_ID_PATTERN`.
+   * Without it the registry generates `comment-<uuid>`. Idempotent: a comment
+   * of the Thread's log with this id is returned as it is and nothing is
+   * appended, so a retried flush never duplicates.
+   */
+  readonly commentId?: string;
+  /**
+   * The comment of the same Thread this one answers. A reply's id is
+   * normalized to its root, so `inReplyTo` always names a root; an unknown id
+   * is `invalid_input`. The reply keeps the `target` the caller passes.
+   */
+  readonly inReplyTo?: string;
 }
 
 /**
@@ -90,30 +116,72 @@ export interface CommentResolveInput {
 /**
  * `comments/v1` (host), cardinality `one`. A comment is immutable: editing one
  * is a new event, not a rewrite of the stored row.
+ *
+ * The Thread event log is the only record: `list` and `resolve` fold the
+ * `comments.added/v1` and `comments.resolved/v1` rows of the call's scope, so
+ * a restarted host, a replay or a rewind answers what the log holds. Every
+ * call is scoped: `add` and `resolve` need the Project, the Thread and the
+ * prompt the event is written under (`invalid_scope` otherwise), and `list`
+ * needs at least the Project.
  */
 export interface Comments {
-  /** Writes `comments.added/v1` and returns the comment's identity. */
+  /** Writes `comments.added/v1` in the call's Thread and returns the comment. */
   add(input: CommentAddInput, call?: CallArg): Promise<Comment>;
-  /** The comments of a target (or of a `kind`), in the order of the log. */
+  /**
+   * The comments of a target (or of a `kind`), in the order of the log: the
+   * call's Thread when the scope names one, else every Thread of its Project.
+   */
   list(input: CommentListInput, call?: CallArg): Promise<readonly Comment[]>;
-  /** Marks one comment attended, writing `comments.resolved/v1`. */
+  /**
+   * Marks one comment of the call's Thread attended, writing
+   * `comments.resolved/v1` there; a comment the Thread's log does not hold —
+   * one of another Thread or Project included — answers `undefined` and writes
+   * nothing.
+   */
   resolve(
     input: CommentResolveInput,
     call?: CallArg,
   ): Promise<Comment | undefined>;
 }
 
+/** The ids a caller may choose for a comment. */
+export const COMMENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** The fields every form may carry; each form then requires its own. */
+const anchorFields = {
+  path: z.string().optional(),
+  line: z.number().int().positive().optional(),
+  selector: z.string().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  label: z.string().optional(),
+  text: z.string().optional(),
+};
+
 export const commentAnchorSchema: z.ZodType<CommentAnchor, CommentAnchor> =
-  z.looseObject({
-    form: z.enum(['source', 'selector', 'point', 'range']),
-    path: z.string().optional(),
-    line: z.number().int().optional(),
-    selector: z.string().optional(),
-    x: z.number().optional(),
-    y: z.number().optional(),
-    label: z.string().optional(),
-    text: z.string().optional(),
-  });
+  z.discriminatedUnion('form', [
+    z.looseObject({
+      ...anchorFields,
+      form: z.literal('source'),
+      path: z.string().min(1),
+    }),
+    z.looseObject({
+      ...anchorFields,
+      form: z.literal('selector'),
+      selector: z.string().min(1),
+    }),
+    z.looseObject({
+      ...anchorFields,
+      form: z.literal('point'),
+      x: z.number(),
+      y: z.number(),
+    }),
+    z.looseObject({
+      ...anchorFields,
+      form: z.literal('range'),
+      text: z.string().min(1),
+    }),
+  ]);
 
 export const commentTargetSchema: z.ZodType<CommentTarget, CommentTarget> =
   z.looseObject({
@@ -130,6 +198,7 @@ export const commentSchema: z.ZodType<Comment, Comment> = z.looseObject({
   author: z.string().optional(),
   resolved: z.boolean(),
   createdAt: z.string(),
+  inReplyTo: z.string().optional(),
 });
 
 export const commentAddInputSchema: z.ZodType<
@@ -139,6 +208,8 @@ export const commentAddInputSchema: z.ZodType<
   target: commentTargetSchema,
   text: z.string(),
   author: z.string().optional(),
+  commentId: z.string().regex(COMMENT_ID_PATTERN).optional(),
+  inReplyTo: z.string().optional(),
 });
 
 export const commentTargetKeySchema: z.ZodType<
@@ -177,7 +248,11 @@ export const CommentsV1 = ref<Comments>('comments/v1');
 
 // Events ----------------------------------------------------------------------
 
-/** The comment reached the log: written by the send, never by a draft. */
+/**
+ * The comment reached the log: written by the send, never by a draft. The
+ * registry rebuilds `list` from these rows, so `createdAt` is the comment's
+ * own time; a row written before it was carried reads the log entry's time.
+ */
 export const commentsAddedEvent = defineEvent({
   type: 'comments.added/v1',
   payload: z.looseObject({
@@ -185,6 +260,9 @@ export const commentsAddedEvent = defineEvent({
     target: commentTargetSchema,
     text: z.string(),
     author: z.string().optional(),
+    createdAt: z.string().optional(),
+    /** The root comment this one answers; absent on a root comment. */
+    inReplyTo: z.string().optional(),
   }),
 });
 

@@ -1,30 +1,46 @@
 // `artifact.kind/v1`: the name a bundle declares its kind with, before any
-// artifact of it exists — and, since the audit, the kind's own providers: the
-// zod schema of its payload, its materialization and the `blockType` its
-// renderer draws.
+// artifact of it exists, plus the kind's own providers — the zod schema of
+// its payload, its materialization, the `blockType` of its body and the
+// `bodyTag` the frame mounts it with (and whether the body draws the header).
+// A registration is a `Disposable` that
+// lives as long as the registering generation, and a bundle's next generation
+// replaces its own declaration.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { z } from 'zod';
 
+import { createArtifactKindRegistry } from '../src/host/kinds.js';
 import { artifactsHarness } from './support/harness.js';
 
+const preview = {
+  id: 'preview',
+  title: 'Preview',
+  blockType: 'papercraft.preview/v1',
+  bodyTag: 'papercraft-preview-body',
+  header: 'body',
+} as const;
+
 describe('artifact.kind/v1', () => {
-  test('answers the kinds a bundle registered, in registration order, without the providers', async () => {
+  test('lists the kinds in force, in registration order, without the providers', async () => {
     const harness = await artifactsHarness();
 
     try {
       assert.deepEqual(await harness.kinds.list(harness.call()), []);
 
-      await harness.kinds.register({
-        id: 'preview',
-        title: 'Preview',
-        blockType: 'papercraft.preview/v1',
-      });
+      await harness.kinds.register(
+        {
+          ...preview,
+          payload: z.object({ label: z.string() }).strict(),
+          materialize: () => ({ entries: [] }),
+        },
+        harness.call(),
+      );
       await harness.kinds.register({ id: 'screen.recording' }, harness.call());
+
       assert.deepEqual(await harness.kinds.list(harness.call()), [
-        { id: 'preview', title: 'Preview', blockType: 'papercraft.preview/v1' },
+        preview,
         { id: 'screen.recording' },
       ]);
     } finally {
@@ -32,100 +48,72 @@ describe('artifact.kind/v1', () => {
     }
   });
 
-  test('is idempotent for the same declaration and refuses a different title or blockType', async () => {
+  test('forgets a kind once its registration is disposed', async () => {
     const harness = await artifactsHarness();
 
     try {
-      const same = {
-        id: 'preview',
-        title: 'Preview',
-        blockType: 'papercraft.preview/v1',
-      };
-
-      assert.deepEqual(await harness.kinds.register(same, harness.call()), {
-        id: 'preview',
-        title: 'Preview',
-        blockType: 'papercraft.preview/v1',
-      });
-
-      // The providers are refreshed, not compared: a generation that
-      // re-registers its kind hands the registry the functions it declared.
-      await harness.kinds.register(
-        {
-          ...same,
-          payload: z.object({ label: z.string() }).strict(),
-          materialize: () => ({ entries: [] }),
-        },
+      const registration = await harness.kinds.register(
+        preview,
         harness.call(),
       );
 
-      assert.deepEqual(await harness.kinds.list(harness.call()), [
-        {
-          id: 'preview',
-          title: 'Preview',
-          blockType: 'papercraft.preview/v1',
-        },
-      ]);
+      registration.dispose();
 
-      await assert.rejects(
-        harness.kinds.register(
-          {
-            ...same,
-            title: 'Another',
-            payload: z.object({}).strict(),
-          },
-          harness.call(),
-        ),
-        { code: 'invalid_input' },
-      );
-      await assert.rejects(
-        harness.kinds.register(
-          { ...same, blockType: 'other.block/v1' },
-          harness.call(),
-        ),
-        { code: 'invalid_input' },
-      );
+      assert.deepEqual(await harness.kinds.list(harness.call()), []);
     } finally {
       await harness.close();
     }
+  });
+
+  test('lets the next generation change its title and block type, and outlive the previous one', async () => {
+    const harness = await artifactsHarness();
+
+    try {
+      const previous = await harness.kinds.register(preview, harness.call());
+      // The next generation registers before the previous one is disposed.
+      await harness.kinds.register(
+        { ...preview, title: 'Live preview', blockType: 'papercraft.body/v2' },
+        harness.call(),
+      );
+
+      previous.dispose();
+
+      assert.deepEqual(await harness.kinds.list(harness.call()), [
+        {
+          ...preview,
+          title: 'Live preview',
+          blockType: 'papercraft.body/v2',
+        },
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('refuses another bundle claiming a kind id in use', () => {
+    const registry = createArtifactKindRegistry();
+    const held = registry.register(preview, 'papercraft');
+
+    assert.throws(() => registry.register(preview, 'other'), {
+      code: 'registration_conflict',
+    });
+
+    held.dispose();
+
+    // Once released, the id is free for whoever registers it next.
+    registry.register(preview, 'other');
+    assert.equal(registry.find('preview')?.title, 'Preview');
   });
 
   test('refuses a kind id that is not one', async () => {
     const harness = await artifactsHarness();
 
     try {
-      await assert.rejects(
-        harness.kinds.register({ id: 'Preview' }, harness.call()),
-        {
+      for (const id of ['Preview', 'pre view']) {
+        await assert.rejects(harness.kinds.register({ id }, harness.call()), {
           code: 'invalid_input',
-        },
-      );
-      await assert.rejects(
-        harness.kinds.register({ id: 'pre view' }, harness.call()),
-        {
-          code: 'invalid_input',
-        },
-      );
-    } finally {
-      await harness.close();
-    }
-  });
-
-  test('takes the kind payload schema and materialization it was given', async () => {
-    const harness = await artifactsHarness();
-
-    try {
-      const payload = z.object({ label: z.string().min(1) }).strict();
-
-      assert.deepEqual(
-        await harness.kinds.register({
-          id: 'diagram',
-          title: 'Diagram',
-          payload,
-          materialize: () => ({ entries: [] }),
-        }),
-        { id: 'diagram', title: 'Diagram' },
-      );
+        });
+      }
     } finally {
       await harness.close();
     }

@@ -1,6 +1,7 @@
 // The artifacts projector: `artifacts.created/v1` and `artifacts.revised/v1`
-// become one `artifacts.frame/v1` block per revision — one per revision, with
-// the frame data a frame reads — and nothing else becomes a block.
+// become one `artifacts.frame/v1` block per revision, with the frame data the
+// one reducer holds; `approved` and `applied` fold into the same state and
+// draw nothing.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -8,8 +9,8 @@ import { describe, test } from 'node:test';
 import type { ChatThreadEvent } from '../../src/client/chat-contract.js';
 import {
   ARTIFACT_FRAME_BLOCK_TYPE,
+  ARTIFACT_REVIEW_EVENT_TYPES,
   createArtifactsProjector,
-  frameDataOf,
 } from '../../src/client/projector.js';
 
 const event = (
@@ -54,21 +55,23 @@ const revised = (artifactId: string, revision: number, sequence: number) =>
   );
 
 describe('the artifacts projector', () => {
-  test('claims exactly the created/revised pair', () => {
-    const projector = createArtifactsProjector();
-
-    assert.deepEqual(projector.eventTypes, [
+  test('claims every artifacts event, or the review pair alone', () => {
+    assert.deepEqual(createArtifactsProjector().eventTypes, [
       'artifacts.created/v1',
       'artifacts.revised/v1',
+      'artifacts.approved/v1',
+      'artifacts.applied/v1',
     ]);
+    assert.deepEqual(
+      createArtifactsProjector(ARTIFACT_REVIEW_EVENT_TYPES).eventTypes,
+      ['artifacts.approved/v1', 'artifacts.applied/v1'],
+    );
   });
 
-  test('creates one frame block per revision, in order', () => {
+  test('draws one frame per revision, naming the kind and title the artifact was created with', () => {
     const projector = createArtifactsProjector();
-    const state = projector.initial();
-
     const first = projector.reduce(
-      state,
+      projector.initial(),
       created('checkout-7f3a', 'preview', 1),
     );
     const second = projector.reduce(
@@ -76,64 +79,87 @@ describe('the artifacts projector', () => {
       revised('checkout-7f3a', 2, 2),
     );
 
-    assert.equal(first.blocks.length, 1);
-    assert.equal(second.blocks.length, 1);
+    assert.deepEqual(
+      [...first.blocks, ...second.blocks].map((block) => block.id),
+      ['artifacts.frame:checkout-7f3a@1', 'artifacts.frame:checkout-7f3a@2'],
+    );
 
     const [block] = second.blocks;
 
-    assert.equal(block?.id, 'artifacts.frame:checkout-7f3a@2');
     assert.equal(block?.type, ARTIFACT_FRAME_BLOCK_TYPE);
     assert.equal(block?.sequence, 2);
     assert.deepEqual(block?.data, {
       artifactId: 'checkout-7f3a',
       revision: 2,
-      kind: 'unknown',
+      kind: 'preview',
+      title: 'Checkout',
       targets: [{ path: 'src/checkout.html', line: 9 }],
       entries: [{ path: 'index.html', sha256: 'b'.repeat(64) }],
       changeNote: 'Smaller',
       createdAt: '2024-01-01T00:00:00Z',
+      projectId: 'p1',
+      threadId: 't1',
     });
   });
 
-  test('keeps the projection in its state, and comments out of its blocks', () => {
+  test('folds approvals and applies without drawing a block for them', () => {
     const projector = createArtifactsProjector();
-    const state = projector.initial();
-
-    const folded = projector.reduce(
-      state,
+    const first = projector.reduce(
+      projector.initial(),
+      created('checkout-7f3a', 'preview', 1),
+    );
+    const approved = projector.reduce(
+      first.state,
       event(
-        'comments.added/v1',
-        {
-          commentId: 'c1',
-          target: {
-            kind: 'artifact',
-            id: 'checkout-7f3a',
-            revision: 1,
-            anchor: {},
-          },
-          text: 'aumenta o respiro',
-        },
+        'artifacts.approved/v1',
+        { artifactId: 'checkout-7f3a', revision: 1, scope: 'revision' },
         2,
       ),
     );
-
-    // Comments fold into the state — and never into a block of this projector.
-    assert.equal(folded.blocks.length, 0);
-  });
-
-  test('draws nothing for a malformed or unsupportable event', () => {
-    const projector = createArtifactsProjector();
-    const state = projector.initial();
-
-    const drawn = projector.reduce(
-      state,
-      event('artifacts.revised/v1', { artifactId: 'x' }, 1),
+    const applied = projector.reduce(
+      approved.state,
+      event(
+        'artifacts.applied/v1',
+        { artifactId: 'checkout-7f3a', revision: 1, files: ['a.tsx'] },
+        3,
+      ),
     );
 
-    assert.equal(drawn.blocks.length, 0);
+    assert.equal(approved.blocks.length + applied.blocks.length, 0);
+
+    const artifact = applied.state.artifacts.get('checkout-7f3a');
+
+    assert.equal(artifact?.revisions[0]?.approved, true);
+    assert.equal(artifact?.revisions[0]?.applied, true);
+  });
+
+  test('draws nothing for a revision the artifact cannot have, or a repeated creation', () => {
+    const projector = createArtifactsProjector();
+    const first = projector.reduce(
+      projector.initial(),
+      created('checkout-7f3a', 'preview', 1),
+    );
+
     assert.equal(
-      frameDataOf(event('artifacts.created/v1', null, 2)),
-      undefined,
+      projector.reduce(first.state, revised('checkout-7f3a', 5, 2)).blocks
+        .length,
+      0,
+    );
+    assert.equal(
+      projector.reduce(first.state, revised('ghost-1', 2, 3)).blocks.length,
+      0,
+    );
+    assert.equal(
+      projector.reduce(first.state, created('checkout-7f3a', 'preview', 4))
+        .blocks.length,
+      0,
+    );
+    assert.equal(
+      projector.reduce(
+        projector.initial(),
+        event('artifacts.created/v1', null, 5),
+      ).blocks.length,
+      0,
     );
   });
 });

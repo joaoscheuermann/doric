@@ -116,11 +116,32 @@ test('stamping stays out of comments, raw text and quoted values', () => {
   );
 });
 
-test('a component preview carries the component file as its root stamp', () => {
-  const markup = deriveMarkup('component', 'src/Checkout.tsx', '<div />');
+test('a document behind a long leading comment is kept as a document', () => {
+  const banner = `<!-- ${'licença '.repeat(80)} -->`;
+  const markup = deriveMarkup(
+    'html',
+    'page.html',
+    `${banner}\n<!DOCTYPE html>\n<html><body><p>oi</p></body></html>`,
+  );
 
-  assert.match(markup, /<pre data-papercraft-component/);
-  assert.match(markup, /data-papercraft-source="src\/Checkout\.tsx:1"/);
+  // Not wrapped a second time: one doctype, the source's own.
+  assert.equal(markup.match(/<!DOCTYPE html>/gi)?.length, 1);
+  assert.match(markup, /<html data-papercraft-source="page\.html:3">/);
+});
+
+test('the text of title and textarea is never stamped', () => {
+  const stamped = stampSource(
+    '<title><b>t</b></title>\n<textarea><p>texto</p></textarea>',
+    'page.html',
+  );
+
+  assert.match(
+    stamped,
+    /<title data-papercraft-source="page\.html:1"><b>t<\/b>/,
+  );
+  assert.match(stamped, /<p>texto<\/p>/);
+  assert.doesNotMatch(stamped, /<b data-papercraft-source/);
+  assert.doesNotMatch(stamped, /<p data-papercraft-source/);
 });
 
 test('the builder answers the built files with a sha of the markup', async () => {
@@ -167,6 +188,37 @@ test('read serves the markup a revision froze, not the edited source', async () 
   assert.deepEqual(state?.files, [
     { path: 'index.html', sha256: sha256(frozen) },
   ]);
+});
+
+test('read serves the markup of a component revision, not its module', async () => {
+  const frozen = deriveMarkup('component', 'src/Card.tsx', 'export default 1;');
+  const module = 'export function mount() {}';
+  const sheet = '.p-4 { padding: 1rem; }';
+  // The module's bytes come first: the markup is the `index.html` entry,
+  // wherever the registry lists it.
+  const record = recordWith([
+    { path: 'index.js', sha256: sha256(module), base64: b64(module) },
+    { path: 'index.css', sha256: sha256(sheet), base64: b64(sheet) },
+    { path: 'index.html', sha256: sha256(frozen), base64: b64(frozen) },
+  ]);
+  const services = servicesFor((id) => {
+    if (id === 'files/v1') return filesFor('export default 2;');
+    if (id === 'artifacts/v1') return { read: async () => record };
+
+    return undefined;
+  });
+
+  const state = await readPreview(services, testCall, {
+    artifactId: 'checkout-7f3a',
+    revision: 1,
+  });
+
+  assert.equal(state?.markup, frozen);
+  assert.equal(state?.derived, undefined);
+  assert.deepEqual(
+    state?.files.map((file) => file.path),
+    ['index.js', 'index.css', 'index.html'],
+  );
 });
 
 test('read falls back to the live source when nothing was stored', async () => {

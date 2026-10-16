@@ -22,6 +22,7 @@
   "requires": [
     "files/v1@^1.0.0",
     "artifacts/v1@^1.0.0",
+    "artifacts.cache/v1@^1.0.0",
     "artifact.kind/v1@^1.0.0",
     "comments/v1@^1.0.0",
     "tools/v1@^1.0.0",
@@ -30,10 +31,9 @@
     "commands/v1@^1.0.0",
     "menus/v1@^1.0.0",
     "hooks/v1@^1.0.0",
-    "windows/v1@^1.0.0",
-    "chat.views/v1@^1.0.0",
-    "chat.composer/v1@^1.0.0"
+    "windows/v1@^1.0.0"
   ],
+  "optional": ["chat.composer/v1", "chat.send/v1", "runtime.threads/v1"],
   "desktopScope": {
     "papercraft.previews/v1": ["projectId", "threadId", "promptId"]
   }

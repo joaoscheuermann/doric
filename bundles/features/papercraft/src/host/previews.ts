@@ -1,21 +1,28 @@
-// The preview builder and reader (path A).
+// The preview builder and reader.
 //
-// `build` derives the self-contained markup of one Project source file: an
-// `html` file that is already a document is kept as it is, a fragment is
-// wrapped in a minimal document, and the resulting markup carries the source
-// path as its origin stamp. It writes nothing and answers the built file list
-// with its content hash.
+// `build` derives one revision's files from one Project source:
+//
+// - `html` (path A): the self-contained markup — a document is kept as it is,
+//   a fragment is wrapped in a minimal document — with every element stamped
+//   with its origin (`data-papercraft-source="path:line"`). The revision's
+//   only entry is `index.html`, which the node mounts directly.
+// - `component` (path B): `compile.ts` bundles the source with esbuild (the
+//   window's import-map specifiers external, Project files read through
+//   `files/v1`) into `index.js`, an ESM module exporting
+//   `mount(root, { theme })` that renders the chosen export with the
+//   window's own React, and compiles its Tailwind into `index.css`. The
+//   revision also keeps `index.html` — the source text in a `<pre>` — as the
+//   path-A fallback the node shows when the module does not load. A source
+//   that does not compile fails the build, before anything is published.
+//
+// It writes nothing: it answers each built file with its content hash, and the
+// snapshot also hands over the bytes so the registry writes them into the work
+// copy.
 //
 // `read` resolves a stored revision back to `{ files, markup }` by reading the
-// artifact record through `artifacts/v1` and re-deriving the markup from the
-// source it names. Path B (an ESM module served from the app origin) and path C
-// (a host `view` window) are out of scope, so a revision's payload is its
-// derivation, not a served module.
-//
-// A `component` source is accepted by the schema but only its file text is
-// read: without path B there is no component runtime to mount, so a component
-// previews as its source text rendered in the document. This is the honest
-// boundary of path A.
+// artifact record through `artifacts/v1`: the `index.html` bytes the revision
+// froze when the work copy still holds them, else a derivation from the
+// source it names. Path C (a host `view` window) is out of scope.
 
 import { createHash } from 'node:crypto';
 
@@ -43,6 +50,7 @@ import {
   type PreviewState,
   papercraftPreviewsMethods,
 } from '../contracts/index.js';
+import { compileComponent } from './compile.js';
 
 /** The largest source file the builder reads. */
 export const MAX_SOURCE_BYTES = 1_048_576;
@@ -59,14 +67,30 @@ const escapeHtml = (value: string): string =>
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
 
+/** The entry path of a revision's markup (path A, and B's fallback). */
+export const MARKUP_ENTRY = 'index.html';
+
+/** The entry path of a component revision's compiled module (path B). */
+export const MODULE_ENTRY = 'index.js';
+
+/** The entry path of a component revision's Tailwind sheet (path B). */
+export const STYLES_ENTRY = 'index.css';
+
 /** The sha256 of a built payload, as `git`'s object hashes are written. */
 export const sha256 = (value: string): string =>
   createHash('sha256').update(value, 'utf8').digest('hex');
 
-const isDocument = (value: string): boolean => {
-  const head = value.trimStart().slice(0, 256).toLowerCase();
+/** Leading whitespace and `<!-- … -->` comments, which may precede a doctype. */
+const LEADING_TRIVIA = /^(?:\s+|<!--[\s\S]*?-->)*/;
 
-  return head.startsWith('<!doctype') || /<html[\s>]/.test(head);
+/**
+ * Whether a source is a whole document: its first markup, after whitespace
+ * and comments of any length, is a doctype or the `<html>` element.
+ */
+const isDocument = (value: string): boolean => {
+  const head = value.replace(LEADING_TRIVIA, '');
+
+  return /^<!doctype[\s>]/i.test(head) || /^<html[\s>/]/i.test(head);
 };
 
 const ROOT_TAG =
@@ -74,14 +98,17 @@ const ROOT_TAG =
 
 const TAG_NAME = /^<([a-zA-Z][a-zA-Z0-9-]*)/;
 
-/** The raw-text elements whose inner markup is text, not elements to stamp. */
-const RAW_ELEMENTS = ['script', 'style'] as const;
+/**
+ * The raw-text and escapable raw-text elements: their inner markup is text,
+ * not elements to stamp (`<title>` and `<textarea>` show it verbatim).
+ */
+const RAW_ELEMENTS = ['script', 'style', 'title', 'textarea'] as const;
 
 /**
- * Stamps the first element of a derived markup with the origin it came from —
- * the whole `path:line` the comment anchor reads as its `source` form. Used
- * where the root is synthetic (a `component` preview's `<pre>`), so the line
- * names where the derived block begins, not where a tag sits.
+ * Stamps the first element of a markup with the origin it came from — the
+ * whole `path:line` the comment anchor reads as its `source` form. Used where
+ * the element is synthetic (a `component` preview's `<pre>`), so the line names
+ * where the derived block begins, not where a tag sits.
  */
 export const stampRoot = (markup: string, origin: string): string => {
   if (markup.includes('data-papercraft-source=')) return markup;
@@ -200,8 +227,8 @@ export const stampSource = (content: string, path: string): string => {
     emit(stampTag(tag, path, line));
     index = close + 1;
 
-    // The raw text of a `<script>`/`<style>` is not elements: carry it over
-    // until the matching close, and never stamp inside it.
+    // The raw text of a raw-text element is not elements: carry it over until
+    // the matching close, and never stamp inside it.
     const name = TAG_NAME.exec(tag)?.[1]?.toLowerCase() ?? '';
     const selfClosed = tag.trimEnd().endsWith('/>');
 
@@ -234,8 +261,9 @@ const wrapFragment = (content: string, path: string): string =>
 /**
  * The self-contained markup of one source: a document is stamped and kept, a
  * fragment has its elements stamped before the minimal document wraps them,
- * and the source text of a `component` is embedded as escaped text (path A
- * has no component runtime) with the component's own file-level stamp.
+ * and the source text of a `component` is embedded as escaped text in a
+ * `<pre>` that carries the component's own file-level stamp — the fallback
+ * the node shows only when the revision's compiled module does not load.
  *
  * Every element the source itself wrote carries `data-papercraft-source="path:line"`,
  * so the comment anchor's `source` form names the code the element came from;
@@ -247,12 +275,13 @@ export const deriveMarkup = (
   content: string,
 ): string => {
   if (source === 'component') {
-    return stampRoot(
-      wrapFragment(
-        `<pre data-papercraft-component>${escapeHtml(content)}</pre>`,
-        path,
-      ),
-      `${path}:1`,
+    const origin = escapeHtml(`${path}:1`);
+
+    return wrapFragment(
+      `<pre data-papercraft-component data-papercraft-source="${origin}">${escapeHtml(
+        content,
+      )}</pre>`,
+      path,
     );
   }
 
@@ -263,7 +292,7 @@ export const deriveMarkup = (
 
 /** The built file list of one derived markup. */
 export const builtFiles = (markup: string): PreviewBuild => ({
-  files: [{ path: 'index.html', sha256: sha256(markup) }],
+  files: [{ path: MARKUP_ENTRY, sha256: sha256(markup) }],
 });
 
 /**
@@ -277,6 +306,30 @@ export const readSource = async (
   call: Call,
   path: string,
 ): Promise<string> => {
+  const content = await probeSource(services, call, path, true);
+
+  if (content === undefined) {
+    // Unreachable: a strict probe throws instead of answering nothing.
+    throw new ContractError(
+      'invalid_input',
+      `The source "${path}" could not be read.`,
+    );
+  }
+
+  return content;
+};
+
+/**
+ * Reads one Project file as text, as `readSource` does, except that a file
+ * that is not there answers `undefined` unless `strict`: the compiler probes
+ * the candidates of an import this way.
+ */
+export const probeSource = async (
+  services: Services,
+  call: Call,
+  path: string,
+  strict = false,
+): Promise<string | undefined> => {
   const outcome = await services
     .use(FilesV1, call.scope)
     .content({ path }, call);
@@ -290,6 +343,10 @@ export const readSource = async (
   }
 
   const read = outcome.value;
+
+  if (!strict && (read.status === 'not_found' || read.status === 'not_file')) {
+    return undefined;
+  }
 
   if (read.status !== 'read') {
     throw new ContractError(
@@ -310,15 +367,84 @@ export const readSource = async (
   return read.content;
 };
 
+/** One revision's built payload: the markup, its entries and their bytes. */
+export interface PreviewSnapshot {
+  readonly markup: string;
+  readonly entries: readonly PreviewFile[];
+  readonly files: readonly { readonly path: string; readonly base64: string }[];
+  /** What the build skipped without failing (a component's CSS imports). */
+  readonly warnings: readonly string[];
+}
+
+/** One snapshot's input: the source kind, its path and a component's export. */
+export interface PreviewSnapshotInput {
+  readonly source: PreviewSource;
+  readonly path: string;
+  readonly entry?: string;
+}
+
+/**
+ * One snapshot of a source: read once and built once, so the entries a
+ * revision records and the bytes the registry writes come from the same read.
+ * A `component` is compiled into `index.js` and `index.css` beside its
+ * fallback `index.html`; a compile failure throws `invalid_input` naming the
+ * errors.
+ */
+export const snapshotPreview = async (
+  services: Services,
+  call: Call,
+  input: PreviewSnapshotInput,
+): Promise<PreviewSnapshot> => {
+  const content = await readSource(services, call, input.path);
+  const markup = deriveMarkup(input.source, input.path, content);
+  const built: { path: string; text: string }[] = [
+    { path: MARKUP_ENTRY, text: markup },
+  ];
+  let warnings: readonly string[] = [];
+
+  if (input.source === 'component') {
+    const compiled = await compileComponent(
+      (path) =>
+        path === input.path
+          ? Promise.resolve(content)
+          : probeSource(services, call, path),
+      {
+        path: input.path,
+        ...(input.entry === undefined ? {} : { entry: input.entry }),
+      },
+    );
+
+    built.push(
+      { path: MODULE_ENTRY, text: compiled.js },
+      { path: STYLES_ENTRY, text: compiled.css },
+    );
+    warnings = compiled.warnings;
+  }
+
+  return {
+    markup,
+    entries: built.map(({ path, text }) => ({ path, sha256: sha256(text) })),
+    files: built.map(({ path, text }) => ({
+      path,
+      base64: Buffer.from(text, 'utf8').toString('base64'),
+    })),
+    warnings,
+  };
+};
+
 /** Builds one input against the files it reads; writes nothing. */
 export const buildPreview = async (
   services: Services,
   call: Call,
   input: PreviewBuildInput,
 ): Promise<PreviewBuild> => {
-  const content = await readSource(services, call, input.path);
+  const { entries } = await snapshotPreview(services, call, {
+    source: input.source,
+    path: input.path,
+    ...(input.entry === undefined ? {} : { entry: input.entry }),
+  });
 
-  return builtFiles(deriveMarkup(input.source, input.path, content));
+  return { files: [...entries] };
 };
 
 /**
@@ -348,11 +474,13 @@ export const readPreview = async (
 
   if (record === undefined || record.kind !== PREVIEW_KIND) return undefined;
 
-  // The revision's own bytes: the registry serves an entry's base64 while the
-  // work copy still holds the file that hashes to the entry the event named.
+  // The revision's own markup: the registry serves an entry's base64 while
+  // the work copy still holds the file that hashes to the entry the event
+  // named. A component revision also stores its module and sheet; the markup
+  // is always `index.html`.
   const stored = record.entries.find(
     (entry): entry is ArtifactReadEntry & { readonly base64: string } =>
-      entry.base64 !== undefined,
+      entry.path === MARKUP_ENTRY && entry.base64 !== undefined,
   );
 
   if (stored !== undefined) {

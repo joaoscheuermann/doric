@@ -1,21 +1,17 @@
 // The `artifacts` client part.
 //
-// It defines `<artifacts-node>` — the registry's generic frame — and
-// `<artifacts-revisions>`, the revision list, and registers, through
-// `chat.views/v1` (`whenAvailable`, as the `threads` and `papercraft` clients
-// do), the renderer that draws the frame block type.
+// It defines `<artifacts-node>` — the registry's frame, which mounts the
+// kind's body — and registers,
+// through `chat.views/v1` (`whenAvailable`, as the `threads` and `papercraft`
+// clients do), the renderer of the frame block type and the projector of
+// `artifacts.*`: one frame block per revision, for every kind.
 //
-// The projector of `artifacts.created/v1` / `artifacts.revised/v1` is
-// registered only when no kind bundle owns a node surface of its own: a kind
-// that declared a `blockType` in `artifact.kind/v1` has its own client part —
-// its projector claims the pair and its renderer draws the block (as
-// `papercraft`'s does for `preview`), and `chat.views/v1` claims are
-// exclusive, so registering this projector beside it would break that
-// bundle's activation. In a window where no such kind exists, this bundle
-// claims the pair and projects the frame for every artifact; in one where a
-// kind bundle stands, the frame block type still resolves to this renderer,
-// should a composition choose to draw it.
-
+// A kind provides its body by declaring `bodyTag` (and `blockType`) in
+// `artifact.kind/v1`; the frame creates that element with the frame's block.
+// A legacy kind — one that declares a `blockType` but no `bodyTag` — still
+// projects created/revised itself, and `chat.views/v1` claims are exclusive,
+// so in a window where one stands this bundle claims only the review pair
+// (`approved`/`applied`) and leaves created/revised to it.
 import {
   type Cleanup,
   type ClientContext,
@@ -31,18 +27,14 @@ import {
   ArtifactKindV1,
 } from '../contracts/index.js';
 import { ChatViewsV1 } from './chat-contract.js';
-import { defineFrameElement, defineRevisionsElement } from './elements.js';
+import { ARTIFACTS_NODE_TAG, defineFrameElement } from './elements.js';
 import {
+  ARTIFACT_EVENT_TYPES,
   ARTIFACT_FRAME_BLOCK_TYPE,
+  ARTIFACT_REVIEW_EVENT_TYPES,
   createArtifactsProjector,
 } from './projector.js';
 import { defineReviewElement } from './settings/review.js';
-
-/** The node element tag; every tag this bundle defines carries its prefix. */
-export const ARTIFACTS_NODE_TAG = 'artifacts-node';
-
-/** The revision list element tag. */
-export const ARTIFACTS_REVISIONS_TAG = 'artifacts-revisions';
 
 /** The Review section's element tag, drawn inside the settings window. */
 export const ARTIFACTS_REVIEW_TAG = 'artifacts-settings-review';
@@ -77,18 +69,20 @@ export const artifactsRegions: readonly {
   },
 ];
 
-/** Whether a kind owns its own node surface: a declared `blockType` names one. */
-const ownsNodeSurface = (kinds: readonly ArtifactKindDescriptor[]): boolean =>
-  kinds.some((kind) => kind.blockType !== undefined);
+/**
+ * Whether a legacy kind stands: one with a `blockType` but no `bodyTag`
+ * projects and renders its own node instead of a body inside the frame.
+ */
+const legacyKindStands = (kinds: readonly ArtifactKindDescriptor[]): boolean =>
+  kinds.some(
+    (kind) => kind.blockType !== undefined && kind.bodyTag === undefined,
+  );
 
 export function activate({ services }: ClientContext): Cleanup {
   const ui = services.use(UiV1);
   const disposables: Disposable[] = [];
 
   disposables.push(ui.define(ARTIFACTS_NODE_TAG, defineFrameElement()));
-  disposables.push(
-    ui.define(ARTIFACTS_REVISIONS_TAG, defineRevisionsElement()),
-  );
   disposables.push(ui.define(ARTIFACTS_REVIEW_TAG, defineReviewElement()));
 
   // The Review section's place in the settings window: one link in the nav's
@@ -125,22 +119,28 @@ export function activate({ services }: ClientContext): Cleanup {
       }),
     );
 
-    // The kinds the host registered decide who projects the pair: one with a
-    // `blockType` owns its node surface, so this bundle leaves the pair to its
-    // bundle's client. The registry is host state, complete before any window
-    // client part activates.
+    // The kinds the host registered decide what this bundle claims: all of
+    // `artifacts.*`, or — beside a legacy kind — the review pair alone. The
+    // registry is host state, complete before any window client part
+    // activates.
     void services
       .use(ArtifactKindV1)
       .list()
       .then(
         (kinds) => {
-          if (ownsNodeSurface(kinds)) return;
-
           try {
-            track(chat.registerProjector(createArtifactsProjector()));
+            track(
+              chat.registerProjector(
+                createArtifactsProjector(
+                  legacyKindStands(kinds)
+                    ? ARTIFACT_REVIEW_EVENT_TYPES
+                    : ARTIFACT_EVENT_TYPES,
+                ),
+              ),
+            );
           } catch {
-            // Another bundle claimed the pair first; its projection stands,
-            // and the frame renderer above still draws the block type it names.
+            // Another bundle claimed these types first; its projection
+            // stands, and the frame renderer above still draws its block type.
           }
         },
         () => undefined,
@@ -165,11 +165,15 @@ export {
   type CommentTargetKey,
 } from './comments-contract.js';
 export {
+  ARTIFACTS_COMMENT_EVENT,
+  ARTIFACTS_NODE_TAG,
+  type ArtifactCommentDetail,
   defineFrameElement,
-  defineRevisionsElement,
 } from './elements.js';
 export {
+  ARTIFACT_EVENT_TYPES,
   ARTIFACT_FRAME_BLOCK_TYPE,
+  ARTIFACT_REVIEW_EVENT_TYPES,
   type ArtifactFrameData,
   createArtifactsProjector,
   frameDataOf,

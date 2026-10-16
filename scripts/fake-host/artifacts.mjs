@@ -8,9 +8,9 @@
 //
 //  - `/workspace/.doric/artifacts/<artifactId>/` holds the newest payload and
 //    `artifact.json`, the index of the working copy, in exactly the real
-//    bundle's `StoredArtifact` shape — `manifestVersion`, identity, `state`,
-//    `approvedRevision`, provenance and one entry per revision, each with its
-//    anchors and entries;
+//    bundle's `StoredArtifact` shape — `manifestVersion`, identity,
+//    provenance and one entry per revision, each with its anchors, entries
+//    and review state (`approved`, per revision);
 //  - a `preview` revision is materialised by the `papercraft` bundle's own
 //    build function (see `papercraft.mjs`), never by markup written here;
 //  - every change appends its durable event to the Thread log, so the
@@ -53,13 +53,13 @@ const messageOf = (error) =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * The registry. `origin` names the seeded Project and Thread every event of
- * the fake host belongs to; the prompt is the Thread's current one, so a
- * comment or an artifact event lands beside the turn it belongs to.
+ * The registry. Every write appends its event to the Thread its call's scope
+ * names — the prompt is the scope's, else the Thread's current one, so an
+ * artifact event lands beside the turn it belongs to. A call without a
+ * Project and Thread is refused, as the real host refuses it.
  */
 export const createArtifacts = ({
   workspaceRoot,
-  defaults,
   threads,
   papercraft,
   policy,
@@ -73,14 +73,35 @@ export const createArtifacts = ({
   /** The artifact the scope is working on: what `papercraft.previews/v1.build` resolves. */
   let current;
 
-  const scopeOf = () => ({
-    projectId: defaults.projectId,
-    threadId: defaults.threadId,
-    promptId: threads.promptIdOf(defaults.threadId),
-  });
+  /**
+   * The Thread an event belongs to: the call's own scope, never a default —
+   * the real host scopes every write by the calling Project and Thread, and a
+   * call without them is refused, as it would be there.
+   */
+  const scopeOf = (scope) => {
+    if (typeof scope?.projectId !== 'string' || scope.projectId === '') {
+      throw new DevHostError(
+        'invalid_input',
+        'The call needs a projectId in its scope.',
+      );
+    }
 
-  const append = (type, event) =>
-    threads.append({ ...scopeOf(), threadId: defaults.threadId, type, event });
+    if (typeof scope.threadId !== 'string' || scope.threadId === '') {
+      throw new DevHostError(
+        'invalid_input',
+        'The call needs a threadId in its scope: its event belongs to a Thread log.',
+      );
+    }
+
+    return {
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+      promptId: scope.promptId ?? threads.promptIdOf(scope.threadId),
+    };
+  };
+
+  const append = (scope, type, event) =>
+    threads.append({ ...scopeOf(scope), type, event });
 
   const dirOf = (artifactId) =>
     join(workspaceRoot, '.doric/artifacts', artifactId);
@@ -162,10 +183,6 @@ export const createArtifacts = ({
     artifactId: manifest.artifactId,
     kind: manifest.kind,
     title: manifest.title,
-    state: manifest.state,
-    ...(manifest.approvedRevision === undefined
-      ? {}
-      : { approvedRevision: manifest.approvedRevision }),
     createdAt: manifest.createdAt,
     ...(manifest.createdBy === undefined
       ? {}
@@ -183,6 +200,7 @@ export const createArtifacts = ({
       ...(revision.changeNote === undefined
         ? {}
         : { changeNote: revision.changeNote }),
+      ...(revision.approved === true ? { approved: true } : {}),
       createdAt: revision.createdAt,
     })),
   });
@@ -214,7 +232,8 @@ export const createArtifacts = ({
       ...(stored.changeNote === undefined
         ? {}
         : { changeNote: stored.changeNote }),
-      state: manifest.state,
+      // The review state is the revision's own.
+      state: stored.approved === true ? 'approved' : 'open',
       createdAt: manifest.createdAt,
       ...(manifest.createdBy === undefined
         ? {}
@@ -247,12 +266,15 @@ export const createArtifacts = ({
 
     const built = payloadOf(artifactId, manifest.revisions.at(-1).revision);
 
-    if (built?.markup !== undefined) {
-      for (const file of built.files) {
-        if (file.path === 'index.html') {
-          await mkdir(dir, { recursive: true });
-          await writeFile(join(dir, file.path), built.markup, 'utf8');
-        }
+    for (const file of built?.files ?? []) {
+      const base64 = built.bytes?.[file.path];
+
+      if (base64 !== undefined) {
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, file.path), Buffer.from(base64, 'base64'));
+      } else if (built.markup !== undefined && file.path === 'index.html') {
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, file.path), built.markup, 'utf8');
       }
     }
 
@@ -269,7 +291,7 @@ export const createArtifacts = ({
    * preview materialisation is the dev host's own — a desktop that created an
    * artifact without a source would answer the same nothing the log says.
    */
-  const create = async (input = {}) => {
+  const create = async (input = {}, callScope) => {
     const {
       artifactId,
       kind,
@@ -298,12 +320,11 @@ export const createArtifacts = ({
     }
 
     const createdAt = now();
-    const scope = scopeOf();
+    const scope = scopeOf(callScope);
     const manifest = {
       artifactId: id,
       kind: String(kind ?? 'preview'),
       title: String(title ?? id),
-      state: 'open',
       createdAt,
       ...(createdBy === undefined ? {} : { createdBy: String(createdBy) }),
       threadId: scope.threadId,
@@ -337,7 +358,7 @@ export const createArtifacts = ({
 
     await writeManifest(id);
 
-    append('artifacts.created/v1', {
+    append(scope, 'artifacts.created/v1', {
       type: 'artifacts.created/v1',
       artifactId: id,
       revision: 1,
@@ -355,7 +376,7 @@ export const createArtifacts = ({
   };
 
   /** `artifacts/v1.revise`: the next revision of an existing artifact. */
-  const revise = async (input = {}) => {
+  const revise = async (input = {}, scope) => {
     const { artifactId, changeNote, targets, path, source, entry, notes } =
       input;
     const manifest = manifests.get(artifactId);
@@ -392,7 +413,7 @@ export const createArtifacts = ({
 
     await writeManifest(artifactId);
 
-    append('artifacts.revised/v1', {
+    append(scope, 'artifacts.revised/v1', {
       type: 'artifacts.revised/v1',
       artifactId,
       revision,
@@ -423,20 +444,26 @@ export const createArtifacts = ({
 
     return {
       ...record,
-      entries: record.entries.map((file) => ({
-        ...file,
-        ...(built?.markup !== undefined && file.path === 'index.html'
-          ? {
-              base64: Buffer.from(built.markup, 'utf8').toString('base64'),
-            }
-          : {}),
-      })),
+      // Every entry the build answered bytes for (the markup, and a
+      // component's module and sheet); the markup alone for an older build.
+      entries: record.entries.map((file) => {
+        const base64 =
+          built?.bytes?.[file.path] ??
+          (built?.markup !== undefined && file.path === 'index.html'
+            ? Buffer.from(built.markup, 'utf8').toString('base64')
+            : undefined);
+
+        return base64 === undefined ? file : { ...file, base64 };
+      }),
     };
   };
 
-  /** `artifacts/v1.list`: every artifact of a Thread, newest first. */
-  const list = (input = {}) => {
-    const { threadId } = input;
+  /**
+   * `artifacts/v1.list`: the artifacts of a Thread, newest first — the input's
+   * Thread, else the calling Thread, else the whole Project.
+   */
+  const list = (input = {}, scope) => {
+    const threadId = input.threadId ?? scope?.threadId;
 
     return [...manifests.values()]
       .filter(
@@ -446,40 +473,50 @@ export const createArtifacts = ({
       .map((manifest) => recordOf(manifest, manifest.revisions.length));
   };
 
+  /** `artifacts/v1.revisions`: every revision's record, oldest first, no bytes. */
+  const revisions = (input = {}) => {
+    const manifest = manifests.get(input.artifactId);
+
+    if (manifest === undefined) return [];
+
+    return manifest.revisions.map((entry) =>
+      recordOf(manifest, entry.revision),
+    );
+  };
+
   /**
-   * `artifacts/v1.approve`: records the approval once, and moves the
-   * revision's state only under the `request` policy — as the real registry
-   * does, over the manifest's own `state` and `approvedRevision`. A second
-   * approval of the same revision writes nothing.
+   * `artifacts/v1.approve`: under `request`, records the approval of one
+   * revision once and makes that revision — only that one — approved; under
+   * `proceed` there is no review to record, and nothing is written — as the
+   * real registry does.
    */
-  const approve = (input = {}) => {
+  const approve = (input = {}, scope) => {
     const { artifactId, revision } = input;
     const manifest = manifests.get(artifactId);
 
     if (manifest === undefined) return undefined;
 
     const asked = revision ?? manifest.revisions.length;
+    const stored = manifest.revisions.find((entry) => entry.revision === asked);
 
-    if (asked < 1 || asked > manifest.revisions.length) return undefined;
+    if (stored === undefined) return undefined;
 
-    if (manifest.state === 'approved' && manifest.approvedRevision === asked) {
+    if (policy !== 'request') {
+      log.note(
+        `approve(${artifactId}@${asked}) under the "proceed" policy writes nothing`,
+      );
+
       return recordOf(manifest, asked);
     }
 
-    append('artifacts.approved/v1', {
-      type: 'artifacts.approved/v1',
-      artifactId,
-      revision: asked,
-      scope: REVISION_SCOPE,
-    });
-
-    if (policy === 'request') {
-      manifest.state = 'approved';
-      manifest.approvedRevision = asked;
-    } else {
-      log.note(
-        `approve(${artifactId}@${asked}) under the "proceed" policy: the event is recorded and the revision stays open`,
-      );
+    if (stored.approved !== true) {
+      append(scope, 'artifacts.approved/v1', {
+        type: 'artifacts.approved/v1',
+        artifactId,
+        revision: asked,
+        scope: REVISION_SCOPE,
+      });
+      stored.approved = true;
     }
 
     return recordOf(manifest, asked);
@@ -493,7 +530,7 @@ export const createArtifacts = ({
    * The dev host has no code-writing step, so the event is all it can honestly
    * write; the canvas never calls it because nothing there applied anything.
    */
-  const apply = (input = {}) => {
+  const apply = (input = {}, scope) => {
     const { artifactId, revision, files } = input;
     const manifest = manifests.get(artifactId);
 
@@ -503,7 +540,18 @@ export const createArtifacts = ({
 
     if (asked < 1 || asked > manifest.revisions.length) return undefined;
 
-    append('artifacts.applied/v1', {
+    if (
+      policy === 'request' &&
+      manifest.revisions.find((entry) => entry.revision === asked)?.approved !==
+        true
+    ) {
+      throw new DevHostError(
+        'invalid_input',
+        `Revision ${asked} of "${artifactId}" is not approved: under "request" it cannot be applied.`,
+      );
+    }
+
+    append(scope, 'artifacts.applied/v1', {
       type: 'artifacts.applied/v1',
       artifactId,
       revision: asked,
@@ -594,6 +642,7 @@ export const createArtifacts = ({
     create,
     dirOf,
     list,
+    revisions,
     policy: policyOf,
     read,
     readPreview,

@@ -9,9 +9,14 @@
 // back happens only when the editor holds nothing — a reader who is typing
 // in this window is the master of their own words, and the restore never
 // fights them.
+//
+// A send made elsewhere (`chat.send/v1`, from the papercraft canvas) takes the
+// draft's words with it and clears them on the service; the editor empties
+// with that clear, but only while it still holds the words this side last
+// wrote — words typed since are newer than the send and stay.
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import { composerFeed } from '../../../../api/composer.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
@@ -30,6 +35,13 @@ export function ComposerDraft({ thread }: { readonly thread: Thread }) {
   const [editor] = useLexicalComposerContext();
   /** The words this side last handed the service, so its echoes are quiet. */
   const last = useRef<string | undefined>(undefined);
+  // The draft belongs to the Thread, not to its record: a record that moves on
+  // (a send starts the Thread running) is the same draft, and reading it back
+  // then would draw words the reader already sent.
+  const scope = useMemo<Thread>(
+    () => ({ id: thread.id, projectId: thread.projectId }),
+    [thread.id, thread.projectId],
+  );
 
   useEffect(() => {
     let restored = false;
@@ -41,12 +53,12 @@ export function ComposerDraft({ thread }: { readonly thread: Thread }) {
     const write = (text: string): void => {
       if (last.current === text) return;
       last.current = text;
-      composerFeed.setText(thread, text);
+      composerFeed.setText(scope, text);
     };
 
     const readBack = async (): Promise<void> => {
       if (restored) return;
-      const snapshot = await composerFeed.read(thread);
+      const snapshot = await composerFeed.read(scope);
       if (snapshot === undefined) return;
       last.current = snapshot.text;
 
@@ -79,12 +91,31 @@ export function ComposerDraft({ thread }: { readonly thread: Thread }) {
       quiet();
     });
 
+    const unwatch = composerFeed.watch(scope, (item) => {
+      if (item.kind !== 'text' || item.text.length > 0) return;
+      if (last.current === undefined || last.current === '') return;
+      const held = last.current;
+      last.current = '';
+      editor.update(() => {
+        const prompt = $getUserPromptNode();
+        if (prompt === undefined) return;
+        if (prompt.getTextContent().trim() !== held) return;
+        prompt.clear();
+      });
+    });
+
     return () => {
+      unwatch();
       restored = true;
-      if (settle !== undefined) clearTimeout(settle);
+      // A run of keystrokes still settling is written now, not dropped: the
+      // service keeps the words the editor last held.
+      if (settle !== undefined) {
+        clearTimeout(settle);
+        writeNow();
+      }
       unregister();
     };
-  }, [editor, thread]);
+  }, [editor, scope]);
 
   return null;
 }

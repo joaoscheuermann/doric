@@ -11,8 +11,17 @@
 // bundles are built separately and this one must not import them at compile
 // time. The IDs and shapes are theirs.
 
-import { type CallArg, type MethodSpecs, ref } from 'bundle/contracts';
+import {
+  type CallArg,
+  type CallScope,
+  type Disposable,
+  type MethodSpecs,
+  ref,
+  type StreamListener,
+} from 'bundle/contracts';
 import { z } from 'zod';
+
+export * from './chat.js';
 
 /* papercraft.previews/v1 ---------------------------------------------------- */
 
@@ -161,9 +170,13 @@ export const artifactTargetSchema = z
   .object({
     path: z.string().min(1),
     line: z.number().int().positive().optional(),
+    /** The first and last line the anchor covers. */
+    lines: z
+      .tuple([z.number().int().positive(), z.number().int().positive()])
+      .optional(),
     snippet: z.string().optional(),
   })
-  .strict();
+  .loose();
 
 export type ArtifactTarget = z.output<typeof artifactTargetSchema>;
 
@@ -178,6 +191,7 @@ export const artifactRecordSchema = z
     source: previewSourceSchema.optional(),
     path: z.string().optional(),
     entry: z.string().optional(),
+    /** The review state of this revision (per revision, not per artifact). */
     state: z.enum(['open', 'approved']),
     createdAt: z.string(),
     createdBy: z.string().optional(),
@@ -206,24 +220,63 @@ export interface ArtifactRevisionRead extends ArtifactRecord {
   readonly entries: readonly ArtifactReadEntry[];
 }
 
+/** The bytes of one entry, base64, as `create`/`revise` hand them once. */
+export interface ArtifactFile {
+  readonly path: string;
+  readonly base64: string;
+}
+
+/**
+ * The revision a caller built itself: its entries (identity) and their bytes,
+ * which the registry verifies against the entries before writing them into the
+ * work copy. A caller that passes these needs no kind materialization.
+ */
+export interface ArtifactBuiltRevision {
+  readonly entries?: readonly PreviewFile[];
+  readonly files?: readonly ArtifactFile[];
+  /** The kind's payload, for the registry to materialize instead. */
+  readonly payload?: unknown;
+}
+
 export interface Artifacts {
   create(
     input: {
       readonly artifactId?: string;
       readonly kind: string;
       readonly title: string;
-      readonly targets: readonly ArtifactTarget[];
+      readonly targets?: readonly ArtifactTarget[];
       readonly source?: PreviewSource;
       readonly path?: string;
       readonly entry?: string;
       readonly notes?: string;
-    },
+    } & ArtifactBuiltRevision,
+    call?: CallArg,
+  ): Promise<ArtifactRecord>;
+  /** Adds the next revision; absent fields carry over from the previous one. */
+  revise(
+    input: {
+      readonly artifactId: string;
+      readonly changeNote?: string;
+      readonly targets?: readonly ArtifactTarget[];
+      readonly source?: PreviewSource;
+      readonly path?: string;
+      readonly entry?: string;
+    } & ArtifactBuiltRevision,
     call?: CallArg,
   ): Promise<ArtifactRecord>;
   read(
     input: { readonly artifactId: string; readonly revision?: number },
     call?: CallArg,
   ): Promise<ArtifactRevisionRead | undefined>;
+  /** Every revision's record, oldest first, without bytes. */
+  revisions(
+    input: { readonly artifactId: string },
+    call?: CallArg,
+  ): Promise<readonly ArtifactRecord[]>;
+  /**
+   * Under `request`, records the approval of one revision and makes that
+   * revision `approved`; under `proceed` it writes nothing.
+   */
   approve(
     input: { readonly artifactId: string; readonly revision: number },
     call?: CallArg,
@@ -233,33 +286,118 @@ export interface Artifacts {
 
 export const ArtifactsV1 = ref<Artifacts>('artifacts/v1');
 
+/* Artifacts cache (structural copy of `artifacts.cache/v1`) --------------- */
+
+/** One entry `artifacts.cache/v1.ensure` takes: `artifacts/v1.read`'s shape. */
+export interface ArtifactCacheEntry {
+  readonly path: string;
+  readonly sha256: string;
+  readonly base64: string;
+}
+
+/** What one `ensure` left in the cache, and the entries it refused. */
+export interface ArtifactCacheEnsureResult {
+  readonly kept: number;
+  readonly written: number;
+  readonly failed: readonly {
+    readonly path: string;
+    readonly reason: 'invalid_path' | 'hash_mismatch' | 'write_failed';
+    readonly message: string;
+  }[];
+}
+
+/**
+ * `artifacts.cache/v1` (desktopMain): writes a revision's entries under
+ * `userData/artifacts/<artifactId>@<revision>/` once each SHA-256 is
+ * confirmed, which is what `doric://app/artifacts/…` serves. The window
+ * fetches the bytes from `artifacts/v1.read` and hands them over.
+ */
+export interface ArtifactsCache {
+  ensure(
+    input: {
+      readonly artifactId: string;
+      readonly revision: number;
+      readonly entries: readonly ArtifactCacheEntry[];
+    },
+    call?: CallArg,
+  ): Promise<ArtifactCacheEnsureResult>;
+}
+
+export const ArtifactsCacheV1 = ref<ArtifactsCache>('artifacts.cache/v1');
+
 export interface ArtifactKinds {
-  /** Registers a kind. A duplicate id fails with `registration_conflict`. */
+  /**
+   * Registers a kind; the release unregisters it. A duplicate id fails with
+   * `registration_conflict`. A kind that declares `bodyTag` renders its body
+   * inside the registry's frame: the frame creates `bodyTag` with its block
+   * (`type` = `blockType`, `data` = the frame's data).
+   */
   register(
-    input: { readonly id: string; readonly title?: string },
+    input: {
+      readonly id: string;
+      readonly title?: string;
+      readonly blockType?: string;
+      readonly bodyTag?: string;
+      /** Who draws the header: the registry's frame (default) or the body. */
+      readonly header?: 'frame' | 'body';
+    },
     call?: CallArg,
-  ): unknown;
-  list(
-    call?: CallArg,
-  ): readonly { readonly id: string; readonly title?: string }[];
+  ): Promise<Disposable> | Disposable;
+  list(call?: CallArg): Promise<
+    readonly {
+      readonly id: string;
+      readonly title?: string;
+      readonly blockType?: string;
+      readonly bodyTag?: string;
+      readonly header?: 'frame' | 'body';
+    }[]
+  >;
 }
 
 export const ArtifactKindV1 = ref<ArtifactKinds>('artifact.kind/v1');
 
 /* Comments (structural copy of `comments/v1`) ----------------------------- */
 
-export const commentAnchorSchema = z
-  .object({
-    form: z.enum(['source', 'selector', 'point', 'range']),
-    path: z.string().optional(),
-    line: z.number().int().positive().optional(),
-    selector: z.string().optional(),
-    x: z.number().optional(),
-    y: z.number().optional(),
-    label: z.string().optional(),
-    text: z.string().optional(),
-  })
-  .strict();
+/** The fields every anchor form may carry; each form then requires its own. */
+const anchorFields = {
+  path: z.string().optional(),
+  line: z.number().int().positive().optional(),
+  selector: z.string().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  label: z.string().optional(),
+  text: z.string().optional(),
+};
+
+/**
+ * Where in the target a comment sits, validated per form as `comments/v1`
+ * validates it: `source` names a `path` (its `line` a positive integer when
+ * given), `selector` a `selector`, `point` both `x` and `y`, `range` its
+ * `text`.
+ */
+export const commentAnchorSchema = z.discriminatedUnion('form', [
+  z.looseObject({
+    ...anchorFields,
+    form: z.literal('source'),
+    path: z.string().min(1),
+  }),
+  z.looseObject({
+    ...anchorFields,
+    form: z.literal('selector'),
+    selector: z.string().min(1),
+  }),
+  z.looseObject({
+    ...anchorFields,
+    form: z.literal('point'),
+    x: z.number(),
+    y: z.number(),
+  }),
+  z.looseObject({
+    ...anchorFields,
+    form: z.literal('range'),
+    text: z.string().min(1),
+  }),
+]);
 
 export type CommentAnchor = z.output<typeof commentAnchorSchema>;
 
@@ -282,6 +420,8 @@ export const commentSchema = z
     author: z.string().optional(),
     resolved: z.boolean(),
     createdAt: z.string(),
+    /** The root comment this one answers; absent on a root. */
+    inReplyTo: z.string().optional(),
   })
   .loose();
 
@@ -297,16 +437,77 @@ export interface CommentAddInput {
   readonly target: CommentTarget;
   readonly text: string;
   readonly author?: string;
+  /**
+   * The id the comment is written under, chosen by the caller (the stack
+   * item's id): a retried write with the same id is idempotent.
+   */
+  readonly commentId?: string;
+  /** The root comment this one answers. */
+  readonly inReplyTo?: string;
 }
 
 /** The target kind a preview comment carries; read by whoever owns the target. */
 export const ARTIFACT_TARGET_KIND = 'artifact';
 
+/** The identity of a target, as `comments/v1.list` filters by it. */
+export interface CommentTargetKey {
+  readonly kind: string;
+  readonly id: string;
+  readonly revision?: number;
+}
+
 export interface Comments {
   add(input: CommentAddInput, call?: CallArg): Promise<Comment>;
+  /** The comments of a target, in the order of the log. */
+  list(
+    input: { readonly target?: CommentTargetKey; readonly kind?: string },
+    call?: CallArg,
+  ): Promise<readonly Comment[]>;
+  /**
+   * Marks one comment of the call's Thread attended (or reopens it), writing
+   * `comments.resolved/v1`; the call scope names the Project, the Thread and
+   * the prompt the event is written under.
+   */
+  resolve(
+    input: { readonly commentId: string; readonly resolved: boolean },
+    call?: CallArg,
+  ): Promise<Comment | undefined>;
 }
 
 export const CommentsV1 = ref<Comments>('comments/v1');
+
+/* Threads (structural copy of `runtime.threads/v1`'s watch) --------------- */
+
+/** One durable event of a Thread's log, as the watch delivers it. */
+export interface ThreadLogEvent {
+  readonly sequence?: number;
+  /** The prompt the event was written under. */
+  readonly promptId?: string;
+  readonly type: string;
+  readonly event: unknown;
+  readonly createdAt?: string;
+}
+
+/** One item of `watchThread`: the replay first, then the live events. */
+export type ThreadWatchItem =
+  | { readonly kind: 'snapshot'; readonly events: readonly ThreadLogEvent[] }
+  | { readonly kind: 'event'; readonly event: ThreadLogEvent }
+  | { readonly kind: 'updated' | 'deleted' };
+
+/**
+ * `runtime.threads/v1`, only the stream the canvas window reads its preview's
+ * durable state from (spec: "De onde vêm os dados"). Optional: a window
+ * without it reads the registry and stays at that reading.
+ */
+export interface ThreadsWatch {
+  watchThread(
+    input: { readonly threadId: string; readonly afterSequence: number },
+    listener: StreamListener<ThreadWatchItem>,
+    call?: CallArg,
+  ): Disposable;
+}
+
+export const RuntimeThreadsV1 = ref<ThreadsWatch>('runtime.threads/v1');
 
 /* Names the client and desktop parts share --------------------------------- */
 
@@ -316,17 +517,44 @@ export const PREVIEW_BLOCK_TYPE = 'papercraft.preview/v1';
 /** The node element tag; the `papercraft` owner prefixes every tag. */
 export const PAPERCRAFT_PREVIEW_TAG = 'papercraft-preview';
 
-/** The canvas element tag of the `/papercraft/:artifactId` route. */
+/** The canvas element tag of the canvas route. */
 export const PAPERCRAFT_CANVAS_TAG = 'papercraft-canvas';
+
+/**
+ * The Project and the Thread a preview belongs to: what every host call of the
+ * node and the window carries as its scope (the host's lease needs the
+ * `projectId`), and what the composer stack is keyed by.
+ */
+export interface PreviewScope {
+  readonly projectId: string;
+  readonly threadId?: string;
+}
+
+/** The call scope of a preview: its Project and, when known, its Thread. */
+export const callScopeOf = (scope: PreviewScope): CallScope => ({
+  projectId: scope.projectId,
+  ...(scope.threadId === undefined ? {} : { threadId: scope.threadId }),
+});
 
 /** The window command that opens or focuses the canvas at a preview. */
 export const OPEN_CANVAS_COMMAND = 'papercraft.open-canvas/v1';
 
-/** The path window the canvas opens as, parameterised by the artifact id. */
-export const CANVAS_ROUTE = '/papercraft/:artifactId';
+/**
+ * The path window the canvas opens as. The window is opened from a
+ * conversation, and it carries that conversation in its path: the Project
+ * scopes every host call, and the Thread is the composer stack its comments
+ * join and the log it watches.
+ */
+export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:artifactId';
 
-export const canvasPathOf = (artifactId: string): string =>
-  `/papercraft/${artifactId}`;
+export const canvasPathOf = (input: {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly artifactId: string;
+}): string =>
+  `/papercraft/${encodeURIComponent(input.projectId)}/${encodeURIComponent(
+    input.threadId,
+  )}/${encodeURIComponent(input.artifactId)}`;
 
 /** The command that approves a revision under the `request` policy. */
 export const APPROVE_COMMAND = 'papercraft.approve/v1';
@@ -364,8 +592,73 @@ export const PAPERCRAFT_KEYBINDINGS = [
 /** The composer stack item kind of a papercraft comment draft. */
 export const PAPERCRAFT_COMMENT_KIND = 'papercraft-preview';
 
-/** The element chat draws one composer stack item with. */
-export const PAPERCRAFT_COMMENT_CARD_TAG = 'papercraft-comment-card';
+/**
+ * What one composer stack item of the papercraft kind carries (`data`): the
+ * comment's target, the pin it wears, the root it answers when it is a reply,
+ * and the preview it was written on for the line to name. The flush reads the
+ * target; chat's line reads `target` and `refs`.
+ */
+export interface PreviewItemData {
+  readonly target: CommentTarget;
+  /** The pin's number: `1`, `2`, … per artifact and revision. */
+  readonly pin?: number;
+  /** The root comment (or root draft) this reply answers. */
+  readonly inReplyTo?: string;
+  /** The preview the comment was written on: its title and source path. */
+  readonly refs?: { readonly title?: string; readonly source?: string };
+  /** Where the pin sits, in content coordinates, when it was placed. */
+  readonly point?: { readonly x: number; readonly y: number };
+}
+
+const recordOf = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+/**
+ * The target a papercraft stack item's `data` names: its `target`, else the
+ * fields a draft written before the target was carried recorded
+ * (`artifactId`, `revision`, `anchor`). `undefined` when neither names one.
+ */
+export const previewItemTargetOf = (
+  data: unknown,
+): CommentTarget | undefined => {
+  const fields = recordOf(data);
+  const target = recordOf(fields?.target);
+
+  if (
+    target !== undefined &&
+    typeof target.id === 'string' &&
+    target.id !== '' &&
+    recordOf(target.anchor) !== undefined
+  ) {
+    return {
+      kind:
+        typeof target.kind === 'string' ? target.kind : ARTIFACT_TARGET_KIND,
+      id: target.id,
+      ...(typeof target.revision === 'number'
+        ? { revision: target.revision }
+        : {}),
+      anchor: target.anchor as CommentAnchor,
+    };
+  }
+
+  if (
+    typeof fields?.artifactId !== 'string' ||
+    fields.artifactId === '' ||
+    typeof fields.revision !== 'number' ||
+    recordOf(fields.anchor) === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: ARTIFACT_TARGET_KIND,
+    id: fields.artifactId,
+    revision: fields.revision,
+    anchor: fields.anchor as CommentAnchor,
+  };
+};
 
 /** What the toolbar's revision reading shows: which revisions exist. */
 export interface RevisionReading {

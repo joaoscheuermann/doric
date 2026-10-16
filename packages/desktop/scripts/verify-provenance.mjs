@@ -31,10 +31,87 @@ const origin = (file) =>
       : `app/desktop/doric-renderer/src/${file}`;
 
 /**
+ * The portal container patch: an overlay portals into the container the
+ * nearest `PortalContainerProvider` names. `spread` is the original return of
+ * a `*Portal` wrapper that spreads its props into the primitive (a caller's
+ * own `container` still wins), and `inline` names the primitive whose content
+ * component renders its `Portal` inline.
+ */
+const portalContainer = ({ primitive, spread, inline = false }) => {
+  const reads = '  const container = usePortalContainer();\n';
+  const entries = [
+    ["import { usePortalContainer } from '../portal-container.js';\n", ''],
+  ];
+  if (spread !== undefined) {
+    entries.push([
+      `${reads}  return (\n    <${primitive}.Portal\n      data-slot="${spread.slot}"\n      container={container}\n      {...props}\n    />\n  );\n`,
+      spread.text,
+    ]);
+  }
+  if (inline) {
+    entries.push([
+      `${reads}  return (\n    <${primitive}.Portal container={container}>\n`,
+      `  return (\n    <${primitive}.Portal>\n`,
+    ]);
+  }
+  return entries;
+};
+
+/** A `*Portal` wrapper's original one-line return. */
+const oneLine = (primitive, slot) => ({
+  slot,
+  text: `  return <${primitive}.Portal data-slot="${slot}" {...props} />;\n`,
+});
+
+/** A `*Portal` wrapper's original return, wrapped in parentheses. */
+const wrapped = (primitive, slot) => ({
+  slot,
+  text: `  return (\n    <${primitive}.Portal data-slot="${slot}" {...props} />\n  );\n`,
+});
+
+/**
  * The local patches, each undone exactly. A patch that no longer matches leaves
  * the text changed, so the hash check reports the file.
  */
 const patches = {
+  'components/alert-dialog.tsx': portalContainer({
+    primitive: 'AlertDialogPrimitive',
+    spread: wrapped('AlertDialogPrimitive', 'alert-dialog-portal'),
+  }),
+  'components/combobox.tsx': portalContainer({
+    primitive: 'ComboboxPrimitive',
+    inline: true,
+  }),
+  'components/context-menu.tsx': portalContainer({
+    primitive: 'ContextMenuPrimitive',
+    spread: wrapped('ContextMenuPrimitive', 'context-menu-portal'),
+    inline: true,
+  }),
+  'components/dialog.tsx': portalContainer({
+    primitive: 'DialogPrimitive',
+    spread: oneLine('DialogPrimitive', 'dialog-portal'),
+  }),
+  'components/dropdown-menu.tsx': portalContainer({
+    primitive: 'DropdownMenuPrimitive',
+    spread: wrapped('DropdownMenuPrimitive', 'dropdown-menu-portal'),
+    inline: true,
+  }),
+  'components/popover.tsx': portalContainer({
+    primitive: 'PopoverPrimitive',
+    inline: true,
+  }),
+  'components/select.tsx': portalContainer({
+    primitive: 'SelectPrimitive',
+    inline: true,
+  }),
+  'components/sheet.tsx': portalContainer({
+    primitive: 'SheetPrimitive',
+    spread: oneLine('SheetPrimitive', 'sheet-portal'),
+  }),
+  'components/tooltip.tsx': portalContainer({
+    primitive: 'TooltipPrimitive',
+    inline: true,
+  }),
   // The composer's white control: a fill the theme's blue `--primary` cannot
   // give, with an icon that stays dark on it in either theme.
   'components/button.tsx': [

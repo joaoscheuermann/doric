@@ -2,7 +2,9 @@
 // draws above the prompt and the send flushes. The state itself lives in the
 // main process (`chat.composer/v1`); this store only opens one watch per Thread
 // a surface shows, applies the deltas it sees and hands the gestures (a new
-// item, an edit, a removal) back through the same service.
+// item, an edit, a removal) back through the same service. An edit and a
+// removal also apply here at once, so a send right after a keystroke reads the
+// note as written; the service's echo then states the same.
 //
 // The watch is retained: several surfaces can show one Thread (the transcript
 // and the footer controls both do), so the last release ends the watch and the
@@ -31,7 +33,10 @@ export interface StackThread {
 export interface ComposerStackState {
   /** Each held Thread's stack, in the order the items were added. */
   readonly stacks: ReadonlyMap<string, readonly ComposerItem[]>;
-  /** The item the surface opens the note editor of, until it is closed. */
+  /**
+   * The item whose note should take the caret — a comment that just joined
+   * the stack — until its line has put it there.
+   */
   readonly focused: string | undefined;
   /** Shows one Thread: opens its watch, or keeps the one already open. */
   retain(thread: StackThread): void;
@@ -46,7 +51,7 @@ export interface ComposerStackState {
   note(thread: StackThread, id: string, note: string): void;
   /** Removes one item from the Thread's stack. */
   remove(thread: StackThread, id: string): void;
-  /** Opens one item's note editor; `undefined` closes it. */
+  /** Asks for one item's note to take the caret; `undefined` drops the ask. */
   focus(id: string | undefined): void;
   /** One Thread's stack, empty while no watch has answered yet. */
   stack(threadId: string): readonly ComposerItem[];
@@ -136,9 +141,26 @@ export const createComposerStackStore = (feed: ComposerFeed = composerFeed) => {
       },
       add: (thread, input) => feed.add(thread, input),
       note: (thread, id, note) => {
+        const held = get().stacks.get(thread.id) ?? [];
+        if (held.some((item) => item.id === id && item.note !== note)) {
+          const stacks = new Map(get().stacks);
+          stacks.set(
+            thread.id,
+            held.map((item) => (item.id === id ? { ...item, note } : item)),
+          );
+          set({ stacks });
+        }
         void feed.note(thread, id, note);
       },
       remove: (thread, id) => {
+        set((state) => ({
+          stacks: applyDelta(state.stacks, {
+            kind: 'removed',
+            threadId: thread.id,
+            id,
+          }),
+          focused: state.focused === id ? undefined : state.focused,
+        }));
         void feed.remove(thread, id);
       },
       focus: (id) => set({ focused: id }),

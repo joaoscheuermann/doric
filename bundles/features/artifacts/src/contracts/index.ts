@@ -13,8 +13,10 @@
 import {
   type CallArg,
   type ContractId,
+  type Disposable,
   defineEvent,
   defineSettings,
+  disposableSchema,
   noInput,
   ref,
 } from 'bundle/contracts';
@@ -24,6 +26,8 @@ import { z } from 'zod';
 export interface ArtifactTarget {
   /** Workspace-relative path of the file the artifact touches. */
   readonly path: string;
+  /** The first and last line of that file the anchor covers (the spec's form). */
+  readonly lines?: readonly [number, number];
   /** One line of that file, when the anchor is a line. */
   readonly line?: number;
   /** A snippet of it, when naming the line by number would be brittle. */
@@ -32,6 +36,43 @@ export interface ArtifactTarget {
 
 /** Where the payload of a revision came from. */
 export type ArtifactSource = 'html' | 'component' | 'site';
+
+/**
+ * The identity grammar of an artifact: lowercase segments separated by single
+ * dashes. It is also a directory name of the work copy and of the desktop
+ * cache, so nothing else is ever an artifact id.
+ */
+export const artifactIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Whether a revision-relative entry path stays inside the revision: one or
+ * more `/`-separated segments, none empty, `.` or `..`, and none carrying a
+ * backslash or NUL — so no leading `/` either. The registry writes entries
+ * under `.doric/`, and the desktop cache under its own root, by this rule.
+ */
+export const isArtifactEntryPath = (path: string): boolean =>
+  path !== '' &&
+  path
+    .split('/')
+    .every(
+      (segment) =>
+        segment !== '' &&
+        segment !== '.' &&
+        segment !== '..' &&
+        !segment.includes('\\') &&
+        !segment.includes('\0'),
+    );
+
+/** The entry path schema every wire shape that names an entry uses. */
+export const artifactEntryPathSchema = z.string().refine(isArtifactEntryPath, {
+  message:
+    'An entry path is relative segments without empty, ".", "..", backslash or NUL parts.',
+});
+
+/** The artifact id schema every wire shape that names an artifact uses. */
+export const artifactIdSchema = z
+  .string()
+  .regex(artifactIdPattern, { message: 'Not an artifact id.' });
 
 /**
  * One entry of a revision: the artifact-relative path of a payload file and
@@ -90,6 +131,10 @@ export interface ArtifactRecord {
   readonly notes?: string;
   /** The note this revision was published with, when it was a `revise`. */
   readonly changeNote?: string;
+  /**
+   * The review state of this revision: `approved` only once the review
+   * gesture was recorded for it under `request`. A new revision starts open.
+   */
   readonly state: 'open' | 'approved';
   /** ISO-8601, when the artifact was created. */
   readonly createdAt: string;
@@ -165,6 +210,13 @@ export interface ArtifactApproveInput {
   readonly revision: number;
 }
 
+export interface ArtifactAwaitApprovalInput {
+  readonly artifactId: string;
+  readonly revision: number;
+  /** Absent, the wait lasts as long as the call does. */
+  readonly timeoutMs?: number;
+}
+
 /** The review policy in force: `proceed` publishes and moves on, `request` waits. */
 export type ArtifactReviewPolicyValue = {
   readonly policy: 'proceed' | 'request';
@@ -188,32 +240,62 @@ export interface Artifacts {
     input: ArtifactReadInput,
     call?: CallArg,
   ): Promise<ArtifactRevisionRead | undefined>;
+  /**
+   * The Project's artifacts, newest revision each. Without `threadId`, a call
+   * scoped to a Thread lists that Thread's artifacts and any other call the
+   * whole Project's. An artifact whose manifest cannot be read is skipped.
+   */
   list(
     input: ArtifactListInput,
     call?: CallArg,
   ): Promise<readonly ArtifactRecord[]>;
   /**
-   * Records `artifacts.approved/v1` for one revision. Under `request` the
-   * artifact also becomes `approved`; under `proceed` the gesture is not the
-   * policy's path and only the event is recorded. Repeating it for a revision
-   * already approved writes nothing twice.
+   * Every revision of one artifact, oldest first, without bytes: what the
+   * frame reads a revision's review state from. Empty when the artifact does
+   * not exist.
+   */
+  revisions(
+    input: { readonly artifactId: string },
+    call?: CallArg,
+  ): Promise<readonly ArtifactRecord[]>;
+  /**
+   * Under `request`, records `artifacts.approved/v1` for one revision and
+   * makes that revision — only that one — `approved`. Under `proceed` there
+   * is no approval: nothing is recorded and the revision stays as it was.
+   * Repeating it for a revision already approved records nothing twice.
    */
   approve(
     input: ArtifactApproveInput,
     call?: CallArg,
   ): Promise<ArtifactRecord | undefined>;
-  /** What the UI reads before offering the review gesture. */
+  /**
+   * Resolves once the revision may reach the Project's code: at once under
+   * `proceed` or when the revision is already approved, otherwise when
+   * `approve` records it — or with the revision still `open` when
+   * `timeoutMs` passes. Undefined when the artifact or revision does not
+   * exist. What a kind's tool awaits under `request` before writing code.
+   */
+  awaitApproval(
+    input: ArtifactAwaitApprovalInput,
+    call?: CallArg,
+  ): Promise<ArtifactRecord | undefined>;
+  /** The policy of the calling Project: what the UI reads before offering the gesture. */
   policy(call?: CallArg): Promise<ArtifactReviewPolicyValue>;
   /**
-   * Writes the Project's review policy into `artifacts.review-policy/v1` —
-   * the settings space this bundle registers, so a window reaches it through
-   * the registry and not through `settings/v1`, which the desktop never sees.
+   * Writes the review policy of the calling Project (or, for a call scoped to
+   * no Project, the default of every Project without a choice) into
+   * `artifacts.review-policy/v1` — the settings space this bundle registers,
+   * so a window reaches it through the registry and not through
+   * `settings/v1`, which the desktop never sees.
    */
   setPolicy(
     input: ArtifactReviewPolicyValue,
     call?: CallArg,
   ): Promise<ArtifactReviewPolicyValue>;
-  /** Records `artifacts.applied/v1`: the revision's files reached the code. */
+  /**
+   * Records `artifacts.applied/v1`: the revision's files reached the code.
+   * Under `request`, a revision not yet approved is refused.
+   */
   apply(
     input: {
       readonly artifactId: string;
@@ -247,7 +329,10 @@ export interface ArtifactMaterialization {
  */
 export type ArtifactKindMaterialize = (
   input: {
-    /** The payload, already validated against the kind's schema. */
+    /**
+     * The payload as the kind's schema parsed it (defaults and transforms
+     * applied), or as the caller sent it when the kind declares no schema.
+     */
     readonly payload: unknown;
     readonly artifactId: string;
     readonly revision: number;
@@ -265,13 +350,33 @@ export interface ArtifactKindDescriptor {
   /** The kind's own derivation of a revision from its payload. */
   readonly materialize?: ArtifactKindMaterialize;
   /**
-   * The chat block type the kind's renderer draws. A kind that declares one
-   * owns its node surface: its bundle's client projects and renders its own
-   * blocks (as `papercraft`'s does for `preview`), and the registry's client
-   * leaves the `artifacts.*` pair to it.
+   * The block type of the kind's body: the `type` of the block the registry's
+   * frame hands the body element (`bodyTag`). Without `bodyTag`, a kind that
+   * declares one is a legacy kind that projects and renders its own node (as
+   * `papercraft`'s client did for `preview`), and the registry's client leaves
+   * the created/revised pair to it.
    */
   readonly blockType?: string;
+  /**
+   * The custom element (defined by the kind's own client part, with `ui/v1`)
+   * that renders the body of one revision inside the registry's frame. The
+   * frame creates it with `ui/v1.create(bodyTag, { block })`, where `block` is
+   * the frame's own block with `type` set to `blockType` — `data` is an
+   * `ArtifactFrameData`. "The frame is the registry's, the body is the kind's."
+   */
+  readonly bodyTag?: string;
+  /**
+   * Who draws the header of a revision: `frame` (the default) — the registry's
+   * bar with the title, kind, revision, review state and `Comentar` — or
+   * `body`, for a kind whose body overlays its own header. With `body` the
+   * frame draws no bar; it keeps `Autorizar` (under `request`, for an open
+   * revision) below the body.
+   */
+  readonly header?: ArtifactKindHeader;
 }
+
+/** Who draws a kind's header: the registry's frame, or the kind's body. */
+export type ArtifactKindHeader = 'frame' | 'body';
 
 /**
  * `artifact.kind/v1` (host), cardinality `one`: the registry a bundle that owns
@@ -279,6 +384,12 @@ export interface ArtifactKindDescriptor {
  * it exists. The registry keeps names and the kind's own providers; it
  * interprets neither a kind nor an artifact, and an artifact whose kind nobody
  * registered is still stored, exactly as the log stores it.
+ *
+ * `register` answers a `Disposable`: the kind lives until it is disposed or
+ * the registering generation ends (the platform tracks the disposable on the
+ * caller's generation). The same bundle registering the same id again — its
+ * next generation — replaces the declaration, title and block type included;
+ * another bundle claiming an id in use is a `registration_conflict`.
  */
 export interface ArtifactKindRegistry {
   register(
@@ -288,9 +399,11 @@ export interface ArtifactKindRegistry {
       readonly payload?: ArtifactKindPayload;
       readonly materialize?: ArtifactKindMaterialize;
       readonly blockType?: string;
+      readonly bodyTag?: string;
+      readonly header?: ArtifactKindHeader;
     },
     call?: CallArg,
-  ): Promise<ArtifactKindDescriptor>;
+  ): Promise<Disposable>;
   list(call?: CallArg): Promise<readonly ArtifactKindDescriptor[]>;
 }
 
@@ -305,19 +418,20 @@ export const ARTIFACT_TARGET_KIND = 'artifact';
 export const artifactTargetSchema: z.ZodType<ArtifactTarget, ArtifactTarget> =
   z.looseObject({
     path: z.string(),
+    lines: z.tuple([z.number().int(), z.number().int()]).optional(),
     line: z.number().int().optional(),
     snippet: z.string().optional(),
   });
 
 export const artifactEntrySchema: z.ZodType<ArtifactEntry, ArtifactEntry> =
   z.looseObject({
-    path: z.string(),
+    path: artifactEntryPathSchema,
     sha256: z.string(),
   });
 
 export const artifactFileSchema: z.ZodType<ArtifactFile, ArtifactFile> =
   z.looseObject({
-    path: z.string(),
+    path: artifactEntryPathSchema,
     base64: z.string(),
   });
 
@@ -349,7 +463,7 @@ export const artifactRecordSchema: z.ZodType<ArtifactRecord, ArtifactRecord> =
 
 const artifactReadEntrySchema: z.ZodType<ArtifactReadEntry, ArtifactReadEntry> =
   z.looseObject({
-    path: z.string(),
+    path: artifactEntryPathSchema,
     sha256: z.string(),
     base64: z.string().optional(),
   });
@@ -366,7 +480,7 @@ const artifactCreateInputSchema: z.ZodType<
   ArtifactCreateInput,
   ArtifactCreateInput
 > = z.looseObject({
-  artifactId: z.string().optional(),
+  artifactId: artifactIdSchema.optional(),
   kind: z.string(),
   title: z.string(),
   targets: z.array(artifactTargetSchema).optional(),
@@ -383,7 +497,7 @@ const artifactReviseInputSchema: z.ZodType<
   ArtifactReviseInput,
   ArtifactReviseInput
 > = z.looseObject({
-  artifactId: z.string(),
+  artifactId: artifactIdSchema,
   changeNote: z.string().optional(),
   targets: z.array(artifactTargetSchema).optional(),
   path: z.string().optional(),
@@ -396,8 +510,8 @@ const artifactReviseInputSchema: z.ZodType<
 
 const artifactReadInputSchema: z.ZodType<ArtifactReadInput, ArtifactReadInput> =
   z.looseObject({
-    artifactId: z.string(),
-    revision: z.number().int().optional(),
+    artifactId: artifactIdSchema,
+    revision: z.number().int().positive().optional(),
   });
 
 const artifactListInputSchema: z.ZodType<ArtifactListInput, ArtifactListInput> =
@@ -409,13 +523,26 @@ const artifactApproveInputSchema: z.ZodType<
   ArtifactApproveInput,
   ArtifactApproveInput
 > = z.looseObject({
-  artifactId: z.string(),
-  revision: z.number().int(),
+  artifactId: artifactIdSchema,
+  revision: z.number().int().positive(),
+});
+
+const artifactAwaitApprovalInputSchema: z.ZodType<
+  ArtifactAwaitApprovalInput,
+  ArtifactAwaitApprovalInput
+> = z.looseObject({
+  artifactId: artifactIdSchema,
+  revision: z.number().int().positive(),
+  timeoutMs: z.number().int().nonnegative().optional(),
+});
+
+const artifactRevisionsInputSchema = z.looseObject({
+  artifactId: artifactIdSchema,
 });
 
 const artifactApplyInputSchema = z.looseObject({
-  artifactId: z.string(),
-  revision: z.number().int(),
+  artifactId: artifactIdSchema,
+  revision: z.number().int().positive(),
   files: z.array(z.string()),
 });
 
@@ -441,8 +568,16 @@ export const artifactsMethods = {
     input: artifactListInputSchema,
     output: z.array(artifactRecordSchema),
   },
+  revisions: {
+    input: artifactRevisionsInputSchema,
+    output: z.array(artifactRecordSchema),
+  },
   approve: {
     input: artifactApproveInputSchema,
+    output: artifactRecordSchema.optional(),
+  },
+  awaitApproval: {
+    input: artifactAwaitApprovalInputSchema,
     output: artifactRecordSchema.optional(),
   },
   policy: { input: noInput, output: artifactPolicySchema },
@@ -471,6 +606,8 @@ const artifactKindRegisterInputSchema = z.looseObject({
   payload: kindPayloadSchema.optional(),
   materialize: kindMaterializeSchema.optional(),
   blockType: z.string().optional(),
+  bodyTag: z.string().optional(),
+  header: z.enum(['frame', 'body']).optional(),
 });
 
 const artifactKindDescriptorSchema: z.ZodType<
@@ -479,17 +616,21 @@ const artifactKindDescriptorSchema: z.ZodType<
 > = z.looseObject({
   id: z.string(),
   title: z.string().optional(),
-  payload: kindPayloadSchema.optional(),
-  materialize: kindMaterializeSchema.optional(),
   blockType: z.string().optional(),
+  bodyTag: z.string().optional(),
+  header: z.enum(['frame', 'body']).optional(),
 });
 
 export const artifactKindMethods = {
   register: {
     input: artifactKindRegisterInputSchema,
-    output: artifactKindDescriptorSchema,
+    output: disposableSchema,
   },
-  list: { input: noInput, output: z.array(artifactKindDescriptorSchema) },
+  list: {
+    input: noInput,
+    output: z.array(artifactKindDescriptorSchema),
+    expose: 'desktop',
+  },
 } as const;
 
 export const ArtifactKindV1 = ref<ArtifactKindRegistry>('artifact.kind/v1');
@@ -544,7 +685,7 @@ const artifactCacheEntrySchema: z.ZodType<
   ArtifactCacheEntry
 > = z
   .object({
-    path: z.string().min(1),
+    path: artifactEntryPathSchema,
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
     base64: z.string(),
   })
@@ -566,7 +707,7 @@ export const artifactCacheEnsureInputSchema: z.ZodType<
   ArtifactCacheEnsureInput
 > = z
   .object({
-    artifactId: z.string().min(1),
+    artifactId: artifactIdSchema,
     revision: z.number().int().positive(),
     entries: z.array(artifactCacheEntrySchema),
   })
@@ -613,7 +754,9 @@ export const artifactsCacheMethods = {
 
 /**
  * A new artifact exists at revision 1. The payload carries the revision's
- * anchors and entries — `path` + `sha256`, never the bytes.
+ * anchors and entries — `path` + `sha256`, never the bytes — and, when the
+ * revision was materialized from one, the kind's payload as its schema parsed
+ * it.
  */
 export const artifactsCreatedEvent = defineEvent({
   type: 'artifacts.created/v1',
@@ -628,6 +771,7 @@ export const artifactsCreatedEvent = defineEvent({
     path: z.string().optional(),
     entry: z.string().optional(),
     notes: z.string().optional(),
+    payload: z.unknown().optional(),
   }),
 });
 
@@ -644,6 +788,7 @@ export const artifactsRevisedEvent = defineEvent({
     changeNote: z.string().optional(),
     targets: z.array(artifactTargetSchema),
     entries: z.array(artifactEntrySchema),
+    payload: z.unknown().optional(),
   }),
 });
 
@@ -657,7 +802,10 @@ export const artifactsAppliedEvent = defineEvent({
   }),
 });
 
-/** The review gesture, recorded under either policy. */
+/**
+ * The review gesture on one revision. It exists only under the `request`
+ * policy, and at most once per revision.
+ */
 export const artifactsApprovedEvent = defineEvent({
   type: 'artifacts.approved/v1',
   payload: z.looseObject({
@@ -672,14 +820,22 @@ export const artifactApprovalScope = 'revision';
 
 // Settings --------------------------------------------------------------------
 
+const reviewPolicyChoice = z.enum(['proceed', 'request']);
+
 /**
- * `artifacts.review-policy/v1`: the Project's review policy. `proceed` is the
- * default (Doric is YOLO by default); `request` adds the gate.
+ * `artifacts.review-policy/v1`: the review policy of each Project. `policy` is
+ * the choice of every Project without one of its own — `proceed` by default
+ * (Doric is YOLO by default); `projects` holds each Project's own choice, by
+ * `projectId`. `settings/v1` keeps one value per space, so the per-Project
+ * choice lives inside it.
  */
 export const artifactReviewPolicy = defineSettings({
   id: 'artifacts.review-policy/v1',
   schema: z
-    .object({ policy: z.enum(['proceed', 'request']).default('proceed') })
+    .object({
+      policy: reviewPolicyChoice.default('proceed'),
+      projects: z.record(z.string(), reviewPolicyChoice).default({}),
+    })
     .strict(),
 });
 
@@ -690,7 +846,16 @@ export type ArtifactReviewPolicySettings = z.output<
 /** The policy a Project without an explicit choice runs. */
 export const defaultArtifactReviewPolicy: ArtifactReviewPolicySettings = {
   policy: 'proceed',
+  projects: {},
 };
+
+/** The policy one Project runs: its own choice, else the default. */
+export const reviewPolicyOf = (
+  settings: ArtifactReviewPolicySettings,
+  projectId: string | undefined,
+): ArtifactReviewPolicyValue['policy'] =>
+  (projectId === undefined ? undefined : settings.projects[projectId]) ??
+  settings.policy;
 
 /** The contract IDs this bundle publishes, for readers of the manifest. */
 export const artifactsContractIds = {

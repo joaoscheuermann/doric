@@ -141,13 +141,12 @@ const papercraft = await loadPapercraftBuild({
 });
 const artifacts = createArtifacts({
   workspaceRoot,
-  defaults,
   threads,
   papercraft,
   policy: reviewPolicy,
   log,
 });
-const comments = createComments({ defaults, threads, log });
+const comments = createComments({ threads, log });
 
 const seeded = await seedDevWorkspace({
   root,

@@ -1,8 +1,8 @@
 // The one reducer of `artifacts/v1`: one state per artifact — the revisions it
 // gained in log order, the current one, the review state, and the comments
-// still pending on it. The same reducer serves the node, the window and the
-// revision list, as `docs/architecture/bundles/artifacts.md` demands; it is
-// pure, so replay and rewind run it again over the same event list.
+// still pending on it. The same reducer serves the node and the window, as
+// `docs/architecture/bundles/artifacts.md` demands; it is pure, so replay and
+// rewind run it again over the same event list.
 //
 // The comment counts come from the comments registry's own events — a comment
 // on an artifact is a `comments.added/v1` whose target is the revision —
@@ -35,7 +35,9 @@ export interface ArtifactProjection {
   readonly revisions: readonly ArtifactRevisionProjection[];
   /** The newest revision. */
   readonly revision: number;
+  /** The review state of the newest revision: a new revision starts open. */
   readonly state: 'open' | 'approved';
+  /** The newest revision that was approved, when any was. */
   readonly approvedRevision?: number;
   readonly createdAt: string;
   /** The comments still pending over the whole artifact. */
@@ -233,7 +235,10 @@ const reduceRevised = (
   };
   const artifacts = new Map(state.artifacts);
 
-  artifacts.set(artifactId, withRevision(artifact, revisionState, 0));
+  artifacts.set(artifactId, {
+    ...withRevision(artifact, revisionState, 0),
+    state: 'open',
+  });
 
   return { ...state, artifacts };
 };
@@ -256,15 +261,18 @@ const reduceApproved = (
 
   if (artifact === undefined) return state;
 
-  if (artifact.state === 'approved' && artifact.approvedRevision === revision) {
-    return state;
-  }
+  const approved = artifact.revisions.find(
+    (entry) => entry.revision === revision,
+  );
+
+  // One approval per revision, and only of a revision the artifact has.
+  if (approved === undefined || approved.approved) return state;
 
   const artifacts = new Map(state.artifacts);
   artifacts.set(artifactId, {
     ...artifact,
-    state: 'approved',
-    approvedRevision: revision,
+    state: revision === artifact.revision ? 'approved' : artifact.state,
+    approvedRevision: Math.max(artifact.approvedRevision ?? 0, revision),
     revisions: artifact.revisions.map((entry) =>
       entry.revision === revision ? { ...entry, approved: true } : entry,
     ),

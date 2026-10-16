@@ -57,7 +57,8 @@ export class ComposerStackNode extends DecoratorNode<JSX.Element> {
   }
 
   override isKeyboardSelectable(): boolean {
-    // The stack's lines are their own popovers; the caret has nothing to say.
+    // The stack's notes are editing hosts of their own, which the caret
+    // enters from the prompt (`StackCaret`), never as a stop of the editor.
     return false;
   }
 

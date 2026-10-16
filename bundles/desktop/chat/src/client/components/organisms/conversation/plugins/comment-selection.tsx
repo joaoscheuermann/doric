@@ -117,8 +117,8 @@ export function CommentSelection({ thread }: { readonly thread: Thread }) {
       note: '',
     });
     if (item === undefined) return;
-    // The note is written where the stack writes it: the new line opens with
-    // its editor, not its empty reading.
+    // The note is written where the stack writes it, in the line itself: the
+    // new line's note takes the caret as soon as the line stands.
     composerStackStore.getState().focus(item.id);
   }, [selected, thread]);
 

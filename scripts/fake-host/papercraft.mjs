@@ -10,13 +10,15 @@
 // The built host part is `bundles/features/papercraft/dist/host/index.js`
 // (override: `DORIC_FAKE_PAPERCRAFT` / `--papercraft`), and it exports:
 //
-//  - `buildPreview(services, call, input)`, the contract's `build` over
-//    `files/v1`. A dev host runs no kernel, so its `Services` and `Call` are
-//    not available and the fake host does not fake them;
+//  - `snapshotPreview(services, call, input)`, the build the bundle's tool and
+//    kind run. A dev host runs no kernel, so this module hands it the one
+//    service it reads — a `files/v1` over the workspace on disk — and keeps
+//    every entry it answers with its bytes: the markup and, for a `component`,
+//    the compiled `index.js` and `index.css` (path B);
 //  - `deriveMarkup(source, path, content)` and `builtFiles(markup)`, the two
-//    pure steps `buildPreview` composes, which is what this module calls. The
-//    markup is therefore the bundle's own derivation, and the file list its own
-//    content hash — never a string written by the fake host.
+//    pure markup steps, used when an older host part has no `snapshotPreview`.
+//    Either way the markup is the bundle's own derivation, and the file list
+//    its own content hash — never a string written by the fake host.
 //
 // A host part that exports a single build function instead is called as
 // `build({ dir, root, path, entry, source, artifactId, revision }, { dir, root, log })`
@@ -25,7 +27,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Export names tried in order for a single-function host part. */
@@ -56,6 +58,41 @@ const sha256Of = (text) =>
   createHash('sha256').update(text, 'utf8').digest('hex');
 
 /**
+ * The `Services` `snapshotPreview` needs, over the workspace on disk: a
+ * `files/v1` whose `content` reads a workspace-relative path, answering
+ * `not_found` for a missing file and `invalid_path` for one outside it.
+ */
+const diskServices = (workspaceRoot) => ({
+  use: () => ({
+    content: async ({ path }) => {
+      const root = resolve(workspaceRoot);
+      const target = resolve(root, path);
+
+      if (target !== root && !target.startsWith(`${root}${sep}`)) {
+        return { status: 'ready', value: { status: 'invalid_path' } };
+      }
+
+      const bytes = await readFile(target).catch(() => undefined);
+
+      if (bytes === undefined) {
+        return { status: 'ready', value: { status: 'not_found' } };
+      }
+
+      return {
+        status: 'ready',
+        value: {
+          status: 'read',
+          path,
+          content: bytes.toString('utf8'),
+          truncated: false,
+          binary: bytes.includes(0),
+        },
+      };
+    },
+  }),
+});
+
+/**
  * Imports the papercraft host part and returns the build the fake host can
  * call, or `undefined` after saying why it could not be used.
  */
@@ -84,8 +121,40 @@ export const loadPapercraftBuild = async ({ root, override, log }) => {
     return undefined;
   }
 
-  // The real path: the two pure steps `buildPreview` composes over the source
-  // it reads through `files/v1`.
+  // The real build: `snapshotPreview` over a `files/v1` that reads the
+  // workspace from disk. It answers every entry of the revision — the
+  // markup, and for a `component` the compiled `index.js`/`index.css` — with
+  // the bytes that hash to each.
+  if (isFunction(module.snapshotPreview)) {
+    log.note(`papercraft build: snapshotPreview() from ${path}`);
+
+    return {
+      name: 'snapshotPreview',
+      path,
+      run: async ({ workspaceRoot, source, path: sourcePath, entry }) => {
+        const built = await module.snapshotPreview(
+          diskServices(workspaceRoot),
+          { scope: {} },
+          {
+            source,
+            path: sourcePath,
+            ...(entry === undefined ? {} : { entry }),
+          },
+        );
+
+        return {
+          files: [...built.entries],
+          markup: built.markup,
+          bytes: Object.fromEntries(
+            built.files.map((file) => [file.path, file.base64]),
+          ),
+        };
+      },
+    };
+  }
+
+  // The older path: the two pure steps `buildPreview` composes over the
+  // source it reads through `files/v1`.
   if (isFunction(module.deriveMarkup)) {
     const files =
       isFunction(module.builtFiles) || isFunction(module.sha256)
@@ -196,6 +265,7 @@ export const buildPreview = async ({
   }
 
   const built = await papercraft.run({
+    workspaceRoot,
     dir,
     path,
     entry,

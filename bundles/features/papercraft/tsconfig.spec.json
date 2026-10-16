@@ -13,7 +13,7 @@
   "include": [
     "src/host/**/*.ts",
     "src/contracts/**/*.ts",
-    "src/client/projector.ts",
+    "src/client/block.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],

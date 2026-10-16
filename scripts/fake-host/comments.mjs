@@ -6,9 +6,10 @@
 // anchor is opaque here — resolving it against the rendered structure is the
 // target owner's job, and there is no rendered structure in a dev host.
 //
-// Events carry the Thread's current prompt, which is the one a send has just
-// accepted: that is where the flush writes them, and what places the cards in
-// the conversation beside the turn they comment on.
+// Events go to the Thread the call's scope names, with the scope's prompt —
+// the one a send has just accepted, which is where the flush writes them — or
+// else the Thread's current one: that places the cards in the conversation
+// beside the turn they comment on. A call without that scope is refused.
 
 import { randomUUID } from 'node:crypto';
 
@@ -25,7 +26,6 @@ const sameTarget = (left, right) => {
 };
 
 export const createComments = ({
-  defaults,
   threads,
   log,
   now = () => new Date().toISOString(),
@@ -33,22 +33,38 @@ export const createComments = ({
   /** commentId → the comment, in the order the log holds them. */
   const comments = new Map();
 
-  const scopeOf = () => ({
-    projectId: defaults.projectId,
-    threadId: defaults.threadId,
-    promptId: threads.promptIdOf(defaults.threadId),
-  });
+  /**
+   * The Thread an event belongs to: the call's own scope, never a default —
+   * the real host scopes every write by the calling Project and Thread, and a
+   * call without them is refused, as it would be there.
+   */
+  const scopeOf = (scope) => {
+    if (typeof scope?.projectId !== 'string' || scope.projectId === '') {
+      throw new DevHostError(
+        'invalid_input',
+        'The call needs a projectId in its scope.',
+      );
+    }
 
-  const append = (type, event) =>
-    threads.append({
-      ...scopeOf(),
-      threadId: defaults.threadId,
-      type,
-      event,
-    });
+    if (typeof scope.threadId !== 'string' || scope.threadId === '') {
+      throw new DevHostError(
+        'invalid_input',
+        'The call needs a threadId in its scope: its event belongs to a Thread log.',
+      );
+    }
+
+    return {
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+      promptId: scope.promptId ?? threads.promptIdOf(scope.threadId),
+    };
+  };
+
+  const append = (scope, type, event) =>
+    threads.append({ ...scopeOf(scope), type, event });
 
   /** `comments/v1.add`: stores one comment and writes its event. */
-  const add = (input = {}) => {
+  const add = (input = {}, scope) => {
     const { target, text, author } = input;
 
     if (target === undefined || typeof target.id !== 'string') {
@@ -73,7 +89,7 @@ export const createComments = ({
 
     comments.set(comment.commentId, comment);
 
-    append('comments.added/v1', {
+    append(scope, 'comments.added/v1', {
       type: 'comments.added/v1',
       commentId: comment.commentId,
       target: comment.target,
@@ -82,7 +98,7 @@ export const createComments = ({
     });
 
     log.note(
-      `comment ${comment.commentId} on ${target.kind} ${target.id}: appended to the log of Thread ${defaults.threadId}`,
+      `comment ${comment.commentId} on ${target.kind} ${target.id}: appended to the log of Thread ${scope.threadId}`,
     );
 
     return comment;
@@ -100,7 +116,7 @@ export const createComments = ({
   };
 
   /** `comments/v1.resolve`: marks one comment attended, writing its event once. */
-  const resolve = (input = {}) => {
+  const resolve = (input = {}, scope) => {
     const comment = comments.get(input.commentId);
 
     if (comment === undefined) return undefined;
@@ -109,7 +125,7 @@ export const createComments = ({
 
     if (comment.resolved !== resolved) {
       comment.resolved = resolved;
-      append('comments.resolved/v1', {
+      append(scope, 'comments.resolved/v1', {
         type: 'comments.resolved/v1',
         commentId: comment.commentId,
         resolved,

@@ -1,6 +1,6 @@
-# Artefatos — proposta
+# Artefatos
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual. Os caminhos citados como evidência existem hoje no repositório.
+**Estado:** parcialmente implementado. Parte da [arquitetura de bundles](../bundles.md); `GROUNDING.md` continua sendo o contrato da implementação atual. Já existem: o bundle `artifacts` (`bundles/features/artifacts`) com `artifacts/v1` (incluindo `revisions` e o método só de host `awaitApproval`), o registro `artifact.kind/v1`, o cache desktop `artifacts.cache/v1`, os quatro eventos, a política de revisão por Project, a moldura no desktop com o "Autorizar" sob `request` (sem lista de revisões: a conversa é o histórico), e o tipo `preview` do [papercraft](./papercraft.md) como corpo dentro dela. Diferenças em relação ao texto abaixo: a cópia de trabalho guarda os bytes em `.doric/artifacts/<artifactId>/<revision>/<path>` (leituras caem no layout antigo `<artifactId>/<path>`); `artifact.kind/v1` tem um provedor só, com `register` devolvendo um Disposable, em vez de cardinalidade `many`; o tipo declara o corpo com `bodyTag` e, com `header: 'body'`, desenha o próprio cabeçalho; a configuração se chama `artifacts.review-policy/v1` e guarda o mapa por Project dentro de um documento só; os eventos `created`/`revised` carregam também `entries`, `source`, `path`, `entry` e `notes`; uma aprovação ou aplicação vinda da janela cai no log da Thread e do prompt que criaram o artefato; e os `requires` do manifesto não incluem `tools/v1`, `skills/v1` nem `storage/v1`. Ainda não existem: quem emite `artifacts.applied/v1`, retenção e órfãos (decisões 7 e 8) e tipos além do `preview`.
 
 ## Resumo
 
@@ -143,8 +143,8 @@ O que a tabela compra: o registro **não é uma taxonomia copiada do Antigravity
 
 - **Um bloco por revisão**, com identidade estável: o replay reconstrói todos os blocos e nenhuma revisão some.
 - **O `blockType` é do tipo**, registrado no client com `registerRenderer({ blockType, elementTag })` ([eventos e nodes](./events-and-nodes.md)); o elemento leva o prefixo do bundle dono, como manda a [UI composta por bundles](./ui-composition.md).
-- **A moldura é do registro, o corpo é do tipo.** Título, tipo, leitura da revisão e a ação de comentar com a contagem são do bundle `artifacts` — as mesmas em todo artefato; o tipo renderiza o corpo (o canvas do preview, a mídia de uma gravação). A moldura tem variantes de chrome, como o papercraft desenha: a do node na conversa e a da janela em tela cheia. A ação de autorizar só aparece sob a política `request`.
-- **Um redutor só.** O bundle `artifacts` reduz `artifacts.*` a um estado por artefato — revisão atual, comentários pendentes —, e o mesmo redutor serve o node, a janela e a lista de revisão.
+- **A moldura é do registro, o corpo é do tipo.** Título, tipo, leitura da revisão e a ação de comentar com a contagem são do bundle `artifacts` — as mesmas em todo artefato; o tipo renderiza o corpo (o canvas do preview, a mídia de uma gravação). A moldura tem variantes de chrome, como o papercraft desenha: a do node na conversa e a da janela em tela cheia. A ação de autorizar só aparece sob a política `request`. Um tipo cujo corpo sobrepõe o próprio cabeçalho declara `header: 'body'` (o padrão é `'frame'`): a moldura então não desenha a barra — título, tipo, revisão, estado e `Comentar` são do corpo — e mantém abaixo do corpo só o que é do registro, `Autorizar` (sob `request`, numa revisão aberta). A moldura não desenha lista de revisões: cada revisão é um node da conversa, e a conversa — com as respostas do agente — é o histórico. O `preview` do papercraft declara `header: 'body'`.
+- **Um redutor só.** O bundle `artifacts` reduz `artifacts.*` a um estado por artefato — revisão atual, comentários pendentes —, e o mesmo redutor serve o node e a janela.
 
 ## Revisão: comentários
 
@@ -177,7 +177,7 @@ A tool **não bloqueia** sob a política padrão: ela publica o artefato, devolv
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Artefato: entregável estruturado que comunica progresso         | Artefato do Project, com identidade, revisões e âncoras                                      |
 | Plano de implementação, walkthrough, diff, diagrama, gravação   | **Só o que precisa de superfície própria** — o `preview` —, e a porta aberta para quem tiver |
-| Painel de revisão no app e seletor de artefatos na CLI          | Nodes da conversa, a lista de revisão do bundle e `notifications` para o aviso               |
+| Painel de revisão no app e seletor de artefatos na CLI          | Nodes da conversa e `notifications` para o aviso                                             |
 | Visualizador com comentário por linha e indicador de comentário | Comentário ancorado, com carimbo de origem e pino ([comentários](./comments.md))             |
 | Política de revisão: pedir revisão ou seguir direto             | `artifacts.reviewPolicy` em `settings/v1`, com **`proceed` como padrão**                     |
 | Aprovar e rejeitar por arquivo, e em lote                       | Só sob `request`: `artifacts.approved/v1` com `scope`                                        |
@@ -192,13 +192,13 @@ O que **não** se copia: a taxonomia de tipos (plano, walkthrough, diff, diagram
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `host`        | `artifacts/v1`, o registro de tipos `artifact.kind/v1`, os eventos `artifacts.*` e as settings; `requires` `tools/v1`, `events/v1`, `skills/v1`, `settings/v1`, `storage/v1`, `runtime.lease/v1` |
 | `desktopMain` | O cache verificado das entradas compiladas em `userData/artifacts/<artifactId>@<revision>/` e o prefixo `/artifacts/` no handler do protocolo                                                    |
-| `client`      | A moldura do node, a lista de revisão, o redutor de `artifacts.*` e a ação de comentar                                                                                                           |
+| `client`      | A moldura do node, o redutor de `artifacts.*` e a ação de comentar                                                                                                                               |
 
 O bundle entra em `enabled` na composição (`app/backend/doric-host/composition.json`), como o [papercraft](./papercraft.md) descreve para si. Nenhum contrato novo é `doric.*`: `artifacts/v1` e `artifact.kind/v1` são contratos de bundle e podem ser substituídos como qualquer um sem prefixo ([serviços entre bundles](./services-and-channels.md)).
 
 ## Etapas de entrega
 
-1. **Registro e eventos.** `artifacts/v1`, o manifesto, `artifact.kind/v1`, o redutor, a moldura do node e a lista de revisão; o `preview` do papercraft passa a ser o tipo `preview`.
+1. **Registro e eventos.** `artifacts/v1`, o manifesto, `artifact.kind/v1`, o redutor e a moldura do node; o `preview` do papercraft passa a ser o tipo `preview`.
 2. **Cache e rota.** O cache verificado por hash no `desktopMain` e a rota `/artifacts/<artifactId>@<revision>/…`, com a guarda de caminho que `/bundles/` já tem.
 3. **Comentários.** O registro de [comentários](./comments.md) sobre o alvo `artifact`, com o flush e a pilha do compositor.
 4. **Política.** `artifacts.reviewPolicy` em `settings/v1`, com `proceed` como padrão e o caminho `request` completo.

@@ -7,7 +7,14 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
@@ -230,6 +237,40 @@ describe('artifacts.cache/v1 (desktopMain)', () => {
     ]);
 
     await assert.rejects(readFile(join(root, 'escape.js')));
+  });
+
+  test('refuses an artifact id that would leave the cache root', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'doric-artifacts-outside-'));
+
+    try {
+      for (const artifactId of [
+        '../../../tmp/x',
+        // Resolved from the cache root, this would land inside `outside`.
+        `..${'/..'.repeat(16)}${outside}/x`,
+        'a/b',
+      ]) {
+        const result = await ensure?.(
+          {
+            artifactId,
+            revision: 1,
+            entries: [entryOf('index.js', 'escaped')],
+          },
+          call,
+          services,
+        );
+
+        assert.equal(result?.written, 0, artifactId);
+        assert.deepEqual(
+          result?.failed.map((failure) => failure.reason),
+          ['invalid_path'],
+          artifactId,
+        );
+      }
+
+      assert.deepEqual(await readdir(outside), []);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   test('replaces a tampered cached file with the verified bytes', async () => {

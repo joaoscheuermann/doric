@@ -10,6 +10,7 @@
       "policy",
       "read",
       "revise",
+      "revisions",
       "setPolicy"
     ],
     "comments/v1": ["add", "list", "resolve"],

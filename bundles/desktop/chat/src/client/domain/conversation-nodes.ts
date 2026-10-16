@@ -36,6 +36,9 @@ export const COMPACTION_TURN_BLOCK = 'compaction-turn-node';
 /** A prompt the host closed as a failure, and what it was closed with. */
 export const FAILURE_TURN_BLOCK = 'failure-turn-node';
 
+/** The agent's answers to the reader's comments, where it wrote them. */
+export const REPLIES_TURN_BLOCK = 'chat-replies-turn-node';
+
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
 export const QUEUE_BLOCK = 'queue-node';
@@ -70,6 +73,7 @@ const UNDELETABLE = new Set([
   LIFECYCLE_TURN_BLOCK,
   COMPACTION_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
+  REPLIES_TURN_BLOCK,
 ]);
 
 /**

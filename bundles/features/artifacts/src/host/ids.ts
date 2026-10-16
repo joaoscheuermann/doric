@@ -4,8 +4,7 @@
 
 import { randomBytes } from 'node:crypto';
 
-/** The identity grammar: lowercase segments separated by single dashes. */
-export const artifactIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export { artifactIdPattern } from '../contracts/index.js';
 
 /** The longest identity derived from a title; the suffix is added after it. */
 const slugLimit = 48;

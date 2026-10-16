@@ -7,67 +7,50 @@
 // The real `chat.composer/v1.registerFlush` carries a function, so only the
 // main process reaches it: this module is imported by `src/desktop/index.ts`
 // (desktopMain) and stays free of the DOM, which the desktop runner has none of
-// (it is why the target is remade here rather than imported from the client's
-// DOM-bound `src/client/anchor.ts`).
+// (it is why the target is read with the contracts' `previewItemTargetOf`
+// rather than the client's DOM-bound `src/client/anchor.ts`). A draft written
+// before the item carried its `target` still flushes from the `artifactId`,
+// `revision` and `anchor` it recorded.
 
-import type { ComposerFlush, ComposerItem } from '../client/chat-contract.js';
+import type { ComposerFlush } from '../contracts/chat.js';
 import {
-  ARTIFACT_TARGET_KIND,
   type CommentAddInput,
-  type CommentAnchor,
-  type CommentTarget,
+  previewItemTargetOf,
 } from '../contracts/index.js';
 
-/**
- * The target a papercraft item's `data` recorded, else `undefined`: the client
- * wrote the artifact, the revision and the anchor — the same fields
- * `src/client/anchor.ts#targetOf` shapes into the `artifact` target.
- */
-const commentTargetOf = (item: ComposerItem): CommentTarget | undefined => {
-  if (typeof item.data !== 'object' || item.data === null) return undefined;
+/** The root a reply item answers, when its data names one. */
+const inReplyToOf = (data: unknown): string | undefined => {
+  const value =
+    typeof data === 'object' && data !== null
+      ? (data as { readonly inReplyTo?: unknown }).inReplyTo
+      : undefined;
 
-  const data = item.data as {
-    readonly artifactId?: unknown;
-    readonly revision?: unknown;
-    readonly anchor?: unknown;
-  };
-
-  if (
-    typeof data.artifactId !== 'string' ||
-    data.artifactId === '' ||
-    typeof data.revision !== 'number' ||
-    typeof data.anchor !== 'object' ||
-    data.anchor === null
-  ) {
-    return undefined;
-  }
-
-  return {
-    kind: ARTIFACT_TARGET_KIND,
-    id: data.artifactId,
-    revision: data.revision,
-    anchor: data.anchor as CommentAnchor,
-  };
+  return typeof value === 'string' && value !== '' ? value : undefined;
 };
 
 /**
  * The `papercraft-preview` flush: an item with no note stays drafted (nothing
  * was asked yet), and an item whose data no longer names a target stays drafted
- * too — the sender only writes what the reader actually wrote about. It answers
- * the writes; the composer service hands them to the sender, which performs the
- * `comments/v1.add`.
+ * too — the sender only writes what the reader actually wrote about. The write
+ * carries the item's id as the comment's id — the id the prompt already named,
+ * and the one a reply drafted against a root still in the stack points at —
+ * and, for a reply, the root it answers. The composer service hands the writes
+ * to the sender, which performs the `comments/v1.add`.
  */
 export const papercraftFlush: ComposerFlush = (item) => {
   const note = item.note.trim();
-  const target = commentTargetOf(item);
+  const target = previewItemTargetOf(item.data);
 
   if (note === '' || target === undefined) {
     return Promise.resolve([]);
   }
 
+  const inReplyTo = inReplyToOf(item.data);
   const write: CommentAddInput = {
     target,
     text: note,
+    commentId: item.id,
+    ...(inReplyTo === undefined ? {} : { inReplyTo }),
     ...(item.author === undefined ? {} : { author: item.author }),
   };
 

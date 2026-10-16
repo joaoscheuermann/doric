@@ -1,6 +1,6 @@
-# Comentários — proposta
+# Comentários
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual. Os caminhos citados como evidência existem hoje no repositório.
+**Estado:** parcialmente implementado. Parte da [arquitetura de bundles](../bundles.md); `GROUNDING.md` continua sendo o contrato da implementação atual. Já existem: o bundle `comments` (`bundles/features/comments`) com `comments/v1` (`add`, `list`, `resolve`), os eventos `comments.added/v1` e `comments.resolved/v1` no log da Thread e a validação das quatro formas de âncora; `list` e `resolve` dobram esses eventos a partir do log (`runtime.threads/v1.threadEvents`), sem estado no processo, no escopo da chamada (a Thread, ou todas as Threads do Project quando a chamada só nomeia o Project); a pilha do compositor (`chat.composer/v1`), a nota confirmada no próprio canvas do papercraft antes de entrar na pilha, o envio da pilha fora do compositor (`chat.send/v1`, `Cmd/Ctrl+Enter`), o flush depois do aceite do prompt — que devolve à pilha o item cuja gravação falhou —, o prompt em envelope XML (`<comments>` e `<message>`) que leva os comentários da pilha acima das palavras do usuário, o `commentId` escolhido por quem comenta e as respostas (`inReplyTo`), a tool `comment_reply` com que o agente responde e resolve, e as threads de comentário com estado (`done`, `await`, `open`) que o `chat` projeta; e os consumidores papercraft (alvo `artifact`) e conversa (alvo `message`, âncora `range`). As decisões em aberto abaixo continuam em aberto, exceto as marcadas como decididas.
 
 ## Resumo
 
@@ -8,10 +8,11 @@ Um comentário é uma **anotação ancorada** num **alvo**: qualquer coisa ender
 
 Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](./papercraft.md) é o primeiro consumidor (comentário num elemento do preview), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
 
-Três regras dão forma ao resto do documento:
+Quatro regras dão forma ao resto do documento:
 
 - **Um comentário sempre tem âncora.** Sem âncora não é comentário — é mensagem, e a mensagem já existe: é o prompt.
 - **O comentário é durável e reconstruível.** Ele vira um evento do log, e o replay o reconstrói como reconstrói qualquer node.
+- **O comentário abre uma thread.** O agente responde ao comentário — dizendo o que mudou ou perguntando o que não entendeu — e a thread termina resolvida; a resposta é outro comentário, ligado ao primeiro, e não uma mensagem solta.
 - **Um comentário nunca autoriza.** Ele orienta; a decisão de agir é do agente, e o Doric é [YOLO por padrão](./artifacts.md#a-política-de-revisão): o agente segue direto e o comentário corrige o rumo.
 
 ## O alvo
@@ -50,18 +51,22 @@ A âncora é resolvida contra a **estrutura derivada** do alvo, não contra uma 
 
 Serviço de host fornecido pelo bundle `comments`, cardinalidade `one` como os demais. Os métodos que uma janela chama declaram `desktopScope` com `['projectId', 'threadId', 'promptId']` e `expose: 'desktop'`, como `resources/v1` e `screen.views/v1`.
 
-| Método    | O que faz                                                                                      |
-| --------- | ---------------------------------------------------------------------------------------------- |
-| `add`     | Grava `comments.added/v1` com o alvo, a âncora e o texto, e devolve a identidade do comentário |
-| `list`    | Devolve os comentários de um alvo (ou de um `kind`), na ordem do log                           |
-| `resolve` | Marca um comentário como atendido, gravando `comments.resolved/v1`                             |
+| Método    | O que faz                                                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `add`     | Grava `comments.added/v1` com o alvo, a âncora e o texto, e devolve a identidade do comentário; aceita `commentId` e `inReplyTo` |
+| `list`    | Devolve os comentários de um alvo (ou de um `kind`), na ordem do log                                                             |
+| `resolve` | Marca um comentário como atendido, gravando `comments.resolved/v1`                                                               |
+
+`add` aceita um `commentId` escolhido por quem chama (`/^[A-Za-z0-9_-]{1,128}$/`), idempotente por Thread: gravar de novo o mesmo id devolve o comentário que já existe. É assim que o id que o prompt nomeia ao agente (`comment-<uuid>`, o id do item da pilha) é o id do evento. `inReplyTo` aponta para outro comentário **da mesma Thread** e é normalizado para a **raiz**: a thread é plana, e toda resposta aponta para o primeiro comentário. Uma raiz que não existe na Thread recusa a chamada.
+
+O bundle também registra a tool `comment_reply` (ordem 1800, sempre disponível, sem skill), e por isso passa a exigir `tools/v1`. A entrada é `{ comment_id, text, resolve? }`; a tool procura o comentário na Thread da chamada, normaliza para a raiz e grava a resposta com `author: "agent"`, o alvo da raiz e `inReplyTo` apontando para ela. Com `resolve`, grava também `comments.resolved/v1` na raiz. A saída é `{ commentId, inReplyTo, resolved }`.
 
 Eventos, declarados em `contracts/` com `defineEvent` e registrados com `events/v1` na ativação, no sumidouro que o `runtime` já registra (`scopeKeys` `['projectId', 'threadId', 'promptId']` no stream `runtime.thread.events/{threadId}`, `bundles/runtime/runtime/src/contracts/events.ts:28-32`):
 
-| Evento                 | Payload (resumo)                                                    |
-| ---------------------- | ------------------------------------------------------------------- |
-| `comments.added/v1`    | `commentId`, `target` (`kind`, `id`, `revision?`, `anchor`), `text` |
-| `comments.resolved/v1` | `commentId`, `resolved`                                             |
+| Evento                 | Payload (resumo)                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `comments.added/v1`    | `commentId`, `target` (`kind`, `id`, `revision?`, `anchor`), `text`, `author?`, `inReplyTo?` |
+| `comments.resolved/v1` | `commentId`, `resolved`                                                                      |
 
 Um comentário é **imutável**: editar um comentário enviado é um evento novo (decisão em aberto, item 4).
 
@@ -70,7 +75,7 @@ Um comentário é **imutável**: editar um comentário enviado é um evento novo
 O comentário tem um só gesto — o envio — e dois registros, porque o log durável e o histórico do provider são contratos separados ([eventos e nodes](./events-and-nodes.md)):
 
 1. **O evento** `comments.added/v1` — durável, replayável, desenhado como pino no alvo e presente no transcript, com o prompt. É a memória do comentário.
-2. **O prompt** — o único canal que acorda o agente, enviado por `runtime.threads/v1.prompt({ id, prompt })`, o mesmo caminho do compositor da conversa (`bundles/desktop/chat/src/client/api/threads-api.ts:32`), com texto legível em Markdown.
+2. **O prompt** — o único canal que acorda o agente, enviado por `runtime.threads/v1.prompt({ id, prompt })`, o mesmo caminho do compositor da conversa (`bundles/desktop/chat/src/client/api/threads-api.ts:32`), num envelope XML ([abaixo](#o-prompt-o-envelope-xml)).
 
 Os dois nascem do mesmo envio. Um comentário que nunca chega a ser enviado **não vira evento**: enquanto é rascunho, ele não está no log.
 
@@ -82,28 +87,65 @@ O texto do prompt e a pilha de comentários são **um só estado**, e ele vive n
 
 - **Chaveado por `(projectId, threadId)`**, e toda janela lê e assina: `read({ threadId })` para o retrato e `watch(threadId, listener)` para os deltas, no formato de `runtime.threads/v1.watchThread` — retrato primeiro, depois os itens ao vivo, com `StreamListener<T>`.
 - **Sobrevive à navegação** e é o mesmo em qualquer janela: hoje o rascunho vive só no `threadChatsStore` da janela que o escreveu (`bundles/desktop/chat/src/client/stores/thread-chats.ts`), então uma segunda janela abre a conversa vazia.
-- **O item da pilha é genérico**: `{ id, kind, elementTag, data, author, note }`. O `chat` resolve o `elementTag` como resolve um bloco de conversa, e o `flush()` que o dono registra para o seu `kind` é o que o envio chama. É assim que dois consumidores diferentes — o preview do papercraft e uma mensagem da conversa — usam a mesma pilha, com o mesmo elemento e o mesmo gesto.
+- **O item da pilha é genérico**: `{ id, kind, elementTag, data, author, note }`. O `chat` resolve o `elementTag` como resolve um bloco de conversa, e o `flush()` que o dono registra para o seu `kind` é o que o envio chama. O `id` do item é `comment-<uuid>` e vira o `commentId` do evento (`addItem` aceita um `id` opcional, e o item devolvido à pilha o mantém); a convenção de `data` é `{ target, pin?, inReplyTo?, refs?: { title?, source? } }`. É assim que dois consumidores diferentes — o preview do papercraft e uma mensagem da conversa — usam a mesma pilha, com o mesmo elemento e o mesmo gesto.
 
-O flush roda **depois** que o host aceita o prompt: um envio recusado devolve as palavras ao editor e a pilha fica onde está. Os eventos entram no log na ordem em que foram gravados, e o bloco nasce ancorado pelo `sequence` logo abaixo do turno do usuário.
+O flush roda **depois** que o host aceita o prompt: um envio recusado devolve as palavras ao editor e a pilha fica onde está. Ele grava `commentId` e `inReplyTo` **na ordem da pilha**, e uma resposta espera enquanto a raiz dela ainda é rascunho (a raiz é gravada antes, ou a resposta volta para a pilha). Os eventos entram no log na ordem em que foram gravados, e o bloco nasce ancorado pelo `sequence` logo abaixo do turno do usuário.
 
 ## Onde o comentário aparece
 
-| Lugar                       | O que mostra                                                                                        | Quem desenha   |
-| --------------------------- | --------------------------------------------------------------------------------------------------- | -------------- |
-| A pilha acima do prompt     | Uma linha por comentário, com avatar, autor, a nota truncada e a âncora com o número do pino        | O `chat`       |
-| O turno do usuário          | As mesmas linhas, acima do texto que o usuário escreveu — o mesmo elemento, agora vindo do projetor | O `chat`       |
-| O alvo                      | O pino, o contorno ou o indicador no ponto ancorado; o controle de comentar mostra a contagem       | O dono do alvo |
-| A linha do código, num diff | O indicador de comentário na linha, como o Antigravity faz                                          | O dono do alvo |
+| Lugar                       | O que mostra                                                                                                                 | Quem desenha   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| A pilha acima do prompt     | Uma linha por comentário (`chat-comment-line`), com avatar, `↩` nas respostas, autor, a nota editável, a âncora e o `[pino]` | O `chat`       |
+| O turno do usuário          | As mesmas linhas, acima do texto que o usuário escreveu; clicar abre a thread no preview mais recente                        | O `chat`       |
+| A resposta do agente        | Blocos de resposta no ponto do turno do agente em que a `comment_reply` aconteceu, agrupados                                 | O `chat`       |
+| O alvo                      | O pino com o estado da thread, ou o contorno no ponto ancorado; o controle de comentar mostra a contagem                     | O dono do alvo |
+| A linha do código, num diff | O indicador de comentário na linha, como o Antigravity faz                                                                   | O dono do alvo |
 
-O comentário **não abre popover sobre o alvo**. O clique vira uma linha na pilha, e a nota se escreve ali: o alvo fica livre, a escrita acontece no mesmo lugar de sempre — o compositor —, e o comentário e o pedido do usuário viajam juntos no mesmo envio.
+O dono do alvo decide **onde a nota se escreve**. Num alvo de canvas, como o preview do [papercraft](./papercraft.md#o-node-da-conversa), é no próprio alvo, como no Figma: o clique abre um campo ao lado do pino, e só **confirmar** a nota (`Enter` ou ↑) acrescenta a linha à pilha, já com ela — um campo vazio que perde o foco, ou cancelado com `Esc`, nunca toca a pilha. Num alvo de texto, como a mensagem do agente, o clique vira uma linha na pilha e a nota se escreve ali. Nos dois casos a linha confirmada é um **rascunho**: editar ou remover na pilha muda o alvo, e vice-versa, porque é um só item; e o comentário e o pedido do usuário viajam juntos no mesmo envio.
 
-A linha é **linha única** e truncada com elipses; abrir a linha mostra o texto inteiro e é ali que a nota se edita (`Popover` + `Details`, o desenho que a fila de mensagens já usa).
+O envio é o do compositor. Fora dele, o alvo envia a pilha com `Cmd/Ctrl+Enter` (e a janela do canvas, que não tem prompt, com o botão `Enviar ao agente`) pelo serviço de cliente `chat.send/v1`: o mesmo caminho do botão de enviar — as linhas da pilha com as âncoras no prompt, o flush só depois do aceite e os itens cuja gravação falhou de volta na pilha —, sem as palavras do editor.
+
+A linha da pilha é do `chat` para **todo** `kind`, e a nota se edita **na própria linha**, sem popover nem botões: o campo é um `contenteditable` ao lado do avatar, e o teclado é o da pilha — ↑/↓ andam entre as notas e o prompt, `Enter` vai para a próxima, `Esc` volta ao prompt, `Cmd/Ctrl+Backspace` apaga a linha (assim como `Backspace`/`Delete` numa nota vazia) e `Cmd/Ctrl+Enter` envia. Os eventos da pilha ficam isolados do Lexical, que não os vê como edição do prompt.
+
+### Threads, estados e respostas do agente
+
+O `chat` projeta `comments.added/v1` e `comments.resolved/v1` (as duas reivindicadas pela projeção embutida dele) em **threads**: a raiz, as respostas na ordem do log e o estado, que é derivado:
+
+| Estado  | Quando                                                               |
+| ------- | -------------------------------------------------------------------- |
+| `done`  | A raiz foi resolvida (`comments.resolved/v1`)                        |
+| `await` | A última mensagem da thread é do agente: a resposta espera o usuário |
+| `open`  | O usuário falou por último, ou ninguém respondeu ainda               |
+
+As respostas do agente aparecem no ponto do turno do agente em que aconteceram, como linhas recolhíveis no estilo das tools (`Replied to [n]` com o trecho do comentário e o glifo do estado no fim). A linha vem fechada quando a thread está resolvida e aberta nos outros estados, e a escolha do leitor prevalece. A linha de uma `comment_reply` bem-sucedida na lista de tools fica escondida, porque a linha de resposta já a mostra. No turno do usuário, a linha do comentário não desenha o estado (ele só é lido para leitores de tela); clicar na linha leva ao preview mais recente do alvo, com a thread aberta.
+
+As linhas de comentário do turno do usuário e o glifo das linhas de resposta disparam o evento DOM `doric:comment-thread-open` (borbulha, `composed`, `detail: { commentId, target }`, com o id da **raiz** e o alvo sem `revision`, que quer dizer a revisão mais recente), que o dono do alvo escuta para abrir a thread no próprio alvo: só o node do papercraft da revisão mais recente abre o popover do pino. Os blocos externos da conversa levam `data-chat-block-id`. A janela do canvas é outro documento e não recebe o evento DOM do `chat`: abrir o pino a partir da conversa é uma limitação conhecida dela.
+
+### O prompt: o envelope XML
+
+O texto que o agente lê é montado pelo `chat` em **todo** envio (o do editor e o de `chat.send/v1`):
+
+```xml
+<comments>
+<target kind="artifact" id="art_123" revision="2" title="Checkout" source="src/Checkout.tsx">
+<comment id="comment-…" pin="1" anchor="src/Checkout.tsx:14" element="h2">aumenta o respiro</comment>
+<comment id="comment-…" in-reply-to="comment-…" pin="1" anchor="src/Checkout.tsx:14">e o botão também</comment>
+</target>
+</comments>
+<message>
+palavras do usuário
+</message>
+```
+
+Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt inteiro; um prompt só de palavras continua sendo texto simples). Um comentário leva `id`, `in-reply-to` (nas respostas), `pin` e a âncora em atributos — `anchor` com `arquivo:linha`, seletor ou posição, mais `element`, `near` (o elemento mais próximo de um ponto) ou `quote` (o trecho de um intervalo) —, e a nota como corpo. Os valores de atributo são escapados e, nos corpos, as tags de fechamento dos elementos do envelope são neutralizadas (`<\/message>`), para que o texto do usuário não encerre a estrutura. O `runtime` (`bundles/runtime/direct`) embrulha o prompt inteiro em `<user-request>`, então o `chat` nunca escreve esse elemento; o prompt de sistema explica o envelope e manda o agente responder cada comentário com `comment_reply`.
+
+**A leitura de volta é uma regra só.** O log guarda esse texto, então todo lugar do `chat` que mostra um prompt guardado como "as palavras do usuário" lê o corpo de `<message>`: o turno do usuário, as linhas e a edição da fila, o turno pendente e os marcadores do trilho. Editar um prompt da fila preserva o bloco de comentários (`withPromptMessage` troca só o corpo de `<message>`), e um prompt em texto simples, como o das conversas antigas, é lido como está.
 
 ## Comentário não autoriza
 
 Um comentário **orienta**, e nada mais:
 
-- Comentar pede uma mudança e alimenta a próxima revisão do alvo. O agente responde publicando uma revisão nova — o que é a conversa funcionando.
+- Comentar pede uma mudança e alimenta a próxima revisão do alvo. O agente responde publicando uma revisão nova — o que é a conversa funcionando — e **responde ao comentário** com `comment_reply`, resolvendo-o quando atendeu.
 - O agente **não espera** um comentário para agir: no Doric ele segue direto, e o comentário corrige o rumo ([a política de revisão](./artifacts.md#a-política-de-revisão)). Um comentário chegado depois da implementação vale como pedido de ajuste, não como veto.
 - Não existe "aprovar comentário": o modelo não tem estado de aprovação. Quando um Project opta por revisar antes ([política `request`](./artifacts.md#a-política-de-revisão)), a aprovação é do artefato, e continua sendo outro gesto e outro evento.
 
@@ -133,8 +175,8 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 2. **Comentário durante um prompt em andamento.** A fila de `runtime.threads/v1` aceita; falta decidir se a pilha enfileira ou espera (decisão 7 do [papercraft](./papercraft.md#decisões-em-aberto)).
 3. **Comentário sem prompt.** Hoje o comentário só vira evento no flush do envio; falta decidir se um comentário pode ser gravado sozinho, sem acordar o agente.
 4. **Editar e apagar.** Editar um rascunho é livre; o que fazer com um comentário já enviado — outro evento, um evento de remoção, ou imutável.
-5. **`resolve`.** O que "atendido" significa, quem marca e se o estado é por comentário ou por alvo.
-6. **Quem é o autor.** Se o comentário guarda o autor (o avatar da pilha usa o jdenticon do nome), e como isso se relaciona com o usuário do Project.
+5. **Decidido: `resolve`.** "Atendido" é um estado da **thread** (da raiz), marcado por `comments/v1.resolve` — o usuário, pelo popover do pino, ou o agente, com `resolve` na `comment_reply` — e projetado como `done`; reabrir é outro `resolve` com `resolved: false`. Continua em aberto se o estado também vale por alvo.
+6. **Quem é o autor.** O comentário guarda o autor (`agent` nas respostas da tool; o avatar da pilha usa o jdenticon do nome); falta decidir como isso se relaciona com o usuário do Project.
 7. **Notificação e retomada.** Se um comentário pendente aparece fora da conversa, como o `notifications` faz com o fim de um prompt.
 8. **Alvo sem Thread.** Um comentário num alvo que não pertence a uma conversa (um arquivo do Project, uma revisão antiga) precisa de outro escopo que `projectId`/`threadId`/`promptId`.
 9. **Persistência do rascunho além do processo.** Se a pilha sobrevive ao fechamento do app, num registro de cache como o do `history`, e se o texto do editor sincroniza a cada tecla ou em lotes curtos (decisão 14 do [papercraft](./papercraft.md#decisões-em-aberto)).
@@ -149,5 +191,6 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 - [Papercraft](./papercraft.md): o primeiro consumidor — a âncora carimbada, o pino e a pilha.
 - [Eventos e nodes](./events-and-nodes.md): o log durável, os projetores e os nodes de conversa.
 - [O bundle chat](./chat.md): `chat.views/v1`, os renderizadores e o serviço de compositor.
+- [Direct](../../../bundles/runtime/direct/README.md): o envelope de entrada (`<user-request>` e os demais) em que o prompt chega ao modelo.
 - [Armazenamento genérico e histórico](./storage.md): o cache local por bundle, o precedente do `history`.
 - [Contextos e capacidades](./contexts.md): o `call` com `scope`, que é o que amarra o comentário ao Project, à Thread e ao prompt.

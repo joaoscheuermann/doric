@@ -72,6 +72,13 @@ export interface ChatViews {
 
 export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
 
+/**
+ * The reader at this install: their turns, their prompt and the stack items
+ * they add wear this name. The host does not report who is who yet, so it is
+ * fixed here, the one place that is replaced the day it does.
+ */
+export const READER_NAME = 'jao.scheuermann';
+
 export interface ChatLexical {
   /** Accepted until the window's first conversation editor exists; then `frozen`. */
   registerNodes(
@@ -212,7 +219,12 @@ export interface ChatIntentDetail {
 
 /** One item of the composer's comment stack: a draft until the send flushes it. */
 export interface ComposerItem {
-  /** The item's identity within the composer, assigned when it is added. */
+  /**
+   * The item's identity, assigned when it is added: `comment-<uuid>`. It is
+   * also the id of the comment the item becomes — the flush writes it as
+   * `commentId`, and a reply names it in `inReplyTo` — so the prompt that
+   * carries the draft and the log that records it speak of the same comment.
+   */
   readonly id: string;
   /** The kind of comment, declared by the bundle that owns it. */
   readonly kind: string;
@@ -221,7 +233,11 @@ export interface ComposerItem {
    * block's element is; `CHAT_COMMENT_LINE_TAG` names the built-in line.
    */
   readonly elementTag: string;
-  /** The owner's payload — the target and anchor of the comment; chat never interprets it. */
+  /**
+   * The owner's payload. Chat reads only the fields `ComposerItemData` names
+   * (the target, the pin, the root a reply continues, the target's references)
+   * and leaves every other field to the owner.
+   */
   readonly data: unknown;
   /** Who wrote the comment; the line's avatar is the jdenticon of this name. */
   readonly author?: string;
@@ -231,6 +247,38 @@ export interface ComposerItem {
 
 /** The element tag of the line the chat itself draws for a stack item. */
 export const CHAT_COMMENT_LINE_TAG = 'chat-comment-line';
+
+/** The prefix of every stack item id, which is also its comment id. */
+export const COMPOSER_ITEM_ID_PREFIX = 'comment-';
+
+/**
+ * The part of a stack item's `data` the chat reads, whoever owns the kind: the
+ * comment's target (with its anchor), the pin number the owner shows, the
+ * comment a reply continues and the target's references for the prompt. The
+ * owner may add fields of its own; chat never reads them.
+ */
+export interface ComposerItemData {
+  readonly target: CommentTarget;
+  /** The number the owner's surface shows for the comment. */
+  readonly pin?: number;
+  /** The root comment a reply continues: an item id or a logged comment id. */
+  readonly inReplyTo?: string;
+  /** What the prompt names the target by. */
+  readonly refs?: {
+    readonly title?: string;
+    readonly source?: string;
+  };
+}
+
+/**
+ * One durable comment write a flush answers: `comments/v1.add`'s input, with
+ * the comment id (the item's own id, so the write is idempotent) and the root
+ * a reply continues.
+ */
+export type ComposerCommentWrite = CommentAddInput & {
+  readonly commentId?: string;
+  readonly inReplyTo?: string;
+};
 
 /** The draft one Thread holds: its words and its comment stack, one state. */
 export interface ComposerSnapshot {
@@ -280,7 +328,7 @@ export interface ComposerFlushContext {
 export type ComposerFlush = (
   item: ComposerItem,
   context: ComposerFlushContext,
-) => Promise<readonly CommentAddInput[]>;
+) => Promise<readonly ComposerCommentWrite[]>;
 
 export interface ComposerReadInput {
   readonly threadId: string;
@@ -293,6 +341,12 @@ export interface ComposerTextInput {
 
 export interface ComposerAddInput {
   readonly threadId: string;
+  /**
+   * The id an item put back on the stack keeps (a flushed comment whose write
+   * failed): honoured when it carries the `comment-` prefix and the stack does
+   * not hold it yet; otherwise the composer assigns a new one.
+   */
+  readonly id?: string;
   readonly kind: string;
   readonly elementTag: string;
   readonly data?: unknown;
@@ -314,6 +368,17 @@ export interface ComposerRemoveInput {
 export interface ComposerFlushInput {
   readonly threadId: string;
   readonly promptId: string;
+}
+
+/**
+ * One item the send took off the stack, with the comment writes its kind's
+ * flush answered. The sender performs the writes and, when one of them fails,
+ * puts the item back on the stack (`addItem`), so a comment the log never
+ * received is not lost with the send.
+ */
+export interface ComposerFlushed {
+  readonly item: ComposerItem;
+  readonly writes: readonly ComposerCommentWrite[];
 }
 
 export interface ComposerFlushRegistration {
@@ -346,14 +411,14 @@ export interface ChatComposer {
   /** Removes one item from the Thread's stack. */
   removeItem(input: ComposerRemoveInput, call?: CallArg): Promise<void>;
   /**
-   * Runs the flush each item's kind registered, empties the stack and answers
-   * the comment writes the sender performs. A refused send never calls this,
-   * so the stack stays where it was.
+   * Runs the flush each item's kind registered, takes the flushed items off
+   * the stack and answers each with the comment writes the sender performs. A
+   * refused send never calls this, so the stack stays where it was.
    */
   flush(
     input: ComposerFlushInput,
     call?: CallArg,
-  ): Promise<readonly CommentAddInput[]>;
+  ): Promise<readonly ComposerFlushed[]>;
   /** The owner of a kind registers how its items flush; a second registration is a conflict. */
   registerFlush(input: ComposerFlushRegistration, call?: CallArg): Disposable;
 }
@@ -421,6 +486,7 @@ const composerTextSchema = z
 const composerAddInputSchema = z
   .object({
     threadId: z.string().min(1),
+    id: z.string().min(1).optional(),
     kind: z.string().min(1),
     elementTag: z.string().min(1),
     data: z.unknown(),
@@ -500,12 +566,68 @@ export const chatComposerMethods = {
   },
   flush: {
     input: composerFlushInputSchema,
-    output: z.array(commentAddInputSchema),
+    output: z.array(
+      z
+        .object({
+          item: composerItemSchema,
+          writes: z.array(commentAddInputSchema),
+        })
+        .strict(),
+    ),
     expose: 'desktop',
   },
   registerFlush: {
     input: composerFlushRegistrationSchema,
     output: disposableSchema,
+  },
+} as const satisfies MethodSpecs;
+
+/* chat.send/v1 ---------------------------------------------------------------- */
+
+/** Which Thread's stack a send carries, and the Project it belongs to. */
+export interface ChatSendInput {
+  readonly projectId: string;
+  readonly threadId: string;
+}
+
+/**
+ * What a send answered: the host accepted the prompt (the stack was flushed
+ * into the log and the draft text cleared), the draft carried no words to
+ * send, or the host refused the prompt — the draft then stays where it was.
+ */
+export interface ChatSendResult {
+  readonly status: 'accepted' | 'empty' | 'refused';
+}
+
+/**
+ * `chat.send/v1` (client, one per window): sends a Thread's held draft now —
+ * the same send the composer's control makes, read from `chat.composer/v1`:
+ * the stack's comments and the draft text become the prompt envelope
+ * (`<comments>` then `<message>`), the host is asked through
+ * `runtime.threads/v1.prompt`, and only after it accepts does the stack flush
+ * into `comments.added/v1` (an item whose write fails goes back on the stack)
+ * and the draft text clear in every window. A surface outside the composer —
+ * the papercraft canvas, in the conversation or in its own window — sends with
+ * it (`Cmd+Enter`).
+ *
+ * It is a client contract, not a `chat.composer/v1` method, because the send
+ * reaches the host (`runtime.threads/v1`, `comments/v1`) and the composer runs
+ * in the main process, which does not call the host's contracts.
+ */
+export interface ChatSend {
+  send(input: ChatSendInput, call?: CallArg): Promise<ChatSendResult>;
+}
+
+export const ChatSendV1 = ref<ChatSend>('chat.send/v1');
+
+export const chatSendMethods = {
+  send: {
+    input: z
+      .object({ projectId: z.string().min(1), threadId: z.string().min(1) })
+      .strict() satisfies z.ZodType<ChatSendInput, ChatSendInput>,
+    output: z
+      .object({ status: z.enum(['accepted', 'empty', 'refused']) })
+      .strict() satisfies z.ZodType<ChatSendResult, ChatSendResult>,
   },
 } as const satisfies MethodSpecs;
 
@@ -522,10 +644,37 @@ export interface TurnComment {
   readonly target: unknown;
   readonly text: string;
   readonly author?: string;
+  /** The root comment this one answers; absent on a root comment. */
+  readonly inReplyTo?: string;
 }
 
 /** The `comments.added/v1` event type, as the log carries it. */
 export const COMMENTS_ADDED_EVENT = 'comments.added/v1';
+
+/** The `comments.resolved/v1` event type: a root comment resolved or reopened. */
+export const COMMENTS_RESOLVED_EVENT = 'comments.resolved/v1';
+
+/**
+ * The DOM event the conversation dispatches when the reader asks to open one
+ * comment's thread — a sent comment's line in a user turn, or the state glyph
+ * of an agent's reply row. It bubbles (and crosses shadow roots) from the
+ * element that was clicked; the bundle that draws the comment's target
+ * (Papercraft's pins) listens for it and opens the thread.
+ */
+export const COMMENT_THREAD_OPEN_EVENT = 'doric:comment-thread-open';
+
+/** The detail of `COMMENT_THREAD_OPEN_EVENT`. */
+export interface CommentThreadOpenDetail {
+  /** The thread's root comment id. */
+  readonly commentId: string;
+  /**
+   * The root comment's target, as `comments.added/v1` carried it. A target
+   * without `revision` names the latest revision: only the target's latest
+   * drawing answers it. The conversation sends it without one, so the thread
+   * opens on the latest preview of the target.
+   */
+  readonly target: unknown;
+}
 
 /**
  * The comment kind this bundle owns: a comment on one of the agent's messages,
@@ -558,5 +707,8 @@ export const turnCommentFrom = (payload: unknown): TurnComment | undefined => {
     target,
     text,
     ...(typeof record.author === 'string' ? { author: record.author } : {}),
+    ...(typeof record.inReplyTo === 'string' && record.inReplyTo.length > 0
+      ? { inReplyTo: record.inReplyTo }
+      : {}),
   };
 };

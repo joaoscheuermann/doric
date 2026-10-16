@@ -11,7 +11,7 @@
   "firstMessage": {
     "content": [
       {
-        "text": "# User request\n\n[[plain]] Say hello.",
+        "text": "<user-request>\n[[plain]] Say hello.\n</user-request>",
         "type": "input_text"
       }
     ],

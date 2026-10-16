@@ -33,6 +33,13 @@ Electron app (`serve.mjs`, which adds `--no-sandbox` when running as root).
 | `GET /status`, `GET /projects`, `GET /threads`                                                | `server.mjs`                                                                                                                                                 |
 | `GET /reload`                                                                                 | rebuilds the catalog from the staged files and publishes a new generation to every `doric.catalog/v1.watch` subscriber                                       |
 
+`artifacts/v1`, `comments/v1` and `papercraft.previews/v1` read the scope each
+bridge call carries, as the real host does: a call without a `projectId` is
+refused (`invalid_input`, the lease's refusal), and a write without a
+`threadId` too, because its event belongs to a Thread log. Nothing falls back
+to the seeded Project, so a window that forgets to scope a call fails here as it
+would against the real host.
+
 Two Projects ("Doric", "Sandbox") with one Thread each, from fixed UUIDs, are
 enough for the sidebar, the project tabs and the dashboard.
 

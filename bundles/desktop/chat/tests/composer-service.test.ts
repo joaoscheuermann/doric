@@ -11,6 +11,7 @@ import {
   type ChatComposer,
   ChatComposerV1,
   type ComposerWatchItem,
+  READER_NAME,
 } from '../src/contracts/index.js';
 import { bootDesktop, type Desktop } from './support/desktop.js';
 
@@ -74,6 +75,25 @@ describe('chat.composer/v1', () => {
     assert.equal(portrait.items.length, 1);
     assert.equal(portrait.items[0]?.id, item.id);
     assert.equal(portrait.items[0]?.kind, 'message');
+  });
+
+  test('an item nobody signed wears the reader, one they signed keeps its author', async () => {
+    if (desktop === undefined) desktop = await bootDesktop();
+    const composer = desktop.services.use(ChatComposerV1);
+    const { author: _signed, ...unsigned } = messageItem;
+
+    const mine = await composer.addItem({
+      threadId: 'thread-author',
+      ...unsigned,
+    });
+    const theirs = await composer.addItem({
+      threadId: 'thread-author',
+      ...unsigned,
+      author: 'ana',
+    });
+
+    assert.equal(mine.author, READER_NAME);
+    assert.equal(theirs.author, 'ana');
   });
 
   test('watches: the portrait first, then the live deltas', async () => {
@@ -158,7 +178,7 @@ describe('chat.composer/v1', () => {
     again.dispose();
   });
 
-  test('flushes each item through its kind, and answers the comment writes', async () => {
+  test('flushes each item through its kind, and answers each with its comment writes', async () => {
     if (desktop === undefined) desktop = await bootDesktop();
     const composer = desktop.services.use(ChatComposerV1);
     const seen = watch(composer, 'thread-flush');
@@ -183,17 +203,22 @@ describe('chat.composer/v1', () => {
       author: 'jao.scheuermann',
     });
 
-    const writes = await composer.flush({
+    const flushed = await composer.flush({
       threadId: 'thread-flush',
       promptId: 'prompt-just-accepted',
     });
 
-    // The message flush answers one comment write, in the sender's scope.
-    assert.equal(writes.length, 1);
-    const write = writes[0];
+    // The message flush answers one comment write for its item, so the
+    // sender can put the item back when the write fails.
+    assert.equal(flushed.length, 1);
+    assert.equal(flushed[0]?.item.id, item.id);
+    assert.equal(flushed[0]?.writes.length, 1);
+    const write = flushed[0]?.writes[0];
     assert.deepEqual(write?.target, messageItem.data.target);
     assert.equal(write?.text, 'essa resposta está desatualizada');
     assert.equal(write?.author, 'jao.scheuermann');
+    // The item's id is the comment's id, so the write is idempotent on it.
+    assert.equal(write?.commentId, item.id);
 
     // The flushed item left; the kind without a flush stayed drafted.
     const portrait = await composer.read({ threadId: 'thread-flush' });
@@ -239,6 +264,82 @@ describe('chat.composer/v1', () => {
         })
       ).length,
       0,
+    );
+  });
+  test("an item's id is its comment id, and a put-back item keeps its own", async () => {
+    if (desktop === undefined) desktop = await bootDesktop();
+    const composer = desktop.services.use(ChatComposerV1);
+
+    const added = await composer.addItem({
+      threadId: 'thread-ids',
+      ...messageItem,
+    });
+    assert.match(added.id, /^comment-.+/);
+
+    // An item put back after a failed write comes back under its id.
+    const back = await composer.addItem({
+      threadId: 'thread-ids',
+      id: 'comment-sent-before',
+      ...messageItem,
+    });
+    assert.equal(back.id, 'comment-sent-before');
+
+    // An id the stack already holds, or one that is not a comment id, is
+    // replaced by a new one.
+    const twice = await composer.addItem({
+      threadId: 'thread-ids',
+      id: 'comment-sent-before',
+      ...messageItem,
+    });
+    const foreign = await composer.addItem({
+      threadId: 'thread-ids',
+      id: 'item-1',
+      ...messageItem,
+    });
+    assert.notEqual(twice.id, 'comment-sent-before');
+    assert.match(twice.id, /^comment-.+/);
+    assert.match(foreign.id, /^comment-.+/);
+  });
+
+  test('a reply flushes after its root and names it; a reply to a drafted root waits', async () => {
+    if (desktop === undefined) desktop = await bootDesktop();
+    const composer = desktop.services.use(ChatComposerV1);
+    const replyTo = (root: string, note: string) => ({
+      threadId: 'thread-replies',
+      ...messageItem,
+      data: { ...messageItem.data, inReplyTo: root },
+      note,
+    });
+
+    const root = await composer.addItem({
+      threadId: 'thread-replies',
+      ...messageItem,
+    });
+    const reply = await composer.addItem(replyTo(root.id, 'e mais isso'));
+    // A root with nothing written stays drafted, and so does its reply.
+    const empty = await composer.addItem({
+      threadId: 'thread-replies',
+      ...messageItem,
+      note: '',
+    });
+    const waiting = await composer.addItem(replyTo(empty.id, 'resposta'));
+
+    const flushed = await composer.flush({
+      threadId: 'thread-replies',
+      promptId: 'prompt-replies',
+    });
+
+    assert.deepEqual(
+      flushed.map(({ writes }) => [writes[0]?.commentId, writes[0]?.inReplyTo]),
+      [
+        [root.id, undefined],
+        [reply.id, root.id],
+      ],
+    );
+    const portrait = await composer.read({ threadId: 'thread-replies' });
+    assert.deepEqual(
+      portrait.items.map((item) => item.id),
+      [empty.id, waiting.id],
     );
   });
 });

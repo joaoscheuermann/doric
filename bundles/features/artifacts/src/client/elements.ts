@@ -1,28 +1,59 @@
 // The `artifacts` client elements.
 //
-// `<artifacts-node>` is the registry's generic frame, as
-// `docs/architecture/bundles/artifacts.md` states it: the title, the kind, the
-// revision reading, and the comment gesture with the count of what is still
-// pending — the same in every artifact. The kind would render the body; a
-// kind without a renderer of its own (an orphan, or one whose bundle projects
-// and renders its own blocks) reads here as the entries the revision named,
-// with no body canvas — the frame never invents one.
+// `<artifacts-node>` is the registry's frame, as
+// `docs/architecture/bundles/artifacts.md` states it: "the frame is the
+// registry's, the body is the kind's". The frame draws what is the same in
+// every artifact — the title, the kind, the revision reading, the review
+// state, the authorize gesture (only under `request`) and the comment gesture
+// with the count of what is still pending — and mounts
+// the kind's body inside it: the element the kind declared as `bodyTag` in
+// `artifact.kind/v1`, created with `ui/v1.create(bodyTag, { block })`, where
+// `block` is the frame's block with `type` set to the kind's `blockType`. A
+// kind without a body (an orphan, or a kind no active bundle declares) reads
+// as the entries the revision named — the frame never invents a body.
 //
-// `<artifacts-revisions>` is the revision list: one row per revision, with its
-// change note, its entries and the comments still pending on it, read through
-// `artifacts/v1`. Any surface a bundle composes — the node, a window, a
-// panel — mounts it with the `artifactId`.
+// A kind that declares `header: 'body'` overlays its own header on its body:
+// the frame then draws no bar, and keeps only what is the registry's alone —
+// `Autorizar` (under `request`, for an open revision) — below the body.
+//
+// The frame draws no list of revisions: the conversation is the history — one
+// frame per revision, where the agent said what changed.
+//
+// The comment gesture dispatches `artifacts:comment` (bubbling, composed,
+// cancelable) with `{ artifactId, revision, kind }`. A surface that composes
+// comments takes it and calls `preventDefault()`; otherwise the frame hands
+// the gesture to its body, when the body offers `comment(detail)` (the kind
+// knows where in its body a comment anchors), and says so when nobody can.
 //
 // The classes are made inside factories the activation calls, so importing
 // this module touches no DOM global; every element extends `HTMLElement`, and
 // the window's `ui/v1` attaches the services of this bundle to each instance
 // it creates.
 
-import type { Services } from 'bundle/contracts';
+import { type CallScope, type Services, UiV1 } from 'bundle/contracts';
 
-import { ArtifactsV1, type ArtifactTarget } from '../contracts/index.js';
-import { CommentsV1, type CommentTargetKey } from './comments-contract.js';
+import {
+  type ArtifactKindDescriptor,
+  ArtifactKindV1,
+  type ArtifactRecord,
+  ArtifactsV1,
+  type ArtifactTarget,
+} from '../contracts/index.js';
+import { type Comment, CommentsV1 } from './comments-contract.js';
 import type { ArtifactFrameData } from './projector.js';
+
+/** The frame element tag; every tag this bundle defines carries its prefix. */
+export const ARTIFACTS_NODE_TAG = 'artifacts-node';
+
+/** The event the comment gesture dispatches. */
+export const ARTIFACTS_COMMENT_EVENT = 'artifacts:comment';
+
+/** What `artifacts:comment` carries. */
+export interface ArtifactCommentDetail {
+  readonly artifactId: string;
+  readonly revision: number;
+  readonly kind: string;
+}
 
 const element = (name: string, className: string): HTMLElement => {
   const node = document.createElement(name);
@@ -42,19 +73,22 @@ const button = (className: string, label: string): HTMLButtonElement => {
 
 const STYLE = [
   ':host { display: block; }',
+  // An author `display` would otherwise beat the `hidden` attribute.
+  '[hidden] { display: none !important; }',
   '.artifacts-frame { display: flex; flex-direction: column; gap: 8px; }',
   '.artifacts-bar { display: flex; align-items: center; gap: 8px; }',
   '.artifacts-title { font-weight: 600; }',
   '.artifacts-kind { opacity: 0.7; }',
   '.artifacts-revision { opacity: 0.7; font-variant-numeric: tabular-nums; }',
+  '.artifacts-state { opacity: 0.7; }',
+  '.artifacts-bar button { font: inherit; font-size: 12px; color: inherit; background: transparent; border: 1px solid var(--border, currentColor); border-radius: 6px; padding: 2px 8px; cursor: pointer; }',
+  '.artifacts-bar button:hover { background: var(--accent, transparent); }',
   '.artifacts-comment { margin-left: auto; }',
+  '.artifacts-below { display: flex; align-items: center; gap: 8px; }',
+  '.artifacts-below button { font: inherit; font-size: 12px; color: inherit; background: transparent; border: 1px solid var(--border, currentColor); border-radius: 6px; padding: 2px 8px; cursor: pointer; }',
   '.artifacts-entries { display: grid; gap: 2px; }',
   '.artifacts-entry { font: 12px/1.6 monospace; opacity: 0.8; word-break: break-all; }',
-  '.artifacts-orphan { opacity: 0.7; font-style: italic; }',
-  '.artifacts-revisions { display: grid; gap: 4px; }',
-  '.artifacts-revision-row { display: flex; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }',
-  '.artifacts-revision-note { opacity: 0.8; }',
-  '.artifacts-missing { opacity: 0.7; }',
+  '.artifacts-orphan, .artifacts-hint { opacity: 0.7; font-style: italic; }',
 ].join('\n');
 
 const sheet = (root: ShadowRoot): void => {
@@ -63,35 +97,66 @@ const sheet = (root: ShadowRoot): void => {
   root.append(style);
 };
 
-/** The pieces a frame keeps after it builds its shadow tree. */
-interface FrameView {
-  readonly title: HTMLElement;
-  readonly kind: HTMLElement;
-  readonly revision: HTMLElement;
-  readonly comment: HTMLButtonElement;
-  readonly entries: HTMLElement;
-  readonly orphan: HTMLElement;
+/**
+ * The scope the frame calls the registry and the comments under:
+ * the Project and Thread whose log holds the artifact. `comments/v1` refuses a
+ * call without a Project, so an element without one counts nothing.
+ */
+export interface ArtifactViewScope {
+  readonly projectId?: string;
+  readonly threadId?: string;
 }
 
-/** What `<artifacts-node>` builds once, and re-renders on every input. */
-const buildFrame = (root: ShadowRoot): FrameView => {
-  sheet(root);
+const callScopeOf = (scope: ArtifactViewScope): CallScope | undefined =>
+  scope.projectId === undefined
+    ? undefined
+    : {
+        projectId: scope.projectId,
+        ...(scope.threadId === undefined ? {} : { threadId: scope.threadId }),
+      };
 
-  const frame = element('div', 'artifacts-frame');
-  const bar = element('div', 'artifacts-bar');
-  const title = element('span', 'artifacts-title');
-  const kind = element('span', 'artifacts-kind');
-  const revision = element('span', 'artifacts-revision');
-  const comment = button('artifacts-comment', 'Comentar');
-  const entries = element('div', 'artifacts-entries');
-  const orphan = element('div', 'artifacts-orphan');
-  orphan.hidden = true;
+/** A service of the window, or undefined when the composition lacks it. */
+const tryUse = <T>(use: () => T): T | undefined => {
+  try {
+    return use();
+  } catch {
+    return undefined;
+  }
+};
 
-  bar.append(title, kind, revision, comment);
-  frame.append(bar, entries, orphan);
-  root.append(frame);
+/**
+ * The comments still pending on an artifact, by revision, read through the
+ * comments registry in one call. A composition without it counts nothing
+ * rather than fails the frame.
+ */
+const pendingByRevision = async (
+  services: Services,
+  artifactId: string,
+  scope: ArtifactViewScope,
+): Promise<ReadonlyMap<number, number>> => {
+  const counts = new Map<number, number>();
+  const bound = callScopeOf(scope);
+  let comments: readonly Comment[] = [];
 
-  return { title, kind, revision, comment, entries, orphan };
+  if (bound === undefined) return counts;
+
+  try {
+    comments = await services
+      .use(CommentsV1, bound)
+      .list({ target: { kind: 'artifact', id: artifactId } });
+  } catch {
+    return counts;
+  }
+
+  for (const comment of comments) {
+    const revision = comment.target?.revision;
+
+    if (comment.resolved || revision === undefined) continue;
+
+    counts.set(revision, (counts.get(revision) ?? 0) + 1);
+  }
+
+  return counts;
 };
 
 /** The frame data off a block chat hands an element, else undefined. */
@@ -103,15 +168,13 @@ const frameDataOf = (block: unknown): ArtifactFrameData | undefined => {
   if (typeof data !== 'object' || data === null) return undefined;
 
   const value = data as Record<string, unknown>;
-  const artifactId = value.artifactId;
-  const revision = value.revision;
-  const kind = value.kind;
+  const { artifactId, revision, kind } = value;
 
   if (
     typeof artifactId !== 'string' ||
     artifactId === '' ||
     typeof revision !== 'number' ||
-    Number.isInteger(revision) === false ||
+    !Number.isInteger(revision) ||
     revision <= 0 ||
     typeof kind !== 'string' ||
     kind === ''
@@ -123,7 +186,7 @@ const frameDataOf = (block: unknown): ArtifactFrameData | undefined => {
     artifactId,
     revision,
     kind,
-    ...(typeof value.title === 'string' ? { title: value.title } : {}),
+    title: typeof value.title === 'string' ? value.title : artifactId,
     targets: Array.isArray(value.targets)
       ? (value.targets as readonly ArtifactTarget[])
       : [],
@@ -131,39 +194,88 @@ const frameDataOf = (block: unknown): ArtifactFrameData | undefined => {
     ...(typeof value.changeNote === 'string'
       ? { changeNote: value.changeNote }
       : {}),
-    ...(typeof value.createdAt === 'string'
-      ? { createdAt: value.createdAt }
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : '',
+    ...(typeof value.projectId === 'string'
+      ? { projectId: value.projectId }
       : {}),
+    ...(typeof value.threadId === 'string' ? { threadId: value.threadId } : {}),
   } as ArtifactFrameData;
 };
 
-/**
- * The count of comments still pending on one revision, read through the
- * comments registry — the same state the artifact's own reducer folds from
- * the log, read where the registry keeps it.
- */
-const pendingComments = async (
-  services: Services,
-  target: CommentTargetKey,
-): Promise<number> => {
-  try {
-    const comments = await services.use(CommentsV1).list({ target });
+/** The pieces a frame keeps after it builds its shadow tree. */
+interface FrameView {
+  readonly bar: HTMLElement;
+  /** The row under the body that carries `Autorizar` when the body draws the header. */
+  readonly below: HTMLElement;
+  readonly title: HTMLElement;
+  readonly kind: HTMLElement;
+  readonly revision: HTMLElement;
+  readonly state: HTMLElement;
+  readonly authorize: HTMLButtonElement;
+  readonly comment: HTMLButtonElement;
+  readonly body: HTMLElement;
+  readonly entries: HTMLElement;
+  readonly orphan: HTMLElement;
+  readonly hint: HTMLElement;
+}
 
-    return comments.filter((comment) => !comment.resolved).length;
-  } catch {
-    // The comments registry is another bundle's; a composition without it
-    // counts nothing rather than fails the frame.
-    return 0;
-  }
+/** What `<artifacts-node>` builds once, and re-renders on every input. */
+const buildFrame = (root: ShadowRoot): FrameView => {
+  sheet(root);
+
+  const frame = element('div', 'artifacts-frame');
+  const bar = element('div', 'artifacts-bar');
+  const title = element('span', 'artifacts-title');
+  const kind = element('span', 'artifacts-kind');
+  const revision = element('span', 'artifacts-revision');
+  const state = element('span', 'artifacts-state');
+  const authorize = button('artifacts-authorize', 'Autorizar');
+  const comment = button('artifacts-comment', 'Comentar');
+  const body = element('div', 'artifacts-body');
+  // The kind's body is light DOM slotted here, so the window's sheets (the
+  // kind bundle's own utilities and the theme) style it; a node inside this
+  // shadow root would be out of their reach.
+  body.append(Object.assign(document.createElement('slot'), { name: 'body' }));
+  const entries = element('div', 'artifacts-entries');
+  const orphan = element('div', 'artifacts-orphan');
+  const hint = element('div', 'artifacts-hint');
+  const below = element('div', 'artifacts-below');
+
+  authorize.hidden = true;
+  below.hidden = true;
+  orphan.hidden = true;
+  hint.hidden = true;
+  orphan.textContent =
+    'Sem renderizador para este tipo: a revisão nomeou o que existiu.';
+  bar.append(title, kind, revision, state, authorize, comment);
+  frame.append(bar, body, entries, orphan, hint, below);
+  root.append(frame);
+
+  return {
+    bar,
+    below,
+    title,
+    kind,
+    revision,
+    state,
+    authorize,
+    comment,
+    body,
+    entries,
+    orphan,
+    hint,
+  };
 };
 
-/** `<artifacts-node>`: the registry's generic frame, one block of the log. */
+/** `<artifacts-node>`: the registry's frame around the kind's body. */
 export const defineFrameElement = () =>
   class ArtifactsFrameElement extends HTMLElement {
     #services: Services | undefined;
     #block: unknown;
     #view: FrameView | undefined;
     #token = 0;
+    /** The body element and the key (tag and block id) it was made for. */
+    #body: { readonly key: string; readonly node: object } | undefined;
 
     set services(value: Services | undefined) {
       this.#services = value;
@@ -188,6 +300,84 @@ export const defineFrameElement = () =>
         this.attachShadow({ mode: 'open' })) as ShadowRoot;
     }
 
+    /** The kind's body, made once per kind tag and block. */
+    #mountBody(
+      services: Services,
+      kind: ArtifactKindDescriptor | undefined,
+    ): boolean {
+      const tag = kind?.bodyTag;
+      const ui = tryUse(() => services.use(UiV1));
+
+      if (tag === undefined || ui === undefined) {
+        this.#dropBody();
+        return false;
+      }
+
+      const block = this.#block as {
+        readonly id?: string;
+        readonly type?: string;
+      };
+      const key = `${tag} ${block.id ?? ''}`;
+
+      if (this.#body?.key === key) return true;
+
+      this.#dropBody();
+
+      const node = tryUse(() =>
+        ui.create(tag, {
+          block: { ...block, type: kind?.blockType ?? block.type },
+        }),
+      );
+
+      if (node === undefined) return false;
+
+      this.#body = { key, node };
+      (node as HTMLElement).slot = 'body';
+      this.append(node as Node);
+
+      return true;
+    }
+
+    #dropBody(): void {
+      if (this.#body === undefined) return;
+
+      const { node } = this.#body;
+      this.#body = undefined;
+      (node as ChildNode).remove();
+      tryUse(() => this.#services?.use(UiV1).dispose(node));
+    }
+
+    #comment(view: FrameView, data: ArtifactFrameData): void {
+      const detail: ArtifactCommentDetail = {
+        artifactId: data.artifactId,
+        revision: data.revision,
+        kind: data.kind,
+      };
+      const event = new CustomEvent(ARTIFACTS_COMMENT_EVENT, {
+        detail,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      });
+
+      // A surface that composes comments took the gesture.
+      if (!this.dispatchEvent(event)) return;
+
+      const body = this.#body?.node as
+        | { comment?: (detail: ArtifactCommentDetail) => void }
+        | undefined;
+
+      if (typeof body?.comment === 'function') {
+        body.comment(detail);
+        view.hint.hidden = true;
+        return;
+      }
+
+      view.hint.textContent =
+        'Este artefato não tem onde ancorar um comentário: comente pela conversa.';
+      view.hint.hidden = false;
+    }
+
     async #render(): Promise<void> {
       const data = frameDataOf(this.#block);
 
@@ -195,24 +385,10 @@ export const defineFrameElement = () =>
       if (this.#view === undefined) this.#view = buildFrame(this.#shadow());
       const view = this.#view;
 
-      view.title.textContent = data.title ?? data.artifactId;
+      view.title.textContent = data.title;
       view.kind.textContent = data.kind;
       view.revision.textContent = `rev ${data.revision}`;
-
-      // The revision the event named, as the registry still keeps it: the
-      // reading the frame shows, and where a later revision exists.
-      view.comment.onclick = () => {
-        this.dispatchEvent(
-          new CustomEvent('artifacts:comment', {
-            detail: {
-              artifactId: data.artifactId,
-              revision: data.revision,
-            },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      };
+      view.comment.onclick = () => this.#comment(view, data);
 
       view.entries.replaceChildren();
 
@@ -222,146 +398,70 @@ export const defineFrameElement = () =>
         view.entries.append(row);
       }
 
-      view.orphan.hidden = data.entries.length > 0;
-      view.orphan.textContent =
-        'Sem renderizador para este tipo: a revisão nomeou o que existiu.';
-
-      if (this.#services === undefined) return;
-
-      this.#token += 1;
-      const token = this.#token;
-      const pending = await pendingComments(this.#services, {
-        kind: 'artifact',
-        id: data.artifactId,
-        revision: data.revision,
-      });
-
-      if (token !== this.#token) return;
-
-      view.comment.textContent =
-        pending > 0 ? `Comentar (${pending})` : 'Comentar';
-    }
-  };
-
-/** The pieces a revision list keeps after it builds its shadow tree. */
-interface RevisionsView {
-  readonly rows: HTMLElement;
-}
-
-/** What `<artifacts-revisions>` builds once, and re-renders on input. */
-const buildRevisions = (root: ShadowRoot): RevisionsView => {
-  sheet(root);
-
-  const rows = element('div', 'artifacts-revisions');
-  root.append(rows);
-
-  return { rows };
-};
-
-/**
- * `<artifacts-revisions>`: one row per revision of an artifact — the revision
- * reading, its change note, its entries and its pending comments — read
- * through `artifacts/v1`, which is where the registry keeps every revision.
- */
-export const defineRevisionsElement = () =>
-  class ArtifactsRevisionsElement extends HTMLElement {
-    #services: Services | undefined;
-    #artifactId: string | undefined;
-    #view: RevisionsView | undefined;
-    #token = 0;
-
-    set services(value: Services | undefined) {
-      this.#services = value;
-      void this.#render();
-    }
-
-    get services(): Services | undefined {
-      return this.#services;
-    }
-
-    set artifactId(value: string | undefined) {
-      this.#artifactId = value;
-      void this.#render();
-    }
-
-    get artifactId(): string | undefined {
-      return this.#artifactId;
-    }
-
-    #shadow(): ShadowRoot {
-      return (this.shadowRoot ??
-        this.attachShadow({ mode: 'open' })) as ShadowRoot;
-    }
-
-    async #render(): Promise<void> {
-      const artifactId = this.#artifactId;
       const services = this.#services;
 
-      if (artifactId === undefined || services === undefined) return;
-
-      if (this.#view === undefined) {
-        this.#view = buildRevisions(this.#shadow());
-      }
-      const view = this.#view;
-
-      this.#token += 1;
-      const token = this.#token;
-
-      const newest = await services
-        .use(ArtifactsV1)
-        .read({ artifactId }, undefined);
-
-      if (token !== this.#token) return;
-
-      view.rows.replaceChildren();
-
-      if (newest === undefined) {
-        const missing = element('div', 'artifacts-missing');
-        missing.textContent = `Artefato ${artifactId} não está mais disponível.`;
-        view.rows.append(missing);
-
+      if (services === undefined) {
+        view.orphan.hidden = false;
         return;
       }
 
-      for (let revision = 1; revision <= newest.revisions; revision += 1) {
-        const record = await services
-          .use(ArtifactsV1)
-          .read({ artifactId, revision }, undefined);
+      this.#token += 1;
+      const token = this.#token;
+      const bound = callScopeOf(data);
+      const artifacts = tryUse(() => services.use(ArtifactsV1, bound));
+      const [kinds, records, policy, pending] = await Promise.all([
+        tryUse(() => services.use(ArtifactKindV1))
+          ?.list()
+          .catch(() => []) ?? Promise.resolve([]),
+        artifacts
+          ?.revisions({ artifactId: data.artifactId })
+          .catch(() => [] as readonly ArtifactRecord[]) ??
+          Promise.resolve([] as readonly ArtifactRecord[]),
+        artifacts?.policy().catch(() => undefined) ??
+          Promise.resolve(undefined),
+        pendingByRevision(services, data.artifactId, data),
+      ]);
 
-        if (token !== this.#token || record === undefined) continue;
+      if (token !== this.#token) return;
 
-        const row = element('div', 'artifacts-revision-row');
-        const reading = element('span', 'artifacts-revision');
-        reading.textContent = `rev ${revision}/${newest.revisions}`;
-        row.append(reading);
+      // The body is the kind's; without one, the entries are what the frame
+      // can stand behind, and only then is the artifact an orphan.
+      const kind = kinds.find((candidate) => candidate.id === data.kind);
+      const bodied = this.#mountBody(services, kind);
 
-        if (record.changeNote !== undefined) {
-          const note = element('span', 'artifacts-revision-note');
-          note.textContent = record.changeNote;
-          row.append(note);
-        }
+      view.entries.hidden = bodied;
+      view.orphan.hidden = bodied;
 
-        const pending = await pendingComments(services, {
-          kind: 'artifact',
-          id: artifactId,
-          revision,
-        });
+      const record = records.find(
+        (candidate) => candidate.revision === data.revision,
+      );
+      const approved = record?.state === 'approved';
+      const authorizable = policy?.policy === 'request' && !approved;
 
-        if (token !== this.#token) return;
+      // A body that draws its own header takes the bar's place: the frame
+      // keeps `Autorizar` below the body, beside nothing else of the bar.
+      const bodyHeader = bodied && kind?.header === 'body';
 
-        if (pending > 0) {
-          const count = element('span', 'artifacts-revision-note');
-          count.textContent = `${pending} comentário${pending === 1 ? '' : 's'} pendente${pending === 1 ? '' : 's'}`;
-          row.append(count);
-        }
+      view.bar.hidden = bodyHeader;
+      if (bodyHeader) view.below.append(view.authorize);
+      else view.bar.insertBefore(view.authorize, view.comment);
+      view.below.hidden = !bodyHeader || !authorizable;
 
-        if (record.state === 'approved') {
-          const approved = element('span', 'artifacts-revision-note');
-          approved.textContent = 'autorizado';
-          row.append(approved);
-        }
+      view.state.textContent = approved ? 'autorizado' : '';
+      view.authorize.hidden = !authorizable;
+      view.authorize.onclick = () => {
+        view.authorize.disabled = true;
+        void artifacts
+          ?.approve({ artifactId: data.artifactId, revision: data.revision })
+          .catch(() => undefined)
+          .finally(() => {
+            view.authorize.disabled = false;
+            void this.#render();
+          });
+      };
 
-        view.rows.append(row);
-      }
+      const count = pending.get(data.revision) ?? 0;
+
+      view.comment.textContent = count > 0 ? `Comentar (${count})` : 'Comentar';
     }
   };

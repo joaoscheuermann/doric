@@ -6,6 +6,7 @@ import {
   InputGroupInput,
 } from './input-group.js';
 import { cn } from '../lib/utils.js';
+import { usePortalContainer } from '../portal-container.js';
 import { Combobox as ComboboxPrimitive } from '@base-ui/react';
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import * as React from 'react';
@@ -96,8 +97,9 @@ function ComboboxContent({
     ComboboxPrimitive.Positioner.Props,
     'side' | 'align' | 'sideOffset' | 'alignOffset' | 'anchor'
   >) {
+  const container = usePortalContainer();
   return (
-    <ComboboxPrimitive.Portal>
+    <ComboboxPrimitive.Portal container={container}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

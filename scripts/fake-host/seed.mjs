@@ -109,14 +109,17 @@ export const seedDevWorkspace = async ({
   // own `defaultTargets` does.
   const targets = [{ path: sourcePath, line: 90, snippet: SEEDED_BUTTON }];
 
-  const record = await artifacts.create({
-    artifactId: SEEDED_ARTIFACT_ID,
-    kind: 'preview',
-    title: SEEDED_TITLE,
-    targets,
-    source: 'html',
-    path: sourcePath,
-  });
+  const record = await artifacts.create(
+    {
+      artifactId: SEEDED_ARTIFACT_ID,
+      kind: 'preview',
+      title: SEEDED_TITLE,
+      targets,
+      source: 'html',
+      path: sourcePath,
+    },
+    { ...scope, promptId: SEEDED_PROMPT_ID },
+  );
 
   const built = artifacts.payloadOf(SEEDED_ARTIFACT_ID, record.revision) ?? {
     files: [],

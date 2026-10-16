@@ -10,6 +10,7 @@ import {
   threadsApi,
 } from '../api/threads-api.js';
 import { messageFrom } from '../domain/errors.js';
+import { promptMessage } from '../domain/prompt-envelope.js';
 import { queueChanged } from '../domain/queue.js';
 import {
   applyThreadEvents,
@@ -67,8 +68,16 @@ export type ThreadChatsState = {
   readonly chats: ThreadChats;
   /** Opens (or shows) a Thread, subscribing where its cached history ends. */
   readonly open: (thread: Thread) => void;
-  /** Sends a prompt from a Thread, recording it as pending until accepted. */
-  readonly prompt: (id: string, text: string) => Promise<boolean>;
+  /**
+   * Sends a prompt from a Thread, recording it as pending until accepted. The
+   * Project names where the stack flushes when this window has not opened the
+   * Thread (a send from outside the conversation).
+   */
+  readonly prompt: (
+    id: string,
+    text: string,
+    options?: { readonly projectId?: string },
+  ) => Promise<boolean>;
   /** Replaces a past prompt of a Thread through `threads.rewind`. */
   readonly rewind: (
     id: string,
@@ -315,10 +324,12 @@ export const createThreadChatsStore = (
           });
       },
 
-      prompt: async (id, text) => {
+      prompt: async (id, text, options) => {
         const words = text.trim();
         if (words.length === 0) return false;
-        setChats(startPending(get().chats, id, words));
+        // The pending turn draws the reader's words, as the log's turn will:
+        // the envelope's `<message>`, never its comments.
+        setChats(startPending(get().chats, id, promptMessage(words)));
         // The receipt is what carries the flush: the host's prompt id, which
         // the comment events land below once the stack empties into them.
         let receipt: PromptReceipt | undefined;
@@ -340,7 +351,7 @@ export const createThreadChatsStore = (
           // so each draft of the stack becomes a durable comment of this
           // prompt, and the stack empties into the log.
           const projectId =
-            get().chats.chats.get(id)?.thread.projectId ?? undefined;
+            get().chats.chats.get(id)?.thread.projectId ?? options?.projectId;
           if (projectId !== undefined) {
             await dependencies.flush?.({
               threadId: id,

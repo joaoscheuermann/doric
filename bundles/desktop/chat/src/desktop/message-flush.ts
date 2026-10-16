@@ -5,13 +5,19 @@
 // `comments/v1.add` with the target the selection recorded and the note the
 // reader wrote.
 //
-// The item's `data` is the shape the selection gesture wrote into the stack:
-// `{ target: CommentTarget }`, where the target's `id` is the prompt that
-// produced the message and the anchor is the `range` the reader selected.
+// The item's `data` follows the stack's convention (`ComposerItemData`):
+// `{ target: CommentTarget, inReplyTo? }`, where the target's `id` is the prompt
+// that produced the message and the anchor is the `range` the reader selected.
+// The item's id is the comment's id, so the write is idempotent and a reply
+// names its root by the id the prompt already carried.
 
-import type { CommentAddInput, CommentTarget } from 'comments/contracts';
+import type { CommentTarget } from 'comments/contracts';
 
-import type { ComposerFlush, ComposerItem } from '../contracts/index.js';
+import type {
+  ComposerCommentWrite,
+  ComposerFlush,
+  ComposerItem,
+} from '../contracts/index.js';
 import { MESSAGE_KIND } from '../contracts/index.js';
 
 export { MESSAGE_KIND };
@@ -48,9 +54,14 @@ export const messageFlush: ComposerFlush = (item: ComposerItem) => {
     return Promise.resolve([]);
   }
 
-  const write: CommentAddInput = {
+  const inReplyTo = (item.data as { inReplyTo?: unknown }).inReplyTo;
+  const write: ComposerCommentWrite = {
     target,
     text: note,
+    commentId: item.id,
+    ...(typeof inReplyTo === 'string' && inReplyTo.length > 0
+      ? { inReplyTo }
+      : {}),
     ...(item.author === undefined ? {} : { author: item.author }),
   };
 

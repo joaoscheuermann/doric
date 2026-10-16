@@ -73,6 +73,11 @@ import {
   QueuedTurnNode,
 } from '../nodes/queued-turn-node.js';
 import {
+  $createRepliesTurnNode,
+  $isRepliesTurnNode,
+  type RepliesTurnNode,
+} from '../nodes/replies-turn-node.js';
+import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
@@ -111,7 +116,8 @@ type TurnBlock =
   | ActivityTurnNode
   | LifecycleTurnNode
   | CompactionTurnNode
-  | FailureTurnNode;
+  | FailureTurnNode
+  | RepliesTurnNode;
 
 /**
  * A turn as the editor holds it: the turn's block, and the author line that
@@ -135,7 +141,8 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isActivityTurnNode(node) ||
   $isLifecycleTurnNode(node) ||
   $isCompactionTurnNode(node) ||
-  $isFailureTurnNode(node);
+  $isFailureTurnNode(node) ||
+  $isRepliesTurnNode(node);
 
 /** The block a turn becomes: one node class per kind of turn. */
 const $createBlock = (
@@ -197,6 +204,8 @@ const $createBlock = (
       );
     case 'failure':
       return $createFailureTurnNode(key, turn.promptId, turn.failure);
+    case 'replies':
+      return $createRepliesTurnNode(key, turn.promptId, turn.replies);
     case 'compaction':
       return $createCompactionTurnNode(
         key,
@@ -337,6 +346,16 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.failure.name === other.failure.name
       );
     }
+    case 'replies': {
+      const other = right as Extract<Turn, { type: 'replies' }>;
+      return (
+        left.replies.length === other.replies.length &&
+        left.replies.every(
+          (reply, index) =>
+            reply.reply.commentId === other.replies[index]?.reply.commentId,
+        )
+      );
+    }
     case 'queued': {
       const other = right as Extract<Turn, { type: 'queued' }>;
       return (
@@ -371,6 +390,8 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   else if (turn.type === 'compaction' && $isCompactionTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'failure' && $isFailureTurnNode(block))
+    block.setTurn(turn);
+  else if (turn.type === 'replies' && $isRepliesTurnNode(block))
     block.setTurn(turn);
 };
 

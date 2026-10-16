@@ -1,8 +1,11 @@
 // The harness the registry's tests run against: the bundle's own `activate`
 // over `createTestServices`, with a fake lease on a temporary sandbox and
 // fakes of the two basic contracts the host part uses — `events/v1`, which
-// records what `append` was called with, and `settings/v1`, which holds a
-// value per space and answers a space's own default when it was never written.
+// refuses what the real facade refuses (a call scope without the Thread log
+// sink's `projectId`, `threadId` and `promptId`, or a payload its event
+// schema rejects) and records what it accepted, and `settings/v1`, which
+// holds a value per space and answers a space's own default when it was
+// never written.
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +15,7 @@ import {
   type AnyServiceDefinition,
   type Call,
   type CallScope,
+  ContractError,
   type Disposable,
   defineMethod,
   defineService,
@@ -32,7 +36,7 @@ import {
   artifactReviewPolicy,
 } from '../../src/contracts/index.js';
 import { activate } from '../../src/host/index.js';
-import { fakeLease } from './lease.js';
+import { type FakeLeaseState, fakeLease } from './lease.js';
 
 export type { ArtifactTarget } from '../../src/contracts/index.js';
 
@@ -47,7 +51,12 @@ export interface AppendedEvent {
 export interface EventsRecord {
   readonly appended: AppendedEvent[];
   readonly registered: string[];
+  /** Set, the next append fails with this error (once), after validation. */
+  failNext?: Error;
 }
+
+/** The scope keys of the runtime's Thread log sink, `runtime.thread.events/{threadId}`. */
+const sinkScopeKeys = ['projectId', 'threadId', 'promptId'] as const;
 
 /** `events/v1` for a test: it records appends instead of writing a stream. */
 export const fakeEvents = (): {
@@ -72,6 +81,31 @@ export const fakeEvents = (): {
         [event, payload]: readonly [EventDefinition, Record<string, unknown>],
         call: Call,
       ) => {
+        const scope = call.scope ?? {};
+
+        if (sinkScopeKeys.some((key) => scope[key] === undefined)) {
+          throw new ContractError(
+            'invalid_scope',
+            `Event ${event.type} needs a call scope with ${sinkScopeKeys.join(', ')}.`,
+            { type: event.type },
+          );
+        }
+
+        if (!event.payload.safeParse(payload).success) {
+          throw new ContractError(
+            'invalid_input',
+            `Invalid ${event.type} payload.`,
+            { type: event.type },
+          );
+        }
+
+        const failure = record.failNext;
+
+        if (failure !== undefined) {
+          record.failNext = undefined;
+          throw failure;
+        }
+
         record.appended.push({ type: event.type, payload, call });
       },
     }),
@@ -163,6 +197,8 @@ export interface ArtifactsHarness {
   readonly call: (scope?: CallScope) => Call;
   readonly artifacts: Artifacts;
   readonly kinds: ArtifactKindRegistry;
+  /** Moves the Project's lease to another state, as the runtime would. */
+  setLease(state: FakeLeaseState): void;
   close(): Promise<void>;
 }
 
@@ -179,6 +215,7 @@ export const artifactsHarness = async (
   const root = await mkdtemp(join(tmpdir(), 'doric-artifacts-'));
   const events = fakeEvents();
   const settings = fakeSettings();
+  let lease: FakeLeaseState = 'ready';
 
   if (options.policy !== undefined) {
     settings.record.values.set(artifactReviewPolicy.id, {
@@ -188,7 +225,11 @@ export const artifactsHarness = async (
 
   const harness = createTestServices({
     bundle: { id: 'artifacts' },
-    provide: [fakeLease(root), events.definition, settings.definition],
+    provide: [
+      fakeLease(root, () => lease),
+      events.definition,
+      settings.definition,
+    ],
   });
 
   await activate({ services: harness.services });
@@ -200,6 +241,9 @@ export const artifactsHarness = async (
     call: (scope: CallScope = promptScope) => harness.call(scope),
     artifacts: harness.services.use(ArtifactsV1),
     kinds: harness.services.use(ArtifactKindV1),
+    setLease: (state: FakeLeaseState) => {
+      lease = state;
+    },
     close: async () => {
       await harness.dispose();
       await rm(root, { recursive: true, force: true });

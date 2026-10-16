@@ -198,6 +198,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     'storage/v1@^1.0.0',
     'events/v1@^1.0.0',
     'hooks/v1@^1.0.0',
+    // The core's hooks: an append another bundle made reaches the runtime.
+    'core.event-hooks/v1@^1.0.0',
     'log/v1@^1.0.0',
     'secrets/v1@^1.0.0',
     'models/v1@^1.0.0',

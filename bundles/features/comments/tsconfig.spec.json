@@ -13,6 +13,7 @@
   "include": ["src/host/**/*.ts", "src/contracts/**/*.ts", "tests/**/*.ts"],
   "references": [
     { "path": "../../../packages/bundle/tsconfig.lib.json" },
+    { "path": "../../../packages/tool/tsconfig.lib.json" },
     { "path": "../../runtime/runtime" }
   ]
 }

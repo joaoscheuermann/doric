@@ -51,19 +51,51 @@ ${body}`;
   return prompt;
 };
 
+const envelopeTags = [
+  'user-request',
+  'parent-instruction',
+  'terminal-output',
+  'child-result',
+] as const;
+
+const closingTags = new RegExp(`</(${envelopeTags.join('|')})`, 'gi');
+
+const attribute = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;');
+
+/**
+ * Wraps the prompt in the XML envelope that names where the input came from.
+ * Only the attribute values are escaped; the body stays as written, except that
+ * a literal closing envelope tag is defused so the text cannot end the
+ * envelope early. A plain-text prompt (older history, no inner tags) is
+ * wrapped unchanged.
+ */
 const input = (job: PromptJob): string => {
   const source = job.source;
-  const label =
+  const [tag, attributes] =
     source.kind === 'user'
-      ? 'User request'
+      ? (['user-request', ''] as const)
       : source.kind === 'parent'
-        ? `Parent instruction from thread ${source.threadId}, prompt ${source.promptId}`
+        ? ([
+            'parent-instruction',
+            ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
+          ] as const)
         : source.kind === 'terminal'
-          ? `Background terminal ${source.terminalId}, originating prompt ${source.promptId}`
-          : `Child result from thread ${source.threadId}, prompt ${source.promptId}`;
-  return `# ${label}
-
-${job.prompt}`;
+          ? ([
+              'terminal-output',
+              ` terminal="${attribute(source.terminalId)}" prompt="${attribute(source.promptId)}"`,
+            ] as const)
+          : ([
+              'child-result',
+              ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
+            ] as const);
+  const body = job.prompt.replace(closingTags, '<\\/$1');
+  return `<${tag}${attributes}>
+${body}
+</${tag}>`;
 };
 
 /**

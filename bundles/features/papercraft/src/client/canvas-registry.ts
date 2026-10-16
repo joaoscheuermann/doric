@@ -6,11 +6,13 @@
 // input names, or the one the reader last touched. The registry is view state
 // only: nothing durable ever consults it.
 
-import type { PreviewTool } from '../contracts/index.js';
+import type { PreviewScope, PreviewTool } from '../contracts/index.js';
 
 /** What one mounted canvas frame lets a command do to it. */
 export interface PreviewController {
   readonly artifactId: string;
+  /** The Project and Thread the canvas belongs to: every host call's scope. */
+  readonly scope: PreviewScope | undefined;
   /** The armed tool: `select` is the entry default. */
   setTool(tool: PreviewTool): void;
   /** Isolates the selected node: its chain stays, the siblings hide. */
@@ -48,6 +50,11 @@ export const registerController = (
       lastActive = [...canvases.keys()].at(-1);
     }
   };
+};
+
+/** Marks one registered canvas as the one the reader touched last. */
+export const touchController = (artifactId: string): void => {
+  if (canvases.has(artifactId)) lastActive = artifactId;
 };
 
 /** The canvas a command acts on: the one named, else the last one touched. */

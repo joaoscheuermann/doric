@@ -1,17 +1,22 @@
 // The `papercraft` client elements (spec: "Composição e partes").
 //
-// Three public Web Components, all React-backed over the shared
+// Two public Web Components, both React-backed over the shared
 // `desktop/ui/react-element` boundary, as the `threads` bundle publishes its
 // delegated turn:
 //
-//   - `<papercraft-preview>` — one preview revision inside the conversation.
-//     Chat hands it the block (`block`), it mounts the frame with
-//     `chrome: 'node'`.
-//   - `<papercraft-canvas>` — the `/papercraft/:artifactId` route: the same
-//     surface full-screen, with `chrome: 'canvas'` (tree left, command bar
-//     bottom-centre, `Autorizar` only under the `request` policy).
-//   - `<papercraft-comment-card>` — one line of the composer stack, the
-//     elementTag the papercraft items of `chat.composer/v1` name.
+//   - `<papercraft-preview>` — the body of one preview revision inside the
+//     `artifacts` registry's frame (the kind's `bodyTag`). The frame hands it
+//     its block (`block`) and calls `comment(detail)` for its comment gesture;
+//     it mounts the surface with `chrome: 'node'`.
+//   - `<papercraft-canvas>` — the `/papercraft/:projectId/:threadId/:artifactId`
+//     route: the same surface full-screen, with `chrome: 'canvas'` (tree left,
+//     command bar bottom-centre, `Autorizar` only under the `request` policy).
+//
+// Both hand the frame the Project and Thread the preview belongs to — the
+// node from its block (the event's own scope), the window from its path — so
+// every host call is scoped and the comments join that Thread's stack. A
+// comment's line in the composer stack is chat's own (`chat-comment-line`):
+// the items name it, so this bundle defines no line element.
 //
 // The classes are made inside factories the activation calls, so importing
 // this module touches no DOM global; every element extends `HTMLElement`.
@@ -21,34 +26,53 @@ import { defineReactElement } from 'desktop/ui/react-element';
 
 import {
   PAPERCRAFT_CANVAS_TAG,
-  PAPERCRAFT_COMMENT_CARD_TAG,
   PAPERCRAFT_PREVIEW_TAG,
+  type PreviewScope,
 } from '../contracts/index.js';
-import type { ComposerItem } from './chat-contract.js';
-import { previewBlockDataOf } from './projector.js';
-import { CommentCard, type CommentCardData } from './surface/comment-card.js';
+import { previewBlockDataOf } from './block.js';
+import { locationScope } from './comment.js';
 import { PreviewContainer } from './surface/preview-container.js';
 
 interface PreviewElementProps {
   readonly block?: unknown;
+  /** Bumped by each comment gesture of the frame; the surface toggles comment mode. */
+  readonly commentRequest?: number;
 }
 
-/** `<papercraft-preview>`: one revision inside the conversation. */
+/** What the registry's frame passes `comment(detail)`. */
+export interface FrameCommentDetail {
+  readonly artifactId: string;
+  readonly revision: number;
+  readonly kind: string;
+}
+
+/** `<papercraft-preview>`: the body of one revision inside the registry's frame. */
 export const definePreviewElement = () => {
   const Base = defineReactElement<PreviewElementProps>({
-    props: ['block'],
-    render: ({ block, services }) => {
+    props: ['block', 'commentRequest'],
+    render: ({ block, commentRequest, services }) => {
       const data = previewBlockDataOf(block);
 
       if (data === undefined) return null;
+
+      const scope: PreviewScope | undefined =
+        data.projectId === undefined
+          ? locationScope()
+          : {
+              projectId: data.projectId,
+              ...(data.threadId === undefined
+                ? {}
+                : { threadId: data.threadId }),
+            };
 
       return (
         <PreviewContainer
           services={services}
           chrome="node"
+          scope={scope}
           artifactId={data.artifactId}
           blockRevision={data.revision}
-          {...(data.title === undefined ? {} : { blockTitle: data.title })}
+          {...(commentRequest === undefined ? {} : { commentRequest })}
         />
       );
     },
@@ -59,24 +83,57 @@ export const definePreviewElement = () => {
     implements PreviewElementProps
   {
     declare block: unknown;
+    declare commentRequest: number | undefined;
+
+    /**
+     * The frame's comment gesture: the comment is anchored here, in the
+     * canvas, so it arms (or disarms) the comment tool of this revision.
+     */
+    comment(detail?: FrameCommentDetail): void {
+      const data = previewBlockDataOf(this.block);
+
+      if (
+        detail !== undefined &&
+        data !== undefined &&
+        (detail.artifactId !== data.artifactId ||
+          detail.revision !== data.revision)
+      ) {
+        return;
+      }
+
+      this.commentRequest = (this.commentRequest ?? 0) + 1;
+    }
   };
 };
 
 interface CanvasElementProps {
+  readonly projectId?: string;
+  readonly threadId?: string;
   readonly artifactId?: string;
 }
 
 /** `<papercraft-canvas>`: the full-screen route of one preview. */
 export const defineCanvasElement = () => {
   const Base = defineReactElement<CanvasElementProps>({
-    props: ['artifactId'],
-    render: ({ artifactId, services }) => {
+    props: ['projectId', 'threadId', 'artifactId'],
+    render: ({ projectId, threadId, artifactId, services }) => {
       if (artifactId === undefined || artifactId === '') return null;
+
+      const scope: PreviewScope | undefined =
+        projectId === undefined || projectId === ''
+          ? undefined
+          : {
+              projectId,
+              ...(threadId === undefined || threadId === ''
+                ? {}
+                : { threadId }),
+            };
 
       return (
         <PreviewContainer
           services={services}
           chrome="canvas"
+          scope={scope}
           artifactId={artifactId}
         />
       );
@@ -87,57 +144,9 @@ export const defineCanvasElement = () => {
     extends Base
     implements CanvasElementProps
   {
+    declare projectId: string | undefined;
+    declare threadId: string | undefined;
     declare artifactId: string | undefined;
-  };
-};
-
-interface CommentCardElementProps {
-  /** The composer stack item, as chat hands the element its own line. */
-  readonly item?: ComposerItem;
-  /** The line's number in the stack, as chat numbers it. */
-  readonly pin?: number;
-  /** Whether the surface opened this line for the reader to write in. */
-  readonly open?: boolean;
-  /** Edits the draft's note. */
-  readonly onNote?: (note: string) => void;
-  /** Removes the draft from the stack. */
-  readonly onRemove?: () => void;
-  /** Reports the line closing. */
-  readonly onClose?: () => void;
-}
-
-/** `<papercraft-comment-card>`: one line of the composer stack above the prompt. */
-export const defineCommentCardElement = () => {
-  const Base = defineReactElement<CommentCardElementProps>({
-    props: ['item', 'pin', 'open', 'onNote', 'onRemove', 'onClose'],
-    render: ({ item, pin, open, onNote, onRemove, onClose }) => {
-      if (item === undefined) return null;
-
-      return (
-        <CommentCard
-          data={item.data as CommentCardData}
-          note={item.note}
-          pin={pin}
-          open={open}
-          onNote={onNote}
-          onRemove={onRemove}
-          onClose={onClose}
-          {...(item.author === undefined ? {} : { author: item.author })}
-        />
-      );
-    },
-  });
-
-  return class PapercraftCommentCardElement
-    extends Base
-    implements CommentCardElementProps
-  {
-    declare item: ComposerItem | undefined;
-    declare pin: number | undefined;
-    declare open: boolean | undefined;
-    declare onNote: ((note: string) => void) | undefined;
-    declare onRemove: (() => void) | undefined;
-    declare onClose: (() => void) | undefined;
   };
 };
 
@@ -145,7 +154,6 @@ export const defineCommentCardElement = () => {
 export const PAPERCRAFT_TAGS = [
   [PAPERCRAFT_PREVIEW_TAG, definePreviewElement],
   [PAPERCRAFT_CANVAS_TAG, defineCanvasElement],
-  [PAPERCRAFT_COMMENT_CARD_TAG, defineCommentCardElement],
 ] as const;
 
 export type { Services };

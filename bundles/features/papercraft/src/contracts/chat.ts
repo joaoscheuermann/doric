@@ -1,7 +1,7 @@
-// The papercraft client's view of chat's `chat.views/v1` and the block
-// vocabulary, kept as a structural copy so this bundle does not import the
-// `chat` package (the `threads` client does the same): the IDs and shapes are
-// chat's.
+// The papercraft bundle's view of chat's `chat.views/v1`, `chat.composer/v1`
+// and the block vocabulary, kept as a structural copy so this bundle does not
+// import the `chat` package (the `threads` client does the same). The client
+// and the desktop part both read it here; the IDs and shapes are chat's.
 
 import {
   type CallArg,
@@ -10,7 +10,7 @@ import {
   type StreamListener,
 } from 'bundle/contracts';
 
-import type { CommentAddInput } from '../contracts/index.js';
+import type { CommentAddInput } from './index.js';
 
 /** One persisted event of a Thread, as the conversation receives it. */
 export interface ChatThreadEvent {
@@ -88,6 +88,34 @@ export interface ComposerItem {
   readonly note: string;
 }
 
+/**
+ * The element tag of the line chat itself draws for a stack item — the line
+ * every papercraft draft names, so the stack draws (and edits) it like any
+ * other comment.
+ */
+export const CHAT_COMMENT_LINE_TAG = 'chat-comment-line';
+
+/**
+ * The bubbling DOM event the conversation dispatches when the reader asks to
+ * see a comment's thread (a reply block, a comment marker of a user turn):
+ * `detail` names the root comment and its target. The owner of the target
+ * opens the thread; every other listener ignores it. A target with a
+ * `revision` names that revision; a target without one means the latest — of
+ * a preview's nodes in the conversation, the one of its newest revision
+ * opens the thread.
+ */
+export const COMMENT_THREAD_OPEN_EVENT = 'doric:comment-thread-open';
+
+/** What `COMMENT_THREAD_OPEN_EVENT` carries. */
+export interface CommentThreadOpenDetail {
+  readonly commentId: string;
+  readonly target: {
+    readonly kind: string;
+    readonly id: string;
+    readonly revision?: number;
+  };
+}
+
 /** The draft one Thread holds: its words and its comment stack, one state. */
 export interface ComposerSnapshot {
   readonly threadId: string;
@@ -138,8 +166,16 @@ export type ComposerFlush = (
   context: ComposerFlushContext,
 ) => Promise<readonly CommentAddInput[]>;
 
+/** One item the send took off the stack, with the writes its flush answered. */
+export interface ComposerFlushed {
+  readonly item: ComposerItem;
+  readonly writes: readonly CommentAddInput[];
+}
+
 /** The input that adds one item to the Thread's stack. */
 export interface ComposerAddInput {
+  /** The item's id, when the caller chooses it (`comment-<uuid>`). */
+  readonly id?: string;
   readonly threadId: string;
   readonly kind: string;
   readonly elementTag: string;
@@ -187,13 +223,34 @@ export interface ChatComposer {
     input: { readonly threadId: string; readonly id: string },
     call?: CallArg,
   ): Promise<void>;
-  /** Runs the flush each item's kind registered and answers its writes. */
+  /**
+   * Runs the flush each item's kind registered, takes the flushed items off
+   * the stack and answers each with its writes; the sender puts an item back
+   * when one of its writes fails.
+   */
   flush(
     input: { readonly threadId: string; readonly promptId: string },
     call?: CallArg,
-  ): Promise<readonly CommentAddInput[]>;
+  ): Promise<readonly ComposerFlushed[]>;
   /** The owner of a kind registers how its items flush; a second is a conflict. */
   registerFlush(input: ComposerFlushRegistration, call?: CallArg): Disposable;
 }
 
 export const ChatComposerV1 = ref<ChatComposer>('chat.composer/v1');
+
+/* `chat.send/v1` (structural copy) ------------------------------------------ */
+
+/**
+ * `chat.send/v1` (client, one per window): sends a Thread's comment stack now,
+ * as its own prompt — the composer's own send path: the stack's lines with
+ * their anchors become the prompt, and the stack flushes into the log only
+ * after the host accepts it. The canvas sends with it on `Cmd+Enter`.
+ */
+export interface ChatSend {
+  send(
+    input: { readonly projectId: string; readonly threadId: string },
+    call?: CallArg,
+  ): Promise<{ readonly status: 'accepted' | 'empty' | 'refused' }>;
+}
+
+export const ChatSendV1 = ref<ChatSend>('chat.send/v1');

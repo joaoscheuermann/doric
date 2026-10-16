@@ -8,18 +8,28 @@
 //     `resolvedVariables` (packages/desktop/src/tokens/css.ts:33) resolves for
 //     a window: the variant's palette, the shared tokens and the window
 //     variables — so the artifact renders in the reader's theme;
-//   - injects the revision's `index.css` by `<link rel="stylesheet">` (the CSP
-//     allows `'self'` and `'unsafe-inline'`);
-//   - imports the revision's compiled module from the app origin —
-//     `doric://app/artifacts/<artifactId>@<revision>/index.js` (path B) — and
-//     calls `mount(root, { theme })` on it, keeping the unmount it returns;
-//   - falls back to the built markup of path A when the module does not load,
-//     with the discreet one-line notice of decision 10, because the canvas is
-//     never empty.
+//   - when the revision's entries name a compiled module (`index.js`, path B),
+//     first has the revision's entries written into the desktop's verified
+//     cache (`ensure`, which reaches `artifacts.cache/v1`), then injects its
+//     `index.css` (when named) by `<link rel="stylesheet">` and imports the
+//     module from the app origin —
+//     `doric://app/artifacts/<artifactId>@<revision>/index.js` — calling
+//     `mount(root, { theme })` and keeping the unmount it returns; when that
+//     revision cannot be cached or its module does not load, the built markup
+//     of path A stands in, with the
+//     discreet one-line notice of decision 10, because the canvas is never
+//     empty;
+//   - keeps the module's portal container (`[data-papercraft-portal]`, which
+//     `mount` creates beside its React root) inside the content's containing
+//     block, and reports the content again when an overlay opens in it;
+//   - when the entries name no module — what the host builds today, which is
+//     path A's `index.html` only — mounts that markup directly, with no import
+//     to attempt and no notice to show.
 //
 // The module shares the window's React through the import map, so errors inside
-// it are contained here: the import and the mount are guarded, and any failure
-// lands on the fallback.
+// it are contained here: the import and the mount are guarded, a stale import
+// (the revision changed, or the surface unmounted, while it loaded) is never
+// mounted, and the unmount runs once.
 
 import { tokens } from 'desktop/ui/tokens';
 import { useEffect, useRef, useState } from 'react';
@@ -79,19 +89,76 @@ export const appTheme = (): 'light' | 'dark' =>
 export const renderMarkup = (surface: HTMLElement, markup: string): void => {
   const parsed = new DOMParser().parseFromString(markup, 'text/html');
   const body = document.createElement('body');
+
+  // The body's own attributes (its origin stamp, a class the styles key on)
+  // survive the mount, as its children do.
+  for (const attribute of [...parsed.body.attributes]) {
+    body.setAttribute(attribute.name, attribute.value);
+  }
+
   body.innerHTML = parsed.body.innerHTML;
 
   surface.replaceChildren(...parsed.head.querySelectorAll('style'), body);
 };
 
-/** What the surface mounted: the live module, or the fallback markup. */
-export type SurfaceMode = 'module' | 'fallback';
+/**
+ * The shadow root's first sheet. Inherited properties cross a shadow
+ * boundary, so without it the artifact would take the conversation's text
+ * colour and font; the host starts from initial values instead, as a
+ * standalone document does, and the artifact's own rules come after this one
+ * and win. Custom properties are not reset, so the theme variables the host
+ * carries still reach the artifact.
+ */
+export const SURFACE_RESET = [
+  // `all` resets the cursor too; the canvas's cursor still reaches inside.
+  ':host { all: initial; display: block; color-scheme: light; cursor: inherit; }',
+  // While a tool owns the pointer, no element of the artifact overrides it.
+  ':host([data-cursor="locked"]) * { cursor: inherit !important; }',
+  // The content is the containing block of the module's portaled overlays
+  // (`fixed`/`absolute` dialogs, popovers): they stay inside the preview,
+  // under the canvas's zoom, instead of spanning the window.
+  '.papercraft-content { display: block; min-height: 100%; position: relative; contain: layout; }',
+  'body { display: block; margin: 8px; background: Canvas; color: CanvasText; }',
+].join('\n');
+
+const resetSheet = (): HTMLStyleElement => {
+  const style = document.createElement('style');
+  style.textContent = SURFACE_RESET;
+
+  return style;
+};
+
+/** The window's own dynamic import, resolved against the import map. */
+const importModule = (url: string): Promise<unknown> => import(url);
+
+/** The entry a revision names when it carries path B's compiled module. */
+export const MODULE_ENTRY = 'index.js';
+
+/** The entry of path B's compiled Tailwind sheet. */
+export const STYLES_ENTRY = 'index.css';
+
+/**
+ * What the surface mounted: the live module, the markup of a revision that
+ * has no module, or the markup standing in for a module that did not load.
+ */
+export type SurfaceMode = 'module' | 'markup' | 'fallback';
 
 export interface PreviewSurfaceProps {
   readonly artifactId: string;
   readonly revision: number;
   /** The path-A built markup of the revision, as `papercraft.previews/v1` read it. */
   readonly markup: string | undefined;
+  /** The paths of the revision's entries; a module is imported only when named. */
+  readonly entries?: readonly string[];
+  /** How a module URL is imported; the window's own `import()` by default. */
+  readonly load?: (url: string) => Promise<unknown>;
+  /**
+   * Makes the revision's entries servable at the app origin before its module
+   * is imported (the desktop's verified cache); a rejection falls back to the
+   * markup. Called only when the entries name a module; read when the
+   * revision mounts, so a new identity never remounts the artifact.
+   */
+  readonly ensure?: (artifactId: string, revision: number) => Promise<void>;
   readonly height?: number;
   /**
    * Reports the shadow root once the revision's content is in it, so the
@@ -100,6 +167,8 @@ export interface PreviewSurfaceProps {
   readonly onContent?: (root: ShadowRoot | undefined) => void;
   /** Reports what the surface mounted: the live module, or the fallback. */
   readonly onMode?: (mode: SurfaceMode) => void;
+  /** The canvas's cursor wins over every cursor the artifact declares. */
+  readonly lockCursor?: boolean;
 }
 
 /**
@@ -111,12 +180,24 @@ export function PreviewSurface({
   artifactId,
   revision,
   markup,
+  entries,
+  load = importModule,
+  ensure,
   height,
   onContent,
   onMode,
+  lockCursor = false,
 }: PreviewSurfaceProps) {
   const host = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<SurfaceMode>('fallback');
+  const [mode, setMode] = useState<SurfaceMode>('markup');
+
+  // The reporters are read when a mount settles, so a new callback identity
+  // never remounts the artifact.
+  const reporters = useRef({ onContent, onMode, ensure });
+  reporters.current = { onContent, onMode, ensure };
+
+  const hasModule = entries?.includes(MODULE_ENTRY) === true;
+  const hasStyles = entries?.includes(STYLES_ENTRY) === true;
 
   useEffect(() => {
     const element = host.current;
@@ -135,68 +216,115 @@ export function PreviewSurface({
       element.style.setProperty(name, value);
     }
 
-    // The revision's compiled sheet; the CSP allows `'self'`.
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = artifactStylesUrl(artifactId, revision);
-    shadow.append(link);
-
     const content = document.createElement('div');
     content.className = 'papercraft-content';
-    shadow.append(content);
 
+    let disposed = false;
     let unmount: (() => void) | undefined;
-    let settled = false;
 
     const settle = (next: SurfaceMode): void => {
-      if (settled) return;
-      settled = true;
+      if (disposed) return;
       setMode(next);
-      onMode?.(next);
-      onContent?.(shadow);
+      reporters.current.onMode?.(next);
+      reporters.current.onContent?.(shadow);
     };
 
-    void (async () => {
-      try {
-        const loaded = (await import(
-          artifactModuleUrl(artifactId, revision)
-        )) as PapercraftModule;
+    const showMarkup = (next: SurfaceMode): void => {
+      if (markup !== undefined) renderMarkup(content, markup);
+      settle(next);
+    };
 
-        if (typeof loaded.mount !== 'function')
-          throw new TypeError('the artifact module exports no mount');
+    // An overlay the module portals into its portal container (inside the
+    // content) opens after the mount: the content is reported again, so the
+    // frame's scene graph — and comments — reach it.
+    let portalObserver: MutationObserver | undefined;
 
-        const dispose = loaded.mount(content, { theme });
+    const watchPortal = (): void => {
+      const portal = content.querySelector('[data-papercraft-portal]');
 
-        unmount =
-          typeof dispose === 'function'
-            ? dispose
-            : () => content.replaceChildren();
+      if (portal === null || typeof MutationObserver === 'undefined') return;
 
-        settle('module');
-      } catch {
-        // The live module did not load — the canvas is never empty: the
-        // built markup of path A stands in (decision 10).
-        unmount = undefined;
+      let queued = false;
+      portalObserver = new MutationObserver(() => {
+        if (queued) return;
+        queued = true;
+        queueMicrotask(() => {
+          queued = false;
+          if (!disposed) reporters.current.onContent?.(shadow);
+        });
+      });
+      portalObserver.observe(portal, { childList: true, subtree: true });
+    };
 
-        if (markup !== undefined) renderMarkup(content, markup);
+    shadow.replaceChildren(resetSheet(), content);
 
-        settle('fallback');
-      }
-    })();
+    if (!hasModule) {
+      // A revision without a module: path A's markup is the revision.
+      showMarkup('markup');
+    } else {
+      void (async () => {
+        try {
+          // The route serves only what the cache verified: the revision's
+          // entries reach it first.
+          await reporters.current.ensure?.(artifactId, revision);
+
+          if (disposed) return;
+
+          if (hasStyles) {
+            // The revision's compiled sheet, once cached; the CSP allows
+            // `'self'`.
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = artifactStylesUrl(artifactId, revision);
+            shadow.insertBefore(link, content);
+          }
+
+          const loaded = (await load(
+            artifactModuleUrl(artifactId, revision),
+          )) as PapercraftModule;
+
+          // The revision changed, or the surface unmounted, while the module
+          // loaded: a stale module is never mounted.
+          if (disposed) return;
+
+          if (typeof loaded.mount !== 'function')
+            throw new TypeError('the artifact module exports no mount');
+
+          const dispose = loaded.mount(content, { theme });
+
+          unmount =
+            typeof dispose === 'function'
+              ? dispose
+              : () => content.replaceChildren();
+
+          settle('module');
+          watchPortal();
+        } catch {
+          // The revision could not be cached, or its module did not load —
+          // the canvas is never empty: the built markup of path A stands in
+          // (decision 10).
+          if (!disposed) showMarkup('fallback');
+        }
+      })();
+    }
 
     return () => {
-      settled = true;
+      disposed = true;
+      portalObserver?.disconnect();
+
+      const release = unmount;
+      unmount = undefined;
 
       try {
-        unmount?.();
+        release?.();
       } catch {
         // A module that fails to unmount takes nothing with it.
       }
 
-      onContent?.(undefined);
+      reporters.current.onContent?.(undefined);
       shadow.replaceChildren();
     };
-  }, [artifactId, revision, markup, onContent, onMode]);
+  }, [artifactId, revision, markup, hasModule, hasStyles, load]);
 
   return (
     <div
@@ -206,6 +334,7 @@ export function PreviewSurface({
         height === undefined ? undefined : { height: `${String(height)}px` }
       }
       data-mode={mode}
+      data-cursor={lockCursor ? 'locked' : undefined}
     />
   );
 }

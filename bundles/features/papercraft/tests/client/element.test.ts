@@ -1,9 +1,12 @@
 // The preview frame as the conversation mounts it (the node chrome) and as
 // the route mounts it (the canvas chrome): the built markup lands in the
-// shadow root, the live module falls back to it, the comment gesture joins
-// the composer stack — or records directly as its fallback — the command bar
-// shows its four groups and obeys the `request` policy, and the revision
-// reading switches the revision on screen.
+// shadow root, every host call carries the preview's Project scope, the header
+// overlays the canvas, the comment flow is Figma's — an inline input at the
+// pin, and the composer stack only hears of a note once it is confirmed; a
+// comment that is never sent never becomes an event — sent comments stay as
+// pins, `Cmd+Enter` sends the stack through chat's send, the command bar shows
+// its four groups and obeys the `request` policy, and the revision reading
+// switches the revision on screen.
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -38,6 +41,13 @@ for (const name of installed) {
     writable: true,
   });
 }
+
+// The thread's menus measure what they open beside.
+Object.defineProperty(globalThis, 'getComputedStyle', {
+  configurable: true,
+  value: window.getComputedStyle.bind(window),
+  writable: true,
+});
 
 type React = typeof import('react');
 type ReactDomClient = typeof import('react-dom/client');
@@ -141,6 +151,8 @@ type Registry = Map<
 
 interface Mounted {
   readonly frame: HTMLElement;
+  /** Renders the same frame again with new props. */
+  readonly rerender: (props: Record<string, unknown>) => Promise<void>;
   readonly unmount: () => Promise<void>;
 }
 
@@ -151,8 +163,21 @@ interface Harness {
   readonly comments: unknown[];
   readonly approvals: unknown[];
   readonly policy: { value: 'proceed' | 'request' };
-  /** Composers the harness would hand a `whenAvailable` registration. */
-  readonly composers: unknown[];
+  /** The durable comments `comments/v1.list` answers. */
+  readonly durable: unknown[];
+  /** Every `comments/v1.resolve` the frame asked for, with its scope. */
+  readonly resolves: { input: unknown; scope: unknown }[];
+  /**
+   * The Thread's log `runtime.threads/v1.watchThread` replays, once a test
+   * sets one; without it the watch never answers.
+   */
+  log: unknown[] | undefined;
+  /** The scopes every host call carried. */
+  readonly scopes: unknown[];
+  /** The composer `chat.composer/v1` answers, once a test sets one. */
+  composer: unknown;
+  /** Every `chat.send/v1.send` the frame asked for, with its scope. */
+  readonly sends: { input: unknown; scope: unknown }[];
   mount(
     chrome: 'node' | 'canvas',
     props: Record<string, unknown>,
@@ -168,10 +193,32 @@ const harness = (): Harness => {
   const policy = { value: 'proceed' as 'proceed' | 'request' };
 
   const registry: Registry = new Map();
-  const composers: unknown[] = [];
+  const durable: unknown[] = [];
+  const resolves: { input: unknown; scope: unknown }[] = [];
+  const thread: { log: unknown[] | undefined } = { log: undefined };
+  const scopes: unknown[] = [];
+  const sends: { input: unknown; scope: unknown }[] = [];
+  const state: { composer: unknown } = { composer: undefined };
+  const scopedContracts = new Set([
+    'papercraft.previews/v1',
+    'artifacts/v1',
+    'comments/v1',
+    'chat.composer/v1',
+    'runtime.threads/v1',
+  ]);
   const services = {
     provide: () => ({ dispose: () => undefined }),
-    use: (contract: { id?: string }) => {
+    use: (contract: { id?: string }, scope?: { projectId?: string }) => {
+      // As the real host's lease: a Project-bound call without its Project
+      // is refused.
+      if (scopedContracts.has(contract.id ?? '')) {
+        if (scope?.projectId === undefined) {
+          throw new Error(`${String(contract.id)} used without a projectId`);
+        }
+
+        scopes.push(scope);
+      }
+
       switch (contract.id) {
         case 'papercraft.previews/v1':
           return {
@@ -217,23 +264,40 @@ const harness = (): Harness => {
                 createdAt: '',
               };
             },
+            list: async () => durable,
+            resolve: async (input: unknown) => {
+              resolves.push({ input, scope });
+
+              return undefined;
+            },
+          };
+        case 'chat.composer/v1':
+          return state.composer;
+        case 'chat.send/v1':
+          return {
+            send: async (input: unknown) => {
+              sends.push({ input, scope });
+
+              return { status: 'accepted' };
+            },
+          };
+        case 'runtime.threads/v1':
+          return {
+            watchThread: (
+              _input: unknown,
+              listener: (item: unknown) => void,
+            ) => {
+              if (thread.log !== undefined)
+                listener({ kind: 'snapshot', events: [...thread.log] });
+
+              return { dispose: () => undefined };
+            },
           };
         default:
           throw new Error(`unexpected contract ${String(contract.id)}`);
       }
     },
-    whenAvailable: (
-      contract: { id?: string },
-      callback: (api: unknown) => void,
-    ) => {
-      if (contract.id === 'chat.composer/v1') {
-        const api = composers.at(-1);
-
-        if (api !== undefined) callback(api);
-      }
-
-      return { dispose: () => undefined };
-    },
+    whenAvailable: () => ({ dispose: () => undefined }),
   } as unknown as Services;
 
   for (const command of [...commands.canvasCommands, commands.approveCommand]) {
@@ -255,6 +319,7 @@ const harness = (): Harness => {
             services,
             chrome,
             artifactId: 'checkout-7f3a',
+            scope: { projectId: 'p1', threadId: 't-123' },
             ...next,
           } as never),
         );
@@ -267,6 +332,7 @@ const harness = (): Harness => {
 
     return {
       frame,
+      rerender: render,
       unmount: async () => {
         await react.act(async () => {
           root.unmount();
@@ -282,8 +348,23 @@ const harness = (): Harness => {
     comments,
     approvals,
     policy,
+    durable,
+    resolves,
+    get log() {
+      return thread.log;
+    },
+    set log(value: unknown[] | undefined) {
+      thread.log = value;
+    },
+    scopes,
+    sends,
+    get composer() {
+      return state.composer;
+    },
+    set composer(value: unknown) {
+      state.composer = value;
+    },
     mount,
-    composers,
   };
 };
 
@@ -295,35 +376,248 @@ const shadowOf = (frame: HTMLElement): ShadowRoot => {
   return host.shadowRoot;
 };
 
-test('the node renders the markup in its shadow root, header and revision reading', async () => {
-  const h = harness();
-  const mounted = await h.mount('node', {
-    blockRevision: 1,
-    blockTitle: 'Checkout',
+/** One item of the fake composer's stack. */
+interface StackItem {
+  id: string;
+  kind: string;
+  elementTag: string;
+  data: unknown;
+  author?: string;
+  note: string;
+}
+
+type Watch =
+  | { kind: 'snapshot'; threadId: string; text: string; items: StackItem[] }
+  | { kind: 'added' | 'updated'; threadId: string; item: StackItem }
+  | { kind: 'removed'; threadId: string; id: string };
+
+/**
+ * A `chat.composer/v1` double: the host-held stack, its watch (portrait
+ * first, then deltas) and a record of every write the frame asked for.
+ */
+const fakeComposer = (initial: StackItem[] = []) => {
+  const items: StackItem[] = [...initial];
+  const listeners: ((watch: Watch) => void)[] = [];
+  const added: { threadId: string; data?: unknown; note?: string }[] = [];
+  const notes: { id: string; note: string }[] = [];
+  const removed: string[] = [];
+  const emit = (watch: Watch) => {
+    for (const listener of [...listeners]) listener(watch);
+  };
+
+  const api = {
+    addItem: async (input: {
+      threadId: string;
+      kind: string;
+      elementTag: string;
+      data?: unknown;
+      note?: string;
+    }) => {
+      added.push(input);
+      const item: StackItem = {
+        id: `i${String(items.length + added.length)}`,
+        kind: input.kind,
+        elementTag: input.elementTag,
+        data: input.data,
+        note: input.note ?? '',
+      };
+      items.push(item);
+      emit({ kind: 'added', threadId: input.threadId, item });
+
+      return item;
+    },
+    updateNote: async (input: {
+      threadId: string;
+      id: string;
+      note: string;
+    }) => {
+      notes.push({ id: input.id, note: input.note });
+      const index = items.findIndex((item) => item.id === input.id);
+      const item = items[index];
+      if (item === undefined) return;
+      items[index] = { ...item, note: input.note };
+      emit({ kind: 'updated', threadId: input.threadId, item: items[index] });
+    },
+    removeItem: async (input: { threadId: string; id: string }) => {
+      removed.push(input.id);
+      const index = items.findIndex((item) => item.id === input.id);
+      if (index >= 0) items.splice(index, 1);
+      emit({ kind: 'removed', threadId: input.threadId, id: input.id });
+    },
+    watch: (threadId: string, listener: (watch: Watch) => void) => {
+      listeners.push(listener);
+      listener({ kind: 'snapshot', threadId, text: '', items: [...items] });
+
+      return { dispose: () => undefined };
+    },
+  };
+
+  return { api, added, notes, removed };
+};
+
+/** A draft of this preview, as the stack holds it. */
+const draftOf = (
+  id: string,
+  revision: number,
+  note: string,
+  extra: Record<string, unknown> = {},
+): StackItem => ({
+  id,
+  kind: 'papercraft-preview',
+  elementTag: 'chat-comment-line',
+  data: {
+    target: {
+      kind: 'artifact',
+      id: 'checkout-7f3a',
+      revision,
+      anchor: { form: 'point', x: 10, y: 20 },
+    },
+    pin: 1,
+    point: { x: 10, y: 20 },
+    ...extra,
+  },
+  note,
+});
+
+/** A durable comment of this preview, as `comments/v1.list` answers it. */
+const sentOf = (
+  commentId: string,
+  text: string,
+  extra: Record<string, unknown> = {},
+) => ({
+  commentId,
+  target: {
+    kind: 'artifact',
+    id: 'checkout-7f3a',
+    revision: 1,
+    anchor: { form: 'source', path: 'src/checkout.html', line: 42 },
+  },
+  text,
+  resolved: false,
+  createdAt: '2024-01-01T00:00:00Z',
+  ...extra,
+});
+
+/** A `comments.*` event of the Thread's log, written under a prompt. */
+const logged = (type: string, promptId: string, event: unknown) => ({
+  type,
+  promptId,
+  event,
+});
+
+const query = <T extends Element = HTMLElement>(
+  root: ParentNode,
+  testId: string,
+): T | null => root.querySelector(`[data-testid="${testId}"]`) as T | null;
+
+/** Sets a controlled field's value the way typing does. */
+const type = (field: HTMLTextAreaElement, value: string) => {
+  Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype,
+    'value',
+  )?.set?.call(field, value);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+const key = (
+  target: EventTarget,
+  name: string,
+  init: Record<string, unknown> = {},
+) =>
+  react.act(async () => {
+    target.dispatchEvent(
+      new window.KeyboardEvent('keydown', {
+        key: name,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      }) as never,
+    );
   });
+
+/** A click on an element of the preview, inside its shadow root. */
+const clickIn = (target: Element, init: Record<string, unknown> = {}) =>
+  react.act(async () => {
+    target.dispatchEvent(
+      new window.MouseEvent('click', {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ...init,
+      }) as never,
+    );
+  });
+
+/**
+ * A press on an element of the frame, the way a pointer makes one: the
+ * pointer-down, then the click.
+ */
+const press = (target: Element, init: Record<string, unknown> = {}) =>
+  react.act(async () => {
+    const options = { bubbles: true, composed: true, cancelable: true };
+
+    target.dispatchEvent(
+      new window.PointerEvent('pointerdown', { ...options, ...init }) as never,
+    );
+    target.dispatchEvent(
+      new window.MouseEvent('click', { ...options, ...init }) as never,
+    );
+  });
+
+/** The reader's first press on the node, which only focuses it. */
+const focusNode = (frame: HTMLElement) =>
+  press(shadowOf(frame).querySelector('#title') as Element);
+
+/** Mounts a node with chat's composer on, focused, in comment mode. */
+const commenting = async (
+  h: Harness,
+  composer = fakeComposer(),
+  blockRevision = 1,
+) => {
+  h.composer = composer.api;
+  comment.setComposerAvailable(true);
+  const mounted = await h.mount('node', { blockRevision });
+
+  await focusNode(mounted.frame);
+  await react.act(async () => {
+    query(mounted.frame, 'papercraft-comment')?.click();
+  });
+
+  return { mounted, composer };
+};
+
+const inputOf = (frame: HTMLElement) =>
+  query(frame, 'papercraft-comment-input')?.querySelector(
+    'textarea',
+  ) as HTMLTextAreaElement | null;
+
+test('the node renders the markup in its shadow root, in the preview scope', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
 
   const shadow = shadowOf(mounted.frame);
   assert.match(shadow.innerHTML, /<h1 id="title"[^>]*>Checkout<\/h1>/);
-  assert.match(mounted.frame.textContent ?? '', /src\/checkout\.html/);
-  assert.match(
-    mounted.frame.querySelector('[data-testid="papercraft-revision"]')
-      ?.textContent ?? '',
-    /rev 1\/2/,
-  );
   assert.deepEqual(h.reads, [{ artifactId: 'checkout-7f3a', revision: 1 }]);
+
+  // Every host call named the preview's Project.
+  assert.ok(h.scopes.length > 0);
+  for (const scope of h.scopes) {
+    assert.equal((scope as { projectId: string }).projectId, 'p1');
+  }
 
   // The path A markup keeps its styles and a real body element.
   assert.ok(shadow.querySelector('style') !== null);
   assert.ok(shadow.querySelector('body #title') !== null);
 
-  // The module did not load: the discreet notice, never an empty canvas.
+  // The revision names no module: the markup is the revision, no notice.
   assert.equal(
-    mounted.frame.querySelector('[data-testid="papercraft-notice"]')
-      ?.textContent,
-    'o preview não carregou · mostrando o markup',
+    mounted.frame.querySelector('[data-testid="papercraft-notice"]'),
+    null,
   );
 
-  // [ abrir ] opens the canvas window through the command.
+  // [ abrir ] opens the canvas window through the command, once the node
+  // is focused and shows its controls.
+  await focusNode(mounted.frame);
   (
     mounted.frame.querySelector(
       '[data-testid="papercraft-open"]',
@@ -331,7 +625,10 @@ test('the node renders the markup in its shadow root, header and revision readin
   ).click();
   await tick();
   assert.deepEqual(h.executes, [
-    ['papercraft.open-canvas/v1', { artifactId: 'checkout-7f3a' }],
+    [
+      'papercraft.open-canvas/v1',
+      { artifactId: 'checkout-7f3a', projectId: 'p1', threadId: 't-123' },
+    ],
   ]);
 
   // The node has no approve button: under `request` it is a reading only.
@@ -340,259 +637,1146 @@ test('the node renders the markup in its shadow root, header and revision readin
   await mounted.unmount();
 });
 
-test('the node shows the request reading and no button under the request policy', async () => {
+test('the header overlays the canvas with the title, the revision and icon controls', async () => {
   const h = harness();
-  h.policy.value = 'request';
   const mounted = await h.mount('node', { blockRevision: 2 });
+  await focusNode(mounted.frame);
+  const header = query(mounted.frame, 'papercraft-header') as HTMLElement;
+
+  assert.match(header.textContent ?? '', /src\/checkout\.html/);
+  assert.match(
+    query(header, 'papercraft-revision')?.textContent ?? '',
+    /rev 2/,
+  );
+  // Icon buttons, named for the reader and the tooltips.
+  assert.equal(
+    query(header, 'papercraft-open')?.getAttribute('aria-label'),
+    'Abrir',
+  );
+  const control = query(header, 'papercraft-comment') as HTMLButtonElement;
+  assert.equal(control.getAttribute('aria-label'), 'Comentar');
+  assert.equal(control.getAttribute('aria-pressed'), 'false');
+  // The canvas fills the frame from the top: the header floats over it.
+  assert.match(
+    (mounted.frame.querySelector('.papercraft-canvas') as HTMLElement)
+      .className,
+    /\binset-0\b/,
+  );
+
+  await mounted.unmount();
+});
+
+test('the node is a square, with no resize handle', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', {});
+  const container = mounted.frame.querySelector(
+    '.papercraft-container',
+  ) as HTMLElement;
+
+  // Every child is absolute, so the ratio is the container's own.
+  assert.match(container.className, /\baspect-square\b/);
+  assert.match(container.className, /\bw-full\b/);
+  assert.equal(container.style.height, '');
+  assert.equal(mounted.frame.querySelector('.papercraft-resize'), null);
+
+  await mounted.unmount();
+});
+
+const activeOf = (frame: HTMLElement) =>
+  (frame.querySelector('[data-active]') as HTMLElement).dataset.active;
+
+test('the first press on the node only focuses it, and its controls come with the focus', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  const container = mounted.frame.querySelector(
+    '.papercraft-container',
+  ) as HTMLElement;
+  const canvas = mounted.frame.querySelector('.papercraft-canvas');
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+  // Unfocused, the node shows its title but none of its controls.
+  assert.equal(activeOf(mounted.frame), 'false');
+  assert.match(
+    query(mounted.frame, 'papercraft-header')?.textContent ?? '',
+    /src\/checkout\.html/,
+  );
+  assert.equal(query(mounted.frame, 'papercraft-open'), null);
+  assert.equal(query(mounted.frame, 'papercraft-comment'), null);
+  assert.equal(query(mounted.frame, 'papercraft-footer'), null);
+  assert.doesNotMatch(container.className, /\boutline-primary\b/);
+
+  // The first press focuses the canvas, outlines the frame and selects
+  // nothing.
+  await press(pay);
+  assert.equal(document.activeElement, canvas);
+  assert.equal(activeOf(mounted.frame), 'true');
+  assert.match(container.className, /\boutline-primary\b/);
+  assert.equal(query(mounted.frame, 'papercraft-selection'), null);
+  assert.ok(query(mounted.frame, 'papercraft-open') !== null);
+  assert.ok(query(mounted.frame, 'papercraft-comment') !== null);
+  assert.ok(query(mounted.frame, 'papercraft-footer') !== null);
+
+  // The focused canvas answers the next one.
+  await press(pay);
+  assert.ok(query(mounted.frame, 'papercraft-selection') !== null);
+
+  await mounted.unmount();
+});
+
+test('the tools armed on the node wait out the blur and return with the focus', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const hover = () =>
+    react.act(async () => {
+      pay.dispatchEvent(
+        new window.PointerEvent('pointermove', {
+          bubbles: true,
+          composed: true,
+        }) as never,
+      );
+    });
+  const toolOf = () =>
+    (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool;
+
+  await hover();
+  assert.ok(query(mounted.frame, 'papercraft-hover') !== null);
+
+  // The focus goes elsewhere in the app: the tools hide, comment mode stays.
+  const elsewhere = document.createElement('button');
+  document.body.append(elsewhere);
+  await react.act(async () => elsewhere.focus());
+  assert.equal(activeOf(mounted.frame), 'false');
+  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+  assert.equal(query(mounted.frame, 'papercraft-comment'), null);
+  assert.equal(toolOf(), 'comment');
+
+  await hover();
+  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+
+  // The press that brings the focus back drops no pin; the tool is there.
+  await focusNode(mounted.frame);
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+  assert.equal(
+    query(mounted.frame, 'papercraft-comment')?.getAttribute('aria-pressed'),
+    'true',
+  );
+  await hover();
+  assert.ok(query(mounted.frame, 'papercraft-hover') !== null);
+
+  elsewhere.remove();
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('Esc with nothing to cancel hands the focus back', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
+
+  await focusNode(mounted.frame);
+  assert.equal(activeOf(mounted.frame), 'true');
+
+  await key(
+    mounted.frame.querySelector('.papercraft-canvas') as Element,
+    'Escape',
+  );
+  assert.equal(activeOf(mounted.frame), 'false');
+
+  await mounted.unmount();
+});
+
+test('without the composer the comment control is disabled and nothing is drafted', async () => {
+  const h = harness();
+  comment.setComposerAvailable(false);
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  await focusNode(mounted.frame);
 
   assert.equal(
-    mounted.frame.querySelector('[data-testid="papercraft-request"]')
-      ?.textContent,
-    'aguardando autorização',
+    (query(mounted.frame, 'papercraft-comment') as HTMLButtonElement).disabled,
+    true,
   );
-  assert.equal(mounted.frame.textContent?.includes('Autorizar'), false);
-
-  await mounted.unmount();
-});
-
-test('the fallback gesture records a comment through comments/v1', async () => {
-  const h = harness();
-  const mounted = await h.mount('node', { blockRevision: 1 });
-
-  // No composer is bound: the gesture falls back to the note form.
-  (
-    mounted.frame.querySelector(
-      '[data-testid="papercraft-comment"]',
-    ) as HTMLElement
-  ).click();
-  await tick();
-
-  const shadow = shadowOf(mounted.frame);
-  (shadow.querySelector('#title') as HTMLElement).click();
-  await tick();
-
-  const form = (await settle(
-    () => mounted.frame.querySelector('[data-testid="papercraft-note"]'),
-    (value) => value !== null,
-    'the fallback note form never appeared',
-  )) as HTMLFormElement;
-
-  (form.querySelector('.papercraft-note-input') as HTMLInputElement).value =
-    'aqui precisa de respiro';
-
-  // Let the frame's effects settle — the submit listener the fallback form
-  // hangs from is one of them — before the dispatch.
-  await new Promise((done) => setTimeout(done, 50));
-  await react.act(async () => {});
-  await react.act(async () => {
-    form.dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true }),
-    );
-  });
-  await settle(
-    () => h.comments.length,
-    (length) => length === 1,
-    'the comment was never recorded',
+  await mounted.rerender({ blockRevision: 1, commentRequest: 1 });
+  assert.equal(
+    (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool,
+    'select',
   );
 
-  assert.equal(h.comments.length, 1);
-  const added = h.comments[0] as {
-    target: {
-      kind: string;
-      id: string;
-      revision: number;
-      anchor: { form: string; path?: string; line?: number };
-    };
-    text: string;
-  };
-  assert.equal(added.target.kind, 'artifact');
-  assert.equal(added.target.id, 'checkout-7f3a');
-  assert.equal(added.target.revision, 1);
-  assert.equal(added.target.anchor.form, 'source');
-  assert.equal(added.target.anchor.path, 'src/checkout.html');
-  assert.equal(added.target.anchor.line, 12);
-  assert.equal(added.text, 'aqui precisa de respiro');
-
-  // The comment became a numbered pin, and the button carries the count.
-  assert.equal(mounted.frame.textContent?.includes('[1]'), true);
-  assert.match(
-    mounted.frame.querySelector('[data-testid="papercraft-comment"]')
-      ?.textContent ?? '',
-    /1/,
-  );
-
-  await mounted.unmount();
-});
-
-test('the gesture joins the composer stack when chat provides one', async () => {
-  const h = harness();
-  await window.happyDOM.setURL('https://doric.app/projects/p1/threads/t-123');
-
-  interface StackItem {
-    id: string;
-    kind: string;
-    elementTag: string;
-    data: unknown;
-    author?: string;
-    note: string;
-  }
-
-  type Watch =
-    | {
-        kind: 'snapshot';
-        threadId: string;
-        text: string;
-        items: StackItem[];
-      }
-    | { kind: 'added'; threadId: string; item: StackItem };
-
-  const added: {
-    threadId: string;
-    kind: string;
-    elementTag: string;
-    data?: unknown;
-    note?: string;
-    author?: string;
-  }[] = [];
-  const listeners: ((watch: Watch) => void)[] = [];
-  const items: StackItem[] = [];
-  let nextId = 0;
-
-  comment.setComposer({
-    addItem: async (input: {
-      threadId: string;
-      kind: string;
-      elementTag: string;
-      data?: unknown;
-      note?: string;
-      author?: string;
-    }) => {
-      added.push(input);
-      nextId += 1;
-      const item: StackItem = {
-        id: `i${String(nextId)}`,
-        kind: input.kind,
-        elementTag: input.elementTag,
-        data: input.data,
-        note: input.note ?? '',
-        ...(input.author === undefined ? {} : { author: input.author }),
-      };
-      items.push(item);
-
-      for (const listener of [...listeners]) {
-        listener({ kind: 'added', threadId: input.threadId, item });
-      }
-
-      return item;
-    },
-    watch: (threadId: string, listener: (watch: Watch) => void) => {
-      listeners.push(listener);
-      // The portrait first, as the real stream does.
-      listener({ kind: 'snapshot', threadId, text: '', items: [...items] });
-
-      return { dispose: () => undefined };
-    },
-  } as never);
-  h.composers.push(comment.composer());
-
-  const mounted = await h.mount('node', { blockRevision: 1 });
-
-  (
-    mounted.frame.querySelector(
-      '[data-testid="papercraft-comment"]',
-    ) as HTMLElement
-  ).click();
-  await tick();
-
-  const shadow = shadowOf(mounted.frame);
-  (shadow.querySelector('#pay') as HTMLElement).click();
-
-  // One stack item, no durable comment yet.
-  await settle(
-    () => added.length,
-    (length) => length === 1,
-    'the gesture never joined the composer stack',
-  );
-  await settle(
-    () => mounted.frame.textContent?.includes('[1]') === true,
-    (pin) => pin,
-    'the stack delivery never lit the pin',
-  );
+  await clickIn(shadowOf(mounted.frame).querySelector('#title') as Element);
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
   assert.equal(h.comments.length, 0);
 
-  const input = added[0] as {
+  await mounted.unmount();
+});
+
+test('the comment control, C and Esc toggle comment mode', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const control = query(mounted.frame, 'papercraft-comment') as HTMLElement;
+  const canvas = mounted.frame.querySelector('.papercraft-canvas') as Element;
+  const toolOf = () =>
+    (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool;
+
+  assert.equal(toolOf(), 'comment');
+  assert.equal(control.getAttribute('aria-pressed'), 'true');
+
+  await key(canvas, 'c');
+  assert.equal(toolOf(), 'select');
+  assert.equal(control.getAttribute('aria-pressed'), 'false');
+
+  await key(canvas, 'C');
+  assert.equal(toolOf(), 'comment');
+
+  await key(canvas, 'Escape');
+  assert.equal(toolOf(), 'select');
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the element a comment would land on is outlined unlike the selection; Alt clears it', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const move = (init: Record<string, unknown> = {}) =>
+    react.act(async () => {
+      pay.dispatchEvent(
+        new window.PointerEvent('pointermove', {
+          bubbles: true,
+          composed: true,
+          ...init,
+        }) as never,
+      );
+    });
+
+  await move();
+  const hover = query(mounted.frame, 'papercraft-hover') as HTMLElement;
+  assert.ok(hover !== null);
+  assert.match(hover.className, /border-dashed/);
+  assert.equal(query(mounted.frame, 'papercraft-selection'), null);
+  // The label names the element and the source line it came from.
+  assert.equal(
+    query(mounted.frame, 'papercraft-hover-label')?.textContent,
+    'button#pay · checkout.html:42',
+  );
+
+  await move({ altKey: true });
+  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+  assert.equal(query(mounted.frame, 'papercraft-hover-label'), null);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the new comment opens in a popover, and the hover label steps aside while it is open', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+  await react.act(async () => {
+    pay.dispatchEvent(
+      new window.PointerEvent('pointermove', {
+        bubbles: true,
+        composed: true,
+      }) as never,
+    );
+  });
+  assert.ok(query(mounted.frame, 'papercraft-hover-label') !== null);
+
+  await clickIn(pay);
+  const popover = query(mounted.frame, 'papercraft-comment-input');
+  assert.ok(popover !== null, 'the inline input never opened');
+  // The thread's surface: the popover colours, a border, a radius.
+  for (const surface of [
+    /\bbg-popover\b/,
+    /\btext-popover-foreground\b/,
+    /\bborder\b/,
+    /\brounded-lg\b/,
+  ])
+    assert.match(popover.className, surface);
+  // The label never covers the field or its pending pin.
+  assert.equal(query(mounted.frame, 'papercraft-hover-label'), null);
+
+  // Esc still cancels, and the label comes back.
+  await key(inputOf(mounted.frame) as HTMLTextAreaElement, 'Escape');
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+  assert.ok(query(mounted.frame, 'papercraft-hover-label') !== null);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('a click opens the inline input; Enter confirms one draft with its note', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(h);
+
+  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+
+  const field = inputOf(mounted.frame);
+  assert.ok(field !== null, 'the inline input never opened');
+  assert.equal(field.getAttribute('placeholder'), 'Adicionar comentário');
+  // Nothing reached the stack while the note is being written.
+  assert.equal(composer.added.length, 0);
+  assert.equal(
+    (query(mounted.frame, 'papercraft-comment-confirm') as HTMLButtonElement)
+      .disabled,
+    true,
+  );
+
+  await react.act(async () => type(field, 'mais respiro'));
+  // Shift+Enter breaks the line: nothing is confirmed.
+  await key(field, 'Enter', { shiftKey: true });
+  await tick();
+  assert.equal(composer.added.length, 0);
+  assert.ok(inputOf(mounted.frame) !== null);
+  await key(field, 'Enter');
+
+  await settle(
+    () => composer.added.length,
+    (length) => length === 1,
+    'the confirmed note never joined the stack',
+  );
+  const added = composer.added[0] as {
     threadId: string;
-    kind: string;
+    note: string;
     elementTag: string;
     data: {
-      artifactId: string;
-      revision: number;
+      target: {
+        kind: string;
+        id: string;
+        revision: number;
+        anchor: {
+          form: string;
+          path?: string;
+          line?: number;
+          selector?: string;
+        };
+      };
       pin: number;
-      anchor: { form: string; selector?: string };
+      inReplyTo?: string;
+      refs: { title?: string; source?: string };
     };
-    note?: string;
   };
-  assert.equal(input.threadId, 't-123');
-  assert.equal(input.kind, 'papercraft-preview');
-  assert.equal(input.elementTag, 'papercraft-comment-card');
-  assert.equal(input.data.artifactId, 'checkout-7f3a');
-  assert.equal(input.data.revision, 1);
-  assert.equal(input.data.pin, 1);
-  assert.equal(input.data.anchor.selector, 'button#pay');
-  assert.equal(input.note, '');
+  assert.equal(added.threadId, 't-123');
+  assert.equal(added.note, 'mais respiro');
+  // Chat draws the line itself.
+  assert.equal(added.elementTag, 'chat-comment-line');
+  assert.equal(added.data.target.kind, 'artifact');
+  assert.equal(added.data.target.id, 'checkout-7f3a');
+  assert.equal(added.data.target.revision, 1);
+  assert.equal(added.data.target.anchor.form, 'source');
+  assert.equal(added.data.target.anchor.path, 'src/checkout.html');
+  assert.equal(added.data.target.anchor.line, 42);
+  assert.equal(added.data.target.anchor.selector, 'button#pay');
+  // Where it was clicked, for a later revision without the element.
+  const recorded = added.data.target.anchor as { x?: unknown; y?: unknown };
+  assert.equal(typeof recorded.x, 'number');
+  assert.equal(typeof recorded.y, 'number');
+  assert.equal(added.data.pin, 1);
+  assert.equal(added.data.inReplyTo, undefined);
+  assert.deepEqual(added.data.refs, {
+    title: 'Checkout',
+    source: 'src/checkout.html',
+  });
 
-  // The stack delivery lights the pin and the count.
-  assert.equal(mounted.frame.textContent?.includes('[1]'), true);
+  // The input closes, the draft is a numbered pin, and comment mode stays.
+  await settle(
+    () => query(mounted.frame, 'papercraft-pin')?.getAttribute('data-pin'),
+    (pin) => pin === '1',
+    'the draft never became a pin',
+  );
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+  assert.equal(
+    (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool,
+    'comment',
+  );
+  // Still a draft: nothing durable was written.
+  assert.equal(h.comments.length, 0);
 
-  // The flush the main process registers answers the durable writes the
-  // sender then performs: the client records nothing itself here.
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('an empty input that loses focus is discarded, and Esc cancels a written one', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(h);
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+  await clickIn(pay);
+  await react.act(async () => inputOf(mounted.frame)?.blur());
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+
+  // The focus left the node with the input: the next press only focuses it.
+  await focusNode(mounted.frame);
+  await clickIn(pay);
+  const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'deixa pra lá'));
+  await key(field, 'Escape');
+  assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+
+  await tick();
+  assert.equal(composer.added.length, 0);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('Alt forces a free point over an element', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(h);
+
+  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element, {
+    altKey: true,
+  });
+  const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'aqui'));
+  await key(field, 'Enter');
+
+  await settle(
+    () => composer.added.length,
+    (length) => length === 1,
+    'the note never joined the stack',
+  );
+  const data = composer.added[0]?.data as
+    | { target?: { anchor?: { form?: string } } }
+    | undefined;
+  assert.equal(data?.target?.anchor?.form, 'point');
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+/** Opens one `⋯` menu of the thread the way the keyboard does. */
+const openMenu = async (trigger: Element) => {
+  await key(trigger, 'Enter');
+  await react.act(async () => {
+    await tick();
+  });
+};
+
+/** Picks one item of an open menu. */
+const pick = async (frame: HTMLElement, testId: string) => {
+  const item = await settle(
+    () => query(frame, testId),
+    (found) => found !== null,
+    `the menu item ${testId} never showed`,
+  );
+
+  await react.act(async () => {
+    item?.click();
+    await tick();
+  });
+};
+
+const threadOf = (frame: HTMLElement) => query(frame, 'papercraft-thread');
+
+const replyFieldOf = (frame: HTMLElement) =>
+  threadOf(frame)?.querySelector('textarea') as HTMLTextAreaElement | null;
+
+test('a draft pin opens its thread; a reply joins the stack answering it', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(
+    h,
+    fakeComposer([draftOf('comment-d1', 1, 'primeira versão')]),
+  );
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the draft never became a pin',
+  );
+  assert.equal(pin?.dataset.state, 'draft');
+  await react.act(async () => pin?.click());
+
+  const thread = threadOf(mounted.frame) as HTMLElement;
+  assert.ok(thread !== null, 'the thread never opened');
+  assert.equal(pin?.dataset.active, 'true');
+  const messages = thread.querySelectorAll(
+    '[data-testid="papercraft-thread-message"]',
+  );
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]?.textContent ?? '', /na pilha/);
+  assert.match(messages[0]?.textContent ?? '', /primeira versão/);
+  // A draft root cannot be resolved: there is nothing durable yet.
+  assert.equal(query(thread, 'papercraft-thread-resolve'), null);
+
+  const field = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'e o espaçamento?'));
+  await key(field, 'Enter');
+
+  await settle(
+    () => composer.added.length,
+    (length) => length === 1,
+    'the reply never joined the stack',
+  );
+  const reply = composer.added[0] as {
+    note: string;
+    data: { inReplyTo?: string; pin?: number; target?: { id?: string } };
+  };
+  assert.equal(reply.note, 'e o espaçamento?');
+  assert.equal(reply.data.inReplyTo, 'comment-d1');
+  assert.equal(reply.data.pin, 1);
+  assert.equal(reply.data.target?.id, 'checkout-7f3a');
+  // Nothing durable: the reply leaves with the next prompt.
+  assert.equal(h.comments.length, 0);
+  // The thread stays open with the reply drafted under its root.
+  await settle(
+    () =>
+      threadOf(mounted.frame)?.querySelectorAll(
+        '[data-testid="papercraft-thread-message"]',
+      ).length,
+    (length) => length === 2,
+    'the drafted reply never showed in the thread',
+  );
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('a draft of the thread is edited from its menu, and saving it empty removes it', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(
+    h,
+    fakeComposer([
+      draftOf('comment-d1', 1, 'primeira versão'),
+      draftOf('comment-r1', 1, 'uma resposta', { inReplyTo: 'comment-d1' }),
+    ]),
+  );
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the draft never became a pin',
+  );
+  // The draft reply is no pin of its own.
+  assert.equal(
+    mounted.frame.querySelectorAll('[data-testid="papercraft-pin"]').length,
+    1,
+  );
+  await react.act(async () => pin?.click());
+
+  const mores = threadOf(mounted.frame)?.querySelectorAll(
+    '[data-testid="papercraft-message-more"]',
+  );
+  await openMenu(mores?.[0] as Element);
+  await pick(mounted.frame, 'papercraft-message-edit');
+
+  const field = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+  assert.equal(field.value, 'primeira versão');
+  assert.equal(field.getAttribute('placeholder'), 'Editar comentário…');
+  await react.act(async () => type(field, 'segunda versão'));
+  await key(field, 'Enter');
+  await settle(
+    () => composer.notes.length,
+    (length) => length === 1,
+    'the edit never reached the stack',
+  );
+  assert.deepEqual(composer.notes, [
+    { id: 'comment-d1', note: 'segunda versão' },
+  ]);
+
+  // Editing the root again and saving it empty drops it and its replies.
+  const again = threadOf(mounted.frame)?.querySelectorAll(
+    '[data-testid="papercraft-message-more"]',
+  );
+  await openMenu(again?.[0] as Element);
+  await pick(mounted.frame, 'papercraft-message-edit');
+  const emptied = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(emptied, ''));
+  await key(emptied, 'Enter');
+  await settle(
+    () => composer.removed.length,
+    (length) => length === 2,
+    'the emptied draft was never removed',
+  );
+  assert.deepEqual([...composer.removed].sort(), ['comment-d1', 'comment-r1']);
+  await settle(
+    () => threadOf(mounted.frame),
+    (found) => found === null,
+    'the thread of a removed draft stayed open',
+  );
+  assert.equal(composer.added.length, 0);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('a draft is removed from the stack from its thread', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(
+    h,
+    fakeComposer([draftOf('comment-d1', 1, 'primeira versão')]),
+  );
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the draft never became a pin',
+  );
+  await react.act(async () => pin?.click());
+
+  await openMenu(query(mounted.frame, 'papercraft-thread-more') as Element);
+  await pick(mounted.frame, 'papercraft-thread-remove');
+  await settle(
+    () => composer.removed.length,
+    (length) => length === 1,
+    'the removal never reached the stack',
+  );
+  assert.deepEqual(composer.removed, ['comment-d1']);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('Esc closes a thread without adding what its field holds', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(
+    h,
+    fakeComposer([draftOf('comment-d1', 1, 'primeira versão')]),
+  );
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the draft never became a pin',
+  );
+  await react.act(async () => pin?.click());
+  const field = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'deixa'));
+  await key(field, 'Escape');
+
+  assert.equal(threadOf(mounted.frame), null);
+  await tick();
+  assert.equal(composer.added.length, 0);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('sent pins say where their thread stands, and the control counts the open ones', async () => {
+  const h = harness();
+  h.durable.push(
+    sentOf('c-open', 'mais respiro'),
+    sentOf('c-reply', 'qual cor?', { author: 'agent', inReplyTo: 'c-open' }),
+    sentOf('c-me', 'azul', { inReplyTo: 'c-open' }),
+    sentOf('c-await', 'o título'),
+    sentOf('c-agent', 'maior ou menor?', {
+      author: 'agent',
+      inReplyTo: 'c-await',
+    }),
+    sentOf('c-done', 'pronto', { resolved: true }),
+  );
+  const { mounted } = await commenting(h);
+
+  const stateOfPin = (number: string) =>
+    mounted.frame.querySelector(
+      `[data-testid="papercraft-pin"][data-pin="${number}"]`,
+    ) as HTMLElement | null;
+
+  await settle(
+    () => stateOfPin('3')?.dataset.state,
+    (state) => state === 'done',
+    'the resolved thread never became a pin',
+  );
+  // The reader answered last: open, with its replies counted.
+  assert.equal(stateOfPin('1')?.dataset.state, 'open');
+  assert.equal(
+    stateOfPin('1')?.querySelector('[data-testid="papercraft-pin-badge"]')
+      ?.textContent,
+    '2',
+  );
+  // The agent asked last: the thread awaits the reader.
+  assert.equal(stateOfPin('2')?.dataset.state, 'await');
+  assert.equal(
+    stateOfPin('2')?.querySelector('[data-testid="papercraft-pin-badge"]')
+      ?.textContent,
+    '?',
+  );
+  assert.equal(
+    stateOfPin('3')?.querySelector('[data-testid="papercraft-pin-badge"]')
+      ?.textContent,
+    '✓',
+  );
+  // The replies are no pins; the control counts the unresolved roots.
+  assert.equal(
+    mounted.frame.querySelectorAll('[data-testid="papercraft-pin"]').length,
+    3,
+  );
+  assert.equal(
+    query(mounted.frame, 'papercraft-comment-count')?.textContent,
+    '2',
+  );
+
+  // The header hides the resolved pins, and shows them again.
+  const eye = query(mounted.frame, 'papercraft-show-resolved') as HTMLElement;
+  assert.ok(eye !== null, 'no show/hide control with a resolved thread');
+  await react.act(async () => eye.click());
+  assert.equal(stateOfPin('3'), null);
+  await react.act(async () => eye.click());
+  assert.equal(stateOfPin('3')?.dataset.state, 'done');
+
+  // The awaiting thread opens with its messages and its state chip.
+  await react.act(async () => stateOfPin('2')?.click());
+  const thread = threadOf(mounted.frame) as HTMLElement;
+  assert.equal(
+    query(thread, 'papercraft-thread-title')?.textContent,
+    'checkout:42',
+  );
+  assert.equal(
+    thread.querySelectorAll('[data-testid="papercraft-thread-message"]').length,
+    2,
+  );
+  assert.match(
+    query(thread, 'papercraft-thread-state')?.textContent ?? '',
+    /aguardando você/,
+  );
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('threads and drafts of an earlier revision carry over to the newest, keeping their numbers', async () => {
+  const h = harness();
+  h.durable.push(sentOf('c1', 'mais respiro'));
+  const { mounted, composer } = await commenting(
+    h,
+    fakeComposer([draftOf('comment-d1', 1, 'e o título?', { pin: 2 })]),
+    2,
+  );
+
+  const pinOf = (number: string) =>
+    mounted.frame.querySelector(
+      `[data-testid="papercraft-pin"][data-pin="${number}"]`,
+    ) as HTMLElement | null;
+
+  await settle(
+    () => [pinOf('1')?.dataset.state, pinOf('2')?.dataset.state],
+    ([sent, drafted]) => sent === 'open' && drafted === 'draft',
+    "revision 1's thread and draft never showed on revision 2",
+  );
+  assert.equal(
+    query(mounted.frame, 'papercraft-comment-count')?.textContent,
+    '2',
+  );
+
+  // A reply answers the root on the root's own target.
+  await react.act(async () => pinOf('1')?.click());
+  const field = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'ainda apertado'));
+  await key(field, 'Enter');
+  await settle(
+    () => composer.added.length,
+    (length) => length === 1,
+    'the reply never joined the stack',
+  );
+  const reply = composer.added[0]?.data as {
+    inReplyTo?: string;
+    target?: { revision?: number };
+  };
+  assert.equal(reply.inReplyTo, 'c1');
+  assert.equal(reply.target?.revision, 1);
+  await key(replyFieldOf(mounted.frame) as HTMLTextAreaElement, 'Escape');
+
+  // A new comment is written against the revision on screen, numbered next.
+  await clickIn(shadowOf(mounted.frame).querySelector('#title') as Element);
+  const input = inputOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(input, 'novo'));
+  await key(input, 'Enter');
+  await settle(
+    () => composer.added.length,
+    (length) => length === 2,
+    'the new comment never joined the stack',
+  );
+  const added = composer.added[1]?.data as {
+    pin?: number;
+    target?: { revision?: number };
+  };
+  assert.equal(added.target?.revision, 2);
+  assert.equal(added.pin, 3);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('a thread whose element is gone from the revision on screen stays a reachable pin', async () => {
+  const h = harness();
+  h.durable.push(
+    sentOf('c-gone', 'a seção antiga', {
+      target: {
+        kind: 'artifact',
+        id: 'checkout-7f3a',
+        revision: 1,
+        anchor: {
+          form: 'source',
+          path: 'src/old.html',
+          line: 7,
+          selector: 'section#gone',
+        },
+      },
+    }),
+  );
+  const { mounted } = await commenting(h, fakeComposer(), 2);
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the thread without its element was dropped',
+  );
+  assert.equal(pin?.dataset.detached, 'true');
+  assert.equal(
+    query(mounted.frame, 'papercraft-comment-count')?.textContent,
+    '1',
+  );
+
+  await react.act(async () => pin?.click());
+  assert.match(threadOf(mounted.frame)?.textContent ?? '', /a seção antiga/);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('a sent thread resolves under the prompt its root was written in', async () => {
+  const h = harness();
+  const target = {
+    kind: 'artifact',
+    id: 'checkout-7f3a',
+    revision: 1,
+    anchor: { form: 'source', path: 'src/checkout.html', line: 42 },
+  };
+  h.log = [
+    logged('comments.added/v1', 'prompt-root', {
+      commentId: 'c1',
+      target,
+      text: 'mais respiro',
+    }),
+    logged('comments.added/v1', 'prompt-agent', {
+      commentId: 'c2',
+      target,
+      text: 'feito',
+      author: 'agent',
+      inReplyTo: 'c1',
+    }),
+  ];
+  const { mounted } = await commenting(h);
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found?.dataset.state === 'await',
+    'the logged thread never became an awaiting pin',
+  );
+  await react.act(async () => pin?.click());
+
+  const resolve = query(
+    mounted.frame,
+    'papercraft-thread-resolve',
+  ) as HTMLButtonElement;
+  assert.equal(resolve.disabled, false);
+  await react.act(async () => resolve.click());
+
+  await settle(
+    () => h.resolves.length,
+    (length) => length === 1,
+    'the resolve was never asked',
+  );
+  assert.deepEqual(h.resolves[0]?.input, { commentId: 'c1', resolved: true });
+  assert.deepEqual(h.resolves[0]?.scope, {
+    projectId: 'p1',
+    threadId: 't-123',
+    promptId: 'prompt-root',
+  });
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+  h.log = undefined;
+});
+
+test('a thread whose prompt is unknown cannot be resolved', async () => {
+  const h = harness();
+  h.durable.push(sentOf('c1', 'mais respiro'));
+  const { mounted } = await commenting(h);
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the sent comment never became a pin',
+  );
+  await react.act(async () => pin?.click());
+
+  const resolve = query(
+    mounted.frame,
+    'papercraft-thread-resolve',
+  ) as HTMLButtonElement;
+  assert.equal(resolve.disabled, true);
+  assert.equal(h.resolves.length, 0);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+/** The conversation asking to see a thread, as chat dispatches it. */
+const askThread = (from: Element, detail: object) =>
+  react.act(async () => {
+    from.dispatchEvent(
+      new window.CustomEvent('doric:comment-thread-open', {
+        bubbles: true,
+        detail,
+      }) as never,
+    );
+    await tick();
+  });
+
+test('the conversation opens a thread of this preview, and only of its own revision', async () => {
+  const h = harness();
+  h.durable.push(
+    sentOf('c1', 'mais respiro'),
+    sentOf('c2', 'feito', { author: 'agent', inReplyTo: 'c1' }),
+  );
+  comment.setComposerAvailable(true);
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the sent comment never became a pin',
+  );
+  const elsewhere = document.body;
+
+  // Another artifact's thread, and another revision's, are not this node's.
+  await askThread(elsewhere, {
+    commentId: 'c1',
+    target: { kind: 'artifact', id: 'other-1', revision: 1 },
+  });
+  await askThread(elsewhere, {
+    commentId: 'c1',
+    target: { kind: 'artifact', id: 'checkout-7f3a', revision: 2 },
+  });
+  assert.equal(threadOf(mounted.frame), null);
+
+  // A reply's id opens its root's thread.
+  await askThread(elsewhere, {
+    commentId: 'c2',
+    target: { kind: 'artifact', id: 'checkout-7f3a', revision: 1 },
+  });
+  const thread = await settle(
+    () => threadOf(mounted.frame),
+    (found) => found !== null,
+    'the asked thread never opened',
+  );
+  assert.equal(
+    thread?.querySelectorAll('[data-testid="papercraft-thread-message"]')
+      .length,
+    2,
+  );
+  assert.equal(query(mounted.frame, 'papercraft-pin')?.dataset.active, 'true');
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the window opens the asked thread on the revision on screen', async () => {
+  const h = harness();
+  h.durable.push(sentOf('c1', 'na revisão um'));
+  const mounted = await h.mount('canvas', {});
+  await settle(
+    () => h.reads.at(-1)?.revision,
+    (revision) => revision === 2,
+    'the window never opened at the newest revision',
+  );
+
+  await askThread(document.body, {
+    commentId: 'c1',
+    target: { kind: 'artifact', id: 'checkout-7f3a', revision: 1 },
+  });
+
+  const thread = await settle(
+    () => threadOf(mounted.frame),
+    (found) => found !== null,
+    'the asked thread never opened',
+  );
+  assert.match(thread?.textContent ?? '', /na revisão um/);
+  // Every revision shows every thread: the newest stays on screen.
+  assert.equal(h.reads.at(-1)?.revision, 2);
+
+  await mounted.unmount();
+});
+
+test('a thread asked for without a revision opens on the node of the newest revision only', async () => {
+  const older = harness();
+  const newer = harness();
+  for (const h of [older, newer]) h.durable.push(sentOf('c1', 'mais respiro'));
+  const first = await older.mount('node', { blockRevision: 1 });
+  const second = await newer.mount('node', { blockRevision: 2 });
+  for (const mounted of [first, second])
+    await settle(
+      () => query(mounted.frame, 'papercraft-pin'),
+      (found) => found !== null,
+      'the thread never became a pin',
+    );
+
+  await askThread(document.body, {
+    commentId: 'c1',
+    target: { kind: 'artifact', id: 'checkout-7f3a' },
+  });
+
+  await settle(
+    () => threadOf(second.frame),
+    (found) => found !== null,
+    'the newest node never opened the thread',
+  );
+  assert.equal(threadOf(first.frame), null);
+
+  await first.unmount();
+  await second.unmount();
+});
+
+test('Cmd+Enter confirms the open note and sends the stack through chat', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(h);
+
+  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+  const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'manda já'));
+  await key(field, 'Enter', { metaKey: true });
+
+  await settle(
+    () => h.sends.length,
+    (length) => length === 1,
+    'the stack was never sent',
+  );
+  assert.equal(composer.added.length, 1);
+  assert.equal(composer.added[0]?.note, 'manda já');
+  assert.deepEqual(h.sends[0]?.input, { projectId: 'p1', threadId: 't-123' });
+
+  // On the focused canvas, with nothing open, it sends too.
+  await key(
+    mounted.frame.querySelector('.papercraft-canvas') as Element,
+    'Enter',
+    { ctrlKey: true },
+  );
+  await settle(
+    () => h.sends.length,
+    (length) => length === 2,
+    'the canvas never sent',
+  );
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the body the frame mounts arms its comment mode, even when chat comes late', async () => {
+  const h = harness();
+  const composer = fakeComposer();
+  h.composer = composer.api;
+
+  // The body as the registry's frame mounts it: `<papercraft-preview>` with
+  // the frame's block, the frame's comment gesture reaching `comment(detail)`.
+  const tag = 'papercraft-preview-body-test';
+  if (customElements.get(tag) === undefined) {
+    customElements.define(tag, elements.definePreviewElement());
+  }
+  const body = document.createElement(tag) as HTMLElement & {
+    services: unknown;
+    block: unknown;
+    comment: (detail: unknown) => void;
+  };
+  body.services = h.services;
+  body.block = {
+    id: 'artifacts:checkout-7f3a@1',
+    type: 'papercraft.preview/v1',
+    data: {
+      artifactId: 'checkout-7f3a',
+      revision: 1,
+      kind: 'preview',
+      title: 'Checkout',
+      targets: [],
+      entries: [{ path: 'index.html', sha256: 'abc' }],
+      createdAt: '',
+      projectId: 'p1',
+      threadId: 't-123',
+    },
+  };
+  const detail = { artifactId: 'checkout-7f3a', revision: 1, kind: 'preview' };
+  const toolOf = () =>
+    (body.querySelector('[data-tool]') as HTMLElement | null)?.dataset.tool;
+
+  comment.setComposerAvailable(false);
+  await react.act(async () => {
+    document.body.append(body);
+  });
+  await settle(toolOf, (tool) => tool === 'select', 'the body never rendered');
+
+  await react.act(async () => body.comment(detail));
+  assert.equal(toolOf(), 'select');
+
+  await react.act(async () => {
+    comment.setComposerAvailable(true);
+  });
+  await react.act(async () => body.comment(detail));
+  await settle(
+    toolOf,
+    (tool) => tool === 'comment',
+    'the late composer never armed the gesture',
+  );
+
+  await clickIn(shadowOf(body).querySelector('#pay') as Element);
+  const field = inputOf(body) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'aumenta o respiro do botão'));
+  await key(field, 'Enter');
+  await settle(
+    () => composer.added.length,
+    (length) => length === 1,
+    'the note never joined the stack',
+  );
+
+  // The composer was called in the preview's Project and Thread.
+  assert.ok(
+    h.scopes.some(
+      (scope) =>
+        (scope as { threadId?: string }).threadId === 't-123' &&
+        (scope as { projectId?: string }).projectId === 'p1',
+    ),
+  );
+
+  // The flush the main process registers answers the durable write the
+  // sender performs once the prompt is accepted.
+  const data = composer.added[0]?.data as { anchor: unknown };
   const writes = await papercraftFlush(
     {
       id: 'i1',
       kind: 'papercraft-preview',
-      elementTag: 'papercraft-comment-card',
-      data: input.data,
+      elementTag: 'chat-comment-line',
+      data,
       note: '  aumenta o respiro do botão  ',
     },
     { threadId: 't-123', promptId: 'p-1' },
   );
-
-  assert.equal(h.comments.length, 0);
   assert.equal(writes.length, 1);
-  const write = writes[0];
-  assert.ok(write !== undefined);
-  assert.deepEqual(write.target, {
-    kind: 'artifact',
-    id: 'checkout-7f3a',
-    revision: 1,
-    anchor: input.data.anchor,
-  });
-  assert.equal(write.text, 'aumenta o respiro do botão');
+  assert.equal(writes[0]?.text, 'aumenta o respiro do botão');
+  assert.equal(h.comments.length, 0);
 
-  comment.setComposer(undefined);
-  await mounted.unmount();
+  comment.setComposerAvailable(false);
+  await react.act(async () => body.remove());
 });
 
-test('the papercraft flush leaves a note-less or target-less item drafted', async () => {
+test('the papercraft flush writes the item as the comment, under its own id', async () => {
   const context = { threadId: 't-123', promptId: 'p-1' };
-  const data = {
-    artifactId: 'checkout-7f3a',
+  const target = {
+    kind: 'artifact',
+    id: 'checkout-7f3a',
     revision: 2,
     anchor: { form: 'selector', selector: 'button#pay' },
-    pin: 3,
-    point: { x: 10, y: 20 },
   };
+  const item = (id: string, data: unknown, note: string, author?: string) => ({
+    id,
+    kind: 'papercraft-preview',
+    elementTag: 'chat-comment-line',
+    data,
+    note,
+    ...(author === undefined ? {} : { author }),
+  });
 
   // A blank note answers no write — nothing was asked yet.
   assert.deepEqual(
     await papercraftFlush(
-      {
-        id: 'i2',
-        kind: 'papercraft-preview',
-        elementTag: 'papercraft-comment-card',
-        data,
-        note: '   ',
-      },
+      item('comment-a', { target, pin: 3 }, '   '),
       context,
     ),
     [],
@@ -601,110 +1785,95 @@ test('the papercraft flush leaves a note-less or target-less item drafted', asyn
   // An item whose data no longer names a target is not ours.
   assert.deepEqual(
     await papercraftFlush(
-      {
-        id: 'i3',
-        kind: 'papercraft-preview',
-        elementTag: 'papercraft-comment-card',
-        data: { something: 'else' },
-        note: 'não é meu',
-      },
+      item('comment-b', { something: 'else' }, 'não é meu'),
       context,
     ),
     [],
   );
 
-  // A named note carries the author through.
-  const writes = await papercraftFlush(
-    {
-      id: 'i4',
-      kind: 'papercraft-preview',
-      elementTag: 'papercraft-comment-card',
-      data,
-      note: 'aumenta o respiro',
-      author: 'ada',
-    },
-    context,
+  // A root carries its id and its author through.
+  assert.deepEqual(
+    await papercraftFlush(
+      item('comment-c', { target, pin: 3 }, ' aumenta o respiro ', 'ada'),
+      context,
+    ),
+    [
+      {
+        target,
+        text: 'aumenta o respiro',
+        commentId: 'comment-c',
+        author: 'ada',
+      },
+    ],
   );
 
-  assert.deepEqual(writes, [
-    {
-      target: {
-        kind: 'artifact',
-        id: 'checkout-7f3a',
-        revision: 2,
-        anchor: data.anchor,
+  // A reply names the root it answers.
+  assert.deepEqual(
+    await papercraftFlush(
+      item('comment-d', { target, pin: 3, inReplyTo: 'comment-c' }, 'e mais'),
+      context,
+    ),
+    [
+      {
+        target,
+        text: 'e mais',
+        commentId: 'comment-d',
+        inReplyTo: 'comment-c',
       },
-      text: 'aumenta o respiro',
-      author: 'ada',
-    },
-  ]);
+    ],
+  );
+
+  // A draft written before items carried their target still flushes.
+  assert.deepEqual(
+    await papercraftFlush(
+      item(
+        'comment-e',
+        {
+          artifactId: 'checkout-7f3a',
+          revision: 2,
+          anchor: target.anchor,
+          pin: 1,
+          point: { x: 10, y: 20 },
+        },
+        'antigo',
+      ),
+      context,
+    ),
+    [{ target, text: 'antigo', commentId: 'comment-e' }],
+  );
 });
 
-test('the comment card element accepts the stack line props', async () => {
-  const Element = elements.defineCommentCardElement();
-  const tag = 'papercraft-comment-card-props-test';
+test('a draft written before items carried their target is still a pin', async () => {
+  const h = harness();
+  const { mounted } = await commenting(
+    h,
+    fakeComposer([
+      {
+        id: 'i1',
+        kind: 'papercraft-preview',
+        elementTag: 'papercraft-comment-card',
+        data: {
+          artifactId: 'checkout-7f3a',
+          revision: 1,
+          anchor: { form: 'point', x: 10, y: 20 },
+          pin: 4,
+          point: { x: 10, y: 20 },
+        },
+        note: 'antigo',
+      },
+    ]),
+  );
 
-  if (customElements.get(tag) === undefined) {
-    customElements.define(tag, Element);
-  }
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the old draft never became a pin',
+  );
+  assert.equal(pin?.dataset.pin, '4');
+  assert.equal(pin?.dataset.state, 'draft');
 
-  const el = document.createElement(tag) as HTMLElement & {
-    services: unknown;
-    item?: unknown;
-    pin?: number;
-    open?: boolean;
-    onNote?: (note: string) => void;
-  };
-  document.body.append(el);
-  el.services = {};
-
-  let edited: string | undefined;
-  el.item = {
-    id: 'i1',
-    kind: 'papercraft-preview',
-    elementTag: 'papercraft-comment-card',
-    data: {
-      artifactId: 'checkout-7f3a',
-      revision: 1,
-      anchor: { form: 'selector', selector: 'button#pay' },
-      pin: 1,
-      point: { x: 0, y: 0 },
-    },
-    note: '',
-  };
-  el.pin = 7;
-  el.open = true;
-  el.onNote = (note) => {
-    edited = note;
-  };
-
-  await react.act(async () => {
-    await tick();
-  });
-
-  // The stack's props landed: its number and the anchor are on the line, and
-  // the opened line edits the note in place.
-  assert.match(el.textContent ?? '', /\[7\] button#pay/);
-
-  const area = el.querySelector('textarea') as HTMLTextAreaElement | null;
-  assert.ok(area !== null, 'the opened line never asked');
-
-  // React tracks a controlled textarea's value; set it through the native
-  // setter so the change is not swallowed, then let the input event bubble.
-  const value = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    'value',
-  )?.set;
-  value?.call(area, 'mais respiro');
-  area.dispatchEvent(new Event('input', { bubbles: true }));
-
-  await react.act(async () => {
-    await tick();
-  });
-
-  assert.equal(edited, 'mais respiro');
-
-  el.remove();
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
 });
 
 test('the canvas draws the toolbar groups and the tree, and obeys the policy', async () => {
@@ -830,6 +1999,46 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
   await mounted.unmount();
 });
 
+test('the node footer zooms, returns to 100% and centres', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', {});
+  await focusNode(mounted.frame);
+  const footer = mounted.frame.querySelector(
+    '[data-testid="papercraft-footer"]',
+  ) as HTMLElement;
+  const reading = () =>
+    footer.querySelector('[data-testid="papercraft-zoom-reset"]')
+      ?.textContent ?? '';
+  const press = async (id: string) => {
+    (footer.querySelector(`[data-testid="${id}"]`) as HTMLElement).click();
+    await tick();
+    await tick();
+  };
+
+  assert.match(reading(), /100%/);
+  assert.ok(footer.querySelector('[aria-label="Centralizar"]'));
+
+  await press('papercraft-zoom-in');
+  assert.match(reading(), /120%/);
+
+  await press('papercraft-zoom-out');
+  await press('papercraft-zoom-out');
+  assert.match(reading(), /83%/);
+
+  await press('papercraft-zoom-reset');
+  assert.match(reading(), /100%/);
+
+  // The window has its own command bar, not this footer.
+  const window_ = await h.mount('canvas', {});
+  assert.equal(
+    window_.frame.querySelector('[data-testid="papercraft-footer"]'),
+    null,
+  );
+
+  await window_.unmount();
+  await mounted.unmount();
+});
+
 test('the zoom controls dispatch commands and the reading follows', async () => {
   const h = harness();
   const mounted = await h.mount('canvas', {});
@@ -933,5 +2142,33 @@ test('Autorizar lives in the bar, and turns into the reading once approved', asy
   assert.equal(toolbar.querySelector('[aria-label="Autorizar"]'), null);
   assert.match(toolbar.textContent ?? '', /Autorizado/);
 
+  await mounted.unmount();
+});
+
+test('the window sends its drafts from the header, having no prompt of its own', async () => {
+  const h = harness();
+  const composer = fakeComposer([draftOf('d1', 2, 'ajuste o botão')]);
+  h.composer = composer.api;
+  comment.setComposerAvailable(true);
+  const mounted = await h.mount('canvas', {});
+
+  const send = await settle(
+    () => query(mounted.frame, 'papercraft-send'),
+    (found) => found !== null,
+    'the send button never showed for the draft',
+  );
+  assert.match(send?.textContent ?? '', /Enviar ao agente \(1\)/);
+  // The window has no `abrir`: it is the window.
+  assert.equal(query(mounted.frame, 'papercraft-open'), null);
+
+  await react.act(async () => send?.click());
+  await settle(
+    () => h.sends.length,
+    (length) => length === 1,
+    'the stack was never sent',
+  );
+  assert.deepEqual(h.sends[0]?.input, { projectId: 'p1', threadId: 't-123' });
+
+  comment.setComposerAvailable(false);
   await mounted.unmount();
 });

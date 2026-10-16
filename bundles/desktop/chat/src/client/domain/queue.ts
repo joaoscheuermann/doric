@@ -1,4 +1,9 @@
 import { READER_NAME } from './conversation-authors.js';
+import {
+  parsePromptEnvelope,
+  previewSummary,
+  promptSummary,
+} from './prompt-envelope.js';
 import type { ThreadEvent, ThreadUpdate } from './workspace.js';
 
 export interface QueueItem {
@@ -100,21 +105,57 @@ export const latestQueue = (
 ): ThreadQueue =>
   previous !== undefined && previous.revision > next.revision ? previous : next;
 
+/** The text a queued prompt was accepted with, or last edited to. */
 export const queueDetail = (
   events: readonly ThreadEvent[],
   promptId: string,
 ): string | undefined => {
-  const event = [...events]
-    .reverse()
-    .find(
-      (event) =>
-        event.promptId === promptId &&
-        (event.type === 'prompt.accepted' || event.type === 'prompt.edited'),
-    )?.event;
-  return event !== null &&
-    typeof event === 'object' &&
-    'text' in event &&
-    typeof event.text === 'string'
-    ? event.text
-    : undefined;
+  // Read from the end without copying the log: the selector runs on every
+  // update of the Thread's chat, once per row.
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (
+      event === undefined ||
+      event.promptId !== promptId ||
+      (event.type !== 'prompt.accepted' && event.type !== 'prompt.edited')
+    )
+      continue;
+    const payload = event.event;
+    return payload !== null &&
+      typeof payload === 'object' &&
+      'text' in payload &&
+      typeof payload.text === 'string'
+      ? payload.text
+      : undefined;
+  }
+  return undefined;
+};
+
+/**
+ * The words a queued item's details show: a reader's prompt as its words (or,
+ * for comments alone, their notes), read from the stored text when the log
+ * holds it and from the host's preview otherwise; any other source as is.
+ */
+export const queueItemText = (
+  item: QueueItem,
+  stored: string | undefined,
+): string => {
+  if (item.source.kind !== 'user') return stored ?? item.preview;
+  return stored === undefined
+    ? previewSummary(item.preview)
+    : promptSummary(stored);
+};
+
+/**
+ * The one line a queue row shows for an item: the host's preview, except for
+ * a reader's envelope, whose words the row reads from the stored text.
+ */
+export const queueRowText = (
+  item: QueueItem,
+  stored: string | undefined,
+): string => {
+  if (item.source.kind !== 'user') return item.preview;
+  if (stored !== undefined && parsePromptEnvelope(stored) !== undefined)
+    return promptSummary(stored).replace(/\s+/g, ' ').trim();
+  return previewSummary(item.preview);
 };

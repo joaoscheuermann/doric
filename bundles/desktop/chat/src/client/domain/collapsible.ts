@@ -10,6 +10,7 @@
  * state; `null` here means the reader has not chosen and the default decides.
  */
 
+import type { CommentThreadState } from './comment-threads.js';
 import type { ToolStatus } from './projector.js';
 
 /** The reader's choice of open/closed; `null` until they make one. */
@@ -67,3 +68,18 @@ export const toolOpenness = (
 
 /** A settled burst's answer: an activity summary is never the live one. */
 export const settledOpenness: Openness = { active: false, hasContent: true };
+
+/**
+ * An agent's reply row's answer: folded once its thread is resolved, and open
+ * otherwise — above all while the agent waits for the reader (`await`), so a
+ * question is not missed. The thread's state is read live, so the row follows
+ * a later resolution until the reader chooses.
+ */
+export const replyOpenness = (
+  state: CommentThreadState,
+  text: string,
+): Openness => ({
+  active: false,
+  hasContent: text.trim().length > 0,
+  defaultOpen: state !== 'done',
+});

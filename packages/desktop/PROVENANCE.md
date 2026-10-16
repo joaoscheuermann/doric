@@ -83,6 +83,13 @@ it compares:
   white fill with an icon that stays dark on it in either theme. Filling a
   primary button white would have meant turning the theme's `--primary` into
   white, which every other primary surface reads.
+- `alert-dialog.tsx`, `combobox.tsx`, `context-menu.tsx`, `dialog.tsx`,
+  `dropdown-menu.tsx`, `popover.tsx`, `select.tsx`, `sheet.tsx` and
+  `tooltip.tsx`: each portal passes `container={usePortalContainer()}` (read
+  into a `container` constant), imported from `../portal-container.js`, so
+  overlays land in the container a `PortalContainerProvider` names (a
+  Papercraft preview's shadow root). The exported `*Portal` wrappers pass it
+  before their spread props, so a caller's own `container` still wins.
 
 ## Fonts
 

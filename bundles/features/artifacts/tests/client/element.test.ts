@@ -1,7 +1,8 @@
 // The frame element as the conversation mounts it: the title, the kind, the
 // revision reading, the comment gesture with the count of what is still
-// pending, and the orphan state of a kind without a renderer of its own. And
-// the revision list element: one row per revision, read through `artifacts/v1`.
+// pending, the kind's body mounted inside it (or the orphan state of a kind
+// without one) and the authorize gesture under `request`. The frame draws no
+// list of revisions: the conversation is the history.
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -23,8 +24,9 @@ const installed = [
 ] as const;
 
 let defineFrameElement: typeof import('../../src/client/elements.js')['defineFrameElement'];
-let defineRevisionsElement: typeof import('../../src/client/elements.js')['defineRevisionsElement'];
 let ArtifactsV1: typeof import('../../src/contracts/index.js')['ArtifactsV1'];
+let ArtifactKindV1: typeof import('../../src/contracts/index.js')['ArtifactKindV1'];
+let UiV1: typeof import('bundle/contracts')['UiV1'];
 let CommentsV1: typeof import('../../src/client/comments-contract.js')['CommentsV1'];
 
 before(async () => {
@@ -36,10 +38,11 @@ before(async () => {
     });
   }
 
-  ({ defineFrameElement, defineRevisionsElement } = await import(
-    '../../src/client/elements.js'
+  ({ defineFrameElement } = await import('../../src/client/elements.js'));
+  ({ ArtifactsV1, ArtifactKindV1 } = await import(
+    '../../src/contracts/index.js'
   ));
-  ({ ArtifactsV1 } = await import('../../src/contracts/index.js'));
+  ({ UiV1 } = await import('bundle/contracts'));
   ({ CommentsV1 } = await import('../../src/client/comments-contract.js'));
 });
 
@@ -90,190 +93,277 @@ const frameBlock = {
     targets: [{ path: 'docs/Flow.md' }],
     entries: [{ path: 'flow.svg', sha256: '7'.repeat(64) }],
     createdAt: '2024-01-01T00:00:00Z',
+    projectId: 'p1',
+    threadId: 't1',
   },
 };
 
+/** Comments as the registry lists them for one artifact (every revision). */
+const commentsApi = (comments: readonly unknown[]) => ({
+  list: async (input: { readonly target?: { readonly id?: string } }) =>
+    comments.filter(
+      (comment) =>
+        (comment as { target: { id: string } }).target.id === input.target?.id,
+    ),
+});
+
 const commentsFor = (comments: unknown[]) =>
   servicesFor((id) =>
-    id === CommentsV1.id
-      ? {
-          list: async (input: {
-            readonly target?: {
-              readonly id?: string;
-              readonly revision?: number;
-            };
-          }) =>
-            comments.filter(
-              (comment) =>
-                input.target === undefined ||
-                ((comment as { target: { id: string } }).target.id ===
-                  input.target.id &&
-                  (comment as { target: { revision?: number } }).target
-                    .revision === input.target.revision),
-            ),
-        }
-      : undefined,
+    id === CommentsV1.id ? commentsApi(comments) : undefined,
   );
+
+const shadowOf = (node: unknown): ShadowRoot =>
+  (node as HTMLElement).shadowRoot as ShadowRoot;
+
+const settle = async (): Promise<void> => {
+  for (let index = 0; index < 6; index += 1) await tick();
+};
 
 test('the frame shows the title, the kind, the revision and the pending comments', async () => {
   const frame = mount(defineFrameElement);
   const comments = [
     { target: { id: 'checkout-7f3a', revision: 1 }, resolved: false },
     { target: { id: 'checkout-7f3a', revision: 1 }, resolved: true },
+    { target: { id: 'checkout-7f3a', revision: 2 }, resolved: false },
     { target: { id: 'other', revision: 1 }, resolved: false },
   ];
 
   frame.services = commentsFor(comments);
   frame.block = frameBlock;
-  await tick();
-  await tick();
+  await settle();
 
-  const root = (frame as unknown as HTMLElement).shadowRoot as ShadowRoot;
-  const bar = root.querySelector('.artifacts-bar') as HTMLElement;
+  const bar = shadowOf(frame).querySelector('.artifacts-bar') as HTMLElement;
+  const text = (selector: string) =>
+    (bar.querySelector(selector) as HTMLElement).textContent;
 
-  assert.equal(
-    (bar.querySelector('.artifacts-title') as HTMLElement).textContent,
-    'The flow',
-  );
-  assert.equal(
-    (bar.querySelector('.artifacts-kind') as HTMLElement).textContent,
-    'diagram',
-  );
-  assert.equal(
-    (bar.querySelector('.artifacts-revision') as HTMLElement).textContent,
-    'rev 1',
-  );
-  // Two comments on this revision, one already resolved: one is pending.
-  assert.equal(
-    (bar.querySelector('.artifacts-comment') as HTMLElement).textContent,
-    'Comentar (1)',
-  );
-
-  // The entries the revision named, and no invented body.
-  const entries = [...root.querySelectorAll('.artifacts-entry')];
-
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0]?.textContent, `flow.svg · ${'7'.repeat(12)}`);
+  assert.equal(text('.artifacts-title'), 'The flow');
+  assert.equal(text('.artifacts-kind'), 'diagram');
+  assert.equal(text('.artifacts-revision'), 'rev 1');
+  // One pending on this revision; the resolved one and revision 2's do not count.
+  assert.equal(text('.artifacts-comment'), 'Comentar (1)');
 });
 
-test('the frame shows the orphan state of a kind without a renderer', async () => {
+test('the frame shows the entries and the orphan state of a kind without a body', async () => {
   const frame = mount(defineFrameElement);
 
   frame.services = commentsFor([]);
-  frame.block = {
-    ...frameBlock,
-    data: { ...frameBlock.data, kind: 'unknown', entries: [] },
-  };
-  await tick();
-  await tick();
+  frame.block = frameBlock;
+  await settle();
 
-  const orphan = (
-    (frame as unknown as HTMLElement).shadowRoot as ShadowRoot
-  ).querySelector('.artifacts-orphan') as HTMLElement;
+  const root = shadowOf(frame);
+  const orphan = root.querySelector('.artifacts-orphan') as HTMLElement;
 
   assert.equal(orphan.hidden, false);
   assert.match(orphan.textContent ?? '', /Sem renderizador/);
+  assert.deepEqual(
+    [...root.querySelectorAll('.artifacts-entry')].map(
+      (entry) => entry.textContent,
+    ),
+    [`flow.svg · ${'7'.repeat(12)}`],
+  );
 });
 
-test('the revision list reads one row per revision through artifacts/v1', async () => {
-  const list = mount(defineRevisionsElement);
-  const records = new Map([
-    [
-      'checkout-7f3a',
-      {
-        artifactId: 'checkout-7f3a',
-        revision: 2,
-        revisions: 2,
-        state: 'approved',
-        changeNote: 'Smaller',
-      },
-    ],
-    [
-      'checkout-7f3a@1',
-      {
-        artifactId: 'checkout-7f3a',
-        revision: 1,
-        revisions: 2,
-        state: 'approved',
-      },
-    ],
-    [
-      'checkout-7f3a@2',
-      {
-        artifactId: 'checkout-7f3a',
-        revision: 2,
-        revisions: 2,
-        state: 'approved',
-        changeNote: 'Smaller',
-      },
-    ],
-  ]);
-
-  const services = servicesFor((id) => {
-    if (id === ArtifactsV1.id) {
-      return {
-        read: async (input: {
-          readonly artifactId: string;
-          readonly revision?: number;
-        }) =>
-          input.revision === undefined
-            ? records.get(input.artifactId)
-            : records.get(`${input.artifactId}@${input.revision}`),
-      };
-    }
-
-    if (id === CommentsV1.id) {
+/** Services where the `diagram` kind declares a body, and `ui/v1` makes it. */
+const bodiedServices = (
+  created: { tag: string; props?: Record<string, unknown> }[],
+  extra: (id: string) => unknown = () => undefined,
+  header?: 'frame' | 'body',
+) =>
+  servicesFor((id) => {
+    if (id === ArtifactKindV1.id) {
       return {
         list: async () => [
           {
-            target: { id: 'checkout-7f3a', revision: 1 },
-            resolved: false,
+            id: 'diagram',
+            blockType: 'diagram.body/v1',
+            bodyTag: 'diagram-body',
+            ...(header === undefined ? {} : { header }),
           },
         ],
       };
     }
 
-    return undefined;
+    if (id === UiV1.id) {
+      return {
+        create: (tag: string, props?: Record<string, unknown>) => {
+          created.push({ tag, props });
+
+          const node = window.document.createElement('div');
+          Object.assign(node, props ?? {});
+
+          return node;
+        },
+        dispose: () => undefined,
+      };
+    }
+
+    if (id === CommentsV1.id) return commentsApi([]);
+
+    return extra(id);
   });
 
-  list.services = services;
-  list.artifactId = 'checkout-7f3a';
-  await tick();
-  await tick();
-  await tick();
-  await tick();
+test("the frame mounts the kind's body with its block, and no revision list", async () => {
+  const frame = mount(defineFrameElement);
+  const created: { tag: string; props?: Record<string, unknown> }[] = [];
+  // Two revisions, the second with the agent's change note.
+  const artifacts = {
+    policy: async () => ({ policy: 'proceed' }),
+    revisions: async () => [
+      { artifactId: 'checkout-7f3a', revision: 1, state: 'open' },
+      {
+        artifactId: 'checkout-7f3a',
+        revision: 2,
+        state: 'open',
+        changeNote: 'Smaller button',
+      },
+    ],
+  };
 
-  const rows = [
-    ...(
-      (list as unknown as HTMLElement).shadowRoot as ShadowRoot
-    ).querySelectorAll('.artifacts-revision-row'),
-  ];
+  frame.services = bodiedServices(created, (id) =>
+    id === ArtifactsV1.id ? artifacts : undefined,
+  );
+  frame.block = frameBlock;
+  await settle();
 
-  assert.equal(rows.length, 2);
-  assert.match(rows[0]?.textContent ?? '', /1\/2/);
-  assert.match(rows[0]?.textContent ?? '', /comentário pendente/);
-  assert.match(rows[1]?.textContent ?? '', /Smaller/);
-  assert.match(rows[1]?.textContent ?? '', /autorizado/);
+  const root = shadowOf(frame);
+  const body = created.find((entry) => entry.tag === 'diagram-body');
+
+  assert.equal(
+    (body?.props?.block as { type?: string } | undefined)?.type,
+    'diagram.body/v1',
+  );
+  assert.deepEqual(
+    (body?.props?.block as { data?: unknown } | undefined)?.data,
+    frameBlock.data,
+  );
+  assert.equal(
+    (root.querySelector('.artifacts-orphan') as HTMLElement).hidden,
+    true,
+  );
+  // The body is light DOM slotted into the frame, so the window's sheets
+  // style it; it is not inside the frame's shadow root.
+  const slotted = (frame as unknown as HTMLElement).querySelector(
+    '[slot="body"]',
+  );
+  assert.equal(
+    (slotted as { block?: { type?: string } } | null)?.block?.type,
+    'diagram.body/v1',
+  );
+  assert.equal(root.querySelector('[slot="body"]'), null);
+  assert.ok(root.querySelector('.artifacts-body slot[name="body"]'));
+  // The conversation is the history: the frame lists no revisions, and
+  // creates nothing but the kind's body.
+  assert.deepEqual(
+    created.map((entry) => entry.tag),
+    ['diagram-body'],
+  );
+  assert.doesNotMatch(root.textContent ?? '', /rev \d+\/\d+|Smaller button/);
 });
 
-test('the revision list says when the artifact is not there anymore', async () => {
-  const list = mount(defineRevisionsElement);
-  const services = servicesFor((id) =>
-    id === ArtifactsV1.id
-      ? { read: async () => undefined }
-      : id === CommentsV1.id
-        ? { list: async () => [] }
-        : undefined,
+test('the frame offers to authorize an open revision only under request', async () => {
+  const approvals: unknown[] = [];
+  const state = { policy: 'request' as 'request' | 'proceed' };
+  const artifacts = {
+    policy: async () => ({ policy: state.policy }),
+    revisions: async () => [
+      { artifactId: 'checkout-7f3a', revision: 1, state: 'open' },
+    ],
+    approve: async (input: unknown) => {
+      approvals.push(input);
+    },
+  };
+  const frame = mount(defineFrameElement);
+
+  frame.services = bodiedServices([], (id) =>
+    id === ArtifactsV1.id ? artifacts : undefined,
+  );
+  frame.block = frameBlock;
+  await settle();
+
+  const authorize = shadowOf(frame).querySelector(
+    '.artifacts-authorize',
+  ) as HTMLButtonElement;
+
+  assert.equal(authorize.hidden, false);
+  authorize.click();
+  await settle();
+  assert.deepEqual(approvals, [{ artifactId: 'checkout-7f3a', revision: 1 }]);
+
+  state.policy = 'proceed';
+  frame.block = { ...frameBlock };
+  await settle();
+  assert.equal(authorize.hidden, true);
+});
+
+test('a body that draws its header leaves no bar, and Autorizar below the body', async () => {
+  const artifacts = {
+    policy: async () => ({ policy: 'request' }),
+    revisions: async () => [
+      { artifactId: 'checkout-7f3a', revision: 1, state: 'open' },
+    ],
+    approve: async () => undefined,
+  };
+  const frame = mount(defineFrameElement);
+
+  frame.services = bodiedServices(
+    [],
+    (id) => (id === ArtifactsV1.id ? artifacts : undefined),
+    'body',
+  );
+  frame.block = frameBlock;
+  await settle();
+
+  const root = shadowOf(frame);
+
+  // No title, kind, revision or Comentar of the frame's: the body has them.
+  assert.equal(
+    (root.querySelector('.artifacts-bar') as HTMLElement).hidden,
+    true,
   );
 
-  list.services = services;
-  list.artifactId = 'ghost';
-  await tick();
-  await tick();
+  // Autorizar is still the registry's, under the body.
+  const authorize = root.querySelector(
+    '.artifacts-below .artifacts-authorize',
+  ) as HTMLButtonElement | null;
+  assert.ok(authorize !== null);
+  assert.equal(authorize.hidden, false);
+  assert.equal(
+    (root.querySelector('.artifacts-below') as HTMLElement).hidden,
+    false,
+  );
+});
 
-  const missing = (
-    (list as unknown as HTMLElement).shadowRoot as ShadowRoot
-  ).querySelector('.artifacts-missing') as HTMLElement;
+test('the comment gesture goes to a surface that takes it, else to the body', async () => {
+  const frame = mount(defineFrameElement);
+  const asked: unknown[] = [];
 
-  assert.match(missing?.textContent ?? '', /não está mais disponível/);
+  frame.services = bodiedServices([]);
+  frame.block = frameBlock;
+  await settle();
+
+  const body = (frame as unknown as HTMLElement).querySelector(
+    '[slot="body"]',
+  ) as unknown as { comment?: (detail: unknown) => void };
+
+  body.comment = (detail) => asked.push(detail);
+
+  const comment = shadowOf(frame).querySelector(
+    '.artifacts-comment',
+  ) as HTMLButtonElement;
+  const taken: unknown[] = [];
+  const take = (event: Event) => {
+    taken.push((event as CustomEvent).detail);
+    event.preventDefault();
+  };
+
+  window.document.body.append(frame as never);
+  window.document.addEventListener('artifacts:comment', take as never);
+  comment.click();
+  window.document.removeEventListener('artifacts:comment', take as never);
+  comment.click();
+
+  const detail = { artifactId: 'checkout-7f3a', revision: 1, kind: 'diagram' };
+
+  assert.deepEqual(taken, [detail]);
+  assert.deepEqual(asked, [detail]);
 });

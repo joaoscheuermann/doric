@@ -17,6 +17,29 @@ import { DevHostError } from './bundles.mjs';
 /** The argument a wire message carries: a tuple's first item, or the value. */
 export const first = (input) => (Array.isArray(input) ? input[0] : input);
 
+/**
+ * The scope of a Project-bound call, refused without a `projectId` exactly as
+ * the real host's lease refuses it (`runtime.lease/v1`): a window that forgets
+ * to scope its call fails here as it would against the real host, instead of
+ * landing on the seeded Project by default.
+ */
+export const projectScopeOf = (call) => {
+  const scope = call?.scope;
+
+  if (typeof scope?.projectId !== 'string' || scope.projectId.length === 0) {
+    throw new DevHostError(
+      'invalid_input',
+      'The call needs a projectId in its scope: the Project lease is scoped by it.',
+    );
+  }
+
+  return {
+    projectId: scope.projectId,
+    ...(typeof scope.threadId === 'string' ? { threadId: scope.threadId } : {}),
+    ...(typeof scope.promptId === 'string' ? { promptId: scope.promptId } : {}),
+  };
+};
+
 /** The refusal of a contract the fake host does not answer. */
 export const unavailable = (contract, method) =>
   new DevHostError(
@@ -153,35 +176,81 @@ export const createContracts = ({
   });
 
   // artifacts/v1 -------------------------------------------------------------
-  calls.set('artifacts/v1 create', (input) =>
-    artifacts.create(first(input) ?? {}),
+  // Every Project-bound surface takes the call's scope, and refuses a call
+  // without a Project the way the real host's lease does.
+  const scoped = (handler) => (input, call) =>
+    handler(first(input) ?? {}, projectScopeOf(call));
+
+  calls.set(
+    'artifacts/v1 create',
+    scoped((input, scope) => artifacts.create(input, scope)),
   );
-  calls.set('artifacts/v1 revise', (input) =>
-    artifacts.revise(first(input) ?? {}),
+  calls.set(
+    'artifacts/v1 revise',
+    scoped((input, scope) => artifacts.revise(input, scope)),
   );
-  calls.set('artifacts/v1 read', (input) => artifacts.read(first(input) ?? {}));
-  calls.set('artifacts/v1 list', (input) => artifacts.list(first(input) ?? {}));
-  calls.set('artifacts/v1 approve', (input) =>
-    artifacts.approve(first(input) ?? {}),
+  calls.set(
+    'artifacts/v1 read',
+    scoped((input) => artifacts.read(input)),
   );
-  calls.set('artifacts/v1 apply', (input) =>
-    artifacts.apply(first(input) ?? {}),
+  calls.set(
+    'artifacts/v1 list',
+    scoped((input, scope) => artifacts.list(input, scope)),
   );
-  calls.set('artifacts/v1 policy', () => artifacts.policy());
+  calls.set(
+    'artifacts/v1 revisions',
+    scoped((input) => artifacts.revisions(input)),
+  );
+
+  // artifact.kind/v1 ---------------------------------------------------------
+  // The kinds the host registered, as the window's frame reads them to mount
+  // a kind's body. The fake host runs no host parts, so it answers the one
+  // kind it seeds: papercraft's `preview`, whose body is `<papercraft-preview>`
+  // (`bundles/features/papercraft/src/host/kind.ts`).
+  calls.set('artifact.kind/v1 list', () => [
+    {
+      id: 'preview',
+      title: 'Preview',
+      blockType: 'papercraft.preview/v1',
+      bodyTag: 'papercraft-preview',
+      header: 'body',
+    },
+  ]);
+  calls.set(
+    'artifacts/v1 approve',
+    scoped((input, scope) => artifacts.approve(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 apply',
+    scoped((input, scope) => artifacts.apply(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 policy',
+    scoped(() => artifacts.policy()),
+  );
 
   // comments/v1 --------------------------------------------------------------
-  calls.set('comments/v1 add', (input) => comments.add(first(input) ?? {}));
-  calls.set('comments/v1 list', (input) => comments.list(first(input) ?? {}));
-  calls.set('comments/v1 resolve', (input) =>
-    comments.resolve(first(input) ?? {}),
+  calls.set(
+    'comments/v1 add',
+    scoped((input, scope) => comments.add(input, scope)),
+  );
+  calls.set(
+    'comments/v1 list',
+    scoped((input) => comments.list(input)),
+  );
+  calls.set(
+    'comments/v1 resolve',
+    scoped((input, scope) => comments.resolve(input, scope)),
   );
 
   // papercraft.previews/v1 ---------------------------------------------------
-  calls.set('papercraft.previews/v1 build', (input) =>
-    artifacts.build(first(input) ?? {}),
+  calls.set(
+    'papercraft.previews/v1 build',
+    scoped((input, scope) => artifacts.build(input, scope)),
   );
-  calls.set('papercraft.previews/v1 read', (input) =>
-    artifacts.readPreview(first(input) ?? {}),
+  calls.set(
+    'papercraft.previews/v1 read',
+    scoped((input) => artifacts.readPreview(input)),
   );
 
   // Streams ----------------------------------------------------------------

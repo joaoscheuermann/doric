@@ -1,8 +1,9 @@
-// The pure reducer of `artifacts.*` and `comments.added/v1` events
+// The pure reducer of `artifacts.*` and `comments.*` events
 // (`domain/preview-state.ts`): one PreviewState per preview artifact, one
 // revision per `created`/`revised`, approvals marked, kinds that are not
 // `preview` never claimed, and the registry record resolved to the same shape
-// the window reads first.
+// the window reads first; the comments grouped into threads, each in the
+// state its last word and its resolution leave it in.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -13,6 +14,7 @@ import {
   initialPreviewStates,
   type PreviewLogEvent,
   previewStateOfRecord,
+  threadsOf,
 } from '../../src/client/domain/preview-state.js';
 import type { ArtifactRecord } from '../../src/contracts/index.js';
 
@@ -160,7 +162,7 @@ test('the registry record resolves to the same shape', () => {
   assert.equal(previewStateOfRecord({ ...record, kind: 'diagram' }), undefined);
 });
 
-test('the durable comments of a revision read off the events, in order', () => {
+test('the durable comments of a preview read off the events, on every revision, in order', () => {
   const events: readonly PreviewLogEvent[] = [
     event('artifacts.created/v1', {
       artifactId: 'checkout-7f3a',
@@ -195,17 +197,173 @@ test('the durable comments of a revision read off the events, in order', () => {
     }),
   ];
 
-  const ofRevisionOne = commentsOfEvents(events, 'checkout-7f3a', 1);
+  const comments = commentsOfEvents(events, 'checkout-7f3a');
 
-  assert.equal(ofRevisionOne.length, 1);
-  assert.equal(ofRevisionOne[0]?.commentId, 'c1');
-  assert.equal(ofRevisionOne[0]?.author, 'jao');
-  assert.deepEqual(ofRevisionOne[0]?.anchor, {
+  // Both revisions' comments carry over; another artifact's never enter.
+  assert.deepEqual(
+    comments.map((comment) => [comment.commentId, comment.revision]),
+    [
+      ['c1', 1],
+      ['c3', 2],
+    ],
+  );
+  assert.equal(comments[0]?.author, 'jao');
+  assert.deepEqual(comments[0]?.anchor, {
     form: 'source',
     path: 'src/Checkout.tsx',
     line: 42,
   });
+});
 
-  const ofAny = commentsOfEvents(events, 'checkout-7f3a');
-  assert.equal(ofAny.length, 2);
+const TARGET = {
+  kind: 'artifact',
+  id: 'checkout-7f3a',
+  revision: 1,
+  anchor: { form: 'source', path: 'src/Checkout.tsx', line: 42 },
+};
+
+const added = (
+  commentId: string,
+  promptId: string,
+  extra: Record<string, unknown> = {},
+): PreviewLogEvent => ({
+  type: 'comments.added/v1',
+  promptId,
+  event: { commentId, text: commentId, target: TARGET, ...extra },
+});
+
+const resolved = (commentId: string, value: boolean): PreviewLogEvent => ({
+  type: 'comments.resolved/v1',
+  promptId: 'q-resolve',
+  event: { commentId, resolved: value },
+});
+
+test('a thread keeps its number across revisions, and answers across them', () => {
+  const on = (revision: number) => ({ ...TARGET, revision });
+  const threads = threadsOf(
+    commentsOfEvents(
+      [
+        added('c1', 'q1', { target: on(1) }),
+        added('c2', 'q2', { target: on(2) }),
+        // The agent answers the first thread while revision 2 is current.
+        added('c3', 'q3', { target: on(2), inReplyTo: 'c1', author: 'agent' }),
+      ],
+      'checkout-7f3a',
+    ),
+  );
+
+  assert.deepEqual(
+    threads.map((thread) => [
+      thread.root.commentId,
+      thread.pin,
+      thread.replies.map((reply) => reply.commentId),
+      thread.state,
+    ]),
+    [
+      ['c1', 1, ['c3'], 'await'],
+      ['c2', 2, [], 'open'],
+    ],
+  );
+});
+
+test("the log names each comment's prompt, its root and its latest resolution", () => {
+  const comments = commentsOfEvents(
+    [
+      added('c1', 'q1'),
+      added('c2', 'q2', { author: 'agent', inReplyTo: 'c1' }),
+      resolved('c1', true),
+      resolved('c1', false),
+      added('c3', 'q3'),
+      resolved('c3', true),
+      // A retried write of the same comment is the same comment.
+      added('c3', 'q4'),
+    ],
+    'checkout-7f3a',
+  );
+
+  assert.deepEqual(
+    comments.map((comment) => [
+      comment.commentId,
+      comment.promptId,
+      comment.inReplyTo,
+      comment.resolved,
+    ]),
+    [
+      ['c1', 'q1', undefined, false],
+      ['c2', 'q2', 'c1', false],
+      ['c3', 'q3', undefined, true],
+    ],
+  );
+});
+
+test('comments group into threads, each root with its replies, numbered by root', () => {
+  const threads = threadsOf(
+    commentsOfEvents(
+      [
+        added('r1', 'q1'),
+        added('r2', 'q1'),
+        added('a1', 'q2', { author: 'agent', inReplyTo: 'r1' }),
+        added('u1', 'q3', { inReplyTo: 'r1' }),
+        // A reply whose root is not here has no thread to join.
+        added('lost', 'q3', { inReplyTo: 'elsewhere' }),
+      ],
+      'checkout-7f3a',
+    ),
+  );
+
+  assert.deepEqual(
+    threads.map((thread) => ({
+      root: thread.root.commentId,
+      pin: thread.pin,
+      replies: thread.replies.map((reply) => reply.commentId),
+    })),
+    [
+      { root: 'r1', pin: 1, replies: ['a1', 'u1'] },
+      { root: 'r2', pin: 2, replies: [] },
+    ],
+  );
+});
+
+test('a thread is open, awaits the reader once the agent spoke last, and is done once resolved', () => {
+  const stateOf = (events: readonly PreviewLogEvent[]) =>
+    threadsOf(commentsOfEvents(events, 'checkout-7f3a'))[0]?.state;
+
+  // Only the reader spoke.
+  assert.equal(stateOf([added('r1', 'q1')]), 'open');
+  // The agent answered last.
+  assert.equal(
+    stateOf([
+      added('r1', 'q1'),
+      added('a1', 'q2', { author: 'agent', inReplyTo: 'r1' }),
+    ]),
+    'await',
+  );
+  // The reader answered the agent.
+  assert.equal(
+    stateOf([
+      added('r1', 'q1'),
+      added('a1', 'q2', { author: 'agent', inReplyTo: 'r1' }),
+      added('u1', 'q3', { inReplyTo: 'r1' }),
+    ]),
+    'open',
+  );
+  // Resolved, whoever spoke last.
+  assert.equal(
+    stateOf([
+      added('r1', 'q1'),
+      added('a1', 'q2', { author: 'agent', inReplyTo: 'r1' }),
+      resolved('r1', true),
+    ]),
+    'done',
+  );
+  // Reopened: back to who spoke last.
+  assert.equal(
+    stateOf([
+      added('r1', 'q1'),
+      added('a1', 'q2', { author: 'agent', inReplyTo: 'r1' }),
+      resolved('r1', true),
+      resolved('r1', false),
+    ]),
+    'await',
+  );
 });

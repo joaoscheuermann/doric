@@ -26,6 +26,7 @@ import {
   createRuntimeStores,
   type RuntimeStores,
   runtimeStorageTypes,
+  type ThreadStoreOptions,
 } from '../../src/host/store/index.js';
 
 /** The PostgreSQL the database cases run against; they skip without it. */
@@ -285,8 +286,11 @@ export const testExecutor = {
   },
 };
 
-export const stores = (storage: Storage): RuntimeStores =>
-  createRuntimeStores(storage, { executor: testExecutor });
+export const stores = (
+  storage: Storage,
+  options?: Partial<ThreadStoreOptions>,
+): RuntimeStores =>
+  createRuntimeStores(storage, { executor: testExecutor, ...options });
 
 /** A configuration snapshot as `host-config/v1` answers it. */
 export const snapshot = (model = 'test-model'): DoricConfiguration =>

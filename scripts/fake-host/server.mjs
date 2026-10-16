@@ -128,7 +128,7 @@ const serveBridge = ({ socket, calls, streams, log }) => {
     });
 
   socket.on('call', (message) => {
-    const { id, contract, method, input } = message ?? {};
+    const { id, contract, method, input, scope } = message ?? {};
 
     void (async () => {
       const started = Date.now();
@@ -144,7 +144,9 @@ const serveBridge = ({ socket, calls, streams, log }) => {
       log.call(contract, method, input);
 
       try {
-        const output = await handler(input);
+        // The scope the call carries, as the real host's dispatcher hands it
+        // to a provider; handlers that need a Project refuse without one.
+        const output = await handler(input, { scope });
 
         log.answered(contract, method, Date.now() - started);
         answer(id, output);

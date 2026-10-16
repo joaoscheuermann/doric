@@ -40,9 +40,47 @@ const stampOf = (
     : { path: value };
 };
 
-/** The anchor a clicked element carries: its origin stamp, else its selector. */
-export const anchorOf = (element: Element): CommentAnchor => {
+/**
+ * Where inside its element a comment was clicked, as fractions of the
+ * element's box (`0..1` on each axis): the pin follows the element through
+ * layout changes and any pan/zoom. An extra key of the anchor; the forms and
+ * their meaning are unchanged.
+ */
+export interface AnchorOffset {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The longest text excerpt an anchor records of its element. */
+const EXCERPT_LIMIT = 120;
+
+/** An element's text as an anchor records it: whitespace collapsed, short. */
+export const excerptOf = (text: string): string =>
+  text.replace(/\s+/g, ' ').trim().slice(0, EXCERPT_LIMIT);
+
+/**
+ * The anchor a clicked element carries: its origin stamp, else its selector.
+ * `point`, the content point that was clicked, is recorded as the anchor's `x`
+ * and `y` (keys every form may carry): where the pin goes on a later revision
+ * that no longer has the element. The element's identity beyond its selector
+ * goes with it, for a revision whose edited file moved its line: a `text`
+ * excerpt and `index`, its ordinal among the elements of its selector (an
+ * extra key, like `offset`).
+ */
+export const anchorOf = (
+  element: Element,
+  offset?: AnchorOffset,
+  point?: { readonly x: number; readonly y: number },
+  index?: number,
+): CommentAnchor => {
   const stamp = element.getAttribute(STAMP_ATTRIBUTE);
+  const text = excerptOf(element.textContent ?? '');
+  const at = {
+    ...(text === '' ? {} : { text }),
+    ...(index === undefined ? {} : { index }),
+    ...(offset === undefined ? {} : { offset }),
+    ...(point === undefined ? {} : { x: point.x, y: point.y }),
+  };
 
   if (stamp !== null && stamp !== '') {
     const { path, line } = stampOf(stamp);
@@ -53,6 +91,7 @@ export const anchorOf = (element: Element): CommentAnchor => {
       ...(line === undefined ? {} : { line }),
       selector: selectorOf(element),
       label: element.tagName.toLowerCase(),
+      ...at,
     };
   }
 
@@ -60,8 +99,28 @@ export const anchorOf = (element: Element): CommentAnchor => {
     form: 'selector',
     selector: selectorOf(element),
     label: element.tagName.toLowerCase(),
-    ...(element.textContent ? { text: element.textContent.slice(0, 120) } : {}),
+    ...at,
   };
+};
+
+/** The offset an anchor recorded inside its element, when it is a valid one. */
+export const offsetOf = (anchor: CommentAnchor): AnchorOffset | undefined => {
+  const offset = (anchor as { readonly offset?: unknown }).offset as
+    | { readonly x?: unknown; readonly y?: unknown }
+    | undefined;
+
+  return typeof offset?.x === 'number' && typeof offset.y === 'number'
+    ? { x: offset.x, y: offset.y }
+    : undefined;
+};
+
+/** The ordinal an anchor recorded among its selector's elements, when valid. */
+export const indexOf = (anchor: CommentAnchor): number | undefined => {
+  const index = (anchor as { readonly index?: unknown }).index;
+
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0
+    ? index
+    : undefined;
 };
 
 /** The anchored target of the preview revision a comment is written against. */
@@ -97,14 +156,25 @@ export const pointAnchorOf = (
 });
 
 /** The reading a card shows at the end of its line: `Checkout.tsx:42`, or `espaço em (412, 180)`. */
-export const anchorLabelOf = (anchor: CommentAnchor): string => {
+export const anchorLabelOf = (anchor: {
+  readonly form: CommentAnchor['form'];
+  readonly path?: string;
+  readonly line?: number;
+  readonly selector?: string;
+  readonly x?: number;
+  readonly y?: number;
+  readonly label?: string;
+  readonly text?: string;
+}): string => {
   if (anchor.form === 'source' && anchor.path !== undefined)
     return anchor.line === undefined
       ? anchor.path
       : `${anchor.path}:${String(anchor.line)}`;
 
   if (anchor.form === 'point')
-    return `espaço em (${String(anchor.x ?? 0)}, ${String(anchor.y ?? 0)})`;
+    return `espaço em (${String(Math.round(anchor.x ?? 0))}, ${String(
+      Math.round(anchor.y ?? 0),
+    )})`;
 
   return anchor.selector ?? anchor.label ?? anchor.text ?? '';
 };

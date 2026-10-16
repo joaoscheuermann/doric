@@ -6,7 +6,11 @@ import type { QueueItem } from '../domain/queue.js';
 export interface QueueEdit {
   readonly item: QueueItem;
   readonly revision: number;
+  /** The stored prompt being edited — an envelope keeps its comments on save. */
+  readonly stored: string;
+  /** The reader's words of the stored prompt, as the edit header quotes them. */
   readonly original: string;
+  /** The words the editor holds. */
   readonly text: string;
   readonly draft: SerializedElementNode;
   readonly saving: boolean;

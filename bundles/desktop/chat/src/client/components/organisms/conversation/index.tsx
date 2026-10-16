@@ -37,6 +37,7 @@ import {
 import { withPendingTurns } from '../../../domain/pending-turns.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
+import { CommentThreadsContext } from '../../../hooks/use-comment-threads.js';
 import { useExternalBlocks } from '../../../hooks/use-external-blocks.js';
 import { ConversationThreadContext } from '../../../hooks/use-live-terminal.js';
 import { useThreadChat } from '../../../hooks/use-thread-chat.js';
@@ -65,6 +66,7 @@ import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
 import { PromptEditNode } from './nodes/prompt-edit-node.js';
 import { QueueNode } from './nodes/queue-node.js';
 import { QueuedTurnNode } from './nodes/queued-turn-node.js';
+import { RepliesTurnNode } from './nodes/replies-turn-node.js';
 import { ThinkingTurnNode } from './nodes/thinking-turn-node.js';
 import { ToolTurnNode } from './nodes/tool-turn-node.js';
 import { TurnAuthorNode } from './nodes/turn-author-node.js';
@@ -83,6 +85,7 @@ import { PasteIntoPrompt } from './plugins/paste-into-prompt.js';
 import { PromptLineBreaks } from './plugins/prompt-line-breaks.js';
 import { ReadOnlyBlocksPlugin } from './plugins/read-only-blocks.js';
 import { SendPrompt } from './plugins/send-prompt.js';
+import { StackCaret } from './plugins/stack-caret.js';
 import { TableBlocksPlugin } from './plugins/table-blocks.js';
 import { UndeletableBlocksPlugin } from './plugins/undeletable-blocks.js';
 import { conversationTheme } from './theme.js';
@@ -234,6 +237,7 @@ const defineConversationExtension = (
       PromptEditNode,
       QueuedTurnNode,
       FailureTurnNode,
+      RepliesTurnNode,
       UserPromptNode,
       // The blocks the agent's markdown becomes; a heading, a quote, a list, a
       // fence and a table are nodes the editor has to know to hold the answer's
@@ -380,50 +384,53 @@ export function Conversation({
           transcript grows from the top of the scroll view. */}
         <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
-            <ChatBlocksContext.Provider value={blocksSource}>
-              <LexicalExtensionComposer
-                extension={extension}
-                contentEditable={contentEditable}
-              >
-                <UndeletableBlocksPlugin
-                  isReadOnly={isReadOnlyBlock}
-                  isUndeletable={isUndeletableNode}
-                />
-                <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-                <CaretNavigation />
-                <TableBlocksPlugin />
-                <MarkdownPromptPlugin />
-                <PromptLineBreaks />
-                <PasteIntoPrompt />
-                <InsertThreadTurnNodes
-                  autoFocus={autoFocus}
-                  thread={thread}
-                  turns={turns}
-                  blocks={external.placed}
-                  onResume={chat.resume}
-                  navigating={navigating}
-                  following={following}
-                />
-                <ComposerDraft thread={thread} />
-                <SendPrompt
-                  canStop={running}
-                  promptSignal={promptSignal}
-                  send={chat.prompt}
-                  sendRequest={sendRequest}
-                  threadId={thread.id}
-                  onStop={stop}
-                  onResumeQueue={
-                    !queue.resuming &&
-                    !queue.isError &&
-                    composerAction(running, queue.data) === 'resume'
-                      ? queue.resume
-                      : undefined
-                  }
-                />
-                <EditQueuePrompt threadId={thread.id} />
-                <CommentSelection thread={thread} />
-              </LexicalExtensionComposer>
-            </ChatBlocksContext.Provider>
+            <CommentThreadsContext.Provider value={chat.threads}>
+              <ChatBlocksContext.Provider value={blocksSource}>
+                <LexicalExtensionComposer
+                  extension={extension}
+                  contentEditable={contentEditable}
+                >
+                  <UndeletableBlocksPlugin
+                    isReadOnly={isReadOnlyBlock}
+                    isUndeletable={isUndeletableNode}
+                  />
+                  <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+                  <CaretNavigation />
+                  <TableBlocksPlugin />
+                  <MarkdownPromptPlugin />
+                  <PromptLineBreaks />
+                  <PasteIntoPrompt />
+                  <InsertThreadTurnNodes
+                    autoFocus={autoFocus}
+                    thread={thread}
+                    turns={turns}
+                    blocks={external.placed}
+                    onResume={chat.resume}
+                    navigating={navigating}
+                    following={following}
+                  />
+                  <ComposerDraft thread={thread} />
+                  <SendPrompt
+                    canStop={running}
+                    promptSignal={promptSignal}
+                    send={chat.prompt}
+                    sendRequest={sendRequest}
+                    threadId={thread.id}
+                    onStop={stop}
+                    onResumeQueue={
+                      !queue.resuming &&
+                      !queue.isError &&
+                      composerAction(running, queue.data) === 'resume'
+                        ? queue.resume
+                        : undefined
+                    }
+                  />
+                  <EditQueuePrompt threadId={thread.id} />
+                  <CommentSelection thread={thread} />
+                  <StackCaret />
+                </LexicalExtensionComposer>
+              </ChatBlocksContext.Provider>
+            </CommentThreadsContext.Provider>
           </ConversationThreadContext.Provider>
         </div>
         {/* Inside the scroll view, pinned to it: the rail is absolutely

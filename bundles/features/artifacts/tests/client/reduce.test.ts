@@ -1,7 +1,7 @@
 // The one reducer: `artifacts.*` and the artifact-anchored `comments.*` fold
 // into one state per artifact — the revisions in log order, the current one,
 // the review state, and the comments still pending — and the same fold serves
-// the node, the window and the revision list.
+// the node and the window.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -163,6 +163,24 @@ describe('the artifacts reducer', () => {
     assert.equal(artifact?.approvedRevision, 1);
     assert.equal(artifact?.revisions[0]?.approved, true);
     assert.equal(artifact?.revisions[0]?.applied, true);
+  });
+
+  test('a revision after an approval starts open', () => {
+    const state = reduceArtifacts([
+      created('checkout-7f3a', 1),
+      event(
+        'artifacts.approved/v1',
+        { artifactId: 'checkout-7f3a', revision: 1, scope: 'revision' },
+        2,
+      ),
+      revised('checkout-7f3a', 2, 3),
+    ]);
+
+    const artifact = state.artifacts.get('checkout-7f3a');
+
+    assert.equal(artifact?.state, 'open');
+    assert.equal(artifact?.approvedRevision, 1);
+    assert.equal(artifact?.revisions[1]?.approved, false);
   });
 
   test('counts the comments still pending per revision and per artifact', () => {

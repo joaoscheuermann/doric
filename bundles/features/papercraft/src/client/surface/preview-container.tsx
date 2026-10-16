@@ -1,28 +1,47 @@
 // `preview-container.tsx` — the frame of one preview: the overlay header, the
-// canvas that scrolls behind it, the comment gesture, pan/zoom, selection and
-// layers (spec: "A UI no node e na janela").
+// canvas that fills the frame and flows under it, the comment flow, pan/zoom,
+// selection and layers (spec: "A UI no node e na janela").
 //
-// One surface, two mouldes (`Uma superfície, duas molduras`): the node frame
-// (`chrome: 'node'`) draws the file name, the `[ abrir ]` button and the one
-// comment button in the corner, with a fixed, draggable height; the window
-// frame (`chrome: 'canvas'`) draws the same surface full-screen with the tree
-// on the left and the command bar centred on the bottom edge, and no footer.
-// The node has no approve button: under the `request` policy the conversation
-// carries the request as a reading; the button lives in the window's bar only.
+// One surface, two moldings (`Uma superfície, duas molduras`). In the
+// conversation (`chrome: 'node'`) the surface is the body of the `artifacts`
+// registry's frame, and it draws its own header (the kind declares
+// `header: 'body'`): the frame keeps only `Autorizar` below it. The node is
+// a square — as tall as it is wide. The window
+// (`chrome: 'canvas'`) draws the same surface full-screen, with the tree on
+// the left and the command bar centred on the bottom edge.
+//
+// The comment flow is Figma's: the comment control (or `C` on the focused
+// canvas) arms comment mode; the element under the pointer gets a dashed
+// outline and a label naming it and its source line (`Alt` forces a free
+// point); a click drops a pin with an inline input beside it, and only
+// confirming it (`Enter` or ↑) adds the draft to the Thread's composer stack.
+// A pin that holds its first comment opens its thread: the messages, the
+// state, resolve/reopen, and a reply row whose replies join the stack too. A
+// draft stays a draft until a prompt is sent; `Cmd/Ctrl+Enter` sends the
+// stack now, through chat's own send path.
 //
 // What is view state here — the armed tool, pan/zoom, selection, isolation,
-// hidden layers, pins — is local to the frame; what is durable stays in the
-// events (comments, on flush; the approval, under `request`).
+// hidden layers, the open input — is local to the frame; what is durable stays
+// in the events and is read back through `preview-data.ts`, in the preview's
+// scope. The pins are both: the sent threads of the preview and its drafts,
+// on every revision — a thread carries over to the next revision, keeps its
+// number and re-places its pin through its anchor; a new comment is written
+// against the revision on screen.
+//
+// The node lives inside the conversation, so it never takes the page's wheel
+// or focus by passing over it. The reader's first click on the node only
+// focuses it — the frame takes the app's primary outline and the click does
+// nothing else — and only the focused node shows its controls (the header's
+// buttons, the footer) and the tool it had armed: the cursor, the outlines.
+// That view state survives the blur and returns with the focus; `Esc` with
+// nothing open hands the focus back. The wheel pans only the focused node (or
+// zooms with the modifier). The window is always focused.
 
 import { type Commands, CommandsV1, type Services } from 'bundle/contracts';
-import { Badge } from 'desktop/ui/badge';
-import { Button } from 'desktop/ui/button';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
-import { ExternalLinkIcon, MessageSquarePlusIcon } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -31,45 +50,67 @@ import {
 } from 'react';
 
 import {
-  type ArtifactRecord,
+  ARTIFACT_TARGET_KIND,
   ArtifactsV1,
+  COMMENT_THREAD_OPEN_EVENT,
+  type CommentThreadOpenDetail,
+  callScopeOf,
   OPEN_CANVAS_COMMAND,
-  PAPERCRAFT_COMMENT_KIND,
-  PapercraftPreviewsV1,
-  type PreviewState,
+  type PreviewScope,
   type PreviewTool,
 } from '../../contracts/index.js';
-import { anchorOf, pointAnchorOf } from '../anchor.js';
+import { anchorOf, pointAnchorOf, targetOf } from '../anchor.js';
 import {
   type PreviewController,
   registerController,
+  touchController,
 } from '../canvas-registry.js';
-import type { ComposerItem } from '../chat-contract.js';
 import {
   beginComment,
-  commentStackItemId,
-  composer,
-  type PendingComment,
+  editComment,
   type PendingCommentData,
-  threadIdOfLocation,
+  removeComment,
+  resolveComment,
+  sendComments,
 } from '../comment.js';
 import { CommandToolbar } from './command-toolbar.js';
-import { type CommentPin, PinsLayer } from './pins-layer.js';
+import { NodeFooter } from './node-footer.js';
+import { anchorIndexOf, offsetIn, pinPointOf } from './pin-geometry.js';
+import {
+  type CommentInputProps,
+  type CommentPin,
+  OVERLAY_ATTRIBUTE,
+  PinsLayer,
+} from './pins-layer.js';
+import { ensureRevisionCached, usePreviewData } from './preview-data.js';
+import { PreviewHeader } from './preview-header.js';
 import { PreviewSurface, type SurfaceMode } from './preview-surface.js';
 import {
   type BoundsOf,
   boundsIndex,
   buildSceneGraph,
-  contentBounds,
   hitTest,
   isolateHiddenIds,
   nearestNode,
+  nodeLabel,
   type SceneGraph,
   type SceneNode,
+  visualBounds,
 } from './scene-graph.js';
+import { ThreadPopover } from './thread-popover.js';
+import {
+  anchorTextOf,
+  anchorTitleOf,
+  DETACHED_STEP,
+  nextPinOf,
+  openCountOf,
+  pinsOf,
+  threadViewOf,
+} from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
 import {
   fitViewport,
+  gridBackground,
   IDENTITY,
   toContent,
   type Viewport,
@@ -85,61 +126,125 @@ export type PreviewChrome = 'node' | 'canvas';
 export interface PreviewContainerProps {
   readonly services: Services;
   readonly chrome: PreviewChrome;
+  /** The Project and Thread of the preview: every host call's scope. */
+  readonly scope: PreviewScope | undefined;
   readonly artifactId: string;
   /** The node shows the revision its block was created with; the window opens at the newest. */
   readonly blockRevision?: number;
-  /** The block's title, when chat's projector handed one to the node. */
-  readonly blockTitle?: string;
+  /**
+   * Bumped by each comment gesture of the registry's frame (the node is the
+   * body inside it): every change toggles the comment tool.
+   */
+  readonly commentRequest?: number;
 }
 
-const REQUEST_NOTICE = 'aguardando autorização';
-const APPROVED_NOTICE = 'Autorizado';
 const FALLBACK_NOTICE = 'o preview não carregou · mostrando o markup';
 
-const DEFAULT_NODE_HEIGHT = 280;
-const MIN_NODE_HEIGHT = 120;
-const MAX_NODE_HEIGHT = 800;
+/** The room a fit leaves around the element, clear of the header and footer. */
+const FIT_MARGIN = 48;
 
 const EMPTY_BOUNDS = { x: 0, y: 0, width: 0, height: 0 } as const;
+
+/** The comment balloon the pointer becomes in comment mode; its tip is the hotspot. */
+const COMMENT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M2 22V12a10 10 0 1 1 10 10z" fill="#2563eb" stroke="white" stroke-width="1.5"/></svg>',
+)}") 2 22, crosshair`;
+
+/**
+ * What is open over the canvas, if anything: the inline input of a new
+ * comment, or the thread of a pin that holds its first comment (keyed by its
+ * root's id, which a draft keeps once it is sent).
+ */
+type OpenComment =
+  | { readonly kind: 'new'; readonly data: PendingCommentData }
+  | { readonly kind: 'thread'; readonly rootId: string };
+
+/** The label the armed comment tool shows over an element: `button#pay · Checkout.tsx:42`. */
+export const hoverLabelOf = (node: SceneNode): string => {
+  const element = nodeLabel(node);
+
+  if (node.stamp === undefined) return element;
+
+  const file = node.stamp.path.split('/').pop() ?? node.stamp.path;
+
+  return node.stamp.line === undefined
+    ? `${element} · ${file}`
+    : `${element} · ${file}:${String(node.stamp.line)}`;
+};
+
+/** Copies a text to the clipboard, when the window lets it. */
+const copyText = (text: string): void => {
+  void globalThis.navigator?.clipboard?.writeText(text).catch(() => undefined);
+};
+
+/** Whether an event came from the overlay (pins, the inline input). */
+const fromOverlay = (event: Event): boolean =>
+  (typeof event.composedPath === 'function' ? event.composedPath() : []).some(
+    (part) => part instanceof Element && part.hasAttribute(OVERLAY_ATTRIBUTE),
+  );
 
 /** One frame of a preview: header, canvas, gesture, tree (window), bar (window). */
 export function PreviewContainer({
   services,
   chrome,
+  scope,
   artifactId,
   blockRevision,
-  blockTitle,
+  commentRequest,
 }: PreviewContainerProps) {
-  const [record, setRecord] = useState<ArtifactRecord | undefined>(undefined);
-  const [policy, setPolicy] = useState<'proceed' | 'request'>('proceed');
-  const [preview, setPreview] = useState<PreviewState | undefined>(undefined);
-  const [selectedRevision, setSelectedRevision] = useState<number | undefined>(
-    blockRevision,
-  );
-  const [reloadTick, setReloadTick] = useState(0);
+  const {
+    record,
+    policy,
+    preview,
+    selectedRevision,
+    selectRevision,
+    reload,
+    threads,
+    drafts,
+    reloadComments,
+    canComment,
+    approved,
+  } = usePreviewData({
+    services,
+    chrome,
+    scope,
+    artifactId,
+    ...(blockRevision === undefined ? {} : { blockRevision }),
+  });
 
   const [tool, setTool] = useState<PreviewTool>('select');
   const [viewport, setViewport] = useState<Viewport>(IDENTITY);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [hoverId, setHoverId] = useState<string | undefined>(undefined);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [pins, setPins] = useState<readonly CommentPin[]>([]);
-  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('module');
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('markup');
   const [graphTick, setGraphTick] = useState(0);
-  const [nodeHeight, setNodeHeight] = useState(DEFAULT_NODE_HEIGHT);
-  const [draft, setDraft] = useState<PendingComment | undefined>(undefined);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [open, setOpen] = useState<OpenComment | undefined>(undefined);
+  const [text, setText] = useState('');
+  /** The draft of the open thread whose note the field edits, if any. */
+  const [editing, setEditing] = useState<string | undefined>(undefined);
+  const [showResolved, setShowResolved] = useState(true);
+  const [focused, setFocused] = useState(false);
 
+  /** Whether the frame shows its controls and tools: the window always is. */
+  const active = chrome === 'canvas' || focused;
+
+  const container = useRef<HTMLDivElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
-  const noteFormRef = useRef<HTMLFormElement>(null);
   const viewportRef = useRef(viewport);
   const revisionRef = useRef(selectedRevision);
   const selectedRef = useRef(selectedId);
+  const chromeRef = useRef(chrome);
+  const toolRef = useRef(tool);
+  /** Whether the focus is in the frame, read before the render it causes. */
+  const focusedRef = useRef(false);
   const graphRef = useRef<SceneGraph | undefined>(undefined);
   const boundsRef = useRef<BoundsOf | undefined>(undefined);
-  const heightDrag = useRef<
-    { readonly y: number; readonly height: number } | undefined
-  >(undefined);
+  /** A pointer-down that resolved the open input consumes its click. */
+  const consumeClick = useRef(false);
+  /** A pointer-down that only focused the node consumes its click. */
+  const focusClick = useRef(false);
   const panDrag = useRef<
     | {
         readonly x: number;
@@ -153,99 +258,75 @@ export function PreviewContainer({
   viewportRef.current = viewport;
   revisionRef.current = selectedRevision;
   selectedRef.current = selectedId;
-
-  /* Reading the durable state ---------------------------------------------- */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const next = await services
-        .use(ArtifactsV1)
-        .read(
-          chrome === 'node' && blockRevision !== undefined
-            ? { artifactId, revision: blockRevision }
-            : { artifactId },
-        );
-
-      if (cancelled) return;
-      setRecord(next);
-
-      // The node stays at its block's revision; the window opens at the newest.
-      if (chrome === 'node' && blockRevision !== undefined) return;
-      setSelectedRevision(next?.revision);
-    })();
-
-    void services
-      .use(ArtifactsV1)
-      .policy()
-      .then((answer) => {
-        if (!cancelled) setPolicy(answer.policy);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [services, artifactId, blockRevision, chrome, reloadTick]);
-
-  useEffect(() => {
-    const revision = selectedRevision;
-
-    if (revision === undefined) return;
-    let cancelled = false;
-
-    void services
-      .use(PapercraftPreviewsV1)
-      .read({ artifactId, revision })
-      .then((state) => {
-        if (!cancelled) setPreview(state);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [services, artifactId, selectedRevision, reloadTick]);
+  chromeRef.current = chrome;
+  toolRef.current = tool;
 
   /* The scene graph, derived from what the revision rendered ---------------- */
 
-  const onContent = useCallback((root: ShadowRoot | undefined) => {
-    if (root === undefined) {
-      graphRef.current = undefined;
-      boundsRef.current = undefined;
+  const contentRef = useRef<HTMLElement | null>(null);
 
-      return;
-    }
+  /**
+   * A fresh cache of node bounds, in content coordinates. The artifact's
+   * layout follows the canvas's width (its page is as wide as the canvas), so
+   * a cache is only good for the size it was measured at.
+   */
+  const measureBounds = useCallback(
+    (content: HTMLElement | null) =>
+      boundsIndex((node) => {
+        const rect = node.element.getBoundingClientRect();
+        const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
+        const scale = viewportRef.current.scale;
 
-    const content = root.querySelector(
-      '.papercraft-content',
-    ) as HTMLElement | null;
-    const base: ParentNode = content ?? root;
-    const graph = buildSceneGraph(base);
+        return {
+          x: (rect.x - origin.x) / scale,
+          y: (rect.y - origin.y) / scale,
+          width: rect.width / scale,
+          height: rect.height / scale,
+        };
+      }),
+    [],
+  );
 
-    graphRef.current = graph;
-    boundsRef.current = boundsIndex((node) => {
-      const rect = node.element.getBoundingClientRect();
-      const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
-      const scale = viewportRef.current.scale;
+  const onContent = useCallback(
+    (root: ShadowRoot | undefined) => {
+      if (root === undefined) {
+        graphRef.current = undefined;
+        boundsRef.current = undefined;
+        contentRef.current = null;
 
-      return {
-        x: (rect.x - origin.x) / scale,
-        y: (rect.y - origin.y) / scale,
-        width: rect.width / scale,
-        height: rect.height / scale,
-      };
-    });
-    setGraphTick((tick) => tick + 1);
-  }, []);
+        return;
+      }
+
+      const content = root.querySelector(
+        '.papercraft-content',
+      ) as HTMLElement | null;
+      const base: ParentNode = content ?? root;
+      const graph = buildSceneGraph(base);
+
+      graphRef.current = graph;
+      contentRef.current = content;
+      boundsRef.current = measureBounds(content);
+      setGraphTick((tick) => tick + 1);
+    },
+    [measureBounds],
+  );
+
+  // Path B: the revision's entries reach the desktop's verified cache before
+  // the surface imports its module.
+  const ensure = useCallback(
+    (id: string, revision: number) =>
+      ensureRevisionCached(services, scope, id, revision),
+    [services, scope],
+  );
 
   const onMode = useCallback((mode: SurfaceMode) => {
     setSurfaceMode(mode);
   }, []);
 
   // A hidden layer is view state, applied to the artifact's DOM: hidden nodes
-  // never answer a pointer.
+  // never answer a pointer. The graph is read through a ref, so the readings
+  // that rebuild it are what re-apply the layers.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new graph re-applies the hidden layers
   useEffect(() => {
     for (const node of graphRef.current?.nodes ?? []) {
       (node.element as HTMLElement).style.visibility = hidden.has(node.id)
@@ -254,68 +335,308 @@ export function PreviewContainer({
     }
   }, [hidden, preview, graphTick, selectedRevision]);
 
-  /* The composer stack: the pins of this revision ---------------------------- */
+  /* The frame's comment gesture: each request toggles the comment tool ------ */
+
+  const handledRequest = useRef(commentRequest);
 
   useEffect(() => {
-    const api = composer();
-    const threadId = threadIdOfLocation();
+    if (commentRequest === handledRequest.current) return;
 
-    if (api === undefined || threadId === undefined) return;
+    handledRequest.current = commentRequest;
+    if (!canComment) return;
 
-    let items: readonly ComposerItem[] = [];
+    // Arming the tool from outside chooses the canvas too: its tools only
+    // show on the focused node.
+    if (toolRef.current !== 'comment')
+      wrapper.current?.focus?.({ preventScroll: true });
+    setTool((current) => (current === 'comment' ? 'select' : 'comment'));
+    setOpen(undefined);
+    setText('');
+  }, [commentRequest, canComment]);
 
-    const publish = (): void => {
-      const mine: CommentPin[] = [];
+  /* The pins: the preview's threads, on whatever revision, then its drafts --- */
 
-      for (const item of items) {
-        if (item.kind !== PAPERCRAFT_COMMENT_KIND) continue;
+  // The graph is read through refs; its tick is what changes. A pin whose
+  // anchor no longer resolves is stacked by the content's edge, a fixed
+  // surface step apart whatever the zoom.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: graphTick re-derives the pins over a new graph
+  const pins = useMemo<readonly CommentPin[]>(
+    () =>
+      pinsOf(
+        threads,
+        drafts,
+        showResolved,
+        (anchor, fallback) =>
+          pinPointOf(anchor, graphRef.current, boundsRef.current, fallback),
+        DETACHED_STEP / viewport.scale,
+      ),
+    [threads, drafts, showResolved, graphTick, viewport.scale],
+  );
 
-        const data = item.data as PendingCommentData | undefined;
+  /** What the comment control counts: the open threads and the draft pins. */
+  const commentCount = openCountOf(threads, drafts);
 
-        if (
-          data?.artifactId !== artifactId ||
-          data.revision !== selectedRevision
-        ) {
-          continue;
-        }
+  /** Whether a thread of the preview is resolved: the eye shows then. */
+  const hasResolved = threads.some((thread) => thread.state === 'done');
 
-        mine.push({
-          pin: data.pin,
-          point: data.point,
-          note: item.note,
-        });
+  /** The next pin's number: never one the preview already shows. */
+  const nextPin = (): number => nextPinOf(threads, drafts);
+
+  /** The thread open over the canvas, as its popover shows it. */
+  // A reply's id names its thread too: the thread opens at its root.
+  const openRootId =
+    open?.kind === 'thread'
+      ? (threads.find((candidate) =>
+          candidate.replies.some((reply) => reply.commentId === open.rootId),
+        )?.root.commentId ?? open.rootId)
+      : undefined;
+
+  // A reply answers the root on the root's own target, the revision it was
+  // written on, whatever revision is on screen.
+  const thread =
+    openRootId !== undefined
+      ? threadViewOf(openRootId, threads, drafts, {
+          artifactId,
+          ...(selectedRevision === undefined
+            ? {}
+            : { revision: selectedRevision }),
+        })
+      : undefined;
+
+  /** The preview's title and source, for the stack's line to name. */
+  const refs = {
+    ...(record?.title === undefined ? {} : { title: record.title }),
+    ...(record?.path === undefined ? {} : { source: record.path }),
+  };
+
+  /* The inline input: confirm, cancel, send ----------------------------------- */
+
+  const closeInput = () => {
+    setOpen(undefined);
+    setText('');
+    setEditing(undefined);
+  };
+
+  /** Removes one draft of the stack, and the draft replies that answer it. */
+  const removeDraft = (itemId: string): void => {
+    const ids = [
+      itemId,
+      ...drafts
+        .filter((draft) => draft.inReplyTo === itemId)
+        .map((draft) => draft.id),
+    ];
+
+    for (const id of ids) {
+      void removeComment(services, scope, id).catch(() => undefined);
+    }
+
+    if (open?.kind === 'thread' && open.rootId === itemId) closeInput();
+    if (editing !== undefined && ids.includes(editing)) {
+      setEditing(undefined);
+      setText('');
+    }
+  };
+
+  /**
+   * Confirms what the open field holds. A new note joins the stack as a draft
+   * (only now — nothing touched the stack while it was typed). In a thread, a
+   * reply joins the stack answering the thread's root, and an edit updates its
+   * draft — an emptied one is removed. An empty note confirms nothing.
+   * `close` closes the thread too; a new comment's input always closes.
+   */
+  const confirmInput = async (close = true): Promise<void> => {
+    const current = open;
+    const note = text.trim();
+    const edited = editing;
+
+    if (current?.kind !== 'thread' || close) closeInput();
+    else {
+      setText('');
+      setEditing(undefined);
+    }
+
+    try {
+      if (current?.kind === 'new') {
+        if (note !== '')
+          await beginComment(services, scope, { data: current.data, note });
+
+        return;
       }
 
-      setPins(mine);
+      if (current?.kind !== 'thread') return;
+
+      if (edited !== undefined) {
+        const original = drafts.find((draft) => draft.id === edited);
+
+        if (note === '') removeDraft(edited);
+        else if (original !== undefined && note !== original.note)
+          await editComment(services, scope, edited, note);
+
+        return;
+      }
+
+      if (note === '' || thread === undefined) return;
+
+      await beginComment(services, scope, {
+        data: {
+          target: thread.target,
+          pin: thread.pin,
+          inReplyTo: thread.rootId,
+          refs,
+        },
+        note,
+      });
+    } catch {
+      // The stack is unreachable: the gesture leaves nothing behind.
+    }
+  };
+
+  /** Click outside or focus leaving: a note is kept as a draft, an empty one discarded. */
+  const resolveInput = (): void => {
+    void confirmInput();
+  };
+
+  /** Sends the stack now, after confirming what the open field holds. */
+  const sendNow = async (): Promise<void> => {
+    await confirmInput();
+    await sendComments(services, scope);
+  };
+
+  /** A pin opens its thread; the field opens empty, to reply. */
+  const openPin = (pin: CommentPin) => {
+    if (open?.kind === 'thread' && open.rootId === pin.key) return;
+
+    if (open !== undefined) void confirmInput();
+    setOpen({ kind: 'thread', rootId: pin.key });
+    setText('');
+    setEditing(undefined);
+  };
+
+  /** Loads one draft of the open thread into the field, to edit it. */
+  const editDraft = (itemId: string) => {
+    const draft = drafts.find((candidate) => candidate.id === itemId);
+
+    if (draft === undefined) return;
+
+    setEditing(itemId);
+    setText(draft.note);
+  };
+
+  /** Opens one thread asked for from outside the canvas, and shows the frame. */
+  const showThread = (commentId: string): void => {
+    if (open !== undefined) void confirmInput();
+    setOpen({ kind: 'thread', rootId: commentId });
+    setText('');
+    setEditing(undefined);
+    // A resolved thread opens with its pin shown.
+    if (
+      threads.some(
+        (candidate) =>
+          candidate.root.commentId === commentId && candidate.state === 'done',
+      )
+    )
+      setShowResolved(true);
+    container.current?.scrollIntoView?.({
+      block: 'center',
+      behavior: 'smooth',
+    });
+  };
+
+  const showThreadRef = useRef(showThread);
+  showThreadRef.current = showThread;
+
+  /**
+   * The conversation asks to see a thread (`doric:comment-thread-open`): when
+   * it is one of this preview's, the frame comes into view and opens the
+   * root's thread. Every revision shows every thread, so the window keeps the
+   * revision on screen. Of the conversation's nodes only one answers: the
+   * node of the revision the target names, or — a target without a revision
+   * means the latest — the node of the preview's newest revision, which it
+   * asks the registry for, since a node's own reading may predate a later
+   * revision.
+   */
+  const openFromConversation = (detail: CommentThreadOpenDetail): void => {
+    const revision = detail.target.revision;
+    const own = blockRevision ?? selectedRevision;
+
+    if (detail.target.kind !== ARTIFACT_TARGET_KIND) return;
+    if (detail.target.id !== artifactId) return;
+
+    if (chrome !== 'node') {
+      showThread(detail.commentId);
+
+      return;
+    }
+
+    if (revision !== undefined) {
+      if (revision === own) showThread(detail.commentId);
+
+      return;
+    }
+
+    const known = record?.revisions;
+    const newest = async (): Promise<number | undefined> => {
+      if (scope === undefined) return known;
+
+      try {
+        const latest = await services
+          .use(ArtifactsV1, callScopeOf(scope))
+          .read({ artifactId });
+
+        return latest?.revision ?? known;
+      } catch {
+        return known;
+      }
     };
 
-    // The portrait first, then the deltas — the shape of
-    // `runtime.threads/v1.watchThread`.
-    const subscription = api.watch(threadId, (watch) => {
-      switch (watch.kind) {
-        case 'snapshot':
-          items = watch.items;
-          break;
-        case 'added':
-          items = [...items, watch.item];
-          break;
-        case 'updated':
-          items = items.map((candidate) =>
-            candidate.id === watch.item.id ? watch.item : candidate,
-          );
-          break;
-        case 'removed':
-          items = items.filter((candidate) => candidate.id !== watch.id);
-          break;
-        case 'text':
-          return;
-      }
-
-      publish();
+    void newest().then((latest) => {
+      if (latest !== undefined && latest === own)
+        showThreadRef.current(detail.commentId);
     });
+  };
 
-    return () => subscription.dispose();
-  }, [artifactId, selectedRevision]);
+  const threadOpenRef = useRef(openFromConversation);
+  threadOpenRef.current = openFromConversation;
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const onOpen = (event: Event): void => {
+      const detail = (event as CustomEvent<CommentThreadOpenDetail>).detail;
+
+      if (
+        typeof detail?.commentId !== 'string' ||
+        typeof detail.target?.id !== 'string'
+      )
+        return;
+
+      threadOpenRef.current(detail);
+    };
+
+    document.addEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+
+    return () =>
+      document.removeEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+  }, []);
+
+  /** Resolves or reopens the open thread's sent root, under its own prompt. */
+  const toggleResolved = () => {
+    const root = thread?.sent?.root;
+
+    if (root === undefined) return;
+
+    void resolveComment(services, scope, {
+      commentId: root.commentId,
+      promptId: root.promptId,
+      resolved: !root.resolved,
+    }).then(() => reloadComments());
+  };
+
+  const setCommentMode = (on: boolean) => {
+    if (!on) closeInput();
+    setHoverId(undefined);
+    setTool(on ? 'comment' : 'select');
+  };
 
   /* Pointer questions --------------------------------------------------------- */
 
@@ -333,7 +654,7 @@ export function PreviewContainer({
     });
   };
 
-  const nodeOfEvent = (event: Event): SceneNode | undefined => {
+  const nodeOfEvent = (event: Event, nearest = true): SceneNode | undefined => {
     const graph = graphRef.current;
 
     if (graph === undefined) return undefined;
@@ -371,62 +692,81 @@ export function PreviewContainer({
 
     return (
       hitTest(graph, point, bounds, hidden) ??
-      nearestNode(graph, point, bounds, hidden)
+      (nearest ? nearestNode(graph, point, bounds, hidden) : undefined)
     );
   };
 
-  /* The comment gesture: the click falls into the composer stack ------------- */
+  /**
+   * The element a comment would land on: the one under the pointer, never the
+   * document's own body — empty space is a free point — and none at all while
+   * `Alt` is held, which forces a free point over an element.
+   */
+  const commentNodeOf = (event: MouseEvent): SceneNode | undefined => {
+    if (event.altKey) return undefined;
+
+    const node = nodeOfEvent(event, false);
+
+    return node === undefined || node.tag === 'body' || node.tag === 'html'
+      ? undefined
+      : node;
+  };
+
+  /* The click: select, or drop a pin with its inline input ------------------- */
 
   const gestureClick = (event: MouseEvent) => {
+    // A click whose element left the document as it was handled (a menu item
+    // of an open thread, say) was never a click on the preview.
+    if (event.target instanceof Node && !event.target.isConnected) return;
+    if (fromOverlay(event)) return;
+    if (consumeClick.current) {
+      consumeClick.current = false;
+
+      return;
+    }
     if (tool === 'pan') return;
 
-    const node = nodeOfEvent(event);
+    // The preview is being inspected, not used: a link or a submit under the
+    // pointer must not navigate the window away.
+    event.preventDefault();
 
     if (tool === 'select') {
-      setSelectedId(node?.id);
+      setSelectedId(nodeOfEvent(event)?.id);
 
       return;
     }
 
     const revision = revisionRef.current;
 
-    if (revision === undefined) return;
+    if (revision === undefined || !canComment) return;
 
-    const bounds = boundsRef.current;
+    const node = commentNodeOf(event);
     const point = contentPointOf(event);
+    const box = node === undefined ? undefined : boundsRef.current?.(node);
     const anchor =
       node === undefined
         ? pointAnchorOf(point, nearestNodeOf(point))
-        : anchorOf(node.element);
+        : anchorOf(
+            node.element,
+            box === undefined ? undefined : offsetIn(box, point),
+            point,
+            graphRef.current === undefined
+              ? undefined
+              : anchorIndexOf(graphRef.current, node),
+          );
 
-    const box = node === undefined ? undefined : bounds?.(node);
-    const pinPoint = box === undefined ? point : { x: box.x, y: box.y };
-    const pin = pins.length + 1;
-
-    const pending: PendingComment = {
-      id: commentStackItemId(artifactId, revision, pin),
-      data: { artifactId, revision, anchor, pin, point: pinPoint },
-      note: '',
-    };
-
-    if (composer() !== undefined && threadIdOfLocation() !== undefined) {
-      // The stack is the only place a draft is written; the note is written
-      // there too, above the prompt. Nothing is durable yet.
-      void beginComment(services, pending, originOf())
-        .then(() => {
-          setPins((current) => [
-            ...current.filter((candidate) => candidate.pin !== pin),
-            { pin, point: pinPoint, note: '' },
-          ]);
-        })
-        .catch(() => undefined);
-
-      return;
-    }
-
-    // No stack to join: the gesture keeps the fallback note form, and the
-    // submit records through `comments/v1` directly.
-    setDraft(pending);
+    // The balloon and its input open at the click; the stack is untouched
+    // until the note is confirmed.
+    setOpen({
+      kind: 'new',
+      data: {
+        target: targetOf(artifactId, revision, anchor),
+        pin: nextPin(),
+        point,
+        refs,
+      },
+    });
+    setText('');
+    setEditing(undefined);
   };
 
   const nearestNodeOf = (point: {
@@ -441,52 +781,37 @@ export function PreviewContainer({
     return nearestNode(graph, point, bounds, hidden)?.element;
   };
 
-  /** The canvas the reader clicked: the origin the comment intent bubbles from. */
-  const originOf = (): EventTarget => wrapper.current ?? globalThis;
-
-  const submitDraft = (event: Event) => {
-    event.preventDefault();
-
-    const form = event.target as HTMLFormElement;
-    const input = form.querySelector<HTMLInputElement>(
-      '.papercraft-note-input',
-    );
-    const text = input?.value.trim() ?? '';
-    const pending = draft;
-
-    if (pending === undefined || text === '') return;
-
-    void beginComment(services, { ...pending, note: text }, originOf())
-      .then(() => {
-        setPins((current) => [
-          ...current.filter((candidate) => candidate.pin !== pending.data.pin),
-          { pin: pending.data.pin, point: pending.data.point, note: text },
-        ]);
-      })
-      .catch(() => undefined);
-
-    setDraft(undefined);
-  };
-
-  // The fallback's note form submits natively: the canvas sits under a shadow
-  // root of its own, and a delegated submit that React carries through its own
-  // tree is one more thing a foreign shadow root can break.
-  useEffect(() => {
-    const form = noteFormRef.current;
-
-    if (form === null || form === undefined) return;
-
-    form.addEventListener('submit', submitDraft);
-
-    return () => form.removeEventListener('submit', submitDraft);
-  }, [draft]);
-
   /* Pan with the space bar, zoom with the wheel -------------------------------- */
 
   const onKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === ' ') {
       event.preventDefault();
       setSpaceHeld(true);
+
+      return;
+    }
+
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void sendNow();
+
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (open !== undefined) closeInput();
+      else if (tool === 'comment') setCommentMode(false);
+      // Nothing left to cancel: the node gives the focus back.
+      else if (chrome === 'node') wrapper.current?.blur?.();
+
+      return;
+    }
+
+    const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+
+    if (plain && (event.key === 'c' || event.key === 'C') && canComment) {
+      event.preventDefault();
+      setCommentMode(tool !== 'comment');
     }
   };
 
@@ -507,14 +832,29 @@ export function PreviewContainer({
   });
 
   const onHoverMove = (event: PointerEvent) => {
-    if (tool !== 'comment') return;
+    if (!active || tool !== 'comment' || fromOverlay(event)) return;
 
-    const id = nodeOfEvent(event)?.id;
+    const id = commentNodeOf(event)?.id;
 
     if (id !== hoverId) setHoverId(id);
   };
 
   const onPanPointerDown = (event: PointerEvent) => {
+    if (fromOverlay(event)) return;
+
+    // A click outside the open input resolves it — a note stays as a draft,
+    // an empty one is discarded — and that click starts nothing else.
+    if (open !== undefined) {
+      consumeClick.current = true;
+      resolveInput();
+    }
+
+    // A click is the reader choosing the canvas: it takes the focus (the
+    // space bar and, in the node, the wheel are the canvas's from then on)
+    // and becomes the canvas a keybinding acts on.
+    wrapper.current?.focus?.({ preventScroll: true });
+    touchController(artifactId);
+
     if (!spaceHeld && tool !== 'pan') return;
 
     panDrag.current = {
@@ -559,10 +899,20 @@ export function PreviewContainer({
     const onPointerDown = (event: PointerEvent) =>
       handlersRef.current.onPointerDown(event);
     const onPointerUp = () => handlersRef.current.onPointerUp();
+    const onBlur = () => setSpaceHeld(false);
     const onWheel = (event: WheelEvent): void => {
+      const zoom = event.ctrlKey || event.metaKey;
+
+      // An open thread scrolls its own messages.
+      if (!zoom && fromOverlay(event)) return;
+
+      // In the conversation the wheel scrolls the conversation: the node pans
+      // only once the reader clicked it, and zooms only with the modifier.
+      if (chromeRef.current === 'node' && !zoom && !focusedRef.current) return;
+
       event.preventDefault();
 
-      if (event.ctrlKey || event.metaKey) {
+      if (zoom) {
         const rect = area.getBoundingClientRect();
 
         setViewport((current) =>
@@ -587,8 +937,10 @@ export function PreviewContainer({
     area.addEventListener('pointerdown', onPointerDown);
     area.addEventListener('pointerup', onPointerUp);
     area.addEventListener('wheel', onWheel, { passive: false });
+    area.addEventListener('blur', onBlur);
 
     return () => {
+      area.removeEventListener('blur', onBlur);
       area.removeEventListener('click', onClick);
       area.removeEventListener('pointermove', onPointerMove);
       area.removeEventListener('pointerdown', onPointerDown);
@@ -596,6 +948,59 @@ export function PreviewContainer({
       area.removeEventListener('wheel', onWheel);
     };
   }, []);
+
+  // The node's focus is the frame's: the canvas, the open input, the header's
+  // and the footer's controls all keep it. Unfocused, the first press on the
+  // frame only focuses it — captured before anything inside sees it, the
+  // artifact's own handlers included — and the click it makes is consumed.
+  useEffect(() => {
+    const frame = container.current;
+
+    if (frame === null) return;
+
+    const onFocusIn = () => {
+      focusedRef.current = true;
+      setFocused(true);
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget;
+
+      if (next instanceof Node && frame.contains(next)) return;
+      focusedRef.current = false;
+      setFocused(false);
+    };
+    const focusFrame = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      wrapper.current?.focus?.({ preventScroll: true });
+      touchController(artifactId);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (chromeRef.current !== 'node' || focusedRef.current) return;
+      focusClick.current = true;
+      focusFrame(event);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (chromeRef.current !== 'node') return;
+      if (!focusClick.current && focusedRef.current) return;
+      focusClick.current = false;
+      focusFrame(event);
+    };
+
+    frame.addEventListener('focusin', onFocusIn);
+    frame.addEventListener('focusout', onFocusOut);
+    frame.addEventListener('pointerdown', onPointerDown, { capture: true });
+    frame.addEventListener('click', onClick, { capture: true });
+
+    return () => {
+      frame.removeEventListener('focusin', onFocusIn);
+      frame.removeEventListener('focusout', onFocusOut);
+      frame.removeEventListener('pointerdown', onPointerDown, {
+        capture: true,
+      });
+      frame.removeEventListener('click', onClick, { capture: true });
+    };
+  }, [artifactId]);
 
   handlersRef.current = {
     onClick: gestureClick,
@@ -618,9 +1023,85 @@ export function PreviewContainer({
     };
   }, []);
 
+  /** The last view a fit set; while it is still the view, nobody moved it. */
+  const autoFit = useRef<Viewport | undefined>(undefined);
+
+  /**
+   * Centres what the artifact shows — the element, not the page around it —
+   * scaled down to fit and never blown up. False while nothing is measurable.
+   */
+  const fitContent = useCallback((): boolean => {
+    const graph = graphRef.current;
+    const bounds = boundsRef.current;
+
+    if (graph === undefined || bounds === undefined) return false;
+
+    const content = visualBounds(graph, bounds);
+    const area = areaSize();
+
+    if (content === undefined || area.width <= 0 || area.height <= 0)
+      return false;
+
+    const fitted = fitViewport(content, area, FIT_MARGIN);
+
+    autoFit.current = fitted;
+    setViewport(fitted);
+
+    return true;
+  }, [areaSize]);
+
+  // The canvas changing size relays the artifact out: the cached bounds are
+  // measured again (outlines, pins and hit-tests follow the new layout), and a
+  // view nobody moved since it was fitted is fitted again, so it stays centred.
+  useEffect(() => {
+    const area = wrapper.current;
+
+    if (area === null || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      if (graphRef.current === undefined) return;
+
+      boundsRef.current = measureBounds(contentRef.current);
+      setGraphTick((tick) => tick + 1);
+
+      if (
+        autoFit.current !== undefined &&
+        viewportRef.current === autoFit.current
+      ) {
+        fitContent();
+      }
+    });
+
+    observer.observe(area);
+
+    return () => observer.disconnect();
+  }, [fitContent, measureBounds]);
+
+  // Every revision opens centred: the first time its content is measured, the
+  // view fits it. Pan and zoom after that are the reader's.
+  const centredFor = useRef<string | undefined>(undefined);
+  const contentKey = `${artifactId}@${String(selectedRevision ?? blockRevision ?? 1)}`;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: graphTick is when a revision's content is measured
+  useEffect(() => {
+    if (centredFor.current === contentKey) return;
+    if (fitContent()) centredFor.current = contentKey;
+  }, [contentKey, fitContent, graphTick]);
+
+  // The scope's members, not its identity, which may change every render.
+  const scopeProject = scope?.projectId;
+  const scopeThread = scope?.threadId;
+
   const controller = useMemo<PreviewController>(
     () => ({
       artifactId,
+      scope:
+        scopeProject === undefined
+          ? undefined
+          : {
+              projectId: scopeProject,
+              ...(scopeThread === undefined ? {} : { threadId: scopeThread }),
+            },
       setTool: (next) => setTool(next),
       isolate: () => {
         const graph = graphRef.current;
@@ -659,27 +1140,25 @@ export function PreviewContainer({
         );
       },
       zoomFit: () => {
-        const graph = graphRef.current;
-        const bounds = boundsRef.current;
-
-        if (graph === undefined || bounds === undefined) return;
-
-        const content = contentBounds(graph, bounds);
-        const area = areaSize();
-
-        if (content === undefined || area.width <= 0) return;
-
-        setViewport(fitViewport(content, area));
+        fitContent();
       },
       selectRevision: (revision) => {
         setSelectedId(undefined);
         setHidden(new Set());
-        setSelectedRevision(revision);
+        selectRevision(revision);
       },
       currentRevision: () => revisionRef.current ?? undefined,
-      reload: () => setReloadTick((tick) => tick + 1),
+      reload,
     }),
-    [artifactId, areaSize],
+    [
+      artifactId,
+      areaSize,
+      fitContent,
+      scopeProject,
+      scopeThread,
+      selectRevision,
+      reload,
+    ],
   );
 
   useEffect(() => {
@@ -698,51 +1177,24 @@ export function PreviewContainer({
     [services],
   );
 
-  const open = () => {
-    execute(OPEN_CANVAS_COMMAND, { artifactId });
-  };
+  const canOpen = scope?.threadId !== undefined;
 
-  /* The resizable height of the node ------------------------------------------- */
+  const open_ = () => {
+    if (scope?.threadId === undefined) return;
 
-  const onHeightPointerDown = (event: ReactPointerEvent) => {
-    heightDrag.current = { y: event.clientY, height: nodeHeight };
-    (event.target as Element).setPointerCapture?.(event.pointerId);
-  };
-
-  const onHeightPointerMove = (event: ReactPointerEvent) => {
-    const drag = heightDrag.current;
-
-    if (drag === undefined) return;
-
-    const next = drag.height + (event.clientY - drag.y);
-
-    setNodeHeight(Math.min(MAX_NODE_HEIGHT, Math.max(MIN_NODE_HEIGHT, next)));
-  };
-
-  const onHeightPointerUp = () => {
-    heightDrag.current = undefined;
+    execute(OPEN_CANVAS_COMMAND, {
+      artifactId,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    });
   };
 
   /* What the frame reads for its chrome ----------------------------------------- */
 
-  const title =
-    chrome === 'node'
-      ? (record?.path ?? blockTitle ?? artifactId)
-      : (record?.path ?? record?.title ?? artifactId);
+  // The header names the file (else the title) and the revision on screen.
+  const title = record?.path ?? record?.title ?? artifactId;
 
   const revisionTotal = record?.revisions ?? 1;
-  const approved =
-    selectedRevision !== undefined &&
-    record !== undefined &&
-    record.state === 'approved' &&
-    selectedRevision === record.revision;
-
-  const requestNotice =
-    policy === 'request'
-      ? approved
-        ? APPROVED_NOTICE
-        : REQUEST_NOTICE
-      : undefined;
 
   const selectedNode =
     selectedId === undefined
@@ -751,6 +1203,18 @@ export function PreviewContainer({
 
   const hoverNode =
     hoverId === undefined ? undefined : graphRef.current?.byId.get(hoverId);
+
+  /** The hover label sits on the outline's top edge, inside the canvas. */
+  const hoverLabelPlacement = (node: SceneNode) => {
+    const box = boundsRef.current?.(node) ?? EMPTY_BOUNDS;
+    const left = box.x * viewport.scale + viewport.tx;
+    const top = box.y * viewport.scale + viewport.ty;
+
+    return {
+      left: `${String(Math.max(4, left))}px`,
+      top: `${String(top >= 22 ? top - 20 : top + box.height * viewport.scale + 4)}px`,
+    };
+  };
 
   const outlineOf = (node: SceneNode | undefined) => {
     if (node === undefined || boundsRef.current === undefined)
@@ -766,105 +1230,191 @@ export function PreviewContainer({
     };
   };
 
+  /* The open inline input, positioned on its pin -------------------------------- */
+
+  const input: CommentInputProps | undefined =
+    open?.kind !== 'new' || open.data.point === undefined
+      ? undefined
+      : {
+          point:
+            pinPointOf(
+              open.data.target.anchor,
+              graphRef.current,
+              boundsRef.current,
+              open.data.point,
+            ) ?? open.data.point,
+          value: text,
+          onChange: setText,
+          onConfirm: () => void confirmInput(),
+          onCancel: closeInput,
+          onSend: () => void sendNow(),
+          onBlurOutside: resolveInput,
+        };
+
+  /* The open thread, beside its pin ---------------------------------------------- */
+
+  const threadPoint =
+    thread === undefined
+      ? undefined
+      : (pins.find((pin) => pin.key === thread.rootId)?.point ??
+        pinPointOf(
+          thread.target.anchor,
+          graphRef.current,
+          boundsRef.current,
+          thread.point,
+        ));
+
+  const threadPopover =
+    thread === undefined || threadPoint === undefined ? null : (
+      <ThreadPopover
+        point={threadPoint}
+        viewport={viewport}
+        area={areaSize()}
+        pin={thread.pin}
+        title={anchorTitleOf(thread.target.anchor, record?.path)}
+        anchor={anchorTextOf(thread.target.anchor, thread.target.revision)}
+        messages={thread.messages}
+        {...(thread.sent === undefined
+          ? {}
+          : { state: thread.sent.state, onResolve: toggleResolved })}
+        canResolve={
+          scope?.threadId !== undefined &&
+          thread.sent?.root.promptId !== undefined
+        }
+        showResolved={showResolved}
+        onToggleShowResolved={() => setShowResolved((shown) => !shown)}
+        value={text}
+        editing={editing !== undefined}
+        onChange={setText}
+        onConfirm={() => void confirmInput(false)}
+        onCancel={closeInput}
+        onClose={resolveInput}
+        onSend={() => void sendNow()}
+        onEdit={editDraft}
+        onRemove={removeDraft}
+        onCopy={copyText}
+      />
+    );
+
   return (
     <TooltipProvider>
       <div
+        ref={container}
         className={cn(
+          // `papercraft-container` carries the chrome's face (styles.css).
           'papercraft-container relative overflow-hidden rounded-lg border border-border bg-card',
-          chrome === 'node' && 'w-full',
+          // The node is a square: as tall as the conversation is wide. Every
+          // child is absolute, so the ratio is the container's own.
+          chrome === 'node' && 'aspect-square w-full',
           chrome === 'canvas' && 'h-full w-full rounded-none border-0',
+          // The focused node says so in the app's primary colour.
+          chrome === 'node' && focused && 'outline-2 outline-primary',
         )}
         data-chrome={chrome}
         data-tool={tool}
+        data-active={active ? 'true' : 'false'}
       >
-        <div className="papercraft-header absolute inset-x-0 top-0 z-10 flex h-8 items-center gap-2 border-b border-border/60 bg-background/80 px-2 backdrop-blur">
-          <span
-            className={cn(
-              'truncate font-medium',
-              chrome === 'canvas' && 'ml-(--doric-safe-left)',
-            )}
-          >
-            {title}
-          </span>
-          {requestNotice === undefined ? null : (
-            <span
-              className="papercraft-request shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-              data-testid="papercraft-request"
-            >
-              {requestNotice}
-            </span>
-          )}
-          {chrome === 'node' ? (
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              <span
-                className="papercraft-revision font-mono text-[10px] text-muted-foreground tabular-nums"
-                data-testid="papercraft-revision"
-              >
-                rev {String(selectedRevision ?? '–')}/{String(revisionTotal)}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label="abrir"
-                data-testid="papercraft-open"
-                onClick={open}
-              >
-                <ExternalLinkIcon aria-hidden="true" />
-                abrir
-              </Button>
-            </span>
-          ) : null}
-        </div>
+        <PreviewHeader
+          chrome={chrome}
+          title={title}
+          controls={active}
+          {...(selectedRevision === undefined
+            ? {}
+            : { revision: selectedRevision })}
+          canOpen={canOpen}
+          onOpen={open_}
+          commentActive={tool === 'comment'}
+          canComment={canComment}
+          commentCount={commentCount}
+          onToggleComment={() => setCommentMode(tool !== 'comment')}
+          {...(hasResolved
+            ? {
+                resolvedToggle: {
+                  shown: showResolved,
+                  onToggle: () => setShowResolved((shown) => !shown),
+                },
+              }
+            : {})}
+          draftCount={drafts.length}
+          onSend={() => void sendNow()}
+        />
 
-        {/* The canvas: the transform the content and the pins ride. Its role
-            is an interactive graphical region — the canvas owns the space
-            bar while the pointer is over it. */}
+        {/* The canvas: the transform the content and the pins ride. It fills
+            the frame and flows under the header. Its role is an interactive
+            graphical region — the canvas owns the space bar and its keys once
+            the reader clicked it. */}
         <div
           ref={wrapper}
           role="application"
           aria-label="canvas do preview"
           tabIndex={-1}
           className={cn(
-            'papercraft-canvas absolute overflow-hidden',
-            chrome === 'node' && 'top-8 right-0 bottom-1.5 left-0',
-            chrome === 'canvas' &&
-              'top-(--doric-titlebar-height) right-0 bottom-0 left-0',
-            (spaceHeld || tool === 'pan') && 'cursor-grab',
+            'papercraft-canvas absolute inset-0 overflow-hidden outline-none',
+            active && (spaceHeld || tool === 'pan') && 'cursor-grab',
             panDrag.current !== undefined && 'cursor-grabbing',
           )}
-          style={
-            chrome === 'node'
-              ? { height: `${String(nodeHeight)}px` }
-              : undefined
-          }
+          // The dot grid rides the viewport, so it pans and zooms with the
+          // content over the container's own background colour.
+          style={{
+            ...gridBackground(viewport),
+            ...(active && tool === 'comment' && !spaceHeld
+              ? { cursor: COMMENT_CURSOR }
+              : {}),
+          }}
           onKeyDown={onKeyDown}
           onKeyUp={onKeyUp}
-          onMouseEnter={() => wrapper.current?.focus?.()}
         >
           <div
             className="papercraft-viewport absolute inset-0"
-            style={{ transform: viewportTransform(viewport) }}
+            style={{
+              transform: viewportTransform(viewport),
+              // The viewport math maps content to surface from the top-left
+              // corner (`toContent`, `zoomAt`): so must the transform.
+              transformOrigin: '0 0',
+            }}
           >
             <PreviewSurface
               artifactId={artifactId}
               revision={selectedRevision ?? blockRevision ?? 1}
               markup={preview?.markup}
+              entries={preview?.files.map((file) => file.path)}
+              ensure={ensure}
               onContent={onContent}
               onMode={onMode}
+              // The comment balloon (and the pan hand) stays over the
+              // artifact's own elements, whatever cursor they declare.
+              lockCursor={
+                active && (tool === 'comment' || tool === 'pan' || spaceHeld)
+              }
             />
           </div>
 
-          {/* What the armed comment points at, before the click. */}
-          {tool === 'comment' && hoverNode !== undefined ? (
-            <div
-              data-testid="papercraft-hover"
-              className="pointer-events-none absolute z-10 border-2 border-primary/60"
-              style={outlineOf(hoverNode)}
-            />
+          {/* What the armed comment lands on, before the click: a dashed
+              outline, never the selection's solid one, and a label naming
+              the element and the source line it came from — the label only
+              while nothing is open over the canvas, so it never covers the
+              input, its pending pin or a thread. */}
+          {active && tool === 'comment' && hoverNode !== undefined ? (
+            <>
+              <div
+                data-testid="papercraft-hover"
+                className="pointer-events-none absolute z-10 rounded-sm border-[1.5px] border-dashed border-primary"
+                style={outlineOf(hoverNode)}
+              />
+              {open === undefined ? (
+                <span
+                  data-testid="papercraft-hover-label"
+                  className="pointer-events-none absolute z-10 rounded-sm bg-primary px-1.5 font-mono text-[10.5px] leading-4 whitespace-nowrap text-primary-foreground"
+                  style={hoverLabelPlacement(hoverNode)}
+                >
+                  {hoverLabelOf(hoverNode)}
+                </span>
+              ) : null}
+            </>
           ) : null}
 
           {/* The selection: the element with its outline. */}
-          {selectedNode !== undefined ? (
+          {active && selectedNode !== undefined ? (
             <div
               data-testid="papercraft-selection"
               className="pointer-events-none absolute z-10 border-2 border-primary"
@@ -872,7 +1422,16 @@ export function PreviewContainer({
             />
           ) : null}
 
-          <PinsLayer pins={pins} viewport={viewport} />
+          <PinsLayer
+            pins={pins}
+            viewport={viewport}
+            area={areaSize()}
+            {...(input === undefined ? {} : { input })}
+            {...(thread === undefined ? {} : { activeKey: thread.rootId })}
+            onOpenPin={openPin}
+          >
+            {threadPopover}
+          </PinsLayer>
         </div>
 
         {/* The one-line notice of a module that did not load (decision 10). */}
@@ -885,53 +1444,13 @@ export function PreviewContainer({
           </div>
         ) : null}
 
-        {/* The fallback's note form: only without a composer stack. */}
-        {draft === undefined ? null : (
-          <form
-            ref={noteFormRef}
-            className="papercraft-note absolute inset-x-0 bottom-2 z-10 mx-auto flex w-fit gap-1"
-            data-testid="papercraft-note"
-          >
-            <input
-              type="text"
-              className="papercraft-note-input h-7 w-56 rounded border border-border bg-background px-2 text-xs"
-              placeholder="Comente o elemento…"
-            />
-            <Button type="submit" size="sm">
-              Comentar
-            </Button>
-          </form>
-        )}
-
-        {/* The node's one comment button, in the corner. */}
-        {chrome === 'node' ? (
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-pressed={tool === 'comment'}
-            data-testid="papercraft-comment"
-            className="absolute right-2 bottom-2 z-10 rounded-full"
-            onClick={() => setTool(tool === 'comment' ? 'select' : 'comment')}
-          >
-            <MessageSquarePlusIcon aria-hidden="true" />
-            {pins.length === 0 ? null : (
-              <Badge
-                variant="secondary"
-                className="ml-1 h-4 min-w-4 px-0.5 text-[9px]"
-              >
-                {String(pins.length)}
-              </Badge>
-            )}
-          </Button>
-        ) : null}
-
-        {/* The node's fixed height is the reader's, dragged. */}
-        {chrome === 'node' ? (
-          <div
-            className="papercraft-resize absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-row-resize"
-            onPointerDown={onHeightPointerDown}
-            onPointerMove={onHeightPointerMove}
-            onPointerUp={onHeightPointerUp}
+        {chrome === 'node' && active ? (
+          <NodeFooter
+            zoom={zoomPercent(viewport)}
+            onZoomOut={controller.zoomOut}
+            onZoomReset={controller.zoomReset}
+            onZoomIn={controller.zoomIn}
+            onCenter={controller.zoomFit}
           />
         ) : null}
 
@@ -957,7 +1476,7 @@ export function PreviewContainer({
               artifactId={artifactId}
               execute={execute}
               tool={tool}
-              pinCount={pins.length}
+              pinCount={commentCount}
               hasSelection={selectedId !== undefined}
               hasHidden={hidden.size > 0}
               zoom={zoomPercent(viewport)}

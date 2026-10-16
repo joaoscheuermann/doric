@@ -28,6 +28,7 @@ import {
   nodeLabel,
   type SceneGraph,
   stampLabel,
+  visualBounds,
 } from '../../src/client/surface/scene-graph.js';
 
 const mount = (markup: string): SceneGraph => {
@@ -161,4 +162,36 @@ test('the content box wraps every node, for ajustar', () => {
     width: 400,
     height: 300,
   });
+});
+
+test('centring frames the element, not the page wrapper around it', () => {
+  // A page-wide `main` centring a card across the whole height: its box is
+  // the page, so the view centres the card inside it.
+  const graph = mount(
+    '<main><div class="card"><h1>T</h1><p>x</p></div></main>',
+  );
+
+  const bounds = boundsOf({
+    n0: { x: 0, y: 0, width: 600, height: 900 },
+    n1: { x: 150, y: 350, width: 300, height: 200 },
+    n2: { x: 170, y: 370, width: 260, height: 40 },
+    n3: { x: 170, y: 420, width: 260, height: 20 },
+  });
+
+  assert.deepEqual(visualBounds(graph, bounds), {
+    x: 150,
+    y: 350,
+    width: 300,
+    height: 200,
+  });
+
+  // Nothing but the page measurable: the page is what is centred.
+  const lone = mount('<main></main>');
+  assert.deepEqual(
+    visualBounds(
+      lone,
+      boundsOf({ n0: { x: 0, y: 0, width: 600, height: 900 } }),
+    ),
+    { x: 0, y: 0, width: 600, height: 900 },
+  );
 });

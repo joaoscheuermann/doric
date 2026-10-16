@@ -16,6 +16,8 @@ export interface CommentTargetKey {
 /** One comment as the registry answers it. */
 export interface Comment {
   readonly commentId: string;
+  /** The target the comment names; its revision groups a list by revision. */
+  readonly target?: CommentTargetKey;
   readonly text: string;
   readonly resolved: boolean;
   readonly createdAt: string;

@@ -121,6 +121,15 @@ export interface ProjectStore {
 }
 
 export interface ThreadStore {
+  /**
+   * Folds what other bundles appended to the Thread's stream (through
+   * `events/v1`) after the document's `lastSequence` into the document, in
+   * one commit, and publishes those events once that commit lands. Nothing
+   * to fold, or no such Thread, writes nothing. Concurrent runtime commits on
+   * the same Thread are serialized with it, so each event is folded — and
+   * published — by exactly one commit, in sequence order.
+   */
+  catchUp(id: string): Promise<void>;
   queue(id: string): Promise<ThreadQueue | undefined>;
   usage(id: string): Promise<ThreadUsage | undefined>;
   /** A child inherits its parent's working directory and hint as a snapshot. */
