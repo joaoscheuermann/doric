@@ -1,7 +1,7 @@
 // The `chat` bundle's desktopMain part: it provides `chat.composer/v1`, the
 // composer's state in the main process — the draft text and the comment stack
 // of every Thread, one state shared by every window (`docs/architecture/bundles/
-// papercraft.md`, "Comentários acima do prompt, rascunho no host"). It also owns
+// papercraft/README.md`, "Comentários acima do prompt, rascunho no host"). It also owns
 // the `message` comment kind, the proof that a second consumer rides the same
 // stack: the flush of that kind is registered here, in the environment the
 // flush runs in, and any bundle that owns a kind registers its own flush the

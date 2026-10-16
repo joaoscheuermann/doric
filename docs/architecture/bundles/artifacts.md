@@ -1,6 +1,6 @@
 # Artefatos
 
-**Estado:** parcialmente implementado. Parte da [arquitetura de bundles](../bundles.md); `GROUNDING.md` continua sendo o contrato da implementação atual. Já existem: o bundle `artifacts` (`bundles/features/artifacts`) com `artifacts/v1` (incluindo `revisions` e o método só de host `awaitApproval`), o registro `artifact.kind/v1`, o cache desktop `artifacts.cache/v1`, os quatro eventos, a política de revisão por Project, a moldura no desktop com o "Autorizar" sob `request` (sem lista de revisões: a conversa é o histórico), e o tipo `preview` do [papercraft](./papercraft.md) como corpo dentro dela. Diferenças em relação ao texto abaixo: a cópia de trabalho guarda os bytes em `.doric/artifacts/<artifactId>/<revision>/<path>` (leituras caem no layout antigo `<artifactId>/<path>`); `artifact.kind/v1` tem um provedor só, com `register` devolvendo um Disposable, em vez de cardinalidade `many`; o tipo declara o corpo com `bodyTag` e, com `header: 'body'`, desenha o próprio cabeçalho; a configuração se chama `artifacts.review-policy/v1` e guarda o mapa por Project dentro de um documento só; os eventos `created`/`revised` carregam também `entries`, `source`, `path`, `entry` e `notes`; uma aprovação ou aplicação vinda da janela cai no log da Thread e do prompt que criaram o artefato; e os `requires` do manifesto não incluem `tools/v1`, `skills/v1` nem `storage/v1`. Ainda não existem: quem emite `artifacts.applied/v1`, retenção e órfãos (decisões 7 e 8) e tipos além do `preview`.
+**Estado:** parcialmente implementado. Parte da [arquitetura de bundles](../bundles.md); `GROUNDING.md` continua sendo o contrato da implementação atual. Já existem: o bundle `artifacts` (`bundles/features/artifacts`) com `artifacts/v1` (incluindo `revisions` e o método só de host `awaitApproval`), o registro `artifact.kind/v1`, o cache desktop `artifacts.cache/v1`, os quatro eventos, a política de revisão por Project, a moldura no desktop com o "Autorizar" sob `request` (sem lista de revisões: a conversa é o histórico), e o tipo `preview` do [papercraft](./papercraft/README.md) como corpo dentro dela. Diferenças em relação ao texto abaixo: a cópia de trabalho guarda os bytes em `.doric/artifacts/<artifactId>/<revision>/<path>` (leituras caem no layout antigo `<artifactId>/<path>`); `artifact.kind/v1` tem um provedor só, com `register` devolvendo um Disposable, em vez de cardinalidade `many`; o tipo declara o corpo com `bodyTag` e, com `header: 'body'`, desenha o próprio cabeçalho; a configuração se chama `artifacts.review-policy/v1` e guarda o mapa por Project dentro de um documento só; os eventos `created`/`revised` carregam também `entries`, `source`, `path`, `entry` e `notes`; uma aprovação ou aplicação vinda da janela cai no log da Thread e do prompt que criaram o artefato; e os `requires` do manifesto não incluem `tools/v1`, `skills/v1` nem `storage/v1`. Ainda não existem: quem emite `artifacts.applied/v1`, retenção e órfãos (decisões 7 e 8) e tipos além do `preview`.
 
 ## Resumo
 
@@ -167,9 +167,9 @@ A política é do Project porque um repositório de produção pode querer o por
 
 ## A tool do agente
 
-**O tipo possui a sua tool.** O `preview` já tem `papercraft_preview` ([papercraft](./papercraft.md#tool-do-agente)), e um tipo futuro traz a sua: a forma da entrada, a validação e o materializar são do tipo, e uma tool genérica de artefato seria um schema de união ou um passthrough — pior nos dois casos. O bundle `artifacts` possui o registro, não a produção de cada tipo; é a mesma divisão de "o dono de uma operação define os hooks dela".
+**O tipo possui a sua tool.** O `preview` já tem `papercraft_preview` ([papercraft](./papercraft/README.md#tool-do-agente)), e um tipo futuro traz a sua: a forma da entrada, a validação e o materializar são do tipo, e uma tool genérica de artefato seria um schema de união ou um passthrough — pior nos dois casos. O bundle `artifacts` possui o registro, não a produção de cada tipo; é a mesma divisão de "o dono de uma operação define os hooks dela".
 
-A tool **não bloqueia** sob a política padrão: ela publica o artefato, devolve o estado resolvido e o agente segue. Quem ensina **quando** propor um artefato é a skill do tipo, não o corpo da tool — a divisão que o [papercraft](./papercraft.md#skill-do-agente) já faz.
+A tool **não bloqueia** sob a política padrão: ela publica o artefato, devolve o estado resolvido e o agente segue. Quem ensina **quando** propor um artefato é a skill do tipo, não o corpo da tool — a divisão que o [papercraft](./papercraft/README.md#skill-do-agente) já faz.
 
 ## Antigravity como referência
 
@@ -194,7 +194,7 @@ O que **não** se copia: a taxonomia de tipos (plano, walkthrough, diff, diagram
 | `desktopMain` | O cache verificado das entradas compiladas em `userData/artifacts/<artifactId>@<revision>/` e o prefixo `/artifacts/` no handler do protocolo                                                    |
 | `client`      | A moldura do node, o redutor de `artifacts.*` e a ação de comentar                                                                                                                               |
 
-O bundle entra em `enabled` na composição (`app/backend/doric-host/composition.json`), como o [papercraft](./papercraft.md) descreve para si. Nenhum contrato novo é `doric.*`: `artifacts/v1` e `artifact.kind/v1` são contratos de bundle e podem ser substituídos como qualquer um sem prefixo ([serviços entre bundles](./services-and-channels.md)).
+O bundle entra em `enabled` na composição (`app/backend/doric-host/composition.json`), como o [papercraft](./papercraft/README.md) descreve para si. Nenhum contrato novo é `doric.*`: `artifacts/v1` e `artifact.kind/v1` são contratos de bundle e podem ser substituídos como qualquer um sem prefixo ([serviços entre bundles](./services-and-channels.md)).
 
 ## Etapas de entrega
 
@@ -206,7 +206,7 @@ O bundle entra em `enabled` na composição (`app/backend/doric-host/composition
 
 ## Decisões em aberto
 
-1. **Decidido: o diretório é `/workspace/.doric/artifacts/<artifactId>/`** — no root do workspace do Project, que as Threads compartilham, alcançado pelo lease, ignorado pelo Git por padrão. Fecha a decisão 4 do [papercraft](./papercraft.md#decisões-em-aberto).
+1. **Decidido: o diretório é `/workspace/.doric/artifacts/<artifactId>/`** — no root do workspace do Project, que as Threads compartilham, alcançado pelo lease, ignorado pelo Git por padrão. Fecha a decisão 4 do [papercraft](./papercraft/README.md#decisões-em-aberto).
 2. **Decidido: os eventos são `artifacts.*`, com `kind` no payload**, e o comentário **não** é um deles: ele é do registro de [comentários](./comments.md), com o artefato como alvo.
 3. **Decidido: `proceed` é o padrão** (YOLO) e `request` é escolha do Project. O que resta é o que `proceed` significa em detalhe.
 4. **O que `proceed` significa.** Se o agente publica o artefato e segue sem gravar nada de aprovação, se um comentário chegando depois gera uma revisão automática, e se o `applied` sai no fim do turno ou quando o agente decide.
@@ -232,5 +232,5 @@ O bundle entra em `enabled` na composição (`app/backend/doric-host/composition
 - [Composição e distribuição pelo host](./composition-and-distribution.md): o catálogo, o cache verificado e o sentido de "artefato" na plataforma.
 - [Serviços entre bundles e canais de mensagens](./services-and-channels.md): cardinalidade `one` e `many`, `desktopScope`, `expose: 'desktop'`.
 - [Contextos e capacidades](./contexts.md): o `call` com `scope` e o `caller` de cada salto.
-- [Papercraft](./papercraft.md): o tipo `preview`, o canvas no node e na janela.
+- [Papercraft](./papercraft/README.md): o tipo `preview`, o canvas no node e na janela.
 - [Comentários](./comments.md): o spec do conceito que o artefato usa como estado de revisão.

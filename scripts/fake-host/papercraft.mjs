@@ -219,7 +219,7 @@ export const loadPapercraftBuild = async ({ root, override, log }) => {
 /**
  * The bytes of the payload: the Project-relative source path first (what the
  * records carry and `files/v1` would read), the artifact directory second (the
- * layout `docs/architecture/bundles/papercraft.md` shows for a payload the kind
+ * layout `docs/architecture/bundles/papercraft/README.md` shows for a payload the kind
  * writes itself).
  */
 const payloadOf = async ({ workspaceRoot, dir, path }) => {

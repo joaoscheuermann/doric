@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="pt-BR">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Papercraft Comment Replies</title>
+  <meta name="claude:viewport-fit-sides" content="cover" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Noto+Sans:wght@400;500;600&display=swap"
+  />
+  <style>
+    /* Layout: one column of proposals; each proposal is a frame holding a Doric conversation excerpt
+   (author lines, no bubbles, tool rows with a left guide). Tokens mirror packages/desktop/src/styles/tokens.css. */
+    :root {
+      --background: #ffffff;
+      --foreground: #333333;
+      --card: #f2f2f2;
+      --sidebar: #f2f2f2;
+      --muted: #eaeaea;
+      --muted-foreground: #666666;
+      --border: #e2e2e2;
+      --primary: oklch(0.55 0.145 258);
+      --primary-soft: oklch(0.55 0.145 258 / 0.12);
+      --warning: oklch(0.52 0.15 75);
+      --warning-soft: oklch(0.52 0.15 75 / 0.14);
+      --green: oklch(62% 0.16 150);
+      --green-soft: oklch(62% 0.16 150 / 0.14);
+      --hover: oklab(0% 0 0 / 0.05);
+      --radius: 6px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Noto Sans', sans-serif;
+      --font-conversation: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme='light']) {
+        --background: #222222;
+        --foreground: #e9e9e9;
+        --card: #2a2a2a;
+        --sidebar: #2a2a2a;
+        --muted: #333333;
+        --muted-foreground: #b2b2b2;
+        --border: #373737;
+        --primary: oklch(0.67 0.17 258);
+        --primary-soft: oklch(0.67 0.17 258 / 0.2);
+        --warning: oklch(0.8 0.16 78);
+        --warning-soft: oklch(0.8 0.16 78 / 0.16);
+        --green: oklch(74% 0.18 150);
+        --green-soft: oklch(74% 0.18 150 / 0.16);
+        --hover: oklab(100% 0 0 / 0.06);
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme='dark'] {
+      --background: #222222;
+      --foreground: #e9e9e9;
+      --card: #2a2a2a;
+      --sidebar: #2a2a2a;
+      --muted: #333333;
+      --muted-foreground: #b2b2b2;
+      --border: #373737;
+      --primary: oklch(0.67 0.17 258);
+      --primary-soft: oklch(0.67 0.17 258 / 0.2);
+      --warning: oklch(0.8 0.16 78);
+      --warning-soft: oklch(0.8 0.16 78 / 0.16);
+      --green: oklch(74% 0.18 150);
+      --green-soft: oklch(74% 0.18 150 / 0.16);
+      --hover: oklab(100% 0 0 / 0.06);
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      background: var(--sidebar);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      padding-block: 32px 64px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+    }
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      text-wrap: balance;
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .lede {
+      color: var(--muted-foreground);
+      margin: 0;
+      max-width: 64ch;
+    }
+    .tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .tag.dim {
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+    .option {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .option > p {
+      margin: 0;
+      color: var(--muted-foreground);
+      max-width: 68ch;
+    }
+    .pros {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted-foreground);
+      display: grid;
+      gap: 2px;
+    }
+    .pros b {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+
+    /* The conversation frame */
+    .frame {
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px clamp(16px, 4vw, 40px) 20px;
+      font-family: var(--font-conversation);
+      font-size: 14px;
+      font-weight: 300;
+      min-width: 0;
+    }
+    .frame p {
+      margin: 0 0 0.5rem;
+    }
+    .frame p:last-child {
+      margin-bottom: 0;
+    }
+    .frame code {
+      font-family: var(--font-conversation);
+      font-size: 0.85em;
+      background: var(--muted);
+      padding: 0 0.3rem;
+      border-radius: calc(var(--radius) - 2px);
+    }
+    .author {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin: 8px 0 24px;
+      user-select: none;
+    }
+    .author:first-child {
+      margin-top: 0;
+    }
+    .avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      flex: none;
+      background:
+        linear-gradient(
+            90deg,
+            transparent 33%,
+            var(--primary) 33% 66%,
+            transparent 66%
+          )
+          50% 30%/10px 3px no-repeat,
+        linear-gradient(
+            90deg,
+            var(--primary) 33%,
+            transparent 33% 66%,
+            var(--primary) 66%
+          )
+          50% 70%/10px 3px no-repeat,
+        var(--card);
+    }
+    .bot {
+      width: 18px;
+      height: 18px;
+      flex: none;
+    }
+    .turn {
+      margin-top: 24px;
+    }
+    .turn:first-child {
+      margin-top: 0;
+    }
+
+    /* Comment lines (as in the user turn today) */
+    .lines {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 0 -10px 12px;
+    }
+    .cline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 10px;
+      border-radius: var(--radius);
+      min-width: 0;
+    }
+    .cline .who {
+      max-width: 10rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cline .note {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted-foreground);
+    }
+    .meta {
+      margin-left: auto;
+      padding-left: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    .meta .where {
+      max-width: 12rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .num {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* State marks: glyphs, the same ones the user turn's lines carry */
+    .mark {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      line-height: 17px;
+      font-weight: 500;
+      padding: 0 6px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .mark.done {
+      background: var(--green-soft);
+      color: var(--green);
+    }
+    .mark.await {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+    .glyph {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .glyph.done {
+      color: var(--green);
+    }
+    .glyph.await {
+      color: var(--warning);
+    }
+
+    /* Tool row (collapsible block) */
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+      background: none;
+      border: 0;
+      padding: 0;
+      font: inherit;
+      color: var(--muted-foreground);
+      text-align: left;
+      cursor: pointer;
+    }
+    .row:hover,
+    .row:focus-visible {
+      color: var(--foreground);
+    }
+    .row:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+    .row .verb {
+      font-weight: 400;
+      flex: none;
+    }
+    .row .obj {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chev {
+      width: 14px;
+      height: 14px;
+      flex: none;
+      transition: transform 0.15s;
+    }
+    .row[aria-expanded='true'] .chev {
+      transform: rotate(90deg);
+    }
+    .guide {
+      margin: 6px 0 0 6px;
+      border-left: 1px solid var(--border);
+      padding-left: 12px;
+    }
+    .guide.muted {
+      color: var(--muted-foreground);
+    }
+    .row .meta {
+      padding-left: 8px;
+    }
+
+    /* Option B: quote line */
+    button.quote {
+      width: 100%;
+      border: 0;
+      background: none;
+      padding: 0;
+      font: inherit;
+      text-align: left;
+    }
+    .quote {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 4px;
+      min-width: 0;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .quote:hover {
+      color: var(--foreground);
+    }
+    .quote .q {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Today: the card */
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-head {
+      background: var(--sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 3px 0;
+    }
+    .card-head .cline {
+      padding: 3px 12px;
+    }
+    .card-body {
+      padding: 9px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .notes {
+      display: grid;
+      gap: 10px;
+    }
+    .notes div {
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .notes b {
+      font-weight: 600;
+    }
+    .notes p {
+      margin: 4px 0 0;
+      color: var(--muted-foreground);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .chev {
+        transition: none;
+      }
+    }
+  </style>
+
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol
+      id="bot"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M12 8V4H8" />
+      <rect width="16" height="12" x="4" y="8" rx="2" />
+      <path d="M2 14h2" />
+      <path d="M20 14h2" />
+      <path d="M15 13v2" />
+      <path d="M9 13v2" />
+    </symbol>
+    <symbol
+      id="chev"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="m9 18 6-6-6-6" />
+    </symbol>
+  </svg>
+
+  <main>
+    <header>
+      <h1>Respostas a comentários no chat</h1>
+      <p class="lede">
+        O card de hoje é o único elemento com caixa, faixa de cabeçalho e rodapé
+        no meio da fala do agente. No Doric, o resto é texto corrido em Plex
+        Mono, e as ferramentas aparecem como uma linha de texto com uma guia
+        vertical. As três propostas usam só peças que já existem: a linha de
+        comentário do turno do usuário, a
+        <code style="font-size: 0.85em">CollapsibleBlock</code> e as marcas ✓ /
+        ?.
+      </p>
+    </header>
+
+    <!-- Shared user turn, drawn once at the top for context -->
+    <section class="option" aria-labelledby="ctx">
+      <h2 id="ctx">
+        Contexto: o turno do usuário <span class="tag dim">igual nas três</span>
+      </h2>
+      <div class="frame">
+        <div class="author">
+          <span class="avatar"></span>jao.scheuermann <span>·</span> 3m
+        </div>
+        <div class="lines">
+          <div class="cline">
+            <span class="avatar"></span><span class="who">jao.scheuermann</span
+            ><span class="note">Emoji nao precisa aqui</span
+            ><span class="meta"
+              ><span class="where">h1 · hello-world.html:92</span
+              ><span class="num">[1]</span
+              ><span class="glyph done">✓</span></span
+            >
+          </div>
+          <div class="cline">
+            <span class="avatar"></span><span class="who">jao.scheuermann</span
+            ><span class="note">Esse botão podia ser maior</span
+            ><span class="meta"
+              ><span class="where">button · hello-world.html:118</span
+              ><span class="num">[2]</span
+              ><span class="glyph await">?</span></span
+            >
+          </div>
+        </div>
+        <p>ajusta esses dois pontos</p>
+      </div>
+    </section>
+
+    <section class="option" aria-labelledby="today">
+      <h2 id="today">Hoje <span class="tag dim">card</span></h2>
+      <div class="frame">
+        <div class="card">
+          <div class="card-head">
+            <div class="cline">
+              <span class="avatar"></span
+              ><span class="who">jao.scheuermann</span
+              ><span class="note">Emoji nao...</span
+              ><span class="meta"
+                ><span class="where">doric/scripts/fake-ho…</span
+                ><span class="num">[1]</span></span
+              >
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="author" style="margin: 0">
+              <svg aria-hidden="true" class="bot"><use href="#bot" /></svg>agent
+            </div>
+            <p>
+              Emoji removido. <code>hello-world.html:92</code> passou de
+              <code>&lt;h1&gt;Hello, world 👋&lt;/h1&gt;</code> para
+              <code>&lt;h1&gt;Hello, world&lt;/h1&gt;</code>.
+            </p>
+            <div class="card-foot">
+              <span class="mark done">✓ resolvido</span
+              ><span>Abrir thread</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="option" aria-labelledby="a">
+      <h2 id="a">A · Linha de resposta com guia</h2>
+      <p>
+        Cada resposta é uma <code>CollapsibleBlock</code> aberta. O cabeçalho
+        repete a linha do comentário com o verbo "Replied to", e a resposta vem
+        embaixo, na guia, com a cor normal do texto, porque é a fala do agente.
+        Clicar no cabeçalho abre a thread no pino. O estado aparece como glifo
+        no fim da linha, igual no turno do usuário.
+      </p>
+      <div class="frame">
+        <div class="turn">
+          <button type="button" class="row" aria-expanded="false" data-toggle>
+            <span class="verb">Called</span
+            ><span class="obj">papercraft preview</span
+            ><svg aria-hidden="true" class="chev"><use href="#chev" /></svg>
+          </button>
+        </div>
+        <div class="turn stack">
+          <div>
+            <button
+              type="button"
+              class="row"
+              aria-expanded="true"
+              data-toggle
+              title="Abrir a thread no preview"
+            >
+              <span class="verb">Replied to</span><span class="num">[1]</span
+              ><span class="obj">Emoji nao precisa aqui</span>
+              <svg aria-hidden="true" class="chev"><use href="#chev" /></svg>
+              <span class="meta"
+                ><span class="where">h1 · hello-world.html:92</span
+                ><span class="mark done">✓ resolved</span></span
+              >
+            </button>
+            <div class="guide">
+              <p>
+                Emoji removido. <code>hello-world.html:92</code> passou de
+                <code>&lt;h1&gt;Hello, world 👋&lt;/h1&gt;</code> para
+                <code>&lt;h1&gt;Hello, world&lt;/h1&gt;</code>. O resto do
+                preview está igual.
+              </p>
+            </div>
+          </div>
+          <div>
+            <button
+              type="button"
+              class="row"
+              aria-expanded="true"
+              data-toggle
+              title="Abrir a thread no preview"
+            >
+              <span class="verb">Replied to</span><span class="num">[2]</span
+              ><span class="obj">Esse botão podia ser maior</span>
+              <svg aria-hidden="true" class="chev"><use href="#chev" /></svg>
+              <span class="meta"
+                ><span class="where">button · hello-world.html:118</span
+                ><span class="mark await">? waiting on you</span></span
+              >
+            </button>
+            <div class="guide">
+              <p>
+                Prefere 40px ou 48px de altura? Com 48px ele fica maior que os
+                campos da grade.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="turn">
+          <p>Pronto, o título está sem emoji. Falta só a altura do botão.</p>
+        </div>
+        <div class="author" style="margin-top: 8px">
+          <svg aria-hidden="true" class="bot"><use href="#bot" /></svg>agent
+          <span>·</span> 1m
+        </div>
+      </div>
+      <ul class="pros">
+        <li>
+          <b>Lê como o resto da conversa:</b> mesma linha de ferramenta, mesma
+          guia, nenhuma caixa.
+        </li>
+        <li>
+          <b>A resposta fica visível:</b> o bloco nasce aberto e pode ser
+          recolhido como qualquer outro.
+        </li>
+        <li>
+          <b>Sem rodapé:</b> o botão "Abrir thread" vira o próprio cabeçalho.
+          Para responder, abre a thread no pino ou escreve no prompt.
+        </li>
+      </ul>
+    </section>
+
+    <section class="option" aria-labelledby="b">
+      <h2 id="b">B · Citação dentro da fala</h2>
+      <p>
+        A resposta é um parágrafo normal do agente, com uma linha de citação
+        pequena acima: pino, trecho do comentário, local e estado. Quase não tem
+        estrutura e se mistura com o texto ao redor.
+      </p>
+      <div class="frame">
+        <div class="turn">
+          <button type="button" class="quote">
+            <span>↩</span><span class="num">[1]</span
+            ><span class="q"
+              >“Emoji nao precisa aqui” · hello-world.html:92</span
+            ><span class="glyph done">✓</span>
+          </button>
+          <p>
+            Emoji removido. <code>hello-world.html:92</code> passou de
+            <code>&lt;h1&gt;Hello, world 👋&lt;/h1&gt;</code> para
+            <code>&lt;h1&gt;Hello, world&lt;/h1&gt;</code>.
+          </p>
+        </div>
+        <div class="turn">
+          <button type="button" class="quote">
+            <span>↩</span><span class="num">[2]</span
+            ><span class="q"
+              >“Esse botão podia ser maior” · hello-world.html:118</span
+            ><span class="glyph await">?</span>
+          </button>
+          <p>
+            Prefere 40px ou 48px de altura? Com 48px ele fica maior que os
+            campos da grade.
+          </p>
+        </div>
+        <div class="author" style="margin-top: 8px">
+          <svg aria-hidden="true" class="bot"><use href="#bot" /></svg>agent
+          <span>·</span> 1m
+        </div>
+      </div>
+      <ul class="pros">
+        <li><b>Mais leve de todas.</b></li>
+        <li>
+          <b>Contra:</b> com várias respostas seguidas, fica difícil ver onde
+          uma acaba e a outra começa.
+        </li>
+      </ul>
+    </section>
+
+    <section class="option" aria-labelledby="c">
+      <h2 id="c">
+        C · Linha de ferramenta recolhida <span class="tag">escolhida</span>
+      </h2>
+      <p>
+        Tratada como uma chamada de ferramenta: uma linha por resposta,
+        recolhida quando o comentário está resolvido. A resposta aparece em
+        cinza ao abrir, igual ao corpo de uma ferramenta.
+      </p>
+      <div class="frame">
+        <div class="turn stack" style="gap: 8px">
+          <button
+            type="button"
+            class="row"
+            aria-expanded="false"
+            data-toggle
+            data-body="c1"
+          >
+            <span class="verb">Replied to</span><span class="num">[1]</span
+            ><span class="obj">Emoji nao precisa aqui</span
+            ><svg aria-hidden="true" class="chev"><use href="#chev" /></svg
+            ><span class="meta"><span class="glyph done">✓</span></span>
+          </button>
+          <div class="guide muted" id="c1" hidden>
+            <p>
+              Emoji removido. <code>hello-world.html:92</code> passou de
+              <code>&lt;h1&gt;Hello, world 👋&lt;/h1&gt;</code> para
+              <code>&lt;h1&gt;Hello, world&lt;/h1&gt;</code>.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="row"
+            aria-expanded="true"
+            data-toggle
+            data-body="c2"
+          >
+            <span class="verb">Replied to</span><span class="num">[2]</span
+            ><span class="obj">Esse botão podia ser maior</span
+            ><svg aria-hidden="true" class="chev"><use href="#chev" /></svg
+            ><span class="meta"><span class="glyph await">?</span></span>
+          </button>
+          <div class="guide muted" id="c2">
+            <p>
+              Prefere 40px ou 48px de altura? Com 48px ele fica maior que os
+              campos da grade.
+            </p>
+          </div>
+        </div>
+        <div class="author" style="margin-top: 16px">
+          <svg aria-hidden="true" class="bot"><use href="#bot" /></svg>agent
+          <span>·</span> 1m
+        </div>
+      </div>
+      <ul class="pros">
+        <li>
+          <b>A mais compacta:</b> respostas resolvidas somem para uma linha.
+        </li>
+        <li>
+          <b>Contra:</b> a resposta do agente vira um detalhe de ferramenta, e
+          uma pergunta como a do [2] fica fácil de perder.
+        </li>
+      </ul>
+    </section>
+
+    <section class="option" aria-labelledby="n">
+      <h2 id="n">Vale para qualquer opção</h2>
+      <div class="notes">
+        <div>
+          <b>Textos em inglês no chat</b>
+          <p>
+            "resolvido" e "aguardando você" viram "resolved" e "waiting on you",
+            como "Comments" e "Write a note…" da pilha.
+          </p>
+        </div>
+        <div>
+          <b>Mesmo vocabulário do turno do usuário</b>
+          <p>
+            Pino como [n], local como <code>elemento · arquivo:linha</code> (sem
+            o caminho inteiro) e as marcas ✓ / ?.
+          </p>
+        </div>
+        <div>
+          <b>Um bloco por comentário respondido</b>
+          <p>
+            Várias respostas no mesmo turno ficam empilhadas na ordem em que o
+            agente chamou a <code>comment_reply</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    document.querySelectorAll('[data-toggle]').forEach((row) => {
+      row.addEventListener('click', () => {
+        const open = row.getAttribute('aria-expanded') !== 'true';
+        row.setAttribute('aria-expanded', String(open));
+        const body = row.dataset.body
+          ? document.getElementById(row.dataset.body)
+          : row.nextElementSibling;
+        if (body?.classList.contains('guide')) body.hidden = !open;
+      });
+    });
+  </script>
+</html>

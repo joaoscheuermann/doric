@@ -2,7 +2,7 @@
 // the send flushed it into and by the top row of an agent's reply block: the
 // author's avatar, `↩` before the name when the comment answers another, the
 // note truncated with an ellipsis, and the anchor with the pin's number at the
-// end (`docs/architecture/bundles/papercraft.md`, the stack's ASCII). The line
+// end (`docs/architecture/bundles/papercraft/README.md`, the stack's ASCII). The line
 // itself never edits: the stack hands it the note's own editing host in place
 // of the read-only text, and a sent comment is immutable until a new event
 // says otherwise.

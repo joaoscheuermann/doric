@@ -559,7 +559,7 @@ export const canvasPathOf = (input: {
 /** The command that approves a revision under the `request` policy. */
 export const APPROVE_COMMAND = 'papercraft.approve/v1';
 
-/* The command bar (papercraft.md, "A barra de comandos") ------------------ */
+/* The command bar (papercraft/README.md, "A barra de comandos") ------------------ */
 
 /** The armed tool of the canvas: `select` is the entry default. */
 export type PreviewTool = 'select' | 'comment' | 'pan';

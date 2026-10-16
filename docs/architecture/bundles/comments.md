@@ -6,7 +6,7 @@
 
 Um comentário é uma **anotação ancorada** num **alvo**: qualquer coisa endereçável do app — uma revisão de [artefato](./artifacts.md), uma mensagem da conversa, um arquivo e uma linha, a saída de um terminal, um elemento de um preview. O usuário aponta o ponto, escreve o que quer diferente, e o agente lê isso como instrução.
 
-Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](./papercraft.md) é o primeiro consumidor (comentário num elemento do preview), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
+Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](./papercraft/README.md) é o primeiro consumidor (comentário num elemento do preview), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
 
 Quatro regras dão forma ao resto do documento:
 
@@ -41,7 +41,7 @@ Um comentário solto ("esse botão está errado") obriga o agente a adivinhar a 
 | `point`    | Uma posição no alvo, com o elemento mais próximo             | Um clique em espaço vazio                           |
 | `range`    | Um intervalo no texto do alvo                                | Uma seleção de texto numa mensagem ou num documento |
 
-O carimbo de origem é a forma mais forte, e o [papercraft](./papercraft.md#âncoras-que-o-agente-entende) é o exemplo completo: quando o preview vem de um componente do Project, o carimbo aponta para o **código real** — e é isso que faz o comentário valer como instrução de edição, e não como descrição.
+O carimbo de origem é a forma mais forte, e o [papercraft](./papercraft/README.md#âncoras-que-o-agente-entende) é o exemplo completo: quando o preview vem de um componente do Project, o carimbo aponta para o **código real** — e é isso que faz o comentário valer como instrução de edição, e não como descrição.
 
 A âncora é resolvida contra a **estrutura derivada** do alvo, não contra uma posição de pixel: um clique em espaço vazio ainda encontra o elemento mais próximo, e o hit-test continua correto sob pan e zoom. Quem resolve é o dono do alvo; o registro nunca olha para dentro da âncora.
 
@@ -101,7 +101,7 @@ O flush roda **depois** que o host aceita o prompt: um envio recusado devolve as
 | O alvo                      | O pino com o estado da thread, ou o contorno no ponto ancorado; o controle de comentar mostra a contagem                     | O dono do alvo |
 | A linha do código, num diff | O indicador de comentário na linha, como o Antigravity faz                                                                   | O dono do alvo |
 
-O dono do alvo decide **onde a nota se escreve**. Num alvo de canvas, como o preview do [papercraft](./papercraft.md#o-node-da-conversa), é no próprio alvo, como no Figma: o clique abre um campo ao lado do pino, e só **confirmar** a nota (`Enter` ou ↑) acrescenta a linha à pilha, já com ela — um campo vazio que perde o foco, ou cancelado com `Esc`, nunca toca a pilha. Num alvo de texto, como a mensagem do agente, o clique vira uma linha na pilha e a nota se escreve ali. Nos dois casos a linha confirmada é um **rascunho**: editar ou remover na pilha muda o alvo, e vice-versa, porque é um só item; e o comentário e o pedido do usuário viajam juntos no mesmo envio.
+O dono do alvo decide **onde a nota se escreve**. Num alvo de canvas, como o preview do [papercraft](./papercraft/README.md#o-node-da-conversa), é no próprio alvo, como no Figma: o clique abre um campo ao lado do pino, e só **confirmar** a nota (`Enter` ou ↑) acrescenta a linha à pilha, já com ela — um campo vazio que perde o foco, ou cancelado com `Esc`, nunca toca a pilha. Num alvo de texto, como a mensagem do agente, o clique vira uma linha na pilha e a nota se escreve ali. Nos dois casos a linha confirmada é um **rascunho**: editar ou remover na pilha muda o alvo, e vice-versa, porque é um só item; e o comentário e o pedido do usuário viajam juntos no mesmo envio.
 
 O envio é o do compositor. Fora dele, o alvo envia a pilha com `Cmd/Ctrl+Enter` (e a janela do canvas, que não tem prompt, com o botão `Enviar ao agente`) pelo serviço de cliente `chat.send/v1`: o mesmo caminho do botão de enviar — as linhas da pilha com as âncoras no prompt, o flush só depois do aceite e os itens cuja gravação falhou de volta na pilha —, sem as palavras do editor.
 
@@ -151,10 +151,10 @@ Um comentário **orienta**, e nada mais:
 
 ## Quem usa hoje
 
-| Consumidor                    | Alvo                               | Âncora                                                |
-| ----------------------------- | ---------------------------------- | ----------------------------------------------------- |
-| [Papercraft](./papercraft.md) | A revisão de um artefato `preview` | O elemento carimbado, um seletor ou uma posição livre |
-| A conversa                    | Uma mensagem do agente             | Um intervalo no texto da mensagem                     |
+| Consumidor                           | Alvo                               | Âncora                                                |
+| ------------------------------------ | ---------------------------------- | ----------------------------------------------------- |
+| [Papercraft](./papercraft/README.md) | A revisão de um artefato `preview` | O elemento carimbado, um seletor ou uma posição livre |
+| A conversa                           | Uma mensagem do agente             | Um intervalo no texto da mensagem                     |
 
 O papercraft é o consumidor com desenho completo (a âncora carimbada, o pino, o botão com a contagem, a pilha). O segundo uso — comentar a resposta do agente — é outro `kind` na mesma pilha, com o mesmo elemento e o mesmo `flush`, e existe para provar que o conceito não é do papercraft.
 
@@ -172,15 +172,15 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 ## Decisões em aberto
 
 1. **Âncora obsoleta.** O que o alvo faz quando a revisão seguinte muda o ponto: manter a âncora antiga (e deixar o agente reconciliar), remapear pela estrutura derivada, ou marcar o comentário como órfão na tela.
-2. **Comentário durante um prompt em andamento.** A fila de `runtime.threads/v1` aceita; falta decidir se a pilha enfileira ou espera (decisão 7 do [papercraft](./papercraft.md#decisões-em-aberto)).
+2. **Comentário durante um prompt em andamento.** A fila de `runtime.threads/v1` aceita; falta decidir se a pilha enfileira ou espera (decisão 7 do [papercraft](./papercraft/README.md#decisões-em-aberto)).
 3. **Comentário sem prompt.** Hoje o comentário só vira evento no flush do envio; falta decidir se um comentário pode ser gravado sozinho, sem acordar o agente.
 4. **Editar e apagar.** Editar um rascunho é livre; o que fazer com um comentário já enviado — outro evento, um evento de remoção, ou imutável.
 5. **Decidido: `resolve`.** "Atendido" é um estado da **thread** (da raiz), marcado por `comments/v1.resolve` — o usuário, pelo popover do pino, ou o agente, com `resolve` na `comment_reply` — e projetado como `done`; reabrir é outro `resolve` com `resolved: false`. Continua em aberto se o estado também vale por alvo.
 6. **Quem é o autor.** O comentário guarda o autor (`agent` nas respostas da tool; o avatar da pilha usa o jdenticon do nome); falta decidir como isso se relaciona com o usuário do Project.
 7. **Notificação e retomada.** Se um comentário pendente aparece fora da conversa, como o `notifications` faz com o fim de um prompt.
 8. **Alvo sem Thread.** Um comentário num alvo que não pertence a uma conversa (um arquivo do Project, uma revisão antiga) precisa de outro escopo que `projectId`/`threadId`/`promptId`.
-9. **Persistência do rascunho além do processo.** Se a pilha sobrevive ao fechamento do app, num registro de cache como o do `history`, e se o texto do editor sincroniza a cada tecla ou em lotes curtos (decisão 14 do [papercraft](./papercraft.md#decisões-em-aberto)).
-10. **Uma pilha, várias janelas.** Falta decidir o que uma janela faz quando o prompt é enviado em outra: a pilha se esvazia para todas e o editor das demais se limpa (decisão 15 do [papercraft](./papercraft.md#decisões-em-aberto)).
+9. **Persistência do rascunho além do processo.** Se a pilha sobrevive ao fechamento do app, num registro de cache como o do `history`, e se o texto do editor sincroniza a cada tecla ou em lotes curtos (decisão 14 do [papercraft](./papercraft/README.md#decisões-em-aberto)).
+10. **Uma pilha, várias janelas.** Falta decidir o que uma janela faz quando o prompt é enviado em outra: a pilha se esvazia para todas e o editor das demais se limpa (decisão 15 do [papercraft](./papercraft/README.md#decisões-em-aberto)).
 
 ## Referências
 
@@ -188,7 +188,7 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 - [Implementation plan](https://antigravity.google/docs/implementation-plan) (Antigravity): comentar o plano para redirecionar o agente antes de ele editar.
 - [Artifacts](https://antigravity.google/docs/artifacts) (Antigravity): a colaboração assíncrona e a revisão em marcos.
 - [Artefatos](./artifacts.md): o alvo com revisões, a política de revisão e a decisão de seguir direto.
-- [Papercraft](./papercraft.md): o primeiro consumidor — a âncora carimbada, o pino e a pilha.
+- [Papercraft](./papercraft/README.md): o primeiro consumidor — a âncora carimbada, o pino e a pilha.
 - [Eventos e nodes](./events-and-nodes.md): o log durável, os projetores e os nodes de conversa.
 - [O bundle chat](./chat.md): `chat.views/v1`, os renderizadores e o serviço de compositor.
 - [Direct](../../../bundles/runtime/direct/README.md): o envelope de entrada (`<user-request>` e os demais) em que o prompt chega ao modelo.

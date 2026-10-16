@@ -60,7 +60,7 @@ export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
 /**
  * `chat.composer/v1` (desktopMain, cardinality `one`): the host-owned draft of
  * the prompt — its text and the composer stack above it — so a draft survives
- * navigation and serves every window (papercraft.md decisions 14 and 15). One
+ * navigation and serves every window (papercraft/README.md decisions 14 and 15). One
  * stack per Thread; every window subscribes by `threadId`.
  *
  * The shape below mirrors the real contract, kept as a structural copy so this
