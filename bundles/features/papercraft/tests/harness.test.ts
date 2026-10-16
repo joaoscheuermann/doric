@@ -14,6 +14,9 @@
 // - a harness that cannot be bundled is left out with a warning naming the
 //   import, and the preview still compiles;
 // - a harness whose CSS is Tailwind v3 falls back to Doric's theme, warning;
+// - a harness stylesheet named by a specifier the window import map would
+//   serve (`desktop/ui/theme.css`) is compiled into `index.css`, never left
+//   as an import in `index.js`;
 // - a plain CSS file a component imports reaches `index.css`;
 // - type-only `@storybook/*` imports erase, and `@storybook/addon-themes`
 //   compiles without the Project having it;
@@ -221,6 +224,31 @@ describe('the preview harness and the Project CSS', () => {
       built.warnings.some((warning) => /Tailwind v3/.test(warning)),
       built.warnings.join('\n'),
     );
+  });
+
+  test('a harness stylesheet the import map would serve reaches the sheet, not the module', async () => {
+    const built = await snapshot(
+      {
+        'src/Badge.tsx': BADGE,
+        'node_modules/desktop/package.json': JSON.stringify({
+          name: 'desktop',
+          exports: { './ui/theme.css': './src/theme.css' },
+        }),
+        'node_modules/desktop/src/theme.css': PROJECT_CSS,
+        '.storybook/preview.tsx': harness(
+          'theme',
+          "import 'desktop/ui/theme.css';",
+        ),
+      },
+      'src/Badge.tsx',
+    );
+
+    assert.match(
+      textOf(built, 'index.css'),
+      /:root,\s*:host[^{]*\{\s*--brand:\s*#123456/,
+    );
+    // A window cannot import a stylesheet as a module: it would fail the load.
+    assert.doesNotMatch(textOf(built, 'index.js'), /theme\.css/);
   });
 
   test("a component's plain CSS import reaches the sheet", async () => {

@@ -12,7 +12,9 @@
 //    ReactDOM, `desktop/ui`, Lexical, zod) stay external and resolve in the
 //    window, so the preview shares the app's one React. `bundle/contracts`
 //    and `*/contracts` are not left external here: a preview is Project code,
-//    not a bundle part.
+//    not a bundle part. Nor is a stylesheet (`desktop/ui/theme.css`): a
+//    window cannot import CSS as a module, so it resolves like any other
+//    Project import and compiles into `index.css`.
 // 2. Imports a preview must not make — `bundle`, `desktop` outside
 //    `desktop/ui`, Node built-ins — fail the build with a message naming them.
 // 3. Relative imports and the Project's `tsconfig.json` `paths` aliases are
@@ -173,6 +175,10 @@ const forbidden = (specifier: string): string | undefined => {
 
   return undefined;
 };
+
+/** Whether an import names a stylesheet, which `index.css` carries. */
+const isStylesheet = (specifier: string): boolean =>
+  posix.extname(specifier) === '.css';
 
 /** The files one import of `base` may name, in the order they are tried. */
 const candidatesOf = (base: string): readonly string[] => {
@@ -524,7 +530,13 @@ const sandboxPlugin = (input: {
         return { path: args.path, namespace: JSX_NS };
       }
 
-      if (matchesExternal(previewExternals, args.path)) {
+      // A stylesheet is never left to the window, even under an import-map
+      // pattern (`desktop/ui/theme.css`): a window cannot import CSS as a
+      // module, so it resolves in the Project and compiles into `index.css`.
+      if (
+        !isStylesheet(args.path) &&
+        matchesExternal(previewExternals, args.path)
+      ) {
         // A bundled CommonJS module that `require`s an external gets an ESM
         // re-export of it, so the external stays the window's one instance.
         return args.kind === 'require-call' && args.namespace !== REQUIRE_NS

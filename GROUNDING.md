@@ -966,7 +966,9 @@ Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
 host (path B): esbuild bundles the entry, reading Project files through
 `files/v1`, keeps the window import-map specifiers external (the shared
 `clientExternals` from `bundle/externals`; `lucide-react` is not in the import
-map, so it is bundled), wraps the chosen export (`entry`, else `default`, else
+map, so it is bundled; a `.css` import is never left external, even
+`desktop/ui/theme.css`: it resolves in the Project and compiles into the
+sheet), wraps the chosen export (`entry`, else `default`, else
 the single PascalCase export) in `mount(root, { theme })`, and compiles its
 Tailwind sheet; the revision's entries are `index.html` (fallback markup),
 `index.js` and `index.css`, and a compile error fails the call before anything
