@@ -63,6 +63,23 @@ const threadMethods: Readonly<Record<string, number | null>> = {
   resumeQueue: 1,
 };
 
+/** `chat.composer/v1` as main routes it: tuple length per method. */
+const composerMethods: Readonly<Record<string, number | null>> = {
+  read: null,
+  setText: null,
+  addItem: null,
+  updateNote: null,
+  removeItem: null,
+  flush: null,
+};
+
+/** `comments/v1` as main routes it: tuple length per method. */
+const commentMethods: Readonly<Record<string, number | null>> = {
+  add: null,
+  list: null,
+  resolve: null,
+};
+
 const hostCandidate: CatalogCandidate = {
   id: 'host',
   source: { kind: 'installed', dir: 'host@1.0.0' },
@@ -75,6 +92,7 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
       'runtime.threads/v1@1.1.0',
+      'comments/v1@1.0.0',
     ],
     requires: [],
   },
@@ -85,6 +103,7 @@ const hostCandidate: CatalogCandidate = {
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
       ['runtime.threads/v1', '1.1.0'],
+      ['comments/v1', '1.0.0'],
     ].map(([id, version]) => ({
       id,
       version,
@@ -113,6 +132,42 @@ const threadsRemote: RemoteContract = {
       ]),
     ),
     watchThread: { tuple: 2, local: false, stream: true },
+  },
+};
+
+const composerRemote: RemoteContract = {
+  id: 'chat.composer/v1',
+  environment: 'desktopMain',
+  bundleId: 'chat',
+  version: '1.2.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    ...Object.fromEntries(
+      Object.entries(composerMethods).map(([name, tuple]) => [
+        name,
+        { tuple, local: false, stream: false },
+      ]),
+    ),
+    watch: { tuple: 2, local: false, stream: true },
+    registerFlush: { tuple: null, local: true, stream: false },
+  },
+};
+
+const commentsRemote: RemoteContract = {
+  id: 'comments/v1',
+  environment: 'host',
+  bundleId: 'host',
+  version: '1.0.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    ...Object.fromEntries(
+      Object.entries(commentMethods).map(([name, tuple]) => [
+        name,
+        { tuple, local: false, stream: false },
+      ]),
+    ),
   },
 };
 
@@ -185,8 +240,10 @@ export interface ChatWindow {
   received(method: string): readonly BridgeCallEnvelope[];
   /** Every bridge call, in order. */
   calls(): readonly BridgeCallEnvelope[];
-  /** The open `runtime.threads/v1.watchThread` streams. */
+  /** Every open `runtime.threads/v1.watchThread` stream. */
   watches(): readonly OpenStream[];
+  /** Every open `chat.composer/v1.watch` stream. */
+  composerWatches(): readonly OpenStream[];
   /** Reports a host connection status on main's stream. */
   connection(status: 'connected' | 'disconnected'): void;
   close(): Promise<void>;
@@ -293,7 +350,7 @@ export const openChatWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [threadsRemote],
+    remote: [threadsRemote, composerRemote, commentsRemote],
     hostId: 'host-1',
     storageGeneration: 1,
   };
@@ -386,6 +443,31 @@ export const openChatWindow = async (input: {
           if (index >= 0) streams.splice(index, 1);
         };
       }
+      if (
+        envelope.contract === 'chat.composer/v1' &&
+        envelope.method === 'watch'
+      ) {
+        let open = true;
+        const stream: OpenStream = {
+          envelope,
+          push: (item) => {
+            if (open) listener({ type: 'event', event: item });
+          },
+          end: (error) => {
+            if (!open) return;
+            open = false;
+            listener(
+              error === undefined ? { type: 'end' } : { type: 'end', error },
+            );
+          },
+        };
+        streams.push(stream);
+        return () => {
+          open = false;
+          const index = streams.indexOf(stream);
+          if (index >= 0) streams.splice(index, 1);
+        };
+      }
       return () => undefined;
     },
   };
@@ -424,7 +506,14 @@ export const openChatWindow = async (input: {
         (envelope) => `${envelope.contract}.${envelope.method}` === method,
       ),
     calls: () => calls,
-    watches: () => streams,
+    watches: () =>
+      streams.filter(
+        (stream) => stream.envelope.contract === 'runtime.threads/v1',
+      ),
+    composerWatches: () =>
+      streams.filter(
+        (stream) => stream.envelope.contract === 'chat.composer/v1',
+      ),
     connection: (status) => {
       for (const listener of [...connectionListeners]) {
         listener({ type: 'event', event: status });

@@ -2,16 +2,43 @@
 //
 // Only the members the desktop actually calls for a workspace to come up are
 // implemented (`runtime/v1`, `runtime.threads/v1`, the catalog and its
-// diagnostics report). Everything else is refused with a clear `unavailable`
-// error and logged, so a boot that asks for something new says so instead of
-// hanging.
+// diagnostics report), plus the feature surfaces the dev host is here to show:
+// `artifacts/v1`, `comments/v1`, `papercraft.previews/v1` and the durable
+// event log `runtime.threads/v1.watchThread` streams. Everything else is
+// refused with a clear `unavailable` error and logged, so a boot that asks for
+// something new says so instead of hanging.
 //
 // A key is `<contract> <method>`, the pair every bridge message carries.
+
+import { randomUUID } from 'node:crypto';
 
 import { DevHostError } from './bundles.mjs';
 
 /** The argument a wire message carries: a tuple's first item, or the value. */
 export const first = (input) => (Array.isArray(input) ? input[0] : input);
+
+/**
+ * The scope of a Project-bound call, refused without a `projectId` exactly as
+ * the real host's lease refuses it (`runtime.lease/v1`): a window that forgets
+ * to scope its call fails here as it would against the real host, instead of
+ * landing on the seeded Project by default.
+ */
+export const projectScopeOf = (call) => {
+  const scope = call?.scope;
+
+  if (typeof scope?.projectId !== 'string' || scope.projectId.length === 0) {
+    throw new DevHostError(
+      'invalid_input',
+      'The call needs a projectId in its scope: the Project lease is scoped by it.',
+    );
+  }
+
+  return {
+    projectId: scope.projectId,
+    ...(typeof scope.threadId === 'string' ? { threadId: scope.threadId } : {}),
+    ...(typeof scope.promptId === 'string' ? { promptId: scope.promptId } : {}),
+  };
+};
 
 /** The refusal of a contract the fake host does not answer. */
 export const unavailable = (contract, method) =>
@@ -24,8 +51,18 @@ export const unavailable = (contract, method) =>
  * The handler table of the fake host: a call handler takes the wire input and
  * answers the output; a stream handler takes the wire input and a sink
  * (`push`/`end`).
+ *
+ * `threads`, `artifacts` and `comments` are the in-memory feature state the
+ * fake host seeds at boot (see `thread-log.mjs`, `artifacts.mjs`, `seed.mjs`).
  */
-export const createContracts = ({ workspace, catalog, log }) => {
+export const createContracts = ({
+  workspace,
+  catalog,
+  log,
+  threads,
+  artifacts,
+  comments,
+}) => {
   const calls = new Map();
   const streams = new Map();
 
@@ -85,6 +122,137 @@ export const createContracts = ({ workspace, catalog, log }) => {
     workspace.deleteThread(first(input)),
   );
 
+  // The composer's send: accepted, then its own durable events, so the
+  // conversation shows the reader's turn. The fake host runs no agent, so the
+  // turn is opened and closed with no answer text — which is what happened.
+  calls.set('runtime.threads/v1 prompt', (input) => {
+    const { id, prompt } = first(input) ?? {};
+    const found = workspace.threadById(id);
+
+    if (found === undefined) return { status: 'missing' };
+
+    const text = String(prompt ?? '').trim();
+
+    if (text.length === 0) {
+      throw new DevHostError(
+        'invalid_input',
+        'A non-empty prompt is required.',
+      );
+    }
+
+    const promptId = randomUUID();
+    const scope = { projectId: found.projectId, threadId: id, promptId };
+
+    threads.appendMany({
+      ...scope,
+      values: [
+        {
+          type: 'prompt.accepted',
+          event: {
+            type: 'prompt.accepted',
+            text,
+            source: { kind: 'user' },
+            queued: false,
+          },
+        },
+        { type: 'prompt.started', event: { type: 'prompt.started' } },
+        {
+          type: 'prompt.finished',
+          event: {
+            type: 'prompt.finished',
+            status: 'completed',
+            text: '',
+            source: { kind: 'user' },
+          },
+        },
+      ],
+    });
+
+    log.note(
+      `prompt accepted on Thread ${id} as ${promptId}: the fake host runs no agent, so its turn completes with no answer text`,
+    );
+
+    return { status: 'accepted', promptId };
+  });
+
+  // artifacts/v1 -------------------------------------------------------------
+  // Every Project-bound surface takes the call's scope, and refuses a call
+  // without a Project the way the real host's lease does.
+  const scoped = (handler) => (input, call) =>
+    handler(first(input) ?? {}, projectScopeOf(call));
+
+  calls.set(
+    'artifacts/v1 create',
+    scoped((input, scope) => artifacts.create(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 revise',
+    scoped((input, scope) => artifacts.revise(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 read',
+    scoped((input) => artifacts.read(input)),
+  );
+  calls.set(
+    'artifacts/v1 list',
+    scoped((input, scope) => artifacts.list(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 revisions',
+    scoped((input) => artifacts.revisions(input)),
+  );
+
+  // artifact.kind/v1 ---------------------------------------------------------
+  // The kinds the host registered, as the window's frame reads them to mount
+  // a kind's body. The fake host runs no host parts, so it answers the one
+  // kind it seeds: papercraft's `preview`, whose body is `<papercraft-preview>`
+  // (`bundles/features/papercraft/src/host/kind.ts`).
+  calls.set('artifact.kind/v1 list', () => [
+    {
+      id: 'preview',
+      title: 'Preview',
+      blockType: 'papercraft.preview/v1',
+      bodyTag: 'papercraft-preview',
+      header: 'body',
+    },
+  ]);
+  calls.set(
+    'artifacts/v1 approve',
+    scoped((input, scope) => artifacts.approve(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 apply',
+    scoped((input, scope) => artifacts.apply(input, scope)),
+  );
+  calls.set(
+    'artifacts/v1 policy',
+    scoped(() => artifacts.policy()),
+  );
+
+  // comments/v1 --------------------------------------------------------------
+  calls.set(
+    'comments/v1 add',
+    scoped((input, scope) => comments.add(input, scope)),
+  );
+  calls.set(
+    'comments/v1 list',
+    scoped((input) => comments.list(input)),
+  );
+  calls.set(
+    'comments/v1 resolve',
+    scoped((input, scope) => comments.resolve(input, scope)),
+  );
+
+  // papercraft.previews/v1 ---------------------------------------------------
+  calls.set(
+    'papercraft.previews/v1 build',
+    scoped((input, scope) => artifacts.build(input, scope)),
+  );
+  calls.set(
+    'papercraft.previews/v1 read',
+    scoped((input) => artifacts.readPreview(input)),
+  );
+
   // Streams ----------------------------------------------------------------
   streams.set('runtime/v1 watchProject', (input, sink) => {
     const { projectId } = first(input) ?? {};
@@ -99,8 +267,9 @@ export const createContracts = ({ workspace, catalog, log }) => {
     });
   });
   streams.set('runtime.threads/v1 watchThread', (input, sink) => {
-    const { threadId } = first(input) ?? {};
+    const { threadId, afterSequence } = first(input) ?? {};
     const found = workspace.threadById(threadId);
+    const from = typeof afterSequence === 'number' ? afterSequence : 0;
 
     sink.push({
       kind: 'snapshot',
@@ -111,8 +280,23 @@ export const createContracts = ({ workspace, catalog, log }) => {
           ? null
           : (workspace.projectById(found.projectId) ?? null),
       thread: found ?? null,
-      events: [],
+      // A replay after this sequence, exactly as the real watch answers: 0
+      // replays the whole log of the seeded conversation.
+      events: threads
+        .eventsOf(threadId)
+        .filter((event) => event.sequence > from),
     });
+
+    // Every event the feature appends while the app runs, as it happens.
+    const release = threads.watch(threadId, {
+      push: (event) => sink.push({ kind: 'event', event }),
+    });
+    const end = sink.end.bind(sink);
+
+    sink.end = (error) => {
+      release();
+      end(error);
+    };
   });
   streams.set('doric.catalog/v1 watch', (_input, sink) => {
     catalog.watch(sink);

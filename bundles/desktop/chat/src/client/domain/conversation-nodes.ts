@@ -36,11 +36,18 @@ export const COMPACTION_TURN_BLOCK = 'compaction-turn-node';
 /** A prompt the host closed as a failure, and what it was closed with. */
 export const FAILURE_TURN_BLOCK = 'failure-turn-node';
 
+/** The agent's answers to the reader's comments, where it wrote them. */
+export const REPLIES_TURN_BLOCK = 'chat-replies-turn-node';
+
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
 export const QUEUE_BLOCK = 'queue-node';
 export const QUEUED_TURN_BLOCK = 'queued-turn-node';
 export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';
+/** The comments one user turn wears, above the reader's own words. */
+export const TURN_COMMENTS_BLOCK = 'chat-turn-comments-node';
+/** The draft stack above the prompt block: one line per comment to send. */
+export const COMPOSER_STACK_BLOCK = 'chat-composer-stack-node';
 
 /**
  * The attribute the prompt input's block carries in the DOM. The conversation's
@@ -53,6 +60,8 @@ const UNDELETABLE = new Set([
   PROMPT_EDIT_BLOCK,
   QUEUE_BLOCK,
   QUEUED_TURN_BLOCK,
+  TURN_COMMENTS_BLOCK,
+  COMPOSER_STACK_BLOCK,
   TURN_AUTHOR_BLOCK,
   AGENT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
@@ -64,6 +73,7 @@ const UNDELETABLE = new Set([
   LIFECYCLE_TURN_BLOCK,
   COMPACTION_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
+  REPLIES_TURN_BLOCK,
 ]);
 
 /**

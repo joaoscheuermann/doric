@@ -42,6 +42,8 @@ type CollapsibleBlockProps = {
   readonly guide?: boolean;
   /** Optional control rendered at the right end of the header row (e.g. Stop). */
   readonly trailing?: ReactNode;
+  /** What a screen reader names the header's toggle by, when not its text. */
+  readonly toggleLabel?: string;
   readonly children: ReactNode;
 };
 
@@ -68,6 +70,7 @@ export function CollapsibleBlock({
   label,
   onChosenChange,
   openness,
+  toggleLabel,
   trailing,
 }: CollapsibleBlockProps) {
   const open = blockOpen(chosen, openness);
@@ -90,7 +93,7 @@ export function CollapsibleBlock({
     <Collapsible open={open} onOpenChange={toggle}>
       {action === undefined ? (
         trailing === undefined ? (
-          <CollapsibleTrigger className={headerClass}>
+          <CollapsibleTrigger className={headerClass} aria-label={toggleLabel}>
             <span className={cn('min-w-0', openness.active && 'shimmer')}>
               {label}
             </span>
@@ -100,6 +103,7 @@ export function CollapsibleBlock({
           <div className="flex w-full items-center gap-2">
             <CollapsibleTrigger
               className={cn(headerClass, 'w-auto min-w-0 flex-1')}
+              aria-label={toggleLabel}
             >
               <span className={cn('min-w-0', openness.active && 'shimmer')}>
                 {label}

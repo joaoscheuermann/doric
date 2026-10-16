@@ -190,6 +190,13 @@ export const threadEventsStreamPrefix = 'runtime.thread.events/';
 export const threadEventsStream = (threadId: string): string =>
   `${threadEventsStreamPrefix}${threadId}`;
 
+/** The Thread a stream of `threadEventsStream` names, else undefined. */
+export const threadIdOfStream = (stream: string): string | undefined => {
+  if (!stream.startsWith(threadEventsStreamPrefix)) return undefined;
+  const threadId = stream.slice(threadEventsStreamPrefix.length);
+  return threadId === '' || threadId.includes('/') ? undefined : threadId;
+};
+
 /**
  * The value of each entry of a Thread's event stream: the Project, Thread and
  * prompt it belongs to, its durable `type` and its body. The sequence and

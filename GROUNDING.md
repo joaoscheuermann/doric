@@ -796,7 +796,21 @@ append whose call scope lacks a key the sink names is refused with
 with the stream `runtime.thread.events/{threadId}`, registers only
 `runtime.prompt-finished/v1`, and writes the Thread events it owns to that
 stream directly, in the same commit as the Thread document; REST and Socket.IO
-serve the stream. `/bundles/features/files` owns the built-in `cwd`,
+serve the stream. Other bundles (`artifacts`, `comments`) append their
+registered events to the same stream through `events/v1`. After each append it
+commits, `events/v1` fires the core-owned host hook
+`core.event-hooks/v1.onEventAppendedHook({ stream, type })` without waiting;
+the core still names no scope key. The `runtime` requires
+`core.event-hooks/v1` and, for a `runtime.thread.events/<threadId>` stream,
+runs `ThreadStore.catchUp` in the Thread document's write queue: it reads the
+entries after the document's `lastSequence`, folds them into the document
+(counter, queue flag, usage, latest start, pending), commits the document
+alone and then publishes those events to `runtime/v1.watch` listeners in
+sequence order, so an external event reaches watchers as soon as it is
+committed. A runtime commit that meets such an append first folds it on its
+`sequence_conflict` retry (sequence conflicts have their own budget of 64,
+revision conflicts 8). Either way each external event is folded and published
+exactly once, by the one commit that moves the document past it. `/bundles/features/files` owns the built-in `cwd`,
 `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
 working directory and moves it, and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
@@ -811,6 +825,176 @@ input. `/bundles/features/threads` owns the delegation tools `thread-spawn`,
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
 inspection, and steering skills. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.
+
+`/bundles/features/artifacts` owns `artifacts/v1`, the kind registry
+`artifact.kind/v1`, the desktop byte cache `artifacts.cache/v1`, the events
+`artifacts.created/v1`, `artifacts.revised/v1`, `artifacts.approved/v1` and
+`artifacts.applied/v1`, and the review-policy setting
+`artifacts.review-policy/v1`. An artifact's bytes live in the Project
+workspace under `.doric/artifacts/<artifactId>/<revision>/<path>` (reads fall
+back to the older `<artifactId>/<path>` layout and serve only bytes whose hash
+matches), written through `runtime.lease/v1.withLease`; without a lease reads
+answer empty and mutations refuse with `unavailable`. Artifact ids, entry paths
+and cache paths are validated against path traversal at the contract, the
+store and the desktop cache. Mutations need the full call scope
+(`projectId`, `threadId`, `promptId`), are serialised per Project and
+artifact, write bytes, then the manifest, then the event, and undo the
+transition when the append fails. Approval belongs to one revision; the
+policy (`proceed` or `request`) is kept per Project inside the one setting
+document, `approve` writes `artifacts.approved/v1` only under `request`, and
+`apply` refuses an unapproved revision under `request`; the host-only
+`awaitApproval` lets a caller wait. The kind registry has one provider whose
+`register` returns a Disposable tracked on the caller's generation; a kind
+declares a `blockType`, a `bodyTag` and who draws its header (`header`,
+`'frame'` by default or `'body'`). On the desktop the artifacts client
+projects the artifact events with one reducer and draws the frame (title,
+revision reading, "Autorizar" under `request`, the comment gesture), and the
+kind's `bodyTag` element draws the body inside it; for a `header: 'body'` kind
+the frame draws no bar and keeps only "Autorizar" below the body. The frame
+draws no revision list: the conversation, one frame per revision with the
+agent's replies, is the history.
+
+`/bundles/features/comments` owns `comments/v1` (`add`, `list`, `resolve`), the
+events `comments.added/v1` and `comments.resolved/v1`, and the always-available
+`comment_reply` tool (order 1800, no skill). It holds no state: the Thread log
+is the only record, and `list`/`resolve` rebuild comments from it through
+`runtime.threads/v1` (`threadEvents`, `projectThreads`). `add` and `resolve`
+need `projectId`, `threadId` and `promptId`; `list` needs `projectId` and reads
+one Thread when `threadId` is given; `resolve` only sees the caller's own
+Thread. Anchors are validated per form (`source`, `selector`, `point`,
+`range`) and otherwise left uninterpreted. `add` accepts a caller-chosen
+`commentId` (`/^[A-Za-z0-9_-]{1,128}$/`, idempotent per Thread) and
+`inReplyTo`, which is normalized to the thread's root and must exist in the
+Thread; `comments.added/v1` and `Comment` carry `inReplyTo?`, so threads are
+flat. `comment_reply({ comment_id, text, resolve? })` writes the agent's
+answer as a comment with `author: "agent"`, the root's target and `inReplyTo`
+the root, and `resolve` also resolves the root; it returns
+`{ commentId, inReplyTo, resolved }`. The bundle requires `tools/v1`.
+`add`, `list` and `resolve` stay desktop-exposed with `desktopScope`
+`projectId`, `threadId` and `promptId`.
+
+On the desktop, comments are drafted on `chat.composer/v1`'s stack and reach
+the log only through the flushes registered there after a prompt is accepted;
+an item whose write fails returns to the stack. A stack item's id is
+`comment-<uuid>` and becomes the comment id (`addItem` takes an optional `id`,
+which a put-back keeps); its data is `{ target, pin?, inReplyTo?, refs?:
+{ title?, source? } }`. Flushes write `commentId` and `inReplyTo` in stack
+order, and a reply waits while its root is still a draft. The chat builds the
+user prompt of every send (the editor's and `chat.send/v1`'s) as
+`<comments><target kind id revision title source><comment id in-reply-to pin
+anchor element|near|quote>note</comment></target></comments><message>words</message>`,
+leaving out the part that is empty, escaping attribute values and neutralizing
+closing envelope tags in bodies. Wherever the chat shows a stored prompt as the
+reader's words (user turn, queue rows and editing, pending turn, rail markers)
+it reads the `<message>` body back; editing keeps the comments block
+(`withPromptMessage`), and plain-text prompts are unchanged. The chat client
+provides `chat.send/v1` in every window: `send({ projectId, threadId })` sends
+the Thread's stack, with the draft text the host holds, as one prompt through
+the same send path and clears that draft once the prompt is accepted (the
+composer itself runs in desktopMain, which does not call host contracts).
+
+The stack lines are chat's `chat-comment-line` for every target kind, edited in
+place without a popover or buttons: avatar, `↩` for a reply, author, a
+contenteditable note, anchor and `[pin]`. Arrow keys move between the notes and
+the prompt, Enter goes to the next one, Escape to the prompt,
+Cmd/Ctrl+Backspace deletes a line, as do Backspace and Delete on an empty note,
+and Cmd/Ctrl+Enter sends; stack events are isolated from Lexical. The chat's
+built-in projection folds `comments.added/v1` and `comments.resolved/v1` into
+comment threads with the states `done`, `await` (the agent replied last) and
+`open`. Agent replies draw where they happened in the agent turn as collapsible
+`Replied to [pin]` rows (folded when the thread is `done`, open otherwise, the
+reader's toggle winning), and successful `comment_reply` tool rows are hidden;
+the comment lines of a user turn draw no state chip (the state is read out to
+screen readers only). A click on a user-turn comment line or on a reply row's state glyph dispatches the
+bubbling, composed DOM event `doric:comment-thread-open` with
+`detail: { commentId, target }` (the root's id, the target without `revision`,
+which means the artifact's latest revision) and reveals the latest block of that
+target; external blocks carry `data-chat-block-id`.
+
+`/bundles/features/papercraft` owns the `preview` artifact kind, the
+`papercraft.previews/v1` service, the `papercraft_preview` tool (order 1700)
+and the `papercraft-preview` skill (order 3400). The tool snapshots a
+Project source once, publishes it as an artifact (or, given `artifact_id`,
+revises it), and answers the preview state with the unresolved comments and
+the review state; under `request` it reports `review.pending` and never
+blocks. Its desktop part draws the `papercraft-preview` body inside the
+artifacts frame (the kind declares `header: 'body'`; the node is a square)
+and the canvas window at `/papercraft/:projectId/:threadId/:artifactId`, both
+under an overlaid header with icon controls. A comment is written in an inline
+input at its pin, in a popover with the thread popover's surface (the send
+button outside the field, inside the popover; the hover label hides while it
+or a thread is open), and joins
+the composer stack only when confirmed; the stack item carries
+`{ target, pin, point, refs: { title, source }, inReplyTo? }` and draws as
+chat's `chat-comment-line`. It stays a draft until a prompt is sent, and
+`Cmd/Ctrl+Enter` (or the window's send button) sends the stack through
+`chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
+old-format drafts. Comments are grouped into threads from the Thread log (one
+shared `watchThread` per Thread per window, `comments/v1.list` as fallback).
+Threads and drafts carry over revisions: every revision on screen shows every
+thread of the artifact, numbered by the root's place among all its roots; a
+pin re-places itself through its anchor, else at the point the anchor
+recorded (element anchors also record the clicked content point as `x`/`y`),
+else it is drawn detached by the content's left edge, still counted and
+openable. Element anchors also record a whitespace-collapsed `text` excerpt
+and `index`, the element's ordinal among the elements of its selector (stamped
+from the same file when stamped). Because an edited file moves its lines, an
+anchor re-resolves only to an element of its own selector: the exact
+`path:line` when it is the only match there; otherwise, among that selector's
+elements stamped from the file (or all elements with that selector), the one
+whose text matches, then the recorded `index`, then the only candidate, then
+the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
+It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
+root's target. Pins show the thread state: a draft is dashed, an open comment primary
+with its reply count, an awaiting one an orange `?`, a done one a muted green
+`✓`; a control shows or hides the resolved ones, and a hover label
+`element · file:line` appears while the tool is armed. Opening a pin that
+already holds its first comment shows a thread popover (header
+`N Component:line`, a menu, resolve or reopen on sent roots, close; messages
+with avatar, name and time; a reply field): replies go to the stack with
+`inReplyTo`, drafts stay editable and removable, and resolving calls
+`comments/v1.resolve` on the root under the root's own `promptId`. The node
+listens for `doric:comment-thread-open`: a target with a `revision` opens on
+that revision's node, and a target without one means the latest, so only the
+node of the artifact's newest revision (asked of `artifacts/v1.read`) opens
+it; the separate canvas window does not receive the chat's DOM event, a known
+limitation. `papercraft_preview` returns
+the unresolved root comments with their `replies`, and the skill tells the
+agent to answer with `comment_reply` and resolve when done. Every window call carries the
+Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
+`runtime.threads/v1` are optional. A `component` source is compiled on the
+host (path B): esbuild bundles the entry, reading Project files through
+`files/v1`, keeps the window import-map specifiers external (the shared
+`clientExternals` from `bundle/externals`; `lucide-react` is not in the import
+map, so it is bundled), wraps the chosen export (`entry`, else `default`, else
+the single PascalCase export) in `mount(root, { theme })`, and compiles its
+Tailwind sheet; the revision's entries are `index.html` (fallback markup),
+`index.js` and `index.css`, and a compile error fails the call before anything
+is published. The Project's preview harness is a versioned Project file: the
+nearest `.storybook/preview.*`, else `.papercraft/preview.*`, walking up from
+the previewed file (skipping `.doric/`), in Storybook's `Preview` shape; its
+decorators wrap every component preview, and a harness that does not compile
+is left out with a warning. A `*.stories.*` source (or a default export shaped
+like CSF meta) mounts one CSF story (`entry`, else the first in source order)
+with Storybook's decorator order and `args` merge; `@storybook/addon-themes` is
+a built-in stand-in. The CSS the harness imports replaces Doric's theme as the
+sheet's base, compiled with Tailwind v4 through `files/v1` (`tailwindcss`
+itself from the host), with its `:root` rules also on `:host` and the module's
+theme wrapper; components' CSS imports are appended; Tailwind v3 or a sheet
+that does not compile falls back to Doric's theme with a warning. `mount`
+creates a portal container beside its React root, inside the shadow root, and
+renders the tree under `desktop/ui`'s `PortalContainerProvider` with it, so
+`desktop/ui` overlays portal there by themselves (the runtime's
+`desktop/ui/portal-container` import does not count as the preview using
+`desktop/ui` for its sheet); it also hands the container to decorators and
+stories as `context.papercraft.portalContainer`, which only third-party
+portals (the Project's own components) need; the surface's content is the
+containing block of portaled overlays. An `html` source still builds `index.html` only. Before
+importing a module, the window reads the revision's bytes through
+`artifacts/v1.read` and writes them into the verified cache with
+`artifacts.cache/v1.ensure`; the module is then imported from
+`doric://app/artifacts/<artifactId>@<revision>/index.js`, and the markup stands
+in when either step fails.
 
 `/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
@@ -855,7 +1039,7 @@ names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `runtime`,
 `direct`,
 `openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
-`settings`, `chat` and `history`, and chooses
+`settings`, `chat`, `history`, `artifacts`, `comments` and `papercraft`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
 than in a generation process: `host-config`, which owns the configuration's
@@ -945,7 +1129,14 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `pending` queue projection and the usage aggregate into the same commit as
 the event. `/bundles/runtime/direct` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession`, and keeps its history as the opaque
-`direct.history/v1` state (`messages` and `meta`). Its `compact` condenses an
+`direct.history/v1` state (`messages` and `meta`). The executor frames every
+input in an XML envelope instead of Markdown headers: `<user-request>`,
+`<parent-instruction thread="" prompt="">`, `<terminal-output terminal=""
+prompt="">` or `<child-result thread="" prompt="">`. Attribute values escape
+`&`, `"` and `<`, and a closing tag of the four envelope names inside the body
+is neutralized to `<\/…`; older history keeps its `# User request` text. The
+system prompt describes the envelope, the chat's `<comments>`, `<target>`,
+`<comment>` and `<message>` parts and the `comment_reply` tool. Its `compact` condenses an
 idle Thread's history into one marked summary message: the automatic trigger
 runs between provider turns of a run (after `usage`/`response.finished`, and
 before a resumed run's first call) when the projected next call crosses the
@@ -1026,7 +1217,10 @@ contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
 and the renderer was the shell's legacy React tree (both removed by stage 9);
 the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
-theme, fonts and shadcn/ui components; `desktop/client` runs the window;
+theme, fonts and shadcn/ui components, whose overlays portal into the
+container the nearest `PortalContainerProvider` (`desktop/ui/portal-container`,
+also exported by `desktop/ui`) names, else into `document.body`, while a
+`container` passed to a `*Portal` wins; `desktop/client` runs the window;
 `desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
 window-main API. `app/desktop/doric-platform` builds the platform files and import map.
 The CSP adds `worker-src 'self'` and the import
@@ -1052,7 +1246,7 @@ unavailable elements. `layout` registers `/` with the workspace frame, its
 terminals, usage, resources, working-directory and branch UI under
 `src/client/provisional/` until stage 10 moved them to their bundles; `chat` registers
 `/projects/:projectId/threads/:threadId` (child of `/`) with `<chat-view>`, its
-composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1` and
+composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1`, `chat.send/v1` and
 `chat.hooks/v1`; `settings` registers `/settings` with sections as child routes
 and the execution picker as a `layout.footer` item; `history` (desktopMain)
 keeps the per-Thread snapshot cache over `doric.cache/v1`. The new platform
@@ -2208,7 +2402,12 @@ Newly written or materially revised user-message inputs passed to model
 arrays as their outer prompt envelope.
 
 Enforcement: write the outer prompt as simple, direct, unambiguous,
-evidence-grounded Markdown. Literal JSON source material is allowed only in a
+evidence-grounded Markdown. Approved exception: the Direct runtime's input
+envelope (`<user-request>`, `<parent-instruction>`, `<child-result>`,
+`<terminal-output>`) and the chat's prompt structure (`<comments>`, `<target>`,
+`<comment>`, `<message>`) use those XML tags, with readable text or Markdown
+inside; system prompts and every other model input stay Markdown. Literal JSON
+source material is allowed only in a
 labeled fenced `json` block within that Markdown. This constraint does not
 apply to provider transports, JSON-RPC, configuration, storage or persistence,
 tools or tool payloads, schemas, or other non-prompt JSON.

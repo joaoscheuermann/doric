@@ -177,6 +177,8 @@ void test('the default composition exposes the pre-migration tools, in order, by
         'thread-send',
         'thread-interrupt',
         'thread-terminate',
+        'papercraft_preview',
+        'comment_reply',
       ],
     );
   });
@@ -253,9 +255,11 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // `resources` and `screen` features, and since the desktop switch (WP-10N) the
     // `notifications` bundle, which has no host part, and the `web` bundle. The
     // `screen-relay` bundle is one too: it is the resident half of the screen,
-    // which serves the relay on the host's own listener. No bundle is
+    // which serves the relay on the host's own listener, and the `artifacts`,
+    // `comments` and `papercraft` features are the review registry, its
+    // anchored comments and the live preview over them. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 24);
+    assert.equal(host.bundleCount, 27);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -292,6 +296,9 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         history: ['active', 'others'],
         'host-config': ['active', 'others'],
         transport: ['active', 'others'],
+        artifacts: ['active', 'others'],
+        comments: ['active', 'others'],
+        papercraft: ['active', 'others'],
       },
     );
     const order = host.platform.catalog().order;
@@ -313,6 +320,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'resources'],
       ['runtime', 'screen'],
       ['screen-relay', 'screen'],
+      ['artifacts', 'papercraft'],
+      ['comments', 'papercraft'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),

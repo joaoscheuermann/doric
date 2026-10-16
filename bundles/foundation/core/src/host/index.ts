@@ -1,5 +1,11 @@
-import { type HostContext, StorageV1 } from 'bundle/contracts';
+import {
+  type HookHandle,
+  HooksV1,
+  type HostContext,
+  StorageV1,
+} from 'bundle/contracts';
 
+import { CoreEventHooksV1 } from '../contracts/hooks.js';
 import { settingsGenerationType, settingsType } from '../contracts/storage.js';
 import { createHooks, type HooksOptions } from '../shared/hooks.js';
 import { createLog } from '../shared/log.js';
@@ -39,12 +45,24 @@ export const createActivate =
     );
 
     services.provide(createHooks(options.hooks));
+
+    // `core.event-hooks/v1`: the hooks `events/v1` fires after each append.
+    // A host without a catalog (a unit test) cannot define it, and appends
+    // then tell no one.
+    let eventHooks: HookHandle<typeof CoreEventHooksV1> | undefined;
+
+    try {
+      eventHooks = services.use(HooksV1).define(CoreEventHooksV1);
+    } catch {
+      eventHooks = undefined;
+    }
+
     services.provide(createLog());
     services.provide(createTools());
     services.provide(createSkills());
     services.provide(createStorage(state));
     services.provide(createSecrets(state));
-    services.provide(createEvents(state));
+    services.provide(createEvents(state, () => eventHooks));
     services.provide(createSettings(state));
     services.provide(createModels(services));
 

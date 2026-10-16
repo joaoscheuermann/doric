@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '../lib/utils.js';
+import { usePortalContainer } from '../portal-container.js';
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import { Select as SelectPrimitive } from 'radix-ui';
 import * as React from 'react';
@@ -63,8 +64,9 @@ function SelectContent({
   align = 'center',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const container = usePortalContainer();
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={container}>
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === 'item-aligned'}

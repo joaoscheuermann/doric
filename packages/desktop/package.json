@@ -53,6 +53,12 @@
       "import": "./dist/chrome-bar.js",
       "default": "./dist/chrome-bar.js"
     },
+    "./ui/portal-container": {
+      "@org/source": "./src/portal-container.tsx",
+      "types": "./dist/portal-container.d.ts",
+      "import": "./dist/portal-container.js",
+      "default": "./dist/portal-container.js"
+    },
     "./ui/react-element": {
       "@org/source": "./src/react-element.ts",
       "types": "./dist/react-element.d.ts",

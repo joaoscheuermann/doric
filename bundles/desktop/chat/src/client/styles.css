@@ -91,6 +91,14 @@
       transition-duration: 0ms;
     }
   }
+
+  /* A comment's reply card, or the block that draws its target, flashed when
+     a marker or a reply asks for it. */
+  .conversation-scroll [data-comment-flash] {
+    border-radius: var(--radius-lg);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 12%, transparent);
+    transition: box-shadow 300ms ease-out;
+  }
 }
 
 /* Long paths and URLs must fit each conversation's resizable pane. */

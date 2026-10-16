@@ -12,13 +12,8 @@
     "doric:fake-host": "node scripts/fake-host/main.mjs",
     "codex:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/codex-oauth.mjs",
     "okf": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/okf.mjs",
-    "doric:dev": "concurrently --kill-others --success first --names renderer,electron \"npm run nxe:serve:frontend\" \"wait-on tcp:127.0.0.1:4200 && npm run nxe:serve:backend\"",
-    "nxe:build:frontend": "nx build doric-renderer",
-    "nxe:build:backend": "nx build doric-app",
-    "nxe:serve:frontend": "nx serve doric-renderer",
-    "nxe:serve:backend": "nx serve doric-app",
-    "nxe:package:app": "nx run doric-app:package",
-    "nxe:make:app": "nx run doric-app:make"
+    "doric:dev": "nx run doric-app:build-runner && concurrently --kill-others --success first --names renderer,electron \"nx serve doric-renderer\" \"wait-on tcp:127.0.0.1:4200 && nx serve doric-app\"",
+    "doric:docker:build": "docker compose -p doric --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker up -d --build"
   },
   "private": true,
   "dependencies": {

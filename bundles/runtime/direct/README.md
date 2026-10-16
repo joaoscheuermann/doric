@@ -8,6 +8,14 @@ generation process, next to `runtime`, which calls it.
 
 - **System prompt:** the Direct instruction followed by every skill that
   `skills/v1` lists, in bundle order.
+- **Input envelope:** every input is framed in XML, not Markdown headers:
+  `<user-request>`, `<parent-instruction thread="" prompt="">`,
+  `<terminal-output terminal="" prompt="">` or
+  `<child-result thread="" prompt="">`. Attribute values escape `&`, `"` and
+  `<`; a closing tag of those four names inside the body becomes `<\/…`. Older
+  history keeps its `# User request` text. The system prompt describes the
+  envelope, the chat's `<comments>`, `<target>`, `<comment>` and `<message>`
+  parts, and the `comment_reply` tool.
 - **Tools:** every tool `tools/v1` lists, bound to the prompt's call.
   A prompt whose tool settings are unmet is refused before the model is called.
 - **Model:** the configured execution provider, model and effort, read from

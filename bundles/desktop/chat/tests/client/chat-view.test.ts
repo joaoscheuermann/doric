@@ -668,7 +668,13 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   await settle(50);
   assert.deepEqual(
     opened.received('runtime.threads/v1.prompt').map((call) => call.input),
-    [{ id: childId, prompt: 'Send only this child draft' }],
+    // Words alone travel as the envelope's message.
+    [
+      {
+        id: childId,
+        prompt: '<message>\nSend only this child draft\n</message>',
+      },
+    ],
   );
   assert.match(main.textContent ?? '', /Keep this main draft/);
   button(mainFooter, 'Send (Cmd+Enter)')?.click();
@@ -676,8 +682,11 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   assert.deepEqual(
     opened.received('runtime.threads/v1.prompt').map((call) => call.input),
     [
-      { id: childId, prompt: 'Send only this child draft' },
-      { id: threadId, prompt: 'Keep this main draft' },
+      {
+        id: childId,
+        prompt: '<message>\nSend only this child draft\n</message>',
+      },
+      { id: threadId, prompt: '<message>\nKeep this main draft\n</message>' },
     ],
   );
 });

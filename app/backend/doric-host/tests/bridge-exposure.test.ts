@@ -126,6 +126,16 @@ void test('the exposed methods of the built composition equal the frozen allowli
 
 void test('desktop providers expose exactly the operations used by clients', async () => {
   assert.deepEqual(await exposedMethods('desktopMain'), {
+    'artifacts.cache/v1': ['ensure'],
+    'chat.composer/v1': [
+      'addItem',
+      'flush',
+      'read',
+      'removeItem',
+      'setText',
+      'updateNote',
+      'watch',
+    ],
     'core.commands/v1': ['execute'],
     'history.snapshots/v1': ['read', 'write'],
     'menus/v1': ['addItem', 'addKeybinding', 'setContext'],

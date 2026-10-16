@@ -304,7 +304,16 @@ export class DesktopPlatform {
       windows: this.windows,
       menus: this.menus,
       cacheDirectory: (bundleId) =>
-        cacheDirectory(this.#paths.bundleCache, bundleId),
+        cacheDirectory(
+          // The artifacts bundle's `doric.cache/v1` directory is the tree the
+          // protocol serves to windows under `/artifacts/<artifactId>@<revision>/`
+          // (`artifacts.md`, stage 2), so the kernel places it directly under
+          // `userData` (`userData/artifacts/`), not under `bundle-cache/`.
+          bundleId === 'artifacts'
+            ? this.#paths.userData
+            : this.#paths.bundleCache,
+          bundleId,
+        ),
       migrateStorage: (request) =>
         migrateStorageOrigin(
           {
@@ -498,6 +507,7 @@ export class DesktopPlatform {
       resources: this.resources,
       shell: shellRenderer,
       bundles: this.cache,
+      artifacts: { root: this.#paths.artifacts },
       ...(devProxy === undefined ? {} : { devProxy }),
     });
     ipcMain.handle('doric:desktop', (event, request: unknown) =>

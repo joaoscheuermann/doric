@@ -55,7 +55,9 @@ const directHarness = (
       calls.push({ persisted: state.parts().messages, executions });
       const content = request.messages.at(-1)?.content;
       assert.equal(typeof content, 'string');
-      const input = (content as string).replace('# User request\n\n', '');
+      const input = (content as string)
+        .replace(/^<user-request>\n/, '')
+        .replace(/\n<\/user-request>$/, '');
       yield {
         type: 'response.started' as const,
         provider: { id: 'provider', name: 'provider' },
@@ -211,9 +213,9 @@ void test('feeds complete persisted history into each fresh Direct agent', async
   await harness.run('prompt-2');
 
   assert.deepEqual(harness.requests[1]?.messages.slice(1), [
-    { role: 'user', content: '# User request\n\nprompt-1' },
+    { role: 'user', content: '<user-request>\nprompt-1\n</user-request>' },
     { role: 'assistant', content: 'answer-prompt-1' },
-    { role: 'user', content: '# User request\n\nprompt-2' },
+    { role: 'user', content: '<user-request>\nprompt-2\n</user-request>' },
   ]);
 });
 
@@ -326,8 +328,8 @@ void test('persists partial history after failure for the next prompt', async ()
   await harness.run('after-failure');
 
   assert.deepEqual(harness.requests[1]?.messages.slice(1), [
-    { role: 'user', content: '# User request\n\nfail' },
-    { role: 'user', content: '# User request\n\nafter-failure' },
+    { role: 'user', content: '<user-request>\nfail\n</user-request>' },
+    { role: 'user', content: '<user-request>\nafter-failure\n</user-request>' },
   ]);
 });
 
@@ -418,7 +420,7 @@ void test('answers a resumed history that ends in a tool call with no result', a
   // assistant call the run never answered.
   seedHistory(harness.state, {
     messages: [
-      { role: 'user', content: '# User request\n\nuse-tool' },
+      { role: 'user', content: '<user-request>\nuse-tool\n</user-request>' },
       {
         role: 'assistant',
         content: 'Inspecting.',
@@ -443,7 +445,7 @@ void test('answers a resumed history that ends in a tool call with no result', a
   assert.equal(harness.calls[0]?.executions, 0);
   assert.deepEqual(
     sent.filter(({ role }) => role === 'user').map(({ content }) => content),
-    ['# User request\n\nuse-tool'],
+    ['<user-request>\nuse-tool\n</user-request>'],
   );
 });
 
@@ -454,7 +456,7 @@ void test('keeps the original input and every assistant turn across successive r
       controller.abort();
   });
   const history: readonly ProviderMessage[] = [
-    { role: 'user', content: '# User request\n\ncontinue' },
+    { role: 'user', content: '<user-request>\ncontinue\n</user-request>' },
     { role: 'assistant', content: 'Work before the first restart.' },
   ];
   seedHistory(harness.state, {
@@ -474,7 +476,7 @@ void test('keeps the original input and every assistant turn across successive r
 void test('repairs only unanswered calls after a partially completed tool batch', async () => {
   const harness = directHarness();
   const history: readonly ProviderMessage[] = [
-    { role: 'user', content: '# User request\n\ncontinue' },
+    { role: 'user', content: '<user-request>\ncontinue\n</user-request>' },
     {
       role: 'assistant',
       content: '',

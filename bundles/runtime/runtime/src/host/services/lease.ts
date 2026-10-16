@@ -45,33 +45,71 @@ export const leaseService = ({
    * delegates to it on the caller's scope.
    */
   readonly resources?: () => ProjectResourcesReader | undefined;
-}) =>
-  defineService(RuntimeLeaseV1, {
+}) => {
+  const runWithSandbox = async <T>(
+    call: Call,
+    operation: (sandbox: Sandbox) => Promise<T>,
+  ): Promise<T> => {
+    const scope = readRuntimeScope(call);
+    if (scope.promptId !== undefined) {
+      return operation(bindings.bound(call).sandbox);
+    }
+
+    let projectId = scope.projectId;
+    if (projectId === undefined && scope.threadId !== undefined) {
+      const thread = await service.threads.find(scope.threadId);
+      projectId = thread?.projectId;
+    }
+    if (projectId === undefined) {
+      const active = await service.projects.activity();
+      if (active.length > 0) {
+        projectId = active[0]?.project.id;
+      }
+    }
+    if (projectId !== undefined) {
+      const outcome = await service.projects.withLease(projectId, operation);
+      if (outcome.status === 'ready') {
+        return outcome.value;
+      }
+      throw new ContractError(
+        'unavailable',
+        `Project lease is not ready (${outcome.status}).`,
+      );
+    }
+    throw new ContractError('invalid_input', leaseScopeMessage);
+  };
+
+  return defineService(RuntimeLeaseV1, {
     describe: defineMethod({
       ...methods.describe,
-      execute: async (_input, call) => describe(bindings.bound(call).sandbox),
+      execute: async (_input, call) =>
+        runWithSandbox(call, async (sandbox) => describe(sandbox)),
     }),
     exec: defineMethod({
       ...methods.exec,
-      execute: async (input, call) => {
-        // No abort signal reaches the sandbox, as no tool ever passed one.
-        const result = await bindings.bound(call).sandbox.exec(input);
+      execute: async (input, call) =>
+        runWithSandbox(call, async (sandbox) => {
+          // No abort signal reaches the sandbox, as no tool ever passed one.
+          const result = await sandbox.exec(input);
 
-        return {
-          exitCode: result.exitCode,
-          stdout: result.stdout,
-          stderr: result.stderr,
-        };
-      },
+          return {
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          };
+        }),
     }),
     readFile: defineMethod({
       ...methods.readFile,
-      execute: (path, call) => bindings.bound(call).sandbox.readFile(path),
+      execute: (path, call) =>
+        runWithSandbox(call, (sandbox) => sandbox.readFile(path)),
     }),
     writeFile: defineMethod({
       ...methods.writeFile,
       execute: async ([path, content], call) => {
-        await bindings.bound(call).sandbox.writeFile(path, content);
+        await runWithSandbox(call, async (sandbox) => {
+          await sandbox.writeFile(path, content);
+        });
       },
     }),
     ssh: defineMethod({
@@ -145,3 +183,4 @@ export const leaseService = ({
         service.projects.withLease(scoped(call, 'projectId'), task),
     }),
   });
+};

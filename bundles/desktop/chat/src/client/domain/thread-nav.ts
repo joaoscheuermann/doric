@@ -51,8 +51,12 @@ export const threadMarkers = (
           text: turn.delegated.text.trim(),
         },
       ];
+    // A prompt of comments alone has no words; its notes stand for it.
+    const words =
+      turn.text.trim() ||
+      turn.comments.map((comment) => comment.text.trim()).join('\n');
     return turn.delegated === undefined
-      ? [{ kind: 'prompt', promptId: turn.promptId, text: turn.text.trim() }]
+      ? [{ kind: 'prompt', promptId: turn.promptId, text: words }]
       : [];
   });
 

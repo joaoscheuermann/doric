@@ -178,6 +178,30 @@ describe('thread event projection', () => {
     assert.deepEqual(types(projection.turns), []);
   });
 
+  test('a text delta of only whitespace opens no answer between thinking and tools', () => {
+    // Some models emit a lone "\n\n" between their reasoning and a tool call:
+    // an answer of blank lines would draw an empty block and split the run.
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'Let me look.' }),
+      event(2, 'one', { type: 'text.delta', delta: '\n\n' }),
+      event(3, 'one', { type: 'tool.started', call: call('a', 'grep') }),
+      event(4, 'one', { type: 'tool.finished', call: call('a', 'grep') }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['thinking', 'tool_call']);
+  });
+
+  test('keeps whitespace inside an answer already written', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'First.' }),
+      event(2, 'one', { type: 'text.delta', delta: '\n\n' }),
+      event(3, 'one', { type: 'text.delta', delta: 'Second.' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent']);
+    assert.equal(textOf(projection.turns[0]), 'First.\n\nSecond.');
+  });
+
   test('reads a trailing reasoning run as still streaming', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'hmm' }),

@@ -15,6 +15,11 @@ import { useEffect, useRef } from 'react';
 import { threadsApi } from '../../../../api/threads-api.js';
 import { USER_PROMPT_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { messageFrom } from '../../../../domain/errors.js';
+import {
+  promptMessage,
+  promptSummary,
+  withPromptMessage,
+} from '../../../../domain/prompt-envelope.js';
 import { queryKeys } from '../../../../queries/keys.js';
 import { queueEditStore } from '../../../../stores/queue-edit.js';
 import {
@@ -114,15 +119,19 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
                   (node) => node.type === USER_PROMPT_BLOCK,
                 ) as SerializedElementNode | undefined;
               if (draft === undefined) return;
+              // A reader's prompt is an envelope: the editor takes only its
+              // words, and the comments it carried stay as they were sent.
+              const words = promptMessage(detail.text);
               queueEditStore.getState().set(threadId, {
                 item,
                 revision: detail.revision,
-                original: detail.text,
-                text: detail.text,
+                stored: detail.text,
+                original: promptSummary(detail.text),
+                text: words,
                 draft,
                 saving: false,
               });
-              setText(detail.text);
+              setText(words);
               editor.getRootElement()?.focus({ preventScroll: true });
             })
             .catch((error) => {
@@ -140,12 +149,13 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
           if (edit === undefined) return false;
           if (edit.saving) return true;
           const text = $getUserPromptNode()?.getTextContent() ?? edit.text;
-          if (!text.trim()) return true;
+          const prompt = withPromptMessage(edit.stored, text);
+          if (!prompt.trim()) return true;
           queueEditStore
             .getState()
             .patch(threadId, { saving: true, error: undefined, text });
           void threadsApi
-            .editQueued(threadId, edit.item.promptId, text, edit.revision)
+            .editQueued(threadId, edit.item.promptId, prompt, edit.revision)
             .then((saved) => {
               const latest = current();
               if (latest?.item.promptId !== edit.item.promptId) return;
@@ -158,7 +168,8 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
                 if (live !== text) {
                   queueEditStore.getState().patch(threadId, {
                     revision: saved.revision,
-                    original: saved.text,
+                    stored: saved.text,
+                    original: promptSummary(saved.text),
                     text: live,
                     saving: false,
                   });
@@ -167,7 +178,8 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
               } else if (latest.text !== text) {
                 queueEditStore.getState().patch(threadId, {
                   revision: saved.revision,
-                  original: saved.text,
+                  stored: saved.text,
+                  original: promptSummary(saved.text),
                   saving: false,
                 });
                 return;
@@ -177,7 +189,8 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
               else
                 queueEditStore.getState().patch(threadId, {
                   revision: saved.revision,
-                  original: saved.text,
+                  stored: saved.text,
+                  original: promptSummary(saved.text),
                   saving: false,
                   restore: true,
                 });

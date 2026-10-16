@@ -58,12 +58,12 @@ export const isWritingRoute = (): boolean => writing;
 const persist = (state: RouteSelectionState): Partial<RouteSelectionState> => {
   if (writer === undefined || !shouldWriteSelection(state.load, state.changed))
     return {};
-  if (
-    state.selection.projectId === undefined &&
-    writer.path()?.startsWith('/projects/') &&
-    !state.changed
-  )
-    return {};
+  // Nothing selected and nothing changed: there is no path to write, so the
+  // window keeps the one it has. That keeps a Projects path the user opened
+  // directly, and equally leaves the route of another bundle (`/papercraft/…`)
+  // or a path no route matches alone — an outlet that matches nothing leaves
+  // its URL as it is too. A selection, or a change, still writes as before.
+  if (state.selection.projectId === undefined && !state.changed) return {};
   const target =
     state.selection.projectId === undefined && writer.path() === PROJECTS_ROUTE
       ? PROJECTS_ROUTE

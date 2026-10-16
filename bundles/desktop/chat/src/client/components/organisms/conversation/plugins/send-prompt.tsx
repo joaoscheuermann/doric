@@ -7,16 +7,20 @@ import {
 } from 'lexical';
 import { useCallback, useEffect, useRef } from 'react';
 
+import type { ComposerItem } from '../../../../../contracts/index.js';
+import { promptEnvelope } from '../../../../domain/prompt-envelope.js';
+import { composerStackStore } from '../../../../stores/composer-stack.js';
 import type { PromptSignal } from '../../../../utility/prompt-signal.js';
-import { SAVE_QUEUE_EDIT_COMMAND } from '../commands.js';
+import { SAVE_QUEUE_EDIT_COMMAND, SEND_PROMPT_COMMAND } from '../commands.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
 /**
  * Puts the reader's words back into the prompt, when a send was refused — but
  * only while the prompt is empty, so it never collides with typing that
- * continued after the send.
+ * continued after the send. Shared with the composer's own draft sync, which
+ * restores the words the service's portrait holds when a Thread opens empty.
  */
-const $restore = (text: string): void => {
+export const $restore = (text: string): void => {
   const prompt = $getUserPromptNode();
   if (prompt === undefined || prompt.getTextContent().length > 0) return;
   prompt.append($createTextNode(text));
@@ -53,6 +57,14 @@ type SendPromptProps = {
  * send leaves, so the transcript shows the turn the host accepted rather than a
  * copy still in the input; a send the host refuses puts the words back.
  *
+ * The comment stack counts too. Every send is the prompt envelope — the
+ * stack's comments with their targets and anchors in `<comments>`, the
+ * reader's words in `<message>` — because the prompt is the only thing the
+ * agent reads; and a send with an empty editor still goes out when the stack
+ * carries words, because a comment alone is already something to send. A refused send restores only the reader's
+ * words, never the ones the stack composed: they stay in the stack, which is
+ * where they still are.
+ *
  * `sendRequest` is a value and not a callback because the shell cannot reach the
  * editor: it counts requests, this plugin answers the ones it has not seen, and
  * nothing travels the other way. A child that reports to its parent has to write
@@ -65,7 +77,8 @@ export function SendPrompt({
   promptSignal,
   send,
   sendRequest,
-}: SendPromptProps) {
+  threadId,
+}: SendPromptProps & { readonly threadId: string }) {
   const [editor] = useLexicalComposerContext();
   /**
    * The request this plugin last answered, seeded with the one it mounted under:
@@ -110,25 +123,42 @@ export function SendPrompt({
 
   const sendNow = useCallback((): void => {
     if (editor.dispatchCommand(SAVE_QUEUE_EDIT_COMMAND, undefined)) return;
-    let text = '';
+    let words = '';
     editor.read(() => {
-      text = $getUserPromptNode()?.getTextContent().trim() ?? '';
+      words = $getUserPromptNode()?.getTextContent().trim() ?? '';
     });
-    if (text.length === 0) {
+    // The stack's comments travel with every send: the prompt is the only
+    // thing the agent reads, so the anchors go in it with the reader's words.
+    const stack: readonly ComposerItem[] = composerStackStore
+      .getState()
+      .stack(threadId);
+    const prompt = promptEnvelope(words, stack);
+
+    if (words.length === 0) {
+      // The stack carries words of its own — a comment alone is already
+      // something to send. Only a stack with nothing written waits for the
+      // queue instead.
+      if (prompt.length > 0) {
+        void latest.current.send(prompt);
+        return;
+      }
+
       latest.current.onResumeQueue?.();
       return;
     }
 
     editor.update(() => {
       const prompt = $getUserPromptNode();
-      if (prompt === undefined || prompt.getTextContent().trim() !== text)
+      if (prompt === undefined || prompt.getTextContent().trim() !== words)
         return;
       prompt.clear();
     });
-    void latest.current.send(text).then((accepted) => {
-      if (!accepted) editor.update(() => $restore(text));
+    void latest.current.send(prompt).then((accepted) => {
+      // A refused send gives the reader's own words back; the ones the stack
+      // composed were never in the editor, and the stack still holds them.
+      if (!accepted) editor.update(() => $restore(words));
     });
-  }, [editor]);
+  }, [editor, threadId]);
 
   useEffect(() => {
     if (sendRequest === undefined || answered.current === sendRequest) return;
@@ -147,6 +177,21 @@ export function SendPrompt({
           // whether or not the prompt holds words to send.
           event.preventDefault();
           if (!event.repeat) sendNow();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+    [editor, sendNow],
+  );
+
+  // A stack note's own Cmd/Ctrl+Enter: the note is an editing host of its own,
+  // so its keys never reach the editor's, and it asks for the send instead.
+  useEffect(
+    () =>
+      editor.registerCommand(
+        SEND_PROMPT_COMMAND,
+        () => {
+          sendNow();
           return true;
         },
         COMMAND_PRIORITY_HIGH,

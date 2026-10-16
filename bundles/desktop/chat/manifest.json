@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -9,7 +9,9 @@
   "provides": [
     "chat.views/v1@1.0.0",
     "chat.lexical/v1@1.0.0",
-    "chat.hooks/v1@1.1.0"
+    "chat.hooks/v1@1.1.0",
+    "chat.composer/v1@1.0.0",
+    "chat.send/v1@1.0.0"
   ],
   "optional": ["history.snapshots/v1", "terminal/v1", "runtime.terminals/v1"],
   "requires": [
@@ -18,6 +20,11 @@
     "navigation/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "commands/v1@^1.0.0",
-    "runtime.threads/v1@^1.0.0"
-  ]
+    "runtime.threads/v1@^1.0.0",
+    "comments/v1@^1.0.0",
+    "chat.composer/v1@^1.0.0"
+  ],
+  "desktopScope": {
+    "chat.composer/v1": ["projectId", "threadId", "promptId"]
+  }
 }

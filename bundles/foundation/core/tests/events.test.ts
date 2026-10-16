@@ -7,11 +7,13 @@ import {
   type EventSinkSpec,
   type Events,
   EventsV1,
+  HooksV1,
   SecretsV1,
   StorageV1,
 } from 'bundle/contracts';
 import { z } from 'zod';
 
+import { CoreEventHooksV1 } from '../src/contracts/hooks.js';
 import { boot, core, probe } from './support/host.js';
 
 // D-E and E-6: the events/v1 facade (stage 2+3 design §5.5), and its event
@@ -343,13 +345,13 @@ void test('a sink whose owner segment is a placeholder writes only the streams o
   }
 });
 
-// E-6: before stage 5, REST and Socket.IO read only `thread_event`, so an event
-// appended through events/v1 would be durable but invisible. From stage 5 the
-// runtime owns the Thread streams and writes its one event contract
-// (`runtime.prompt-finished/v1`, X-7) itself; an append by another bundle
-// would still bypass the runtime aggregate (G-7), so no other bundle the host
-// ships may provide one through stage 7.
-void test('no bundle of the shipped host composition but the runtime provides an event contract', async () => {
+// E-6: from stage 5 the runtime owns the Thread streams and writes its one
+// event contract (`runtime.prompt-finished/v1`, X-7) itself. Other bundles
+// (`artifacts`, `comments`) append theirs through events/v1; the runtime folds
+// each one into its Thread aggregate the moment `core.event-hooks/v1` reports
+// it (G-7), so they no longer bypass it. What stays true: a shipped bundle's
+// event contracts are named under its own id, as the owner check requires.
+void test('every event contract of the shipped host composition is named under its bundle', async () => {
   const composition = JSON.parse(
     await readFile('app/backend/doric-host/composition.json', 'utf8'),
   ) as { readonly enabled: readonly string[] };
@@ -380,10 +382,59 @@ void test('no bundle of the shipped host composition but the runtime provides an
       .filter(({ kind }) => kind === 'event')
       .map((contract) => contract.id);
 
-    assert.deepEqual(
-      events,
-      id === 'runtime' ? ['runtime.prompt-finished/v1'] : [],
-      `bundle ${id} provides events`,
+    for (const event of events) {
+      assert.ok(event.startsWith(`${id}.`), `bundle ${id} provides ${event}`);
+    }
+
+    if (id === 'runtime') {
+      assert.deepEqual(events, ['runtime.prompt-finished/v1']);
+    }
+  }
+});
+
+void test('a committed append tells core.event-hooks/v1 observers which stream it reached', async () => {
+  const notify = user('notify', { register: true, sink: sinkSpec });
+  const seen: { stream: string; type: string; lastSequence: number }[] = [];
+  let host: Awaited<ReturnType<typeof boot>> | undefined;
+  let reached: () => void = () => undefined;
+  const observed = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const observer = probe('observer', {
+    requires: ['hooks/v1@^1.0.0', 'core.event-hooks/v1@^1.0.0'],
+    activate: ({ services }) => {
+      services.use(HooksV1).whenAvailable(CoreEventHooksV1, (hooks) => {
+        const registration = hooks.onEventAppendedHook(
+          async ({ stream, type }) => {
+            // The row is committed before observers hear of it.
+            const page = await readStream(host as never, stream);
+            seen.push({ stream, type, lastSequence: page.lastSequence });
+            reached();
+          },
+        );
+        return () => registration.dispose();
+      });
+    },
+  });
+
+  host = await boot([await core(), notify.bundle, observer]);
+
+  try {
+    await notify.events.append(
+      sent,
+      { text: 'hello' },
+      host.platform.call({ scope }),
     );
+    await observed;
+
+    assert.deepEqual(seen, [
+      {
+        stream: 'notify.thread-events/t-1',
+        type: 'notify.sent/v1',
+        lastSequence: 1,
+      },
+    ]);
+  } finally {
+    await host.close();
   }
 });

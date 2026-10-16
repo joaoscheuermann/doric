@@ -7,6 +7,8 @@ export interface DesktopPaths {
   readonly bundles: string;
   /** Download staging on the same volume (atomic rename). */
   readonly staging: string;
+  /** Verified artifact revisions: `artifacts/<artifactId>@<revision>/<path>`, served under `/artifacts/`. */
+  readonly artifacts: string;
   /** `doric.cache/v1`: `bundle-cache/<bundleId>/`. */
   readonly bundleCache: string;
   /** `doric/state.json`: migrations, last good core. */
@@ -21,6 +23,7 @@ export const desktopPaths = (userData: string): DesktopPaths => ({
   userData,
   bundles: join(userData, 'bundles'),
   staging: join(userData, 'bundles', '.tmp'),
+  artifacts: join(userData, 'artifacts'),
   bundleCache: join(userData, 'bundle-cache'),
   state: join(userData, 'doric', 'state.json'),
   windows: join(userData, 'doric', 'windows.json'),

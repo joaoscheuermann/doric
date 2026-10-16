@@ -1,6 +1,7 @@
 import {
   type Cleanup,
   EventsV1,
+  HooksV1,
   type HostContext,
   type Services,
   type Storage,
@@ -9,8 +10,10 @@ import {
 import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 
 import { promptFinishedEvent, threadEventSink } from '../contracts/events.js';
+import type { ThreadEvent } from '../contracts/model.js';
+import { onEventAppended } from './appends.js';
 import { type Bindings, createBindings } from './domain/bindings.js';
-import { createNotices } from './domain/notices.js';
+import { createNotices, type Notices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
 import { createWorkspaceService } from './domain/service.js';
 import { installHandover } from './handover.js';
@@ -19,7 +22,11 @@ import {
   installStartStop,
   type RuntimeLifecycle,
 } from './lifecycle.js';
-import { type ProjectResourcesReader, ResourcesV1 } from './peers.js';
+import {
+  CoreEventHooksV1,
+  type ProjectResourcesReader,
+  ResourcesV1,
+} from './peers.js';
 import { createPorts, type RuntimePorts } from './ports.js';
 import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
@@ -56,12 +63,14 @@ export const provideRuntime = (
     threads,
     ports,
     bindings = createBindings(),
+    notices: injectedNotices,
     terminal = () => undefined,
     resources = () => undefined,
   }: {
     readonly projects: ProjectStore;
     readonly threads: ThreadStore;
     readonly ports: RuntimePorts;
+    readonly notices?: Notices;
     /** The prompt bindings; a test passes its own to observe them. */
     readonly bindings?: Bindings;
     /**
@@ -77,7 +86,7 @@ export const provideRuntime = (
     readonly resources?: () => ProjectResourcesReader | undefined;
   },
 ): RuntimeProvision => {
-  const notices = createNotices(ports.log);
+  const notices = injectedNotices ?? createNotices(ports.log);
   const redactor = createRedactor(ports.storedRedactions);
   const service = createWorkspaceService({
     projects,
@@ -127,6 +136,7 @@ export const provideRuntime = (
 export const runtimeStores = (
   storage: Storage,
   ports: Pick<RuntimePorts, 'executor'>,
+  publish?: (event: ThreadEvent) => void,
 ): RuntimeStores =>
   createRuntimeStores(storage, {
     // The executor's rewind participation, scoped to the rewound prompt.
@@ -136,6 +146,7 @@ export const runtimeStores = (
           .executor({ projectId, threadId, promptId: input.promptId })
           .rewind(input),
     },
+    ...(publish !== undefined ? { publish } : {}),
   });
 
 export const activate = ({ services }: HostContext): Cleanup => {
@@ -147,6 +158,7 @@ export const activate = ({ services }: HostContext): Cleanup => {
   const sink = events.sink(threadEventSink);
 
   const ports = createPorts(services);
+  const notices = createNotices(ports.log);
   // terminal/v1 is the `terminal` bundle's (stage 10 host switch); it
   // activates after the runtime, whose contracts it requires.
   let terminal: TerminalService | undefined;
@@ -167,12 +179,25 @@ export const activate = ({ services }: HostContext): Cleanup => {
     };
   });
 
+  const stores = runtimeStores(storage, ports, notices.publisher.event);
   const { cleanup, lifecycle } = provideRuntime(services, {
-    ...runtimeStores(storage, ports),
+    ...stores,
+    notices,
     ports,
     terminal: () => terminal,
     resources: () => resources,
   });
+  // What other bundles append to a Thread's log through `events/v1` is
+  // folded into the Thread and published the moment it is committed, not at
+  // the runtime's next write on that Thread.
+  const appended = services
+    .use(HooksV1)
+    .whenAvailable(CoreEventHooksV1, (hooks) => {
+      const registration = hooks.onEventAppendedHook(
+        onEventAppended(stores.threads),
+      );
+      return () => registration.dispose();
+    });
   // The start and stop steps, and the handover between generation processes.
   const steps = installStartStop({ services, lifecycle });
   const handover = installHandover({ services, lifecycle, log: ports.log });
@@ -180,6 +205,7 @@ export const activate = ({ services }: HostContext): Cleanup => {
   return () => {
     handover.dispose();
     steps.dispose();
+    appended.dispose();
     sink.dispose();
     return cleanup();
   };

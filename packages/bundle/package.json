@@ -26,6 +26,12 @@
       "import": "./dist/runtime/index.js",
       "default": "./dist/runtime/index.js"
     },
+    "./externals": {
+      "@org/source": "./src/build/externals.ts",
+      "types": "./dist/build/externals.d.ts",
+      "import": "./dist/build/externals.js",
+      "default": "./dist/build/externals.js"
+    },
     "./testing": {
       "@org/source": "./src/testing/index.ts",
       "types": "./dist/testing/index.d.ts",

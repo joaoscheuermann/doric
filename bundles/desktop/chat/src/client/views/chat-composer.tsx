@@ -16,7 +16,7 @@ export function ChatComposer() {
 
 /** Controls bound to the conversation's record, independent of window selection. */
 export function ThreadComposer({ thread }: { readonly thread?: Thread }) {
-  const { canSend, send } = useComposer(thread?.id);
+  const { canSend, send } = useComposer(thread);
   const running =
     thread?.state === 'running' && thread.activePromptId !== undefined;
   const stop = useThreadStop(thread);

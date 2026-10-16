@@ -19,6 +19,8 @@ import {
   queueAuthor,
   queueDetail,
   queueItems,
+  queueItemText,
+  queueRowText,
   visibleQueueItems,
 } from '../../domain/queue.js';
 import { useQueueCaret } from '../../hooks/use-queue-caret.js';
@@ -28,6 +30,15 @@ import { threadChatsStore } from '../../stores/thread-chats.js';
 import { PromptAuthor } from '../molecules/prompt-author.js';
 import { EDIT_QUEUE_PROMPT_COMMAND } from './conversation/commands.js';
 
+/** The text the log stored for a queued prompt, when this window holds it. */
+const useStoredText = (threadId: string, promptId: string) =>
+  useStore(threadChatsStore, (state) =>
+    queueDetail(
+      state.chats.chats.get(threadId)?.projection.events ?? [],
+      promptId,
+    ),
+  );
+
 function Details({
   item,
   threadId,
@@ -35,16 +46,11 @@ function Details({
   readonly item: QueueItem;
   readonly threadId: string;
 }) {
-  const text = useStore(threadChatsStore, (state) =>
-    queueDetail(
-      state.chats.chats.get(threadId)?.projection.events ?? [],
-      item.promptId,
-    ),
-  );
+  const stored = useStoredText(threadId, item.promptId);
   return (
     <>
       <div className="max-h-64 overflow-y-auto p-4 whitespace-pre-wrap wrap-break-word select-text">
-        {text ?? item.preview}
+        {queueItemText(item, stored)}
       </div>
       <Separator />
       <footer
@@ -77,6 +83,9 @@ function Item({
   readonly onKeyDown: (event: KeyboardEvent) => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
+  // A reader's prompt is an envelope: the row shows its words, read from the
+  // stored text, since the host's preview may be cut before them.
+  const text = queueRowText(item, useStoredText(threadId, item.promptId));
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'nearest' });
   }, [focused]);
@@ -95,13 +104,13 @@ function Item({
               'queue-row w-full justify-start gap-2 rounded-none border-0 text-sm font-light focus-visible:ring-inset has-data-[icon=inline-start]:pl-2.5',
               focused && 'bg-muted',
             )}
-            aria-label={`${queueAuthor(item.source, item.label)}: ${item.preview}`}
+            aria-label={`${queueAuthor(item.source, item.label)}: ${text}`}
             onFocus={onFocus}
             onKeyDown={onKeyDown}
           >
             <PromptAuthor source={item.source} label={item.label} />
             <span className="min-w-0 truncate text-muted-foreground">
-              {item.preview}
+              {text}
             </span>
             {editing && (
               <span className="ml-auto shrink-0 pl-3 text-xs font-normal text-muted-foreground">

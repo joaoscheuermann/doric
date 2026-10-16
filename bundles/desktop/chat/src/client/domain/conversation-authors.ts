@@ -7,7 +7,7 @@
  */
 
 /** The reader at this install; their turns and their prompt wear this name. */
-export const READER_NAME = 'jao.scheuermann';
+export { READER_NAME } from '../../contracts/index.js';
 
 /** The agent a Thread talks to. */
 export const AGENT_NAME = 'agent';

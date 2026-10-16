@@ -308,6 +308,42 @@ describe('startup restore', () => {
     assert.deepEqual(window.writes, []);
   });
 
+  test("a window on another bundle's route keeps its path", () => {
+    const window = new FakeWindow('/papercraft/checkout-preview');
+
+    const { looked } = restore({
+      route: {
+        path: '/papercraft/checkout-preview',
+        pattern: '/papercraft/:artifactId',
+        params: { artifactId: 'checkout-preview' },
+      },
+      lookup: async (id) => thread(id),
+    });
+
+    assert.deepEqual(looked, []);
+    assert.equal(routeSelectionStore.getState().load, 'none');
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/papercraft/checkout-preview');
+  });
+
+  test('a path no route matches keeps its own URL', () => {
+    const window = new FakeWindow('/nowhere');
+
+    startRestore({
+      route: undefined,
+      legacy: new FakeLegacy(null),
+      lookup: async (id) => thread(id),
+      isActive: () => true,
+      isCurrent: () => true,
+      onRestore: () => undefined,
+      onMissingProject: (projectId) => ({ projectId }),
+    });
+
+    assert.equal(routeSelectionStore.getState().load, 'none');
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/nowhere');
+  });
+
   test('a direct Project path is kept while the Project selection initializes', () => {
     const window = new FakeWindow('/projects/p1');
 
@@ -426,6 +462,17 @@ describe('selection writes', () => {
   test('a Project-only selection keeps its own path', () => {
     assert.equal(pathFor({ projectId: 'p1' }), '/projects/p1');
     assert.equal(pathFor({}), '/');
+  });
+
+  test("a selection still writes over another bundle's route", () => {
+    const window = new FakeWindow('/papercraft/checkout-preview');
+    routeSelectionStore.setState({ selection: {} });
+    routeSelectionStore.getState().settleLoad('none');
+    window.writes.length = 0;
+
+    routeSelectionStore.getState().changeSelection({ projectId: 'p1' });
+
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
   });
 
   test('ids are encoded as path segments', () => {

@@ -18,6 +18,7 @@ import { createContext, useContext, useEffect, useRef } from 'react';
 import type { JSX } from 'react/jsx-runtime';
 
 import type { RenderBlock } from '../../../../../contracts/index.js';
+import { CHAT_BLOCK_ID_ATTRIBUTE } from '../../../../utility/comment-thread.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
@@ -114,6 +115,9 @@ export class ChatBlockNode extends DecoratorNode<JSX.Element> {
     const dom = document.createElement('div');
     // The gap the conversation's blocks stand apart by, as a failure states it.
     dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
+    // The block's id names what it draws (an artifact's frame names the
+    // artifact), so a comment's thread can find the block of its target.
+    dom.setAttribute(CHAT_BLOCK_ID_ATTRIBUTE, this.__blockId);
     return dom;
   }
 

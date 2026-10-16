@@ -35,6 +35,7 @@ const sentTurn = (text: string): UserTurn => ({
   events: [],
   text,
   accepted: false,
+  comments: [],
   awaiting: false,
 });
 

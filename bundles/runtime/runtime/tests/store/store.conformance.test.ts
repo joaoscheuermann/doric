@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
+import type { ThreadEvent } from '../../src/contracts/model.js';
+import { threadEventsStream } from '../../src/contracts/storage.js';
+import { onEventAppended } from '../../src/host/appends.js';
+import { createNotices } from '../../src/host/domain/notices.js';
 import type { RuntimeStores } from '../../src/host/store/index.js';
 import {
   type Backend,
@@ -487,6 +491,218 @@ storeTest(
       (await threads.appendEvent(thread.id, promptId, 'plain')).type,
       'unknown',
     );
+  },
+);
+
+storeTest(
+  'folds an event another bundle appended to the stream and publishes it once',
+  async ({ projects, backend }) => {
+    const published: ThreadEvent[] = [];
+    const threadStore = stores(backend.storage, {
+      publish: (event: ThreadEvent) => {
+        published.push(event);
+      },
+    }).threads;
+    const { project } = await projects.create(
+      'Intervening',
+      snapshot(),
+      'blue',
+    );
+    const { thread } = await threadStore.create(project.id, 'Thread');
+    await threadStore.appendEvent(thread.id, promptId, {
+      type: 'prompt.accepted',
+      text: 'hello',
+      source: { kind: 'user' },
+    });
+    // The row `events/v1.append` writes for a bundle event on the runtime's
+    // sink: the scope keys, the type, and the body carrying its own type. It
+    // reaches the stream without the Thread document moving.
+    await backend.storage.commit({
+      append: [
+        {
+          stream: threadEventsStream(thread.id),
+          events: [
+            {
+              projectId: project.id,
+              threadId: thread.id,
+              promptId,
+              type: 'artifacts.created/v1',
+              event: {
+                type: 'artifacts.created/v1',
+                artifactId: 'checkout-7f3a',
+                revision: 1,
+                kind: 'preview',
+                title: 'Checkout',
+                targets: [],
+                entries: [],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const next = await threadStore.appendEvent(thread.id, promptId, {
+      type: 'tool.finished',
+      output: { ok: true },
+    });
+    await threadStore.appendEvent(thread.id, promptId, {
+      type: 'tool.finished',
+      output: { ok: true },
+    });
+
+    assert.equal(next.sequence, 3);
+    assert.deepEqual(
+      (await threadStore.eventsAfter(thread.id, 0)).map((event) => [
+        event.sequence,
+        event.type,
+      ]),
+      [
+        [1, 'prompt.accepted'],
+        [2, 'artifacts.created/v1'],
+        [3, 'tool.finished'],
+        [4, 'tool.finished'],
+      ],
+    );
+    assert.equal((await threadStore.record(thread.id))?.lastSequence, 4);
+    assert.deepEqual(
+      published.map((event) => [event.sequence, event.type]),
+      [[2, 'artifacts.created/v1']],
+    );
+  },
+);
+
+storeTest(
+  'publishes an event another bundle appended to an idle Thread the moment the core reports it',
+  async ({ projects, backend }) => {
+    // The live path: a watcher of the runtime's notices, the store publishing
+    // into them, and the handler the runtime registers for the core's
+    // `onEventAppendedHook`.
+    const notices = createNotices({ error: () => undefined });
+    const watched: ThreadEvent[] = [];
+    notices.watch((notice) => {
+      if (notice.kind === 'event') watched.push(notice.value);
+    });
+    const threadStore = stores(backend.storage, {
+      publish: notices.publisher.event,
+    }).threads;
+    const appended = onEventAppended(threadStore);
+    const { project } = await projects.create('Idle', snapshot(), 'blue');
+    const { thread } = await threadStore.create(project.id, 'Thread');
+    await threadStore.appendEvent(thread.id, promptId, {
+      type: 'prompt.accepted',
+      text: 'hello',
+      source: { kind: 'user' },
+    });
+    const stream = threadEventsStream(thread.id);
+    const external = (artifactId: string) => ({
+      projectId: project.id,
+      threadId: thread.id,
+      promptId,
+      type: 'artifacts.created/v1',
+      event: {
+        type: 'artifacts.created/v1',
+        artifactId,
+        revision: 1,
+        kind: 'preview',
+        title: 'Checkout',
+        targets: [],
+        entries: [],
+      },
+    });
+
+    // Two rows land as `events/v1.append` writes them, the Thread idle.
+    await backend.storage.commit({
+      append: [{ stream, events: [external('first-1')] }],
+    });
+    await backend.storage.commit({
+      append: [{ stream, events: [external('second-2')] }],
+    });
+    // The core reports each append; the reports may arrive late or twice.
+    await appended({ stream, type: 'artifacts.created/v1' });
+    await appended({ stream, type: 'artifacts.created/v1' });
+    await appended({ stream: 'other.stream/x', type: 'other.event/v1' });
+
+    assert.deepEqual(
+      watched.map((event) => [event.sequence, event.type]),
+      [
+        [2, 'artifacts.created/v1'],
+        [3, 'artifacts.created/v1'],
+      ],
+    );
+    // No runtime write reached the stream: the rows are the bundle's own.
+    const page = await backend.storage.read({
+      stream,
+      afterSequence: 0,
+      limit: 10,
+    });
+    assert.equal(page.lastSequence, 3);
+    assert.equal((await threadStore.record(thread.id))?.lastSequence, 3);
+
+    // The runtime's next write neither publishes them again nor reorders.
+    const next = await threadStore.appendEvent(thread.id, promptId, {
+      type: 'tool.finished',
+      output: { ok: true },
+    });
+    assert.equal(next.sequence, 4);
+    assert.equal(watched.length, 2);
+  },
+);
+
+storeTest(
+  'keeps appending while other bundles append to the stream before each of its commits',
+  async ({ projects, backend }) => {
+    const { project } = await projects.create('Racing', snapshot(), 'blue');
+    const setup = stores(backend.storage).threads;
+    const { thread } = await setup.create(project.id, 'Thread');
+    const stream = threadEventsStream(thread.id);
+    const externalRow = (index: number) => ({
+      projectId: project.id,
+      threadId: thread.id,
+      promptId,
+      type: 'artifacts.revised/v1',
+      event: {
+        type: 'artifacts.revised/v1',
+        artifactId: 'checkout-7f3a',
+        revision: index + 2,
+        targets: [],
+        entries: [],
+      },
+    });
+    // More racing appends than the eight retries a revision conflict gets:
+    // each lands on the stream right before the runtime's commit does.
+    let racing = 10;
+    const raced: typeof backend.storage = {
+      ...backend.storage,
+      commit: async (batch, call) => {
+        if (
+          racing > 0 &&
+          batch.append?.some((entry) => entry.stream === stream)
+        ) {
+          racing -= 1;
+          await backend.storage.commit({
+            append: [{ stream, events: [externalRow(racing)] }],
+          });
+        }
+        return backend.storage.commit(batch, call);
+      },
+    };
+    const published: ThreadEvent[] = [];
+    const threads = stores(raced, {
+      publish: (event) => {
+        published.push(event);
+      },
+    }).threads;
+
+    const accepted = await threads.appendEvent(thread.id, promptId, {
+      type: 'prompt.accepted',
+      text: 'hello',
+      source: { kind: 'user' },
+    });
+
+    assert.equal(accepted.sequence, 11);
+    assert.equal(published.length, 10);
+    assert.equal((await threads.record(thread.id))?.lastSequence, 11);
   },
 );
 

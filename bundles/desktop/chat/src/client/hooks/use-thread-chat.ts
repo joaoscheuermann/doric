@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useStore } from 'zustand/react';
 
+import type { CommentThreads } from '../domain/comment-threads.js';
 import type { PendingSend } from '../domain/pending-turns.js';
 import {
   emptyProjection,
@@ -20,6 +21,8 @@ export type ThreadChat = {
   readonly events: readonly ThreadEvent[];
   /** The same log, projected into turns. */
   readonly turns: readonly Turn[];
+  /** The log's comment threads, by root comment id, with their state. */
+  readonly threads: CommentThreads;
   /**
    * How many finished `write`, `edit` or `terminal` calls the log holds: the
    * signal that the sandbox the Thread shares has changed.
@@ -110,6 +113,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     thread: chat?.thread ?? thread,
     events: projection.events,
     turns: projection.turns,
+    threads: projection.threads,
     writes,
     // A Thread the surface no longer holds is one a `deleted` update dropped.
     error:

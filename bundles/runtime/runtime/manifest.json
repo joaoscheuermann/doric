@@ -24,6 +24,7 @@
     "storage/v1@^1.0.0",
     "events/v1@^1.0.0",
     "hooks/v1@^1.0.0",
+    "core.event-hooks/v1@^1.0.0",
     "log/v1@^1.0.0",
     "secrets/v1@^1.0.0",
     "models/v1@^1.0.0",

@@ -15,6 +15,7 @@ const prompt = (text: string, awaiting = false): UserTurn => ({
   text,
   accepted: true,
   awaiting,
+  comments: [],
 });
 
 const answer = (): AgentTurn => ({

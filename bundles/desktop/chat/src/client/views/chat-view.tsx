@@ -54,7 +54,7 @@ function ChatThread({
 }) {
   const thread = useThreadRecord(threadId);
   useMountHooks(projectId, threadId);
-  const { promptSignal, sendRequest } = useComposer(threadId);
+  const { promptSignal, sendRequest } = useComposer(thread);
   // Block elements are created through the activation services: a call
   // through the element's services hands back a scoped view of any object
   // that carries methods, which an element is, so it would not be a node.

@@ -10,28 +10,28 @@ O plano usa o contrato `dsh-compaction` do DeepSeek (`deepseek-ai/deepseek-harne
 
 ## Tradução do modelo DeepSeek para o doric
 
-O DeepSeek descreve um *seam* (`ctx.compaction`) sobre uma sessão cuja superfície visível ao modelo é derivada por replay de um log de eventos. No doric a relação é invertida e mais simples:
+O DeepSeek descreve um _seam_ (`ctx.compaction`) sobre uma sessão cuja superfície visível ao modelo é derivada por replay de um log de eventos. No doric a relação é invertida e mais simples:
 
 - o **log de eventos** da Thread (stream `runtime.thread.events/<threadId>`) é o registro completo — é o que a UI renderiza;
 - a **superfície do modelo** é o histórico provider-ready armazenado, `direct.history/v1` (partes `messages` + `meta`), opaco ao `runtime` e propriedade do executor `direct`.
 
 Logo, o equivalente doric do `surfaceOp: replace` é a **reescrita da parte `messages`** (mais o re-base da parte `meta`), gravada através da mesma `PromptSession` que todo o resto do executor usa — que já garante commit-antes-de-publicar, redação, e o retry de storage-pause.
 
-| DeepSeek `dsh-compaction` | doric |
-|---|---|
-| `CompactionEngine` (seam abstrato em `ctx.compaction`) | método `compact` do seam `executor/v1`; a política vive no executor `direct` |
-| Log de sessão + `deriveMessages()` | log de eventos da Thread (UI) + parte `messages` de `direct.history/v1` (modelo) |
-| `compaction/start` log-only (o bracket é a trava) | evento `compaction.started` gravado **antes** de qualquer reescrita; o par `started`/`finished` é o bracket |
-| `compaction/summary` log-only + um `user/message` com `surfaceOp` | evento `compaction.finished` (com resultado) no mesmo `record()` que grava o patch de histórico |
-| `compaction/end` libera a trava | incluído no `compaction.finished` (um evento, um commit) |
+| DeepSeek `dsh-compaction`                                               | doric                                                                                                                                                      |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CompactionEngine` (seam abstrato em `ctx.compaction`)                  | método `compact` do seam `executor/v1`; a política vive no executor `direct`                                                                               |
+| Log de sessão + `deriveMessages()`                                      | log de eventos da Thread (UI) + parte `messages` de `direct.history/v1` (modelo)                                                                           |
+| `compaction/start` log-only (o bracket é a trava)                       | evento `compaction.started` gravado **antes** de qualquer reescrita; o par `started`/`finished` é o bracket                                                |
+| `compaction/summary` log-only + um `user/message` com `surfaceOp`       | evento `compaction.finished` (com resultado) no mesmo `record()` que grava o patch de histórico                                                            |
+| `compaction/end` libera a trava                                         | incluído no `compaction.finished` (um evento, um commit)                                                                                                   |
 | `compaction/summary-error` + `ManualCompactionError` com `code` fechado | falha pós-bracket grava `compaction.failed` com `code` de conjunto fechado; recusas pré-bracket (`busy`, `disabled`, `nothing_to_compact`) não gravam nada |
-| `toolPairingBalancedBefore/After(session, seq)` | `safeBoundary(messages, index)`: nenhuma chamada de tool do assistente sem resposta cruzando o corte |
-| Marker de checkpoint exportado de subpath Cordis-free | `isCompactionCheckpoint(message)` + constante `checkpointMarker`, sem dependências além de tipos |
-| `compactIfNeeded` (pressure/overflow), `compactNow`, `compactRegion` | `maybeCompact` (automático), `compactThread` (on-demand, condensa tudo condensável), sem `compactRegion` explícito (deferido) |
-| `tokenMeter` serviço separado | `UsageMetadata` dos eventos de provider + `contextWindow` de `response.started`/catálogo; projeção estimada, sem serviço novo |
-| `/compact` (comando humano) | `POST /threads/:id/compact` (transport) → `runtime` service → executor; recusa `busy` |
-| backend `compaction-basic` (sumário escrito pelo modelo) | summarizer do `direct`: mesmo `models/v1` da execução, signal propagado, saída em Markdown legível |
-| tool-result pruner, image offload | **não** nesta landing (limitações conhecidas) |
+| `toolPairingBalancedBefore/After(session, seq)`                         | `safeBoundary(messages, index)`: nenhuma chamada de tool do assistente sem resposta cruzando o corte                                                       |
+| Marker de checkpoint exportado de subpath Cordis-free                   | `isCompactionCheckpoint(message)` + constante `checkpointMarker`, sem dependências além de tipos                                                           |
+| `compactIfNeeded` (pressure/overflow), `compactNow`, `compactRegion`    | `maybeCompact` (automático), `compactThread` (on-demand, condensa tudo condensável), sem `compactRegion` explícito (deferido)                              |
+| `tokenMeter` serviço separado                                           | `UsageMetadata` dos eventos de provider + `contextWindow` de `response.started`/catálogo; projeção estimada, sem serviço novo                              |
+| `/compact` (comando humano)                                             | `POST /threads/:id/compact` (transport) → `runtime` service → executor; recusa `busy`                                                                      |
+| backend `compaction-basic` (sumário escrito pelo modelo)                | summarizer do `direct`: mesmo `models/v1` da execução, signal propagado, saída em Markdown legível                                                         |
+| tool-result pruner, image offload                                       | **não** nesta landing (limitações conhecidas)                                                                                                              |
 
 Diferenças deliberadas:
 

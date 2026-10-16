@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { useStore } from 'zustand/react';
 
+import type { Thread } from '../domain/workspace.js';
 import { composerFor } from '../stores/composer.js';
 import type { PromptSignal } from '../utility/prompt-signal.js';
+import { useComposerStack } from './use-composer-stack.js';
 
 /**
  * What the conversation's composer offers the footer, and how the two talk.
@@ -18,6 +20,11 @@ import type { PromptSignal } from '../utility/prompt-signal.js';
  *
  * Sending goes the other way for the same reason: the shell counts requests and
  * the editor answers each new count once.
+ *
+ * The stack counts too: a comment alone is something to send, so the control
+ * stays enabled while the editor holds no words but the stack holds a line —
+ * and a send with an empty editor carries the stack's own Markdown, one line
+ * per comment with its anchor (`domain/composer-stack`).
  */
 export type Composer = {
   readonly promptSignal: PromptSignal;
@@ -26,14 +33,26 @@ export type Composer = {
   readonly send: () => void;
 };
 
-export const useComposer = (threadId: string | undefined): Composer => {
-  const composerStore = composerFor(threadId);
+export const useComposer = (thread: Thread | undefined): Composer => {
+  const composerStore = composerFor(thread?.id);
   const promptSignal = useStore(composerStore, (state) => state.promptSignal);
   const sendRequest = useStore(composerStore, (state) => state.sendRequest);
   const send = useStore(composerStore, (state) => state.send);
-  const canSend = useSyncExternalStore(
+  const hasWords = useSyncExternalStore(
     promptSignal.subscribe,
     promptSignal.snapshot,
   );
-  return { promptSignal, sendRequest, canSend, send };
+  const stack = useComposerStack(
+    thread === undefined
+      ? undefined
+      : { id: thread.id, projectId: thread.projectId },
+  );
+  return {
+    promptSignal,
+    sendRequest,
+    // Either the words or the stack: a comment alone is already something to
+    // send, and its note rides the same prompt the words would.
+    canSend: hasWords || stack.items.length > 0,
+    send,
+  };
 };

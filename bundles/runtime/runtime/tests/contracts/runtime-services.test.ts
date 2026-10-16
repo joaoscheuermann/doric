@@ -283,3 +283,39 @@ void test('every durable prompt.finished keeps its type and validates as the qua
   }
   await harness.dispose();
 });
+
+void test('lease operations run on the project lease when called without an active prompt', async () => {
+  const customSandbox = {
+    ...fakeSandbox(),
+    exec: async () => ({
+      exitCode: 0,
+      stdout: 'ok',
+      stderr: '',
+      stdoutBytes: Buffer.from('ok'),
+      stderrBytes: new Uint8Array(),
+    }),
+    readFile: async () => 'hello world',
+    writeFile: async () => undefined,
+  };
+  const harness = createHarness({
+    sandbox: { sandbox: customSandbox as never },
+  });
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+
+  // With projectId scope
+  const description = await harness.lease({ projectId: project.id }).describe();
+  assert.equal(description.id, 'vm-1');
+
+  // With threadId scope
+  const threadLease = harness.lease({ threadId: thread.id });
+  const execResult = await threadLease.exec({ cmd: ['echo', 'ok'] });
+  assert.equal(execResult.exitCode, 0);
+  assert.equal(execResult.stdout, 'ok');
+
+  await threadLease.writeFile('/test.txt', 'hello world');
+  const content = await threadLease.readFile('/test.txt');
+  assert.equal(content, 'hello world');
+
+  await harness.dispose();
+});

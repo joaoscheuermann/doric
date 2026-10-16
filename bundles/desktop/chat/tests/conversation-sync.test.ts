@@ -38,6 +38,7 @@ const user = (promptId: string, sequence: number): UserTurn => ({
   text: 'question',
   accepted: true,
   awaiting: false,
+  comments: [],
 });
 
 const agent = (

@@ -25,6 +25,7 @@
     "@lexical/table": "^0.51.0",
     "@tanstack/react-query": "^5.104.1",
     "bundle": "0.0.1",
+    "comments": "0.0.1",
     "desktop": "1.0.0",
     "history": "0.0.1",
     "jdenticon": "^3.3.0",

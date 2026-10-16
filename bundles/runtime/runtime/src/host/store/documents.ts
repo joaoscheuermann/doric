@@ -15,13 +15,20 @@ import {
  * applied leaves the revision at `expected + 1`). A revision or sequence
  * conflict, raised by another store over the same storage (another runtime
  * during a handover, a test's second client), drops the cache, reads the
- * document again and computes the change again, up to eight times.
+ * document again and computes the change again, up to eight times. A
+ * sequence conflict alone is the stream moving under the document: other
+ * bundles append to a Thread's stream through `events/v1` without touching
+ * the Thread document, so those retries draw on their own, larger budget and
+ * an external append never exhausts the one revision conflicts share.
  */
 
 /** Conflicts a change is recomputed for. */
 const conflictCodes = new Set(['revision_conflict', 'sequence_conflict']);
 
 const attempts = 8;
+
+/** Retries after a stream moved by appends outside this store. */
+const sequenceAttempts = 64;
 
 export interface Cached<Value> {
   readonly value: Value;
@@ -54,6 +61,7 @@ export interface Documents<Value> {
     id: string,
     change: (
       current: Cached<Value> | undefined,
+      attempt: number,
     ) => Change<Value, Result> | Promise<Change<Value, Result>>,
   ): Promise<Result>;
   /**
@@ -64,6 +72,7 @@ export interface Documents<Value> {
     id: string,
     change: (
       current: Cached<Value> | undefined,
+      attempt: number,
     ) => Change<Value, Result> | Promise<Change<Value, Result>>,
   ): Promise<Result>;
   /** Forgets the cached document of `id`. */
@@ -136,15 +145,22 @@ const createDocuments = <Value>(
     id: string,
     change: (
       current: Cached<Value> | undefined,
+      attempt: number,
     ) => Change<Value, Result> | Promise<Change<Value, Result>>,
   ): Promise<Result> => {
     let failure: unknown;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+    let revisionRetries = 0;
+    let sequenceRetries = 0;
+    for (
+      let attempt = 0;
+      revisionRetries < attempts && sequenceRetries < sequenceAttempts;
+      attempt += 1
+    ) {
       const current =
         (attempt === 0 ? cache.get(id) : undefined) ?? (await get(id));
       if (current === undefined) cache.delete(id);
       else cache.set(id, current);
-      const planned = await change(current);
+      const planned = await change(current, attempt);
       if (planned.value === undefined && planned.batch === undefined)
         return planned.done();
       const revision = current?.revision ?? 0;
@@ -156,6 +172,9 @@ const createDocuments = <Value>(
         cache.delete(id);
         if (!isConflict(error)) throw error;
         failure = error;
+        if (isContractError(error) && error.code === 'sequence_conflict')
+          sequenceRetries += 1;
+        else revisionRetries += 1;
         continue;
       }
       if (planned.value === undefined) {

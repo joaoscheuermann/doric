@@ -84,6 +84,14 @@ export interface RewindParticipation {
 
 export interface ThreadStoreOptions {
   readonly executor: RewindParticipation;
+  /**
+   * Called once for each event another bundle appended to a Thread's stream
+   * (through `events/v1`), after the commit that folds it into the document:
+   * `catchUp` (run when `events/v1` reports the append) or, when a runtime
+   * commit meets the append first, that commit's `sequence_conflict` retry.
+   * The runtime's own events are published by callers.
+   */
+  readonly publish?: (event: ThreadEvent) => void;
 }
 
 /** The former `thread_event.prompt_id uuid` column refused anything else. */
@@ -256,6 +264,97 @@ export const createThreadStore = (
     };
   };
 
+  /**
+   * Applies intervening stream entries to a document in order, bringing its
+   * counter, queue flag, usage fold, latest `prompt.started` and pending
+   * projection up to date with events that were committed to the stream
+   * outside of ThreadStore (for example, through events/v1).
+   */
+  const foldIntervening = async (
+    stored: ThreadDocument,
+    entries: readonly StreamEntry[],
+  ): Promise<ThreadDocument> => {
+    let value = stored;
+    let pending = await pendingOf(stored);
+    let usage: UsageState | undefined;
+    for (const entry of entries) {
+      const envelope = entry.value as ThreadEventEnvelope;
+      const sequence = entry.sequence;
+      value = { ...value, lastSequence: sequence };
+      if (
+        envelope.type === 'queue.paused' ||
+        envelope.type === 'queue.resumed'
+      ) {
+        value = {
+          ...value,
+          queuePaused: envelope.type === 'queue.paused',
+          ...(envelope.type === 'queue.paused' &&
+          (envelope.event as { reason?: string } | null)?.reason ===
+            'storage_low'
+            ? { errorCode: 'storage_low' }
+            : {}),
+        };
+      }
+      if (usageEventTypes.includes(envelope.type)) {
+        usage = projectUsage(usage ?? (await usageOf(stored)), envelope.event);
+        value = { ...value, usage: storableJson(usage) };
+      }
+      if (envelope.type === 'prompt.started') {
+        value = {
+          ...value,
+          lastStarted: { promptId: envelope.promptId, at: entry.createdAt },
+        };
+      }
+      pending = foldProgress(pending, {
+        sequence,
+        promptId: envelope.promptId,
+        type: envelope.type,
+        event: envelope.event,
+        createdAt: entry.createdAt,
+      });
+    }
+    return touched(value, { pending: [...pending] });
+  };
+
+  /**
+   * The stored document brought up to the stream's head when a commit's
+   * append was refused. Other bundles append to a Thread's stream through
+   * `events/v1` without touching the document, so its `lastSequence` can lag
+   * the stream; the first attempt stays optimistic (the append path's cost is
+   * one commit and one read), and a `sequence_conflict` retry reads what
+   * follows the document and folds it before appending again.
+   */
+  const caughtUp = async (
+    stored: ThreadDocument,
+    attempt: number,
+  ): Promise<{
+    readonly base: ThreadDocument;
+    readonly intervening: readonly StreamEntry[];
+  }> => {
+    if (attempt === 0) return { base: stored, intervening: [] };
+    const intervening = await entriesAfter(
+      storage,
+      stored.id,
+      stored.lastSequence,
+    );
+    return {
+      base:
+        intervening.length > 0
+          ? await foldIntervening(stored, intervening)
+          : stored,
+      intervening,
+    };
+  };
+
+  /**
+   * Publishes the externally appended entries a successful commit folded in,
+   * once: the document now covers them, so no later commit reads them again.
+   */
+  const publishIntervening = (entries: readonly StreamEntry[]): void => {
+    if (options.publish === undefined) return;
+    for (const entry of entries) options.publish(toThreadEvent(entry));
+  };
+
   /** Validates and sanitizes events before anything is committed. */
   const prepare = (promptId: string, values: readonly unknown[]): Pending[] => {
     promptIdSchema.parse(promptId);
@@ -342,11 +441,12 @@ export const createThreadStore = (
     id: string,
     events: readonly Pending[],
   ): Promise<ThreadEvent[]> =>
-    threads.mutate(id, async (current) => {
+    threads.mutate(id, async (current, attempt) => {
       if (current === undefined)
         throw new Error('Thread to append to was not found.');
-      const before = current.value.lastSequence;
-      const appended = await applyEvents(current.value, events);
+      const { base, intervening } = await caughtUp(current.value, attempt);
+      const before = base.lastSequence;
+      const appended = await applyEvents(base, events);
       return {
         value: appended.value,
         batch: {
@@ -358,7 +458,10 @@ export const createThreadStore = (
             },
           ],
         },
-        done: () => appendedEvents(id, before, events.length, appended.at),
+        done: async () => {
+          publishIntervening(intervening);
+          return await appendedEvents(id, before, events.length, appended.at);
+        },
       };
     });
 
@@ -450,6 +553,19 @@ export const createThreadStore = (
   };
 
   const store: ThreadStore = {
+    catchUp: (id) =>
+      threads.mutate(id, async (current) => {
+        if (current === undefined) return { done: () => undefined };
+        // `caughtUp` reads past the document only on a retry; here the read
+        // is the point, so ask as a retry does.
+        const { base, intervening } = await caughtUp(current.value, 1);
+        if (intervening.length === 0) return { done: () => undefined };
+        return {
+          value: base,
+          done: () => publishIntervening(intervening),
+        };
+      }),
+
     appendEvents: async (id, promptId, values) =>
       append(id, prepare(promptId, values)),
 
@@ -702,7 +818,9 @@ export const createThreadStore = (
               (value as ThreadEventEnvelope).type === 'prompt.started',
           );
         const marker = { type: 'history.truncated', afterSequence };
-        const sequence = stored.lastSequence + 1;
+        const lastStreamSequence =
+          entries.at(-1)?.sequence ?? stored.lastSequence;
+        const sequence = lastStreamSequence + 1;
         const at = now();
         const pending = foldProgress(foldAll(survivors.map(progressEntry)), {
           sequence,
@@ -733,7 +851,7 @@ export const createThreadStore = (
             append: [
               {
                 stream: threadEventsStream(id),
-                expectedSequence: stored.lastSequence,
+                expectedSequence: lastStreamSequence,
                 events: [
                   {
                     projectId: stored.projectId,
@@ -748,7 +866,7 @@ export const createThreadStore = (
             put: historyPuts(id, stored.projectId, patch),
           },
           done: async () =>
-            (await appendedEvents(id, stored.lastSequence, 1, at))[0],
+            (await appendedEvents(id, lastStreamSequence, 1, at))[0],
         };
       }),
 
@@ -773,7 +891,7 @@ export const createThreadStore = (
     },
 
     failPrompt: (prompt, failure) =>
-      threads.mutate(prompt.threadId, async (current) => {
+      threads.mutate(prompt.threadId, async (current, attempt) => {
         if (current === undefined) return { done: () => undefined };
         // Idempotent: a prompt already closed is no longer pending.
         if (
@@ -782,8 +900,9 @@ export const createThreadStore = (
           )
         )
           return { done: () => undefined };
+        const { base, intervening } = await caughtUp(current.value, attempt);
         const child = await applyEvents(
-          current.value,
+          base,
           prepare(prompt.promptId, [
             { type: 'agent.failed', error: failure },
             {
@@ -807,18 +926,20 @@ export const createThreadStore = (
           append: [
             {
               stream: threadEventsStream(prompt.threadId),
-              expectedSequence: current.value.lastSequence,
+              expectedSequence: base.lastSequence,
               events: [...child.envelopes],
             },
           ],
         };
-        const childDone = () =>
-          appendedEvents(
+        const childDone = async () => {
+          publishIntervening(intervening);
+          await appendedEvents(
             prompt.threadId,
-            current.value.lastSequence,
+            base.lastSequence,
             child.envelopes.length,
             child.at,
           );
+        };
         if (prompt.source.kind !== 'parent')
           return { value, batch, done: async () => void (await childDone()) };
         const parent = await threads.get(prompt.source.threadId);
@@ -829,9 +950,12 @@ export const createThreadStore = (
           parent.value.state === 'cancelling'
         )
           return { value, batch, done: async () => void (await childDone()) };
+        const parentId = parent.value.id;
+        const { base: parentBase, intervening: parentIntervening } =
+          await caughtUp(parent.value, attempt);
         const resultId = randomUUID();
         const delivered = await applyEvents(
-          parent.value,
+          parentBase,
           prepare(resultId, [
             {
               type: 'prompt.accepted',
@@ -853,7 +977,6 @@ export const createThreadStore = (
             { type: 'prompt.queued' },
           ]),
         );
-        const parentId = parent.value.id;
         return {
           value,
           batch: {
@@ -871,7 +994,7 @@ export const createThreadStore = (
               ...batch.append,
               {
                 stream: threadEventsStream(parentId),
-                expectedSequence: parent.value.lastSequence,
+                expectedSequence: parentBase.lastSequence,
                 events: [...delivered.envelopes],
               },
             ],
@@ -879,9 +1002,10 @@ export const createThreadStore = (
           touches: [parentId],
           done: async () => {
             await childDone();
+            publishIntervening(parentIntervening);
             await appendedEvents(
               parentId,
-              parent.value.lastSequence,
+              parentBase.lastSequence,
               delivered.envelopes.length,
               delivered.at,
             );

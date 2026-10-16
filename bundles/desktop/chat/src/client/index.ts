@@ -1,5 +1,6 @@
 // The chat bundle's client part (stage 9, §7.3): the conversation's store,
-// host adapters, `chat.views/v1`, `chat.lexical/v1` and `chat.hooks/v1`, the
+// host adapters, `chat.views/v1`, `chat.lexical/v1`, `chat.send/v1` and
+// `chat.hooks/v1`, the
 // conversation route and the footer composer item. Persistent work runs on
 // the activation services (D9-17).
 
@@ -40,12 +41,14 @@ import {
   setChatLexicalRegistry,
 } from './services/lexical.js';
 import { watchSandboxActivity } from './services/sandbox-activity.js';
+import { createChatSend } from './services/send.js';
 import {
   createChatViews,
   GENERIC_BLOCK_TAG,
   setChatViewsRegistry,
 } from './services/views.js';
 import { resetComposers } from './stores/composer.js';
+import { resetComposerStack } from './stores/composer-stack.js';
 import { resetConnectionStore } from './stores/connection.js';
 import {
   resetLiveTerminalsStore,
@@ -64,6 +67,8 @@ export function activate({ services }: ClientContext): Cleanup {
   setChatViewsRegistry(views.registry);
   const lexical = createChatLexical();
   services.provide(lexical.service);
+  // The stack's send for surfaces outside the composer (`chat.send/v1`).
+  services.provide(createChatSend());
   setChatLexicalRegistry(lexical.registry);
 
   const ui = services.use(UiV1);
@@ -116,6 +121,7 @@ export function activate({ services }: ClientContext): Cleanup {
     resetLiveTerminalsStore();
     resetConnectionStore();
     resetComposers();
+    resetComposerStack();
     setChatLexicalRegistry(undefined);
     setChatViewsRegistry(undefined);
     setChatHooks(undefined);
