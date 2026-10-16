@@ -1,7 +1,7 @@
 // The viewport math (`surface/viewport.ts`): pan and zoom are one transform,
 // every zoom keeps the pointer stable, ajustar fits the content and the
-// reading is whole percents. All of it is pure and view-local — replay never
-// drags the reader anywhere.
+// reading is whole percents; content with no area has nothing to fit yet.
+// All of it is pure and view-local — replay never drags the reader anywhere.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -47,6 +47,7 @@ test('ajustar fits the content into the area, centred, clamped', () => {
     24,
   );
 
+  assert.ok(fitted !== undefined);
   assert.equal(fitted.scale, 0.42);
   // Centred: the content's box sits with equal margins on the x axis.
   assert.ok(Math.abs(fitted.tx + 100 * fitted.scale - 32) < 1e-9);
@@ -57,7 +58,7 @@ test('ajustar fits the content into the area, centred, clamped', () => {
     fitViewport(
       { x: 0, y: 0, width: 10, height: 10 },
       { width: 400, height: 300 },
-    ).scale,
+    )?.scale,
     1,
   );
 
@@ -66,7 +67,7 @@ test('ajustar fits the content into the area, centred, clamped', () => {
     fitViewport(
       { x: 0, y: 0, width: 100_000, height: 100_000 },
       { width: 400, height: 300 },
-    ).scale,
+    )?.scale,
     0.25,
   );
 
@@ -75,9 +76,20 @@ test('ajustar fits the content into the area, centred, clamped', () => {
     fitViewport(
       { x: 0, y: 0, width: 800, height: 600 },
       { width: 0, height: 0 },
-    ).scale,
+    )?.scale,
     1,
   );
+});
+
+test('ajustar has nothing to fit while the content has no area', () => {
+  // A module whose React root has not rendered yet measures as an empty box:
+  // fitting it would settle on identity and never centre the element.
+  for (const content of [
+    { x: 0, y: 0, width: 0, height: 0 },
+    { x: 0, y: 0, width: 640, height: 0 },
+  ]) {
+    assert.equal(fitViewport(content, { width: 400, height: 300 }), undefined);
+  }
 });
 
 test('a surface point becomes the content point under any pan/zoom', () => {

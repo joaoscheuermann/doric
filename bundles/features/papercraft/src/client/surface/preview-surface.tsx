@@ -234,18 +234,19 @@ export function PreviewSurface({
       settle(next);
     };
 
-    // An overlay the module portals into its portal container (inside the
-    // content) opens after the mount: the content is reported again, so the
-    // frame's scene graph — and comments — reach it.
-    let portalObserver: MutationObserver | undefined;
+    // A module renders after `mount` returns (its React root renders
+    // asynchronously) and keeps changing — a section opens, an overlay
+    // portals into its container inside the content — so the content is
+    // reported again on every change, and the frame's scene graph, its fit
+    // and comments follow what actually rendered. Attribute changes are not
+    // watched: the frame writes its own (hidden layers) into this tree.
+    let contentObserver: MutationObserver | undefined;
 
-    const watchPortal = (): void => {
-      const portal = content.querySelector('[data-papercraft-portal]');
-
-      if (portal === null || typeof MutationObserver === 'undefined') return;
+    const watchContent = (): void => {
+      if (typeof MutationObserver === 'undefined') return;
 
       let queued = false;
-      portalObserver = new MutationObserver(() => {
+      contentObserver = new MutationObserver(() => {
         if (queued) return;
         queued = true;
         queueMicrotask(() => {
@@ -253,7 +254,11 @@ export function PreviewSurface({
           if (!disposed) reporters.current.onContent?.(shadow);
         });
       });
-      portalObserver.observe(portal, { childList: true, subtree: true });
+      contentObserver.observe(content, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
     };
 
     shadow.replaceChildren(resetSheet(), content);
@@ -298,7 +303,7 @@ export function PreviewSurface({
               : () => content.replaceChildren();
 
           settle('module');
-          watchPortal();
+          watchContent();
         } catch {
           // The revision could not be cached, or its module did not load —
           // the canvas is never empty: the built markup of path A stands in
@@ -310,7 +315,7 @@ export function PreviewSurface({
 
     return () => {
       disposed = true;
-      portalObserver?.disconnect();
+      contentObserver?.disconnect();
 
       const release = unmount;
       unmount = undefined;

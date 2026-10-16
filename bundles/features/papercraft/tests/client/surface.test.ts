@@ -6,6 +6,9 @@
 // - a component preview keeps its origin stamp on the element the mounted
 //   DOM actually holds, so a click on it anchors to the component's file;
 // - a named module that fails to load is replaced by the markup (`fallback`);
+// - a module that renders after `mount` returns (React's root renders
+//   asynchronously) reports its content again once it is in the shadow root,
+//   so the frame derives the graph of what actually rendered;
 // - a module that resolves after its revision was replaced is never mounted,
 //   and a mounted module is unmounted once when the surface goes;
 // - path B's route serves only what the cache verified: a named module (and
@@ -35,6 +38,7 @@ for (const name of [
   'CustomEvent',
   'customElements',
   'DOMParser',
+  'MutationObserver',
 ] as const) {
   Object.defineProperty(globalThis, name, {
     configurable: true,
@@ -215,6 +219,33 @@ test('a named module that does not load falls back to the markup', async () => {
 
   assert.ok(m.shadow().querySelector('body #hi') !== null);
   assert.deepEqual(m.modes, ['fallback']);
+
+  await m.unmount();
+});
+
+test('a module that renders after mount reports the content it rendered', async () => {
+  const m = mount();
+  const reports: boolean[] = [];
+
+  await m.render({
+    entries: ['index.js'],
+    onContent: (root: ShadowRoot | undefined) =>
+      reports.push(root?.querySelector('#rendered') != null),
+    load: async () => ({
+      // Like a React root: the element lands after `mount` has returned.
+      mount: (root: HTMLElement) => {
+        queueMicrotask(() => {
+          const element = document.createElement('p');
+          element.id = 'rendered';
+          root.append(element);
+        });
+      },
+    }),
+  });
+  await flush();
+  await flush();
+
+  assert.equal(reports.at(-1), true, 'the rendered element was never reported');
 
   await m.unmount();
 });

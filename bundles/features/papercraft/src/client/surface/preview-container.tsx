@@ -1044,6 +1044,9 @@ export function PreviewContainer({
 
     const fitted = fitViewport(content, area, FIT_MARGIN);
 
+    // Nothing rendered yet: the next graph fits it.
+    if (fitted === undefined) return false;
+
     autoFit.current = fitted;
     setViewport(fitted);
 

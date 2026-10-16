@@ -66,18 +66,19 @@ export interface ContentBounds {
 /**
  * The `⤢ ajustar` reading: the scale that fits `content` into `area` with a
  * margin, centred, never above identity (fitting means seeing it whole, not
- * blowing a tiny artifact up).
+ * blowing a tiny artifact up). Undefined while the content has no area — a
+ * module whose root has not rendered yet — so there is nothing to fit.
  */
 export const fitViewport = (
   content: ContentBounds,
   area: { readonly width: number; readonly height: number },
   margin = 24,
-): Viewport => {
+): Viewport | undefined => {
   const width = area.width - margin * 2;
   const height = area.height - margin * 2;
 
+  if (content.width <= 0 || content.height <= 0) return undefined;
   if (width <= 0 || height <= 0) return IDENTITY;
-  if (content.width <= 0 || content.height <= 0) return IDENTITY;
 
   // Never above identity: a fit shows the whole artifact, it does not
   // magnify a small one. Below, the same lower limit as every zoom.
