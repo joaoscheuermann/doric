@@ -187,12 +187,20 @@ export const applyPreviewEvent = (
       const revised = revisedOf(event);
       const known =
         revised === undefined ? undefined : states.get(revised.artifactId);
+      // Without a `created` in this log (another Thread created it), the
+      // revision's own kind says whether it is a preview.
+      const created = known === undefined ? createdOf(event) : undefined;
 
       // A revision of a kind this bundle does not own never enters.
-      if (revised === undefined || known === undefined) return { states };
+      if (
+        revised === undefined ||
+        (known === undefined && created?.kind !== PREVIEW_KIND)
+      )
+        return { states };
 
       const next = setRevision(known, revised.artifactId, {
         revision: revised.revision,
+        ...(created?.title === undefined ? {} : { title: created.title }),
         approved: false,
       });
 

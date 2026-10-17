@@ -102,6 +102,34 @@ describe('the artifacts projector', () => {
     });
   });
 
+  test('draws the frame of a revision whose artifact another Thread created', () => {
+    const projector = createArtifactsProjector();
+    const { blocks } = projector.reduce(
+      projector.initial(),
+      event(
+        'artifacts.revised/v1',
+        {
+          artifactId: 'checkout-7f3a',
+          revision: 5,
+          kind: 'preview',
+          title: 'Checkout',
+          targets: [],
+          entries: [],
+        },
+        1,
+      ),
+    );
+
+    assert.deepEqual(
+      blocks.map((block) => block.id),
+      ['artifacts.frame:checkout-7f3a@5'],
+    );
+    assert.equal(
+      (blocks[0]?.data as { kind?: string } | undefined)?.kind,
+      'preview',
+    );
+  });
+
   test('folds approvals and applies without drawing a block for them', () => {
     const projector = createArtifactsProjector();
     const first = projector.reduce(
@@ -141,7 +169,7 @@ describe('the artifacts projector', () => {
     );
 
     assert.equal(
-      projector.reduce(first.state, revised('checkout-7f3a', 5, 2)).blocks
+      projector.reduce(first.state, revised('checkout-7f3a', 1, 2)).blocks
         .length,
       0,
     );

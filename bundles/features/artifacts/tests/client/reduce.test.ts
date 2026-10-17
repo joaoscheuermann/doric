@@ -108,14 +108,19 @@ describe('the artifacts reducer', () => {
     assert.equal(artifact?.revisions[0]?.applied, false);
   });
 
-  test('appends revisions in order, and refuses one the artifact cannot have', () => {
+  test('appends revisions in order, and refuses one that is not newer', () => {
     const state = reduceArtifacts([
       created('checkout-7f3a', 1),
       revised('checkout-7f3a', 2, 2),
       event(
         'artifacts.revised/v1',
-        { artifactId: 'checkout-7f3a', revision: 4, targets: [], entries: [] },
+        { artifactId: 'checkout-7f3a', revision: 2, targets: [], entries: [] },
         3,
+      ),
+      event(
+        'artifacts.revised/v1',
+        { artifactId: 'checkout-7f3a', revision: 1, targets: [], entries: [] },
+        4,
       ),
     ]);
 
@@ -131,6 +136,55 @@ describe('the artifacts reducer', () => {
     assert.deepEqual(artifact?.revisions[0]?.entries, [
       { path: 'index.html', sha256: 'a'.repeat(64) },
     ]);
+  });
+
+  test('takes a revision another Thread numbered past this log', () => {
+    const state = reduceArtifacts([
+      created('checkout-7f3a', 1),
+      revised('checkout-7f3a', 4, 2),
+    ]);
+
+    const artifact = state.artifacts.get('checkout-7f3a');
+
+    assert.deepEqual(
+      artifact?.revisions.map((entry) => entry.revision),
+      [1, 4],
+    );
+    assert.equal(artifact?.revision, 4);
+  });
+
+  test('a revision of an artifact created in another Thread enters with the kind and title it names', () => {
+    const state = reduceArtifacts([
+      event(
+        'artifacts.revised/v1',
+        {
+          artifactId: 'checkout-7f3a',
+          revision: 5,
+          kind: 'preview',
+          title: 'Checkout',
+          targets: [{ path: 'src/checkout.html' }],
+          entries: [{ path: 'index.html', sha256: 'c'.repeat(64) }],
+        },
+        1,
+      ),
+      revised('checkout-7f3a', 6, 2),
+    ]);
+
+    const artifact = state.artifacts.get('checkout-7f3a');
+
+    assert.equal(artifact?.kind, 'preview');
+    assert.equal(artifact?.title, 'Checkout');
+    assert.deepEqual(
+      artifact?.revisions.map((entry) => entry.revision),
+      [5, 6],
+    );
+    assert.equal(artifact?.revision, 6);
+  });
+
+  test('a revision of an unknown artifact that names no kind changes nothing', () => {
+    const state = reduceArtifacts([revised('checkout-7f3a', 5, 1)]);
+
+    assert.equal(state.artifacts.size, 0);
   });
 
   test('folds approved and applied per revision', () => {

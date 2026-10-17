@@ -90,7 +90,7 @@ created ──▶ revised ──▶ applied
 | Evento                  | Payload (resumo)                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `artifacts.created/v1`  | `artifactId`, `revision`, `kind`, `title`, `targets`, `payload` (o schema do tipo) |
-| `artifacts.revised/v1`  | `artifactId`, `revision`, `changeNote`                                             |
+| `artifacts.revised/v1`  | `artifactId`, `revision`, `kind`, `title`, `changeNote`                            |
 | `artifacts.approved/v1` | `artifactId`, `revision`, `scope` — só existe com a política `request`             |
 | `artifacts.applied/v1`  | `artifactId`, `revision`, `files`                                                  |
 

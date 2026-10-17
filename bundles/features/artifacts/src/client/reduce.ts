@@ -201,7 +201,11 @@ const reduceCreated = (
   return { ...state, artifacts };
 };
 
-/** Reduces one `artifacts.revised/v1` event: the next revision, appended. */
+/**
+ * Reduces one `artifacts.revised/v1` event: a newer revision, appended. Other
+ * Threads may revise the same artifact, so this log can skip revisions, or
+ * hold no `created` at all: then the event's own kind and title start it.
+ */
 const reduceRevised = (
   state: ArtifactsProjectionState,
   event: ChatThreadEvent,
@@ -215,9 +219,25 @@ const reduceRevised = (
 
   if (artifactId === undefined || revision === undefined) return state;
 
-  const artifact = state.artifacts.get(artifactId);
+  const known = state.artifacts.get(artifactId);
+  const kind = text(payload.kind);
+  const title = text(payload.title);
+  const artifact: ArtifactProjection | undefined =
+    known ??
+    (kind === undefined || title === undefined
+      ? undefined
+      : {
+          artifactId,
+          kind,
+          title,
+          revisions: [],
+          revision: 0,
+          state: 'open',
+          createdAt: event.createdAt,
+          pendingComments: 0,
+        });
 
-  if (artifact === undefined || artifact.revision + 1 !== revision) {
+  if (artifact === undefined || revision <= artifact.revision) {
     return state;
   }
 

@@ -855,7 +855,12 @@ revision reading, "Autorizar" under `request`, the comment gesture), and the
 kind's `bodyTag` element draws the body inside it; for a `header: 'body'` kind
 the frame draws no bar and keeps only "Autorizar" below the body. The frame
 draws no revision list: the conversation, one frame per revision with the
-agent's replies, is the history.
+agent's replies, is the history. A revision lands in the log of the Thread that
+made it, which may hold no `created` (another Thread created the artifact) or
+skip revisions (another Thread revised it in between), so
+`artifacts.revised/v1` also carries the artifact's `kind` and `title`, and the
+reducers take any newer revision and start an unknown artifact from a revision
+that names its kind.
 
 `/bundles/features/comments` owns `comments/v1` (`add`, `list`, `resolve`), the
 events `comments.added/v1` and `comments.resolved/v1`, and the always-available

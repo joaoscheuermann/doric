@@ -526,9 +526,13 @@ describe('artifacts/v1.revise', () => {
       assert.equal(first?.revision, 1);
       assert.equal(first?.revisions, 2);
 
+      // Kind and title travel too: a Thread that revises an artifact another
+      // Thread created has no created event to read them from.
       assert.deepEqual(harness.events.appended[1]?.payload, {
         artifactId: 'checkout-7f3a',
         revision: 2,
+        kind: 'preview',
+        title: 'Checkout',
         changeNote: 'Smaller button',
         targets: [target],
         entries: [],

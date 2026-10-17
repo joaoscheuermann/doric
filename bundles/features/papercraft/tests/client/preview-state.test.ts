@@ -73,6 +73,24 @@ test('a revised preview adds the new revision; the old one stays', () => {
   assert.equal(state?.latest, 2);
 });
 
+test('a revised preview created in another Thread enters with its revision', () => {
+  const { states, change } = applyPreviewEvent(
+    initialPreviewStates(),
+    event('artifacts.revised/v1', {
+      artifactId: 'checkout-7f3a',
+      revision: 5,
+      kind: 'preview',
+      title: 'Checkout',
+    }),
+  );
+
+  assert.deepEqual(change, { artifactId: 'checkout-7f3a', revision: 5 });
+
+  const state = states.get('checkout-7f3a');
+  assert.equal(state?.title, 'Checkout');
+  assert.equal(state?.latest, 5);
+});
+
 test('kinds that are not preview are never claimed', () => {
   let states = initialPreviewStates();
 
@@ -88,14 +106,17 @@ test('kinds that are not preview are never claimed', () => {
   assert.equal(applied.change, undefined);
   assert.equal(applied.states.size, 0);
 
-  // A revised of an artifact this reducer never saw: nothing either.
+  // A revised of an artifact this reducer never saw: nothing either, whether
+  // it names another kind or none.
   states = applied.states;
-  applied = applyPreviewEvent(
-    states,
-    event('artifacts.revised/v1', { artifactId: 'diagram-1', revision: 2 }),
-  );
-  assert.equal(applied.change, undefined);
-  assert.equal(applied.states.size, 0);
+  for (const payload of [
+    { artifactId: 'diagram-1', revision: 2, kind: 'diagram' },
+    { artifactId: 'diagram-1', revision: 2 },
+  ]) {
+    applied = applyPreviewEvent(states, event('artifacts.revised/v1', payload));
+    assert.equal(applied.change, undefined);
+    assert.equal(applied.states.size, 0);
+  }
 });
 
 test('an approval marks its revision, without a block-worthy change', () => {
