@@ -414,6 +414,7 @@ export function Conversation({
                     canStop={running}
                     promptSignal={promptSignal}
                     send={chat.prompt}
+                    steer={chat.steer}
                     sendRequest={sendRequest}
                     threadId={thread.id}
                     onStop={stop}

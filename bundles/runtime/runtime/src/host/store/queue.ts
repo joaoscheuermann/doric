@@ -89,9 +89,15 @@ export const queueSnapshot = (
   names: ReadonlyMap<string, string>,
 ): ThreadQueue => {
   const inactive = isTerminal(thread.state) || thread.state === 'cancelling';
+  // A steering input waiting for the running prompt is not queued work.
   const pending = inactive
     ? []
-    : prompts.filter((prompt) => prompt.promptId !== thread.activePromptId);
+    : prompts.filter(
+        (prompt) =>
+          prompt.promptId !== thread.activePromptId &&
+          (prompt.steer === undefined ||
+            prompt.steer !== thread.activePromptId),
+      );
   const resumable = resumablePrompt(pending);
   const current = inactive
     ? undefined

@@ -103,6 +103,15 @@ export const threadsService = ({
       ...methods.prompt,
       execute: ({ id, prompt }) => service.threads.prompt(id, prompt),
     }),
+    steer: defineMethod({
+      expose: 'desktop',
+      ...methods.steer,
+      execute: ({ id, prompt, promptId, interrupt }) =>
+        service.threads.steer(id, prompt, {
+          promptId,
+          ...(interrupt === undefined ? {} : { interrupt }),
+        }),
+    }),
     resume: defineMethod({
       expose: 'desktop',
       ...methods.resume,

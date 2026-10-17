@@ -9,6 +9,7 @@ import {
   type RemoveQueuedResult,
   type ResumeResult,
   type RewindResult,
+  type SteerResult,
   storageMessage,
   type ThreadCreateResult,
 } from './model.js';
@@ -142,6 +143,13 @@ export const restErrors = {
   /** `POST /threads/:id/prompt`: any refusal but missing is `inactive`. */
   prompt: (result: PromptAcceptResult): RestError | undefined =>
     result.status === 'accepted'
+      ? undefined
+      : result.status === 'missing'
+        ? notFoundError('thread')
+        : conflictError('thread', 'inactive'),
+  /** `POST /threads/:id/steer`: a steer and its queued fallback both succeed. */
+  steer: (result: SteerResult): RestError | undefined =>
+    result.status === 'steered' || result.status === 'queued'
       ? undefined
       : result.status === 'missing'
         ? notFoundError('thread')

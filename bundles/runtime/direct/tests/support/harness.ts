@@ -22,6 +22,7 @@ import {
   type HistoryReader,
   type InputSource,
   type PromptSession,
+  type SteerInput,
   type Thread,
 } from 'runtime/contracts';
 
@@ -93,6 +94,8 @@ export const fakeThreadState = () => {
     readonly history?: HistoryPatch;
     readonly event?: unknown;
   }[] = [];
+  /** Steering inputs that no run has taken yet. */
+  const steering: SteerInput[] = [];
   let failWrite: ((entry: { readonly event?: unknown }) => boolean) | undefined;
   let onEvent: (event: unknown) => void = () => undefined;
 
@@ -139,6 +142,7 @@ export const fakeThreadState = () => {
           pending = undefined;
         }
       },
+      steers: async () => steering.splice(0),
     };
   };
 
@@ -150,6 +154,10 @@ export const fakeThreadState = () => {
     apply,
     parts: () => parts,
     format: () => format,
+    steer: (prompt: string, source: InputSource = { kind: 'user' }) => {
+      steering.push({ prompt, source });
+    },
+    steering,
     failWhen: (test: typeof failWrite) => {
       failWrite = test;
     },

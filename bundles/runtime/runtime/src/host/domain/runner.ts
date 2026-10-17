@@ -14,6 +14,7 @@ import {
   type InputSource,
   isTerminal,
   nameFromPrompt,
+  type SteerResult,
   type Thread,
   type ThreadGit,
 } from '../../contracts/model.js';
@@ -215,7 +216,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     await exclusive(project.project.id, async () => {
       const parent = project.threads.get(source.threadId);
       if (parent === undefined || parent.closing || project.closing) return;
-      await enqueue(
+      await deliver(
         project,
         parent,
         delegatedResult(
@@ -240,12 +241,14 @@ export const createThreadRunner = (context: RunnerContext) => {
     job: PromptJob,
     status: string,
     text: string,
+    reason?: 'interrupted',
   ) => {
     await publish(thread, job, {
       type: 'prompt.finished',
       status,
       text,
       source: job.source,
+      ...(reason === undefined ? {} : { reason }),
     });
     // Materialize the result on the thread, so reading its state later never has
     // to reconstruct it from the event log. The last finished prompt wins.
@@ -304,7 +307,7 @@ export const createThreadRunner = (context: RunnerContext) => {
   ): Promise<void> =>
     exclusive(project.project.id, async () => {
       if (project.closing || thread.closing) return;
-      await enqueue(
+      await deliver(
         project,
         thread,
         String(eventJson(input.text, await context.redactor.current())),
@@ -343,6 +346,14 @@ export const createThreadRunner = (context: RunnerContext) => {
       store,
       redactor: context.redactor,
       publish: (event) => publisher.event(event),
+      steering: {
+        take: () => {
+          const steers = active.steers.splice(0);
+          active.taken.push(...steers);
+          return steers;
+        },
+        applied: () => active.taken.shift(),
+      },
     });
     const once = async (signal: AbortSignal): Promise<string> => {
       // A history this executor cannot read fails before any model call.
@@ -381,6 +392,24 @@ export const createThreadRunner = (context: RunnerContext) => {
       release();
     }
   };
+  /**
+   * Whether a failed execution was only a steer aborting the current step, so
+   * the prompt continues. A stop, a pause, a close or a persistence fault that
+   * met the same abort still ends the run.
+   */
+  const redirecting = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    active: NonNullable<ThreadRuntime['active']>,
+    error: unknown,
+  ) =>
+    active.redirect === true &&
+    !project.closing &&
+    !thread.closing &&
+    !thread.interrupting &&
+    thread.pausing === undefined &&
+    !storageFull(error) &&
+    !(error instanceof ThreadPersistenceError);
   const run = async (project: ProjectRuntime, thread: ThreadRuntime) => {
     while (true) {
       const active = await exclusive(project.project.id, async () => {
@@ -397,7 +426,9 @@ export const createThreadRunner = (context: RunnerContext) => {
         const job = thread.jobs.shift();
         if (job === undefined) return undefined;
         let settle!: () => void;
-        const active = {
+        const active: NonNullable<ThreadRuntime['active']> & {
+          readonly settle: () => void;
+        } = {
           job,
           controller: new AbortController(),
           finished: false,
@@ -405,6 +436,8 @@ export const createThreadRunner = (context: RunnerContext) => {
             settle = resolve;
           }),
           settle: () => settle(),
+          steers: [],
+          taken: [],
         };
         thread.active = active;
         await state(thread, 'running', job.id);
@@ -424,6 +457,9 @@ export const createThreadRunner = (context: RunnerContext) => {
       let status = 'completed';
       let text = '';
       let paused = false;
+      let interrupted = false;
+      /** Steering the run never took in; it returns to the front of the queue. */
+      let returned: readonly PromptJob[] = [];
       try {
         try {
           const lease = project.lease;
@@ -435,13 +471,40 @@ export const createThreadRunner = (context: RunnerContext) => {
             threads: coordinate(project, thread, active.job),
             workspace: workspace(project, thread, active.job),
           };
-          text = await execute(project, thread, active, lease.sandbox, host);
-          active.controller.signal.throwIfAborted();
+          while (true) {
+            try {
+              text = await execute(
+                project,
+                thread,
+                active,
+                lease.sandbox,
+                host,
+              );
+              active.controller.signal.throwIfAborted();
+              break;
+            } catch (error) {
+              if (!redirecting(project, thread, active, error)) throw error;
+              // A steer aborted only the current step: the prompt continues
+              // from the history it wrote, and takes the steer in first.
+              active.redirect = false;
+              active.controller = new AbortController();
+            }
+          }
         } catch (error) {
           if (storageFull(error)) throw error;
           if (error instanceof ThreadPersistenceError) throw error;
           const reason = thread.pausing;
-          if (reason !== undefined) {
+          if (reason === undefined && thread.interrupting) {
+            // The reader's stop ends the turn: the history it wrote stays, and
+            // the prompt is finished rather than left to resume.
+            interrupted = true;
+            status = 'cancelled';
+            text = 'The prompt was interrupted.';
+            await publish(thread, active.job, {
+              type: 'agent.cancelled',
+              error,
+            });
+          } else if (reason !== undefined) {
             // A deliberate abort pauses the prompt: it stays unfinished, so the
             // host takes it up again — at the next boot for a stop, when the
             // reader asks for one the reader made — and no result is written.
@@ -464,15 +527,29 @@ export const createThreadRunner = (context: RunnerContext) => {
           }
         }
       } finally {
+        thread.interrupting = undefined;
+        returned = [...active.taken.splice(0), ...active.steers.splice(0)];
+        thread.jobs.unshift(...returned);
         active.settle();
       }
       active.finished = true;
       if (!paused) {
         // A terminated Thread leaves its prompt before the prompt finishes.
         await thread.leaving;
-        await finishJob(project, thread, active.job, status, text);
+        await finishJob(
+          project,
+          thread,
+          active.job,
+          status,
+          text,
+          interrupted ? 'interrupted' : undefined,
+        );
       }
       await exclusive(project.project.id, async () => {
+        for (const job of returned) {
+          if (thread.jobs.includes(job))
+            await publish(thread, job, { type: 'prompt.queued', first: true });
+        }
         thread.active = undefined;
         if (!thread.closing && !project.closing) await state(thread, 'ready');
       });
@@ -605,7 +682,7 @@ export const createThreadRunner = (context: RunnerContext) => {
       await queueState(thread, true);
     } finally {
       if (thread.active !== undefined && !thread.active.finished) {
-        thread.pausing = 'reader_stopped';
+        thread.interrupting = true;
         thread.active.controller.abort();
       }
     }
@@ -750,7 +827,7 @@ export const createThreadRunner = (context: RunnerContext) => {
       const source = prompt.source;
       const parent = project.threads.get(source.threadId);
       if (parent !== undefined && !parent.closing)
-        await enqueue(
+        await deliver(
           project,
           parent,
           delegatedResult(
@@ -770,6 +847,93 @@ export const createThreadRunner = (context: RunnerContext) => {
     }
     return 'removed' as const;
   };
+  /**
+   * Sends one input into the prompt the Thread is running — `promptId`'s, when
+   * one is named. The executor takes it in at its next safe point — after the
+   * tool batch in flight, or before the final answer would end the turn — and
+   * `interrupt` also aborts the current step, so the prompt continues with the
+   * steer at once. Input for a prompt that is no longer running, or for a
+   * Thread that is stopping or paused, is queued instead; a steer the run never
+   * takes in returns to the front of the queue when the run ends.
+   */
+  // Caller holds the project's mutation lock.
+  const steerInto = async (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    prompt: string,
+    source: InputSource,
+    options: { readonly promptId?: string; readonly interrupt?: boolean } = {},
+  ): Promise<SteerResult> => {
+    if (project.closing || thread.closing || isTerminal(thread.thread.state)) {
+      return { status: 'inactive' };
+    }
+    if (prompt.trim().length === 0)
+      throw new TypeError('A non-empty prompt is required.');
+    const active = thread.active;
+    if (
+      active === undefined ||
+      active.finished ||
+      (options.promptId !== undefined && active.job.id !== options.promptId) ||
+      thread.thread.queuePaused === true ||
+      thread.interrupting === true ||
+      thread.pausing !== undefined ||
+      thread.storagePending !== undefined
+    ) {
+      const queued = await enqueue(project, thread, prompt, source);
+      return queued.status === 'accepted'
+        ? { status: 'queued', promptId: queued.promptId }
+        : queued;
+    }
+    const job: PromptJob = { id: randomUUID(), prompt, source };
+    const accepted = await store.appendEvents(thread.thread.id, job.id, [
+      eventJson(
+        {
+          type: 'prompt.accepted',
+          text: prompt,
+          source,
+          queued: true,
+          steer: active.job.id,
+        },
+        await context.redactor.current(),
+      ),
+    ]);
+    for (const event of accepted) publisher.event(event);
+    if (thread.active !== active || active.finished) {
+      // The run ended while the steer was accepted: it waits at the front of
+      // the queue, as a steer the run never took in does.
+      thread.jobs.unshift(job);
+      await publish(thread, job, { type: 'prompt.queued', first: true });
+      start(project, thread);
+      return { status: 'queued', promptId: job.id };
+    }
+    active.steers.push(job);
+    if (options.interrupt === true && !active.controller.signal.aborted) {
+      active.redirect = true;
+      active.controller.abort();
+    }
+    return { status: 'steered', promptId: job.id };
+  };
+  /** The reader's steer of the prompt the reader saw running. */
+  // Caller holds the project's mutation lock.
+  const steer = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    prompt: string,
+    options: { readonly promptId: string; readonly interrupt?: boolean },
+  ): Promise<SteerResult> =>
+    steerInto(project, thread, prompt, { kind: 'user' }, options);
+  /**
+   * Delivers a child's result or a background terminal's output to its
+   * Thread: into the prompt it is running, which reads it at its next safe
+   * point, or into the queue when nothing runs.
+   */
+  // Caller holds the project's mutation lock.
+  const deliver = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    prompt: string,
+    source: Exclude<InputSource, { readonly kind: 'user' }>,
+  ): Promise<SteerResult> => steerInto(project, thread, prompt, source);
   // Caller holds the project's mutation lock.
   const rewind = async (
     project: ProjectRuntime,
@@ -1257,6 +1421,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     resumeQueue,
     removeQueued,
     editQueued,
+    steer,
     rewind,
     compact,
     descendants,

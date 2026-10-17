@@ -133,6 +133,40 @@ describe('threads adapter', () => {
     await rejectsWith(resumed.api.resumeQueue(ID), storageMessage);
   });
 
+  test('a steer answers whether the running prompt took it or it was queued', async () => {
+    const sent: unknown[] = [];
+    const { api } = apiOver({
+      steer: async (input) => {
+        sent.push(input);
+        return { status: 'queued', promptId: PROMPT };
+      },
+    });
+    assert.deepEqual(
+      await api.steer(ID, 'Use the cache', {
+        promptId: PROMPT,
+        interrupt: true,
+      }),
+      { status: 'queued', promptId: PROMPT },
+    );
+    assert.deepEqual(sent, [
+      { id: ID, prompt: 'Use the cache', promptId: PROMPT, interrupt: true },
+    ]);
+    for (const [status, message] of [
+      ['missing', 'The thread was not found.'],
+      ['inactive', 'The thread cannot perform this operation.'],
+    ] as const) {
+      const refused = apiOver({ steer: async () => ({ status }) });
+      await rejectsWith(
+        refused.api.steer(ID, 'late', { promptId: PROMPT }),
+        message,
+      );
+    }
+    await rejectsWith(
+      apiOver({}).api.steer(ID, 'late', { promptId: 'not-a-uuid' }),
+      'A promptId is required.',
+    );
+  });
+
   test('queue edits keep their three sentences', async () => {
     const cases = [
       [

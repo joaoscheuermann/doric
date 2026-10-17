@@ -640,6 +640,41 @@ void test('accepts human prompts but rejects blank text and forged origin', asyn
   );
 });
 
+void test('steers a running prompt, reports a queued fallback and rejects incomplete input', async (t) => {
+  const steered: unknown[] = [];
+  const host = await serve({
+    threads: {
+      steer: (input: { readonly prompt: string }) => {
+        steered.push(input);
+        return input.prompt === 'late'
+          ? { status: 'queued', promptId }
+          : { status: 'steered', promptId };
+      },
+    },
+  });
+  t.after(host.close);
+  const path = `/threads/${threadId}/steer`;
+  const accepted = await host.request(path, 'POST', {
+    prompt: 'Use the cache',
+    promptId,
+    interrupt: true,
+  });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(await accepted.json(), { status: 'steered', promptId });
+  assert.deepEqual(steered, [
+    { id: threadId, prompt: 'Use the cache', promptId, interrupt: true },
+  ]);
+  const queued = await host.request(path, 'POST', { prompt: 'late', promptId });
+  assert.deepEqual(await queued.json(), { status: 'queued', promptId });
+  for (const body of [
+    { prompt: ' ', promptId },
+    { prompt: 'No target' },
+    { prompt: 'Bad target', promptId: 'nope' },
+  ]) {
+    assert.equal((await host.request(path, 'POST', body)).status, 422);
+  }
+});
+
 void test('rewinds an earlier prompt and reports its refusal reasons', async (t) => {
   const host = await serve();
   t.after(host.close);

@@ -19,6 +19,7 @@ import {
   type ProjectTree,
   type PromptAcceptResult,
   type RewindResult,
+  type SteerResult,
   type Terminal,
   type Thread,
 } from '../../contracts/model.js';
@@ -1176,6 +1177,22 @@ export const createWorkspaceService = ({
           if (current === undefined || thread === undefined)
             return Promise.resolve({ status: 'inactive' as const });
           return runner.enqueue(current, thread, prompt, { kind: 'user' });
+        });
+      },
+      steer: async (id, prompt, options) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        // A steer that falls back to the queue is a prompt: it brings the
+        // Project back and refreshes credentials the same way.
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return { status: 'inactive' };
+        await applyCurrentGit(runtimes.get(record.projectId));
+        return exclusive<SteerResult>(record.projectId, () => {
+          const current = runtimes.get(record.projectId);
+          const thread = current?.threads.get(id);
+          if (current === undefined || thread === undefined)
+            return Promise.resolve({ status: 'inactive' as const });
+          return runner.steer(current, thread, prompt, options);
         });
       },
       resume: async (id, promptId) => {

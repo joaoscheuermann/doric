@@ -21,6 +21,7 @@ import type {
   RemoveQueuedResult,
   ResumeResult,
   RewindResult,
+  SteerResult,
   Terminal,
   TerminalOutput,
   Thread,
@@ -144,6 +145,12 @@ export interface WorkspaceService {
     git(id: string): Promise<ThreadGitResult>;
     branches(id: string, branch?: string, cwd?: string): Promise<BranchResult>;
     prompt(id: string, prompt: string): Promise<PromptAcceptResult>;
+    /** Sends input into the running prompt `promptId`; see `SteerResult`. */
+    steer(
+      id: string,
+      prompt: string,
+      options: { readonly promptId: string; readonly interrupt?: boolean },
+    ): Promise<SteerResult>;
     /**
      * Takes up one prompt an interruption left unfinished, bringing the
      * Project's sandbox back when the host holds none, and answers the Thread.

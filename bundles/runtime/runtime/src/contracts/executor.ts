@@ -22,6 +22,9 @@ export interface PromptJob {
   readonly source: InputSource;
 }
 
+/** One input that steers a running prompt: its text and where it came from. */
+export type SteerInput = Pick<PromptJob, 'prompt' | 'source'>;
+
 /** Read access to the Thread's opaque, versioned executor state. */
 export interface HistoryReader {
   /** The format the stored state was written in; undefined when none exists yet. */
@@ -47,6 +50,15 @@ export interface PromptSession {
     readonly history?: HistoryPatch;
     readonly event?: unknown;
   }): Promise<void>;
+  /**
+   * Takes the inputs that arrived for this running prompt since the last call,
+   * oldest first: the reader's steering, and the results of child Threads and
+   * background terminals. The executor stores each one in its history, in the
+   * envelope its source names, before the next model turn and records one
+   * `{ type: 'agent.steered' }` event per input, in the order it took them; an
+   * input it never records returns to the Thread's queue once the run ends.
+   */
+  steers?(): Promise<readonly SteerInput[]>;
 }
 
 export interface ExecutorRunInput {

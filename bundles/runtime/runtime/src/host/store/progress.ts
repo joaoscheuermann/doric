@@ -26,8 +26,10 @@ export interface ProgressEntry {
 export const progressTypes: readonly string[] = [
   'prompt.accepted',
   'prompt.edited',
+  'prompt.queued',
   'prompt.started',
   'prompt.finished',
+  'prompt.steered',
   'prompt.paused',
   'prompt.resumed',
   'agent.started',
@@ -54,9 +56,11 @@ type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
 /**
  * The pending prompts after one more entry. Only a prompt this fold accepted
  * can be unfinished, and it cannot be closed before it was accepted;
- * `prompt.finished` is the one event that closes a turn. A user (or
- * source-less) input that is not queued supersedes every paused prompt of
- * the Thread.
+ * `prompt.finished` is the one event that closes a turn, and `prompt.steered`
+ * closes a steering input the running prompt took in. A steering input that
+ * `prompt.queued` returns to the queue becomes an ordinary queued input at the
+ * front of the FIFO. A user (or source-less) input that is not queued
+ * supersedes every paused prompt of the Thread.
  */
 export const foldProgress = (
   pending: readonly PendingPrompt[],
@@ -69,6 +73,7 @@ export const foldProgress = (
   if (entry.type === 'prompt.accepted') {
     if (index !== -1) return pending;
     const text = field(entry.event, 'text');
+    const steer = field(entry.event, 'steer');
     const rawSource = field(entry.event, 'source');
     const supersedes =
       field(entry.event, 'queued') !== true &&
@@ -94,15 +99,24 @@ export const foldProgress = (
       acceptedAt: entry.createdAt,
       acceptedSequence: entry.sequence,
       queuedSequence: entry.sequence,
+      ...(typeof steer === 'string' ? { steer } : {}),
     });
     return next;
   }
   const current = pending[index];
   if (current === undefined) return pending;
-  if (entry.type === 'prompt.finished')
+  if (entry.type === 'prompt.finished' || entry.type === 'prompt.steered')
     return pending.filter((_, position) => position !== index);
+  // Only a steering input changes when it is queued; any other input was
+  // already queued by its acceptance.
+  if (entry.type === 'prompt.queued' && current.steer === undefined)
+    return pending;
   const progress: Mutable<PendingPrompt> = { ...current };
-  if (entry.type === 'agent.started' || entry.type === 'prompt.started')
+  if (entry.type === 'prompt.queued') {
+    delete progress.steer;
+    progress.first = true;
+    progress.queuedSequence = entry.sequence;
+  } else if (entry.type === 'agent.started' || entry.type === 'prompt.started')
     progress.started = true;
   else if (entry.type === 'prompt.edited') {
     const text = field(entry.event, 'text');

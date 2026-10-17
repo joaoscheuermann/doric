@@ -193,6 +193,18 @@ export type RewindResult =
       readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
     };
 
+/**
+ * What one steer became: `steered` waits for the running prompt to take it in;
+ * `queued` became an ordinary queued input because the prompt the reader saw
+ * was no longer running or the Thread was stopping.
+ */
+export type SteerResult =
+  | {
+      readonly status: 'steered' | 'queued';
+      readonly promptId: string;
+    }
+  | { readonly status: 'missing' | 'inactive' };
+
 /** The answers one on-demand compaction can give. */
 export type CompactResult =
   | {
@@ -619,6 +631,14 @@ export const rewindResultSchema: z.ZodType<RewindResult, RewindResult> =
     z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
     statuses(['missing', 'inactive', 'busy', 'unknown_prompt']),
   ]);
+
+export const steerResultSchema: z.ZodType<SteerResult, SteerResult> = z.union([
+  z.looseObject({
+    status: z.enum(['steered', 'queued']),
+    promptId: z.string(),
+  }),
+  statuses(['missing', 'inactive']),
+]);
 
 export const compactResultSchema: z.ZodType<CompactResult, CompactResult> =
   z.union([

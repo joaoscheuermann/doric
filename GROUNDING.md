@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-12
+Last reviewed: 2026-10-16
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -525,10 +525,11 @@ one screen, shared by its Threads, and two views of one Project are two windows
 onto it.
 
 The terminal tool waits in foreground by default. Explicit background execution
-returns its terminal ID immediately and, after the process settles, enqueues one
-correlated terminal result into the owning Thread's existing FIFO input queue.
-A busy Thread processes it after its current work, an idle Thread takes it up,
-and a terminated Thread is never reopened. Foreground execution returns its
+returns its terminal ID immediately and, after the process settles, delivers one
+correlated terminal result to the owning Thread. A running Thread takes it in as
+a steer of its active prompt at the next safe point, an idle Thread takes it up
+from its FIFO input queue, a stopping or paused Thread queues it, and a
+terminated Thread is never reopened. Foreground execution returns its
 ordinary tool result without an extra queued notification. Prompt interruption
 cancels its foreground execution; explicit background commands remain owned by
 the Thread. Manual shells never enqueue agent continuations. The durable
@@ -630,8 +631,9 @@ a Project closes all its Threads and releases its lease exactly once after
 active work settles. Neither operation rolls back sandbox effects.
 
 Completion, failure, or cancellation of a delegated request automatically
-enqueues a correlated result for its parent: a ready parent runs it, a busy
-parent processes it in FIFO order, and a terminal parent is never reopened.
+delivers a correlated result to its parent: a running parent takes it in as a
+steer of its active prompt at the next safe point, a ready parent runs it, a
+stopping or paused parent queues it, and a terminal parent is never reopened.
 Human follow-ups in a child do not bounce responses back to its parent.
 The thread delegation tools act only on direct children in the same Project,
 reached through the per-prompt host facade; each child has its own history, not
@@ -2034,6 +2036,14 @@ appending the input again, in both complete and stream modes. Direct uses this
 when a persisted checkpoint shows that the input is already stored, preserving
 the original message order across repeated resumptions. It supplies incomplete
 results only for unanswered calls in an interrupted tool batch.
+Agent runs may pass a `steering` callback that takes the messages a caller sent
+the running loop. The loop calls it before the first turn of a resumed run,
+after every executed tool batch, and once more before an ordinary run would
+finish, storing each message as a user message before its next provider turn
+and emitting one streamed `agent.steered` event per message; a message that
+arrives during the final answer therefore continues the run. It is never called
+when no turn is left or when a structured run submits its result, so those
+messages stay with the caller.
 Agent runs may declare an optional positive safe-integer `maxTurns`; omission
 keeps the loop unbounded. Invalid values fail with `TypeError` before message
 storage or provider activity. The budget is checked immediately before every
@@ -2209,7 +2219,8 @@ produce the same chronological view.
 `prompt.paused` carries the reason an interruption left the prompt unfinished —
 `host_stopped` when the host stopped, `host_restarted` when a restart was only
 discovered at the next boot or when the bundle generation process running the
-prompt's tools crashed, `reader_stopped` when the reader stopped the run —
+prompt's tools crashed, and `reader_stopped` only in logs written before a
+reader's stop ended the turn —
 and `prompt.resumed` carries the attempt number of a prompt the host took up
 again. An interrupted prompt is resumed from the provider history persisted as
 the run advanced, so it continues where it stopped, and an attempt budget counted
@@ -2226,17 +2237,44 @@ replacement input is accepted, and sequence numbers are never reused, so the
 discarded range leaves a gap rather than a reused number.
 Delegation results are redacted before entering the parent's input queue.
 
-The reader's Stop button and Escape close a durable per-Thread dispatch gate
-before aborting its active prompt. Repeated stops are idempotent, including when
+The reader's Stop button, Escape with an empty prompt, and Ctrl+C with nothing
+selected close a durable per-Thread dispatch gate before aborting its active
+prompt. The stop ends the turn: the history the run wrote stays, the prompt
+finishes with `prompt.finished` `status: cancelled` and `reason: interrupted`,
+and it is never resumed. Repeated stops are idempotent, including when
 the display names a prompt that just finished. Pending inputs and results that
 arrive later remain accepted, and a backend restart preserves the gate. Sending
-human input while paused adds it to the queue without reopening dispatch or
-superseding the interrupted prompt, which remains resumable before the FIFO.
+human input while the gate is closed adds it to the queue without reopening
+dispatch; sending into an empty paused queue reopens it first. Prompts a
+`reader_stopped` pause left in older logs stay resumable before the FIFO.
 Agent-facing targeted interruption
 keeps its separate child-prompt contract.
+
+Steering sends input into the running prompt without ending it: the reader's,
+and the correlated results of child Threads and background terminals, which
+always steer the active prompt when one runs. The reader steers the prompt the
+reader saw running (`runtime.threads/v1` 1.3.0 `steer`, `POST /threads/:id/steer`
+with `prompt`, the running `promptId` and an optional `interrupt`). The steer is
+accepted as an input of its own — `prompt.accepted` with `queued: true` and
+`steer` naming the running prompt — and waits on that run. Direct takes it in
+through `PromptSession.steers()` (`executor/v1` 1.1.0) at the agent loop's
+safe points: after the tool batch in flight, or before a final answer would end
+the turn, so it never interrupts a tool. It reaches the model in its source's
+envelope (`<user-request>`, `<child-result>` or `<terminal-output>`), its
+history is saved first, and the runtime then closes the
+steer with `prompt.steered` under its own id, naming the prompt it steered. With
+`interrupt`, the runtime also aborts only the current step — the provider call
+or the tool in flight — and continues the same prompt from the history it wrote,
+taking the steer in before its next turn; no pause or resume is recorded. A
+steer for a prompt that is no longer running, or while the Thread is stopping or
+paused, is queued as an ordinary prompt and answered `queued`. A steer a run
+ends without taking in returns to the front of the FIFO with
+`prompt.queued` `first: true`, before inputs queued earlier; one that a crash
+left unread is queued by the boot like any accepted input that never started.
 `GET /threads/:id/queue` returns a non-cached, revisioned snapshot with `paused`,
 `stopping`, an optional resumable prompt, the current active or resumable prompt,
-and FIFO pending items. The active prompt is excluded from the pending items.
+and FIFO pending items. The active prompt, and steers still waiting for it, are
+excluded from the pending items.
 Each item carries its prompt ID, source, display label, bounded
 preview and acceptance time; the accepted event retains full detail.
 `POST /threads/:id/queue/resume` refuses while stopping, otherwise resumes the
@@ -2261,22 +2299,27 @@ include each item's eligibility and revision, and edits invalidate the snapshot.
 
 The conversation has one non-editable queue block immediately above its editable
 prompt, anchored with that prompt rather than added to transcript history. It
-shows a compact `Queue` heading and `Current:` and `Next:` groups, using the
-conversation font and lightweight text. The section has no horizontal padding;
-rows retain the Button's horizontal padding, compensated by negative margins
-on both lists so their content aligns with the conversation. Inset focus rings
-stay visible inside the scroll viewport. Pending
-rows scroll within a bounded list; full details open in a popover. An empty queue
-is hidden, as is a queue containing only an executing prompt with no pending
-items. Current remains visible alongside pending items or while paused/stopping.
-Hidden rows are removed from caret navigation; footer execution controls retain
-the complete queue state. Queue updates preserve the draft and selection. Arrow keys traverse
+shows a compact `Queue` heading and only the enqueued items, using the
+conversation font and lightweight text; the running or paused prompt is never a
+row, because the transcript already shows it. The section has no horizontal
+padding; rows retain the Button's horizontal padding, compensated by a negative
+margin on the list so their content aligns with the conversation. Inset focus
+rings stay visible inside the scroll viewport. Pending
+rows scroll within a bounded list; full details open in a popover. A queue with
+no enqueued items is hidden. Footer execution controls retain the complete
+queue state. Queue updates preserve the draft and selection. Arrow keys traverse
 each row between transcript and draft; Enter edits eligible user input in the
 main composer and otherwise opens details. Clicking a row opens read-only
 details. Delete or
-Backspace removes the selected pending or paused input. The footer alone controls
+Backspace removes the selected pending input. The footer controls
 dispatch: Arrow Up sends when the queue is empty, Play resumes queued work without
-consuming the draft, and Pause stops an active run. While stopping or resuming,
+consuming the draft, and Pause stops an active run. While a prompt runs, the
+prompt's keys control it: Cmd/Ctrl+Enter steers it with the draft, Tab queues the
+draft for after it, Escape with a draft aborts its current step and steers it,
+and Escape without a draft or Ctrl+C with nothing selected stops it. A steer's
+words stay drawn as a pending turn until the run takes them in, then render as
+the reader's turn where `prompt.steered` landed; a steer that returns to the
+queue renders as a Queued receipt. While stopping or resuming,
 the control is disabled. Sending into an empty paused queue reopens dispatch
 before submission; sending while it still has items only appends input.
 Cmd/Ctrl+Enter with an empty input resumes waiting queue items through the same

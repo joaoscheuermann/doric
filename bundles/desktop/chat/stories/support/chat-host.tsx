@@ -167,6 +167,7 @@ const runtimeThreads = {
       }, 600);
       return { status: 'accepted', promptId };
     }),
+  steer: async () => ({ status: 'steered', promptId: crypto.randomUUID() }),
   rewind: async () => ({ status: 'accepted', promptId: crypto.randomUUID() }),
   resume: async (input: { readonly id: string }) => ({
     status: 'resumed',

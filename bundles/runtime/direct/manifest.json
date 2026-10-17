@@ -1,10 +1,10 @@
 {
   "manifestVersion": 1,
   "id": "direct",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engines": { "doric": "^1.0.0" },
   "description": "The Direct executor: system prompt, skills, tools, model resolution and provider history.",
-  "provides": ["executor/v1@1.0.0"],
+  "provides": ["executor/v1@1.1.0"],
   "requires": [
     "tools/v1@^1.0.0",
     "skills/v1@^1.0.0",

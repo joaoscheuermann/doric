@@ -42,7 +42,7 @@ for (const backend of backends)
         }
         for (let index = 0; index < 5; index += 1)
           await new Promise((resolve) => setImmediate(resolve));
-        if (runs === 3) finished.resolve();
+        if (runs === 2) finished.resolve();
         return 'done';
       },
     });
@@ -58,8 +58,13 @@ for (const backend of backends)
       await service.threads.prompt(id, 'next');
       await service.threads.interrupt(id, active.promptId);
       await harness.threadState(id, 'ready');
+      // The stop ended the running turn and left the queue paused on the rest.
       const paused = await service.threads.queue(id);
-      assert.equal(paused?.resumable?.preview, 'active');
+      assert.equal(paused?.paused, true);
+      assert.deepEqual(
+        paused?.items.map((item) => item.preview),
+        ['next'],
+      );
 
       // Reads issued when an event is announced, checked against it.
       const announced: Promise<{ sequence: number; queue?: ThreadQueue }>[] =

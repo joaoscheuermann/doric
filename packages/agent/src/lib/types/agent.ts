@@ -76,6 +76,16 @@ export interface AgentRunOptions<
    */
   readonly maxToolResultChars?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Takes the messages a caller sent the running loop since it last asked.
+   * The loop asks before the first turn of a resumed run, after every executed
+   * tool batch, and once more before an ordinary run would finish, so a
+   * message that arrives while the model answers continues the run instead. Each message is stored as a user
+   * message before the next provider turn. The loop does not ask when no turn
+   * is left or when a structured run submits its result, so those messages
+   * stay with the caller.
+   */
+  readonly steering?: () => readonly string[] | Promise<readonly string[]>;
   readonly schema?: Schema;
   readonly onStructuredAttempt?: (
     event: AgentStructuredAttemptEvent,
@@ -145,6 +155,11 @@ export type AgentEvent<Output = JsonValue> =
   | {
       readonly type: 'agent.finished';
       readonly response: AgentResponse<Output>;
+    }
+  | {
+      /** One steering message the loop stored for its next provider turn. */
+      readonly type: 'agent.steered';
+      readonly input: string;
     }
   | AgentToolEvent;
 

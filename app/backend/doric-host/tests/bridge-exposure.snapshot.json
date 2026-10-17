@@ -71,6 +71,7 @@
       "resumeQueue",
       "rewind",
       "setThreadCwd",
+      "steer",
       "terminateThread",
       "thread",
       "threads",

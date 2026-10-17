@@ -41,6 +41,8 @@ import {
 const projectId = '11111111-1111-4111-8111-111111111111';
 const threadId = '22222222-2222-4222-8222-222222222222';
 const promptId = '33333333-3333-4333-8333-333333333333';
+/** The prompt the Thread runs while `threadState` is `running`. */
+const activePromptId = '55555555-5555-4555-8555-555555555555';
 const path = `/projects/${projectId}/threads/${threadId}`;
 const url = `doric://app${path}`;
 
@@ -54,6 +56,7 @@ const thread = () => ({
   name: 'Fix the parser',
   projectId,
   state: threadState,
+  ...(threadState === 'running' ? { activePromptId } : {}),
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -320,7 +323,11 @@ const shownEditor = (): LexicalEditor => {
 const press = async (
   target: Element,
   key: string,
-  modifiers: { readonly metaKey?: boolean; readonly shiftKey?: boolean } = {},
+  modifiers: {
+    readonly metaKey?: boolean;
+    readonly shiftKey?: boolean;
+    readonly ctrlKey?: boolean;
+  } = {},
 ): Promise<KeyboardEvent> => {
   const event = new KeyboardEvent('keydown', {
     key,
@@ -800,4 +807,103 @@ test('a send made elsewhere clears the draft, and the editor empties with it', a
         .trim() ?? '',
   );
   assert.equal(words, '');
+});
+
+/** The words of the conversation's prompt block, as the reader sees them. */
+const promptWords = (): string =>
+  shownEditor()
+    .getEditorState()
+    .read(
+      () =>
+        $getRoot()
+          .getChildren()
+          .find((node) => node.getType() === 'user-prompt-node')
+          ?.getTextContent()
+          .trim() ?? '',
+    );
+
+/** Boots a window over a running Thread that answers steers and stops. */
+const running = async () => {
+  threadState = 'running';
+  const booted = await boot({
+    'runtime.threads/v1.steer': () => ({ status: 'steered', promptId }),
+    'runtime.threads/v1.pause': () => 'interrupted',
+  });
+  const root = shownEditor().getRootElement();
+  assert.ok(root);
+  return { window: booted.window, root };
+};
+
+test('while a prompt runs, Cmd+Enter steers it with the words at its next safe point', async () => {
+  const { window, root } = await running();
+
+  await type('Use the cache instead');
+  await press(root, 'Enter', { metaKey: true });
+  await settle(100);
+
+  const steers = window
+    .received('runtime.threads/v1.steer')
+    .map((call) => call.input as Record<string, unknown>);
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0]?.promptId, activePromptId);
+  assert.equal(steers[0]?.interrupt, undefined);
+  assert.match(String(steers[0]?.prompt), /Use the cache instead/);
+  assert.equal(window.received('runtime.threads/v1.prompt').length, 0);
+  assert.equal(promptWords(), '');
+});
+
+test('while a prompt runs, Tab queues the words for after it', async () => {
+  const { window, root } = await running();
+
+  await type('Then update the docs');
+  const event = await press(root, 'Tab');
+  await settle(100);
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(window.received('runtime.threads/v1.prompt').length, 1);
+  assert.match(
+    String(
+      (
+        window.received('runtime.threads/v1.prompt')[0]?.input as
+          | { prompt: string }
+          | undefined
+      )?.prompt,
+    ),
+    /Then update the docs/,
+  );
+  assert.equal(window.received('runtime.threads/v1.steer').length, 0);
+});
+
+test('while a prompt runs, Escape with words aborts its step and steers it', async () => {
+  const { window, root } = await running();
+
+  await type('Stop, wrong file');
+  await press(root, 'Escape');
+  await settle(100);
+
+  const steers = window
+    .received('runtime.threads/v1.steer')
+    .map((call) => call.input as Record<string, unknown>);
+  assert.deepEqual(
+    steers.map(({ promptId: target, interrupt }) => ({ target, interrupt })),
+    [{ target: activePromptId, interrupt: true }],
+  );
+  assert.equal(window.received('runtime.threads/v1.pause').length, 0);
+});
+
+test('while a prompt runs, Escape without words and Ctrl+C with nothing selected stop it', async () => {
+  const { window, root } = await running();
+
+  await press(root, 'Escape');
+  await press(root, 'c', { ctrlKey: true });
+  await settle(100);
+
+  assert.deepEqual(
+    window.received('runtime.threads/v1.pause').map((call) => call.input),
+    [
+      { id: threadId, promptId: activePromptId },
+      { id: threadId, promptId: activePromptId },
+    ],
+  );
+  assert.equal(window.received('runtime.threads/v1.steer').length, 0);
 });

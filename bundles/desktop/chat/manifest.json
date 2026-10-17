@@ -20,7 +20,7 @@
     "navigation/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "commands/v1@^1.0.0",
-    "runtime.threads/v1@^1.0.0",
+    "runtime.threads/v1@^1.3.0",
     "comments/v1@^1.0.0",
     "chat.composer/v1@^1.0.0"
   ],

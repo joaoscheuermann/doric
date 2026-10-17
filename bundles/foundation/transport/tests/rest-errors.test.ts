@@ -127,6 +127,14 @@ const threadCases = (): Case[] => [
     body: { prompt: 'Hello' },
     expected: restErrors.prompt({ status }),
   })),
+  ...(['missing', 'inactive'] as const).map((status) => ({
+    name: `steer ${status}`,
+    fakes: { threads: { steer: answering({ status }) } },
+    method: 'POST',
+    path: `/threads/${id}/steer`,
+    body: { prompt: 'Change course', promptId },
+    expected: restErrors.steer({ status }),
+  })),
   ...(
     ['missing', 'inactive', 'busy', 'unknown_prompt', 'storage_low'] as const
   ).map((status) => ({
@@ -287,6 +295,8 @@ void test('the branch switch and terminal outcomes answer the table errors', asy
 void test('a success outcome is no error', () => {
   assert.equal(restErrors.deleteProject('deleted'), undefined);
   assert.equal(restErrors.prompt({ status: 'accepted', promptId }), undefined);
+  assert.equal(restErrors.steer({ status: 'steered', promptId }), undefined);
+  assert.equal(restErrors.steer({ status: 'queued', promptId }), undefined);
   assert.equal(restErrors.pause('interrupted'), undefined);
   assert.equal(restErrors.removeQueued('removed'), undefined);
   assert.equal(restErrors.terminalWrite(true), undefined);

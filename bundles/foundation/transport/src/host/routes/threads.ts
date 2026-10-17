@@ -32,6 +32,13 @@ const promptInput = z
   })
   .strict();
 const interruptInput = z.object({ promptId: z.uuid() }).strict();
+const steerInput = z
+  .object({
+    prompt: z.string().refine((value) => value.trim().length > 0),
+    promptId: z.uuid(),
+    interrupt: z.boolean().optional(),
+  })
+  .strict();
 const editInput = z
   .object({
     text: z.string().refine((text) => text.trim().length > 0),
@@ -276,6 +283,34 @@ export const createThreadsRouter = ({
       return;
     }
     response.status(202).json({ promptId: result.promptId });
+  });
+  router.post('/:id/steer', async (request, response) => {
+    const input = steerInput.safeParse(request.body);
+    if (!input.success) {
+      sendError(
+        response,
+        422,
+        'invalid_steer',
+        'A non-empty prompt and the running promptId are required.',
+      );
+      return;
+    }
+    const result = await threads.steer({
+      id: request.params.id,
+      prompt: input.data.prompt,
+      promptId: input.data.promptId,
+      ...(input.data.interrupt === undefined
+        ? {}
+        : { interrupt: input.data.interrupt }),
+    });
+    if (result.status === 'steered' || result.status === 'queued') {
+      response
+        .status(202)
+        .json({ status: result.status, promptId: result.promptId });
+      return;
+    }
+    if (result.status === 'missing') missing(response, 'thread');
+    else conflict(response, 'thread', 'inactive');
   });
   router.post('/:id/resume', async (request, response) => {
     const input = resumeInput.safeParse(request.body);

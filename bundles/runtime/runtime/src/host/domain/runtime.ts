@@ -41,13 +41,25 @@ export interface ThreadRuntime {
    * terminal.
    */
   pausing?: 'host_stopped' | 'reader_stopped' | 'host_restarted';
+  /**
+   * Set by the reader's stop just before the controller aborts: the run ends
+   * its turn as interrupted, keeping the history it wrote, and is not resumed.
+   */
+  interrupting?: boolean;
   active?: {
     readonly job: PromptJob;
-    readonly controller: AbortController;
+    /** Replaced when a redirect aborts only the current step. */
+    controller: AbortController;
     finished?: boolean;
     reported?: boolean;
     /** Resolves once the run has recorded how it ended (or failed to). */
     settled?: Promise<void>;
+    /** Steering accepted for this prompt that the executor has not taken. */
+    readonly steers: PromptJob[];
+    /** Steering the executor took and has not yet recorded, oldest first. */
+    readonly taken: PromptJob[];
+    /** Set when a steer aborted the current step: the run continues instead. */
+    redirect?: boolean;
   };
   task?: Promise<void>;
   ending?: Promise<void>;

@@ -446,24 +446,32 @@ void test('fails the Project when acquiring its sandbox fails', {
   await harness.dispose();
 });
 
-void test('queues one correlated delegation result for its busy parent and keeps later human input independent', {
+void test('steers one correlated delegation result into its busy parent and keeps later human input independent', {
   timeout: 5000,
 }, async () => {
   const spawned = deferred<{ threadId: string; promptId: string }>();
   const childStarted = deferred();
   const finishChild = deferred();
-  const finishParent = deferred();
-  const resumed = deferred();
+  const childFinished = deferred();
   const humanStarted = deferred();
   const priorHumanStarted = deferred();
   const childInputs: InputSource[] = [];
-  const results: InputSource[] = [];
+  const steered: InputSource[] = [];
   const parentInputs: string[] = [];
   const harness = createHarness({
-    execute: async ({ job, tools }) => {
+    execute: async ({ job, tools, session }) => {
       if (job.prompt === 'coordinate') {
         spawned.resolve(await tools.threads.spawn('delegated'));
-        await finishParent.promise;
+        await childFinished.promise;
+        // The parent's safe point: the child's result arrives as a steer.
+        await harness.waitFor(async () => {
+          const steers = (await session.steers?.()) ?? [];
+          for (const steer of steers) {
+            steered.push(steer.source);
+            await session.record({ event: { type: 'agent.steered' } });
+          }
+          return steered.length > 0;
+        }, 'the result steer');
       } else if (job.prompt === 'delegated') {
         childInputs.push(job.source);
         childStarted.resolve();
@@ -474,8 +482,6 @@ void test('queues one correlated delegation result for its busy parent and keeps
         humanStarted.resolve();
       } else if (job.source.kind === 'result') {
         parentInputs.push('result');
-        results.push(job.source);
-        resumed.resolve();
       } else if (job.prompt === 'prior human input') {
         parentInputs.push(job.prompt);
         priorHumanStarted.resolve();
@@ -498,17 +504,15 @@ void test('queues one correlated delegation result for its busy parent and keeps
   finishChild.resolve();
   await humanStarted.promise;
   await harness.threadState(child.threadId, 'ready');
-  assert.deepEqual(results, []);
+  childFinished.resolve();
+  await priorHumanStarted.promise;
+  await harness.threadState(parent.id, 'ready');
   assert.deepEqual(childInputs, [
     { kind: 'parent', threadId: parent.id, promptId: request.promptId },
     { kind: 'user' },
   ]);
-  finishParent.resolve();
-  await resumed.promise;
-  await priorHumanStarted.promise;
-  await harness.threadState(parent.id, 'ready');
-  assert.deepEqual(parentInputs, ['prior human input', 'result']);
-  assert.deepEqual(results, [
+  // The result reached the running prompt and never ran as a prompt of its own.
+  assert.deepEqual(steered, [
     {
       kind: 'result',
       threadId: child.threadId,
@@ -516,6 +520,7 @@ void test('queues one correlated delegation result for its busy parent and keeps
       requestPromptId: request.promptId,
     },
   ]);
+  assert.deepEqual(parentInputs, ['prior human input']);
   await harness.dispose();
 });
 

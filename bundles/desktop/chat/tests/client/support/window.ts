@@ -54,6 +54,7 @@ const threadMethods: Readonly<Record<string, number | null>> = {
   thread: 1,
   queue: 1,
   prompt: null,
+  steer: null,
   resume: null,
   rewind: null,
   pause: null,
@@ -91,7 +92,7 @@ const hostCandidate: CatalogCandidate = {
     provides: [
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
-      'runtime.threads/v1@1.1.0',
+      'runtime.threads/v1@1.3.0',
       'comments/v1@1.0.0',
     ],
     requires: [],
@@ -102,7 +103,7 @@ const hostCandidate: CatalogCandidate = {
     contracts: [
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
-      ['runtime.threads/v1', '1.1.0'],
+      ['runtime.threads/v1', '1.3.0'],
       ['comments/v1', '1.0.0'],
     ].map(([id, version]) => ({
       id,
@@ -122,7 +123,7 @@ const threadsRemote: RemoteContract = {
   environment: 'host',
   bundleId: 'host',
   version: '1.0.0',
-  contractVersion: '1.1.0',
+  contractVersion: '1.3.0',
   cardinality: 'one',
   methods: {
     ...Object.fromEntries(

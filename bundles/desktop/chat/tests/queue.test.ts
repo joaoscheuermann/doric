@@ -28,7 +28,7 @@ const event = (type: string): ThreadEvent => ({
   event: { text: 'full input\nwith details' },
 });
 
-void test('hides a sole running input but shows paused work and current plus next without changing footer actions', () => {
+void test('the queue block shows only enqueued inputs, never the running or paused prompt, without changing footer actions', () => {
   const current = {
     promptId: 'current',
     source: { kind: 'user' as const },
@@ -50,36 +50,13 @@ void test('hides a sole running input but shows paused work and current plus nex
     visibleQueueItems({ ...running, items: [next] }).map(
       (item) => item.promptId,
     ),
-    ['current', 'next'],
-  );
-  assert.deepEqual(
-    visibleQueueItems({ ...running, paused: true }).map(
-      (item) => item.promptId,
-    ),
-    ['current'],
-  );
-  assert.deepEqual(
-    visibleQueueItems({ ...running, stopping: true }).map(
-      (item) => item.promptId,
-    ),
-    ['current'],
-  );
-  const resumable = { ...running, current: undefined, resumable: current };
-  assert.deepEqual(
-    visibleQueueItems(resumable).map((item) => item.promptId),
-    ['current'],
-  );
-  assert.equal(composerAction(false, resumable), 'resume');
-  assert.deepEqual(
-    visibleQueueItems({ ...running, current: undefined, items: [next] }).map(
-      (item) => item.promptId,
-    ),
     ['next'],
   );
-  assert.deepEqual(
-    visibleQueueItems({ ...running, current: undefined, paused: true }),
-    [],
-  );
+  assert.deepEqual(visibleQueueItems({ ...running, paused: true }), []);
+  assert.deepEqual(visibleQueueItems({ ...running, stopping: true }), []);
+  const resumable = { ...running, current: undefined, resumable: current };
+  assert.deepEqual(visibleQueueItems(resumable), []);
+  assert.equal(composerAction(false, resumable), 'resume');
   assert.deepEqual(visibleQueueItems(undefined), []);
 });
 

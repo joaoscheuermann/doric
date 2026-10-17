@@ -1,15 +1,20 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createTextNode,
+  $getSelection,
+  $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
+  KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
+  KEY_TAB_COMMAND,
 } from 'lexical';
 import { useCallback, useEffect, useRef } from 'react';
 
 import type { ComposerItem } from '../../../../../contracts/index.js';
 import { promptEnvelope } from '../../../../domain/prompt-envelope.js';
 import { composerStackStore } from '../../../../stores/composer-stack.js';
+import { queueEditStore } from '../../../../stores/queue-edit.js';
 import type { PromptSignal } from '../../../../utility/prompt-signal.js';
 import { SAVE_QUEUE_EDIT_COMMAND, SEND_PROMPT_COMMAND } from '../commands.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
@@ -30,6 +35,11 @@ export const $restore = (text: string): void => {
 type SendPromptProps = {
   /** Sends the words, and reports whether the host accepted them. */
   readonly send: (text: string) => Promise<boolean>;
+  /**
+   * Steers the running prompt with the words; `interrupt` also aborts its
+   * current step. Without it, a send while running queues the words.
+   */
+  readonly steer?: (text: string, interrupt: boolean) => Promise<boolean>;
   /** Resumes waiting work when the input is empty and dispatch is available. */
   readonly onResumeQueue?: () => void;
   /**
@@ -49,11 +59,29 @@ type SendPromptProps = {
 };
 
 /**
+ * How a send reaches the Thread while a prompt runs: `send` steers it (and
+ * sends a prompt when nothing runs), `queue` waits for the run to end, and
+ * `redirect` steers it after aborting its current step.
+ */
+type SendMode = 'send' | 'queue' | 'redirect';
+
+/** Whether the reader has selected something Ctrl+C would copy. */
+const $hasSelection = (): boolean => {
+  const selection = $getSelection();
+  if (selection !== null && !$isRangeSelection(selection)) return true;
+  if (selection !== null && !selection.isCollapsed()) return true;
+  return (globalThis.getSelection?.()?.toString() ?? '').length > 0;
+};
+
+/**
  * The composer's own plugin: what a reader sends with, and what they stop with.
  *
  * Sending reads the words from the document, because the prompt block is what
  * holds them — Cmd/Ctrl+Enter wherever the caret is, and the `sendRequest` the
- * shell changes when its own control is clicked. The prompt is emptied as the
+ * shell changes when its own control is clicked. While a prompt runs the keys
+ * control it: Cmd/Ctrl+Enter steers it at its next safe point, Tab queues the
+ * words for after it, Escape with words aborts its current step and steers it,
+ * and Escape without words or Ctrl+C with nothing selected stops it. The prompt is emptied as the
  * send leaves, so the transcript shows the turn the host accepted rather than a
  * copy still in the input; a send the host refuses puts the words back.
  *
@@ -76,6 +104,7 @@ export function SendPrompt({
   onResumeQueue,
   promptSignal,
   send,
+  steer,
   sendRequest,
   threadId,
 }: SendPromptProps & { readonly threadId: string }) {
@@ -87,8 +116,8 @@ export function SendPrompt({
    */
   const answered = useRef(sendRequest);
   /** The send the shell's control calls, kept current without a render. */
-  const latest = useRef({ send, onResumeQueue });
-  latest.current = { send, onResumeQueue };
+  const latest = useRef({ send, steer, onResumeQueue, canStop });
+  latest.current = { send, steer, onResumeQueue, canStop };
 
   /**
    * Whether the prompt holds words, which the shell draws its control from. It
@@ -121,44 +150,69 @@ export function SendPrompt({
     promptSignal?.set(editor.getEditorState().read($promptHasWords));
   }, [editor, promptSignal, $promptHasWords]);
 
-  const sendNow = useCallback((): void => {
-    if (editor.dispatchCommand(SAVE_QUEUE_EDIT_COMMAND, undefined)) return;
-    let words = '';
-    editor.read(() => {
-      words = $getUserPromptNode()?.getTextContent().trim() ?? '';
-    });
-    // The stack's comments travel with every send: the prompt is the only
-    // thing the agent reads, so the anchors go in it with the reader's words.
-    const stack: readonly ComposerItem[] = composerStackStore
-      .getState()
-      .stack(threadId);
-    const prompt = promptEnvelope(words, stack);
+  /** Where one send goes: a steer while a prompt runs, unless it queues. */
+  const deliver = useCallback(
+    (prompt: string, mode: SendMode): Promise<boolean> => {
+      const current = latest.current;
+      return mode === 'queue' || !current.canStop || current.steer === undefined
+        ? current.send(prompt)
+        : current.steer(prompt, mode === 'redirect');
+    },
+    [],
+  );
 
-    if (words.length === 0) {
-      // The stack carries words of its own — a comment alone is already
-      // something to send. Only a stack with nothing written waits for the
-      // queue instead.
-      if (prompt.length > 0) {
-        void latest.current.send(prompt);
-        return;
+  /** Sends what the reader wrote; answers whether there was anything to send. */
+  const sendNow = useCallback(
+    (mode: SendMode = 'send'): boolean => {
+      // Saving a queued prompt's edit is the send's job alone; the run's own
+      // keys never touch the edit.
+      if (mode !== 'send' && queueEditStore.getState().edits[threadId])
+        return false;
+      if (
+        mode === 'send' &&
+        editor.dispatchCommand(SAVE_QUEUE_EDIT_COMMAND, undefined)
+      )
+        return true;
+      let words = '';
+      editor.read(() => {
+        words = $getUserPromptNode()?.getTextContent().trim() ?? '';
+      });
+      // The stack's comments travel with every send: the prompt is the only
+      // thing the agent reads, so the anchors go in it with the reader's words.
+      const stack: readonly ComposerItem[] = composerStackStore
+        .getState()
+        .stack(threadId);
+      const prompt = promptEnvelope(words, stack);
+
+      if (words.length === 0) {
+        // The stack carries words of its own — a comment alone is already
+        // something to send. Only a stack with nothing written waits for the
+        // queue instead.
+        if (prompt.length > 0) {
+          void deliver(prompt, mode);
+          return true;
+        }
+
+        if (mode !== 'send') return false;
+        latest.current.onResumeQueue?.();
+        return true;
       }
 
-      latest.current.onResumeQueue?.();
-      return;
-    }
-
-    editor.update(() => {
-      const prompt = $getUserPromptNode();
-      if (prompt === undefined || prompt.getTextContent().trim() !== words)
-        return;
-      prompt.clear();
-    });
-    void latest.current.send(prompt).then((accepted) => {
-      // A refused send gives the reader's own words back; the ones the stack
-      // composed were never in the editor, and the stack still holds them.
-      if (!accepted) editor.update(() => $restore(words));
-    });
-  }, [editor, threadId]);
+      editor.update(() => {
+        const prompt = $getUserPromptNode();
+        if (prompt === undefined || prompt.getTextContent().trim() !== words)
+          return;
+        prompt.clear();
+      });
+      void deliver(prompt, mode).then((accepted) => {
+        // A refused send gives the reader's own words back; the ones the stack
+        // composed were never in the editor, and the stack still holds them.
+        if (!accepted) editor.update(() => $restore(words));
+      });
+      return true;
+    },
+    [deliver, editor, threadId],
+  );
 
   useEffect(() => {
     if (sendRequest === undefined || answered.current === sendRequest) return;
@@ -199,13 +253,57 @@ export function SendPrompt({
     [editor, sendNow],
   );
 
+  // Tab queues the words for after the running prompt; with nothing to send,
+  // or nothing running, it moves the focus as it always does.
+  useEffect(
+    () =>
+      editor.registerCommand(
+        KEY_TAB_COMMAND,
+        (event) => {
+          if (!canStop || event.shiftKey) return false;
+          if (!sendNow('queue')) return false;
+          event.preventDefault();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+    [canStop, editor, sendNow],
+  );
+
+  // Escape with words aborts the running step and steers it with them; without
+  // words it stops the run.
   useEffect(
     () =>
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
         () => {
           if (!canStop) return false;
-          onStop?.();
+          if (!sendNow('redirect')) onStop?.();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+    [canStop, editor, onStop, sendNow],
+  );
+
+  // Ctrl+C stops the run when there is nothing selected to copy.
+  useEffect(
+    () =>
+      editor.registerCommand(
+        KEY_DOWN_COMMAND,
+        (event) => {
+          if (
+            !canStop ||
+            !event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            event.shiftKey ||
+            event.key.toLowerCase() !== 'c' ||
+            editor.getEditorState().read($hasSelection)
+          )
+            return false;
+          event.preventDefault();
+          if (!event.repeat) onStop?.();
           return true;
         },
         COMMAND_PRIORITY_HIGH,

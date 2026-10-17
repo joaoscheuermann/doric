@@ -525,6 +525,73 @@ void test('saves the history on response.finished and tool.finished and once mor
   );
 });
 
+void test('takes the reader steering in after a tool and saves it before announcing it', async () => {
+  const harness = directHarness();
+  harness.state.onEvent((value) => {
+    if ((value as { type: string }).type === 'tool.started')
+      harness.state.steer('summarize');
+  });
+
+  const text = await harness.run('use-tool');
+
+  assert.equal(text, 'answer-summarize');
+  const steered = harness.state.writes.find(
+    ({ event }) =>
+      (event as { type?: string } | undefined)?.type === 'agent.steered',
+  );
+  const saved = steered?.history?.parts.messages as
+    | readonly ProviderMessage[]
+    | undefined;
+  assert.deepEqual(saved?.at(-1), {
+    role: 'user',
+    content: '<user-request>\nsummarize\n</user-request>',
+  });
+  assert.deepEqual(harness.state.steering, []);
+});
+
+void test('leaves steering untaken when the run answers without a further turn', async () => {
+  const harness = directHarness({
+    ...testConfiguration(),
+    execution: { maxTurns: 1 },
+  });
+  harness.state.onEvent((value) => {
+    if ((value as { type: string }).type === 'response.started')
+      harness.state.steer('too late');
+  });
+
+  assert.equal(await harness.run('plain'), 'answer-plain');
+  assert.deepEqual(
+    harness.state.steering.map((steer) => steer.prompt),
+    ['too late'],
+  );
+});
+
+void test('takes a background terminal result in within its own envelope', async () => {
+  const harness = directHarness();
+  harness.state.onEvent((value) => {
+    if ((value as { type: string }).type === 'tool.started')
+      harness.state.steer('Command: npm test\nExit: 0', {
+        kind: 'terminal',
+        terminalId: 'term-1',
+        promptId,
+      });
+  });
+
+  await harness.run('use-tool');
+
+  const steered = harness.state.writes.find(
+    ({ event }) =>
+      (event as { type?: string } | undefined)?.type === 'agent.steered',
+  );
+  const saved = steered?.history?.parts.messages as
+    | readonly ProviderMessage[]
+    | undefined;
+  assert.deepEqual(saved?.at(-1), {
+    role: 'user',
+    content: `<terminal-output terminal="term-1" prompt="${promptId}">\nCommand: npm test\nExit: 0\n</terminal-output>`,
+  });
+});
+
 void test('pauses without recording the failure when the generation running a tool is lost', async () => {
   const controller = new AbortController();
   const owner = createTestServices({ bundle: { id: 'tools-owner' } });

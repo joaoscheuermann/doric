@@ -26,10 +26,24 @@ export interface PromptReceipt {
   readonly promptId: string;
 }
 
+/** A steer's receipt: taken by the running prompt, or queued instead. */
+export interface SteerReceipt extends PromptReceipt {
+  readonly status: 'steered' | 'queued';
+}
+
 export interface ChatThreadsApi {
   get(threadId: string): Promise<Thread | undefined>;
   history(threadId: string): Promise<ThreadHistory | null>;
   prompt(threadId: string, prompt: string): Promise<PromptReceipt>;
+  /**
+   * Sends input into the running prompt `promptId`; `interrupt` also aborts
+   * its current step.
+   */
+  steer(
+    threadId: string,
+    prompt: string,
+    options: { readonly promptId: string; readonly interrupt?: boolean },
+  ): Promise<SteerReceipt>;
   resume(threadId: string, promptId: string): Promise<Thread>;
   rewind(
     threadId: string,
@@ -216,6 +230,29 @@ export const createThreadsApi = (
       if (result.status !== 'accepted') return conflict('inactive');
 
       return receiptFrom(result.promptId);
+    },
+
+    steer: async (id, prompt, options) => {
+      identifier(id);
+      const target = identifier(options.promptId);
+      const text = promptText(prompt);
+      const checked = threadId(id);
+
+      if (!isUuid(target)) return fail(promptIdRequired);
+
+      const result = await host((threads) =>
+        threads.steer({
+          id: checked,
+          prompt: text,
+          promptId: target,
+          ...(options.interrupt === true ? { interrupt: true } : {}),
+        }),
+      );
+
+      if (result.status === 'steered' || result.status === 'queued')
+        return { ...receiptFrom(result.promptId), status: result.status };
+      if (result.status === 'missing') return fail(notFound);
+      return conflict('inactive');
     },
 
     resume: async (id, promptId) => {

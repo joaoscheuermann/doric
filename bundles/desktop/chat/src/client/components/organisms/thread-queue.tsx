@@ -189,7 +189,6 @@ export function ThreadQueue({
       </div>
     ) : null;
   if (ids.length === 0 && queue.error === undefined) return null;
-  const current = queue.current ?? queue.resumable;
   const row = (item: QueueItem) => (
     <Item
       key={item.promptId}
@@ -218,19 +217,10 @@ export function ThreadQueue({
           Could not refresh queue.
         </p>
       )}
-      {current && (
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-xs font-light text-muted-foreground">Current:</h3>
-          <ol className="-mx-2.5">{row(current)}</ol>
-        </div>
-      )}
       {queue.items.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-xs font-light text-muted-foreground">Next:</h3>
-          <ol className="-mx-2.5 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
-            {queue.items.map(row)}
-          </ol>
-        </div>
+        <ol className="-mx-2.5 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+          {queue.items.map(row)}
+        </ol>
       )}
     </section>
   );

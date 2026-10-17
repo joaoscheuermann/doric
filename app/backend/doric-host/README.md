@@ -150,6 +150,7 @@ is reset to the workspace root. An explicit termination still goes
 | PATCH     | `/threads/:id`                | 200       | Rename a Thread or move its working directory.         |
 | GET       | `/threads/:id/git`            | 200       | Read the Git summary of the Thread's directory.        |
 | POST      | `/threads/:id/prompt`         | 202       | Enqueue human input; returns `promptId`.               |
+| POST      | `/threads/:id/steer`          | 202       | Steer the running prompt, or queue when it ended.      |
 | POST      | `/threads/:id/resume`         | 202       | Take up a prompt no run has finished; returns Thread.  |
 | POST      | `/threads/:id/rewind`         | 202       | Replace an earlier prompt and discard later turns.     |
 | GET       | `/threads/:id/events`         | 200       | Replay durable events.                                 |
@@ -388,7 +389,10 @@ with `persistence_failed`; clients must also observe Thread state.
 An interruption that leaves a prompt unfinished emits `prompt.paused` with
 `{ type, reason }`, where `reason` is `host_stopped` when the host stopped,
 `host_restarted` when a boot discovered the restart a run never recorded, and
-`reader_stopped` when the reader stopped the run. A prompt that never started is
+`reader_stopped` only in logs written before the reader's stop ended the turn.
+The reader's stop (`POST /threads/:id/interrupt`) now finishes the prompt with
+`prompt.finished` `status: cancelled` and `reason: interrupted`, keeping its
+history. A prompt that never started is
 left without one: it was never running. The host takes its own interruptions up
 again by appending `prompt.resumed` with `{ type, attempt }`, counting from `1`,
 and a reader's own resume of the same prompt does the same under the prompt's own
@@ -396,8 +400,22 @@ and a reader's own resume of the same prompt does the same under the prompt's ow
 `prompt.finished`, and a pause or a `prompt.resumed` as its last word — can offer
 the reader `POST /threads/:id/resume`.
 
-Delegated results are queued automatically for the parent without interrupting
-its current prompt. They can trigger additional model/tool activity. The
+`POST /threads/:id/steer` takes `{ prompt, promptId, interrupt? }`, where
+`promptId` is the prompt the reader saw running, and answers
+`{ status, promptId }`. `steered` means the running prompt takes the input in at
+its next safe point — after the tool batch in flight, or before its final answer
+— and `interrupt: true` also aborts its current step so it continues with the
+steer at once. `queued` means the prompt was no longer running, or the Thread
+was stopping, so the input was queued as an ordinary prompt. The steer is
+accepted as `prompt.accepted` with `steer` naming the running prompt; taking it
+in appends `prompt.steered` under the steer's own id, and a steer the run ended
+without reading returns to the front of the queue with `prompt.queued`
+`first: true`.
+
+Delegated results and background terminal results are delivered automatically.
+A Thread that is running takes them in as steers of its active prompt at the
+next safe point, without interrupting it; otherwise they are queued. They can
+trigger additional model/tool activity. The
 `--terminate` client option closes the entire Project after its submitted
 prompt ends, including any still-running descendants; omit it to keep those
 conversations available.

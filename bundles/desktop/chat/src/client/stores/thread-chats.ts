@@ -78,6 +78,16 @@ export type ThreadChatsState = {
     text: string,
     options?: { readonly projectId?: string },
   ) => Promise<boolean>;
+  /**
+   * Sends input into the running prompt `promptId` through `threads.steer`,
+   * the same way `prompt` sends: pending until accepted, then the stack
+   * flushes into it. `interrupt` also aborts the prompt's current step.
+   */
+  readonly steer: (
+    id: string,
+    text: string,
+    options: { readonly promptId: string; readonly interrupt?: boolean },
+  ) => Promise<boolean>;
   /** Replaces a past prompt of a Thread through `threads.rewind`. */
   readonly rewind: (
     id: string,
@@ -102,7 +112,7 @@ export interface ThreadChatsDependencies {
   readonly watch: ThreadWatch;
   readonly threads: Pick<
     ChatThreadsApi,
-    'history' | 'prompt' | 'rewind' | 'resume'
+    'history' | 'prompt' | 'steer' | 'rewind' | 'resume'
   >;
   readonly history: HistoryFeed;
   /**
@@ -289,6 +299,55 @@ export const createThreadChatsStore = (
       }
     };
 
+    /**
+     * Sends the reader's words through one request — a prompt or a steer —
+     * holding them as pending until the host accepts them. The Project names
+     * where the stack flushes when this window has not opened the Thread.
+     */
+    const submit = async (
+      id: string,
+      text: string,
+      request: (text: string) => Promise<PromptReceipt>,
+      fallbackProjectId?: string,
+    ): Promise<boolean> => {
+      const words = text.trim();
+      if (words.length === 0) return false;
+      // The pending turn draws the reader's words, as the log's turn will:
+      // the envelope's `<message>`, never its comments.
+      setChats(startPending(get().chats, id, promptMessage(words)));
+      // The receipt is what carries the flush: the host's prompt id, which
+      // the comment events land below once the stack empties into them.
+      let receipt: PromptReceipt | undefined;
+      const accepted = await send(
+        id,
+        async (value) => {
+          receipt = await request(value);
+        },
+        text,
+      );
+      // A refused send has nothing to wait for; the words go back, and the
+      // stack above the prompt stays exactly where it was.
+      if (!accepted) {
+        setChats(clearPending(get().chats, id));
+        return false;
+      }
+      if (receipt !== undefined) {
+        // The flush runs only after the acceptance: the host took the prompt,
+        // so each draft of the stack becomes a durable comment of this
+        // prompt, and the stack empties into the log.
+        const projectId =
+          get().chats.chats.get(id)?.thread.projectId ?? fallbackProjectId;
+        if (projectId !== undefined) {
+          await dependencies.flush?.({
+            threadId: id,
+            projectId,
+            promptId: receipt.promptId,
+          });
+        }
+      }
+      return true;
+    };
+
     return {
       chats: emptyThreadChats,
 
@@ -324,44 +383,18 @@ export const createThreadChatsStore = (
           });
       },
 
-      prompt: async (id, text, options) => {
-        const words = text.trim();
-        if (words.length === 0) return false;
-        // The pending turn draws the reader's words, as the log's turn will:
-        // the envelope's `<message>`, never its comments.
-        setChats(startPending(get().chats, id, promptMessage(words)));
-        // The receipt is what carries the flush: the host's prompt id, which
-        // the comment events land below once the stack empties into them.
-        let receipt: PromptReceipt | undefined;
-        const accepted = await send(
+      prompt: (id, text, options) =>
+        submit(
           id,
-          async (value) => {
-            receipt = await dependencies.threads.prompt(id, value);
-          },
           text,
-        );
-        // A refused send has nothing to wait for; the words go back, and the
-        // stack above the prompt stays exactly where it was.
-        if (!accepted) {
-          setChats(clearPending(get().chats, id));
-          return false;
-        }
-        if (receipt !== undefined) {
-          // The flush runs only after the acceptance: the host took the prompt,
-          // so each draft of the stack becomes a durable comment of this
-          // prompt, and the stack empties into the log.
-          const projectId =
-            get().chats.chats.get(id)?.thread.projectId ?? options?.projectId;
-          if (projectId !== undefined) {
-            await dependencies.flush?.({
-              threadId: id,
-              projectId,
-              promptId: receipt.promptId,
-            });
-          }
-        }
-        return true;
-      },
+          (value) => dependencies.threads.prompt(id, value),
+          options?.projectId,
+        ),
+
+      steer: (id, text, options) =>
+        submit(id, text, (value) =>
+          dependencies.threads.steer(id, value, options),
+        ),
 
       rewind: (id, promptId, text) =>
         send(

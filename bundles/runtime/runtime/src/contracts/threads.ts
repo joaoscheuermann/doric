@@ -25,6 +25,8 @@ import {
   removeQueuedResultSchema,
   resumeResultSchema,
   rewindResultSchema,
+  type SteerResult,
+  steerResultSchema,
   type Thread,
   type ThreadCreateResult,
   type ThreadEvent,
@@ -271,6 +273,22 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     input: { readonly id: string; readonly prompt: string },
     call?: CallArg,
   ): Promise<PromptAcceptResult>;
+  /**
+   * Sends the reader's input into the running prompt `promptId` (1.3.0). The
+   * prompt takes it in at its next safe point — after the tool batch in flight,
+   * or before its final answer would end the turn — and `interrupt` aborts the
+   * current step so it continues with the steer at once. Input for a prompt
+   * that is no longer running, or while the Thread is stopping, is queued.
+   */
+  steer(
+    input: {
+      readonly id: string;
+      readonly prompt: string;
+      readonly promptId: string;
+      readonly interrupt?: boolean;
+    },
+    call?: CallArg,
+  ): Promise<SteerResult>;
   resume(
     input: { readonly id: string; readonly promptId: string },
     call?: CallArg,
@@ -437,6 +455,17 @@ export const runtimeThreadsMethods = {
   prompt: {
     input: z.object({ id: z.string(), prompt: z.string() }).strict(),
     output: promptResultSchema,
+  },
+  steer: {
+    input: z
+      .object({
+        id: z.string(),
+        prompt: z.string(),
+        promptId: z.string(),
+        interrupt: z.boolean().optional(),
+      })
+      .strict(),
+    output: steerResultSchema,
   },
   resume: { input: threadPrompt, output: resumeResultSchema },
   rewind: {

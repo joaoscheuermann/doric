@@ -44,17 +44,14 @@ export const queueItems = (
   return current === undefined ? queue.items : [current, ...queue.items];
 };
 
-/** Running input alone already appears in the transcript; paused work stays visible. */
+/**
+ * The rows the queue block shows: only what is enqueued. The running prompt
+ * is already the transcript's last turn, and a paused one is resumed from its
+ * marker there.
+ */
 export const visibleQueueItems = (
   queue: ThreadQueue | undefined,
-): readonly QueueItem[] =>
-  queue !== undefined &&
-  (queue.paused ||
-    queue.stopping ||
-    queue.resumable !== undefined ||
-    queue.items.length > 0)
-    ? queueItems(queue)
-    : [];
+): readonly QueueItem[] => queue?.items ?? [];
 
 export const composerAction = (
   running: boolean,
@@ -86,6 +83,7 @@ const changes = new Set([
   'prompt.resumed',
   'prompt.paused',
   'prompt.finished',
+  'prompt.steered',
   'agent.started',
   'queue.updated',
   'queue.paused',

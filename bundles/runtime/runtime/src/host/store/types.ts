@@ -55,6 +55,11 @@ export interface PromptProgress {
   readonly queuedSequence?: number;
   readonly pausedSequence?: number;
   readonly first?: boolean;
+  /**
+   * The prompt this steering input waits to be taken into. It stays until the
+   * steer is taken in, which closes it, or returns to the queue.
+   */
+  readonly steer?: string;
 }
 
 /** The failure a prompt the host gives up on is closed with. */

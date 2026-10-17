@@ -1,6 +1,7 @@
 import type {
   HistoryPatch,
   HistoryReader,
+  PromptJob,
   PromptSession,
 } from '../../contracts/executor.js';
 import type { ThreadEvent } from '../../contracts/model.js';
@@ -29,16 +30,52 @@ export const createSession = (context: {
   readonly store: ThreadStore;
   readonly redactor: Redactor;
   readonly publish: (event: ThreadEvent) => void;
+  /** The prompt's steering; a session without it offers the executor none. */
+  readonly steering?: {
+    /** Hands the waiting steers to the executor, oldest first. */
+    readonly take: () => readonly PromptJob[];
+    /** The oldest steer the executor took, now recorded as taken in. */
+    readonly applied: () => PromptJob | undefined;
+  };
 }): RunSession => {
-  const { threadId, promptId, store, publish } = context;
+  const { threadId, promptId, store, publish, steering } = context;
   let failure: ThreadPersistenceError | undefined;
   let latest: HistoryPatch | undefined;
-  let pending: { readonly event: unknown } | undefined;
+  let pending:
+    | { readonly promptId: string; readonly event: unknown }
+    | undefined;
   const append = async () => {
     if (pending === undefined) return;
-    const stored = await store.appendEvent(threadId, promptId, pending.event);
+    const stored = await store.appendEvent(
+      threadId,
+      pending.promptId,
+      pending.event,
+    );
     pending = undefined;
     publish(stored);
+  };
+  /**
+   * The event one executor event is logged as. A steer the executor took in is
+   * closed under its own id with `prompt.steered`, which names the prompt it
+   * steered, so replay and boot never run it again as a prompt of its own.
+   */
+  const logged = (
+    event: unknown,
+  ): { readonly promptId: string; readonly event: unknown } => {
+    if ((event as { type?: unknown } | null)?.type !== 'agent.steered')
+      return { promptId, event };
+    const steer = steering?.applied();
+    return steer === undefined
+      ? { promptId, event }
+      : {
+          promptId: steer.id,
+          event: {
+            type: 'prompt.steered',
+            promptId,
+            text: steer.prompt,
+            source: steer.source,
+          },
+        };
   };
   /** Saves the latest history again, then the event still owed, once. */
   const retry = async () => {
@@ -70,8 +107,13 @@ export const createSession = (context: {
     record: async (entry) => {
       try {
         const redactions = await context.redactor.current();
-        if (entry.event !== undefined)
-          pending = { event: eventJson(entry.event, redactions) };
+        if (entry.event !== undefined) {
+          const value = logged(entry.event);
+          pending = {
+            promptId: value.promptId,
+            event: eventJson(value.event, redactions),
+          };
+        }
         if (entry.history !== undefined) {
           latest = {
             format: entry.history.format,
@@ -89,5 +131,11 @@ export const createSession = (context: {
         fail(cause);
       }
     },
+    ...(steering === undefined
+      ? {}
+      : {
+          steers: async () =>
+            steering.take().map(({ prompt, source }) => ({ prompt, source })),
+        }),
   };
 };

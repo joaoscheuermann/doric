@@ -134,7 +134,7 @@ void test('edits preserve FIFO and original receipts, reject stale versions and 
   }
 });
 
-void test('removing queued and paused inputs preserves history and the remaining FIFO, but refuses the active input', {
+void test('removing queued inputs preserves history and the remaining FIFO, but refuses the active input', {
   timeout: 5000,
 }, async () => {
   const started = deferred();
@@ -187,9 +187,10 @@ void test('removing queued and paused inputs preserves history and the remaining
     );
     await service.threads.interrupt(id, current.promptId);
     await harness.threadState(id, 'ready');
+    // The stopped turn is finished, so nothing of it is left to remove.
     assert.equal(
       await service.threads.removeQueued(id, current.promptId),
-      'removed',
+      'unknown_prompt',
     );
     assert.equal((await service.threads.queue(id))?.current, undefined);
     assert.equal((await service.threads.queue(id))?.paused, true);
@@ -209,7 +210,7 @@ void test('removing queued and paused inputs preserves history and the remaining
   }
 });
 
-void test('Stop closes dispatch before abort, stays idempotent, and resumes the interrupted input before the FIFO', {
+void test('Stop closes dispatch before abort, stays idempotent, and ends the interrupted turn', {
   timeout: 5000,
 }, async () => {
   const started = deferred();
@@ -330,23 +331,28 @@ void test('Stop closes dispatch before abort, stays idempotent, and resumes the 
     await harness.threadState(id, 'ready');
     const paused = await service.threads.queue(id);
     assert.equal(paused?.stopping, false);
-    assert.equal(paused?.resumable?.preview, 'active');
+    assert.equal(paused?.resumable, undefined);
     assert.deepEqual(
       paused?.items.map((item) => item.preview),
       ['first', 'second', 'echo late'],
     );
     assert.deepEqual(ran, ['active']);
+    const stopped = (await lifecycle()).find(
+      (event) =>
+        event.promptId === active.promptId && event.type === 'prompt.finished',
+    );
+    assert.deepEqual(
+      {
+        status: (stopped?.event as { status?: string } | undefined)?.status,
+        reason: (stopped?.event as { reason?: string } | undefined)?.reason,
+      },
+      { status: 'cancelled', reason: 'interrupted' },
+    );
 
     assert.equal((await service.threads.resumeQueue(id)).status, 'resumed');
     await drained.promise;
     await harness.threadState(id, 'ready');
-    assert.deepEqual(ran, [
-      'active',
-      'active',
-      'first',
-      'second',
-      'late result',
-    ]);
+    assert.deepEqual(ran, ['active', 'first', 'second', 'late result']);
     const history = await lifecycle();
     const dispatched = history.find(
       (event) =>
@@ -379,7 +385,7 @@ void test('Stop closes dispatch before abort, stays idempotent, and resumes the 
   }
 });
 
-void test('new queued inputs preserve the interrupted prompt and resume it before the FIFO', {
+void test('inputs sent after a stop wait in the paused queue and never rerun the stopped turn', {
   timeout: 5000,
 }, async () => {
   const started = deferred();
@@ -414,7 +420,7 @@ void test('new queued inputs preserve the interrupted prompt and resume it befor
     await service.threads.prompt(id, 'second queued');
     const queue = await service.threads.queue(id);
     assert.equal(queue?.paused, true);
-    assert.equal(queue?.resumable?.promptId, old.promptId);
+    assert.equal(queue?.resumable, undefined);
     assert.deepEqual(
       queue?.items.map((item) => item.preview),
       ['first queued', 'second queued'],
@@ -423,7 +429,7 @@ void test('new queued inputs preserve the interrupted prompt and resume it befor
     await service.threads.resumeQueue(id);
     await drained.promise;
     await harness.threadState(id, 'ready');
-    assert.deepEqual(ran, ['old', 'old', 'first queued', 'second queued']);
+    assert.deepEqual(ran, ['old', 'first queued', 'second queued']);
   } finally {
     await harness.dispose();
   }

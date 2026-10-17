@@ -12,6 +12,8 @@ export type PromptInput = {
   readonly source: QueueItem['source'];
   readonly modern: boolean;
   readonly queued: boolean;
+  /** A steer for a running prompt: it shows where that prompt takes it in. */
+  readonly steer: boolean;
   readonly shown: boolean;
   readonly queuedShown: boolean;
 };
@@ -32,7 +34,10 @@ const sourceOf = (value: unknown): QueueItem['source'] => {
 const shownText = (input: PromptInput): string =>
   input.source.kind === 'user' ? promptMessage(input.text) : input.text;
 
-/** Legacy logs render at acceptance; new logs render the full input at dispatch. */
+/**
+ * Legacy logs render at acceptance; new logs render the full input at dispatch,
+ * and a steer renders where the running prompt took it in (`prompt.steered`).
+ */
 export const readInput = (
   inputs: Map<string, PromptInput>,
   comments: ReadonlyMap<string, readonly TurnComment[]>,
@@ -46,6 +51,7 @@ export const readInput = (
       source: sourceOf(event.source),
       modern: typeof event.queued === 'boolean',
       queued: event.queued === true,
+      steer: typeof event.steer === 'string',
       shown: false,
       queuedShown: false,
     });
@@ -84,6 +90,7 @@ export const readInput = (
     input.shown ||
     !(
       event?.type === 'prompt.started' ||
+      event?.type === 'prompt.steered' ||
       (event?.type === 'prompt.accepted' && !input.modern)
     )
   )
@@ -105,8 +112,16 @@ export const readInput = (
   };
 };
 
-/** Acceptance, not the later execution block, acknowledges an optimistic send. */
+/**
+ * Acceptance, not the later execution block, acknowledges an optimistic send.
+ * A steer is acknowledged once it shows — taken in, or back in the queue — so
+ * its words stay drawn as pending while the running prompt has not read them.
+ */
 export const acceptedHumanInputs = (
   inputs: ReadonlyMap<string, PromptInput>,
 ): number =>
-  [...inputs.values()].filter((input) => input.source.kind === 'user').length;
+  [...inputs.values()].filter(
+    (input) =>
+      input.source.kind === 'user' &&
+      (!input.steer || input.shown || input.queuedShown),
+  ).length;

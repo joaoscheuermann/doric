@@ -12,7 +12,15 @@ import type { ToolCallRecord } from '../types/tool-call-storage.js';
 
 const defaultMaxToolCallRepairs = 2;
 
-export const turnGuard = (maxTurns: number | undefined): (() => void) => {
+/** Counts provider turns against an optional run budget. */
+export interface TurnGuard {
+  /** Claims one turn, or throws once the budget is spent. */
+  readonly begin: () => void;
+  /** Whether another turn may still begin. */
+  readonly available: () => boolean;
+}
+
+export const turnGuard = (maxTurns: number | undefined): TurnGuard => {
   if (
     maxTurns !== undefined &&
     (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)
@@ -21,14 +29,18 @@ export const turnGuard = (maxTurns: number | undefined): (() => void) => {
   }
 
   let turns = 0;
-  return (): void => {
-    if (maxTurns !== undefined && turns >= maxTurns) {
-      throw new AgentErrorObject({
-        code: 'turn_limit_exceeded',
-        message: `Agent exceeded its ${maxTurns}-turn limit.`,
-      });
-    }
-    turns += 1;
+  const available = (): boolean => maxTurns === undefined || turns < maxTurns;
+  return {
+    begin: (): void => {
+      if (!available()) {
+        throw new AgentErrorObject({
+          code: 'turn_limit_exceeded',
+          message: `Agent exceeded its ${maxTurns}-turn limit.`,
+        });
+      }
+      turns += 1;
+    },
+    available,
   };
 };
 

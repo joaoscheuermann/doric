@@ -148,14 +148,18 @@ const repaired = (
  * `response.finished` and records a tool result before it yields `tool.finished`,
  * so those two events are the points where the work a resumed run must not lose
  * — the turns it already had answered and the tool results it already held — is
- * written down. The input is no save point of its own: the accepted event
- * already carries its text and the prompt's checkpoint says whether it is in the
- * stored history, so a run that died before its first response resumes with the
- * same history either way. A failed tool grows nothing at all, which is what the
+ * written down. A steering message is stored before `agent.steered` too, so
+ * its history is saved before the event that tells the runtime it was taken
+ * in. The input is no save point of its own: the accepted event already carries
+ * its text and the prompt's checkpoint says whether it is in the stored
+ * history, so a run that died before its first response resumes with the same
+ * history either way. A failed tool grows nothing at all, which is what the
  * repair above answers.
  */
 const addedMessages = (value: { readonly type: string }): boolean =>
-  value.type === 'response.finished' || value.type === 'tool.finished';
+  value.type === 'response.finished' ||
+  value.type === 'tool.finished' ||
+  value.type === 'agent.steered';
 
 /**
  * Whether a failed tool call failed only because the generation process that
@@ -289,6 +293,16 @@ export const runDirect = async (
       signal,
       maxTurns: configuration.execution.maxTurns,
       maxToolResultChars: configuration.execution.maxToolResultChars,
+      ...(session.steers === undefined
+        ? {}
+        : {
+            // Each steer reaches the model in its source's envelope: the
+            // reader's request, a child's result or a terminal's output.
+            steering: async () =>
+              ((await session.steers?.()) ?? []).map(({ prompt, source }) =>
+                input({ id: job.id, prompt, source }),
+              ),
+          }),
     })) {
       if (
         value.type === 'tool.failed' &&

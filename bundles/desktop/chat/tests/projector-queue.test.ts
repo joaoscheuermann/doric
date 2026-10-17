@@ -304,3 +304,134 @@ void test('keeps queued groups separated by visible events and recounts after re
     after,
   );
 });
+
+void test('a steer stays pending until the running prompt takes it in, then reads as the reader’s turn where it landed', () => {
+  const thread = {
+    id: 't',
+    projectId: 'p',
+    name: 'Thread',
+    state: 'running',
+    lastSequence: 0,
+    cwd: '/workspace',
+    createdAt: '',
+    updatedAt: '',
+  };
+  const running = [
+    accepted(1, 'work', false),
+    event(2, 'work', 'prompt.started'),
+    event(3, 'work', 'agent.started'),
+    event(4, 'work', 'text.delta', { delta: 'Looking.' }),
+  ];
+  const steer = event(5, 'steer', 'prompt.accepted', {
+    text: 'Use the cache',
+    source: { kind: 'user' },
+    queued: true,
+    steer: 'work',
+  });
+  let chats = openThread(emptyThreadChats, thread, null).chats;
+  for (const value of running)
+    chats = applyThreadUpdate(chats, 't', {
+      kind: 'event',
+      event: value,
+    }).chats;
+  chats = startPending(chats, 't', 'Use the cache');
+  chats = applyThreadUpdate(chats, 't', { kind: 'event', event: steer }).chats;
+
+  // Accepted but not yet read: no receipt, and the words stay drawn as pending.
+  const waiting = chats.chats.get('t');
+  assert.ok(waiting?.pending);
+  assert.deepEqual(
+    waiting.projection.turns.map((turn) => [turn.type, turn.promptId]),
+    [
+      ['user', 'work'],
+      ['agent', 'work'],
+    ],
+  );
+
+  chats = applyThreadUpdate(chats, 't', {
+    kind: 'event',
+    event: event(6, 'steer', 'prompt.steered', {
+      promptId: 'work',
+      text: 'Use the cache',
+    }),
+  }).chats;
+  chats = applyThreadUpdate(chats, 't', {
+    kind: 'event',
+    event: event(7, 'work', 'text.delta', { delta: 'Using the cache.' }),
+  }).chats;
+
+  const taken = chats.chats.get('t');
+  assert.equal(taken?.pending, undefined);
+  const turns = taken?.projection.turns ?? [];
+  assert.deepEqual(
+    turns.map((turn) => [turn.type, turn.promptId]),
+    [
+      ['user', 'work'],
+      ['agent', 'work'],
+      ['user', 'steer'],
+      ['agent', 'work'],
+    ],
+  );
+  const user = turns[2];
+  assert.equal(user?.type === 'user' ? user.text : undefined, 'Use the cache');
+});
+
+void test('a steer the run returned to the queue reads as a Queued receipt', () => {
+  const projection = projectEvents(emptyProjection, [
+    accepted(1, 'work', false),
+    event(2, 'work', 'prompt.started'),
+    event(3, 'steer', 'prompt.accepted', {
+      text: 'Late',
+      source: { kind: 'user' },
+      queued: true,
+      steer: 'work',
+    }),
+    event(4, 'work', 'prompt.finished', {
+      status: 'completed',
+      text: 'Done.',
+      source: { kind: 'user' },
+    }),
+    event(5, 'steer', 'prompt.queued', { first: true }),
+  ]);
+
+  assert.deepEqual(
+    projection.turns
+      .filter((turn) => turn.promptId === 'steer')
+      .map((turn) => turn.type),
+    ['queued'],
+  );
+});
+
+void test('a child result steered into the running prompt reads as that input where it landed', () => {
+  const source = {
+    kind: 'result',
+    threadId: 'child',
+    promptId: 'delegated',
+    requestPromptId: 'work',
+  };
+  const projection = projectEvents(emptyProjection, [
+    accepted(1, 'work', false),
+    event(2, 'work', 'prompt.started'),
+    event(3, 'result', 'prompt.accepted', {
+      text: 'Child finished.',
+      source,
+      queued: true,
+      steer: 'work',
+    }),
+    event(4, 'result', 'prompt.steered', {
+      promptId: 'work',
+      text: 'Child finished.',
+      source,
+    }),
+    event(5, 'work', 'text.delta', { delta: 'Read it.' }),
+  ]);
+
+  assert.deepEqual(
+    projection.turns.map((turn) => [turn.type, turn.promptId]),
+    [
+      ['user', 'work'],
+      ['user', 'result'],
+      ['agent', 'work'],
+    ],
+  );
+});

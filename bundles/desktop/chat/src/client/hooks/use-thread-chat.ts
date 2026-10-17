@@ -39,6 +39,11 @@ export type ThreadChat = {
   readonly pending: PendingSend | undefined;
   /** Sends a prompt through `threads.prompt`, and reports whether it was accepted. */
   readonly prompt: (text: string) => Promise<boolean>;
+  /**
+   * Steers the running prompt through `threads.steer`; `interrupt` also aborts
+   * its current step. With nothing running it sends a prompt instead.
+   */
+  readonly steer: (text: string, interrupt: boolean) => Promise<boolean>;
   /** Replaces a past prompt through `threads.rewind`. */
   readonly rewind: (promptId: string, text: string) => Promise<boolean>;
   /** Takes up a paused prompt through `threads.resume`. */
@@ -98,6 +103,17 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     },
     [thread.id, queue.data, queue.resumeAsync],
   );
+  const activePromptId = (chat?.thread ?? thread).activePromptId;
+  const steer = useCallback(
+    (text: string, interrupt: boolean) =>
+      activePromptId === undefined
+        ? prompt(text)
+        : threadChatsStore.getState().steer(thread.id, text, {
+            promptId: activePromptId,
+            interrupt,
+          }),
+    [thread.id, activePromptId, prompt],
+  );
   const rewind = useCallback(
     (promptId: string, text: string) =>
       threadChatsStore.getState().rewind(thread.id, promptId, text),
@@ -126,6 +142,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     sendError: chat?.sendError,
     pending: chat?.pending,
     prompt,
+    steer,
     rewind,
     resume,
   };

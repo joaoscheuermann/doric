@@ -63,6 +63,8 @@ export const pendingPromptSchema = z
     queuedSequence: z.number().int().optional(),
     pausedSequence: z.number().int().optional(),
     first: z.boolean().optional(),
+    /** The prompt this steering input waits to be taken into. */
+    steer: z.string().optional(),
   })
   .strict();
 

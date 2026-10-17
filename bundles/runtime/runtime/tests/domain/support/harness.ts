@@ -486,6 +486,8 @@ export const createHarness = (options: HarnessOptions = {}) => {
           ...(cwd === undefined ? {} : { cwd }),
         }),
       prompt: (id, prompt) => threadsApi.prompt({ id, prompt }),
+      steer: (id, prompt, options) =>
+        threadsApi.steer({ id, prompt, ...options }),
       resume: (id, promptId) => threadsApi.resume({ id, promptId }),
       rewind: (id, promptId, prompt) =>
         threadsApi.rewind({ id, promptId, prompt }),

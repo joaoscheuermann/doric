@@ -68,6 +68,14 @@ history without appending the input again. The input still identifies the run in
 `agent.started`; existing messages retain their order. The caller owns loading
 durable history and supplying results for any interrupted tool calls.
 
+Pass `steering` to let a caller correct a run in flight. The loop calls it
+before the first turn of a resumed run, after every executed tool batch, and
+once more before an ordinary run would finish, and stores each returned message as a user message before its next
+provider turn; streaming emits one `agent.steered` event per message. A message
+that arrives while the model writes its final answer therefore continues the
+run. The loop never asks when no turn is left or when a structured run submits
+its result, so those messages stay with the caller.
+
 Each `complete` or `stream` run may set `maxTurns` to a positive safe integer.
 One turn is one provider invocation, including a direct or terminal response,
 a response containing any number of tool calls, or a structured-output repair
