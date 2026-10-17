@@ -442,7 +442,9 @@ from the host log (`Bundles loaded` reports bundle, tool, and skill counts) and
 The Docker profile runs sandboxes from the sandbox image built from
 [`.sandbox.Dockerfile`](.sandbox.Dockerfile), which adds the GitHub CLI and
 Docker's engine and CLI to the base image's Git and the runtime libraries
-Electron needs, with Xvfb for headless runs. Its Docker CLI reaches a daemon
+Electron needs, with Xvfb for headless runs, and esbuild under
+`/opt/doric/bundler` so component previews bundle inside the sandbox (on the
+plain image they bundle on the host, reading each file through it). Its Docker CLI reaches a daemon
 only where the sandbox is given `/var/run/docker.sock` or the privileges
 `dockerd` needs, as Compose does for the host itself: set
 `DORIC_SANDBOX_DOCKER_SOCKET=true` in the environment file to mount that socket

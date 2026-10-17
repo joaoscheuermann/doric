@@ -37,15 +37,16 @@ export const activate = async ({ services }: HostContext): Promise<Cleanup> => {
 };
 
 export {
-  type CompiledComponent,
-  compileComponent,
+  type BundledComponent,
+  bundleComponent,
   HOST_PACKAGES,
   pickExport,
   pickStory,
   previewExternals,
   type SourceReader,
   WINDOW_PACKAGES,
-} from './compile.js';
+} from './bundle.js';
+export { type CompiledComponent, compileComponent } from './compile.js';
 export {
   type CompiledStyles,
   compileStyles,
@@ -77,6 +78,14 @@ export {
   stampRoot,
   stampSource,
 } from './previews.js';
+export {
+  bundleInSandbox,
+  type RunnerSandbox,
+  type RunnerScript,
+  type SandboxBundle,
+  type SandboxBundler,
+  sandboxBundler,
+} from './sandbox.js';
 export type {
   PendingComment,
   PreviewToolInput,

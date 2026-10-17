@@ -974,9 +974,18 @@ limitation. `papercraft_preview` returns
 the unresolved root comments with their `replies`, and the skill tells the
 agent to answer with `comment_reply` and resolve when done. Every window call carries the
 Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
-`runtime.threads/v1` are optional. A `component` source is compiled on the
-host (path B): esbuild bundles the entry, reading Project files through
-`files/v1`, leaves external only what the window shares: the React `mount`
+`runtime.threads/v1` are optional. A `component` source is compiled in two
+places (path B). Where the sandbox image installs esbuild under
+`/opt/doric/bundler` at the host's own version (the image
+`.sandbox.Dockerfile` builds does), the host copies its bundled runner
+script into `.doric/papercraft/` of the workspace through
+`runtime.lease/v1.withLease`, writes the job's input JSON there, runs
+`node` on it with a 120-second timeout and reads the output JSON back, so
+esbuild reads the Project's files from the sandbox's own disk with no read
+budget; a sandbox without a lease, `node` or that esbuild, or a runner that
+breaks, falls back to the host bundling the entry and reading each file
+through `files/v1`, under a budget of 1,500 reads and 8 MiB. Either way the
+bundle leaves external only what the window shares: the React `mount`
 renders with (`react`, `react/jsx-runtime`, `react/jsx-dev-runtime`,
 `react-dom`, `react-dom/client`) and each `@base-ui/react` specifier the
 window's import map serves (the host checks once per specifier that its own
@@ -986,8 +995,9 @@ compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
 markup), `index.js` and `index.css`, and a compile error fails the call before
 anything is published. The preview is agnostic to the Project: besides that
 React and Base UI, the host provisions only `lucide-react` (bundled from
-the host's own `node_modules`, whose per-file layout would cost too many
-sandbox reads) and, in the sheet, Tailwind and a generic theme; every other
+the host's own `node_modules`; the sandbox leaves it external and the host
+bundles it in one more pass) and, in the sheet, which always compiles on the
+host, Tailwind and a generic theme; every other
 import is Project code, read from its files and `node_modules` and bundled,
 resolving packages by the nearest tsconfig's `customConditions` (a workspace
 package to its source) and honouring a subpath folder's own `package.json`.
@@ -1680,8 +1690,10 @@ selected Git skills can reach public remotes. That default ships Git; the
 sandbox image Doric builds from `app/backend/doric-host/.sandbox.Dockerfile` ships Git,
 the GitHub CLI, Electron's runtime libraries, Xvfb and the xpra screen
 server with its HTML5 client, the display stack a sandbox needs to build
-a desktop app and serve its Project screen, and Docker's engine and CLI,
-which build the images a Project describes given a daemon an operator exposes. The image is a deployment choice the host reads from its
+a desktop app and serve its Project screen, Docker's engine and CLI,
+which build the images a Project describes given a daemon an operator exposes,
+and esbuild under `/opt/doric/bundler`, pinned to the papercraft bundle's
+version, with which component previews bundle inside the sandbox. The image is a deployment choice the host reads from its
 environment rather than a compiled-in value, and Firecracker resolves an
 anonymous public OCI image, so a locally built tag needs publishing, or the
 variable pointed at a public image, before that provider can use it.
