@@ -967,14 +967,23 @@ Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
 `runtime.threads/v1` are optional. A `component` source is compiled on the
 host (path B): esbuild bundles the entry, reading Project files through
 `files/v1`, keeps the window import-map specifiers external (the shared
-`clientExternals` from `bundle/externals`; `lucide-react` is not in the import
-map, so it is bundled; a `.css` import is never left external, even
-`desktop/ui/theme.css`: it resolves in the Project and compiles into the
-sheet), wraps the chosen export (`entry`, else `default`, else
-the single PascalCase export) in `mount(root, { theme })`, and compiles its
-Tailwind sheet; the revision's entries are `index.html` (fallback markup),
-`index.js` and `index.css`, and a compile error fails the call before anything
-is published. The Project's preview harness is a versioned Project file: the
+`clientExternals` from `bundle/externals`, `bundle/contracts` included, except
+`*/contracts`, which a window serves only for its own generation's bundles;
+`lucide-react` is not in the import map, so it is bundled; a `.css` import is
+never left external, even `desktop/ui/theme.css`: it resolves in the Project
+and compiles into the sheet), wraps the chosen export (`entry`, else
+`default`, else the single PascalCase export) in `mount(root, { theme })`, and
+compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
+markup), `index.js` and `index.css`, and a compile error fails the call before
+anything is published. Every other import is Project code and is bundled,
+Doric's own platform packages included: a sibling bundle's `<id>/contracts`,
+`bundle/runtime`, `desktop/client` and `desktop/*` outside `desktop/ui` become
+the preview's own copy. No import is refused for what it names: the module
+already runs in the app window's realm, where main's checks on every bridge
+call and the CSP are the boundary. Only what cannot run in a window fails,
+naming the import: a Node built-in, a package missing from the Project, or a
+build past the read budget. The Project's preview harness is a versioned
+Project file: the
 nearest `.storybook/preview.*`, else `.papercraft/preview.*`, walking up from
 the previewed file (skipping `.doric/`), in Storybook's `Preview` shape; its
 decorators wrap every component preview, and a harness that does not compile
@@ -1010,10 +1019,8 @@ so they are not emitted and `packages/desktop/src/components` keeps passing
 `verify-provenance`. They import no `@storybook/*` package (Storybook is not
 installed), reach the shared components through `desktop/ui/*`, seed stores
 and providers with fixtures instead of a live host, and are typechecked by the
-package's client (or spec) tsconfig. Today only the stories whose imports stay
-within `desktop/ui` and plain packages compile in papercraft; a bundle story
-that reaches `bundle/contracts`, `bundle/runtime` or `desktop/*` outside
-`desktop/ui` is refused by the preview build, a known limit.
+package's client (or spec) tsconfig. Every story compiles in papercraft under
+the general rule above, whatever platform package its code reaches.
 
 `/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
@@ -2023,6 +2030,15 @@ receives started, finished, and failed events in both modes; streamed
 `tool.finished` also exposes the record. Rejected calls, reserved terminal calls,
 thrown handlers, and serialization failures create no record. Valid operational
 failure values such as non-zero command exit codes remain ordinary records.
+A thrown handler does not end the run: `tool.failed` is still emitted, and the
+call is answered with a short Markdown failure envelope (no observation ID)
+whose text is what the handler threw and each cause under it, one per line,
+with their codes, the tool registry's `handler_failed` wrapper unwrapped, under
+the same `maxToolResultChars` cap. The batch and the run continue, so the model
+reads why the call failed and corrects it, works around it or reports it; the
+run's turn limit bounds a model that keeps calling a failing tool. A handler
+that fails while the run's signal is already aborted ends the run with its
+error, as do failures to serialize or record a result.
 Agent complete and stream runs check cancellation before provider and tool
 execution and after awaited lifecycle callbacks and streamed boundaries.
 Already-running tool handlers may settle, but cancellation prevents subsequent
@@ -2173,8 +2189,9 @@ all-skills system prompt, and
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials and replacing the
 characters PostgreSQL refuses (U+0000 and unpaired surrogates, which binary tool
-output can carry) with U+FFFD rather than failing the Thread. Provider/tool failures
-return the Thread to `ready`. Storage pressure pauses execution instead of closing
+output can carry) with U+FFFD rather than failing the Thread. A tool handler's
+failure answers its call and the run goes on; provider failures and the tool
+failures that still end a run return the Thread to `ready`. Storage pressure pauses execution instead of closing
 the Thread: before dispatch and every three seconds during a run, the host reads
 `storage/v1.health`, the `postgres` bundle's measurement of the filesystem at
 `DORIC_STORAGE_PATH` (the current directory for native runs), which makes no
@@ -2336,6 +2353,11 @@ at weight 400. The footer checkmark and Cmd/Ctrl+Enter save; Escape restores the
 draft without pausing execution. No cancel button is shown. Pause remains
 available while running. Save conflicts retain the typed edit, and text entered
 while a save is pending is never discarded by the response.
+
+A failed tool call's row and a prompt's failure marker read the stored error,
+not only its outermost message: its message, then each cause's on its own line
+(`Caused by: …`), starting below the tool registry's `handler_failed` wrapper,
+so the reader sees the reason the model read.
 
 The conversation states the two lifecycle events as markers between the blocks
 they sit between: a pause reads as a quiet row — the reason it

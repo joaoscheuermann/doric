@@ -8,15 +8,24 @@
 //
 // Resolution, in order, for every import the artifact makes:
 //
+// The rule is general: what the window's import map serves stays external,
+// everything else is Project code and is bundled, and what cannot run in a
+// window fails naming the import. No specifier is refused for what it is: the
+// module already runs in the app window's realm, where the main process's
+// checks on every bridge call and the CSP are the boundary, so a refusal
+// would protect nothing and only keep stories from previewing.
+//
 // 1. The window's import map: the specifiers `clientExternals` lists (React,
-//    ReactDOM, `desktop/ui`, Lexical, zod) stay external and resolve in the
-//    window, so the preview shares the app's one React. `bundle/contracts`
-//    and `*/contracts` are not left external here: a preview is Project code,
-//    not a bundle part. Nor is a stylesheet (`desktop/ui/theme.css`): a
-//    window cannot import CSS as a module, so it resolves like any other
-//    Project import and compiles into `index.css`.
-// 2. Imports a preview must not make — `bundle`, `desktop` outside
-//    `desktop/ui`, Node built-ins — fail the build with a message naming them.
+//    ReactDOM, `desktop/ui`, Lexical, zod, `bundle/contracts`) stay external
+//    and resolve in the window, so the preview shares the app's one React and
+//    its one contracts API. `*/contracts` is not left external here: a window
+//    serves `<id>/contracts` only for the bundles of its generation, so a
+//    sibling bundle's contracts are bundled from the Project's
+//    `node_modules`. Nor is a stylesheet (`desktop/ui/theme.css`): a window
+//    cannot import CSS as a module, so it resolves like any other Project
+//    import and compiles into `index.css`.
+// 2. Node built-ins do not exist in a window: they fail the build with a
+//    message naming them.
 // 3. Relative imports and the Project's `tsconfig.json` `paths` aliases are
 //    read from the sandbox: `./x.js` tries the TypeScript twins first
 //    (`x.ts`, `x.tsx`), an extensionless import tries `.tsx/.ts/.jsx/.js`
@@ -25,11 +34,12 @@
 //    `lucide-react`) are bundled from the host's own `node_modules`: their
 //    per-file layout is too many sandbox reads, and the window's import map
 //    does not serve them.
-// 5. Any other bare package is resolved in the Project's `node_modules`
-//    through the sandbox (`exports`, then `module`, then `main`) and bundled,
-//    under a read budget; a package that cannot be found or that exceeds the
-//    budget fails the build, naming the import, so the agent stubs it in the
-//    preview wrapper instead.
+// 5. Any other bare package, Doric's own platform packages included
+//    (`bundle/runtime`, `desktop/client`), is resolved in the Project's
+//    `node_modules` through the sandbox (`exports`, then `module`, then
+//    `main`) and bundled as the preview's own copy, under a read budget; a
+//    package that cannot be found or that exceeds the budget fails the build,
+//    naming the import, so the agent stubs it in the preview wrapper instead.
 //
 // The previewed source is wrapped by the Project's preview harness
 // (`harness.ts`: `.storybook/preview.*` or `.papercraft/preview.*`) when it
@@ -108,9 +118,12 @@ export const MAX_SOURCE_READS = 1_500;
 /** The most source bytes one compile may bundle. */
 export const MAX_SOURCE_BYTES_TOTAL = 8 * 1_048_576;
 
-/** The import-map specifiers a preview leaves to the window. */
+/**
+ * The import-map specifiers a preview leaves to the window: a client part's,
+ * except `<id>/contracts`, which only the window's own generation serves.
+ */
 export const previewExternals: readonly string[] = clientExternals.filter(
-  (pattern) => !pattern.endsWith('/contracts'),
+  (pattern) => pattern !== '*/contracts',
 );
 
 /**
@@ -153,28 +166,9 @@ const LOADERS: Readonly<Record<string, Loader>> = {
   '.css': 'empty',
 };
 
-/** Imports a preview module must not contain. */
-const forbidden = (specifier: string): string | undefined => {
-  if (specifier.startsWith('node:') || isBuiltin(specifier)) {
-    return `"${specifier}" is a Node built-in; a preview runs in the app window.`;
-  }
-
-  const name = packageOf(specifier);
-
-  if (name === 'bundle') {
-    return `A preview must not import "${specifier}": it is platform code, not Project code.`;
-  }
-
-  if (
-    name === 'desktop' &&
-    specifier !== 'desktop/ui' &&
-    !specifier.startsWith('desktop/ui/')
-  ) {
-    return `A preview must not import "${specifier}"; only "desktop/ui" is shared with the window.`;
-  }
-
-  return undefined;
-};
+/** Whether an import names a Node built-in, which a window does not have. */
+const isNodeBuiltin = (specifier: string): boolean =>
+  specifier.startsWith('node:') || isBuiltin(specifier);
 
 /** Whether an import names a stylesheet, which `index.css` carries. */
 const isStylesheet = (specifier: string): boolean =>
@@ -544,8 +538,15 @@ const sandboxPlugin = (input: {
           : { path: args.path, external: true };
       }
 
-      const refused = forbidden(args.path);
-      if (refused !== undefined) return { errors: [{ text: refused }] };
+      if (isNodeBuiltin(args.path)) {
+        return {
+          errors: [
+            {
+              text: `"${args.path}" is a Node built-in; a preview runs in the app window.`,
+            },
+          ],
+        };
+      }
 
       if (STORYBOOK_SHIMS[args.path] !== undefined) {
         return { path: args.path, namespace: SHIM_NS };

@@ -16,6 +16,7 @@ import {
   type ThreadComment,
 } from './comment-threads.js';
 import type { DelegatedInput } from './delegated.js';
+import { failureText } from './errors.js';
 import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
 import {
@@ -720,11 +721,10 @@ const readEvent = (
     }
   } else if (event?.type === 'tool.failed') {
     const call = record(event.call);
-    const message = record(event.error)?.message;
     const tool = findTool(turns, promptId, call?.id);
     if (tool?.type === 'tool_call') {
       tool.status = 'failed';
-      tool.error = typeof message === 'string' ? message : '';
+      tool.error = failureText(event.error);
       tool.events.push(item);
     }
   } else if (event?.type === 'prompt.finished') {

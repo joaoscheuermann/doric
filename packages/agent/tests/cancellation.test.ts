@@ -273,18 +273,38 @@ for (const boundary of [
 }
 
 for (const mode of ['complete', 'stream'] as const) {
-  void test(`${mode} handler failure leaves the abandoned batch ready for the next run without records`, async () => {
-    const failure = new Error('handler failed');
+  void test(`${mode} handler failure answers the call with its error and the run continues without records`, async () => {
     const fixture = setup({
       tool: async () => {
-        throw failure;
+        throw new Error('handler failed');
       },
     });
+    await (mode === 'complete'
+      ? fixture.agent.complete('Run.')
+      : collect(fixture.agent.stream('Run.')));
+    assert.deepEqual(fixture.executions, ['first', 'second']);
+    assert.equal(fixture.requests.length, 2);
+    assert.deepEqual(fixture.toolCalls.list(), []);
+    assert.deepEqual(recoveryHistory(fixture), [
+      ['assistant', ['call_first', 'call_second']],
+      ['tool', 'call_first', undefined],
+      ['tool', 'call_second', undefined],
+    ]);
+  });
+
+  void test(`${mode} handler failure under cancellation ends the run and leaves the batch for the next one`, async () => {
+    const controller = new AbortController();
+    const fixture = setup({
+      tool: async () => {
+        controller.abort(new Error('cancelled'));
+        throw new Error('handler failed');
+      },
+    });
+    const options = { signal: controller.signal };
     await assert.rejects(
       mode === 'complete'
-        ? fixture.agent.complete('Run.')
-        : collect(fixture.agent.stream('Run.')),
-      (error) => error instanceof Error && error.cause === failure,
+        ? fixture.agent.complete('Run.', options)
+        : collect(fixture.agent.stream('Run.', options)),
     );
     assert.deepEqual(fixture.executions, ['first']);
     assert.equal(fixture.requests.length, 1);

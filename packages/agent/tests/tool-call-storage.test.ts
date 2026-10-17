@@ -211,7 +211,10 @@ void test('does not append terminal structured output or handler failures', asyn
 
   const failed = createAgent({
     provider: createProvider({
-      complete: () => completeFinish('', [call('lookup')]),
+      complete: (_request, index) =>
+        index === 0
+          ? completeFinish('', [call('lookup')])
+          : completeFinish('The lookup failed.'),
     }).provider,
     tools: createTools({ failure: new Error('tool failed') }).storage,
     messages: createMessageStorage(),
@@ -219,7 +222,7 @@ void test('does not append terminal structured output or handler failures', asyn
     system: '',
     model: 'fake-model',
   });
-  await assert.rejects(failed.complete('Fail.'), /tool failed/u);
+  await failed.complete('Fail.');
   assert.deepEqual(storage.list(), []);
 });
 

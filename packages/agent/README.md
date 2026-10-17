@@ -135,6 +135,15 @@ and exposed by a streamed `tool.finished` event. Empty or colliding IDs abort
 the run. Rejected calls, terminal structured-output calls, thrown handlers, and
 unserializable inputs or results do not create records.
 
+A handler that throws does not end the run. The run emits `tool.failed` and
+answers the call with a Markdown failure message: what the handler threw and
+each cause under it, one per line, with their codes, starting below the tool
+registry's `handler_failed` wrapper. The run then continues, so the model can
+correct the call, work around it or report it. Set `maxTurns` to bound a model
+that keeps calling a failing tool. A handler that fails after the run's signal
+is aborted ends the run with its error, and so does a result that cannot be
+serialized or recorded.
+
 ## Streaming Usage
 
 ```ts

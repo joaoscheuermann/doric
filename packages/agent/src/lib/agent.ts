@@ -23,10 +23,12 @@ import {
   responseFromFinish,
   type TurnGuard,
   toolCallCorrection,
+  toolFailureEnvelope,
   toolResultEnvelope,
   turnGuard,
 } from './utils/run.js';
 import { runTools } from './utils/run-tools.js';
+import { describeToolFailure } from './utils/serialize.js';
 import {
   createStructuredOutputTool,
   nextStructuredOutputRepair,
@@ -151,6 +153,16 @@ export const createAgent = (options: AgentOptions): Agent => {
       const content = toolResultEnvelope(record, maxChars);
       pushToolResult(record.callId, content);
       return content;
+    };
+
+  /** A thrown handler answers its call with the failure, never a record. */
+  const observedToolFailure =
+    (maxChars?: number) =>
+    (call: ToolCall, error: unknown): void => {
+      pushToolResult(
+        call.id,
+        toolFailureEnvelope(describeToolFailure(error), maxChars),
+      );
     };
 
   const storeAssistant = (finish: ProviderFinished<unknown>): void => {
@@ -334,6 +346,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             calls,
             runOptions,
             observedToolResult(runOptions.maxToolResultChars),
+            observedToolFailure(runOptions.maxToolResultChars),
           )) {
             void event;
           }
@@ -533,6 +546,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             calls,
             runOptions,
             observedToolResult(runOptions.maxToolResultChars),
+            observedToolFailure(runOptions.maxToolResultChars),
           )) {
             yield event;
           }

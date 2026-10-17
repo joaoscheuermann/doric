@@ -40,7 +40,10 @@ export function FailureNotice({
           )}
         />
       </MarkerIcon>
-      <MarkerContent>{failure.message || failure.code}</MarkerContent>
+      {/* A message states each cause on its own line. */}
+      <MarkerContent className="whitespace-pre-line">
+        {failure.message || failure.code}
+      </MarkerContent>
     </Marker>
   );
 }

@@ -13,6 +13,11 @@
 // - a Project `tsconfig.json` `paths` alias resolves through the sandbox;
 // - `lucide-react`, outside the window's import map, is bundled, not left
 //   external;
+// - `bundle/contracts`, which every window serves, is left to the import
+//   map, while platform packages the map does not serve (`desktop/client`,
+//   `bundle/runtime`) are bundled from the Project like any package, still
+//   sharing the window's `bundle/contracts`;
+// - a Node built-in fails naming the import;
 // - `mount` takes `desktop/ui`'s portal container provider from the import
 //   map, and the sheet carries the shared components' classes only when the
 //   previewed code itself imports `desktop/ui`;
@@ -216,6 +221,76 @@ describe('component previews (path B)', () => {
 
     assert.ok(!importsOf(js).includes('lucide-react'));
     assert.match(textOf(built, 'index.css'), /\.size-4\s*\{/);
+  });
+
+  test('bundle/contracts is left to the import map, as every window serves it', async () => {
+    const built = await snapshot(
+      {
+        'src/badge.tsx': [
+          "import { ContractError } from 'bundle/contracts';",
+          'export default function Badge() {',
+          "  return <span>{new ContractError('unavailable', 'off').code}</span>;",
+          '}',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/badge.tsx' },
+    );
+
+    assert.ok(
+      importsOf(textOf(built, 'index.js')).includes('bundle/contracts'),
+    );
+  });
+
+  test('platform packages outside the import map are bundled from the Project', async () => {
+    const built = await snapshot(
+      {
+        'node_modules/desktop/package.json': JSON.stringify({
+          name: 'desktop',
+          type: 'module',
+          exports: { './client': './client.js' },
+        }),
+        'node_modules/desktop/client.js':
+          "export const windowLabel = 'desktop-client-copy';",
+        'node_modules/bundle/package.json': JSON.stringify({
+          name: 'bundle',
+          type: 'module',
+          exports: { './runtime': './runtime.js' },
+        }),
+        'node_modules/bundle/runtime.js': [
+          "import { ContractError } from 'bundle/contracts';",
+          "export const runtimeLabel = 'bundle-runtime-copy-' + typeof ContractError;",
+        ].join('\n'),
+        'src/platform.tsx': [
+          "import { runtimeLabel } from 'bundle/runtime';",
+          "import { windowLabel } from 'desktop/client';",
+          'export default function Platform() {',
+          '  return <p>{windowLabel} {runtimeLabel}</p>;',
+          '}',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/platform.tsx' },
+    );
+    const js = textOf(built, 'index.js');
+    const imports = importsOf(js);
+
+    assert.match(js, /desktop-client-copy/);
+    assert.match(js, /bundle-runtime-copy-/);
+    assert.ok(!imports.includes('desktop/client'));
+    assert.ok(!imports.includes('bundle/runtime'));
+    assert.ok(imports.includes('bundle/contracts'));
+  });
+
+  test('a Node built-in fails naming the import', async () => {
+    await rejectsWith(
+      snapshot(
+        {
+          'src/disk.tsx':
+            "import { readFileSync } from 'node:fs';\nexport default () => <div>{String(readFileSync)}</div>;",
+        },
+        { source: 'component', path: 'src/disk.tsx' },
+      ),
+      /node:fs/,
+    );
   });
 
   test("the shared components' classes join the sheet only when the preview imports desktop/ui", async () => {

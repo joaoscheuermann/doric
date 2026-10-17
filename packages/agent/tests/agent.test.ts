@@ -6,7 +6,7 @@ import { createMessageStorage } from 'messages';
 import { createToolStorage, defineTool } from 'tool';
 import { z } from 'zod';
 
-import { AgentErrorObject, type AgentEvent } from '../src/index.js';
+import { AgentErrorObject } from '../src/index.js';
 import {
   call,
   collect,
@@ -235,11 +235,16 @@ void test('rejects concurrent runs with AgentErrorObject before storage mutation
   await first;
 });
 
-void test('stream yields tool.failed and propagates tool execution errors', async () => {
-  const failure = new Error('tool failed');
+void test('stream yields tool.failed and the model reads the failure as the call result', async () => {
+  const failure = new Error('The lookup backend is down.');
   const lookup = call('lookup');
   const fake = createProvider({
-    stream: () => streamEvents(completeFinish('Need tool.', [lookup])),
+    stream: (_request, index) =>
+      streamEvents(
+        index === 0
+          ? completeFinish('Need tool.', [lookup])
+          : completeFinish('The lookup failed.'),
+      ),
   });
   const agent = createAgent({
     provider: fake.provider,
@@ -248,22 +253,64 @@ void test('stream yields tool.failed and propagates tool execution errors', asyn
     system: '',
     model: 'fake-model',
   });
-  const events: AgentEvent[] = [];
 
-  await assert.rejects(
-    async () => {
-      for await (const event of agent.stream('Run tool.')) {
-        events.push(event);
-      }
-    },
-    (error: unknown) => error === failure,
+  const events = await collect(agent.stream('Run tool.'));
+  const result = fake.requests[1]?.messages.find(
+    (message) => message.role === 'tool' && message.toolCallId === lookup.id,
   );
 
-  assert.deepEqual(events.at(-1), {
-    type: 'tool.failed',
-    call: { id: lookup.id, name: 'lookup', payload: {} },
-    error: failure,
+  assert.ok(
+    events.some(
+      (event) => event.type === 'tool.failed' && event.error === failure,
+    ),
+  );
+  assert.equal(events.at(-1)?.type, 'agent.finished');
+  assert.match(String(result?.content), /The lookup backend is down\./);
+  assert.notEqual(
+    result?.role === 'tool' ? result.toolResultStatus : undefined,
+    'incomplete',
+  );
+});
+
+void test('a failed call shows the model what the handler threw and its causes', async () => {
+  const tools = createToolStorage([
+    defineTool({
+      name: 'preview',
+      input: z.object({}),
+      output: z.string(),
+      execute: async () => {
+        throw new Error('The preview did not compile.', {
+          cause: new Error('src/app.tsx:3:1: Unexpected token'),
+        });
+      },
+    })
+      .bind(undefined as never)
+      .toTool(undefined as never),
+  ]);
+  const fake = createProvider({
+    complete: (_request, index) =>
+      index === 0
+        ? completeFinish('Preview it.', [call('preview')])
+        : completeFinish('Fixed the token.'),
   });
+  const agent = createAgent({
+    provider: fake.provider,
+    tools,
+    messages: createMessageStorage(),
+    system: '',
+    model: 'fake-model',
+  });
+
+  const response = await agent.complete('Show the screen.');
+  const content = String(
+    fake.requests[1]?.messages.find((message) => message.role === 'tool')
+      ?.content,
+  );
+
+  assert.equal(response.text, 'Fixed the token.');
+  assert.match(content, /The preview did not compile\./);
+  assert.match(content, /src\/app\.tsx:3:1: Unexpected token/);
+  assert.doesNotMatch(content, /Tool handler failed/);
 });
 
 void test('complete propagates provider errors unchanged', async () => {

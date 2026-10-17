@@ -447,6 +447,26 @@ describe('thread event projection', () => {
     assert.equal(tool?.error, 'command failed');
   });
 
+  test('a failed call shows what the tool threw, not the wrapper', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'papercraft_preview', { path: 'a.tsx' }),
+      }),
+      event(2, 'one', {
+        type: 'tool.failed',
+        call: call('c1', 'papercraft_preview', { path: 'a.tsx' }),
+        error: {
+          message: 'Tool handler failed: papercraft_preview',
+          data: { code: 'handler_failed' },
+          cause: { code: 'invalid_input', message: 'a.tsx did not compile' },
+        },
+      }),
+    ]);
+
+    assert.equal(toolOf(projection.turns[0])?.error, 'a.tsx did not compile');
+  });
+
   test('leaves a call running when the prompt finishes first', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {

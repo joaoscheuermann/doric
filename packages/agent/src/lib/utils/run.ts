@@ -124,6 +124,24 @@ export const toolResultEnvelope = (
     fenced(capOutput(record.output, maxChars)),
   ].join('\n');
 
+/**
+ * What the model reads for a call whose handler threw: no observation, only
+ * the failure, so it can correct the call, work around it or report it.
+ */
+export const toolFailureEnvelope = (
+  failure: string,
+  maxChars?: number,
+): string =>
+  [
+    '# Tool Failure',
+    '',
+    'The tool call failed and returned no result.',
+    '',
+    '## Error',
+    '',
+    fenced(capOutput(failure, maxChars)),
+  ].join('\n');
+
 const fenced = (value: string): string => {
   const longest = Math.max(
     0,

@@ -166,6 +166,17 @@ describe('reading a prompt lifecycle event off the log', () => {
     assert.equal(statesFailure(promptFailure(undefined)), false);
   });
 
+  test("a failure states its cause's words, not only the wrapper's", () => {
+    assert.equal(
+      promptFailure({
+        name: 'AgentErrorObject',
+        message: 'Tool result could not be serialized to JSON.',
+        cause: { message: 'Converting circular structure to JSON' },
+      }).message,
+      'Tool result could not be serialized to JSON.\nCaused by: Converting circular structure to JSON',
+    );
+  });
+
   test('recognises the resume that ran out of attempts as a warning', () => {
     assert.equal(resumeExhausted('resume_exhausted'), true);
     assert.equal(resumeExhausted('boom'), false);

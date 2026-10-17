@@ -12,6 +12,8 @@
  * that has to be answered rather than merely read.
  */
 
+import { failureText } from './errors.js';
+
 /** Why an interruption left a prompt unfinished. */
 export type PauseReason =
   | 'host_stopped'
@@ -131,7 +133,10 @@ export const lifecycleMarker = (event: LifecycleEvent): LifecycleMarker => {
   };
 };
 
-/** The failure an `agent.failed` carries, read into the shape a block renders. */
+/**
+ * The failure an `agent.failed` carries, read into the shape a block renders;
+ * its message states each cause too (`failureText`).
+ */
 export const promptFailure = (value: unknown): PromptFailure => {
   if (typeof value === 'string') return { code: '', message: value, name: '' };
   if (typeof value !== 'object' || value === null)
@@ -141,7 +146,11 @@ export const promptFailure = (value: unknown): PromptFailure => {
     const field = fields[key];
     return typeof field === 'string' ? field : '';
   };
-  return { code: text('code'), message: text('message'), name: text('name') };
+  return {
+    code: text('code'),
+    message: failureText(value),
+    name: text('name'),
+  };
 };
 
 /** Whether a failure carries anything to say for itself. */
