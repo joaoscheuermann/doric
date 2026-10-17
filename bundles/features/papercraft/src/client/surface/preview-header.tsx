@@ -64,16 +64,18 @@ function IconButton({
 } & Omit<Parameters<typeof Button>[0], 'children'>) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={label}
-          className="relative [-webkit-app-region:no-drag]"
-          {...props}
-        >
-          {children}
-        </Button>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={label}
+            className="relative [-webkit-app-region:no-drag]"
+            {...props}
+          />
+        }
+      >
+        {children}
       </TooltipTrigger>
       <TooltipContent className="flex items-center gap-1.5">
         {label}

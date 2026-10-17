@@ -89,10 +89,10 @@ export function SettingsBreadcrumb({
                     {crumb.label}
                   </BreadcrumbPage>
                 ) : (
-                  <BreadcrumbLink asChild>
-                    <button type="button" onClick={crumb.onSelect}>
-                      {crumb.label}
-                    </button>
+                  <BreadcrumbLink
+                    render={<button type="button" onClick={crumb.onSelect} />}
+                  >
+                    {crumb.label}
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>

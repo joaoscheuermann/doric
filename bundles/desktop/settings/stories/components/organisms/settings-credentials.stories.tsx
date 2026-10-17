@@ -47,7 +47,6 @@ export const EditDialogOpen = {
       open={[
         {
           selector: `[aria-label="Actions for ${firstName}"]`,
-          gesture: 'pointerdown',
         },
         { selector: '[role="menuitem"]', text: 'Edit' },
       ]}
@@ -61,7 +60,6 @@ export const RowMenuOpen = {
       open={[
         {
           selector: `[aria-label="Actions for ${firstName}"]`,
-          gesture: 'pointerdown',
         },
       ]}
     />

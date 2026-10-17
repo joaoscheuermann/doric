@@ -268,6 +268,15 @@ export const openChatWindow = async (input: {
   readonly probe?: Probe;
 }): Promise<ChatWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
+  // happy-dom runs no Web Animations and implements `getAnimations` on shadow
+  // roots alone; the shared scroll area asks its viewport for the animations
+  // in progress, and here, truthfully, there are none.
+  const element = window.Element.prototype as unknown as Record<
+    string,
+    unknown
+  >;
+  if (typeof element.getAnimations !== 'function')
+    element.getAnimations = (): unknown[] => [];
   const globals = globalThis as unknown as Record<string, unknown>;
   const names = globalNames(window);
   const previous = new Map(

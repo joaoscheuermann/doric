@@ -54,8 +54,8 @@ export const Counts = {
 
 export const AsLink = {
   render: () => (
-    <Badge asChild variant="outline">
-      <a href="#thread-1">#thread-1</a>
+    <Badge variant="outline" render={<a href="#thread-1" />}>
+      #thread-1
     </Badge>
   ),
 };

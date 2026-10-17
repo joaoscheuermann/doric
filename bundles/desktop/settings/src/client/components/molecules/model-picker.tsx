@@ -65,15 +65,17 @@ export function ModelPicker({
         if (!next) setQuery('');
       }}
     >
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={ariaLabel}
-          className="max-w-72 min-w-0"
-        >
-          <span className="truncate">{label}</span>
-        </Button>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={ariaLabel}
+            className="max-w-72 min-w-0"
+          />
+        }
+      >
+        <span className="truncate">{label}</span>
       </PopoverTrigger>
       <PopoverContent
         align="start"
@@ -123,20 +125,22 @@ export function ModelPicker({
         </div>
         <div className="border-t border-border bg-sidebar px-2 py-1.5">
           <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Reasoning effort, ${reasoning.label}`}
-                disabled={reasoning.choices.length === 0}
-                className="w-full justify-between gap-2 font-normal"
-              >
-                Reasoning
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  {reasoning.label}
-                  <ChevronRightIcon aria-hidden="true" />
-                </span>
-              </Button>
+            <PopoverTrigger
+              disabled={reasoning.choices.length === 0}
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Reasoning effort, ${reasoning.label}`}
+                  className="w-full justify-between gap-2 font-normal"
+                />
+              }
+            >
+              Reasoning
+              <span className="flex items-center gap-1 text-muted-foreground">
+                {reasoning.label}
+                <ChevronRightIcon aria-hidden="true" />
+              </span>
             </PopoverTrigger>
             <PopoverContent
               align="end"

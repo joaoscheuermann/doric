@@ -68,18 +68,20 @@ function CompactionDetails({
     <Collapsible>
       <Marker variant="separator" className="gap-1.5 text-xs">
         <MarkerContent>
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="group h-auto max-w-full whitespace-normal py-1 font-normal"
-            >
-              {label}
-              <ChevronRightIcon
-                data-icon="inline-end"
-                className="group-data-[state=open]:rotate-90"
+          <CollapsibleTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                className="group h-auto max-w-full whitespace-normal py-1 font-normal"
               />
-            </Button>
+            }
+          >
+            {label}
+            <ChevronRightIcon
+              data-icon="inline-end"
+              className="group-data-panel-open:rotate-90"
+            />
           </CollapsibleTrigger>
         </MarkerContent>
       </Marker>

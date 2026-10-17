@@ -55,7 +55,13 @@ export const ProviderForm = {
           </Field>
           <Field>
             <FieldLabel htmlFor="provider-model">Default model</FieldLabel>
-            <Select defaultValue="claude-sonnet-4">
+            <Select
+              items={models.map((model) => ({
+                value: model.id,
+                label: model.label,
+              }))}
+              defaultValue="claude-sonnet-4"
+            >
               <SelectTrigger id="provider-model">
                 <SelectValue />
               </SelectTrigger>

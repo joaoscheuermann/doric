@@ -37,22 +37,29 @@ export function ChoicePicker({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-fit justify-between"
-          aria-label={ariaLabel}
-          disabled={choices.length === 0}
-        >
-          {current?.label ?? emptyLabel ?? `Choose ${ariaLabel.toLowerCase()}`}
-          <ChevronDownIcon data-icon="inline-end" />
-        </Button>
+      <DropdownMenuTrigger
+        disabled={choices.length === 0}
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-fit justify-between"
+            aria-label={ariaLabel}
+          />
+        }
+      >
+        {current?.label ?? emptyLabel ?? `Choose ${ariaLabel.toLowerCase()}`}
+        <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuRadioGroup value={value} onValueChange={onSelect}>
           {choices.map((choice) => (
-            <DropdownMenuRadioItem key={choice.value} value={choice.value}>
+            // A choice is the whole commitment, so choosing one closes the menu.
+            <DropdownMenuRadioItem
+              key={choice.value}
+              value={choice.value}
+              closeOnClick
+            >
               {choice.label}
             </DropdownMenuRadioItem>
           ))}

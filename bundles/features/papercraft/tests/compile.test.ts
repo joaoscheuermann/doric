@@ -13,8 +13,11 @@
 // - a Project `tsconfig.json` `paths` alias resolves through the sandbox;
 // - `lucide-react`, outside the window's import map, is bundled, not left
 //   external;
-// - only the React `mount` renders with is left to the window: everything
-//   else is the Project's — `bundle/contracts`, and the platform packages
+// - only the React `mount` renders with and Base UI are left to the window:
+//   every Base UI entrypoint its import map serves stays external, a
+//   CommonJS `require` of one included, without a read of the Project, and a
+//   Base UI path the map does not serve is the Project's; everything else is
+//   the Project's — `bundle/contracts`, `radix-ui`, and the platform packages
 //   (`desktop/client`, `bundle/runtime`) — bundled like any package;
 // - a Node built-in fails naming the import;
 // - `desktop/ui` comes from the Project's source, resolved through the
@@ -223,7 +226,7 @@ describe('component previews (path B)', () => {
     assert.match(textOf(built, 'index.css'), /\.size-4\s*\{/);
   });
 
-  test("only React is left to the window; bundle/contracts is the Project's", async () => {
+  test("only what the window shares is left to it; bundle/contracts is the Project's", async () => {
     const built = await snapshot(
       {
         'node_modules/bundle/package.json': JSON.stringify({
@@ -258,6 +261,85 @@ describe('component previews (path B)', () => {
       importsOf(js).filter((specifier) => !react.includes(specifier)),
       [],
     );
+  });
+
+  test("Base UI is the window's: each entrypoint its import map serves stays external", async () => {
+    // The Project has no Base UI of its own: nothing is read for it.
+    const built = await snapshot(
+      {
+        'node_modules/cjs-menu/package.json':
+          '{ "name": "cjs-menu", "main": "index.js" }',
+        'node_modules/cjs-menu/index.js':
+          "var merge = require('@base-ui/react/merge-props');\nexports.merged = function () { return merge.mergeProps({}, {}); };\n",
+        'src/menu.tsx': [
+          "import { Toggle } from '@base-ui/react';",
+          "import { Popover } from '@base-ui/react/popover';",
+          "import { merged } from 'cjs-menu';",
+          'export default function Menu() {',
+          '  return (',
+          '    <Popover.Root>',
+          '      <Popover.Trigger {...merged()}>menu-trigger</Popover.Trigger>',
+          '      <Toggle />',
+          '    </Popover.Root>',
+          '  );',
+          '}',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/menu.tsx' },
+    );
+    const js = textOf(built, 'index.js');
+    const imports = importsOf(js);
+
+    for (const specifier of [
+      '@base-ui/react',
+      '@base-ui/react/popover',
+      '@base-ui/react/merge-props',
+    ]) {
+      assert.ok(imports.includes(specifier), `${specifier} is not external`);
+    }
+    assert.doesNotMatch(js, /__require\(\s*["']@base-ui/);
+  });
+
+  test('a Base UI path the window does not serve is resolved in the Project', async () => {
+    const built = await snapshot(
+      {
+        'node_modules/@base-ui/react/package.json':
+          '{ "name": "@base-ui/react", "main": "index.js" }',
+        'node_modules/@base-ui/react/popover/root/PopoverRoot.js':
+          "export const PopoverRoot = 'project-popover-root';",
+        'src/deep.tsx': [
+          "import { PopoverRoot } from '@base-ui/react/popover/root/PopoverRoot';",
+          'export default () => <div>{PopoverRoot}</div>;',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/deep.tsx' },
+    );
+    const js = textOf(built, 'index.js');
+
+    assert.match(js, /project-popover-root/);
+    assert.ok(
+      !importsOf(js).some((specifier) => specifier.startsWith('@base-ui/')),
+    );
+  });
+
+  test('radix-ui is a Project package like any other', async () => {
+    const built = await snapshot(
+      {
+        'node_modules/radix-ui/package.json':
+          '{ "name": "radix-ui", "type": "module", "exports": { ".": "./index.js" } }',
+        'node_modules/radix-ui/index.js':
+          "export const Slot = { Root: () => 'project-radix-slot' };",
+        'src/slot.tsx': [
+          "import { Slot } from 'radix-ui';",
+          'export default () => <Slot.Root />;',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/slot.tsx' },
+    );
+    const js = textOf(built, 'index.js');
+
+    assert.match(js, /project-radix-slot/);
+    assert.ok(!importsOf(js).includes('radix-ui'));
   });
 
   test('platform packages outside the import map are bundled from the Project', async () => {
@@ -329,13 +411,15 @@ describe('component previews (path B)', () => {
           '  <div className="ring-[3px]" data-popover="project-edit">{children}</div>',
           ');',
         ].join('\n'),
-        // Like the platform's own components, it imports Radix through the
-        // umbrella package, which the Project's sandbox is never asked for.
+        // Like the platform's own components, it renders through Base UI,
+        // which is the window's: the Project's sandbox is never asked for it.
         'repo/node_modules/desktop/src/components/fancy-badge.tsx': [
-          "import { Slot } from 'radix-ui';",
-          'export const FancyBadge = () => (',
-          '  <Slot.Root className="tracking-[0.37em]"><span>fancy-badge-body</span></Slot.Root>',
-          ');',
+          "import { useRender } from '@base-ui/react/use-render';",
+          'export const FancyBadge = () =>',
+          '  useRender({',
+          '    render: <span className="tracking-[0.37em]" />,',
+          '    props: { children: <span>fancy-badge-body</span> },',
+          '  });',
         ].join('\n'),
         'repo/src/badge.tsx': [
           "import { FancyBadge } from 'desktop/ui/fancy-badge';",
@@ -355,6 +439,7 @@ describe('component previews (path B)', () => {
     assert.ok(
       !importsOf(js).some((specifier) => specifier.startsWith('desktop/')),
     );
+    assert.ok(importsOf(js).includes('@base-ui/react/use-render'));
     assert.match(css, /ring-\\\[3px\\\]/);
     assert.match(css, /tracking-\\\[0\\\.37em\\\]/);
   });

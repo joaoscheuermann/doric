@@ -51,7 +51,6 @@ export const ProviderPage = {
       open={[
         {
           selector: '[aria-label="Actions for openrouter"]',
-          gesture: 'pointerdown',
         },
         { selector: '[role="menuitem"]', text: 'Edit' },
       ]}
@@ -95,7 +94,6 @@ export const SaveRefused = {
       open={[
         {
           selector: 'button[aria-label="Reasoning effort"]',
-          gesture: 'pointerdown',
         },
         { selector: '[role="menuitemradio"]', text: 'High' },
       ]}

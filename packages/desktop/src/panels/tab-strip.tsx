@@ -1,3 +1,4 @@
+import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import { closestCenter, DndContext } from '@dnd-kit/core';
 import {
   restrictToFirstScrollableAncestor,
@@ -8,7 +9,6 @@ import {
   SortableContext,
 } from '@dnd-kit/sortable';
 import { XIcon } from 'lucide-react';
-import { Tabs as TabsPrimitive } from 'radix-ui';
 import type { ReactNode } from 'react';
 
 import { Button } from '../components/button.js';
@@ -57,7 +57,27 @@ export function TabStrip({
     selected,
     onMove,
   );
-  const List = variant === 'toggle' ? 'div' : TabsList;
+  const tabs = (
+    <SortableContext
+      items={items.map((item) => item.id)}
+      strategy={horizontalListSortingStrategy}
+    >
+      {items.map((item) => (
+        <SortableTab
+          key={item.id}
+          item={item}
+          selected={selected}
+          events={events}
+          onClose={onClose}
+          onReselect={onReselect}
+          onSelect={onSelect}
+          toggle={variant === 'toggle'}
+          line={variant === 'line'}
+          project={variant === 'project'}
+        />
+      ))}
+    </SortableContext>
+  );
   return (
     <DndContext
       sensors={events.sensors}
@@ -80,39 +100,36 @@ export function TabStrip({
           variant === 'project' && 'h-[28px]',
         )}
       >
-        <List
-          {...(variant === 'toggle'
-            ? { role: 'group' }
-            : { variant: variant === 'project' ? 'default' : variant })}
-          aria-label={label}
-          className={cn(
-            'w-max justify-start',
-            variant === 'toggle' && 'flex items-center gap-1',
-            variant === 'line' && 'gap-1 p-0 group-data-horizontal/tabs:h-9',
-            variant === 'project' &&
-              'gap-[4px] bg-transparent p-0 group-data-horizontal/tabs:h-[28px]',
-          )}
-        >
-          <SortableContext
-            items={items.map((item) => item.id)}
-            strategy={horizontalListSortingStrategy}
+        {variant === 'toggle' ? (
+          // biome-ignore lint/a11y/useSemanticElements: a row of toggles, not a form's fieldset; the strip had this role under Radix too.
+          <div
+            role="group"
+            aria-label={label}
+            className="flex w-max items-center justify-start gap-1"
           >
-            {items.map((item) => (
-              <SortableTab
-                key={item.id}
-                item={item}
-                selected={selected}
-                events={events}
-                onClose={onClose}
-                onReselect={onReselect}
-                onSelect={onSelect}
-                toggle={variant === 'toggle'}
-                line={variant === 'line'}
-                project={variant === 'project'}
-              />
-            ))}
-          </SortableContext>
-        </List>
+            {tabs}
+          </div>
+        ) : (
+          <TabsList
+            variant={variant === 'project' ? 'default' : variant}
+            aria-label={label}
+            // Focusing a tab selects it, so arrow keys select as they move.
+            activateOnFocus
+            onKeyDown={(event) => {
+              // A key a tab already handled (a keyboard sort, a move) does not
+              // also move focus to another tab.
+              if (event.defaultPrevented) event.preventBaseUIHandler();
+            }}
+            className={cn(
+              'w-max justify-start',
+              variant === 'line' && 'gap-1 p-0 group-data-horizontal/tabs:h-9',
+              variant === 'project' &&
+                'gap-[4px] bg-transparent p-0 group-data-horizontal/tabs:h-[28px]',
+            )}
+          >
+            {tabs}
+          </TabsList>
+        )}
       </div>
     </DndContext>
   );
@@ -140,23 +157,33 @@ function SortableTab({
   readonly project: boolean;
 }) {
   const sortable = useSortableTab(item.id, events.frozen?.get(item.id));
-  const Control = toggle
-    ? Toggle
-    : project
-      ? TabsPrimitive.Trigger
-      : TabsTrigger;
-  const Item = toggle ? 'button' : 'div';
+  const Control = toggle ? Toggle : project ? TabsPrimitive.Tab : TabsTrigger;
   return (
     <Control
-      asChild
-      {...(toggle ? { pressed: selected === item.id } : {})}
+      // A tab is a `div`: the close control inside it is a button of its own.
+      {...(toggle
+        ? { pressed: selected === item.id }
+        : { render: <div />, nativeButton: false })}
       value={item.id}
+      ref={sortable.setNodeRef}
+      data-tab-id={item.id}
+      data-dragging={sortable.isDragging}
       data-active={selected === item.id ? 'true' : undefined}
       aria-label={item.ariaLabel ?? item.label}
       aria-keyshortcuts="Space Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
       aria-describedby={sortable.attributes['aria-describedby']}
       aria-roledescription="sortable tab"
       title={item.title ?? item.label}
+      style={sortable.style}
+      {...sortable.listeners}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && selected === item.id && !events.sorting)
+          onReselect?.(item.id);
+        events.keyDown(event, item.id);
+        if (!event.defaultPrevented) sortable.listeners?.onKeyDown?.(event);
+        // A key this tab handled (a keyboard sort, a move) is not also a press.
+        if (event.defaultPrevented) event.preventBaseUIHandler();
+      }}
       onClick={() => {
         if (toggle && !events.sorting) onSelect?.(item.id);
         if (selected === item.id && !events.sorting) onReselect?.(item.id);
@@ -171,7 +198,7 @@ function SortableTab({
         'group/tab shrink-0 touch-none flex-none select-none [-webkit-app-region:no-drag] motion-reduce:transition-none! motion-reduce:after:transition-none',
         toggle && 'text-xs font-normal',
         line &&
-          'h-full after:pointer-events-none group-data-horizontal/tabs:after:bottom-0 data-[state=inactive]:hover:after:opacity-30',
+          'h-full after:pointer-events-none group-data-horizontal/tabs:after:bottom-0 not-data-active:hover:after:opacity-30',
         project &&
           cn(
             compactTabClassName,
@@ -179,46 +206,73 @@ function SortableTab({
           ),
       )}
     >
-      <Item
-        {...(toggle ? { type: 'button' as const } : {})}
-        ref={sortable.setNodeRef}
-        data-tab-id={item.id}
-        data-dragging={sortable.isDragging}
-        style={sortable.style}
-        {...sortable.listeners}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && selected === item.id && !events.sorting)
-            onReselect?.(item.id);
-          events.keyDown(event, item.id);
-          if (!event.defaultPrevented) sortable.listeners?.onKeyDown?.(event);
-        }}
-      >
-        {project ? (
-          <span className="flex size-[16px] shrink-0 items-center justify-center [&>svg]:size-[16px]">
-            {item.icon}
-          </span>
-        ) : (
-          item.icon
-        )}
-        {!item.iconOnly && (
-          <span
-            className={
-              project ? 'min-w-0 flex-1 truncate' : 'max-w-40 truncate'
-            }
+      {project ? (
+        <span className="flex size-[16px] shrink-0 items-center justify-center [&>svg]:size-[16px]">
+          {item.icon}
+        </span>
+      ) : (
+        item.icon
+      )}
+      {!item.iconOnly && (
+        <span
+          className={project ? 'min-w-0 flex-1 truncate' : 'max-w-40 truncate'}
+        >
+          {item.label}
+        </span>
+      )}
+      {item.badge}
+      {onClose && project && (
+        <button
+          type="button"
+          data-slot="tab-close"
+          style={sortable.closeStyle}
+          className={cn(
+            'relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center before:absolute before:inset-[4px] before:rounded-[4px] hover:opacity-100! hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover/tab:opacity-50 focus-visible:opacity-100',
+            selected === item.id ? 'opacity-50' : 'opacity-0',
+          )}
+          aria-label={`Close ${item.ariaLabel ?? item.label}`}
+          tabIndex={selected === item.id ? 0 : -1}
+          disabled={events.sorting}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onFocus={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose(item.id);
+          }}
+        >
+          <svg
+            aria-hidden="true"
+            className="relative size-[8px]!"
+            width="8"
+            height="8"
+            viewBox="0 0 8 8"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
           >
-            {item.label}
-          </span>
-        )}
-        {item.badge}
-        {onClose && project && (
-          <button
-            type="button"
-            data-slot="tab-close"
-            style={sortable.closeStyle}
-            className={cn(
-              'relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center before:absolute before:inset-[4px] before:rounded-[4px] hover:opacity-100! hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover/tab:opacity-50 focus-visible:opacity-100',
-              selected === item.id ? 'opacity-50' : 'opacity-0',
-            )}
+            <path
+              d="M0.465332 0.46447L4.00087 4M4.00087 4L7.53641 7.5355M4.00087 4L7.53641 0.46447M4.00087 4L0.465332 7.5355"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        </button>
+      )}
+      {onClose && !project && (
+        <span
+          data-slot="tab-close"
+          style={sortable.closeStyle}
+          className={cn(
+            'flex w-6 shrink-0 overflow-hidden transition-opacity duration-150 ease-out motion-reduce:transition-none',
+            selected === item.id
+              ? 'opacity-100'
+              : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100',
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="icon-xs"
             aria-label={`Close ${item.ariaLabel ?? item.label}`}
             tabIndex={selected === item.id ? 0 : -1}
             disabled={events.sorting}
@@ -231,54 +285,10 @@ function SortableTab({
               onClose(item.id);
             }}
           >
-            <svg
-              aria-hidden="true"
-              className="relative size-[8px]!"
-              width="8"
-              height="8"
-              viewBox="0 0 8 8"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-            >
-              <path
-                d="M0.465332 0.46447L4.00087 4M4.00087 4L7.53641 7.5355M4.00087 4L7.53641 0.46447M4.00087 4L0.465332 7.5355"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
-          </button>
-        )}
-        {onClose && !project && (
-          <span
-            data-slot="tab-close"
-            style={sortable.closeStyle}
-            className={cn(
-              'flex w-6 shrink-0 overflow-hidden transition-opacity duration-150 ease-out motion-reduce:transition-none',
-              selected === item.id
-                ? 'opacity-100'
-                : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100',
-            )}
-          >
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`Close ${item.ariaLabel ?? item.label}`}
-              tabIndex={selected === item.id ? 0 : -1}
-              disabled={events.sorting}
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-              onFocus={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onClose(item.id);
-              }}
-            >
-              <XIcon />
-            </Button>
-          </span>
-        )}
-      </Item>
+            <XIcon />
+          </Button>
+        </span>
+      )}
     </Control>
   );
 }

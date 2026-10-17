@@ -42,10 +42,7 @@ export function DeleteDialog({
           <AlertDialogAction
             variant="destructive"
             disabled={pending}
-            onClick={(event) => {
-              event.preventDefault();
-              void onDelete();
-            }}
+            onClick={() => void onDelete()}
           >
             {pending ? 'Deleting…' : 'Delete'}
           </AlertDialogAction>

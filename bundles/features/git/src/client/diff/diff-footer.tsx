@@ -29,10 +29,9 @@ export function DiffFooter({
       {controls && (
         <div className="flex shrink-0 items-center gap-1">
           <ToggleGroup
-            type="single"
             size="sm"
-            value={controls.layout}
-            onValueChange={(value) => {
+            value={[controls.layout]}
+            onValueChange={([value]) => {
               if (value) controls.onLayout(value);
             }}
             aria-label="Diff layout"

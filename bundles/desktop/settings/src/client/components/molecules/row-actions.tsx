@@ -24,7 +24,7 @@ export type RowAction = {
  *
  * The trigger is the vertical ellipsis, which is the shape a reader already
  * knows as "this row has actions". Selecting an item closes the menu, because
- * Radix does that for an item's own `onSelect`.
+ * a menu item closes its menu on click.
  */
 export function RowActions({
   actions,
@@ -36,15 +36,17 @@ export function RowActions({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          aria-label={`Actions for ${label}`}
-        >
-          <EllipsisVerticalIcon />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto"
+            aria-label={`Actions for ${label}`}
+          />
+        }
+      >
+        <EllipsisVerticalIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {actions.map((action, index) => (
@@ -54,7 +56,7 @@ export function RowActions({
             )}
             <DropdownMenuItem
               variant={action.destructive === true ? 'destructive' : 'default'}
-              onSelect={action.onSelect}
+              onClick={action.onSelect}
             >
               {action.icon}
               {action.label}

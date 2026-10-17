@@ -60,15 +60,24 @@ function Choice({
   readonly options: readonly Credential[];
   readonly value: string | undefined;
 }) {
+  // The trigger names the chosen item; an id no option carries names nothing.
+  const labels = new Map<string, string>([
+    [none, 'None'],
+    ...options.map(
+      (credential) => [credential.id, credentialLabel(credential)] as const,
+    ),
+  ]);
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Select
         value={value ?? none}
-        onValueChange={(next) => onSelect(next === none ? undefined : next)}
+        onValueChange={(next) =>
+          onSelect(next === null || next === none ? undefined : next)
+        }
       >
         <SelectTrigger id={id} className="w-full">
-          <SelectValue placeholder="Choose a credential" />
+          <SelectValue>{(chosen: string) => labels.get(chosen)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>

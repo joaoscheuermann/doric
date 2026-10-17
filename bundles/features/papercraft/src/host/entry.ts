@@ -4,13 +4,13 @@
 //
 // `mount` puts two containers in the root it is given (the surface's content
 // element, inside the preview's shadow root): the React root's own, and a
-// portal container beside it. Portaled overlays (Radix Dialog, Popover,
-// Tooltip…) that are handed the portal container render inside the shadow
+// portal container beside it. Portaled overlays (dialogs, popovers,
+// tooltips…) that are handed the portal container render inside the shadow
 // root — in the zoomed canvas, under the preview's sheet, where comments can
-// anchor to them — instead of in `document.body`. Radix has no global
-// default for a portal's container, and the preview assumes nothing of the
-// Project's components, so the container is handed to the decorators and
-// stories as `context.papercraft.portalContainer` (also
+// anchor to them — instead of in `document.body`. Neither Base UI nor Radix
+// has a global default for a portal's container, and the preview assumes
+// nothing of the Project's components, so the container is handed to the
+// decorators and stories as `context.papercraft.portalContainer` (also
 // `context.parameters.papercraft.portalContainer`), and the Project's
 // harness passes it on to its components (Doric's, to `desktop/ui`'s
 // `PortalContainerProvider`).

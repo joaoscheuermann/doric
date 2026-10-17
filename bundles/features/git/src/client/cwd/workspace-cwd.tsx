@@ -50,36 +50,37 @@ export function WorkspaceCwd({
       <ReadFeedback error={error} refreshing={refreshing} onRetry={refresh} />
       <Popover onOpenChange={() => setBranchesOpen(false)}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="xs"
-                className="min-w-0 shrink gap-1.5"
-                aria-label="Working directory and branch"
-              >
-                <span className="truncate" data-slot="workspace-cwd">
-                  {thread.cwd}
+          <TooltipTrigger
+            render={
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="min-w-0 shrink gap-1.5"
+                    aria-label="Working directory and branch"
+                  />
+                }
+              />
+            }
+          >
+            <span className="truncate" data-slot="workspace-cwd">
+              {thread.cwd}
+            </span>
+            {environment && (
+              <span role="status" className="truncate text-muted-foreground">
+                · {environment}
+              </span>
+            )}
+            {git?.repo && (
+              <>
+                <span className="text-muted-foreground">·</span>
+                <span className="max-w-40 shrink-0 truncate">
+                  {git.detached ? `@${git.head}` : git.head}
                 </span>
-                {environment && (
-                  <span
-                    role="status"
-                    className="truncate text-muted-foreground"
-                  >
-                    · {environment}
-                  </span>
-                )}
-                {git?.repo && (
-                  <>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="max-w-40 shrink-0 truncate">
-                      {git.detached ? `@${git.head}` : git.head}
-                    </span>
-                  </>
-                )}
-                <ChevronDownIcon data-icon="inline-end" />
-              </Button>
-            </PopoverTrigger>
+              </>
+            )}
+            <ChevronDownIcon data-icon="inline-end" />
           </TooltipTrigger>
           <TooltipContent>
             {thread.cwd}
@@ -121,32 +122,37 @@ export function WorkspaceCwd({
           {git?.repo && (
             <>
               <Separator />
+              {/* Nested in the summary's popover: Base UI hands Escape to the
+                  innermost open popover and stops it there, and a press in
+                  this one is inside the summary's tree, so both close only
+                  the branch popover. */}
               <Popover open={branchesOpen} onOpenChange={setBranchesOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="h-auto w-full justify-start gap-2 px-2 py-2"
-                    aria-label="Select branch"
-                    disabled={thread.state === 'running'}
-                  >
-                    <GitBranchIcon data-icon="inline-start" />
-                    <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                      <span className="max-w-full truncate">
-                        {git.detached ? `Detached · ${git.head}` : git.head}
-                      </span>
-                      <span className="max-w-full truncate text-xs font-normal text-muted-foreground">
-                        {gitStatusLine(git)}
-                      </span>
+                <PopoverTrigger
+                  disabled={thread.state === 'running'}
+                  render={
+                    <Button
+                      variant="ghost"
+                      className="h-auto w-full justify-start gap-2 px-2 py-2"
+                      aria-label="Select branch"
+                    />
+                  }
+                >
+                  <GitBranchIcon data-icon="inline-start" />
+                  <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                    <span className="max-w-full truncate">
+                      {git.detached ? `Detached · ${git.head}` : git.head}
                     </span>
-                    <ChevronRightIcon data-icon="inline-end" />
-                  </Button>
+                    <span className="max-w-full truncate text-xs font-normal text-muted-foreground">
+                      {gitStatusLine(git)}
+                    </span>
+                  </span>
+                  <ChevronRightIcon data-icon="inline-end" />
                 </PopoverTrigger>
                 <PopoverContent
                   side="right"
                   align="end"
                   sideOffset={8}
                   className="w-80 max-w-[calc(100vw-1rem)] gap-0 p-0"
-                  onEscapeKeyDown={(event) => event.stopPropagation()}
                 >
                   <BranchPicker
                     key={thread.cwd}
@@ -161,20 +167,22 @@ export function WorkspaceCwd({
       </Popover>
       {git?.repo && (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="shrink-0"
-              aria-label="View changes in current directory"
-              onClick={onShowChanges}
-            >
-              {totals ? (
-                <ChangeCounts {...totals} />
-              ) : (
-                <span className="text-muted-foreground">…</span>
-              )}
-            </Button>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                className="shrink-0"
+                aria-label="View changes in current directory"
+                onClick={onShowChanges}
+              />
+            }
+          >
+            {totals ? (
+              <ChangeCounts {...totals} />
+            ) : (
+              <span className="text-muted-foreground">…</span>
+            )}
           </TooltipTrigger>
           <TooltipContent>View changes in current directory</TooltipContent>
         </Tooltip>

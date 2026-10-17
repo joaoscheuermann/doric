@@ -1,73 +1,86 @@
 # Provenance of the vendored components
 
-`src/components/*.tsx` and `src/hooks/use-mobile.ts` are the shadcn/ui files
-that `app/desktop/doric-renderer` vendored with the shadcn CLI and edited locally.
-`src/lib/utils.ts` is the renderer's `utility/utils.ts`. They were copied from
-commit `20775a6`, not regenerated.
+`src/components/*.tsx`, `src/hooks/use-mobile.ts` and `src/lib/utils.ts` are
+shadcn/ui files edited locally. Each comes from one of two origins, which
+`tests/fixtures/provenance.json` records per file:
+
+- **`renderer`**: the files `app/doric-renderer` vendored with the shadcn CLI
+  (`radix-nova` style), copied from commit `20775a6`, not regenerated. They are
+  the components that use no Radix primitive and that `base-nova` writes
+  exactly as `radix-nova` does: `alert`, `empty`, `field`, `resizable`,
+  `skeleton`, `sonner`, `table`, `textarea`, plus `hooks/use-mobile.ts` and
+  `lib/utils.ts` (the renderer's `utility/utils.ts`).
+- **`registry`**: the Base UI components. On 2026-10-17 the app replaced Radix
+  with Base UI (`@base-ui/react`), and every component that used a Radix
+  primitive, or that `base-nova` writes differently, was re-derived from the
+  CLI's `base-nova` style, the Base UI flavour of the `radix-nova` style the
+  renderer used: `alert-dialog`, `badge`, `breadcrumb`, `button`, `checkbox`,
+  `collapsible`, `combobox`, `command`, `context-menu`, `dialog`,
+  `dropdown-menu`, `input`, `input-group`, `label`, `marker`, `popover`,
+  `progress`, `scroll-area`, `select`, `separator`, `sheet`, `sidebar`, `tabs`,
+  `toggle`, `toggle-group` and `tooltip`.
 
 `scripts/verify-provenance.mjs` checks this. `desktop:test` runs it. For each
 file, it undoes the import rewrites and the patches below and compares the
-result with the SHA-256 that `tests/fixtures/provenance.json` records for the
-renderer file. Any other difference fails, and so does a component file the
-record does not list. To refresh the record from git, run
-`node scripts/verify-provenance.mjs --record <commit>`.
+result with the SHA-256 the record holds for the file's origin. Any other
+difference fails, and so does a component file the record does not list.
 
-## Why the files were not regenerated
+## How the Base UI components were derived
 
-The design asked for `npx shadcn@4.21.0 add --all` (the lockfile's CLI) with
-`components.json`. That command was run on 2026-10-09 into a scratch directory.
-The current registry no longer reproduces the vendored files. Even after
-formatting, every one of the 34 components differs. Some examples:
+The CLI was not run blindly: before the switch, the current `radix-nova`
+output was compared with the renderer's files, formatted alike. Apart from
+import order, `'use client'` and `cn` coming from `'cn'`, they differed only by
+the local patches this file lists, so writing `base-nova` with the same patches
+keeps the renderer's ARIA and visuals, in Base UI's API. To refresh the
+`registry` entries:
 
-- imports are reordered;
-- `cn` comes from `'cn'` instead of `@/lib/utils`;
-- `button.tsx` hovers with `hover:bg-primary/80`;
-- `sidebar.tsx` drops the `menu-sub-item` group classes;
-- `sonner.tsx` depends on `next-themes`;
-- `use-mobile.ts` is written differently.
+1. In a scratch directory, copy `components.json` (style `base-nova`), a
+   `tsconfig.json` mapping `@/*` to `./src/*`, and a `package.json` naming
+   `react` and `react-dom`.
+2. Run `npx shadcn@4.21.0 add <names> --yes --overwrite` there with the names
+   above. It writes `src/components/<name>.tsx` (and installs their packages in
+   the scratch directory).
+3. Format them with the repository's Prettier
+   (`npx prettier --config .prettierrc --ignore-path /dev/null --write`).
+4. Run `node scripts/verify-provenance.mjs --record-registry <scratch>/src/components`.
 
-Regenerating would therefore change ARIA and visuals the app relies on (risk R3).
-The `--all` set would also add 27 components the app does not use, along with
-their libraries: `recharts`, `react-day-picker`, `embla-carousel-react`,
-`input-otp`, `vaul`, `@shadcn/react` and `next-themes`.
+The CLI writes a leading `'use client'` directive in some files and not in
+others, though `components.json` sets `rsc: false`. Nothing in a window reads
+it, so the vendored files drop it and the check ignores it on both sides.
 
-So only the 34 files the renderer vendored are kept. To add a component later,
-run the CLI against this package (`npx shadcn@4.21.0 add <name> -c
-packages/desktop`), rewrite its imports as described below, and add it to
-the record.
+`--record <commit>` rewrites the `renderer` entries from git, as before.
+
+To add a component later, run the CLI against this package (`npx
+shadcn@4.21.0 add <name> -c packages/desktop`), rewrite its imports as
+described below, and add it to the record as a `registry` file.
 
 ## Import rewrites
 
 Imports are relative (`.js`) so that every consumer resolves them the same way.
-That includes the renderer's webpack, where `@/` already names the renderer's
-own `src`, the platform's esbuild and Node.
+That includes the platform's esbuild and Node.
 
-| Renderer import          | desktop/ui import        |
-| ------------------------ | ------------------------ |
-| `@/components/ui/<name>` | `./<name>.js`            |
-| `@/utility/utils`        | `../lib/utils.js`        |
-| `@/hooks/use-mobile`     | `../hooks/use-mobile.js` |
+| Origin     | Source import            | desktop/ui import        |
+| ---------- | ------------------------ | ------------------------ |
+| `registry` | `@/components/<name>`    | `./<name>.js`            |
+| `registry` | `@/hooks/use-mobile`     | `../hooks/use-mobile.js` |
+| `renderer` | `@/components/ui/<name>` | `./<name>.js`            |
+| `renderer` | `@/utility/utils`        | `../lib/utils.js`        |
+| `renderer` | `@/hooks/use-mobile`     | `../hooks/use-mobile.js` |
 
-`command.tsx`, `marker.tsx` and `toggle-group.tsx` import `cn` from `'cn'`, as
-they already did.
+The `registry` files import `cn` from `'cn'`, as the CLI writes them;
+`lib/utils.ts` re-exports the same function.
 
 ## Local patches
 
-These edits were made in the renderer before the copy, and the copy carries
-them unchanged. They are part of the recorded hashes:
+Patches of the `renderer` files, made in the renderer before the copy and part
+of the recorded hashes:
 
-- `button.tsx`: the default variant hovers with
-  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]`, and the
-  secondary variant uses the 5 % mix (commit `5fac0ee`). `Comp` is renamed to
-  `Component`.
 - `sonner.tsx`: the `theme` defaults to `'dark'`, with lucide icons, the
   popover CSS variables and the `cn-toast` class, and no `next-themes`.
-- `marker.tsx`: not a stock registry component. It is vendored locally.
-- `sidebar.tsx`: keeps the `menu-sub-item` group classes.
 - `use-mobile.ts`: the renderer's own formatting and names.
 
-These edits were added in desktop/ui. `verify-provenance.mjs` undoes them before
-it compares:
+Patches added in desktop/ui, which `verify-provenance.mjs` undoes before it
+compares:
 
 - `sonner.tsx`: also imports and re-exports `toast` from `sonner`
   (`export { Toaster, toast }`). Every `toast` call in a window then reaches the
@@ -75,14 +88,22 @@ it compares:
   (stage 8, S8-21).
 - `sonner.tsx`: now defaults to Sonner's `system` theme so native notifications
   follow the operating system while the window remains open.
-- `sidebar.tsx`: also defines and exports `SidebarScope`, the sidebar context
-  without the wrapper element or the shortcut, for a bundle element that draws
-  sidebar rows inside the layout's sidebar from its own React root (stage 10,
-  WP-10N).
+- `button.tsx`: the default variant hovers with
+  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]`
+  (commit `5fac0ee`; the secondary variant's 5 % mix is now the registry's
+  own).
 - `button.tsx`: also defines the `solid` variant, the composer's white control: a
   white fill with an icon that stays dark on it in either theme. Filling a
   primary button white would have meant turning the theme's `--primary` into
   white, which every other primary surface reads.
+- `sidebar.tsx`: keeps the `menu-sub-item` group classes on the menu action, so
+  it also shows on hover and focus inside a sub-item.
+- `sidebar.tsx`: also defines and exports `SidebarScope`, the sidebar context
+  without the wrapper element or the shortcut, for a bundle element that draws
+  sidebar rows inside the layout's sidebar from its own React root (stage 10,
+  WP-10N).
+- `scroll-area.tsx`: drops the registry's `import * as React from 'react'`,
+  which the file never reads (`noUnusedLocals`).
 - `alert-dialog.tsx`, `combobox.tsx`, `context-menu.tsx`, `dialog.tsx`,
   `dropdown-menu.tsx`, `popover.tsx`, `select.tsx`, `sheet.tsx` and
   `tooltip.tsx`: each portal passes `container={usePortalContainer()}` (read

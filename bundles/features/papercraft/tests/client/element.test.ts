@@ -42,12 +42,19 @@ for (const name of installed) {
   });
 }
 
-// The thread's menus measure what they open beside.
-Object.defineProperty(globalThis, 'getComputedStyle', {
-  configurable: true,
-  value: window.getComputedStyle.bind(window),
-  writable: true,
-});
+// The thread's menus measure what they open beside, and schedule their
+// open and close transitions on animation frames.
+for (const name of [
+  'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+] as const) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value: window[name].bind(window),
+    writable: true,
+  });
+}
 
 type React = typeof import('react');
 type ReactDomClient = typeof import('react-dom/client');
@@ -1095,9 +1102,29 @@ test('Alt forces a free point over an element', async () => {
   await mounted.unmount();
 });
 
-/** Opens one `⋯` menu of the thread the way the keyboard does. */
+/**
+ * Opens one `⋯` menu of the thread the way the keyboard does: `Enter` on the
+ * trigger, a button, whose default action a browser turns into a click
+ * (happy-dom does not, so the click is sent here).
+ */
 const openMenu = async (trigger: Element) => {
-  await key(trigger, 'Enter');
+  await react.act(async () => {
+    const enter = new window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    trigger.dispatchEvent(enter as never);
+    if (!enter.defaultPrevented)
+      trigger.dispatchEvent(
+        new window.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          detail: 0,
+        }) as never,
+      );
+  });
   await react.act(async () => {
     await tick();
   });

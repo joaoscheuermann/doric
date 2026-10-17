@@ -131,6 +131,10 @@ const portalTarget = (): HTMLElement => {
   return container;
 };
 
+/** The child of the document body that holds `node`, or `undefined`. */
+const bodyChildHolding = (node: Node): Element | undefined =>
+  [...document.body.children].find((child) => child.contains(node));
+
 const provide = (container: HTMLElement, node: ReactNode): ReactNode =>
   createElement(ui.PortalContainerProvider, { container }, node);
 
@@ -167,12 +171,16 @@ describe('PortalContainerProvider', () => {
     const unmount = await render(openPopover());
 
     const body = document.querySelector('#popover-body');
-    assert.equal(body?.textContent, 'popover');
-    // Portaled: not inside the element the tree was rendered into.
-    assert.equal(
-      body?.closest('[data-radix-popper-content-wrapper]')?.parentElement,
-      document.body,
+    const trigger = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'More',
     );
+    assert.equal(body?.textContent, 'popover');
+    // Portaled: in the document body, outside the element the tree (and so
+    // the trigger) was rendered into.
+    assert.ok(body !== null && trigger !== undefined);
+    const portal = bodyChildHolding(body);
+    assert.ok(portal !== undefined);
+    assert.notEqual(portal, bodyChildHolding(trigger));
     await unmount();
   });
 

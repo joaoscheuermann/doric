@@ -81,8 +81,8 @@ function ResultThreadLink({ threadId }: { readonly threadId: string }) {
  * One handle on the rail: the pill that widens, and the popover it opens.
  *
  * Memoised on its props, which are values and the rail's stable callbacks: a
- * flush of deltas re-renders the rail, and the handles — one Radix popover
- * each, dozens on a long transcript — stay as they were unless the active
+ * flush of deltas re-renders the rail, and the handles — one popover each,
+ * dozens on a long transcript — stay as they were unless the active
  * one, the hovered cascade or an open popover moved.
  */
 const RailHandle = memo(function RailHandle({
@@ -128,58 +128,62 @@ const RailHandle = memo(function RailHandle({
   return (
     <Popover
       open={open && text !== ''}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
+        // A click only jumps. The trigger toggles its popover on every press
+        // unless the change is cancelled, and a toggle here would close the
+        // preview the hover just opened; hover and focus alone open and close
+        // the preview.
+        if (details.reason === 'trigger-press') {
+          details.cancel();
+          return;
+        }
         if (!next) hover(null);
       }}
     >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-current={active ? 'location' : undefined}
-          aria-label={label}
-          className="group flex h-2.5 w-6 cursor-pointer justify-end p-1"
-          onBlur={() => hover(null)}
-          onClick={(event) => {
-            // A click only jumps. The Radix trigger toggles its popover on
-            // click unless the handler says otherwise, and a toggle here would
-            // close the preview the hover just opened.
-            event.preventDefault();
-            onJump(marker);
-          }}
-          onFocus={() => hover(id)}
-          onMouseEnter={() => {
-            onHandleHover(id);
-            hover(id);
-          }}
-          onMouseLeave={() => {
-            onHandleHover(null);
-            hover(null);
-          }}
-        >
-          <span
-            className={cn(
-              'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
-              HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
-              active
-                ? 'bg-primary'
-                : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
-                    emphasis
-                  ],
-            )}
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-current={active ? 'location' : undefined}
+            aria-label={label}
+            className="group flex h-2.5 w-6 cursor-pointer justify-end p-1"
+            onBlur={() => hover(null)}
+            onClick={() => onJump(marker)}
+            onFocus={() => hover(id)}
+            onMouseEnter={() => {
+              onHandleHover(id);
+              hover(id);
+            }}
+            onMouseLeave={() => {
+              onHandleHover(null);
+              hover(null);
+            }}
           />
-        </button>
+        }
+      >
+        <span
+          className={cn(
+            'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
+            HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
+            active
+              ? 'bg-primary'
+              : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
+                  emphasis
+                ],
+          )}
+        />
       </PopoverTrigger>
       {/* The popover never moves the focus on its own — both ends are cut
-        deliberately. Radix focuses its content on open and refocuses the
-        trigger on close; either one runs the hover handlers on its own and
-        reopens what just closed, an endless blink. Focus moves only when the
-        reader moves it, so `onFocus`/`onBlur` stay honest. */}
+        deliberately. By default it focuses its popup on open and refocuses
+        the trigger on close; either one runs the hover handlers on its own
+        and reopens what just closed, an endless blink. Focus moves only when
+        the reader moves it, so `onFocus`/`onBlur` stay honest. */}
       <PopoverContent
         align="center"
         side="left"
         className="w-96 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 font-conversation text-foreground ring-0 duration-0"
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        initialFocus={false}
+        finalFocus={false}
         onMouseEnter={() => hover(id)}
         onMouseLeave={() => hover(null)}
         onFocusCapture={() => hover(id)}

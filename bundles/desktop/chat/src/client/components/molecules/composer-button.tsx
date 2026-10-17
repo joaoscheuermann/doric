@@ -46,22 +46,24 @@ export function ComposerButton({
   }[action];
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          aria-label={label}
-          disabled={
-            disabled || ((action === 'send' || action === 'save') && !canSend)
-          }
-          size="icon-sm"
-          variant="solid"
-          onClick={
-            { send: onSend, resume: onResume, pause: onStop, save: onSend }[
-              action
-            ]
-          }
-        >
-          <Icon />
-        </Button>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-label={label}
+            disabled={
+              disabled || ((action === 'send' || action === 'save') && !canSend)
+            }
+            size="icon-sm"
+            variant="solid"
+            onClick={
+              { send: onSend, resume: onResume, pause: onStop, save: onSend }[
+                action
+              ]
+            }
+          />
+        }
+      >
+        <Icon />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

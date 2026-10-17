@@ -121,7 +121,19 @@ export function ThreadBranches({
               >
                 <TreeGuides depth={depth} />
                 <SidebarMenuSubButton
-                  asChild
+                  render={
+                    <div
+                      role="treeitem"
+                      tabIndex={0}
+                      onClick={activate}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          activate();
+                        }
+                      }}
+                    />
+                  }
                   isActive={selected}
                   size="sm"
                   className={cn(
@@ -131,38 +143,26 @@ export function ThreadBranches({
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >
-                  <div
-                    role="treeitem"
-                    tabIndex={0}
-                    onClick={activate}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        activate();
-                      }
-                    }}
-                  >
-                    <Icon />
-                    {expandable && (
-                      <ChevronRightIcon
-                        aria-hidden
-                        className={cn(
-                          'transition-transform duration-[50ms] ease-out',
-                          expanded ? 'rotate-90' : 'rotate-0',
-                        )}
-                      />
-                    )}
-                    <EditableName
-                      className={cn(running && 'shimmer')}
-                      editing={editingThreadId === thread.id}
-                      label="Thread name"
-                      placeholder="Untitled"
-                      value={thread.name}
-                      onStart={() => actions.startRename(thread)}
-                      onCancel={actions.cancelRename}
-                      onSubmit={(name) => actions.rename(thread, name)}
+                  <Icon />
+                  {expandable && (
+                    <ChevronRightIcon
+                      aria-hidden
+                      className={cn(
+                        'transition-transform duration-[50ms] ease-out',
+                        expanded ? 'rotate-90' : 'rotate-0',
+                      )}
                     />
-                  </div>
+                  )}
+                  <EditableName
+                    className={cn(running && 'shimmer')}
+                    editing={editingThreadId === thread.id}
+                    label="Thread name"
+                    placeholder="Untitled"
+                    value={thread.name}
+                    onStart={() => actions.startRename(thread)}
+                    onCancel={actions.cancelRename}
+                    onSubmit={(name) => actions.rename(thread, name)}
+                  />
                 </SidebarMenuSubButton>
                 <RowAddAction
                   label={`New child thread in ${thread.name || 'Untitled'}`}

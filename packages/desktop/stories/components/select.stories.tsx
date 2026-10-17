@@ -16,6 +16,18 @@ export default {
   component: Select,
 };
 
+/** The labels the trigger shows for each model id. */
+const modelItems = models.map((model) => ({
+  value: model.id,
+  label: model.label,
+}));
+
+const effortItems = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+];
+
 const ModelItems = () => (
   <>
     <SelectGroup>
@@ -45,7 +57,7 @@ const ModelItems = () => (
 export const Open = {
   render: () => (
     <div className="h-80 pt-24">
-      <Select defaultOpen defaultValue="claude-sonnet-4">
+      <Select items={modelItems} defaultOpen defaultValue="claude-sonnet-4">
         <SelectTrigger className="w-56" aria-label="Model">
           <SelectValue placeholder="Choose a model" />
         </SelectTrigger>
@@ -60,11 +72,11 @@ export const Open = {
 export const Popper = {
   render: () => (
     <div className="h-80">
-      <Select defaultOpen defaultValue="gpt-5">
+      <Select items={modelItems} defaultOpen defaultValue="gpt-5">
         <SelectTrigger className="w-56" aria-label="Model">
           <SelectValue placeholder="Choose a model" />
         </SelectTrigger>
-        <SelectContent position="popper">
+        <SelectContent alignItemWithTrigger={false}>
           <ModelItems />
         </SelectContent>
       </Select>
@@ -75,7 +87,7 @@ export const Popper = {
 export const Closed = {
   render: () => (
     <div className="flex flex-col gap-3">
-      <Select defaultValue="claude-opus-4">
+      <Select items={modelItems} defaultValue="claude-opus-4">
         <SelectTrigger className="w-56" aria-label="Model">
           <SelectValue />
         </SelectTrigger>
@@ -83,7 +95,7 @@ export const Closed = {
           <ModelItems />
         </SelectContent>
       </Select>
-      <Select>
+      <Select items={effortItems}>
         <SelectTrigger size="sm" className="w-56" aria-label="Reasoning effort">
           <SelectValue placeholder="Reasoning effort" />
         </SelectTrigger>
@@ -99,7 +111,7 @@ export const Closed = {
 
 export const Disabled = {
   render: () => (
-    <Select disabled defaultValue="claude-opus-4">
+    <Select items={modelItems} disabled defaultValue="claude-opus-4">
       <SelectTrigger className="w-56" aria-label="Model">
         <SelectValue />
       </SelectTrigger>
@@ -112,7 +124,7 @@ export const Disabled = {
 
 export const Invalid = {
   render: () => (
-    <Select>
+    <Select items={modelItems}>
       <SelectTrigger className="w-56" aria-invalid aria-label="Model">
         <SelectValue placeholder="Choose a model" />
       </SelectTrigger>

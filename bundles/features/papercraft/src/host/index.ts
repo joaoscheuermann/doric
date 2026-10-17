@@ -44,6 +44,7 @@ export {
   pickStory,
   previewExternals,
   type SourceReader,
+  WINDOW_PACKAGES,
 } from './compile.js';
 export {
   type CompiledStyles,

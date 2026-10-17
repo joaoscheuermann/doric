@@ -77,7 +77,7 @@ export const Selectable = {
       <TableHeader>
         <TableRow>
           <TableHead>
-            <Checkbox checked="indeterminate" aria-label="Select all" />
+            <Checkbox indeterminate aria-label="Select all" />
           </TableHead>
           <TableHead>Thread</TableHead>
           <TableHead>Updated</TableHead>

@@ -36,10 +36,16 @@ export const ThreadActions = {
   render: () => (
     <div className="h-80">
       <DropdownMenu defaultOpen modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label="Thread actions">
-            <MoreHorizontalIcon />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Thread actions"
+            />
+          }
+        >
+          <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56">
           <DropdownMenuGroup>
@@ -82,30 +88,40 @@ export const CheckboxAndRadio = {
   render: () => (
     <div className="h-96">
       <DropdownMenu defaultOpen modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            View
-          </Button>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+          View
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-56">
-          <DropdownMenuLabel>Panels</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem checked>Files</DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem checked>Changes</DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem checked={false}>
-            Terminal
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem disabled checked={false}>
-            Resources
-          </DropdownMenuCheckboxItem>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Panels</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem closeOnClick checked>
+              Files
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem closeOnClick checked>
+              Changes
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem closeOnClick checked={false}>
+              Terminal
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem closeOnClick disabled checked={false}>
+              Resources
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Model</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value="claude-opus-4">
-            {models.map((model) => (
-              <DropdownMenuRadioItem key={model.id} value={model.id}>
-                {model.label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Model</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value="claude-opus-4">
+              {models.map((model) => (
+                <DropdownMenuRadioItem
+                  closeOnClick
+                  key={model.id}
+                  value={model.id}
+                >
+                  {model.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -116,10 +132,8 @@ export const Submenu = {
   render: () => (
     <div className="h-72">
       <DropdownMenu defaultOpen modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            Move thread
-          </Button>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+          Move thread
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-52">
           <DropdownMenuItem inset>Duplicate</DropdownMenuItem>
@@ -136,10 +150,12 @@ export const Submenu = {
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel inset>Danger zone</DropdownMenuLabel>
-          <DropdownMenuItem inset variant="destructive">
-            Delete
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel inset>Danger zone</DropdownMenuLabel>
+            <DropdownMenuItem inset variant="destructive">
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -149,8 +165,8 @@ export const Submenu = {
 export const Closed = {
   render: () => (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline">Open menu</Button>
+      <DropdownMenuTrigger render={<Button variant="outline" />}>
+        Open menu
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuItem>Rename</DropdownMenuItem>

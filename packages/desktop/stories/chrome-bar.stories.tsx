@@ -26,10 +26,16 @@ export const Default = {
             <PanelLeftIcon />
           </Button>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="icon-sm" variant="ghost" aria-label="New thread">
-                <PlusIcon />
-              </Button>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="New thread"
+                />
+              }
+            >
+              <PlusIcon />
             </TooltipTrigger>
             <TooltipContent>New thread</TooltipContent>
           </Tooltip>

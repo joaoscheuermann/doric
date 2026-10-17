@@ -50,7 +50,7 @@ describe('the platform import map', () => {
     }
   });
 
-  test('serves exactly React, ReactDOM, Lexical, desktop/ui, zod and bundle/contracts', () => {
+  test('serves exactly React, ReactDOM, Lexical, Base UI, desktop/ui, zod and bundle/contracts', () => {
     const roots = new Set(
       Object.keys(imports).map((specifier) => {
         const parts = specifier.split('/');
@@ -59,9 +59,15 @@ describe('the platform import map', () => {
     );
     for (const root of roots) {
       assert.ok(
-        ['react', 'react-dom', 'lexical', 'desktop', 'zod', 'bundle'].includes(
-          root,
-        ) || root.startsWith('@lexical/'),
+        [
+          'react',
+          'react-dom',
+          'lexical',
+          '@base-ui/react',
+          'desktop',
+          'zod',
+          'bundle',
+        ].includes(root) || root.startsWith('@lexical/'),
         `unexpected platform package ${root}`,
       );
     }
@@ -72,6 +78,10 @@ describe('the platform import map', () => {
       'react-dom',
       'react-dom/client',
       'lexical',
+      '@base-ui/react',
+      '@base-ui/react/popover',
+      '@base-ui/react/use-render',
+      '@base-ui/react/merge-props',
       'zod',
       'bundle/contracts',
       'desktop/ui',
@@ -104,6 +114,10 @@ describe('the platform import map', () => {
       `${prefix}lexical@${version('lexical')}/index.js`,
     );
     assert.equal(imports.zod, `${prefix}zod@${version('zod')}/index.js`);
+    assert.equal(
+      imports['@base-ui/react/popover'],
+      `${prefix}@base-ui/react@${version('@base-ui/react')}/popover.js`,
+    );
     assert.equal(
       imports['bundle/contracts'],
       `${prefix}bundle@1.0.0/contracts.js`,
@@ -140,6 +154,64 @@ describe('the platform import map', () => {
           (key) => key === name || key.startsWith(`${name}/`),
         ),
         `${name} is not mapped`,
+      );
+    }
+  });
+
+  test('maps every Base UI specifier desktop/ui and the client bundles import', () => {
+    const bundles = join(workspace, 'bundles');
+    const sources = [
+      join(workspace, 'packages/desktop/src'),
+      ...readdirSync(bundles)
+        .flatMap((group) =>
+          statSync(join(bundles, group)).isDirectory()
+            ? readdirSync(join(bundles, group)).map((name) =>
+                join(bundles, group, name, 'src/client'),
+              )
+            : [],
+        )
+        .filter((dir) => existsSync(dir)),
+    ];
+    const used = new Set(
+      sources
+        .flatMap((dir) => filesUnder(dir))
+        .filter((path) => /\.tsx?$/.test(path))
+        .flatMap((path) => bareImports(readFileSync(path, 'utf8')))
+        .filter(
+          (specifier) =>
+            specifier === '@base-ui/react' ||
+            specifier.startsWith('@base-ui/react/'),
+        ),
+    );
+    assert.ok(used.size > 0);
+    for (const specifier of used) {
+      assert.ok(specifier in imports, `${specifier} is not mapped`);
+    }
+  });
+
+  test('serves every subpath Base UI exports but one whose code needs a package the workspace does not install', async () => {
+    const exported = Object.keys(
+      manifest(join(workspace, 'node_modules/@base-ui/react/package.json'))
+        .exports,
+    )
+      .filter((key) => key !== './package.json')
+      .map((key) =>
+        key === '.' ? '@base-ui/react' : `@base-ui/react/${key.slice(2)}`,
+      );
+    for (const specifier of exported.filter((name) => !(name in imports))) {
+      await assert.rejects(
+        esbuild.build({
+          entryPoints: [specifier],
+          absWorkingDir: workspace,
+          bundle: true,
+          write: false,
+          format: 'esm',
+          platform: 'browser',
+          external: ['react', 'react/*', 'react-dom', 'react-dom/*'],
+          logLevel: 'silent',
+        }),
+        /Could not resolve/,
+        `${specifier} is buildable but not mapped`,
       );
     }
   });
@@ -228,11 +300,17 @@ describe('a window module loaded through the map', () => {
   );
 
   test('renders a desktop/ui Button from a component using hooks, so one React instance serves both', () => {
-    assert.match(
-      report.button,
-      /^<button data-slot="button" data-variant="secondary"/,
-    );
+    assert.match(report.button, /^<button\b[^>]*\bdata-slot="button"/);
     assert.match(report.button, />Count 3<\/button>$/);
+  });
+
+  test('shares one Base UI between the module and desktop/ui: a desktop/ui Toggle reads the group the module renders', () => {
+    assert.deepEqual(
+      [...report.toggles.matchAll(/aria-pressed="(true|false)"/g)].map(
+        (match) => match[1],
+      ),
+      ['true', 'false'],
+    );
   });
 
   test('runs Lexical and the React composer context against the same lexical instance', () => {

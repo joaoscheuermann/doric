@@ -39,17 +39,15 @@ export function TerminalRows({
     >
       <TreeGuides depth={depth} />
       <SidebarMenuSubButton
-        asChild
         size="sm"
         className="h-7 w-full translate-x-0 rounded-none pr-8"
         style={{ paddingLeft: indentation(depth) }}
         onClick={() => onOpen?.(terminal)}
         title={terminalLabel(terminal, now)}
+        render={<button type="button" />}
       >
-        <button type="button">
-          <TerminalIcon />
-          <span className="truncate">{terminalLabel(terminal, now)}</span>
-        </button>
+        <TerminalIcon />
+        <span className="truncate">{terminalLabel(terminal, now)}</span>
       </SidebarMenuSubButton>
       <Button
         variant="ghost"

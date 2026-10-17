@@ -10,10 +10,11 @@
 //
 // The rule is agnostic to the Project: whatever its stories are, the preview
 // renders them in isolation from the Project's own code. The window shares
-// only the React and ReactDOM `mount` renders with; the host provisions only
-// the UI libraries step 4 names (and, in `css.ts`, Tailwind and a generic
-// theme the harness's CSS replaces); everything else is the Project's, read
-// from its files and its `node_modules`. Nothing is special to any Project:
+// only the React and ReactDOM `mount` renders with and Base UI, one instance
+// per window like React; the host provisions only the UI library step 4
+// names (and, in `css.ts`, Tailwind and a generic theme the harness's CSS
+// replaces); everything else is the Project's, read from its files and its
+// `node_modules`. Nothing is special to any Project:
 // when it is Doric itself, its `desktop/ui` and `bundle/contracts` are Project
 // code like any other, so a component it edits or adds previews as the
 // Project has it. No specifier is refused for what it is: the module already
@@ -21,8 +22,13 @@
 // bridge call and the CSP are the boundary, so a refusal would protect
 // nothing. What cannot run in a window fails, naming the import.
 //
-// 1. The shared runtime (`previewExternals`) stays external and resolves in
-//    the window. A stylesheet never does: a window cannot import CSS as a
+// 1. What the window shares stays external and resolves through its import
+//    map: React and ReactDOM by the exact specifiers `previewExternals`
+//    lists, and each specifier of a `WINDOW_PACKAGES` package (Base UI) the
+//    map serves — every subpath the package exports whose code builds, which
+//    the host asks of its own copy once per specifier. A CommonJS `require`
+//    of one gets an ESM re-export, so it stays the window's instance. A
+//    stylesheet never stays external: a window cannot import CSS as a
 //    module, so it resolves like any other Project import and compiles into
 //    `index.css`.
 // 2. Node built-ins do not exist in a window: they fail the build with a
@@ -32,10 +38,9 @@
 //    (`x.ts`, `x.tsx`), an extensionless import tries `.tsx/.ts/.jsx/.js`
 //    and then `index.*`.
 // 4. Bare packages the host itself ships for previews (`HOST_PACKAGES`:
-//    `lucide-react`, and `radix-ui`, the umbrella the shared components
-//    import every primitive through) are bundled from the host's own
-//    `node_modules`: their per-file layout is too many sandbox reads, and the
-//    window's import map does not serve them.
+//    `lucide-react`) are bundled from the host's own `node_modules`: their
+//    per-file layout is too many sandbox reads, and the window's import map
+//    does not serve them.
 // 5. Any other bare package is resolved in the Project's `node_modules`
 //    through the sandbox (`exports` by the nearest tsconfig's
 //    `customConditions`, then the default conditions; then `module`, then
@@ -122,8 +127,9 @@ export const MAX_SOURCE_BYTES_TOTAL = 8 * 1_048_576;
 
 /**
  * What a preview leaves to the window: the React its `mount` renders with, by
- * the exact specifiers the window's import map serves it under. Everything
- * else is the Project's.
+ * the exact specifiers the window's import map serves it under. Besides
+ * these, only the `WINDOW_PACKAGES` are the window's; everything else is the
+ * Project's.
  */
 export const previewExternals: readonly string[] = [
   'react',
@@ -134,11 +140,23 @@ export const previewExternals: readonly string[] = [
 ];
 
 /**
+ * Packages the window shares by every specifier its import map serves: Base
+ * UI, whose contexts the Project's components and the app's must share. The
+ * map serves each subpath the package exports whose code the platform can
+ * bundle from its install, so one that needs a package nobody installed (the
+ * `date-fns` and Luxon temporal adapters) is not the window's.
+ */
+export const WINDOW_PACKAGES: readonly string[] = ['@base-ui/react'];
+
+/**
  * Bare packages bundled from the host's own `node_modules` rather than the
  * sandbox: UI packages the app's own code uses that the import map does not
  * serve, whose per-file ESM layout would cost hundreds of sandbox reads.
  */
-export const HOST_PACKAGES: readonly string[] = ['lucide-react', 'radix-ui'];
+export const HOST_PACKAGES: readonly string[] = ['lucide-react'];
+
+/** What the window shares, as a failure names it. */
+const WINDOW_SHARES = `${previewExternals.join(', ')} and the ${WINDOW_PACKAGES.join(', ')} entrypoints its import map serves`;
 
 const SOURCE_NS = 'papercraft-source';
 const ENTRY_NS = 'papercraft-entry';
@@ -401,6 +419,42 @@ const sourceCache = (read: SourceReader) => {
 /** The directory esbuild resolves `HOST_PACKAGES` from: this module's own. */
 const hostResolveDir = (): string => dirname(fileURLToPath(import.meta.url));
 
+/** Starts one esbuild build: the `build` the compile loaded on demand. */
+type Build = (options: BuildOptions) => Promise<unknown>;
+
+const windowServed = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether the window's import map serves a specifier of a `WINDOW_PACKAGES`
+ * package: whether the host's own copy bundles it, with the React the window
+ * serves left out, as the platform's build bundles it from its install (the
+ * map lists no `package.json`). Asked once per specifier for the host's life.
+ */
+const windowServes = (build: Build, specifier: string): Promise<boolean> => {
+  let served = windowServed.get(specifier);
+
+  if (served === undefined) {
+    served = specifier.endsWith('/package.json')
+      ? Promise.resolve(false)
+      : build({
+          entryPoints: [specifier],
+          absWorkingDir: hostResolveDir(),
+          bundle: true,
+          write: false,
+          format: 'esm',
+          platform: 'browser',
+          external: [...previewExternals],
+          logLevel: 'silent',
+        }).then(
+          () => true,
+          () => false,
+        );
+    windowServed.set(specifier, served);
+  }
+
+  return served;
+};
+
 /**
  * The esbuild plugin that reads the Project through the sandbox and keeps the
  * window's import map external. `loaded` collects the Project files the build
@@ -417,6 +471,8 @@ const sandboxPlugin = (input: {
   readonly loaded: Map<string, string>;
   /** The Project stylesheets this build imported, in import order. */
   readonly css: Set<string>;
+  /** Whether the window serves a `WINDOW_PACKAGES` specifier. */
+  readonly windowServes: (specifier: string) => Promise<boolean>;
 }): Plugin => ({
   name: 'papercraft-sandbox',
   setup(context) {
@@ -540,8 +596,12 @@ const sandboxPlugin = (input: {
         return { path: args.path, namespace: JSX_NS };
       }
 
-      // The React `mount` renders with is the window's.
-      if (previewExternals.includes(args.path)) {
+      // The React `mount` renders with, and Base UI, are the window's.
+      if (
+        previewExternals.includes(args.path) ||
+        (WINDOW_PACKAGES.includes(packageOf(args.path)) &&
+          (await input.windowServes(args.path)))
+      ) {
         // A bundled CommonJS module that `require`s an external gets an ESM
         // re-export of it, so the external stays the window's one instance.
         return args.kind === 'require-call' && args.namespace !== REQUIRE_NS
@@ -611,7 +671,7 @@ const sandboxPlugin = (input: {
         ? {
             errors: [
               {
-                text: `Cannot resolve "${args.path}" from "${importer}": it is not in the Project's node_modules (the window only shares ${previewExternals.join(', ')}). Stub it in the preview wrapper.`,
+                text: `Cannot resolve "${args.path}" from "${importer}": it is not in the Project's node_modules (the window only shares ${WINDOW_SHARES}). Stub it in the preview wrapper.`,
               },
             ],
           }
@@ -901,6 +961,7 @@ export const compileComponent = async (
         aliases,
         conditions,
         loaded,
+        windowServes: (specifier) => windowServes(build, specifier),
       }),
     ],
   });

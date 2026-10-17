@@ -98,6 +98,12 @@ const columnHelper = createColumnHelper<DataTableFeatures, CatalogRow>();
 /** How many rows a page holds, in the order the control offers them. */
 const pageSizes = [10, 20, 50];
 
+/** The page sizes under the names the control and its trigger show them. */
+const pageSizeItems = pageSizes.map((size) => ({
+  label: `${size} rows`,
+  value: String(size),
+}));
+
 /** What a column is called, in its header and in the visibility menu alike. */
 const columnTitle = <TValue,>(
   column: Column<DataTableFeatures, CatalogRow, TValue>,
@@ -310,10 +316,10 @@ export function ProviderModelsTable({
           {offered.length} offered of {data.length}
         </span>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="ml-auto">
-              Columns
-            </Button>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="ml-auto" />}
+          >
+            Columns
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>
@@ -323,6 +329,7 @@ export function ProviderModelsTable({
                 .map((column) => (
                   <DropdownMenuCheckboxItem
                     key={column.id}
+                    closeOnClick
                     checked={column.getIsVisible()}
                     onCheckedChange={(value) =>
                       column.toggleVisibility(!!value)
@@ -385,8 +392,11 @@ export function ProviderModelsTable({
         </p>
         <div className="flex items-center gap-2">
           <Select
+            items={pageSizeItems}
             value={String(table.state.pagination.pageSize)}
-            onValueChange={(value) => table.setPageSize(Number(value))}
+            onValueChange={(value) => {
+              if (value !== null) table.setPageSize(Number(value));
+            }}
           >
             <SelectTrigger
               size="sm"
@@ -397,9 +407,9 @@ export function ProviderModelsTable({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {pageSizes.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} rows
+                {pageSizeItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectGroup>

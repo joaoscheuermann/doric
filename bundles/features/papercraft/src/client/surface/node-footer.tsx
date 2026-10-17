@@ -33,16 +33,18 @@ function Control({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size={icon ? 'icon-sm' : 'sm'}
-          aria-label={label}
-          data-testid={testId}
-          onClick={onClick}
-        >
-          {children}
-        </Button>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size={icon ? 'icon-sm' : 'sm'}
+            aria-label={label}
+            data-testid={testId}
+            onClick={onClick}
+          />
+        }
+      >
+        {children}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

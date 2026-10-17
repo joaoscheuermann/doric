@@ -154,35 +154,37 @@ function ResourceControl({ model }: { readonly model: ResourceControlModel }) {
   return (
     <Popover>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="min-w-0 shrink gap-1.5"
-              aria-label={ariaLabel}
-            >
-              <span
-                className={cn(
-                  'min-w-0 truncate tabular-nums',
-                  model.memoryWarning
-                    ? 'text-warning'
-                    : 'text-muted-foreground',
-                )}
-              >
-                {model.memory}
-              </span>
-              <span className="text-muted-foreground">·</span>
-              <span
-                className={cn(
-                  'min-w-0 truncate tabular-nums',
-                  model.cpuWarning ? 'text-warning' : 'text-muted-foreground',
-                )}
-              >
-                {model.cpu}
-              </span>
-            </Button>
-          </PopoverTrigger>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="min-w-0 shrink gap-1.5"
+                  aria-label={ariaLabel}
+                />
+              }
+            />
+          }
+        >
+          <span
+            className={cn(
+              'min-w-0 truncate tabular-nums',
+              model.memoryWarning ? 'text-warning' : 'text-muted-foreground',
+            )}
+          >
+            {model.memory}
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span
+            className={cn(
+              'min-w-0 truncate tabular-nums',
+              model.cpuWarning ? 'text-warning' : 'text-muted-foreground',
+            )}
+          >
+            {model.cpu}
+          </span>
         </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>

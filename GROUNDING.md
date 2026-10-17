@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-16
+Last reviewed: 2026-10-17
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -59,8 +59,8 @@ define hooks of its own so that other bundles can modify its behavior. The
 host is the source of truth for installed bundles and the composition, which
 names one core bundle activated first; the desktop downloads and verifies
 bundle artifacts during the splash and serves them from a single
-`doric://app` origin, with React, Lexical, the shadcn components, Tailwind and
-theme tokens provided as shared platform packages. Client bundles may own
+`doric://app` origin, with React, Base UI, Lexical, the shadcn components,
+Tailwind and theme tokens provided as shared platform packages. Client bundles may own
 React-backed Web Components, while Electron creates the actual windows and
 keeps the preload and IPC boundary.
 On 2026-10-08 the user approved, as the target of that proposal, one process
@@ -118,8 +118,9 @@ windows load the shell built by `app/desktop/doric-renderer`, which since migrat
 stage 9 only boots the client bundles; the UI described below is drawn by the
 `layout`, `chat` and `settings` client bundles, the feature bundles' client parts
 that `layout` hosts, and the core's outlet, using
-Tailwind CSS and the shadcn/ui components and Radix primitives of
-`packages/desktop`. Where this section says "the renderer", it means those
+Tailwind CSS and the shadcn/ui components of `packages/desktop`, built on Base
+UI (`@base-ui/react`) primitives; on 2026-10-17 the user replaced Radix with
+Base UI across the app. Where this section says "the renderer", it means those
 bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
@@ -970,21 +971,24 @@ agent to answer with `comment_reply` and resolve when done. Every window call ca
 Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
 `runtime.threads/v1` are optional. A `component` source is compiled on the
 host (path B): esbuild bundles the entry, reading Project files through
-`files/v1`, leaves external only the React `mount` renders with (`react`,
-`react/jsx-runtime`, `react/jsx-dev-runtime`, `react-dom`, `react-dom/client`,
-which the window shares), wraps the chosen export (`entry`, else
+`files/v1`, leaves external only what the window shares: the React `mount`
+renders with (`react`, `react/jsx-runtime`, `react/jsx-dev-runtime`,
+`react-dom`, `react-dom/client`) and each `@base-ui/react` specifier the
+window's import map serves (the host checks once per specifier that its own
+copy bundles with React external, as the platform build does), wraps the chosen export (`entry`, else
 `default`, else the single PascalCase export) in `mount(root, { theme })`, and
 compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
 markup), `index.js` and `index.css`, and a compile error fails the call before
 anything is published. The preview is agnostic to the Project: besides that
-React, the host provisions only `radix-ui` and `lucide-react` (bundled from
+React and Base UI, the host provisions only `lucide-react` (bundled from
 the host's own `node_modules`, whose per-file layout would cost too many
 sandbox reads) and, in the sheet, Tailwind and a generic theme; every other
 import is Project code, read from its files and `node_modules` and bundled,
 resolving packages by the nearest tsconfig's `customConditions` (a workspace
 package to its source) and honouring a subpath folder's own `package.json`.
 Nothing is special to Doric: when the Project is Doric, its `desktop/ui`,
-`bundle/contracts`, `<id>/contracts`, zod and Lexical are Project code too, so
+`bundle/contracts`, `<id>/contracts`, zod, Lexical and `radix-ui` are Project
+code too, so
 a component it edits or adds previews as the Project has it. No import is
 refused for what it names: the module
 already runs in the app window's realm, where main's checks on every bridge
@@ -1050,8 +1054,8 @@ and providers with fixtures instead of a live host, and are typechecked by the
 package's client (or spec) tsconfig. A story compiles in papercraft under the
 general rule above, whatever platform package its code reaches, within the
 read budget: today the stories that reach `monaco-editor` (`desktop/ui/code`)
-or `@base-ui/react` (the combobox) read more than the budget allows from the
-sandbox and fail naming it, a known limit.
+read more than the budget allows from the sandbox and fail naming it, a known
+limit.
 
 `/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.
@@ -1279,7 +1283,13 @@ container the nearest `PortalContainerProvider` (`desktop/ui/portal-container`,
 also exported by `desktop/ui`) names, else into `document.body`, while a
 `container` passed to a `*Portal` wins; `desktop/client` runs the window;
 `desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
-window-main API. `app/desktop/doric-platform` builds the platform files and import map.
+window-main API. `app/desktop/doric-platform` builds the platform files and
+import map (React, ReactDOM, Lexical, Base UI, zod, `desktop/ui` and
+`bundle/contracts`); Base UI (`@base-ui/react` and each exported subpath) is
+served once per window like React, so `desktop/ui`, client parts and
+Papercraft previews share one instance, and an ESM package's subpath whose
+code imports a package the workspace does not install (Base UI's date-fns and
+Luxon adapters) is left out of the map, and the build names it.
 The CSP adds `worker-src 'self'` and the import
 map's script hash, and carves out no frame origin: no window frames a foreign
 origin any more, so frames fall back to the default source. The renderer's local storage, including the selected Thread,

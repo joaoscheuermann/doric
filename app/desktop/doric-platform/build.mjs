@@ -266,6 +266,67 @@ const cjsNames = (source) => {
   }
 };
 
+const probing = Symbol('probing');
+
+/**
+ * Leaves a bare import the workspace cannot resolve external and records it
+ * in `missing`, so an ESM package's build can tell which of its subpaths need
+ * a package that is not installed (an optional peer, such as the `date-fns`
+ * and `luxon` behind Base UI's temporal adapters) instead of failing.
+ */
+const missingPackages = (missing) => ({
+  name: 'missing-packages',
+  setup(build) {
+    build.onResolve({ filter: /.*/ }, async (args) => {
+      if (args.kind === 'entry-point' || args.pluginData === probing) {
+        return undefined;
+      }
+      if (!isBare(args.path)) return undefined;
+      const resolved = await build.resolve(args.path, {
+        kind: args.kind,
+        importer: args.importer,
+        namespace: args.namespace,
+        resolveDir: args.resolveDir,
+        pluginData: probing,
+      });
+      if (resolved.errors.length === 0) return undefined;
+      missing.add(args.path);
+      return { path: args.path, external: true };
+    });
+  },
+});
+
+/** The package a bare specifier names: `@scope/name` or `name`. */
+const packageName = (specifier) =>
+  specifier
+    .split('/')
+    .slice(0, specifier.startsWith('@') ? 2 : 1)
+    .join('/');
+
+/**
+ * The entries of a build whose module graph reaches one of the `missing`
+ * imports, read from its metafile.
+ */
+const entriesNeeding = (group, outdir, metafile, missing) => {
+  const reaches = (input, seen) => {
+    if (seen.has(input)) return false;
+    seen.add(input);
+    return (metafile.inputs[input]?.imports ?? []).some((imported) =>
+      imported.external
+        ? missing.has(imported.path)
+        : reaches(imported.path, seen),
+    );
+  };
+  return group.entries.filter((entry) => {
+    const output = relative(workspace, join(outdir, entry.file)).replaceAll(
+      '\\',
+      '/',
+    );
+    const input = metafile.outputs[output]?.entryPoint;
+    return input !== undefined && reaches(input, new Set());
+  });
+};
+
 const cjsEntry = {
   name: 'cjs-entry',
   setup(build) {
@@ -360,25 +421,27 @@ const copyLicenses = async (group, metafile) => {
   }
 };
 
-const buildGroup = async (group) => {
-  const outdir = join(platformOut, group.dir);
-  const entryPoints = group.entries
-    .filter(
-      (entry, index, all) =>
-        all.findIndex((other) => other.file === entry.file) === index,
-    )
-    .map((entry) => ({
-      in: group.kind === 'cjs' ? `cjs-entry:${entry.source}` : entry.source,
-      out: entry.file.slice(0, -'.js'.length),
-    }));
-  const result = await esbuild.build({
+const bundleGroup = (group, outdir, missing) =>
+  esbuild.build({
     ...common,
-    entryPoints,
+    entryPoints: group.entries
+      .filter(
+        (entry, index, all) =>
+          all.findIndex((other) => other.file === entry.file) === index,
+      )
+      .map((entry) => ({
+        in: group.kind === 'cjs' ? `cjs-entry:${entry.source}` : entry.source,
+        out: entry.file.slice(0, -'.js'.length),
+      })),
     outdir,
     platform: group.kind === 'contracts' ? 'neutral' : 'browser',
     mainFields: group.kind === 'contracts' ? [] : ['browser', 'module', 'main'],
     jsx: 'automatic',
-    plugins: [platformExternals, cjsEntry],
+    plugins: [
+      platformExternals,
+      cjsEntry,
+      ...(group.kind === 'esm' ? [missingPackages(missing)] : []),
+    ],
     // Monaco's stylesheets name the codicon face; it ships beside the files.
     ...(group.kind === 'ui'
       ? {
@@ -387,6 +450,35 @@ const buildGroup = async (group) => {
         }
       : {}),
   });
+
+/**
+ * Builds one group. A subpath of an ESM package whose code imports a package
+ * the workspace does not install cannot load in a window, so the map leaves
+ * it out: the group is built again without it, and the groups built after it
+ * (`bundle/contracts` and `desktop/ui`) no longer keep it external.
+ */
+const buildGroup = async (group) => {
+  const outdir = join(platformOut, group.dir);
+  const missing = new Set();
+  let result = await bundleGroup(group, outdir, missing);
+  const unservable = entriesNeeding(group, outdir, result.metafile, missing);
+  if (unservable.length > 0) {
+    console.log(
+      `doric-platform: ${group.dir} leaves out ${unservable.map((entry) => entry.specifier).join(', ')}: they import ${[...new Set([...missing].map(packageName))].sort().join(', ')}, which the workspace does not install.`,
+    );
+    group.entries = group.entries.filter(
+      (entry) => !unservable.includes(entry),
+    );
+    for (const entry of unservable) platformSpecifiers.delete(entry.specifier);
+    await rm(outdir, { recursive: true, force: true });
+    missing.clear();
+    result = await bundleGroup(group, outdir, missing);
+  }
+  if (missing.size > 0) {
+    throw new Error(
+      `${group.dir}: imports ${[...missing].join(', ')}, which the workspace does not install.`,
+    );
+  }
   const emitted = new Set(
     Object.keys(result.metafile.outputs).map((path) =>
       relative(outdir, resolve(workspace, path)).replaceAll('\\', '/'),

@@ -98,7 +98,6 @@ export function FileTree({
             <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
               <TreeGuides depth={depth} />
               <SidebarMenuButton
-                asChild
                 isActive={selected}
                 size="sm"
                 className={cn(
@@ -106,63 +105,64 @@ export function FileTree({
                   rowInteraction(selected),
                 )}
                 style={{ paddingLeft: indentation(depth) }}
-              >
-                <div
-                  role="treeitem"
-                  tabIndex={0}
-                  aria-expanded={directory ? open : undefined}
-                  aria-selected={selected}
-                  aria-label={
-                    decoration === undefined
-                      ? entry.name
-                      : `${entry.name}, ${decoration.description}`
-                  }
-                  title={
-                    decoration === undefined
-                      ? entry.path
-                      : `${entry.path}\n${decoration.description}`
-                  }
-                  onClick={activate}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      activate();
-                    } else if (
-                      event.key === 'ArrowRight' &&
-                      directory &&
-                      !open
-                    ) {
-                      event.preventDefault();
-                      actions.toggle(entry.path);
-                    } else if (event.key === 'ArrowLeft' && open) {
-                      event.preventDefault();
-                      actions.toggle(entry.path);
+                render={
+                  <div
+                    role="treeitem"
+                    tabIndex={0}
+                    aria-expanded={directory ? open : undefined}
+                    aria-selected={selected}
+                    aria-label={
+                      decoration === undefined
+                        ? entry.name
+                        : `${entry.name}, ${decoration.description}`
                     }
-                  }}
-                >
-                  {directory && (
-                    <ChevronRightIcon
-                      aria-hidden
-                      className={cn(
-                        'transition-transform duration-[50ms] ease-out',
-                        open ? 'rotate-90' : 'rotate-0',
-                      )}
-                    />
-                  )}
-                  {directory ? <FolderIcon /> : <FileIcon />}
-                  <span
+                    title={
+                      decoration === undefined
+                        ? entry.path
+                        : `${entry.path}\n${decoration.description}`
+                    }
+                    onClick={activate}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        activate();
+                      } else if (
+                        event.key === 'ArrowRight' &&
+                        directory &&
+                        !open
+                      ) {
+                        event.preventDefault();
+                        actions.toggle(entry.path);
+                      } else if (event.key === 'ArrowLeft' && open) {
+                        event.preventDefault();
+                        actions.toggle(entry.path);
+                      }
+                    }}
+                  />
+                }
+              >
+                {directory && (
+                  <ChevronRightIcon
+                    aria-hidden
                     className={cn(
-                      'min-w-0 flex-1 truncate',
-                      decoration?.tone !== undefined && decoration.tone,
-                      decoration?.tone !== undefined
-                        ? 'font-normal'
-                        : 'font-light',
-                      !directory && decoration?.struck && 'line-through',
+                      'transition-transform duration-[50ms] ease-out',
+                      open ? 'rotate-90' : 'rotate-0',
                     )}
-                  >
-                    {entry.name}
-                  </span>
-                </div>
+                  />
+                )}
+                {directory ? <FolderIcon /> : <FileIcon />}
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate',
+                    decoration?.tone !== undefined && decoration.tone,
+                    decoration?.tone !== undefined
+                      ? 'font-normal'
+                      : 'font-light',
+                    !directory && decoration?.struck && 'line-through',
+                  )}
+                >
+                  {entry.name}
+                </span>
               </SidebarMenuButton>
               {decoration !== undefined && (
                 <SidebarMenuBadge className="z-10 bg-sidebar/90">

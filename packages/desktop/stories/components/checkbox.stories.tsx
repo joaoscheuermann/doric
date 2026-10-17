@@ -27,7 +27,7 @@ export const States = {
         <Label htmlFor="checked">Checked</Label>
       </div>
       <div className="flex items-center gap-2">
-        <Checkbox id="indeterminate" checked="indeterminate" />
+        <Checkbox id="indeterminate" indeterminate />
         <Label htmlFor="indeterminate">Indeterminate</Label>
       </div>
       <div className="flex items-center gap-2">

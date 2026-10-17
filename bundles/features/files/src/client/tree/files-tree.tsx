@@ -249,7 +249,7 @@ const FilesView = memo(function FilesView({
   }
 
   return (
-    <ScrollArea className="min-h-0 w-full flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden! [&>[data-slot=scroll-area-viewport]>div]:block! [&>[data-slot=scroll-area-viewport]>div]:w-full [&>[data-slot=scroll-area-viewport]>div]:min-w-0">
+    <ScrollArea className="min-h-0 w-full flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden!">
       <SidebarMenu role="tree" className="w-full gap-0 py-1">
         <FileTree
           actions={actions}

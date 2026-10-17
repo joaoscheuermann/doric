@@ -59,44 +59,44 @@ export const ChangesTree = memo(function ChangesTree({
     <SidebarMenuItem role="presentation" className="w-full min-w-0">
       <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
         <SidebarMenuButton
-          asChild
           size="sm"
           className={cn(
             'h-7 w-full min-w-0 rounded-none pr-8',
             rowInteraction(false),
           )}
           style={{ paddingLeft: indentation(0) }}
-        >
-          <div
-            role="treeitem"
-            tabIndex={0}
-            aria-expanded={open}
-            aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
-            title={repository.path || 'Workspace repository'}
-            onClick={() => onToggle(key)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onToggle(key);
-              } else if (event.key === 'ArrowRight' && !open) {
-                event.preventDefault();
-                onToggle(key);
-              } else if (event.key === 'ArrowLeft' && open) {
-                event.preventDefault();
-                onToggle(key);
-              }
-            }}
-          >
-            <ChevronRightIcon
-              aria-hidden
-              className={cn(
-                'transition-transform duration-[50ms] ease-out',
-                open ? 'rotate-90' : 'rotate-0',
-              )}
+          render={
+            <div
+              role="treeitem"
+              tabIndex={0}
+              aria-expanded={open}
+              aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
+              title={repository.path || 'Workspace repository'}
+              onClick={() => onToggle(key)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onToggle(key);
+                } else if (event.key === 'ArrowRight' && !open) {
+                  event.preventDefault();
+                  onToggle(key);
+                } else if (event.key === 'ArrowLeft' && open) {
+                  event.preventDefault();
+                  onToggle(key);
+                }
+              }}
             />
-            <GitBranchIcon />
-            <span className="min-w-0 flex-1 truncate font-light">{label}</span>
-          </div>
+          }
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              'transition-transform duration-[50ms] ease-out',
+              open ? 'rotate-90' : 'rotate-0',
+            )}
+          />
+          <GitBranchIcon />
+          <span className="min-w-0 flex-1 truncate font-light">{label}</span>
         </SidebarMenuButton>
         <SidebarMenuBadge className="z-10 bg-sidebar/90">
           <Badge variant="ghost" className="px-1" aria-hidden>

@@ -16,11 +16,13 @@ function ColorRow({ initial }: { readonly initial?: ProjectColor }) {
   return (
     <OpenContextMenu>
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="flex h-7 w-60 items-center gap-2 bg-sidebar px-3 text-xs text-sidebar-foreground">
-            <ProjectAvatar color={color} />
-            Checkout redesign
-          </div>
+        <ContextMenuTrigger
+          render={
+            <div className="flex h-7 w-60 items-center gap-2 bg-sidebar px-3 text-xs text-sidebar-foreground" />
+          }
+        >
+          <ProjectAvatar color={color} />
+          Checkout redesign
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ProjectColorMenu value={color} onSelect={setColor} />

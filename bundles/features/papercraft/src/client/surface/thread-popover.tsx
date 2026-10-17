@@ -109,17 +109,19 @@ function MoreMenu({
 }) {
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={label}
-          title={label}
-          data-testid={testId}
-          className={className}
-        >
-          <EllipsisIcon aria-hidden="true" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={label}
+            title={label}
+            data-testid={testId}
+            className={className}
+          />
+        }
+      >
+        <EllipsisIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-40">
         <DropdownMenuGroup>
@@ -127,7 +129,7 @@ function MoreMenu({
             <DropdownMenuItem
               key={item.label}
               data-testid={item.testId}
-              onSelect={item.onSelect}
+              onClick={item.onSelect}
             >
               {item.label}
             </DropdownMenuItem>

@@ -78,17 +78,19 @@ export function ThreadBreadcrumb({
             </BreadcrumbItem>
           ) : (
             <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <button
-                  type="button"
-                  onClick={() => onSelectProject(project)}
-                  className="flex max-w-48 items-center gap-2"
-                >
-                  <CrumbLabel
-                    mark={<ProjectAvatar color={project.color} />}
-                    name={project.name}
+              <BreadcrumbLink
+                render={
+                  <button
+                    type="button"
+                    onClick={() => onSelectProject(project)}
+                    className="flex max-w-48 items-center gap-2"
                   />
-                </button>
+                }
+              >
+                <CrumbLabel
+                  mark={<ProjectAvatar color={project.color} />}
+                  name={project.name}
+                />
               </BreadcrumbLink>
             </BreadcrumbItem>
           ))}
@@ -96,14 +98,16 @@ export function ThreadBreadcrumb({
           <Fragment key={thread.id}>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <button
-                  type="button"
-                  onClick={() => onSelectThread(thread)}
-                  className="flex max-w-48 items-center gap-2"
-                >
-                  <CrumbLabel mark={<ThreadMark />} name={thread.name} />
-                </button>
+              <BreadcrumbLink
+                render={
+                  <button
+                    type="button"
+                    onClick={() => onSelectThread(thread)}
+                    className="flex max-w-48 items-center gap-2"
+                  />
+                }
+              >
+                <CrumbLabel mark={<ThreadMark />} name={thread.name} />
               </BreadcrumbLink>
             </BreadcrumbItem>
           </Fragment>

@@ -193,19 +193,21 @@ function ContextPopover({
       </div>
       <Separator />
       <Collapsible open={breakdown} onOpenChange={setBreakdown}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            size="xs"
-            className="h-7 w-full justify-start gap-1 rounded-none px-3 font-normal"
-          >
-            Context Breakdown
-            {breakdown ? (
-              <ChevronsDownUpIcon data-icon="inline-end" />
-            ) : (
-              <ChevronsUpDownIcon data-icon="inline-end" />
-            )}
-          </Button>
+        <CollapsibleTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="xs"
+              className="h-7 w-full justify-start gap-1 rounded-none px-3 font-normal"
+            />
+          }
+        >
+          Context Breakdown
+          {breakdown ? (
+            <ChevronsDownUpIcon data-icon="inline-end" />
+          ) : (
+            <ChevronsUpDownIcon data-icon="inline-end" />
+          )}
         </CollapsibleTrigger>
         <CollapsibleContent>
           <dl className="flex flex-col gap-1 bg-muted/40 px-3 py-2 text-[11px] leading-4 tabular-nums">
@@ -280,10 +282,16 @@ export function ThreadUsage({
       <ToolbarDivider />
       {source === undefined ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="sm" aria-label="Context window usage">
-              {contextLabel(context)}
-            </Button>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Context window usage"
+              />
+            }
+          >
+            {contextLabel(context)}
           </TooltipTrigger>
           <TooltipContent>
             {query.isError
@@ -293,10 +301,16 @@ export function ThreadUsage({
         </Tooltip>
       ) : (
         <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" aria-label="Context window usage">
-              {contextLabel(context)}
-            </Button>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Context window usage"
+              />
+            }
+          >
+            {contextLabel(context)}
           </PopoverTrigger>
           <ContextPopover
             usage={source}
@@ -308,15 +322,17 @@ export function ThreadUsage({
       )}
       <ToolbarDivider />
       <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Show conversation cost breakdown"
-          >
-            {total === undefined ? '—' : costLabel(total)}
-            {partial ? ' *' : ''}
-          </Button>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Show conversation cost breakdown"
+            />
+          }
+        >
+          {total === undefined ? '—' : costLabel(total)}
+          {partial ? ' *' : ''}
         </PopoverTrigger>
         <PopoverContent
           align="end"

@@ -47,12 +47,14 @@ function TokenCount({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button type="button" className="inline-flex items-center gap-0.5">
-          <Icon aria-hidden="true" className="size-3" />
-          <span className="sr-only">{label}: </span>
-          {value}
-        </button>
+      <TooltipTrigger
+        render={
+          <button type="button" className="inline-flex items-center gap-0.5" />
+        }
+      >
+        <Icon aria-hidden="true" className="size-3" />
+        <span className="sr-only">{label}: </span>
+        {value}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
@@ -120,25 +122,27 @@ export function CostBreakdown({
         <Collapsible key={threadId}>
           <div className="flex flex-col gap-0.5 px-3 pb-2.5">
             <div className="flex items-center justify-between gap-2">
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="group -ml-1 h-auto px-1 py-0 font-normal"
-                  disabled={subthreads.length === 0}
-                >
-                  Sub Threads
-                  <ChevronsUpDownIcon
-                    aria-hidden="true"
-                    data-icon="inline-end"
-                    className="group-data-[state=open]:hidden"
+              <CollapsibleTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="group -ml-1 h-auto px-1 py-0 font-normal"
+                    disabled={subthreads.length === 0}
                   />
-                  <ChevronsDownUpIcon
-                    aria-hidden="true"
-                    data-icon="inline-end"
-                    className="hidden group-data-[state=open]:block"
-                  />
-                </Button>
+                }
+              >
+                Sub Threads
+                <ChevronsUpDownIcon
+                  aria-hidden="true"
+                  data-icon="inline-end"
+                  className="group-data-panel-open:hidden"
+                />
+                <ChevronsDownUpIcon
+                  aria-hidden="true"
+                  data-icon="inline-end"
+                  className="hidden group-data-panel-open:block"
+                />
               </CollapsibleTrigger>
               <Separator className="min-w-0 flex-1" />
               <Cost total={subtotal} />

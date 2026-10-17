@@ -73,7 +73,6 @@ import { useMemo, useState } from 'react';
 import {
   type Credential,
   type CredentialDraft,
-  type CredentialKind,
   credentialCreate,
   credentialDraftOf,
   credentialFields,
@@ -202,6 +201,18 @@ const columnHelper = createColumnHelper<DataTableFeatures, CredentialRow>();
 
 /** How many rows a page holds, in the order the control offers them. */
 const pageSizes = [10, 20, 50];
+
+/** The page sizes under the names the control and its trigger show them. */
+const pageSizeItems = pageSizes.map((size) => ({
+  label: `${size} rows`,
+  value: String(size),
+}));
+
+/** The credential kinds under the names the kind control and its trigger show. */
+const credentialKindItems = credentialKinds.map((kind) => ({
+  label: credentialKindLabel(kind),
+  value: kind,
+}));
 
 /** What a column is called, in its header and in the visibility menu alike. */
 const columnTitle = <TValue,>(
@@ -390,10 +401,10 @@ function CredentialTable({
           }
         />
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="ml-auto">
-              Columns
-            </Button>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="ml-auto" />}
+          >
+            Columns
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>
@@ -403,6 +414,7 @@ function CredentialTable({
                 .map((column) => (
                   <DropdownMenuCheckboxItem
                     key={column.id}
+                    closeOnClick
                     checked={column.getIsVisible()}
                     onCheckedChange={(value) =>
                       column.toggleVisibility(!!value)
@@ -469,8 +481,11 @@ function CredentialTable({
         </p>
         <div className="flex items-center gap-2">
           <Select
+            items={pageSizeItems}
             value={String(table.state.pagination.pageSize)}
-            onValueChange={(value) => table.setPageSize(Number(value))}
+            onValueChange={(value) => {
+              if (value !== null) table.setPageSize(Number(value));
+            }}
           >
             <SelectTrigger
               size="sm"
@@ -481,9 +496,9 @@ function CredentialTable({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {pageSizes.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} rows
+                {pageSizeItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -577,14 +592,16 @@ function CredentialDialog({
           <Field>
             <FieldLabel htmlFor="credential-kind">Kind</FieldLabel>
             <Select
+              items={credentialKindItems}
               value={draft.kind}
-              onValueChange={(value) =>
+              onValueChange={(value) => {
+                if (value === null) return;
                 onChange({
-                  ...emptyCredentialDraft(value as CredentialKind),
+                  ...emptyCredentialDraft(value),
                   id: draft.id,
                   name: draft.name,
-                })
-              }
+                });
+              }}
               disabled={editing}
             >
               <SelectTrigger id="credential-kind" className="w-full">
@@ -592,9 +609,9 @@ function CredentialDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {credentialKinds.map((kind) => (
-                    <SelectItem key={kind} value={kind}>
-                      {credentialKindLabel(kind)}
+                  {credentialKindItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
                     </SelectItem>
                   ))}
                 </SelectGroup>

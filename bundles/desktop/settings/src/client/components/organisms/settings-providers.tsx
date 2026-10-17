@@ -91,6 +91,12 @@ const columnHelper = createColumnHelper<DataTableFeatures, ProviderRow>();
 /** How many rows a page holds, in the order the control offers them. */
 const pageSizes = [10, 20, 50];
 
+/** The page sizes under the names the control and its trigger show them. */
+const pageSizeItems = pageSizes.map((size) => ({
+  label: `${size} rows`,
+  value: String(size),
+}));
+
 type SettingsProvidersProps = {
   readonly draft: Configuration;
   /** The host's provider catalog, which says what every field and list is. */
@@ -350,8 +356,11 @@ function ProviderTable({
         </p>
         <div className="flex items-center gap-2">
           <Select
+            items={pageSizeItems}
             value={String(table.state.pagination.pageSize)}
-            onValueChange={(value) => table.setPageSize(Number(value))}
+            onValueChange={(value) => {
+              if (value !== null) table.setPageSize(Number(value));
+            }}
           >
             <SelectTrigger
               size="sm"
@@ -362,9 +371,9 @@ function ProviderTable({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {pageSizes.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} rows
+                {pageSizeItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectGroup>

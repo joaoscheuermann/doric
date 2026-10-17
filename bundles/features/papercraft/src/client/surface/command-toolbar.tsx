@@ -44,7 +44,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from 'lucide-react';
-import { memo, type ReactNode } from 'react';
+import { memo, type ReactElement, type ReactNode } from 'react';
 
 import {
   APPROVE_COMMAND,
@@ -76,11 +76,12 @@ function ShortcutTooltip({
 }: {
   readonly label: string;
   readonly shortcut?: string;
-  readonly children: ReactNode;
+  /** The control the tooltip names, rendered as the tooltip's trigger. */
+  readonly children: ReactElement;
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipTrigger render={children} />
       <TooltipContent className="flex items-center gap-1.5">
         <span>{label}</span>
         {shortcut === undefined ? null : (
@@ -181,10 +182,11 @@ export const CommandToolbar = memo(function CommandToolbar({
     >
       {/* Ferramenta: a radio group, one tool armed at a time. */}
       <ToggleGroup
-        type="single"
-        value={tool}
-        onValueChange={(next) => {
-          if (next === '') return;
+        value={[tool]}
+        onValueChange={(values) => {
+          // Pressing the armed tool again leaves nothing armed: ignore it.
+          const next = values[0];
+          if (next === undefined) return;
           execute(
             next === 'select'
               ? SELECT_COMMAND
@@ -306,15 +308,17 @@ export const CommandToolbar = memo(function CommandToolbar({
       {/* Proposta: the revision reading, and `Autorizar` under `request`. */}
       {revisions.total > 1 ? (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Revisão"
-              className={cn('min-w-16 font-mono text-xs tabular-nums')}
-            >
-              rev {String(revisions.current)}/{String(revisions.total)}
-            </Button>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Revisão"
+                className={cn('min-w-16 font-mono text-xs tabular-nums')}
+              />
+            }
+          >
+            rev {String(revisions.current)}/{String(revisions.total)}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {revisions.list.map((revision) => (

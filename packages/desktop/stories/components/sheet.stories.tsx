@@ -25,8 +25,8 @@ const ProjectSettings = ({
   readonly open?: boolean;
 }) => (
   <Sheet defaultOpen={open}>
-    <SheetTrigger asChild>
-      <Button variant="outline">Project settings</Button>
+    <SheetTrigger render={<Button variant="outline" />}>
+      Project settings
     </SheetTrigger>
     <SheetContent side={side}>
       <SheetHeader>
@@ -45,9 +45,7 @@ const ProjectSettings = ({
       </FieldGroup>
       <SheetFooter>
         <Button>Save</Button>
-        <SheetClose asChild>
-          <Button variant="outline">Cancel</Button>
-        </SheetClose>
+        <SheetClose render={<Button variant="outline" />}>Cancel</SheetClose>
       </SheetFooter>
     </SheetContent>
   </Sheet>

@@ -43,7 +43,7 @@ describe('Button', () => {
         'aria-label': 'Send (Cmd+Enter)',
       }),
     );
-    assert.match(markup, /^<button [^>]*data-variant="solid"/);
+    assert.match(markup, /^<button /);
     assert.match(markup, /disabled=""/);
     assert.match(markup, /class="[^"]*bg-white[^"]*"/);
   });

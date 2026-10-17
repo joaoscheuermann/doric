@@ -92,32 +92,32 @@ function Item({
   return (
     <li className="min-w-0">
       <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            ref={ref}
-            variant="ghost"
-            size="sm"
-            data-queue-id={item.promptId}
-            data-caret={focused || undefined}
-            data-editing={editing || undefined}
-            className={cn(
-              'queue-row w-full justify-start gap-2 rounded-none border-0 text-sm font-light focus-visible:ring-inset has-data-[icon=inline-start]:pl-2.5',
-              focused && 'bg-muted',
-            )}
-            aria-label={`${queueAuthor(item.source, item.label)}: ${text}`}
-            onFocus={onFocus}
-            onKeyDown={onKeyDown}
-          >
-            <PromptAuthor source={item.source} label={item.label} />
-            <span className="min-w-0 truncate text-muted-foreground">
-              {text}
+        <PopoverTrigger
+          render={
+            <Button
+              ref={ref}
+              variant="ghost"
+              size="sm"
+              data-queue-id={item.promptId}
+              data-caret={focused || undefined}
+              data-editing={editing || undefined}
+              className={cn(
+                'queue-row w-full justify-start gap-2 rounded-none border-0 text-sm font-light focus-visible:ring-inset has-data-[icon=inline-start]:pl-2.5',
+                focused && 'bg-muted',
+              )}
+              aria-label={`${queueAuthor(item.source, item.label)}: ${text}`}
+              onFocus={onFocus}
+              onKeyDown={onKeyDown}
+            />
+          }
+        >
+          <PromptAuthor source={item.source} label={item.label} />
+          <span className="min-w-0 truncate text-muted-foreground">{text}</span>
+          {editing && (
+            <span className="ml-auto shrink-0 pl-3 text-xs font-normal text-muted-foreground">
+              Editing
             </span>
-            {editing && (
-              <span className="ml-auto shrink-0 pl-3 text-xs font-normal text-muted-foreground">
-                Editing
-              </span>
-            )}
-          </Button>
+          )}
         </PopoverTrigger>
         <PopoverContent
           side="top"

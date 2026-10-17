@@ -71,7 +71,7 @@ export function ProviderModelPicker({
           </span>
           <ChevronRightIcon
             aria-hidden="true"
-            className="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+            className="size-3.5 transition-transform group-data-panel-open:rotate-90"
           />
         </CollapsibleTrigger>
         <CollapsibleContent className="flex flex-col gap-3">

@@ -39,7 +39,6 @@ export const ProviderMenuOpen = {
       open={[
         {
           selector: '[aria-label="Execution provider"]',
-          gesture: 'pointerdown',
         },
       ]}
     />
@@ -48,11 +47,7 @@ export const ProviderMenuOpen = {
 
 export const ModelMenuOpen = {
   render: () => (
-    <Section
-      open={[
-        { selector: '[aria-label="Execution model"]', gesture: 'pointerdown' },
-      ]}
-    />
+    <Section open={[{ selector: '[aria-label="Execution model"]' }]} />
   ),
 };
 

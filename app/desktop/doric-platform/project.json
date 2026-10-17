@@ -21,6 +21,7 @@
         "{workspaceRoot}/dist/app/desktop/doric/assets/platform/lexical@*",
         "{workspaceRoot}/dist/app/desktop/doric/assets/platform/@lexical",
         "{workspaceRoot}/dist/app/desktop/doric/assets/platform/zod@*",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/@base-ui",
         "{workspaceRoot}/dist/app/desktop/doric/assets/platform/bundle@*",
         "{workspaceRoot}/dist/app/desktop/doric/assets/platform/desktop@*",
         "{workspaceRoot}/dist/app/desktop/doric/assets/schemas"

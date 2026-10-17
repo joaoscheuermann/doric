@@ -49,7 +49,6 @@ export const Open = {
       steps={[
         {
           selector: '[aria-label="Actions for openrouter"]',
-          gesture: 'pointerdown',
         },
       ]}
     >
@@ -66,7 +65,6 @@ export const SingleAction = {
       steps={[
         {
           selector: '[aria-label="Actions for openrouter"]',
-          gesture: 'pointerdown',
         },
       ]}
     >

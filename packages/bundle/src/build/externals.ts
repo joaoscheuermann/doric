@@ -1,6 +1,7 @@
 // The import-map specifiers a window resolves itself, as esbuild `external`
 // patterns: a client part leaves them external so one instance of React,
-// the shared UI and the contracts exists per window (decision "Import map").
+// Base UI, the shared UI and the contracts exists per window (decision
+// "Import map").
 // Kept apart from `parts.ts`, and published as `bundle/externals`, so a
 // consumer (a host part that compiles a preview module for the same windows)
 // reads the list without loading esbuild or the loader.
@@ -11,6 +12,8 @@ export const clientExternals: readonly string[] = [
   'react/*',
   'react-dom',
   'react-dom/*',
+  '@base-ui/react',
+  '@base-ui/react/*',
   'lexical',
   '@lexical/*',
   'desktop/ui',

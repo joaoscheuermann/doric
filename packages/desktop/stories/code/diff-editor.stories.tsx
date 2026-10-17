@@ -40,11 +40,11 @@ const Toolbar = ({ controls }: { readonly controls: DiffControls }) => (
     </Button>
     <ToolbarDivider />
     <ToggleGroup
-      type="single"
       size="sm"
-      value={controls.layout}
-      onValueChange={(value) => {
-        if (value !== '') controls.onLayout(value);
+      value={[controls.layout]}
+      onValueChange={(values) => {
+        const [value] = values;
+        if (value !== undefined) controls.onLayout(value);
       }}
       aria-label="Diff layout"
     >

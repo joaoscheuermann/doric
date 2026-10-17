@@ -110,6 +110,7 @@ void test('a desktop part keeps the platform imports and its own contracts exter
 void test('a part with a forbidden import fails the build', async () => {
   for (const [part, specifier] of [
     ['desktop', 'react'],
+    ['desktop', '@base-ui/react/popover'],
     ['desktop', '@lexical/react/LexicalComposer'],
     ['desktop', 'desktop/ui/button'],
     ['desktop', 'bundle'],
@@ -142,10 +143,12 @@ void test('a client part leaves the import-map specifiers to the window', async 
       'src/client/index.ts': [
         `import { createElement } from 'react';`,
         `import { createRoot } from 'react-dom/client';`,
+        `import { Popover } from '@base-ui/react/popover';`,
+        `import { mergeProps } from '@base-ui/react';`,
         `import { Button } from 'desktop/ui/button';`,
         `import { $getRoot } from 'lexical';`,
         `import { GitV1 } from 'git/contracts';`,
-        `export const activate = () => [createElement, createRoot, Button, $getRoot, GitV1];`,
+        `export const activate = () => [createElement, createRoot, Popover, mergeProps, Button, $getRoot, GitV1];`,
         '',
       ].join('\n'),
     },
@@ -157,6 +160,8 @@ void test('a client part leaves the import-map specifiers to the window', async 
         new Set([
           'react',
           'react-dom/client',
+          '@base-ui/react/popover',
+          '@base-ui/react',
           'desktop/ui/button',
           'lexical',
           'git/contracts',
@@ -174,7 +179,7 @@ void test('a bundled CommonJS dependency that requires an external gets the wind
         main: 'index.js',
       }),
       'node_modules/cjs-dep/index.js':
-        "var React = require('react');\nexports.useIt = function () { return React.useState; };\n",
+        "var React = require('react');\nvar Popover = require('@base-ui/react/popover');\nexports.useIt = function () { return [React.useState, Popover]; };\n",
       'src/client/index.ts': [
         `import { useIt } from 'cjs-dep';`,
         `export const activate = () => [useIt];`,
@@ -186,8 +191,14 @@ void test('a bundled CommonJS dependency that requires an external gets the wind
 
       const source = await read(dir, 'client/index.js');
 
-      assert.deepEqual(importsOf(source), ['react']);
-      assert.doesNotMatch(source, /__require\(\s*["']react["']\s*\)/);
+      assert.deepEqual(
+        new Set(importsOf(source)),
+        new Set(['react', '@base-ui/react/popover']),
+      );
+      assert.doesNotMatch(
+        source,
+        /__require\(\s*["'](?:react|@base-ui\/react\/popover)["']\s*\)/,
+      );
     },
   );
 });

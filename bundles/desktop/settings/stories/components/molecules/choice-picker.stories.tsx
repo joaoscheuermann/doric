@@ -54,7 +54,6 @@ export const Open = {
       steps={[
         {
           selector: '[aria-label="Execution provider"]',
-          gesture: 'pointerdown',
         },
       ]}
     >

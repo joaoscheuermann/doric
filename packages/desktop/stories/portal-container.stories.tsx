@@ -34,10 +34,8 @@ const Demo = () => {
       <PortalContainerProvider container={container}>
         <div className="flex gap-2">
           <Popover defaultOpen>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                Popover
-              </Button>
+            <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+              Popover
             </PopoverTrigger>
             <PopoverContent className="w-64">
               <PopoverHeader>
@@ -49,10 +47,10 @@ const Demo = () => {
             </PopoverContent>
           </Popover>
           <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                Menu
-              </Button>
+            <DropdownMenuTrigger
+              render={<Button variant="outline" size="sm" />}
+            >
+              Menu
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem>Rename</DropdownMenuItem>

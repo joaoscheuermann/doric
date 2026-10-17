@@ -7,14 +7,15 @@ import {
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
 import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ReactElement } from 'react';
 
 import type { ProjectColor } from '../../domain/workspace.js';
 import { ProjectColorMenu } from './project-color-menu.js';
 
 type ItemContextMenuProps = {
   readonly addLabel: string;
-  readonly children: ReactNode;
+  /** The row the menu opens on: one element, which becomes the trigger. */
+  readonly children: ReactElement;
   /** Present only where the row owns a color, so thread rows omit the section. */
   readonly color?: {
     readonly onSelect: (color?: ProjectColor) => void;
@@ -38,15 +39,15 @@ export function ItemContextMenu({
 }: ItemContextMenuProps) {
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger render={children} />
       <ContextMenuContent>
         <ContextMenuGroup>
-          <ContextMenuItem onSelect={onAdd}>
+          <ContextMenuItem onClick={onAdd}>
             <PlusIcon />
             {addLabel}
           </ContextMenuItem>
           {onCopyId && (
-            <ContextMenuItem onSelect={onCopyId}>
+            <ContextMenuItem onClick={onCopyId}>
               <CopyIcon />
               Copy thread ID
             </ContextMenuItem>
@@ -60,7 +61,7 @@ export function ItemContextMenu({
         )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem variant="destructive" onSelect={onDelete}>
+          <ContextMenuItem variant="destructive" onClick={onDelete}>
             <Trash2Icon />
             {deleteLabel}
           </ContextMenuItem>

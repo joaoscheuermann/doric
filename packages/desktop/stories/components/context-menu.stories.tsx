@@ -29,9 +29,9 @@ export default {
 };
 
 /*
- * A context menu has no `open` prop: it opens where the pointer asked for it.
- * The story asks once, on mount, with the same `contextmenu` event a right
- * click sends, a little inside the trigger.
+ * A context menu opens where the pointer asked for it, so the story asks
+ * once, on mount, with the same `contextmenu` event a right click sends, a
+ * little inside the trigger.
  */
 const OpenOnMount = ({ children }: { readonly children: ReactNode }) => {
   const area = useRef<HTMLDivElement>(null);
@@ -49,15 +49,13 @@ const OpenOnMount = ({ children }: { readonly children: ReactNode }) => {
     );
   }, []);
   return (
-    <ContextMenu modal={false}>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={area}
-          className="flex h-40 w-72 items-center gap-2 rounded-lg border border-dashed px-4 text-sm text-muted-foreground"
-        >
-          <FileIcon className="size-4" />
-          chrome-bar.tsx — right-click
-        </div>
+    <ContextMenu>
+      <ContextMenuTrigger
+        ref={area}
+        className="flex h-40 w-72 items-center gap-2 rounded-lg border border-dashed px-4 text-sm text-muted-foreground"
+      >
+        <FileIcon className="size-4" />
+        chrome-bar.tsx — right-click
       </ContextMenuTrigger>
       {children}
     </ContextMenu>
@@ -112,22 +110,30 @@ export const CheckboxAndRadio = {
     <div className="h-96">
       <OpenOnMount>
         <ContextMenuContent className="w-56">
-          <ContextMenuLabel>Show</ContextMenuLabel>
-          <ContextMenuCheckboxItem checked>
-            Hidden files
-          </ContextMenuCheckboxItem>
-          <ContextMenuCheckboxItem checked={false}>
-            Ignored files
-          </ContextMenuCheckboxItem>
+          <ContextMenuGroup>
+            <ContextMenuLabel>Show</ContextMenuLabel>
+            <ContextMenuCheckboxItem closeOnClick checked>
+              Hidden files
+            </ContextMenuCheckboxItem>
+            <ContextMenuCheckboxItem closeOnClick checked={false}>
+              Ignored files
+            </ContextMenuCheckboxItem>
+          </ContextMenuGroup>
           <ContextMenuSeparator />
-          <ContextMenuLabel inset>Sort by</ContextMenuLabel>
-          <ContextMenuRadioGroup value="name">
-            <ContextMenuRadioItem value="name">Name</ContextMenuRadioItem>
-            <ContextMenuRadioItem value="modified">
-              Modified
-            </ContextMenuRadioItem>
-            <ContextMenuRadioItem value="kind">Kind</ContextMenuRadioItem>
-          </ContextMenuRadioGroup>
+          <ContextMenuGroup>
+            <ContextMenuLabel inset>Sort by</ContextMenuLabel>
+            <ContextMenuRadioGroup value="name">
+              <ContextMenuRadioItem closeOnClick value="name">
+                Name
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem closeOnClick value="modified">
+                Modified
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem closeOnClick value="kind">
+                Kind
+              </ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
+          </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuItem inset disabled>
             Reveal in Finder

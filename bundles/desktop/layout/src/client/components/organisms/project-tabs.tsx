@@ -18,7 +18,7 @@ import {
   useTabStrip,
 } from 'desktop/ui/panels';
 import { cn } from 'desktop/ui/utils';
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
 import { projectIdFromPath } from '../../domain/project-tabs.js';
@@ -103,7 +103,9 @@ function ProjectTab({
   readonly rename: (project: Project, name: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const renameFromMenu = useRef(false);
+  // "Rename" opens the name only once the menu has closed, so the focus the
+  // menu would hand back cannot leave the name it just opened.
+  const [renameFromMenu, setRenameFromMenu] = useState(false);
   const sortable = useSortableTab(project.id, events.frozen?.get(project.id));
   // Reordering is a visibility trigger even when the active flag stays true.
   // biome-ignore lint/correctness/useExhaustiveDependencies: index triggers scrolling after keyboard reordering
@@ -118,122 +120,122 @@ function ProjectTab({
   const closeThis = () => close(project.id);
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          // The sortable's own ref is stable: a drag re-renders every tab on
-          // each pointer move, and a new ref callback would detach and
-          // re-observe each tab's node every time.
-          ref={sortable.setNodeRef}
-          data-tab-id={project.id}
-          className={cn(
-            tab,
-            'min-w-[100px] max-w-[280px] shrink-0 motion-reduce:!transition-none',
-          )}
-          style={sortable.style}
-          data-active={active ? 'true' : undefined}
-        >
-          {editing ? (
-            <EditableName
-              editing
-              label="Project name"
-              value={project.name}
-              onCancel={() => setEditing(false)}
-              onSubmit={async (name) => {
-                await rename(project, name);
-                setEditing(false);
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="flex h-full min-w-0 flex-1 touch-none items-center gap-[6px] text-left outline-none"
-              ref={sortable.setActivatorNodeRef}
-              {...sortable.attributes}
-              {...sortable.listeners}
-              aria-label={project.name}
-              aria-keyshortcuts="Space Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-              onKeyDown={(event) => {
-                events.keyDown(event, project.id);
-                if (!event.defaultPrevented)
-                  sortable.listeners?.onKeyDown?.(event);
-              }}
-              aria-current={active ? 'page' : undefined}
-              onAuxClick={(event) => {
-                if (event.button === 1) {
-                  event.preventDefault();
-                  closeThis();
-                }
-              }}
-              onClick={() => {
-                if (!events.sorting) navigate(path);
-              }}
-              onDoubleClick={() => setEditing(true)}
-              title={project.name}
-            >
-              <span className="flex size-[16px] shrink-0 items-center justify-center">
-                <ProjectAvatar color={project.color} className="size-[12px]" />
-              </span>
-              <span className="min-w-0 truncate">{project.name}</span>
-            </button>
-          )}
+      <ContextMenuTrigger
+        render={
+          <div
+            // The sortable's own ref is stable: a drag re-renders every tab on
+            // each pointer move, and a new ref callback would detach and
+            // re-observe each tab's node every time.
+            ref={sortable.setNodeRef}
+            data-tab-id={project.id}
+            className={cn(
+              tab,
+              'min-w-[100px] max-w-[280px] shrink-0 motion-reduce:!transition-none',
+            )}
+            style={sortable.style}
+            data-active={active ? 'true' : undefined}
+          />
+        }
+      >
+        {editing ? (
+          <EditableName
+            editing
+            label="Project name"
+            value={project.name}
+            onCancel={() => setEditing(false)}
+            onSubmit={async (name) => {
+              await rename(project, name);
+              setEditing(false);
+            }}
+          />
+        ) : (
           <button
             type="button"
-            className="relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center opacity-0 before:absolute before:inset-[4px] before:rounded-[4px] hover:!opacity-100 hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover:opacity-50 group-data-[active=true]:opacity-50 focus-visible:opacity-100"
-            aria-label={`Close ${project.name} tab`}
-            disabled={events.sorting}
+            className="flex h-full min-w-0 flex-1 touch-none items-center gap-[6px] text-left outline-none"
+            ref={sortable.setActivatorNodeRef}
+            {...sortable.attributes}
+            {...sortable.listeners}
+            aria-label={project.name}
+            aria-keyshortcuts="Space Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
+            onKeyDown={(event) => {
+              events.keyDown(event, project.id);
+              if (!event.defaultPrevented)
+                sortable.listeners?.onKeyDown?.(event);
+            }}
+            aria-current={active ? 'page' : undefined}
             onAuxClick={(event) => {
               if (event.button === 1) {
                 event.preventDefault();
                 closeThis();
               }
             }}
-            onClick={closeThis}
+            onClick={() => {
+              if (!events.sorting) navigate(path);
+            }}
+            onDoubleClick={() => setEditing(true)}
+            title={project.name}
           >
-            <CloseTabIcon />
+            <span className="flex size-[16px] shrink-0 items-center justify-center">
+              <ProjectAvatar color={project.color} className="size-[12px]" />
+            </span>
+            <span className="min-w-0 truncate">{project.name}</span>
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          className="relative -right-[4px] -ml-[8px] flex size-[28px] shrink-0 items-center justify-center opacity-0 before:absolute before:inset-[4px] before:rounded-[4px] hover:!opacity-100 hover:before:bg-[color-mix(in_srgb,currentColor_8%,transparent)] group-hover:opacity-50 group-data-[active=true]:opacity-50 focus-visible:opacity-100"
+          aria-label={`Close ${project.name} tab`}
+          disabled={events.sorting}
+          onAuxClick={(event) => {
+            if (event.button === 1) {
+              event.preventDefault();
+              closeThis();
+            }
+          }}
+          onClick={closeThis}
+        >
+          <CloseTabIcon />
+        </button>
       </ContextMenuTrigger>
       <ContextMenuContent
-        onCloseAutoFocus={(event) => {
-          if (renameFromMenu.current) {
-            event.preventDefault();
-            renameFromMenu.current = false;
-            setEditing(true);
-          }
-        }}
+        finalFocus={
+          renameFromMenu
+            ? () => {
+                setRenameFromMenu(false);
+                setEditing(true);
+                return false;
+              }
+            : undefined
+        }
       >
         <ContextMenuGroup>
           <ContextMenuItem
-            onSelect={() =>
+            onClick={() =>
               navigate(`/projects/${encodeURIComponent(project.id)}`)
             }
           >
             Open project
           </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() => {
-              renameFromMenu.current = true;
-            }}
-          >
+          <ContextMenuItem onClick={() => setRenameFromMenu(true)}>
             Rename
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem onSelect={closeThis}>Close tab</ContextMenuItem>
+          <ContextMenuItem onClick={closeThis}>Close tab</ContextMenuItem>
           <ContextMenuItem
             disabled={order.length < 2}
-            onSelect={() => closeMany(order.filter((id) => id !== project.id))}
+            onClick={() => closeMany(order.filter((id) => id !== project.id))}
           >
             Close other tabs
           </ContextMenuItem>
           <ContextMenuItem
             disabled={index === order.length - 1}
-            onSelect={() => closeMany(order.slice(index + 1))}
+            onClick={() => closeMany(order.slice(index + 1))}
           >
             Close tabs to the right
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => closeMany(order)}>
+          <ContextMenuItem onClick={() => closeMany(order)}>
             Close all tabs
           </ContextMenuItem>
         </ContextMenuGroup>

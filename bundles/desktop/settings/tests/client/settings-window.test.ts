@@ -85,9 +85,8 @@ const navRows = (window: SettingsWindow): string[] =>
   );
 
 const activeRow = (window: SettingsWindow): string | undefined =>
-  window.document.querySelector(
-    '[data-sidebar="menu-button"][data-active="true"]',
-  )?.textContent ?? undefined;
+  window.document.querySelector('[data-sidebar="menu-button"][data-active]')
+    ?.textContent ?? undefined;
 
 const type = (input: HTMLInputElement, value: string): void => {
   const setter = Object.getOwnPropertyDescriptor(

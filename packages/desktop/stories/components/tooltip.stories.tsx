@@ -11,10 +11,12 @@ export const Open = {
   render: () => (
     <div className="flex h-32 items-end justify-center">
       <Tooltip defaultOpen>
-        <TooltipTrigger asChild>
-          <Button size="icon-sm" variant="outline" aria-label="New thread">
-            <PlusIcon />
-          </Button>
+        <TooltipTrigger
+          render={
+            <Button size="icon-sm" variant="outline" aria-label="New thread" />
+          }
+        >
+          <PlusIcon />
         </TooltipTrigger>
         <TooltipContent>New thread</TooltipContent>
       </Tooltip>
@@ -27,10 +29,8 @@ export const Sides = {
     <div className="grid h-64 grid-cols-2 place-items-center gap-16 px-24">
       {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
         <Tooltip key={side} open>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="sm">
-              {side}
-            </Button>
+          <TooltipTrigger render={<Button variant="outline" size="sm" />}>
+            {side}
           </TooltipTrigger>
           <TooltipContent side={side}>Shown on the {side}</TooltipContent>
         </Tooltip>
@@ -43,11 +43,9 @@ export const LongContent = {
   render: () => (
     <div className="flex h-36 items-end justify-center">
       <Tooltip defaultOpen>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="sm">
-            <GitBranchIcon data-icon="inline-start" />
-            feat/app
-          </Button>
+        <TooltipTrigger render={<Button variant="ghost" size="sm" />}>
+          <GitBranchIcon data-icon="inline-start" />
+          feat/app
         </TooltipTrigger>
         <TooltipContent>
           ~/Documents/personal/doric/doric · 3 files changed, 2 ahead of
@@ -61,8 +59,8 @@ export const LongContent = {
 export const Closed = {
   render: () => (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="outline">Hover me</Button>
+      <TooltipTrigger render={<Button variant="outline" />}>
+        Hover me
       </TooltipTrigger>
       <TooltipContent>Archive thread</TooltipContent>
     </Tooltip>

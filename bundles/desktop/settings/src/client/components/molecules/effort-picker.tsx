@@ -38,15 +38,11 @@ export function EffortPicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={ariaLabel}
-          disabled={disabled}
-        >
-          {label}
-        </Button>
+      <PopoverTrigger
+        disabled={disabled}
+        render={<Button variant="ghost" size="sm" aria-label={ariaLabel} />}
+      >
+        {label}
       </PopoverTrigger>
       <PopoverContent
         align="start"

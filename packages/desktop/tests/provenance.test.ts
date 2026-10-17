@@ -1,6 +1,7 @@
 /**
- * The vendored components are the renderer's own shadcn files: only the import
- * rewrites and the local patches PROVENANCE.md lists separate them.
+ * The vendored components are shadcn's own files — the renderer's, or the
+ * CLI's Base UI output: only the import rewrites and the local patches
+ * PROVENANCE.md lists separate them.
  */
 import assert from 'node:assert/strict';
 import {
@@ -37,7 +38,7 @@ const withCopy = (use: (root: string) => void): void => {
 };
 
 describe('provenance', () => {
-  test('every vendored file is the renderer file it came from', () => {
+  test('every vendored file is the shadcn file it came from', () => {
     assert.deepEqual(verify(), []);
   });
 
@@ -47,6 +48,14 @@ describe('provenance', () => {
       writeFileSync(file, `// local change\n${readFileSync(file, 'utf8')}`);
       assert.equal(verify(root).length, 1);
       assert.match(verify(root)[0] ?? '', /^components\/button\.tsx: differs/);
+    });
+  });
+
+  test("a CLI file's leading 'use client' directive is not a difference", () => {
+    withCopy((root) => {
+      const file = join(root, 'src/components/popover.tsx');
+      writeFileSync(file, `'use client';\n\n${readFileSync(file, 'utf8')}`);
+      assert.deepEqual(verify(root), []);
     });
   });
 

@@ -63,6 +63,7 @@ const forbiddenInDesktop = (specifier: string): boolean => {
     specifier === 'bundle' ||
     name === 'react' ||
     name === 'react-dom' ||
+    name === '@base-ui/react' ||
     name === 'lexical' ||
     name.startsWith('@lexical/') ||
     name === 'desktop'

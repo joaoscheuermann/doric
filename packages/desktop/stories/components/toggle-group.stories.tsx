@@ -8,7 +8,7 @@ export default {
 
 export const Default = {
   render: () => (
-    <ToggleGroup type="single" defaultValue="unified" aria-label="Diff layout">
+    <ToggleGroup defaultValue={['unified']} aria-label="Diff layout">
       <ToggleGroupItem value="unified">
         <RowsIcon />
         Unified
@@ -24,10 +24,9 @@ export const Default = {
 export const Outline = {
   render: () => (
     <ToggleGroup
-      type="single"
       variant="outline"
       spacing={0}
-      defaultValue="all"
+      defaultValue={['all']}
       aria-label="Thread filter"
     >
       <ToggleGroupItem value="all">All</ToggleGroupItem>
@@ -41,7 +40,7 @@ export const Outline = {
 export const Multiple = {
   render: () => (
     <ToggleGroup
-      type="multiple"
+      multiple
       variant="outline"
       size="sm"
       defaultValue={['files', 'changes']}
@@ -57,11 +56,10 @@ export const Multiple = {
 export const Vertical = {
   render: () => (
     <ToggleGroup
-      type="single"
       orientation="vertical"
       variant="outline"
       spacing={0}
-      defaultValue="anthropic"
+      defaultValue={['anthropic']}
       aria-label="Provider"
     >
       <ToggleGroupItem value="anthropic">Anthropic</ToggleGroupItem>
@@ -73,7 +71,7 @@ export const Vertical = {
 
 export const Disabled = {
   render: () => (
-    <ToggleGroup type="single" disabled defaultValue="unified">
+    <ToggleGroup disabled defaultValue={['unified']}>
       <ToggleGroupItem value="unified">Unified</ToggleGroupItem>
       <ToggleGroupItem value="split">Split</ToggleGroupItem>
     </ToggleGroup>

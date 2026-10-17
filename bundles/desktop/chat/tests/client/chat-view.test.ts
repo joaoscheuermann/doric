@@ -258,6 +258,36 @@ test('a Thread path opens its conversation with the transcript and the prompt', 
   assert.equal(hasPrompt(opened), true);
 });
 
+test("a trail handle previews its prompt while hovered, keeps the preview through the click that jumps, and never takes the reader's focus", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const { document } = opened;
+  const handle = document.querySelector<HTMLButtonElement>(
+    'nav[aria-label="Conversation trail"] button[aria-label="User prompt 1"]',
+  );
+  assert.ok(handle, 'the prompt has a handle on the trail');
+  const preview = () =>
+    [...document.querySelectorAll('[data-slot="popover-content"]')].find(
+      (popup) => popup.textContent?.includes('Where is the parser?'),
+    );
+  const focused = document.activeElement;
+
+  handle.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await settle();
+  assert.ok(preview(), 'hovering the handle previews its prompt');
+  assert.equal(document.activeElement, focused, 'the preview takes no focus');
+
+  handle.click();
+  // Longer than the delay a preview waits before it closes.
+  await settle(300);
+  assert.ok(preview(), 'the click jumps and leaves the preview open');
+
+  handle.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+  await settle(300);
+  assert.equal(preview(), undefined, 'leaving the handle closes its preview');
+  assert.equal(document.activeElement, focused, 'closing it moves no focus');
+});
+
 test('a Thread the host does not know draws no conversation', async () => {
   opened = await openChatWindow({ url, host: host(undefined) });
   await settle(50);

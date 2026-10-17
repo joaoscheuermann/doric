@@ -39,8 +39,13 @@ export const lexicalRoots = [
   '@lexical/table',
 ];
 
-/** ESM packages served with every subpath they export. */
-export const esmPackages = ['zod'];
+/**
+ * ESM packages served with every subpath they export, but one whose code
+ * imports a package the workspace does not install (the build names it).
+ * Base UI is shared like React: its contexts and stores must be one instance
+ * per window, so `desktop/ui` and every bundle reach the same copy.
+ */
+export const esmPackages = ['zod', '@base-ui/react'];
 
 /** Platform-owned packages; their folders carry `PLATFORM_VERSION`. */
 export const bundleContracts = {

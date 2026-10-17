@@ -1,7 +1,8 @@
 // Opens the context menu wrapped around its child once it mounts, the way a
-// right-click does, so a story shows the menu without a pointer. Radix's
-// context menu has no `open` prop; it opens from the trigger's
-// `contextmenu` event at the pointer's position.
+// right-click does, so a story shows the menu without a pointer. The context
+// menu anchors itself to the pointer only from the trigger's `contextmenu`
+// event; opening it through the root's `open` prop would pin it to the
+// viewport's corner.
 
 import { type ReactNode, useEffect, useRef } from 'react';
 

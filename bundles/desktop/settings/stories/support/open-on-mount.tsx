@@ -1,9 +1,10 @@
 // Opens a control the way a reader does, once, after the story mounts. Most
 // settings menus and popovers keep their open state to themselves (no `open`
-// prop), so a story that shows them open presses their trigger: a Radix menu
-// or select opens on `pointerdown`, a popover, a collapsible or a button on
-// `click`. Each step waits a few frames for the previous one's portal to
-// draw, then gives up, so nothing keeps running behind the story.
+// prop), so a story that shows them open presses their trigger. Every trigger
+// here (a menu, a select, a popover, a collapsible or a plain button) opens on
+// a click that no pointer press came before, which is what `click()` sends.
+// Each step waits a few frames for the previous one's portal to draw, then
+// gives up, so nothing keeps running behind the story.
 
 import { type ReactNode, useEffect, useRef } from 'react';
 
@@ -12,7 +13,6 @@ export type OpenStep = {
   readonly selector: string;
   /** Narrows the match to the control whose text is exactly this. */
   readonly text?: string;
-  readonly gesture?: 'click' | 'pointerdown';
 };
 
 const find = (
@@ -26,21 +26,6 @@ const find = (
 
 /** How many frames one step waits for its control to appear. */
 const frameBudget = 30;
-
-const press = (element: Element, gesture: OpenStep['gesture']): void => {
-  if (gesture === 'pointerdown') {
-    element.dispatchEvent(
-      new PointerEvent('pointerdown', {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        pointerType: 'mouse',
-      }),
-    );
-    return;
-  }
-  (element as HTMLElement).click();
-};
 
 export function OpenOnMount({
   children,
@@ -67,8 +52,8 @@ export function OpenOnMount({
       if (cancelled || index >= steps.length) return;
       const step = steps[index];
       const element = step === undefined ? undefined : find(root, step);
-      if (element !== undefined && step !== undefined) {
-        press(element, step.gesture);
+      if (element !== undefined) {
+        (element as HTMLElement).click();
         frame = requestAnimationFrame(() => run(index + 1, 0));
         return;
       }

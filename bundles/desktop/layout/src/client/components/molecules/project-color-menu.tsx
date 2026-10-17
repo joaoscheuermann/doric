@@ -40,10 +40,13 @@ export function ProjectColorMenu({ onSelect, value }: ProjectColorMenuProps) {
             onSelect(next === noColor ? undefined : (next as ProjectColor))
           }
         >
-          <ContextMenuRadioItem value={noColor}>No color</ContextMenuRadioItem>
+          {/* A pick closes the whole menu, as choosing any other item does. */}
+          <ContextMenuRadioItem value={noColor} closeOnClick>
+            No color
+          </ContextMenuRadioItem>
           <ContextMenuSeparator />
           {projectColors.map((color) => (
-            <ContextMenuRadioItem key={color} value={color}>
+            <ContextMenuRadioItem key={color} value={color} closeOnClick>
               <ProjectAvatar color={color} />
               {colorLabel(color)}
             </ContextMenuRadioItem>

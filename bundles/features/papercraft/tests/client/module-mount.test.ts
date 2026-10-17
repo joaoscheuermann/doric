@@ -37,7 +37,7 @@ import { Window } from 'happy-dom';
 
 const window = new Window();
 
-// Radix's overlays (the `desktop/ui` case) also reach for these globals.
+// The overlays of `desktop/ui` (Base UI's) also reach for these globals.
 for (const name of [
   'window',
   'document',

@@ -39,19 +39,13 @@
   }
 
   /*
-   * Radix wraps a scroll viewport's children in a `display: table` box with no
-   * height of its own — set inline, so it takes `!important` — which is why the
-   * conversation editor could not fill its pane. The wrapper becomes a
-   * full-height column and the conversation column, `flex-1`, stretches into it;
-   * `min-height` rather than `height` lets it grow with a transcript longer than
-   * the pane.
+   * The conversation column is the scroll viewport's own child, and the
+   * viewport is a plain block, so the column's `flex-1` stretches nothing: it
+   * takes the pane's full height here so the conversation editor fills its
+   * pane. `min-height` rather than `height` lets it grow with a transcript
+   * longer than the pane.
    */
   .conversation-scroll > [data-slot='scroll-area-viewport'] > div {
-    /* biome-ignore lint/complexity/noImportantStyles: Radix sets this wrapper's `display` inline, which only `!important` can override */
-    display: flex !important;
-    flex-direction: column;
-    width: 100%;
-    min-width: 0;
     min-height: 100%;
   }
 

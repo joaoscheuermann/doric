@@ -19,8 +19,8 @@ export default {
 
 const RenameThread = ({ open }: { readonly open: boolean }) => (
   <Dialog defaultOpen={open}>
-    <DialogTrigger asChild>
-      <Button variant="outline">Rename thread</Button>
+    <DialogTrigger render={<Button variant="outline" />}>
+      Rename thread
     </DialogTrigger>
     <DialogContent>
       <DialogHeader>
@@ -39,9 +39,7 @@ const RenameThread = ({ open }: { readonly open: boolean }) => (
         </Field>
       </FieldGroup>
       <DialogFooter>
-        <DialogClose asChild>
-          <Button variant="outline">Cancel</Button>
-        </DialogClose>
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
         <Button>Save</Button>
       </DialogFooter>
     </DialogContent>

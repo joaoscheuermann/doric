@@ -19,10 +19,12 @@ const ToolCall = ({ open }: { readonly open: boolean }) => (
         <span className="font-medium">shell</span>
         <span className="text-muted-foreground">npx nx show projects</span>
       </div>
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="icon-xs" aria-label="Toggle output">
-          <ChevronsUpDownIcon />
-        </Button>
+      <CollapsibleTrigger
+        render={
+          <Button variant="ghost" size="icon-xs" aria-label="Toggle output" />
+        }
+      >
+        <ChevronsUpDownIcon />
       </CollapsibleTrigger>
     </div>
     <CollapsibleContent>

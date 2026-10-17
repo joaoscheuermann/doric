@@ -84,7 +84,6 @@ export const RowMenuOpen = {
       open={[
         {
           selector: '[aria-label="Actions for openrouter"]',
-          gesture: 'pointerdown',
         },
       ]}
     />

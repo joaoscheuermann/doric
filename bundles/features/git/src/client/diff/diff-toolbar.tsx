@@ -34,17 +34,19 @@ export function DiffToolbar({
       <div className="flex h-9 min-w-0 items-center gap-2 px-3">
         {change && (
           <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={changeDescription(change)}
-                className={cn(
-                  'shrink-0 text-xs font-normal',
-                  changeClassName(change.status),
-                )}
-              >
-                {changeLetter(change.status)}
-              </button>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={changeDescription(change)}
+                  className={cn(
+                    'shrink-0 text-xs font-normal',
+                    changeClassName(change.status),
+                  )}
+                />
+              }
+            >
+              {changeLetter(change.status)}
             </TooltipTrigger>
             <TooltipContent>
               HEAD ↔ Working tree · {changeDescription(change)}
@@ -52,24 +54,26 @@ export function DiffToolbar({
           </Tooltip>
         )}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center font-mono text-xs font-normal"
-              aria-label={path}
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center font-mono text-xs font-normal"
+                aria-label={path}
+              />
+            }
+          >
+            <span className="truncate text-muted-foreground">
+              {parentPath(path) && `${parentPath(path)}/`}
+            </span>
+            <span
+              className={cn(
+                'max-w-full shrink-0 truncate',
+                change?.status === 'deleted' && 'line-through',
+              )}
             >
-              <span className="truncate text-muted-foreground">
-                {parentPath(path) && `${parentPath(path)}/`}
-              </span>
-              <span
-                className={cn(
-                  'max-w-full shrink-0 truncate',
-                  change?.status === 'deleted' && 'line-through',
-                )}
-              >
-                {baseName(path)}
-              </span>
-            </button>
+              {baseName(path)}
+            </span>
           </TooltipTrigger>
           <TooltipContent>{path}</TooltipContent>
         </Tooltip>
@@ -87,14 +91,16 @@ export function DiffToolbar({
         )}
         {truncated && (
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Partial comparison"
-              >
-                <TriangleAlertIcon />
-              </Button>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Partial comparison"
+                />
+              }
+            >
+              <TriangleAlertIcon />
             </TooltipTrigger>
             <TooltipContent>
               Only the beginning of each file is shown; line counts are partial.
@@ -102,17 +108,19 @@ export function DiffToolbar({
           </Tooltip>
         )}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="shrink-0"
-              aria-label="Open file"
-              disabled={!canOpen}
-              onClick={onOpen}
-            >
-              <FileIcon />
-            </Button>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0"
+                aria-label="Open file"
+                disabled={!canOpen}
+                onClick={onOpen}
+              />
+            }
+          >
+            <FileIcon />
           </TooltipTrigger>
           <TooltipContent>Open file</TooltipContent>
         </Tooltip>

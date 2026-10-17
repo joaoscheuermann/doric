@@ -69,7 +69,12 @@ function ProviderFieldControl({
     return (
       <Field>
         <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
-        <Select value={value} onValueChange={onChange}>
+        <Select
+          value={value}
+          onValueChange={(next) => {
+            if (next !== null) onChange(next);
+          }}
+        >
           <SelectTrigger id={id} className="w-full">
             <SelectValue
               placeholder={field.placeholder ?? `Choose ${field.label}`}
@@ -93,12 +98,21 @@ function ProviderFieldControl({
   }
 
   if (field.kind === 'secret') {
+    // The trigger names the chosen credential as the list does, not by its id.
+    const tokenItems = tokens.map((token) => ({
+      label: credentialLabel(token),
+      value: token.id,
+    }));
+
     return (
       <Field>
         <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
         <Select
+          items={tokenItems}
           value={value}
-          onValueChange={onChange}
+          onValueChange={(next) => {
+            if (next !== null) onChange(next);
+          }}
           disabled={tokens.length === 0}
         >
           <SelectTrigger id={id} className="w-full">
@@ -106,9 +120,9 @@ function ProviderFieldControl({
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {tokens.map((token) => (
-                <SelectItem key={token.id} value={token.id}>
-                  {credentialLabel(token)}
+              {tokenItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -266,7 +280,7 @@ export function SettingsProviderScreen({
             <span>Advanced settings</span>
             <ChevronRightIcon
               aria-hidden="true"
-              className="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+              className="size-3.5 transition-transform group-data-panel-open:rotate-90"
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 flex flex-col gap-4">

@@ -73,7 +73,7 @@ export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
                 <TabsContent
                   key={tab.id}
                   value={tab.id}
-                  forceMount
+                  keepMounted
                   hidden={state.selected !== tab.id}
                   className="min-h-0 flex-1 data-[active=true]:flex data-[active=true]:flex-col"
                   data-active={state.selected === tab.id}

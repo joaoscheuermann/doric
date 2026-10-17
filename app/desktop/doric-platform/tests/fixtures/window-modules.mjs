@@ -2,10 +2,12 @@
  * A module written the way a bundle's client part is: it imports the platform
  * packages by their import-map specifiers only, then reports what it saw.
  */
+import { ToggleGroup } from '@base-ui/react/toggle-group';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContractError } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
+import { Toggle } from 'desktop/ui/toggle';
 import { $getRoot, createEditor } from 'lexical';
 import { createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -33,6 +35,16 @@ editor.update(
 
 const report = {
   button: renderToStaticMarkup(createElement(Counter)),
+  // The module's Base UI group around desktop/ui's toggles: they read its
+  // value only if both reach one Base UI instance.
+  toggles: renderToStaticMarkup(
+    createElement(
+      ToggleGroup,
+      { value: ['on'] },
+      createElement(Toggle, { value: 'on' }, 'On'),
+      createElement(Toggle, { value: 'off' }, 'Off'),
+    ),
+  ),
   composer: renderToStaticMarkup(
     createElement(
       LexicalComposer,
