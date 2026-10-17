@@ -752,17 +752,17 @@ test('the tools armed on the node wait out the blur and return with the focus', 
   await hover();
   assert.ok(query(mounted.frame, 'papercraft-hover') !== null);
 
-  // The focus goes elsewhere in the app: the tools hide, comment mode stays.
+  // The focus goes elsewhere in the app: the tools hide, comment mode stays,
+  // and the element under the pointer is still outlined.
   const elsewhere = document.createElement('button');
   document.body.append(elsewhere);
   await react.act(async () => elsewhere.focus());
   assert.equal(activeOf(mounted.frame), 'false');
-  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
   assert.equal(query(mounted.frame, 'papercraft-comment'), null);
   assert.equal(toolOf(), 'comment');
 
   await hover();
-  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+  assert.ok(query(mounted.frame, 'papercraft-hover') !== null);
 
   // The press that brings the focus back drops no pin; the tool is there.
   await focusNode(mounted.frame);
@@ -874,6 +874,46 @@ test('the element a comment would land on is outlined unlike the selection; Alt 
   assert.equal(query(mounted.frame, 'papercraft-hover-label'), null);
 
   comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the element under the pointer is outlined in any mode, never while the canvas pans', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const canvas = mounted.frame.querySelector('.papercraft-canvas') as Element;
+  const pointer = (target: Element, type: string) =>
+    react.act(async () => {
+      target.dispatchEvent(
+        new window.PointerEvent(type, {
+          bubbles: type !== 'pointerleave',
+          composed: true,
+        }) as never,
+      );
+    });
+
+  // Not focused, not commenting: the outline and its label still follow.
+  assert.equal(activeOf(mounted.frame), 'false');
+  await pointer(pay, 'pointermove');
+  assert.match(
+    (query(mounted.frame, 'papercraft-hover') as HTMLElement).className,
+    /border-dashed/,
+  );
+  assert.equal(
+    query(mounted.frame, 'papercraft-hover-label')?.textContent,
+    'button#pay · checkout.html:42',
+  );
+
+  // The pointer leaves the canvas: nothing stays outlined.
+  await pointer(canvas, 'pointerleave');
+  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+
+  // The space bar pans: nothing is outlined under the hand.
+  await focusNode(mounted.frame);
+  await key(canvas, ' ');
+  await pointer(pay, 'pointermove');
+  assert.equal(query(mounted.frame, 'papercraft-hover'), null);
+
   await mounted.unmount();
 });
 

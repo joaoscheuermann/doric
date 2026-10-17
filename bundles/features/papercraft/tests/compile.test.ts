@@ -8,19 +8,19 @@
 //   Project's component (relative `.js` → `.tsx`) compiles into an ESM
 //   `index.js` that exports `mount`, keeps `react` external and bundles the
 //   imported file; `index.css` carries the utilities the sources use, mapped
-//   to the app's theme variables; each entry's hash is the hash of the bytes
+//   to the generic theme's variables; each entry's hash is the hash of the bytes
 //   handed over, and `index.html` stays the fallback markup;
 // - a Project `tsconfig.json` `paths` alias resolves through the sandbox;
 // - `lucide-react`, outside the window's import map, is bundled, not left
 //   external;
-// - `bundle/contracts`, which every window serves, is left to the import
-//   map, while platform packages the map does not serve (`desktop/client`,
-//   `bundle/runtime`) are bundled from the Project like any package, still
-//   sharing the window's `bundle/contracts`;
+// - only the React `mount` renders with is left to the window: everything
+//   else is the Project's — `bundle/contracts`, and the platform packages
+//   (`desktop/client`, `bundle/runtime`) — bundled like any package;
 // - a Node built-in fails naming the import;
-// - `mount` takes `desktop/ui`'s portal container provider from the import
-//   map, and the sheet carries the shared components' classes only when the
-//   previewed code itself imports `desktop/ui`;
+// - `desktop/ui` comes from the Project's source, resolved through the
+//   nearest tsconfig's `customConditions`: a component the Project edited
+//   shows its edit, one it added is there too, and their classes reach the
+//   sheet; `mount` itself imports nothing but React;
 // - `entry` names the export to mount; a missing one, or a source with no
 //   default and several components, fails naming the exports;
 // - a source that does not compile, or an import nowhere to be found, fails
@@ -166,7 +166,7 @@ describe('component previews (path B)', () => {
     assert.match(css, /\.bg-primary\s*\{[^}]*var\(--primary\)/);
     assert.match(css, /\.p-4\s*\{/);
     // No theme token is defined as itself: under `:host` that cycle would
-    // void the token the surface copies onto the shadow host.
+    // void the token the shadow host inherits.
     assert.doesNotMatch(css, /(--[\w-]+):\s*var\(\1\)/);
 
     // The fallback is still the source text, stamped with its origin.
@@ -223,21 +223,40 @@ describe('component previews (path B)', () => {
     assert.match(textOf(built, 'index.css'), /\.size-4\s*\{/);
   });
 
-  test('bundle/contracts is left to the import map, as every window serves it', async () => {
+  test("only React is left to the window; bundle/contracts is the Project's", async () => {
     const built = await snapshot(
       {
+        'node_modules/bundle/package.json': JSON.stringify({
+          name: 'bundle',
+          type: 'module',
+          exports: { './contracts': './contracts.js' },
+        }),
+        'node_modules/bundle/contracts.js':
+          "export const contractsLabel = 'project-contracts';",
         'src/badge.tsx': [
-          "import { ContractError } from 'bundle/contracts';",
+          "import { contractsLabel } from 'bundle/contracts';",
           'export default function Badge() {',
-          "  return <span>{new ContractError('unavailable', 'off').code}</span>;",
+          '  return <span>{contractsLabel}</span>;',
           '}',
         ].join('\n'),
       },
       { source: 'component', path: 'src/badge.tsx' },
     );
+    const js = textOf(built, 'index.js');
+    const react = [
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom',
+      'react-dom/client',
+    ];
 
-    assert.ok(
-      importsOf(textOf(built, 'index.js')).includes('bundle/contracts'),
+    assert.match(js, /project-contracts/);
+    // Without the Project's `desktop/ui`, `mount` imports none from the
+    // window either.
+    assert.deepEqual(
+      importsOf(js).filter((specifier) => !react.includes(specifier)),
+      [],
     );
   });
 
@@ -254,8 +273,13 @@ describe('component previews (path B)', () => {
         'node_modules/bundle/package.json': JSON.stringify({
           name: 'bundle',
           type: 'module',
-          exports: { './runtime': './runtime.js' },
+          exports: {
+            './runtime': './runtime.js',
+            './contracts': './contracts.js',
+          },
         }),
+        'node_modules/bundle/contracts.js':
+          'export class ContractError extends Error {}',
         'node_modules/bundle/runtime.js': [
           "import { ContractError } from 'bundle/contracts';",
           "export const runtimeLabel = 'bundle-runtime-copy-' + typeof ContractError;",
@@ -277,7 +301,82 @@ describe('component previews (path B)', () => {
     assert.match(js, /bundle-runtime-copy-/);
     assert.ok(!imports.includes('desktop/client'));
     assert.ok(!imports.includes('bundle/runtime'));
-    assert.ok(imports.includes('bundle/contracts'));
+    assert.ok(!imports.includes('bundle/contracts'));
+  });
+
+  test('desktop/ui comes from the Project source, an edited component and a new one alike', async () => {
+    // The Project is a repository in a folder of the workspace whose own
+    // `desktop` package edited a component the window also has and added
+    // one it lacks; its \`dist\` was never built, so only its source resolves.
+    const built = await snapshot(
+      {
+        'repo/tsconfig.base.json':
+          '{ "compilerOptions": { "customConditions": ["@org/source"] } }',
+        'repo/tsconfig.json': '{ "extends": "./tsconfig.base.json" }',
+        'repo/node_modules/desktop/package.json': JSON.stringify({
+          name: 'desktop',
+          type: 'module',
+          exports: {
+            './ui/*': {
+              '@org/source': './src/components/*.tsx',
+              import: './dist/components/*.js',
+            },
+          },
+        }),
+        'repo/node_modules/desktop/src/components/popover.tsx': [
+          "import type { ReactNode } from 'react';",
+          'export const Popover = ({ children }: { children?: ReactNode }) => (',
+          '  <div className="ring-[3px]" data-popover="project-edit">{children}</div>',
+          ');',
+        ].join('\n'),
+        // Like the platform's own components, it imports Radix through the
+        // umbrella package, which the Project's sandbox is never asked for.
+        'repo/node_modules/desktop/src/components/fancy-badge.tsx': [
+          "import { Slot } from 'radix-ui';",
+          'export const FancyBadge = () => (',
+          '  <Slot.Root className="tracking-[0.37em]"><span>fancy-badge-body</span></Slot.Root>',
+          ');',
+        ].join('\n'),
+        'repo/src/badge.tsx': [
+          "import { FancyBadge } from 'desktop/ui/fancy-badge';",
+          "import { Popover } from 'desktop/ui/popover';",
+          'export default function Badge() {',
+          '  return <Popover><FancyBadge /></Popover>;',
+          '}',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'repo/src/badge.tsx' },
+    );
+    const js = textOf(built, 'index.js');
+    const css = textOf(built, 'index.css');
+
+    assert.match(js, /project-edit/);
+    assert.match(js, /fancy-badge-body/);
+    assert.ok(
+      !importsOf(js).some((specifier) => specifier.startsWith('desktop/')),
+    );
+    assert.match(css, /ring-\\\[3px\\\]/);
+    assert.match(css, /tracking-\\\[0\\\.37em\\\]/);
+  });
+
+  test('a package subpath that is a folder with its own package.json resolves through it', async () => {
+    // The layout before `exports` maps (`react-remove-scroll-bar/constants`).
+    const built = await snapshot(
+      {
+        'node_modules/scroll-bar/package.json': '{ "name": "scroll-bar" }',
+        'node_modules/scroll-bar/constants/package.json':
+          '{ "main": "../dist/es5/constants.js", "module": "../dist/es2015/constants.js" }',
+        'node_modules/scroll-bar/dist/es2015/constants.js':
+          "export const gap = 'scroll-bar-constants';",
+        'src/bar.tsx': [
+          "import { gap } from 'scroll-bar/constants';",
+          'export default () => <div>{gap}</div>;',
+        ].join('\n'),
+      },
+      { source: 'component', path: 'src/bar.tsx' },
+    );
+
+    assert.match(textOf(built, 'index.js'), /scroll-bar-constants/);
   });
 
   test('a Node built-in fails naming the import', async () => {
@@ -291,44 +390,6 @@ describe('component previews (path B)', () => {
       ),
       /node:fs/,
     );
-  });
-
-  test("the shared components' classes join the sheet only when the preview imports desktop/ui", async () => {
-    // A class only `desktop/ui/popover` writes.
-    const popoverOrigin = /--radix-popover-content-transform-origin/;
-    const plain = await snapshot(PROJECT, {
-      source: 'component',
-      path: WRAPPER_PATH,
-    });
-
-    assert.ok(
-      importsOf(textOf(plain, 'index.js')).includes(
-        'desktop/ui/portal-container',
-      ),
-    );
-    assert.doesNotMatch(textOf(plain, 'index.css'), popoverOrigin);
-
-    const shared = await snapshot(
-      {
-        'src/menu.tsx': [
-          "import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';",
-          'export default function Menu() {',
-          '  return (',
-          '    <Popover>',
-          '      <PopoverTrigger>Open</PopoverTrigger>',
-          '      <PopoverContent>Body</PopoverContent>',
-          '    </Popover>',
-          '  );',
-          '}',
-        ].join('\n'),
-      },
-      { source: 'component', path: 'src/menu.tsx' },
-    );
-
-    assert.ok(
-      importsOf(textOf(shared, 'index.js')).includes('desktop/ui/popover'),
-    );
-    assert.match(textOf(shared, 'index.css'), popoverOrigin);
   });
 
   test('entry names the export to mount', async () => {

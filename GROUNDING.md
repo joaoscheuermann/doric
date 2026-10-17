@@ -949,8 +949,12 @@ the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
 It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
 root's target. Pins show the thread state: a draft is dashed, an open comment primary
 with its reply count, an awaiting one an orange `?`, a done one a muted green
-`✓`; a control shows or hides the resolved ones, and a hover label
-`element · file:line` appears while the tool is armed. Opening a pin that
+`✓`; a control shows or hides the resolved ones. A dashed hover outline with
+the label `element · file:line` follows the pointer in any mode, focused or
+not: to the element a comment would land on while the comment tool is armed
+(`Alt` forces a free point), else to the element under the pointer; nothing is
+outlined while the canvas pans, and the outline goes when the pointer leaves
+the canvas. Opening a pin that
 already holds its first comment shows a thread popover (header
 `N Component:line`, a menu, resolve or reopen on sent roots, close; messages
 with avatar, name and time; a reply field): replies go to the stack with
@@ -966,19 +970,23 @@ agent to answer with `comment_reply` and resolve when done. Every window call ca
 Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
 `runtime.threads/v1` are optional. A `component` source is compiled on the
 host (path B): esbuild bundles the entry, reading Project files through
-`files/v1`, keeps the window import-map specifiers external (the shared
-`clientExternals` from `bundle/externals`, `bundle/contracts` included, except
-`*/contracts`, which a window serves only for its own generation's bundles;
-`lucide-react` is not in the import map, so it is bundled; a `.css` import is
-never left external, even `desktop/ui/theme.css`: it resolves in the Project
-and compiles into the sheet), wraps the chosen export (`entry`, else
+`files/v1`, leaves external only the React `mount` renders with (`react`,
+`react/jsx-runtime`, `react/jsx-dev-runtime`, `react-dom`, `react-dom/client`,
+which the window shares), wraps the chosen export (`entry`, else
 `default`, else the single PascalCase export) in `mount(root, { theme })`, and
 compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
 markup), `index.js` and `index.css`, and a compile error fails the call before
-anything is published. Every other import is Project code and is bundled,
-Doric's own platform packages included: a sibling bundle's `<id>/contracts`,
-`bundle/runtime`, `desktop/client` and `desktop/*` outside `desktop/ui` become
-the preview's own copy. No import is refused for what it names: the module
+anything is published. The preview is agnostic to the Project: besides that
+React, the host provisions only `radix-ui` and `lucide-react` (bundled from
+the host's own `node_modules`, whose per-file layout would cost too many
+sandbox reads) and, in the sheet, Tailwind and a generic theme; every other
+import is Project code, read from its files and `node_modules` and bundled,
+resolving packages by the nearest tsconfig's `customConditions` (a workspace
+package to its source) and honouring a subpath folder's own `package.json`.
+Nothing is special to Doric: when the Project is Doric, its `desktop/ui`,
+`bundle/contracts`, `<id>/contracts`, zod and Lexical are Project code too, so
+a component it edits or adds previews as the Project has it. No import is
+refused for what it names: the module
 already runs in the app window's realm, where main's checks on every bridge
 call and the CSP are the boundary. Only what cannot run in a window fails,
 naming the import: a Node built-in, a package missing from the Project, or a
@@ -990,19 +998,36 @@ decorators wrap every component preview, and a harness that does not compile
 is left out with a warning. A `*.stories.*` source (or a default export shaped
 like CSF meta) mounts one CSF story (`entry`, else the first in source order)
 with Storybook's decorator order and `args` merge; `@storybook/addon-themes` is
-a built-in stand-in. The CSS the harness imports replaces Doric's theme as the
-sheet's base, compiled with Tailwind v4 through `files/v1` (`tailwindcss`
-itself from the host), with its `:root` rules also on `:host` and the module's
-theme wrapper; components' CSS imports are appended; Tailwind v3 or a sheet
-that does not compile falls back to Doric's theme with a warning. `mount`
+a built-in stand-in (the real addon needs Storybook's runtime). The sheet's
+base is a generic theme, Tailwind's theme variables, preflight and
+utilities with a neutral shadcn token set in light and dark, belonging to no
+application; the CSS the harness imports (a `.css` import is always compiled
+into the sheet, never left to the window) replaces it, compiled with Tailwind
+v4 through `files/v1` (`tailwindcss` itself from the host). Either base has
+its `:root` rules also on `:host` and the module's theme wrapper, over the
+variables the app's page lets the host inherit; the surface copies none of the
+app's theme onto the preview, and only the reader's light or dark mode
+reaches `mount`. Components' CSS imports are appended; Tailwind v3 or a sheet
+that does not compile falls back to the generic theme with a warning. `mount`
 creates a portal container beside its React root, inside the shadow root, and
-renders the tree under `desktop/ui`'s `PortalContainerProvider` with it, so
-`desktop/ui` overlays portal there by themselves (the runtime's
-`desktop/ui/portal-container` import does not count as the preview using
-`desktop/ui` for its sheet); it also hands the container to decorators and
-stories as `context.papercraft.portalContainer`, which only third-party
-portals (the Project's own components) need; the surface's content is the
-containing block of portaled overlays. An `html` source still builds `index.html` only. Before
+hands it to decorators and stories as `context.papercraft.portalContainer`;
+the Project's harness passes it on to its components (Doric's harnesses, to
+`desktop/ui`'s `PortalContainerProvider`, so `desktop/ui` overlays portal
+there); the surface's content is the containing block of portaled overlays. The surface sizes the preview by
+Storybook's layout, which `mount` states on its root as
+`data-papercraft-layout` from the story's merged `parameters.layout`:
+`centered`, papercraft's default, makes the shadow host hug what the preview
+renders (`width: fit-content`, so content wider than the canvas still wraps at
+the canvas's width), and `padded` and `fullscreen` lay the preview out at the
+canvas's width; Storybook's padding is not reproduced. A component whose module
+did not load hugs its fallback markup, and an `html` revision, a page, is laid
+out at the canvas's width. The frame measures each element only by the part
+its clipping ancestors leave visible (those that hide their overflow on its
+containing-block chain), and an element with no area, such as the module's
+own `display: contents` wrappers, which a browser measures at the window's
+corner, neither bounds the content nor answers a pointer; so the fit and
+`Centralizar` centre what is shown, and fitting again does not drift. An
+`html` source still builds `index.html` only. Before
 importing a module, the window reads the revision's bytes through
 `artifacts/v1.read` and writes them into the verified cache with
 `artifacts.cache/v1.ensure`; the module is then imported from
@@ -1011,7 +1036,10 @@ in when either step fails.
 
 Doric's own UI is previewed the same way. Every package with React components
 has a `.storybook/preview.tsx` harness at its root (a bundle's imports
-`desktop/ui/theme.css`, then its own client stylesheet) and CSF stories under
+`desktop/ui/theme.css`, then its own client stylesheet; `packages/desktop`'s
+imports its own `src/styles/theme.css`; each hands
+`context.papercraft.portalContainer` to `desktop/ui`'s
+`PortalContainerProvider`) and CSF stories under
 `stories/`, mirroring the path under `src/` without a leading `client/`
 (`src/client/components/molecules/x.tsx` →
 `stories/components/molecules/x.stories.tsx`). Stories never live in `src/`,
@@ -1019,8 +1047,11 @@ so they are not emitted and `packages/desktop/src/components` keeps passing
 `verify-provenance`. They import no `@storybook/*` package (Storybook is not
 installed), reach the shared components through `desktop/ui/*`, seed stores
 and providers with fixtures instead of a live host, and are typechecked by the
-package's client (or spec) tsconfig. Every story compiles in papercraft under
-the general rule above, whatever platform package its code reaches.
+package's client (or spec) tsconfig. A story compiles in papercraft under the
+general rule above, whatever platform package its code reaches, within the
+read budget: today the stories that reach `monaco-editor` (`desktop/ui/code`)
+or `@base-ui/react` (the combobox) read more than the budget allows from the
+sandbox and fail naming it, a known limit.
 
 `/bundles/foundation/postgres` is the foundation bundle the composition chooses for
 `storage.backend/v1` and `secrets.backend/v1`, so it activates before the core.

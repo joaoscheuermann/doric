@@ -8,38 +8,41 @@
 //
 // Resolution, in order, for every import the artifact makes:
 //
-// The rule is general: what the window's import map serves stays external,
-// everything else is Project code and is bundled, and what cannot run in a
-// window fails naming the import. No specifier is refused for what it is: the
-// module already runs in the app window's realm, where the main process's
-// checks on every bridge call and the CSP are the boundary, so a refusal
-// would protect nothing and only keep stories from previewing.
+// The rule is agnostic to the Project: whatever its stories are, the preview
+// renders them in isolation from the Project's own code. The window shares
+// only the React and ReactDOM `mount` renders with; the host provisions only
+// the UI libraries step 4 names (and, in `css.ts`, Tailwind and a generic
+// theme the harness's CSS replaces); everything else is the Project's, read
+// from its files and its `node_modules`. Nothing is special to any Project:
+// when it is Doric itself, its `desktop/ui` and `bundle/contracts` are Project
+// code like any other, so a component it edits or adds previews as the
+// Project has it. No specifier is refused for what it is: the module already
+// runs in the app window's realm, where the main process's checks on every
+// bridge call and the CSP are the boundary, so a refusal would protect
+// nothing. What cannot run in a window fails, naming the import.
 //
-// 1. The window's import map: the specifiers `clientExternals` lists (React,
-//    ReactDOM, `desktop/ui`, Lexical, zod, `bundle/contracts`) stay external
-//    and resolve in the window, so the preview shares the app's one React and
-//    its one contracts API. `*/contracts` is not left external here: a window
-//    serves `<id>/contracts` only for the bundles of its generation, so a
-//    sibling bundle's contracts are bundled from the Project's
-//    `node_modules`. Nor is a stylesheet (`desktop/ui/theme.css`): a window
-//    cannot import CSS as a module, so it resolves like any other Project
-//    import and compiles into `index.css`.
+// 1. The shared runtime (`previewExternals`) stays external and resolves in
+//    the window. A stylesheet never does: a window cannot import CSS as a
+//    module, so it resolves like any other Project import and compiles into
+//    `index.css`.
 // 2. Node built-ins do not exist in a window: they fail the build with a
 //    message naming them.
 // 3. Relative imports and the Project's `tsconfig.json` `paths` aliases are
 //    read from the sandbox: `./x.js` tries the TypeScript twins first
 //    (`x.ts`, `x.tsx`), an extensionless import tries `.tsx/.ts/.jsx/.js`
 //    and then `index.*`.
-// 4. Bare packages the host itself ships for previews (`HOST_PACKAGES`, today
-//    `lucide-react`) are bundled from the host's own `node_modules`: their
-//    per-file layout is too many sandbox reads, and the window's import map
-//    does not serve them.
-// 5. Any other bare package, Doric's own platform packages included
-//    (`bundle/runtime`, `desktop/client`), is resolved in the Project's
-//    `node_modules` through the sandbox (`exports`, then `module`, then
+// 4. Bare packages the host itself ships for previews (`HOST_PACKAGES`:
+//    `lucide-react`, and `radix-ui`, the umbrella the shared components
+//    import every primitive through) are bundled from the host's own
+//    `node_modules`: their per-file layout is too many sandbox reads, and the
+//    window's import map does not serve them.
+// 5. Any other bare package is resolved in the Project's `node_modules`
+//    through the sandbox (`exports` by the nearest tsconfig's
+//    `customConditions`, then the default conditions; then `module`, then
 //    `main`) and bundled as the preview's own copy, under a read budget; a
 //    package that cannot be found or that exceeds the budget fails the build,
 //    naming the import, so the agent stubs it in the preview wrapper instead.
+
 //
 // The previewed source is wrapped by the Project's preview harness
 // (`harness.ts`: `.storybook/preview.*` or `.papercraft/preview.*`) when it
@@ -64,7 +67,6 @@ import { dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ContractError } from 'bundle/contracts';
-import { clientExternals, matchesExternal } from 'bundle/externals';
 import type {
   BuildFailure,
   BuildOptions,
@@ -79,7 +81,6 @@ import {
   entryModule,
   HARNESS_ID,
   isStoriesFile,
-  PORTAL_CONTAINER_SPECIFIER,
   SOURCE_ID,
   storyOrder,
 } from './entry.js';
@@ -90,6 +91,7 @@ import {
   isRelative,
   packageOf,
   projectPath,
+  SCRIPT_CONDITIONS,
 } from './paths.js';
 
 /**
@@ -119,19 +121,24 @@ export const MAX_SOURCE_READS = 1_500;
 export const MAX_SOURCE_BYTES_TOTAL = 8 * 1_048_576;
 
 /**
- * The import-map specifiers a preview leaves to the window: a client part's,
- * except `<id>/contracts`, which only the window's own generation serves.
+ * What a preview leaves to the window: the React its `mount` renders with, by
+ * the exact specifiers the window's import map serves it under. Everything
+ * else is the Project's.
  */
-export const previewExternals: readonly string[] = clientExternals.filter(
-  (pattern) => pattern !== '*/contracts',
-);
+export const previewExternals: readonly string[] = [
+  'react',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  'react-dom',
+  'react-dom/client',
+];
 
 /**
  * Bare packages bundled from the host's own `node_modules` rather than the
  * sandbox: UI packages the app's own code uses that the import map does not
  * serve, whose per-file ESM layout would cost hundreds of sandbox reads.
  */
-export const HOST_PACKAGES: readonly string[] = ['lucide-react'];
+export const HOST_PACKAGES: readonly string[] = ['lucide-react', 'radix-ui'];
 
 const SOURCE_NS = 'papercraft-source';
 const ENTRY_NS = 'papercraft-entry';
@@ -170,9 +177,12 @@ const LOADERS: Readonly<Record<string, Loader>> = {
 const isNodeBuiltin = (specifier: string): boolean =>
   specifier.startsWith('node:') || isBuiltin(specifier);
 
-/** Whether an import names a stylesheet, which `index.css` carries. */
-const isStylesheet = (specifier: string): boolean =>
-  posix.extname(specifier) === '.css';
+/** A manifest's entry when it has no `exports`: `module`, `browser`, `main`. */
+const entryOf = (fields: Readonly<Record<string, unknown>>): string =>
+  (typeof fields.module === 'string' ? fields.module : undefined) ??
+  (typeof fields.browser === 'string' ? fields.browser : undefined) ??
+  (typeof fields.main === 'string' ? fields.main : undefined) ??
+  'index.js';
 
 /** The files one import of `base` may name, in the order they are tried. */
 const candidatesOf = (base: string): readonly string[] => {
@@ -402,6 +412,8 @@ const sandboxPlugin = (input: {
   readonly entry?: string;
   readonly harnessPath?: string;
   readonly aliases: readonly PathAlias[];
+  /** The export conditions a Project package resolves by, in priority. */
+  readonly conditions: ReadonlySet<string>;
   readonly loaded: Map<string, string>;
   /** The Project stylesheets this build imported, in import order. */
   readonly css: Set<string>;
@@ -438,22 +450,26 @@ const sandboxPlugin = (input: {
           let target: string | undefined;
 
           if (fields.exports !== undefined) {
-            target = exportTarget(fields.exports, subpath);
+            target = exportTarget(fields.exports, subpath, input.conditions);
             if (target === undefined) return undefined;
 
             return firstExisting([posix.join(pkgDir, target)]);
           }
 
           if (subpath === '.') {
-            target =
-              (typeof fields.module === 'string' ? fields.module : undefined) ??
-              (typeof fields.browser === 'string'
-                ? fields.browser
-                : undefined) ??
-              (typeof fields.main === 'string' ? fields.main : undefined) ??
-              'index.js';
+            target = entryOf(fields);
           } else {
-            target = subpath;
+            // A subpath may be a folder with its own manifest, the layout
+            // before `exports` maps (`react-remove-scroll-bar/constants`).
+            const nested = await input.read(
+              posix.join(pkgDir, subpath, 'package.json'),
+            );
+            const nestedFields: unknown =
+              nested === undefined ? undefined : JSON.parse(nested);
+
+            target = isRecord(nestedFields)
+              ? posix.join(subpath, entryOf(nestedFields))
+              : subpath;
           }
 
           return firstExisting(candidatesOf(posix.join(pkgDir, target)));
@@ -524,13 +540,8 @@ const sandboxPlugin = (input: {
         return { path: args.path, namespace: JSX_NS };
       }
 
-      // A stylesheet is never left to the window, even under an import-map
-      // pattern (`desktop/ui/theme.css`): a window cannot import CSS as a
-      // module, so it resolves in the Project and compiles into `index.css`.
-      if (
-        !isStylesheet(args.path) &&
-        matchesExternal(previewExternals, args.path)
-      ) {
+      // The React `mount` renders with is the window's.
+      if (previewExternals.includes(args.path)) {
         // A bundled CommonJS module that `require`s an external gets an ESM
         // re-export of it, so the external stays the window's one instance.
         return args.kind === 'require-call' && args.namespace !== REQUIRE_NS
@@ -600,7 +611,7 @@ const sandboxPlugin = (input: {
         ? {
             errors: [
               {
-                text: `Cannot resolve "${args.path}" from "${importer}": it is not in the window's import map (${previewExternals.join(', ')}) and was not found in the Project's node_modules. Stub it in the preview wrapper.`,
+                text: `Cannot resolve "${args.path}" from "${importer}": it is not in the Project's node_modules (the window only shares ${previewExternals.join(', ')}). Stub it in the preview wrapper.`,
               },
             ],
           }
@@ -633,7 +644,13 @@ const sandboxPlugin = (input: {
         return { errors: [{ text: `"${args.path}" could not be read.` }] };
       }
 
-      if (!/(^|\/)node_modules\//.test(args.path)) {
+      // The Tailwind scan reads what the Project authored: everything outside
+      // `node_modules`, and the TypeScript and JSX sources inside it — a
+      // workspace package resolved to its source, never a published one.
+      if (
+        !/(^|\/)node_modules\//.test(args.path) ||
+        /\.(?:tsx?|jsx|mts|cts)$/.test(args.path)
+      ) {
         input.loaded.set(args.path, contents);
       }
 
@@ -751,6 +768,85 @@ const readAliases = (
   return visit('tsconfig.json', 0);
 };
 
+/**
+ * The `customConditions` of the tsconfig nearest to `path`, walking up from
+ * its folder, through the config's relative `extends` (three levels): how
+ * the Project's own TypeScript resolves its packages — a monorepo's
+ * workspace packages to their source rather than a build that may be stale
+ * or missing. The nearest tsconfig governs; one that names none, or cannot
+ * be read, names none.
+ */
+const readConditions = async (
+  read: (path: string) => Promise<string | undefined>,
+  path: string,
+): Promise<readonly string[]> => {
+  const conditionsIn = async (
+    file: string,
+    depth: number,
+  ): Promise<readonly string[] | undefined> => {
+    if (depth > 3) return undefined;
+
+    let parsed: unknown;
+
+    try {
+      const text = await read(file);
+      if (text === undefined) return undefined;
+      parsed = parseJsonc(text);
+    } catch {
+      return undefined;
+    }
+
+    if (!isRecord(parsed)) return undefined;
+
+    const options = isRecord(parsed.compilerOptions)
+      ? parsed.compilerOptions
+      : {};
+
+    if (Array.isArray(options.customConditions)) {
+      return options.customConditions.filter(
+        (condition): condition is string => typeof condition === 'string',
+      );
+    }
+
+    const parents =
+      typeof parsed.extends === 'string'
+        ? [parsed.extends]
+        : Array.isArray(parsed.extends)
+          ? parsed.extends.filter(
+              (parent): parent is string => typeof parent === 'string',
+            )
+          : [];
+
+    // Later `extends` override earlier ones: the last that names any wins.
+    for (const parent of [...parents].reverse()) {
+      if (!isRelative(parent)) continue;
+
+      const target = projectPath(file, parent);
+      if (target === undefined) continue;
+
+      const found = await conditionsIn(
+        target.endsWith('.json') ? target : `${target}.json`,
+        depth + 1,
+      );
+
+      if (found !== undefined && found.length > 0) return found;
+    }
+
+    return [];
+  };
+
+  for (let dir = posix.dirname(path); ; dir = posix.dirname(dir)) {
+    const top = dir === '.' || dir === '' || dir === '/';
+    const found = await conditionsIn(
+      top ? 'tsconfig.json' : `${dir}/tsconfig.json`,
+      0,
+    );
+
+    if (found !== undefined) return found;
+    if (top) return [];
+  }
+};
+
 /* The build --------------------------------------------------------------- */
 
 const exportsOf = (metafile: Metafile): readonly string[] =>
@@ -773,6 +869,10 @@ export const compileComponent = async (
   const loaded = new Map<string, string>();
   const warnings = new Set<string>();
   const aliases = await readAliases(cached);
+  const conditions: ReadonlySet<string> = new Set([
+    ...(await readConditions(cached, input.path)),
+    ...SCRIPT_CONDITIONS,
+  ]);
 
   const options = (pass: {
     readonly css: Set<string>;
@@ -799,6 +899,7 @@ export const compileComponent = async (
         sourcePath: input.path,
         ...pass,
         aliases,
+        conditions,
         loaded,
       }),
     ],
@@ -878,21 +979,10 @@ export const compileComponent = async (
     );
   }
 
-  // `mount`'s own portal container import carries no classes.
-  const usesDesktopUi = Object.values(result.metafile.outputs).some((output) =>
-    output.imports.some(
-      (entry) =>
-        entry.external === true &&
-        entry.path !== PORTAL_CONTAINER_SPECIFIER &&
-        (entry.path === 'desktop/ui' || entry.path.startsWith('desktop/ui/')),
-    ),
-  );
-
   const styles = await run(() =>
     compileStyles({
       read: cached,
       sources: loaded,
-      usesDesktopUi,
       globalCss: [...globalCss],
       componentCss: [...css].filter((path) => !globalCss.has(path)),
     }),

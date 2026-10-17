@@ -166,7 +166,54 @@ export const boundsIndex = (measure: BoundsOf): BoundsOf => {
   };
 };
 
+/** An ancestor that hides its overflow: its box, and the axes it clips on. */
+export interface Clip {
+  readonly box: Bounds;
+  readonly x: boolean;
+  readonly y: boolean;
+}
+
+/**
+ * The part of a box its clipping ancestors leave visible: what scrolled out
+ * of a scroll area, or overflows a hidden box, is not shown, so it does not
+ * count. A box clipped out of sight keeps its place but takes no room.
+ */
+export const clipBounds = (bounds: Bounds, clips: readonly Clip[]): Bounds => {
+  if (clips.length === 0) return bounds;
+
+  let left = bounds.x;
+  let top = bounds.y;
+  let right = bounds.x + bounds.width;
+  let bottom = bounds.y + bounds.height;
+
+  for (const clip of clips) {
+    if (clip.x) {
+      left = Math.max(left, clip.box.x);
+      right = Math.min(right, clip.box.x + clip.box.width);
+    }
+
+    if (clip.y) {
+      top = Math.max(top, clip.box.y);
+      bottom = Math.min(bottom, clip.box.y + clip.box.height);
+    }
+  }
+
+  return right > left && bottom > top
+    ? { x: left, y: top, width: right - left, height: bottom - top }
+    : { x: bounds.x, y: bounds.y, width: 0, height: 0 };
+};
+
+/**
+ * Whether a node takes up any room. An element that generates no box
+ * (`display: contents`, as the module's own wrappers are, or `display: none`)
+ * measures as an empty rect at the window's corner, far from the content: it
+ * neither bounds the content nor answers a pointer.
+ */
+const hasArea = (bounds: Bounds): boolean =>
+  bounds.width > 0 || bounds.height > 0;
+
 const contains = (bounds: Bounds, point: { x: number; y: number }): boolean =>
+  hasArea(bounds) &&
   point.x >= bounds.x &&
   point.y >= bounds.y &&
   point.x <= bounds.x + bounds.width &&
@@ -225,7 +272,10 @@ export const nearestNode = (
   for (const node of graph.nodes) {
     if (hidden?.has(node.id) === true) continue;
 
-    const nodeDistance = distance(boundsOf(node), point);
+    const bounds = boundsOf(node);
+    if (!hasArea(bounds)) continue;
+
+    const nodeDistance = distance(bounds, point);
     if (nodeDistance < bestDistance) {
       best = node;
       bestDistance = nodeDistance;
@@ -267,8 +317,8 @@ export const isolateHiddenIds = (
 };
 
 /**
- * The content box around every node's bounds, for `⤢ ajustar`; undefined when
- * the derivation has nothing measurable.
+ * The content box around every node's bounds that takes up room, for
+ * `⤢ ajustar`; undefined when the derivation has nothing measurable.
  */
 export const contentBounds = (
   graph: SceneGraph,
@@ -281,6 +331,8 @@ export const contentBounds = (
 
   for (const node of graph.nodes) {
     const bounds = boundsOf(node);
+
+    if (!hasArea(bounds)) continue;
 
     x = Math.min(x, bounds.x);
     y = Math.min(y, bounds.y);

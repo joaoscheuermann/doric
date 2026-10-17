@@ -7,13 +7,15 @@
 // Contract matrix:
 // - a harness that imports the Project's Tailwind v4 entry replaces Doric's
 //   theme: the Project's own tokens and utilities, its `:root` rules also
-//   under `:host`, and none of Doric's theme mapping;
-// - without a harness, Doric's theme stays the base;
+//   under `:host`, and none of the generic theme's mapping;
+// - without a harness, the generic theme is the base, with its own light
+//   and dark tokens, never the app's;
 // - the nearest harness wins, walking up from the previewed file, and
 //   `.storybook/` wins over `.papercraft/` in the same directory;
 // - a harness that cannot be bundled is left out with a warning naming the
 //   import, and the preview still compiles;
-// - a harness whose CSS is Tailwind v3 falls back to Doric's theme, warning;
+// - a harness whose CSS is Tailwind v3 falls back to the generic theme,
+//   warning;
 // - a harness stylesheet named by a specifier the window import map would
 //   serve (`desktop/ui/theme.css`) is compiled into `index.css`, never left
 //   as an import in `index.js`;
@@ -115,7 +117,7 @@ const rejectsWith = async (
 };
 
 describe('the preview harness and the Project CSS', () => {
-  test("a harness's Tailwind entry replaces Doric's theme", async () => {
+  test("a harness's Tailwind entry replaces the generic theme", async () => {
     const built = await snapshot(
       {
         'src/Badge.tsx': BADGE,
@@ -133,12 +135,12 @@ describe('the preview harness and the Project CSS', () => {
     assert.match(css, /\.bg-brand\s*\{[^}]*var\(--brand\)/);
     // The Project's `:root` tokens also apply inside the shadow root.
     assert.match(css, /:root,\s*:host[^{]*\{\s*--brand:\s*#123456/);
-    // Doric's mapping is not the base: the Project defines no `primary`.
+    // The generic mapping is not the base: the Project defines no `primary`.
     assert.doesNotMatch(css, /\.bg-primary\s*\{/);
     assert.match(textOf(built, 'index.js'), /data-harness/);
   });
 
-  test("without a harness, Doric's theme is the base", async () => {
+  test('without a harness, the generic theme is the base, with its own tokens', async () => {
     const built = await snapshot(
       {
         'src/Badge.tsx': BADGE,
@@ -150,6 +152,13 @@ describe('the preview harness and the Project CSS', () => {
 
     assert.match(css, /\.bg-primary\s*\{[^}]*var\(--primary\)/);
     assert.doesNotMatch(css, /\.bg-brand\s*\{/);
+    // The tokens are the theme's own, in light and dark, defined on the
+    // shadow host: nothing of the app's theme is provisioned.
+    assert.match(
+      css,
+      /:root,\s*:host[^{]*\{[^}]*--primary:\s*oklch\(0\.205 0 0\)/,
+    );
+    assert.match(css, /\.dark\s*\{[^}]*--primary:\s*oklch\(0\.922 0 0\)/);
   });
 
   test('the nearest harness wins, and .storybook over .papercraft', async () => {
@@ -205,7 +214,7 @@ describe('the preview harness and the Project CSS', () => {
     );
   });
 
-  test("a Tailwind v3 global sheet falls back to Doric's theme", async () => {
+  test('a Tailwind v3 global sheet falls back to the generic theme', async () => {
     const built = await snapshot(
       {
         'src/Badge.tsx': BADGE,

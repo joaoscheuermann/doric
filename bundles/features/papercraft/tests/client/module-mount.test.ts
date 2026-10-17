@@ -20,11 +20,15 @@
 // - the portal container lives in the shadow root the module is mounted in,
 //   and an element a story portals into it renders there, under `.dark`
 //   when the preview is dark;
-// - a `desktop/ui` overlay the preview opens renders in that portal
-//   container without the story handing it over.
+// - an overlay of the Project's own `desktop/ui` (the workspace's real
+//   `packages/desktop`, reached through the Project's `customConditions`)
+//   renders in that portal container once the harness hands it to
+//   `desktop/ui`'s provider, as Doric's harnesses do;
+// - mount states the story's Storybook layout on its root: the merged
+//   `parameters.layout` when it is one of Storybook's, else `centered`.
 
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -109,6 +113,27 @@ after(async () => {
   await window.happyDOM.close();
 });
 
+/** The repository root, six levels above this compiled test. */
+const workspace = fileURLToPath(new URL('../../../../../../', import.meta.url));
+
+/**
+ * The Project's `node_modules` is the workspace's own: `desktop` there is
+ * the real `packages/desktop`, so a preview takes the Project's `desktop/ui`.
+ */
+const workspaceModule = async (path: string): Promise<string | undefined> => {
+  if (!path.startsWith('node_modules/')) return undefined;
+
+  try {
+    return await readFile(join(workspace, path), 'utf8');
+  } catch {
+    return undefined;
+  }
+};
+
+/** The tsconfig the Doric Project resolves its workspace packages by. */
+const DORIC_TSCONFIG =
+  '{ "compilerOptions": { "customConditions": ["@org/source"] } }';
+
 const compile = async (
   files: Record<string, string>,
   path: string,
@@ -119,7 +144,8 @@ const compile = async (
 
     return {
       content: async (input: { readonly path: string }) => {
-        const content = files[input.path];
+        const content =
+          files[input.path] ?? (await workspaceModule(input.path));
 
         return content === undefined
           ? { status: 'ready', value: { status: 'not_found' } }
@@ -328,6 +354,46 @@ test('a story renders under its, its meta and the harness decorators, with merge
   );
 });
 
+test("mount states the story's layout on its root, centred unless a parameter names Storybook's own", async () => {
+  const stories = {
+    'src/Label.tsx': LABEL,
+    '.storybook/preview.tsx':
+      "export default { parameters: { layout: 'padded' } };",
+    'src/Label.stories.tsx': [
+      "import { Label } from './Label.js';",
+      "export default { component: Label, args: { tone: 't', size: 's', label: 'l' } };",
+      'export const FromHarness = {};',
+      "export const Full = { parameters: { layout: 'fullscreen' } };",
+    ].join('\n'),
+  };
+  const layoutOf = async (module: PreviewModule): Promise<string | null> => {
+    const root = rootElement();
+
+    await act(async () => {
+      module.mount(root, { theme: 'light' });
+    });
+
+    return root.getAttribute('data-papercraft-layout');
+  };
+
+  assert.equal(
+    await layoutOf(
+      await compile({ 'src/Counter.tsx': COUNTER }, 'src/Counter.tsx'),
+    ),
+    'centered',
+  );
+  assert.equal(
+    await layoutOf(
+      await compile(stories, 'src/Label.stories.tsx', 'FromHarness'),
+    ),
+    'padded',
+  );
+  assert.equal(
+    await layoutOf(await compile(stories, 'src/Label.stories.tsx', 'Full')),
+    'fullscreen',
+  );
+});
+
 test("@storybook/addon-themes follows the preview's theme", async () => {
   const module = await compile(
     {
@@ -380,9 +446,24 @@ test('a portaled element renders in the portal container inside the shadow root'
   assert.ok(shadow.querySelector('.dark > #overlay') !== null);
 });
 
-test('a desktop/ui overlay renders in the portal container by itself', async () => {
+test("the Project's desktop/ui overlay renders in the portal container its harness hands it", async () => {
   const module = await compile(
     {
+      'tsconfig.json': DORIC_TSCONFIG,
+      // The harness Doric's packages have: it hands `desktop/ui`'s provider
+      // the container the preview gives it.
+      '.storybook/preview.tsx': [
+        "import { PortalContainerProvider } from 'desktop/ui/portal-container';",
+        'export default {',
+        '  decorators: [',
+        '    (Story, context) => (',
+        '      <PortalContainerProvider container={context.papercraft?.portalContainer}>',
+        '        <Story />',
+        '      </PortalContainerProvider>',
+        '    ),',
+        '  ],',
+        '};',
+      ].join('\n'),
       'src/Menu.tsx': [
         "import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';",
         'export default function Menu() {',

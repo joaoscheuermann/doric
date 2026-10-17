@@ -54,10 +54,11 @@ const labelPlacement = (
 };
 
 /**
- * What the armed comment lands on, before the click: a dashed outline, never
- * the selection's solid one, and a label naming the element and the source
- * line it came from — the label only while nothing is open over the canvas,
- * so it never covers the input, its pending pin or a thread.
+ * The element under the pointer, in any mode — what the armed comment lands
+ * on, before the click: a dashed outline, never the selection's solid one,
+ * and a label naming the element and the source line it came from — the
+ * label only while nothing is open over the canvas, so it never covers the
+ * input, its pending pin or a thread.
  */
 export function HoverOutline({
   node,

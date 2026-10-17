@@ -3,18 +3,22 @@
 // content coordinates, together as one value the frame re-derives when the
 // surface reports its content and re-measures when the canvas changes size.
 //
-// The artifact's layout follows the canvas's width (its page is as wide as
-// the canvas), so a bounds cache is only good for the size it was measured
-// at: a resize keeps the graph and measures again. Hidden layers are view
+// The artifact's layout depends on the canvas's width (a page, or a
+// `padded` or `fullscreen` story, is as wide as the canvas, and a centred
+// one wraps at it), so a bounds cache is only good for the size it was
+// measured at: a resize keeps the graph and measures again. Hidden layers are view
 // state applied to the artifact's DOM — a node in `hidden` never answers a
 // pointer — and a new derivation re-applies them to the elements it found.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  type Bounds,
   type BoundsOf,
   boundsIndex,
   buildSceneGraph,
+  type Clip,
+  clipBounds,
   type SceneGraph,
 } from './scene-graph.js';
 
@@ -27,25 +31,94 @@ export interface Scene {
   readonly content: HTMLElement | null;
 }
 
+const boxOf = (element: Element): Bounds => {
+  const rect = element.getBoundingClientRect();
+
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+};
+
 /**
- * A fresh, lazy cache of node bounds in content coordinates. Each node is
- * measured on its first reading, at the scale the canvas has then — the
- * rect and the divisor are read together, so a zoom between two readings
- * changes nothing.
+ * The ancestors that clip an element, up to the content: those that hide
+ * their overflow on some axis and lie on its containing-block chain. An
+ * absolutely positioned box escapes the static ancestors below its
+ * containing block, and a fixed one every ancestor up to the content (its
+ * containing block, by `contain: layout`).
  */
-const measured = (content: HTMLElement | null, scale: () => number): BoundsOf =>
-  boundsIndex((node) => {
-    const rect = node.element.getBoundingClientRect();
+const clipsOf = (
+  element: Element,
+  stop: Element | null,
+  styleOf: (element: Element) => CSSStyleDeclaration,
+): Clip[] => {
+  const clips: Clip[] = [];
+  let position = styleOf(element).position;
+
+  for (
+    let ancestor = element.parentElement;
+    ancestor !== null && ancestor !== stop;
+    ancestor = ancestor.parentElement
+  ) {
+    const style = styleOf(ancestor);
+
+    if (position === 'fixed') continue;
+    if (position === 'absolute' && style.position === 'static') continue;
+
+    const x = style.overflowX !== 'visible';
+    const y = style.overflowY !== 'visible';
+
+    if (x || y) clips.push({ box: boxOf(ancestor), x, y });
+
+    position = style.position;
+  }
+
+  return clips;
+};
+
+/**
+ * A fresh, lazy cache of node bounds in content coordinates: the part of
+ * each node its clipping ancestors leave visible (`clipBounds`). Each node is
+ * measured on its first reading, at the scale the canvas has then — its rect,
+ * its clips and the divisor are read together, so a zoom between two
+ * readings changes nothing.
+ */
+const measured = (
+  content: HTMLElement | null,
+  scale: () => number,
+): BoundsOf => {
+  const styles = new Map<Element, CSSStyleDeclaration>();
+  const styleOf = (element: Element): CSSStyleDeclaration => {
+    let style = styles.get(element);
+
+    if (style === undefined) {
+      // The element's own window: a frame without one clips nothing.
+      style =
+        element.ownerDocument.defaultView?.getComputedStyle(element) ??
+        ({
+          position: 'static',
+          overflowX: 'visible',
+          overflowY: 'visible',
+        } as CSSStyleDeclaration);
+      styles.set(element, style);
+    }
+
+    return style;
+  };
+
+  return boundsIndex((node) => {
+    const shown = clipBounds(
+      boxOf(node.element),
+      clipsOf(node.element, content, styleOf),
+    );
     const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
     const factor = scale();
 
     return {
-      x: (rect.x - origin.x) / factor,
-      y: (rect.y - origin.y) / factor,
-      width: rect.width / factor,
-      height: rect.height / factor,
+      x: (shown.x - origin.x) / factor,
+      y: (shown.y - origin.y) / factor,
+      width: shown.width / factor,
+      height: shown.height / factor,
     };
   });
+};
 
 /** The scene of what a shadow root holds now. */
 export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {

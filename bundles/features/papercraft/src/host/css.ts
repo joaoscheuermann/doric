@@ -2,17 +2,17 @@
 //
 // Two bases, one compiler:
 //
-// - **Doric's theme** (the default): the app's `desktop/ui/tailwind.css`
-//   mapping (`bg-primary` → `var(--primary)`), the preflight and the
-//   utilities. The surface copies the app's theme variables onto the shadow
-//   host, so the preview renders in the reader's theme.
+// - **The generic theme** (the default, `theme.ts`): Tailwind's theme
+//   variables, preflight and utilities, and a neutral shadcn token set in
+//   light and dark. It belongs to no application, Doric included.
 // - **The Project's global CSS**: the stylesheets the preview harness
 //   (`.storybook/preview.*` / `.papercraft/preview.*`) imports for their side
 //   effect — usually the Project's Tailwind entry (`@import "tailwindcss";`
-//   plus its tokens). They replace Doric's theme. Their `:root` rules also
-//   match `:host` and the module's theme wrapper, so the Project's tokens
-//   reach the shadow tree and win over the app variables the surface copies
-//   onto the host.
+//   plus its tokens). They replace the generic theme.
+//
+// Either way, `:root` rules also match `:host` and the module's theme
+// wrapper, so the base's tokens reach the shadow tree and win over the
+// variables the app's own page lets it inherit.
 //
 // Every Project stylesheet is read through the sandbox reader (`files/v1`):
 // Tailwind's `loadStylesheet` hook resolves relative and root-relative
@@ -28,13 +28,14 @@
 //
 // Tailwind v3 (`@tailwind` directives, a JavaScript config) cannot be
 // compiled by v4: the Project's global CSS is then skipped with a warning and
-// the preview falls back to Doric's theme. Any Project sheet that does not
-// compile degrades the same way, one step at a time: without the components'
-// CSS, then on Doric's theme alone. Only a failure of Doric's own theme fails
-// the preview.
+// the preview falls back to the generic theme. Any Project sheet that does
+// not compile degrades the same way, one step at a time: without the
+// components' CSS, then on the generic theme alone. Only a failure of the
+// generic theme fails the preview.
 
 import { readFile } from 'node:fs/promises';
 import { dirname, posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   exportTarget,
@@ -42,6 +43,7 @@ import {
   packageOf,
   STYLE_CONDITIONS,
 } from './paths.js';
+import { GENERIC_ROOT } from './theme.js';
 
 /** Reads one Project file: `undefined` when it is not there. */
 export type ProjectReader = (path: string) => Promise<string | undefined>;
@@ -50,7 +52,7 @@ export type ProjectReader = (path: string) => Promise<string | undefined>;
 export interface CompiledStyles {
   readonly css: string;
   /** Which base the sheet was built on. */
-  readonly base: 'doric' | 'project';
+  readonly base: 'generic' | 'project';
   readonly warnings: readonly string[];
 }
 
@@ -74,14 +76,8 @@ export const isTailwindV3 = (css: string): boolean =>
 const isTailwindEntry = (css: string): boolean =>
   isTailwindV3(css) || /@import\s+(?:url\()?["']tailwindcss["']/.test(css);
 
-/** Where `desktop/ui/tailwind.css` (the app's theme mapping) sits. */
-export const desktopStyles = async (): Promise<string> => {
-  const { createRequire } = await import('node:module');
-
-  return dirname(
-    createRequire(import.meta.url).resolve('desktop/ui/tailwind.css'),
-  );
-};
+/** Where the host's own stylesheet packages (`tailwindcss`) resolve from. */
+const hostBase = (): string => dirname(fileURLToPath(import.meta.url));
 
 /** The stylesheet one package subpath names, from its manifest. */
 const styleTarget = (manifest: unknown, subpath: string): string => {
@@ -251,7 +247,7 @@ const loaders = (input: {
 /**
  * Adds `:host` and the module's theme wrapper to every selector list that
  * names `:root` or `:host` alone, so a Project's tokens apply inside the
- * shadow root and win over the app variables the surface puts on the host.
+ * shadow root and win over the variables the app's page lets it inherit.
  * Compound forms (`:root.dark`, `:root[data-theme]`) are left as written.
  */
 export const scopeRootSelectors = (css: string): string =>
@@ -277,8 +273,8 @@ export const scopeRootSelectors = (css: string): string =>
 /**
  * The `@theme inline` mapping names some tokens after themselves
  * (`--font-sans: var(--font-sans)`): harmless on the page, where the tokens
- * sheet wins, but a cycle under `:host` that would void the token the surface
- * copies onto the host. Those declarations are dropped.
+ * sheet wins, but a cycle under `:host` that would void the token the host
+ * inherits. Those declarations are dropped.
  */
 const dropSelfReferences = (css: string): string =>
   css.replace(/^[ \t]*(--[\w-]+):\s*var\(\1\);[ \t]*\n/gm, '');
@@ -286,45 +282,18 @@ const dropSelfReferences = (css: string): string =>
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** The candidates the shared components use, scanned once per process. */
-let desktopCandidates: Promise<readonly string[]> | undefined;
-
-const scanDesktop = (stylesDir: string): Promise<readonly string[]> => {
-  desktopCandidates ??= (async () => {
-    const { Scanner } = await import('@tailwindcss/oxide');
-
-    return new Scanner({
-      sources: [
-        { base: posix.join(stylesDir, '..'), pattern: '**/*', negated: false },
-      ],
-    }).scan();
-  })();
-
-  return desktopCandidates;
-};
-
 const importOf = (path: string): string =>
   `@import ${JSON.stringify(`${SANDBOX}/${path}`)};`;
 
-/** Doric's theme: the app's mapping, the preflight and the utilities. */
-const DORIC_ROOT = [
-  '@layer theme, base, components, utilities;',
-  "@import './tailwind.css';",
-  "@import 'tailwindcss/preflight.css' layer(base);",
-  "@import 'tailwindcss/utilities.css' layer(utilities);",
-];
-
 /**
  * The sheet a preview's shadow root needs: the base (the Project's global CSS
- * when the harness imports it, else Doric's theme), the utilities of every
- * class in the Project files the module bundles — plus the shared components'
- * own classes when the module imports `desktop/ui` — and the CSS the
- * components import.
+ * when the harness imports it, else the generic theme), the utilities of every
+ * class in the Project files the module bundles, and the CSS the components
+ * import.
  */
 export const compileStyles = async (input: {
   readonly read: ProjectReader;
   readonly sources: ReadonlyMap<string, string>;
-  readonly usesDesktopUi: boolean;
   /** The Project stylesheets the harness imports, in import order. */
   readonly globalCss?: readonly string[];
   /** The Project stylesheets the components import, in import order. */
@@ -334,7 +303,6 @@ export const compileStyles = async (input: {
     import('tailwindcss'),
     import('@tailwindcss/oxide'),
   ]);
-  const hostBase = await desktopStyles();
   const warnings = new Set<string>();
 
   let globals = [...(input.globalCss ?? [])];
@@ -342,7 +310,7 @@ export const compileStyles = async (input: {
   for (const path of globals) {
     if (isTailwindV3((await input.read(path)) ?? '')) {
       warnings.add(
-        `The preview harness imports "${path}", written for Tailwind v3 (\`@tailwind\` directives); previews compile Tailwind v4, so the Project's global CSS was skipped and the preview uses Doric's theme.`,
+        `The preview harness imports "${path}", written for Tailwind v3 (\`@tailwind\` directives); previews compile Tailwind v4, so the Project's global CSS was skipped and the preview uses the generic theme.`,
       );
       globals = [];
       break;
@@ -369,28 +337,25 @@ export const compileStyles = async (input: {
       extension: posix.extname(path).slice(1) || 'tsx',
     })),
   );
-  const used = input.usesDesktopUi
-    ? [...candidates, ...(await scanDesktop(hostBase))]
-    : candidates;
 
   const attempt = async (
-    base: 'doric' | 'project',
+    base: 'generic' | 'project',
     extra: readonly string[],
   ): Promise<string> => {
     const root = [
-      ...(base === 'project' ? globals.map(importOf) : DORIC_ROOT),
+      ...(base === 'project' ? globals.map(importOf) : GENERIC_ROOT),
       ...extra.map(importOf),
     ].join('\n');
     const compiler = await compile(
       root,
-      loaders({ read: input.read, hostBase, warnings }),
+      loaders({ read: input.read, hostBase: hostBase(), warnings }),
     );
-    const sheet = dropSelfReferences(compiler.build(used));
+    const sheet = dropSelfReferences(compiler.build(candidates));
 
-    return base === 'project' ? scopeRootSelectors(sheet) : sheet;
+    return scopeRootSelectors(sheet);
   };
 
-  const plans: { base: 'doric' | 'project'; extra: readonly string[] }[] = [
+  const plans: { base: 'generic' | 'project'; extra: readonly string[] }[] = [
     ...(globals.length > 0
       ? [
           { base: 'project' as const, extra: components },
@@ -400,9 +365,9 @@ export const compileStyles = async (input: {
         ]
       : []),
     ...(globals.length === 0 && components.length > 0
-      ? [{ base: 'doric' as const, extra: components }]
+      ? [{ base: 'generic' as const, extra: components }]
       : []),
-    { base: 'doric', extra: [] },
+    { base: 'generic', extra: [] },
   ];
 
   for (const [index, plan] of plans.entries()) {

@@ -4,10 +4,9 @@
 // No iframe, in either frame: the preview is mounted in the app itself, in a
 // React-owned host with its own open shadow root. The surface:
 //
-//   - copies the app's theme variables onto the shadow host — the same set
-//     `resolvedVariables` (packages/desktop/src/tokens/css.ts:33) resolves for
-//     a window: the variant's palette, the shared tokens and the window
-//     variables — so the artifact renders in the reader's theme;
+//   - provisions nothing of the app's theme: the module's sheet carries its
+//     own (the Project's, or the generic one), and only the reader's light or
+//     dark mode reaches it, through `mount`;
 //   - when the revision's entries name a compiled module (`index.js`, path B),
 //     first has the revision's entries written into the desktop's verified
 //     cache (`ensure`, which reaches `artifacts.cache/v1`), then injects its
@@ -19,6 +18,9 @@
 //     of path A stands in, with the
 //     discreet one-line notice of decision 10, because the canvas is never
 //     empty;
+//   - sizes the host by Storybook's layout: a component hugs what it renders
+//     (`centered`), unless its module states `padded` or `fullscreen` on the
+//     root, which lay it out at the canvas's width, as an html page is;
 //   - keeps the module's portal container (`[data-papercraft-portal]`, which
 //     `mount` creates beside its React root) inside the content's containing
 //     block, and reports the content again when an overlay opens in it;
@@ -31,7 +33,6 @@
 // (the revision changed, or the surface unmounted, while it loaded) is never
 // mounted, and the unmount runs once.
 
-import { tokens } from 'desktop/ui/tokens';
 import { useEffect, useRef, useState } from 'react';
 
 /** The contract a compiled artifact module exports ("O que o build entrega"). */
@@ -53,23 +54,6 @@ export const artifactStylesUrl = (
   artifactId: string,
   revision: number,
 ): string => `doric://app/artifacts/${artifactId}@${revision}/index.css`;
-
-/**
- * `resolvedVariables` (packages/desktop/src/tokens/css.ts:33) as the client
- * resolves it: the variant's palette, the shared tokens and the window
- * variables the shell guarantees, stated once for the shadow host.
- */
-export const resolvedThemeVariables = (
-  variant: 'light' | 'dark',
-): Readonly<Record<string, string>> => ({
-  ...tokens.shared,
-  ...tokens.variants[variant],
-  '--doric-titlebar-height': `${String(tokens.window.titlebarHeight)}px`,
-  '--doric-window-background': 'var(--background)',
-  '--doric-safe-top': '0px',
-  '--doric-safe-left': '0px',
-  '--doric-safe-right': '0px',
-});
 
 /** The theme the app is in, as a mounted surface reads it. */
 export const appTheme = (): 'light' | 'dark' =>
@@ -106,12 +90,16 @@ export const renderMarkup = (surface: HTMLElement, markup: string): void => {
  * boundary, so without it the artifact would take the conversation's text
  * colour and font; the host starts from initial values instead, as a
  * standalone document does, and the artifact's own rules come after this one
- * and win. Custom properties are not reset, so the theme variables the host
- * carries still reach the artifact.
+ * and win. Custom properties cannot be reset this way: the module's sheet
+ * defines its theme's tokens on `:host`, over the ones the app lets it
+ * inherit.
  */
 export const SURFACE_RESET = [
   // `all` resets the cursor too; the canvas's cursor still reaches inside.
-  ':host { all: initial; display: block; color-scheme: light; cursor: inherit; }',
+  // The host hugs what the preview renders, Storybook's `centered` layout.
+  ':host { all: initial; display: block; width: fit-content; color-scheme: light; cursor: inherit; }',
+  // The layouts that fill lay the preview out at the canvas's width, as a page.
+  ':host([data-layout="padded"]), :host([data-layout="fullscreen"]) { width: auto; }',
   // While a tool owns the pointer, no element of the artifact overrides it.
   ':host([data-cursor="locked"]) * { cursor: inherit !important; }',
   // The content is the containing block of the module's portaled overlays
@@ -142,6 +130,29 @@ export const STYLES_ENTRY = 'index.css';
  * has no module, or the markup standing in for a module that did not load.
  */
 export type SurfaceMode = 'module' | 'markup' | 'fallback';
+
+/**
+ * Storybook's layout the preview is sized by: `centered` hugs the content;
+ * `padded` and `fullscreen` lay it out at the canvas's width.
+ */
+export type SurfaceLayout = 'centered' | 'padded' | 'fullscreen';
+
+/** The attribute a mounted module states its story's layout in. */
+export const LAYOUT_ATTRIBUTE = 'data-papercraft-layout';
+
+/**
+ * The layout a mode starts from: a component hugs its content, and an html
+ * revision is a page, as wide as the canvas. A live module may state another.
+ */
+const layoutOf = (mode: SurfaceMode, content: HTMLElement): SurfaceLayout => {
+  if (mode === 'markup') return 'fullscreen';
+
+  const stated = content.getAttribute(LAYOUT_ATTRIBUTE);
+
+  return mode === 'module' && (stated === 'padded' || stated === 'fullscreen')
+    ? stated
+    : 'centered';
+};
 
 export interface PreviewSurfaceProps {
   readonly artifactId: string;
@@ -190,6 +201,9 @@ export function PreviewSurface({
 }: PreviewSurfaceProps) {
   const host = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SurfaceMode>('markup');
+  const [layout, setLayout] = useState<SurfaceLayout>(() =>
+    entries?.includes(MODULE_ENTRY) === true ? 'centered' : 'fullscreen',
+  );
 
   // The reporters are read when a mount settles, so a new callback identity
   // never remounts the artifact.
@@ -209,12 +223,8 @@ export function PreviewSurface({
       (element.shadowRoot as ShadowRoot | null) ??
       (element.attachShadow({ mode: 'open' }) as ShadowRoot);
 
-    // The app's theme, copied to the host the module renders in.
+    // The reader's mode, the one thing of the app the module renders in.
     const theme = appTheme();
-
-    for (const [name, value] of Object.entries(resolvedThemeVariables(theme))) {
-      element.style.setProperty(name, value);
-    }
 
     const content = document.createElement('div');
     content.className = 'papercraft-content';
@@ -225,6 +235,7 @@ export function PreviewSurface({
     const settle = (next: SurfaceMode): void => {
       if (disposed) return;
       setMode(next);
+      setLayout(layoutOf(next, content));
       reporters.current.onMode?.(next);
       reporters.current.onContent?.(shadow);
     };
@@ -339,6 +350,7 @@ export function PreviewSurface({
         height === undefined ? undefined : { height: `${String(height)}px` }
       }
       data-mode={mode}
+      data-layout={layout}
       data-cursor={lockCursor ? 'locked' : undefined}
     />
   );

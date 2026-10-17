@@ -126,22 +126,30 @@ const nodeOfEvent = (
 };
 
 /**
- * The element a comment would land on: the one under the pointer, never the
- * document's own body — empty space is a free point — and none at all while
- * `Alt` is held, which forces a free point over an element.
+ * The element under the pointer, never the document's own body: empty space
+ * points at nothing.
  */
-const commentNodeOf = (
+const pointedNodeOf = (
   input: GestureInput,
   event: MouseEvent,
 ): SceneNode | undefined => {
-  if (event.altKey) return undefined;
-
   const node = nodeOfEvent(input, event, false);
 
   return node === undefined || node.tag === 'body' || node.tag === 'html'
     ? undefined
     : node;
 };
+
+/**
+ * The element a comment would land on: the one under the pointer — empty
+ * space is a free point — and none at all while `Alt` is held, which forces
+ * a free point over an element.
+ */
+const commentNodeOf = (
+  input: GestureInput,
+  event: MouseEvent,
+): SceneNode | undefined =>
+  event.altKey ? undefined : pointedNodeOf(input, event);
 
 const nearestNodeOf = (
   input: GestureInput,
@@ -209,13 +217,29 @@ const click = (input: GestureInput, gesture: Gesture, event: MouseEvent) => {
   input.onComment(anchor, point);
 };
 
-/** The armed comment tool follows the pointer to the element it would land on. */
-const hover = (input: GestureInput, event: PointerEvent) => {
-  if (!input.active || input.tool !== 'comment' || fromOverlay(event)) return;
+/**
+ * The outline follows the pointer in any mode, focused or not: to the
+ * element a comment would land on while the comment tool is armed, else to
+ * the element under the pointer. Nothing is outlined while the canvas pans.
+ */
+const hover = (input: GestureInput, gesture: Gesture, event: PointerEvent) => {
+  if (fromOverlay(event)) return;
 
-  const id = commentNodeOf(input, event)?.id;
+  const panning =
+    input.tool === 'pan' || input.spaceHeld || gesture.panDrag !== undefined;
+  const id = panning
+    ? undefined
+    : (input.tool === 'comment'
+        ? commentNodeOf(input, event)
+        : pointedNodeOf(input, event)
+      )?.id;
 
   if (id !== input.hoverId) input.onHover(id);
+};
+
+/** The pointer left the canvas: nothing stays outlined. */
+const leave = (input: GestureInput) => {
+  if (input.hoverId !== undefined) input.onHover(undefined);
 };
 
 const pointerDown = (
@@ -284,9 +308,10 @@ export const useCanvasGestures = (
     const onClick = (event: MouseEvent) =>
       click(latest.current, gesture.current, event);
     const onPointerMove = (event: PointerEvent) => {
-      hover(latest.current, event);
+      hover(latest.current, gesture.current, event);
       panMove(latest.current, gesture.current, event);
     };
+    const onPointerLeave = () => leave(latest.current);
     const onPointerDown = (event: PointerEvent) =>
       pointerDown(latest.current, gesture.current, event);
     const onPointerUp = () => {
@@ -327,6 +352,7 @@ export const useCanvasGestures = (
 
     area.addEventListener('click', onClick);
     area.addEventListener('pointermove', onPointerMove);
+    area.addEventListener('pointerleave', onPointerLeave);
     area.addEventListener('pointerdown', onPointerDown);
     area.addEventListener('pointerup', onPointerUp);
     area.addEventListener('wheel', onWheel, { passive: false });
@@ -336,6 +362,7 @@ export const useCanvasGestures = (
       area.removeEventListener('blur', onBlur);
       area.removeEventListener('click', onClick);
       area.removeEventListener('pointermove', onPointerMove);
+      area.removeEventListener('pointerleave', onPointerLeave);
       area.removeEventListener('pointerdown', onPointerDown);
       area.removeEventListener('pointerup', onPointerUp);
       area.removeEventListener('wheel', onWheel);

@@ -471,7 +471,7 @@ export function PreviewContainer({
             />
           </div>
 
-          {active && tool === 'comment' && hoverNode !== undefined ? (
+          {hoverNode !== undefined ? (
             <HoverOutline
               node={hoverNode}
               bounds={scene?.bounds}

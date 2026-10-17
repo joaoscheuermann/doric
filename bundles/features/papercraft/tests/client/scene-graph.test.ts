@@ -21,6 +21,7 @@ import {
   type Bounds,
   boundsIndex,
   buildSceneGraph,
+  clipBounds,
   contentBounds,
   hitTest,
   isolateHiddenIds,
@@ -135,6 +136,71 @@ test('a click on empty space resolves to the nearest node', () => {
     nearestNode(graph, { x: 220, y: 60 }, bounds, new Set(['n1']))?.id,
     'n0',
   );
+});
+
+test('an element with no box neither bounds the content nor answers a pointer', () => {
+  // A `display: contents` wrapper generates no box: the browser measures it
+  // as an empty rect at the window's corner, far from the content. Under it,
+  // the harness's frame, the story's card and its title.
+  const graph = mount('<div><main><section><h1>T</h1></section></main></div>');
+
+  const bounds = boundsOf({
+    n0: { x: -320, y: -120, width: 0, height: 0 },
+    n1: { x: 0, y: 0, width: 720, height: 528 },
+    n2: { x: 24, y: 24, width: 672, height: 480 },
+    n3: { x: 40, y: 48, width: 640, height: 36 },
+  });
+
+  assert.deepEqual(contentBounds(graph, bounds), {
+    x: 0,
+    y: 0,
+    width: 720,
+    height: 528,
+  });
+  assert.deepEqual(visualBounds(graph, bounds), {
+    x: 24,
+    y: 24,
+    width: 672,
+    height: 480,
+  });
+  assert.equal(hitTest(graph, { x: -320, y: -120 }, bounds), undefined);
+  assert.equal(nearestNode(graph, { x: -300, y: -100 }, bounds)?.id, 'n1');
+});
+
+test('a box counts only the part its clipping ancestors leave visible', () => {
+  // A scroll area 480 tall over a column 700 tall.
+  const area = {
+    box: { x: 24, y: 24, width: 672, height: 480 },
+    x: true,
+    y: true,
+  };
+
+  assert.deepEqual(
+    clipBounds({ x: 24, y: 24, width: 672, height: 700 }, [area]),
+    { x: 24, y: 24, width: 672, height: 480 },
+  );
+
+  // Scrolled out entirely: it keeps its place and takes no room.
+  assert.deepEqual(
+    clipBounds({ x: 40, y: 600, width: 640, height: 40 }, [area]),
+    { x: 40, y: 600, width: 0, height: 0 },
+  );
+
+  // An ancestor that hides only one axis clips only that one.
+  assert.deepEqual(
+    clipBounds({ x: 0, y: 0, width: 900, height: 900 }, [
+      { ...area, y: false },
+    ]),
+    { x: 24, y: 0, width: 672, height: 900 },
+  );
+
+  // Nothing clips it: the box is its own.
+  assert.deepEqual(clipBounds({ x: 1, y: 2, width: 3, height: 4 }, []), {
+    x: 1,
+    y: 2,
+    width: 3,
+    height: 4,
+  });
 });
 
 test('isolation hides the siblings and keeps the selected chain', () => {

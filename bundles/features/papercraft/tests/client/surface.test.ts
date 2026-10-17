@@ -182,6 +182,67 @@ test('a tool that owns the pointer locks the cursor over the artifact', async ()
   await m.unmount();
 });
 
+test('a component preview hugs its content unless its story asks to fill the canvas', async () => {
+  const m = mount();
+  const layout = () =>
+    (m.shadow().host as HTMLElement).getAttribute('data-layout');
+  const stating = (value?: string) => async () => ({
+    mount: (root: HTMLElement) => {
+      if (value !== undefined)
+        root.setAttribute('data-papercraft-layout', value);
+
+      return undefined;
+    },
+  });
+
+  await m.render({ entries: ['index.html', 'index.js'], load: stating() });
+  await flush();
+  assert.equal(layout(), 'centered');
+
+  await m.render({
+    revision: 2,
+    entries: ['index.html', 'index.js'],
+    load: stating('fullscreen'),
+  });
+  await flush();
+  assert.equal(layout(), 'fullscreen');
+
+  // A component whose module did not load still hugs its fallback markup.
+  await m.render({
+    revision: 3,
+    entries: ['index.html', 'index.js'],
+    load: async () => {
+      throw new Error('not served');
+    },
+  });
+  await flush();
+  assert.equal(layout(), 'centered');
+
+  // `centered` hugs the content; the layouts that fill lay it out at the
+  // canvas's width.
+  assert.match(surface.SURFACE_RESET, /:host \{[^}]*width: fit-content;/);
+  assert.match(
+    surface.SURFACE_RESET,
+    /:host\(\[data-layout="padded"\]\), :host\(\[data-layout="fullscreen"\]\) \{ width: auto; \}/,
+  );
+
+  await m.unmount();
+});
+
+test('an html revision fills the canvas, as the page it is', async () => {
+  const m = mount();
+
+  await m.render({ entries: ['index.html'] });
+  await flush();
+
+  assert.equal(
+    (m.shadow().host as HTMLElement).getAttribute('data-layout'),
+    'fullscreen',
+  );
+
+  await m.unmount();
+});
+
 test('a component preview keeps its origin stamp on the mounted element', async () => {
   const m = mount();
   const markup = previews.deriveMarkup(

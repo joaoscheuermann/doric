@@ -7,14 +7,13 @@
 // portal container beside it. Portaled overlays (Radix Dialog, Popover,
 // Tooltip…) that are handed the portal container render inside the shadow
 // root — in the zoomed canvas, under the preview's sheet, where comments can
-// anchor to them — instead of in `document.body`. The rendered tree sits
-// under `desktop/ui`'s `PortalContainerProvider` with the portal container,
-// so `desktop/ui` overlays land there by themselves. Radix has no global
-// default for a portal's container, so for the Project's own overlays the
-// container is also handed to the decorators and stories as
-// `context.papercraft.portalContainer` (also
-// `context.parameters.papercraft.portalContainer`), and the harness passes it
-// on to the Project's components.
+// anchor to them — instead of in `document.body`. Radix has no global
+// default for a portal's container, and the preview assumes nothing of the
+// Project's components, so the container is handed to the decorators and
+// stories as `context.papercraft.portalContainer` (also
+// `context.parameters.papercraft.portalContainer`), and the Project's
+// harness passes it on to its components (Doric's, to `desktop/ui`'s
+// `PortalContainerProvider`).
 //
 // CSF (Storybook's Component Story Format, v3 objects and v2 functions): the
 // story renders `story.render(args, context)`, else `meta.render`, else
@@ -26,13 +25,13 @@
 // `Story({ args })`. `argTypes` actions are not synthesized: an `on*`
 // handler the args do not give is `undefined`. A plain component (not CSF)
 // renders with no props, under the harness's decorators.
-
-/**
- * The `desktop/ui` subpath `mount` imports its portal container provider
- * from. It is the runtime's own import, not the Project's, so it does not
- * mean the preview uses `desktop/ui`'s components.
- */
-export const PORTAL_CONTAINER_SPECIFIER = 'desktop/ui/portal-container';
+//
+// `mount` also states the story's Storybook layout on the root as
+// `data-papercraft-layout`: the merged `parameters.layout` when it is
+// `centered`, `padded` or `fullscreen`, else `centered`, papercraft's
+// default. The surface sizes the preview by it: `centered` hugs the content,
+// the other two lay it out at the canvas's width. Storybook's padding is not
+// reproduced, since the canvas already surrounds the preview.
 
 /** The virtual module of the previewed source. */
 export const SOURCE_ID = 'papercraft:source';
@@ -115,6 +114,12 @@ const mergeParameters = (...parts) => {
   }
   return out;
 };
+// Storybook's layouts. The surface sizes the preview by the one a story's
+// merged parameters name; papercraft's default is centered, so a preview
+// hugs its content.
+const LAYOUTS = ['centered', 'padded', 'fullscreen'];
+const layoutOf = (parameters) =>
+  isObject(parameters) && LAYOUTS.includes(parameters.layout) ? parameters.layout : 'centered';
 const META_KEYS = ['component', 'render', 'title', 'args', 'argTypes', 'decorators', 'parameters'];
 const isMeta = (value) =>
   isObject(value) && !('$$typeof' in value) && META_KEYS.some((key) => key in value);
@@ -283,20 +288,24 @@ export function mount(root, options) {
     return render(context);
   }
 
+  let layout = 'centered';
+  try {
+    layout = layoutOf(prepare().context.parameters);
+  } catch {
+    // A story that cannot be described renders its error in the boundary.
+  }
+  root.setAttribute('data-papercraft-layout', layout);
+
   const reactRoot = createRoot(app);
   reactRoot.render(
     createElement(
-      PortalContainerProvider,
-      { container: portalContainer },
-      createElement(
-        'div',
-        {
-          className: theme === 'dark' ? 'dark' : undefined,
-          'data-papercraft-theme': theme,
-          style: { display: 'contents' },
-        },
-        createElement(PreviewBoundary, null, createElement(PapercraftPreview)),
-      ),
+      'div',
+      {
+        className: theme === 'dark' ? 'dark' : undefined,
+        'data-papercraft-theme': theme,
+        style: { display: 'contents' },
+      },
+      createElement(PreviewBoundary, null, createElement(PapercraftPreview)),
     ),
   );
   let mounted = true;
@@ -308,6 +317,7 @@ export function mount(root, options) {
       reactRoot.unmount();
       app.remove();
       portalContainer.remove();
+      root.removeAttribute('data-papercraft-layout');
     });
   };
 }
@@ -318,7 +328,6 @@ export const entryModule = (spec: EntrySpec): string =>
   [
     "import { Component, createElement } from 'react';",
     "import { createRoot } from 'react-dom/client';",
-    `import { PortalContainerProvider } from ${JSON.stringify(PORTAL_CONTAINER_SPECIFIER)};`,
     `import * as Source from ${JSON.stringify(SOURCE_ID)};`,
     spec.harness
       ? `import * as Harness from ${JSON.stringify(HARNESS_ID)};`

@@ -9,6 +9,7 @@
 import 'desktop/ui/theme.css';
 import '../src/client/styles.css';
 
+import { PortalContainerProvider } from 'desktop/ui/portal-container';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import type { ComponentType } from 'react';
 
@@ -22,6 +23,19 @@ const decorators = [
         </footer>
       </div>
     </TooltipProvider>
+  ),
+  // The preview hands the harness its portal container: `desktop/ui`'s
+  // overlays portal into it and stay inside the preview. Storybook, which
+  // hands none, keeps their default.
+  (
+    Story: ComponentType,
+    context: {
+      readonly papercraft?: { readonly portalContainer?: HTMLElement };
+    },
+  ) => (
+    <PortalContainerProvider container={context.papercraft?.portalContainer}>
+      <Story />
+    </PortalContainerProvider>
   ),
 ];
 
