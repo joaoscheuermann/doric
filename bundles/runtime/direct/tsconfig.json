@@ -1,0 +1,37 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/tool"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../../../packages/messages"
+    },
+    {
+      "path": "../../../packages/llms"
+    },
+    {
+      "path": "../../foundation/host-config"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/agent"
+    }
+  ]
+}

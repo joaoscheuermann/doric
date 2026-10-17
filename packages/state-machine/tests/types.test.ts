@@ -7,7 +7,7 @@ import {
   type StateMachineResult,
 } from '../src/index.js';
 
-test('constrains plain data states, actions, results, and error handler names', () => {
+void test('constrains plain data states, actions, results, and error handler names', () => {
   const assertTypes = () => {
     // @ts-expect-error arrays are not top-level state records.
     createStateMachine<void, number[]>();

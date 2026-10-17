@@ -6,10 +6,10 @@ Git, file, diff, SSH, and lifecycle helpers.
 
 ## Use
 
-Choose a provider such as `docker` or `firecracker` and inject it:
+Choose a provider such as `docker-sandbox` or `firecracker-sandbox` and inject it:
 
 ```ts
-import { createDockerClient } from 'docker';
+import { createDockerClient } from 'docker-sandbox';
 import { createSandbox } from 'sandbox';
 
 const sandbox = await createSandbox({
@@ -17,6 +17,7 @@ const sandbox = await createSandbox({
   image: 'node:22-bookworm',
   resources: { cpuCount: 2, memoryMiB: 2048, diskMiB: 4096 },
   network: { mode: 'disabled' },
+  workspace: projectId,
 });
 
 try {
@@ -34,6 +35,11 @@ Relative paths resolve below `/workspace` by default. File and command working
 directories cannot escape the configured root. After `dispose`, all session
 operations reject; disposal itself is idempotent.
 
+`workspace` names a durable workspace the sandbox serves, and `createSandbox`
+forwards it to `provider.provision(input)` unchanged. How those files outlive the
+sandbox is the provider's decision; providers that keep nothing durable treat the
+value as a name only. Without a `workspace`, the sandbox is scratch.
+
 `cloneRepo` supports branches, exact commits, and token or basic Git
 authentication, and remembers the cloned path used by `diff()`. Cloning a
 remote repository requires an effective egress policy.
@@ -47,16 +53,17 @@ provider's egress path and therefore requires DNS configuration; SSH defaults
 to a loopback bind and key-only root access.
 
 Providers remain responsible for enforcing resource and network policy. See
-the [`docker`](../docker/README.md) and
-[`firecracker`](../firecracker/README.md) READMEs for host prerequisites and
+the [`docker-sandbox`](../docker-sandbox/README.md) and
+[`firecracker-sandbox`](../firecracker-sandbox/README.md) READMEs for host prerequisites and
 provider-specific behavior.
 
 ## Implement a provider
 
 Implement `SandboxProvider.provision(input)` and return a `SandboxRuntime` with
 `exec`, byte-oriented file transfer, optional SSH access, and idempotent
-disposal. Consume normalized `input.network` and the explicit CPU, memory, and
-disk resource values rather than adding provider policy to this package.
+disposal. Consume normalized `input.network`, the explicit CPU, memory, and
+disk resource values, and `input.workspace` rather than adding provider policy
+to this package.
 
 ## Development
 

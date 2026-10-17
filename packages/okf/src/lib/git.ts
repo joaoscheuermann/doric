@@ -7,10 +7,10 @@ import type { Ignore } from 'ignore';
 const require = createRequire(import.meta.url);
 const createIgnore = require('ignore') as () => Ignore;
 
-type ScopedIgnore = {
+interface ScopedIgnore {
   readonly base: string;
   readonly matcher: Ignore;
-};
+}
 
 /** Filters normalized repository paths through explicit and scoped gitignore rules. */
 export const filterIgnored = async (

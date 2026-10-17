@@ -1,0 +1,45 @@
+{
+  "name": "chat",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./contracts": {
+      "@org/source": "./src/contracts/index.ts",
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "default": "./dist/contracts/index.js"
+    }
+  },
+  "dependencies": {
+    "@lexical/clipboard": "^0.51.0",
+    "@lexical/code": "^0.51.0",
+    "@lexical/extension": "^0.51.0",
+    "@lexical/history": "^0.51.0",
+    "@lexical/html": "^0.51.0",
+    "@lexical/link": "^0.51.0",
+    "@lexical/list": "^0.51.0",
+    "@lexical/react": "^0.51.0",
+    "@lexical/rich-text": "^0.51.0",
+    "@lexical/table": "^0.51.0",
+    "@tanstack/react-query": "^5.104.1",
+    "bundle": "0.0.1",
+    "comments": "0.0.1",
+    "desktop": "1.0.0",
+    "history": "0.0.1",
+    "jdenticon": "^3.3.0",
+    "lexical": "^0.51.0",
+    "lucide-react": "^0.544.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "runtime": "0.0.1",
+    "tslib": "^2.3.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "core": "0.0.1",
+    "happy-dom": "20.8.9"
+  }
+}

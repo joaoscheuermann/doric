@@ -16,7 +16,7 @@
     }
   },
   "dependencies": {
-    "sandbox": "0.0.1",
+    "bundle": "0.0.1",
     "tslib": "^2.3.0",
     "zod": "^4.4.3"
   }

@@ -30,11 +30,13 @@ const lookup = defineTool({
   description: 'Lookup indexed project context.',
   input: z.object({ query: z.string() }).strict(),
   output: z.object({ result: z.string() }).strict(),
-  async execute(sandbox, { query }) {
+  async execute({ query }, call, services) {
     return { result: `context for ${query}` };
   },
 });
-const tools = createToolStorage([lookup(sandbox)]);
+// `services` are the registering bundle's services and `call` the prompt call
+// (in Doric both come from the bundle runtime).
+const tools = createToolStorage([lookup.bind(services).toTool(call)]);
 
 const messages = createMessageStorage();
 const toolCalls = createToolCallStorage();
@@ -60,6 +62,19 @@ credentials, tool registration, isolated message and tool-call storages, model
 selection, and per-call cancellation.
 The system prompt is included in provider requests but is not persisted into
 external message storage.
+
+Pass `resume: true` to `complete` or `stream` to continue the supplied message
+history without appending the input again. The input still identifies the run in
+`agent.started`; existing messages retain their order. The caller owns loading
+durable history and supplying results for any interrupted tool calls.
+
+Pass `steering` to let a caller correct a run in flight. The loop calls it
+before the first turn of a resumed run, after every executed tool batch, and
+once more before an ordinary run would finish, and stores each returned message as a user message before its next
+provider turn; streaming emits one `agent.steered` event per message. A message
+that arrives while the model writes its final answer therefore continues the
+run. The loop never asks when no turn is left or when a structured run submits
+its result, so those messages stay with the caller.
 
 Each `complete` or `stream` run may set `maxTurns` to a positive safe integer.
 One turn is one provider invocation, including a direct or terminal response,
@@ -119,6 +134,15 @@ message; and the same record is delivered to the awaited `onToolEvent` callback
 and exposed by a streamed `tool.finished` event. Empty or colliding IDs abort
 the run. Rejected calls, terminal structured-output calls, thrown handlers, and
 unserializable inputs or results do not create records.
+
+A handler that throws does not end the run. The run emits `tool.failed` and
+answers the call with a Markdown failure message: what the handler threw and
+each cause under it, one per line, with their codes, starting below the tool
+registry's `handler_failed` wrapper. The run then continues, so the model can
+correct the call, work around it or report it. Set `maxTurns` to bound a model
+that keeps calling a failing tool. A handler that fails after the run's signal
+is aborted ends the run with its error, and so does a result that cannot be
+serialized or recorded.
 
 ## Streaming Usage
 

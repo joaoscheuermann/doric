@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "history",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Local per-Thread conversation history snapshots for the desktop.",
+  "provides": ["history.snapshots/v1@1.0.0"],
+  "requires": ["hooks/v1@^1.0.0"],
+  "desktopScope": {
+    "history.snapshots/v1": ["projectId", "threadId", "promptId"]
+  }
+}

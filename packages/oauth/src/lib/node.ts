@@ -10,15 +10,15 @@ export type LocalCallbackServer = OAuthCallbackServer & {
   close(): Promise<void>;
 };
 
-export type LocalCallbackServerOptions = {
+export interface LocalCallbackServerOptions {
   readonly host?: string;
   readonly port?: number;
   readonly path?: string;
-};
+}
 
-export type BrowserProcess = {
+export interface BrowserProcess {
   unref?(): void;
-};
+}
 
 export type BrowserSpawn = (
   command: string,
@@ -29,18 +29,18 @@ export type BrowserSpawn = (
   },
 ) => BrowserProcess;
 
-export type BrowserOpenOptions = {
-  readonly platform?: NodeJS.Platform | string;
+export interface BrowserOpenOptions {
+  readonly platform?: string;
   readonly spawn?: BrowserSpawn;
-};
+}
 
-type PendingCallback = {
+interface PendingCallback {
   readonly expectedState: string;
   readonly resolve: (callback: OAuthCallback) => void;
   readonly reject: (error: unknown) => void;
   readonly signal?: AbortSignal;
   readonly abort: () => void;
-};
+}
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PATH = '/callback';
@@ -171,7 +171,7 @@ export const createLocalCallbackServer = async (
 };
 
 /** Opens a URL in the platform browser through an explicit spawn boundary. */
-export const openBrowser = async (
+export const openBrowser = (
   url: string,
   options: BrowserOpenOptions = {},
 ): Promise<void> => {
@@ -185,6 +185,7 @@ export const openBrowser = async (
   });
 
   child.unref?.();
+  return Promise.resolve();
 };
 
 const parseCallback = (

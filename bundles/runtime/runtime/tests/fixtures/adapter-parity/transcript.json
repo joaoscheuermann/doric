@@ -1,0 +1,754 @@
+{
+  "version": 1,
+  "source": "host-adapter",
+  "setup": {
+    "project": "Project",
+    "parentThread": "Parent",
+    "parentPrompt": "parent",
+    "childResultPrefix": "done: ",
+    "sandbox": {
+      "id": "vm-1",
+      "root": "/workspace",
+      "entries": [
+        {
+          "path": "notes.txt",
+          "content": "hello\n"
+        },
+        {
+          "path": "repo"
+        }
+      ]
+    },
+    "unknownId": "00000000-0000-4000-8000-0000000000aa"
+  },
+  "steps": [
+    {
+      "label": "cwd starts at the workspace root",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "cwd",
+      "args": [],
+      "outcome": {
+        "value": "/workspace"
+      }
+    },
+    {
+      "label": "setCwd into a directory",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "setCwd",
+      "args": [
+        "repo"
+      ],
+      "outcome": {
+        "value": {
+          "status": "set",
+          "cwd": "/workspace/repo"
+        }
+      }
+    },
+    {
+      "label": "setCwd to a missing path",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "setCwd",
+      "args": [
+        "/workspace/absent"
+      ],
+      "outcome": {
+        "value": {
+          "status": "missing"
+        }
+      }
+    },
+    {
+      "label": "setCwd to a file",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "setCwd",
+      "args": [
+        "/workspace/notes.txt"
+      ],
+      "outcome": {
+        "value": {
+          "status": "not-directory"
+        }
+      }
+    },
+    {
+      "label": "setCwd outside the workspace",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "setCwd",
+      "args": [
+        "../../etc"
+      ],
+      "outcome": {
+        "value": {
+          "status": "outside"
+        }
+      }
+    },
+    {
+      "label": "cwd after the moves",
+      "phase": "bound",
+      "contract": "runtime.workspace/v1",
+      "method": "cwd",
+      "args": [],
+      "outcome": {
+        "value": "/workspace/repo"
+      }
+    },
+    {
+      "label": "describe the lease",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "describe",
+      "args": [],
+      "outcome": {
+        "value": {
+          "id": "vm-1",
+          "root": "/workspace"
+        }
+      }
+    },
+    {
+      "label": "exec a shell command",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "exec",
+      "args": [
+        {
+          "cmd": [
+            "sh",
+            "-c",
+            "true"
+          ],
+          "cwd": "/workspace"
+        }
+      ],
+      "outcome": {
+        "value": {
+          "exitCode": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "label": "write a file",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "writeFile",
+      "args": [
+        "/workspace/new.txt",
+        "written\n"
+      ],
+      "outcome": {
+        "void": true
+      }
+    },
+    {
+      "label": "read the written file",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "readFile",
+      "args": [
+        "/workspace/new.txt"
+      ],
+      "outcome": {
+        "value": "written\n"
+      }
+    },
+    {
+      "label": "read a scripted file",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "readFile",
+      "args": [
+        "/workspace/notes.txt"
+      ],
+      "outcome": {
+        "value": "hello\n"
+      }
+    },
+    {
+      "label": "read a missing file",
+      "phase": "bound",
+      "contract": "runtime.lease/v1",
+      "method": "readFile",
+      "args": [
+        "/workspace/absent.txt"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "No scripted file: /workspace/absent.txt"
+        }
+      }
+    },
+    {
+      "label": "list without children",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "list",
+      "args": [
+        10
+      ],
+      "outcome": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "label": "spawn a child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "spawn",
+      "args": [
+        "child task"
+      ],
+      "outcome": {
+        "value": {
+          "threadId": "<id:1>",
+          "promptId": "<id:2>"
+        }
+      }
+    },
+    {
+      "label": "get the finished child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "get",
+      "args": [
+        "<id:1>"
+      ],
+      "outcome": {
+        "value": {
+          "thread": {
+            "id": "<id:1>",
+            "projectId": "<id:3>",
+            "parentThreadId": "<id:4>",
+            "name": "child task",
+            "state": "ready",
+            "queuePaused": false,
+            "lastSequence": 5,
+            "cwd": "/workspace/repo",
+            "result": {
+              "status": "completed",
+              "text": "done: child task",
+              "promptId": "<id:2>",
+              "at": "<time>"
+            },
+            "createdAt": "<time>",
+            "updatedAt": "<time>",
+            "startedAt": "<time>",
+            "lastExecutionMs": "<ms>"
+          },
+          "result": {
+            "status": "completed",
+            "text": "done: child task",
+            "promptId": "<id:2>",
+            "at": "<time>"
+          }
+        }
+      }
+    },
+    {
+      "label": "first page of child events",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "events",
+      "args": [
+        "<id:1>",
+        0,
+        2
+      ],
+      "outcome": {
+        "value": {
+          "events": [
+            {
+              "projectId": "<id:3>",
+              "threadId": "<id:1>",
+              "promptId": "<id:2>",
+              "sequence": 1,
+              "type": "prompt.accepted",
+              "event": {
+                "text": "child task",
+                "type": "prompt.accepted",
+                "queued": false,
+                "source": {
+                  "kind": "parent",
+                  "promptId": "<id:5>",
+                  "threadId": "<id:4>"
+                }
+              },
+              "createdAt": "<time>"
+            },
+            {
+              "projectId": "<id:3>",
+              "threadId": "<id:1>",
+              "promptId": "<id:2>",
+              "sequence": 2,
+              "type": "queue.updated",
+              "event": {
+                "type": "queue.updated"
+              },
+              "createdAt": "<time>"
+            }
+          ],
+          "nextSequence": 2
+        }
+      }
+    },
+    {
+      "label": "rest of the child events",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "events",
+      "args": [
+        "<id:1>",
+        2,
+        100
+      ],
+      "outcome": {
+        "value": {
+          "events": [
+            {
+              "projectId": "<id:3>",
+              "threadId": "<id:1>",
+              "promptId": "<id:2>",
+              "sequence": 3,
+              "type": "prompt.started",
+              "event": {
+                "type": "prompt.started"
+              },
+              "createdAt": "<time>"
+            },
+            {
+              "projectId": "<id:3>",
+              "threadId": "<id:1>",
+              "promptId": "<id:2>",
+              "sequence": 4,
+              "type": "prompt.finished",
+              "event": {
+                "text": "done: child task",
+                "type": "prompt.finished",
+                "source": {
+                  "kind": "parent",
+                  "promptId": "<id:5>",
+                  "threadId": "<id:4>"
+                },
+                "status": "completed"
+              },
+              "createdAt": "<time>"
+            },
+            {
+              "projectId": "<id:3>",
+              "threadId": "<id:1>",
+              "promptId": "<id:2>",
+              "sequence": 5,
+              "type": "queue.updated",
+              "event": {
+                "type": "queue.updated"
+              },
+              "createdAt": "<time>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "send the child another prompt",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "send",
+      "args": [
+        "<id:1>",
+        "second task"
+      ],
+      "outcome": {
+        "value": {
+          "status": "accepted",
+          "promptId": "<id:6>"
+        }
+      }
+    },
+    {
+      "label": "get the child after the second prompt",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "get",
+      "args": [
+        "<id:1>"
+      ],
+      "outcome": {
+        "value": {
+          "thread": {
+            "id": "<id:1>",
+            "projectId": "<id:3>",
+            "parentThreadId": "<id:4>",
+            "name": "child task",
+            "state": "ready",
+            "queuePaused": false,
+            "lastSequence": 10,
+            "cwd": "/workspace/repo",
+            "result": {
+              "status": "completed",
+              "text": "done: second task",
+              "promptId": "<id:6>",
+              "at": "<time>"
+            },
+            "createdAt": "<time>",
+            "updatedAt": "<time>",
+            "startedAt": "<time>",
+            "lastExecutionMs": "<ms>"
+          },
+          "result": {
+            "status": "completed",
+            "text": "done: second task",
+            "promptId": "<id:6>",
+            "at": "<time>"
+          }
+        }
+      }
+    },
+    {
+      "label": "list with one child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "list",
+      "args": [
+        10
+      ],
+      "outcome": {
+        "value": {
+          "items": [
+            {
+              "id": "<id:1>",
+              "projectId": "<id:3>",
+              "parentThreadId": "<id:4>",
+              "name": "child task",
+              "state": "ready",
+              "queuePaused": false,
+              "lastSequence": 10,
+              "cwd": "/workspace/repo",
+              "result": {
+                "status": "completed",
+                "text": "done: second task",
+                "promptId": "<id:6>",
+                "at": "<time>"
+              },
+              "createdAt": "<time>",
+              "updatedAt": "<time>",
+              "startedAt": "<time>",
+              "lastExecutionMs": "<ms>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "list with a cursor past the child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "list",
+      "args": [
+        10,
+        "<id:1>"
+      ],
+      "outcome": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "label": "get an unknown Thread",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "get",
+      "args": [
+        "00000000-0000-4000-8000-0000000000aa"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread is not a direct child."
+        }
+      }
+    },
+    {
+      "label": "events of an unknown Thread",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "events",
+      "args": [
+        "00000000-0000-4000-8000-0000000000aa",
+        0,
+        10
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread is not a direct child."
+        }
+      }
+    },
+    {
+      "label": "send to an unknown Thread",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "send",
+      "args": [
+        "00000000-0000-4000-8000-0000000000aa",
+        "hello"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread is not a direct child."
+        }
+      }
+    },
+    {
+      "label": "interrupt a child that is not running",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "interrupt",
+      "args": [
+        "<id:1>",
+        "<id:2>"
+      ],
+      "outcome": {
+        "value": "not_running"
+      }
+    },
+    {
+      "label": "interrupt an unknown Thread",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "interrupt",
+      "args": [
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-4000-8000-0000000000aa"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread is not a direct child."
+        }
+      }
+    },
+    {
+      "label": "terminate an unknown Thread",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "terminate",
+      "args": [
+        "00000000-0000-4000-8000-0000000000aa"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread is not a direct child."
+        }
+      }
+    },
+    {
+      "label": "terminate the child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "terminate",
+      "args": [
+        "<id:1>"
+      ],
+      "outcome": {
+        "value": {
+          "id": "<id:1>",
+          "projectId": "<id:3>",
+          "parentThreadId": "<id:4>",
+          "name": "child task",
+          "state": "cancelling",
+          "queuePaused": false,
+          "lastSequence": 10,
+          "cwd": "/workspace/repo",
+          "result": {
+            "status": "completed",
+            "text": "done: second task",
+            "promptId": "<id:6>",
+            "at": "<time>"
+          },
+          "createdAt": "<time>",
+          "updatedAt": "<time>",
+          "startedAt": "<time>",
+          "lastExecutionMs": "<ms>"
+        }
+      }
+    },
+    {
+      "label": "send to the terminated child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "send",
+      "args": [
+        "<id:1>",
+        "after"
+      ],
+      "outcome": {
+        "value": {
+          "status": "inactive"
+        }
+      }
+    },
+    {
+      "label": "interrupt the terminated child",
+      "phase": "bound",
+      "contract": "runtime.threads/v1",
+      "method": "interrupt",
+      "args": [
+        "<id:1>",
+        "<id:2>"
+      ],
+      "outcome": {
+        "value": "inactive"
+      }
+    },
+    {
+      "label": "terminal run on a sandbox without live terminals",
+      "phase": "bound",
+      "contract": "terminal/v1",
+      "method": "run",
+      "args": [
+        {
+          "command": "ls",
+          "cwd": "/workspace",
+          "timeoutMs": 1000
+        }
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Live terminals are unavailable."
+        }
+      }
+    },
+    {
+      "label": "list after the prompt ended",
+      "phase": "ended",
+      "contract": "runtime.threads/v1",
+      "method": "list",
+      "args": [
+        10
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "spawn after the prompt ended",
+      "phase": "ended",
+      "contract": "runtime.threads/v1",
+      "method": "spawn",
+      "args": [
+        "late"
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "cwd after the prompt ended",
+      "phase": "ended",
+      "contract": "runtime.workspace/v1",
+      "method": "cwd",
+      "args": [],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "describe after the prompt ended",
+      "phase": "ended",
+      "contract": "runtime.lease/v1",
+      "method": "describe",
+      "args": [],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "exec after the prompt ended",
+      "phase": "ended",
+      "contract": "runtime.lease/v1",
+      "method": "exec",
+      "args": [
+        {
+          "cmd": [
+            "sh",
+            "-c",
+            "true"
+          ]
+        }
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "terminal run after the prompt ended",
+      "phase": "ended",
+      "contract": "terminal/v1",
+      "method": "run",
+      "args": [
+        {
+          "command": "ls",
+          "cwd": "/workspace",
+          "timeoutMs": 1000
+        }
+      ],
+      "outcome": {
+        "error": {
+          "name": "Error",
+          "message": "Thread control is no longer active."
+        }
+      }
+    },
+    {
+      "label": "terminal run on a facade without terminals",
+      "phase": "no-terminals",
+      "contract": "terminal/v1",
+      "method": "run",
+      "args": [
+        {
+          "command": "ls",
+          "cwd": "/workspace",
+          "timeoutMs": 1000
+        }
+      ],
+      "outcome": {
+        "error": {
+          "name": "ContractError",
+          "message": "This prompt has no live terminals.",
+          "code": "unavailable"
+        }
+      }
+    }
+  ]
+}

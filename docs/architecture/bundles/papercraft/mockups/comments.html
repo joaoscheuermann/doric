@@ -1,0 +1,3094 @@
+<!doctype html>
+<html lang="pt-BR">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Papercraft Comment Threads</title>
+  <meta name="claude:viewport-fit-sides" content="cover" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Noto+Sans:wght@400;500;600&display=swap"
+  />
+  <style>
+    /* Layout: Doric's workspace. The conversation is a document (author lines, no bubbles) ending in the
+   comment stack and the prompt; the workspace footer holds the send button; the inspector sits where a
+   panel would. Tokens mirror packages/desktop/src/styles/tokens.css. */
+    :root {
+      --background: #ffffff;
+      --foreground: #333333;
+      --card: #f2f2f2;
+      --popover: #f2f2f2;
+      --muted: #eaeaea;
+      --muted-foreground: #666666;
+      --accent: #e0e0e0;
+      --border: #e2e2e2;
+      --input: #dadada;
+      --sidebar: #f2f2f2;
+      --primary: oklch(0.55 0.145 258);
+      --primary-foreground: #ffffff;
+      --primary-soft: oklch(0.55 0.145 258 / 0.12);
+      --warning: oklch(0.52 0.15 75);
+      --warning-soft: oklch(0.81 0.18 67 / 0.22);
+      --pin-warning: oklch(81% 0.18 67);
+      --green: oklch(62% 0.16 150);
+      --green-soft: oklch(62% 0.16 150 / 0.14);
+      --ghost-hover: oklab(0% 0 0 / 0.06);
+      --dots: oklab(0% 0 0 / 0.1);
+      --solid-bg: #ffffff;
+      --solid-fg: #101010;
+      --mock-bg: #ffffff;
+      --mock-fg: #1f2328;
+      --mock-line: #e7e7ea;
+      --code-tag: oklch(0.5 0.15 258);
+      --code-attr: oklch(0.5 0.12 320);
+      --code-str: oklch(0.48 0.11 155);
+      --code-dim: #9a9a9a;
+      --shadow-sm:
+        0 2px 6px -1px hsl(240 4% 60% / 0.08),
+        0 1px 2px 0 hsl(240 4% 60% / 0.05);
+      --shadow-md:
+        0 4px 12px -2px hsl(240 4% 60% / 0.1),
+        0 2px 4px -1px hsl(240 4% 60% / 0.06);
+      --shadow-xl:
+        0 12px 28px -6px hsl(240 4% 60% / 0.16),
+        0 4px 8px -2px hsl(240 4% 60% / 0.08);
+      --radius: 6px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Noto Sans', sans-serif;
+      --font-canvas: 'Noto Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-conversation: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme='light']) {
+        --background: #222222;
+        --foreground: #e9e9e9;
+        --card: #2a2a2a;
+        --popover: #2a2a2a;
+        --muted: #333333;
+        --muted-foreground: #b2b2b2;
+        --accent: #3c3c3c;
+        --border: #373737;
+        --input: #3e3e3e;
+        --sidebar: #2a2a2a;
+        --primary: oklch(0.67 0.17 258);
+        --primary-foreground: #101010;
+        --primary-soft: oklch(0.67 0.17 258 / 0.2);
+        --warning: oklch(0.8 0.16 78);
+        --warning-soft: oklch(0.8 0.16 78 / 0.16);
+        --pin-warning: oklch(81% 0.18 67);
+        --green: oklch(74% 0.18 150);
+        --green-soft: oklch(74% 0.18 150 / 0.16);
+        --ghost-hover: oklab(100% 0 0 / 0.06);
+        --dots: oklab(100% 0 0 / 0.09);
+        --mock-bg: #2b2b2e;
+        --mock-fg: #ececec;
+        --mock-line: #3a3a3e;
+        --code-tag: oklch(0.75 0.13 258);
+        --code-attr: oklch(0.76 0.11 320);
+        --code-str: oklch(0.78 0.11 155);
+        --code-dim: #7d7d7d;
+        --shadow-sm:
+          0 2px 6px -1px hsl(0 0% 0% / 0.2), 0 1px 2px 0 hsl(0 0% 0% / 0.15);
+        --shadow-md:
+          0 4px 12px -2px hsl(0 0% 0% / 0.3), 0 2px 4px -1px hsl(0 0% 0% / 0.2);
+        --shadow-xl:
+          0 12px 28px -6px hsl(0 0% 0% / 0.45),
+          0 4px 8px -2px hsl(0 0% 0% / 0.25);
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme='dark'] {
+      --background: #222222;
+      --foreground: #e9e9e9;
+      --card: #2a2a2a;
+      --popover: #2a2a2a;
+      --muted: #333333;
+      --muted-foreground: #b2b2b2;
+      --accent: #3c3c3c;
+      --border: #373737;
+      --input: #3e3e3e;
+      --sidebar: #2a2a2a;
+      --primary: oklch(0.67 0.17 258);
+      --primary-foreground: #101010;
+      --primary-soft: oklch(0.67 0.17 258 / 0.2);
+      --warning: oklch(0.8 0.16 78);
+      --warning-soft: oklch(0.8 0.16 78 / 0.16);
+      --pin-warning: oklch(81% 0.18 67);
+      --green: oklch(74% 0.18 150);
+      --green-soft: oklch(74% 0.18 150 / 0.16);
+      --ghost-hover: oklab(100% 0 0 / 0.06);
+      --dots: oklab(100% 0 0 / 0.09);
+      --mock-bg: #2b2b2e;
+      --mock-fg: #ececec;
+      --mock-line: #3a3a3e;
+      --code-tag: oklch(0.75 0.13 258);
+      --code-attr: oklch(0.76 0.11 320);
+      --code-str: oklch(0.78 0.11 155);
+      --code-dim: #7d7d7d;
+      --shadow-sm:
+        0 2px 6px -1px hsl(0 0% 0% / 0.2), 0 1px 2px 0 hsl(0 0% 0% / 0.15);
+      --shadow-md:
+        0 4px 12px -2px hsl(0 0% 0% / 0.3), 0 2px 4px -1px hsl(0 0% 0% / 0.2);
+      --shadow-xl:
+        0 12px 28px -6px hsl(0 0% 0% / 0.45), 0 4px 8px -2px hsl(0 0% 0% / 0.25);
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      height: 100%;
+    }
+    body {
+      background: var(--background);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+    button {
+      font: inherit;
+      color: inherit;
+      background: none;
+      border: 0;
+      padding: 0;
+      cursor: pointer;
+    }
+    button:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid oklch(74% 0.12 258);
+      outline-offset: 1px;
+    }
+    textarea {
+      font: inherit;
+      color: inherit;
+    }
+    code {
+      font-family: var(--font-conversation);
+      font-size: 0.95em;
+    }
+
+    /* Shell */
+    .app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .chrome {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      min-height: 36px;
+      padding-block: 6px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+      background: var(--sidebar);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .chrome b {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    .steps {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      flex: 1;
+      min-width: 0;
+      justify-content: center;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px 2px 3px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+    .step i {
+      font-style: normal;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 9.5px;
+      background: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .step.is-done {
+      color: var(--foreground);
+    }
+    .step.is-done i {
+      background: var(--green-soft);
+      color: var(--green);
+    }
+    .step.is-now {
+      background: var(--background);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+    }
+    .step.is-now i {
+      background: var(--primary);
+      color: var(--primary-foreground);
+    }
+    .btn-ghost {
+      height: 24px;
+      padding: 0 8px;
+      border-radius: var(--radius);
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .btn-ghost:hover {
+      background: var(--ghost-hover);
+      color: var(--foreground);
+    }
+
+    .layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    }
+    .workspace {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .convo {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .column {
+      width: 100%;
+      max-width: 720px;
+      margin: 0 auto;
+      padding-block: 28px 40px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+      font-family: var(--font-conversation);
+      font-weight: 300;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    #turns {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Workspace footer: h-8, sidebar background, the solid send button at the end */
+    .footer {
+      flex-shrink: 0;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      padding-left: max(8px, env(safe-area-inset-left, 0px));
+      padding-right: max(8px, env(safe-area-inset-right, 0px));
+      border-top: 1px solid var(--border);
+      background: var(--sidebar);
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .footer .status {
+      margin-right: auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding-left: 4px;
+    }
+    .divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+    .kbd {
+      border: 1px solid var(--border);
+      background: var(--muted);
+      border-radius: 4px;
+      padding: 0 4px;
+      font-family: var(--font-conversation);
+      font-size: 10px;
+      line-height: 16px;
+      color: var(--muted-foreground);
+    }
+
+    /* Doric's `solid` button, icon-sm: white, dark glyph, border and a small shadow, in both themes */
+    .btn-solid {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--solid-bg);
+      color: var(--solid-fg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      transition:
+        background 0.12s,
+        transform 0.06s;
+    }
+    .btn-solid:hover {
+      background: #fafafa;
+    }
+    .btn-solid:active {
+      transform: translateY(1px);
+    }
+    .btn-solid[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .btn-solid svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Author lines: avatar and name, text-xs muted */
+    .author {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 6px;
+    }
+    .avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid oklab(0% 0 0 / 0.08);
+      background: var(--background);
+      display: grid;
+      place-items: center;
+    }
+    .avatar svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .avatar--agent {
+      border: 0;
+      background: var(--foreground);
+      color: var(--background);
+    }
+    .avatar--agent svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    .turn p {
+      margin: 0 0 10px;
+      max-width: 68ch;
+      white-space: pre-wrap;
+    }
+    .turn p:last-child {
+      margin-bottom: 0;
+    }
+    .turn-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tool {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    .tool .chev {
+      width: 14px;
+      height: 14px;
+    }
+    .tool b {
+      font-weight: 400;
+    }
+    .tool .sum {
+      margin-left: 6px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    .shimmer {
+      background: linear-gradient(
+        90deg,
+        var(--muted-foreground) 30%,
+        var(--foreground) 50%,
+        var(--muted-foreground) 70%
+      );
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: shimmer 1.6s linear infinite;
+    }
+    @keyframes shimmer {
+      from {
+        background-position: 100% 0;
+      }
+      to {
+        background-position: -100% 0;
+      }
+    }
+
+    /* Comment rows (stack, user turn): the queue's single-line pattern */
+    .crow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      width: 100%;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 300;
+      padding: 3px 10px;
+      border-radius: var(--radius);
+    }
+    .crow .name {
+      flex-shrink: 0;
+      max-width: 10rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .crow .note {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted-foreground);
+    }
+    .crow .end {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      padding-left: 12px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .crow .pinno {
+      font-variant-numeric: tabular-nums;
+    }
+    button.crow:hover,
+    button.crow:focus-visible {
+      background: var(--ghost-hover);
+    }
+    .crow.is-linked {
+      background: var(--primary-soft);
+    }
+    .marker {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      padding: 0 6px;
+      border-radius: 999px;
+      line-height: 17px;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    .marker--done {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+    .marker--await {
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+    .marker--open {
+      color: var(--muted-foreground);
+      background: var(--muted);
+    }
+    button.marker:hover {
+      text-decoration: underline;
+    }
+
+    .comments-h {
+      margin: 0 0 2px;
+      font-size: 13px;
+      font-weight: 300;
+      color: var(--foreground);
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .comments-h span {
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .crows {
+      list-style: none;
+      margin: 0 -10px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .user-comments {
+      margin-bottom: 10px;
+    }
+    .user-comments .grp {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 2px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .user-comments .grp button:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+
+    /* Reply blocks in the agent turn */
+    .replies {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .reply {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--background);
+      transition: box-shadow 0.3s;
+    }
+    .reply.flash {
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+    .reply-src {
+      display: block;
+      width: 100%;
+      background: var(--sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 3px 0;
+    }
+    .reply-src:hover {
+      background: var(--muted);
+    }
+    .reply-src .crow {
+      pointer-events: none;
+    }
+    .reply-main {
+      padding: 9px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .reply-main .author {
+      margin: 0;
+    }
+    .reply-main p {
+      margin: 0;
+      font-size: 13px;
+    }
+    .reply-foot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      margin-top: 2px;
+      flex-wrap: wrap;
+    }
+    .reply-foot .link {
+      color: var(--muted-foreground);
+    }
+    .reply-foot .link:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+
+    /* Papercraft node: Noto Sans chrome over a dotted stage, header overlaid */
+    .node {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--card);
+      font-family: var(--font-canvas);
+      font-weight: 400;
+    }
+    .node-h {
+      position: absolute;
+      inset: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 6px 6px 12px;
+      z-index: 3;
+      pointer-events: none;
+    }
+    .node-h > * {
+      pointer-events: auto;
+    }
+    .node-title {
+      font-size: 13px;
+    }
+    .rev {
+      font-family: var(--font-conversation);
+      font-size: 11px;
+      color: var(--muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+    .node-tools {
+      margin-left: auto;
+      display: flex;
+      gap: 2px;
+    }
+    .ibtn {
+      position: relative;
+      height: 28px;
+      min-width: 28px;
+      padding: 0 6px;
+      border-radius: var(--radius);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: var(--muted-foreground);
+    }
+    .ibtn:hover {
+      background: var(--ghost-hover);
+      color: var(--foreground);
+    }
+    .ibtn[aria-pressed='true'] {
+      background: var(--background);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border);
+    }
+    .ibtn[disabled] {
+      opacity: 0.4;
+      cursor: default;
+      background: none;
+    }
+    .ibtn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .ibtn .count {
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      height: 14px;
+      min-width: 14px;
+      padding: 0 3px;
+      border-radius: 7px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-size: 9px;
+      line-height: 14px;
+      font-weight: 600;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .stage {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      max-width: 100%;
+      min-height: 380px;
+      display: grid;
+      place-items: center;
+      padding: 48px 16px 40px;
+      background-color: var(--card);
+      background-image: radial-gradient(var(--dots) 1px, transparent 1.2px);
+      background-size: 16px 16px;
+    }
+    .node.is-armed .stage {
+      cursor: crosshair;
+    }
+    .node-f {
+      position: absolute;
+      inset: auto 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--muted-foreground);
+      pointer-events: none;
+    }
+    .node-f .path {
+      font-family: var(--font-conversation);
+    }
+
+    /* The mock component the preview draws */
+    .mock {
+      width: min(300px, 100%);
+      background: var(--mock-bg);
+      color: var(--mock-fg);
+      border-radius: 12px;
+      box-shadow: var(--shadow-md);
+      padding: 16px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      user-select: none;
+    }
+    .m-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .m-title.roomy {
+      padding-top: 10px;
+      padding-bottom: 4px;
+    }
+    .m-items {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-bottom: 1px solid var(--mock-line);
+    }
+    .m-items li,
+    .m-total {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .m-items li span:last-child,
+    .m-total b {
+      font-variant-numeric: tabular-nums;
+    }
+    .m-coupon {
+      display: flex;
+      gap: 6px;
+    }
+    .m-coupon span:first-child {
+      flex: 1;
+      border: 1px solid var(--mock-line);
+      border-radius: 6px;
+      padding: 5px 8px;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    /* biome-ignore lint/style/noDescendingSpecificity: mockup CSS, ordered by component for reading */
+    .m-coupon span:last-child {
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-size: 12px;
+      background: var(--muted);
+    }
+    .m-cta {
+      border-radius: 8px;
+      padding: 9px;
+      text-align: center;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-weight: 500;
+    }
+    .m-cta.secondary {
+      background: transparent;
+      color: var(--mock-fg);
+      border: 1px solid var(--mock-line);
+    }
+    .m-link {
+      text-align: center;
+      font-size: 12px;
+      color: var(--primary);
+    }
+    .m-link.primary {
+      border-radius: 8px;
+      padding: 9px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-weight: 500;
+      font-size: 13px;
+    }
+    .mock [data-el] {
+      border-radius: 4px;
+    }
+    .mock .is-hover {
+      outline: 1.5px dashed var(--primary);
+      outline-offset: 3px;
+    }
+    .hover-tag {
+      position: absolute;
+      z-index: 4;
+      font-family: var(--font-conversation);
+      font-size: 10.5px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      padding: 1px 6px;
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* Pins: the papercraft teardrop, tip on the point it annotates */
+    .pin {
+      position: absolute;
+      z-index: 2;
+      width: 24px;
+      height: 24px;
+      margin: -24px 0 0 0;
+      border-radius: 9999px 9999px 9999px 0;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      box-shadow: var(--shadow-md);
+      transition: transform 0.12s;
+      transform-origin: 0 100%;
+    }
+    .pin:hover {
+      transform: scale(1.08);
+    }
+    .pin--draft {
+      background: var(--popover);
+      color: var(--primary);
+      border: 1.5px dashed var(--primary);
+    }
+    .pin--open {
+      background: var(--primary);
+      color: var(--primary-foreground);
+    }
+    .pin--await {
+      background: var(--pin-warning);
+      color: #1d1300;
+    }
+    .pin--done {
+      background: var(--popover);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
+    }
+    .pin .badge {
+      position: absolute;
+      top: -5px;
+      right: -6px;
+      min-width: 14px;
+      height: 14px;
+      border-radius: 7px;
+      font-size: 9px;
+      display: grid;
+      place-items: center;
+      padding: 0 3px;
+      background: var(--foreground);
+      color: var(--background);
+    }
+    .pin--done .badge {
+      background: var(--green);
+      color: #fff;
+    }
+    .pin.is-active {
+      box-shadow:
+        0 0 0 3px var(--primary-soft),
+        0 0 0 1.5px var(--primary),
+        var(--shadow-md);
+    }
+    /* Creation, as the app draws it: the pending pin and the inline input beside it */
+    .pin-pending {
+      position: absolute;
+      z-index: 2;
+      width: 32px;
+      height: 32px;
+      margin: -32px 0 0 0;
+      border-radius: 9999px 9999px 9999px 0;
+      background: var(--primary);
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
+    }
+    /* The field grows with the note; the send button stays outside it, bottom-aligned */
+    /* No surface of its own: the field and the button float straight over the canvas */
+    .cinput {
+      position: absolute;
+      z-index: 5;
+      width: min(280px, calc(100% - 8px));
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      background: transparent;
+      font-family: var(--font-canvas);
+      cursor: default;
+    }
+    /* Flat and level: no shadows; field and button share the 28px height, border and radius */
+    .igroup {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      border: 1px solid var(--input);
+      border-radius: var(--radius);
+      background: var(--background);
+      transition:
+        border-color 0.12s,
+        box-shadow 0.12s;
+    }
+    .igroup:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px oklch(0.55 0.145 258 / 0.2);
+    }
+    .igroup textarea {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      outline: none;
+      background: transparent;
+      resize: none;
+      padding: 4px 9px;
+      font-size: 13px;
+      line-height: 18px;
+      min-height: 26px;
+      max-height: 140px;
+      display: block;
+    }
+    .cinput .btn-solid {
+      box-shadow: none;
+      border-color: var(--input);
+    }
+    .cinput .btn-solid:not([disabled]) {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+    .igroup textarea:focus-visible {
+      outline: none;
+    }
+
+    /* The pin's popover */
+    .pop {
+      position: absolute;
+      z-index: 5;
+      width: min(320px, calc(100% - 16px));
+      background: var(--popover);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-xl);
+      display: flex;
+      flex-direction: column;
+      font-family: var(--font-canvas);
+      font-size: 12.5px;
+      cursor: default;
+    }
+    .pop-h {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 6px 6px 12px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .pop-h .title {
+      font-weight: 500;
+      font-size: 13px;
+      margin-right: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+    .pop-h .where {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pop-h .loc {
+      font-family: var(--font-conversation);
+      font-weight: 400;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .pop-h .num {
+      font-size: 10.5px;
+      font-weight: 600;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      padding: 0 5px;
+      background: var(--muted);
+      color: var(--muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+    .picon {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius);
+      display: grid;
+      place-items: center;
+      color: var(--muted-foreground);
+      flex-shrink: 0;
+    }
+    .picon:hover {
+      background: var(--ghost-hover);
+      color: var(--foreground);
+    }
+    .picon svg {
+      width: 16px;
+      height: 16px;
+    }
+    .picon.is-on {
+      color: var(--green);
+    }
+    .thread {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 12px 8px 2px 12px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .msg {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      column-gap: 9px;
+      row-gap: 2px;
+      align-items: center;
+      position: relative;
+    }
+    .msg .avatar {
+      width: 22px;
+      height: 22px;
+    }
+    .msg .meta {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .msg .name {
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .msg .time {
+      color: var(--muted-foreground);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .msg p {
+      grid-column: 2 / 4;
+      margin: 0;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .msg .status {
+      grid-column: 2 / 4;
+      justify-self: start;
+      margin-top: 4px;
+    }
+    .msg.is-draft p {
+      color: var(--muted-foreground);
+      font-style: italic;
+    }
+    .msg-more {
+      width: 24px;
+      height: 22px;
+      border-radius: var(--radius);
+      color: var(--muted-foreground);
+      display: grid;
+      place-items: center;
+      opacity: 0;
+    }
+    .msg-more svg {
+      width: 15px;
+      height: 15px;
+    }
+    .msg:hover .msg-more,
+    .msg-more:focus-visible,
+    .msg-more[aria-expanded='true'] {
+      opacity: 1;
+    }
+    .msg-more:hover {
+      background: var(--ghost-hover);
+      color: var(--foreground);
+    }
+    .menu {
+      position: absolute;
+      right: 0;
+      top: 24px;
+      z-index: 6;
+      background: var(--popover);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      padding: 4px;
+      min-width: 170px;
+      display: flex;
+      flex-direction: column;
+    }
+    .pop-h .menu {
+      right: 6px;
+      top: 38px;
+    }
+    .menu button {
+      text-align: left;
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    /* biome-ignore lint/style/noDescendingSpecificity: mockup CSS, ordered by component for reading */
+    .menu button:hover {
+      background: var(--ghost-hover);
+    }
+    /* Reply row: avatar, the field, and the send button outside it */
+    .reply-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 10px 10px 10px 12px;
+    }
+    .reply-row > .avatar {
+      width: 22px;
+      height: 22px;
+      margin-bottom: 3px;
+    }
+    .field {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--input);
+      border-radius: var(--radius);
+      background: var(--background);
+      padding: 5px 9px;
+      display: flex;
+      transition:
+        border-color 0.12s,
+        box-shadow 0.12s;
+    }
+    .field:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px oklch(0.55 0.145 258 / 0.18);
+    }
+    .field textarea {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      outline: none;
+      background: transparent;
+      resize: none;
+      padding: 1px 0;
+      font-size: 12.5px;
+      line-height: 1.45;
+      max-height: 120px;
+      min-height: 18px;
+    }
+    .field textarea:focus-visible {
+      outline: none;
+    }
+
+    /* Dock at the end of the document: the stack, then the prompt being written */
+    .dock {
+      margin-top: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    /* Stack rows are edited in place: the note is a text field of the document, no card opens */
+    .crow .avatar {
+      align-self: center;
+    }
+    .srow {
+      cursor: text;
+      align-items: flex-start;
+    }
+    .srow > .avatar,
+    .srow > .name,
+    .srow > .end {
+      margin-top: 3px;
+    }
+    .srow:hover {
+      background: var(--ghost-hover);
+    }
+    .srow.is-linked,
+    .srow:focus-within {
+      background: var(--primary-soft);
+    }
+    .srow .note {
+      outline: none;
+      padding: 2px 0;
+      line-height: 1.5;
+      color: var(--muted-foreground);
+      caret-color: var(--primary);
+    }
+    .srow .note:focus {
+      white-space: pre-wrap;
+      overflow: visible;
+      text-overflow: clip;
+      color: var(--foreground);
+      overflow-wrap: anywhere;
+    }
+    .srow .note:empty::before {
+      content: 'Escreva uma nota…';
+      color: var(--muted-foreground);
+      opacity: 0.6;
+    }
+    .srow.is-leaving {
+      opacity: 0;
+      transform: translateX(-6px);
+      transition:
+        opacity 0.12s,
+        transform 0.12s;
+    }
+    .prompt textarea {
+      width: 100%;
+      border: 0;
+      outline: none;
+      resize: none;
+      background: transparent;
+      font-family: var(--font-conversation);
+      font-weight: 300;
+      font-size: 13px;
+      line-height: 1.65;
+      padding: 0;
+      min-height: 44px;
+    }
+    .prompt textarea::placeholder {
+      color: var(--muted-foreground);
+      opacity: 0.7;
+    }
+    .shake {
+      animation: shake 0.3s;
+    }
+    @keyframes shake {
+      25% {
+        transform: translateX(-4px);
+      }
+      75% {
+        transform: translateX(4px);
+      }
+    }
+
+    /* Inspector, as a side panel */
+    .inspector {
+      border-left: 1px solid var(--border);
+      background: var(--sidebar);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+    .tabs {
+      display: flex;
+      gap: 2px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: var(--radius);
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .tab:hover {
+      background: var(--ghost-hover);
+      color: var(--foreground);
+    }
+    .tab[aria-selected='true'] {
+      background: var(--background);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+    }
+    .panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+    .panel h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+    .panel .lede {
+      margin: 0;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+      font-size: 12px;
+    }
+    .code {
+      margin: 0;
+      font-family: var(--font-conversation);
+      font-size: 11.5px;
+      line-height: 1.6;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .code .t {
+      color: var(--code-tag);
+    }
+    .code .a {
+      color: var(--code-attr);
+    }
+    .code .s {
+      color: var(--code-str);
+    }
+    .code .x {
+      color: var(--code-dim);
+    }
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: var(--muted-foreground);
+    }
+    .legend span::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      margin-right: 5px;
+    }
+    .legend .l-exec::before {
+      background: var(--code-dim);
+    }
+    .legend .l-chat::before {
+      background: var(--code-tag);
+    }
+    details.sent {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+    }
+    details.sent summary {
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      font-family: var(--font-conversation);
+    }
+    details.sent .code {
+      border: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+    .log {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-family: var(--font-conversation);
+      font-size: 11px;
+    }
+    .log li {
+      border: 1px solid var(--border);
+      background: var(--background);
+      border-radius: var(--radius);
+      padding: 6px 8px;
+      min-width: 0;
+    }
+    .log .lt {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .log .seq {
+      color: var(--code-dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .log .ty {
+      font-weight: 500;
+    }
+    .log .ty.ev {
+      color: var(--code-str);
+    }
+    .log .ty.call {
+      color: var(--code-tag);
+    }
+    .log pre {
+      margin: 4px 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--muted-foreground);
+      font-family: inherit;
+    }
+    .empty {
+      color: var(--muted-foreground);
+      font-size: 12px;
+      margin: 0;
+    }
+
+    @media (max-width: 900px) {
+      html,
+      body {
+        height: auto;
+      }
+      .app {
+        height: auto;
+      }
+      .layout {
+        display: block;
+      }
+      .convo {
+        overflow: visible;
+      }
+      .footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 7;
+      }
+      .inspector {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+      }
+      .panel {
+        max-height: 70vh;
+      }
+      .stage {
+        aspect-ratio: auto;
+        min-height: 400px;
+      }
+      .steps {
+        justify-content: flex-start;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation: none;
+        transition: none;
+      }
+    }
+  </style>
+
+  <div class="app">
+    <header class="chrome">
+      <span>doric&nbsp;/&nbsp;<b>Checkout redesign</b></span>
+      <ol class="steps" id="steps" aria-label="Roteiro"></ol>
+      <button class="btn-ghost" id="reset" type="button">Reiniciar</button>
+    </header>
+    <div class="layout">
+      <div class="workspace">
+        <main class="convo" id="convo">
+          <div class="column">
+            <div id="turns"></div>
+            <div class="dock">
+              <div id="stack"></div>
+              <div class="prompt" id="composer">
+                <div class="author" id="prompt-author"></div>
+                <textarea
+                  id="prompt"
+                  rows="2"
+                  aria-label="Prompt"
+                  placeholder="Peça uma mudança…"
+                ></textarea>
+              </div>
+            </div>
+          </div>
+        </main>
+        <footer class="footer">
+          <span class="status" id="status"></span>
+          <span class="kbd">⌘↵</span>
+          <span class="divider" aria-hidden="true"></span>
+          <button
+            class="btn-solid"
+            id="send"
+            type="button"
+            aria-label="Send (Cmd+Enter)"
+            title="Send (Cmd+Enter)"
+          ></button>
+        </footer>
+      </div>
+      <aside class="inspector" aria-label="Inspetor">
+        <div class="tabs" role="tablist">
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            data-tab="prompt"
+            aria-selected="true"
+          >
+            Prompt montado
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            data-tab="log"
+            aria-selected="false"
+          >
+            Log da Thread
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            data-tab="system"
+            aria-selected="false"
+          >
+            System prompt
+          </button>
+        </div>
+        <div class="panel" id="panel"></div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* ---------- helpers ---------- */
+      const $ = (sel, root = document) => root.querySelector(sel);
+      const esc = (s) =>
+        String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
+      const hex = () => Math.random().toString(16).slice(2, 6);
+      const trunc = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+      const ARTIFACT = 'art_checkout';
+      const SOURCE = 'src/Checkout.tsx';
+      const ME = 'João Vitor';
+
+      const svg = (d, w = 2) =>
+        `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+      const ICON = {
+        comment: svg(
+          '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/>',
+          1.8,
+        ),
+        eye: svg(
+          '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+          1.8,
+        ),
+        eyeOff: svg(
+          '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/>',
+          1.8,
+        ),
+        expand: svg('<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>', 1.8),
+        more: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
+        checkCircle: svg(
+          '<circle cx="12" cy="12" r="9.5"/><path d="M8 12.5l2.7 2.7L16.5 9"/>',
+          1.7,
+        ),
+        checkCircleOn:
+          '<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M8 12.5l2.7 2.7L16.5 9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        x: svg('<path d="M6 6l12 12M18 6L6 18"/>', 1.8),
+        arrowUp: svg('<path d="M12 19V5M6 11l6-6 6 6"/>', 2.2),
+        check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 2.4),
+        chev: svg('<path d="M9 6l6 6-6 6"/>', 2),
+        doric: svg(
+          '<path d="M4 20h16M6 20V9M10 20V9M14 20V9M18 20V9M3 9h18L12 4z"/>',
+          2,
+        ),
+      };
+
+      /* A small symmetric identicon, standing in for the app's jdenticon. */
+      const identicon = (name) => {
+        let h = 2166136261;
+        for (const ch of name)
+          h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+        const hue = h % 360;
+        let cells = '';
+        for (let y = 0; y < 5; y++)
+          for (let x = 0; x < 3; x++) {
+            if ((h >> (y * 3 + x)) & 1) {
+              cells += `<rect x="${x * 4 + 2}" y="${y * 4 + 2}" width="4" height="4"/>`;
+              if (x < 2)
+                cells += `<rect x="${(4 - x) * 4 + 2}" y="${y * 4 + 2}" width="4" height="4"/>`;
+            }
+          }
+        return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="hsl(${hue} 55% 55%)">${cells}</svg>`;
+      };
+      const isAgent = (author) => author === 'agent';
+      const nameOf = (author) => (isAgent(author) ? 'Doric' : ME);
+      const avatar = (author) =>
+        isAgent(author)
+          ? `<span class="avatar avatar--agent" aria-hidden="true">${ICON.doric}</span>`
+          : `<span class="avatar" aria-hidden="true">${identicon(ME)}</span>`;
+      const authorLine = (author) =>
+        `<div class="author">${avatar(author)}<span>${nameOf(author)}</span></div>`;
+
+      /* ---------- state ---------- */
+      let S;
+      const initial = () => ({
+        comments: [],
+        stack: [
+          {
+            id: `cmt_${hex()}`,
+            rev: 2,
+            pin: 1,
+            anchor: { form: 'source', line: 14, el: 'h2', ox: 0.92, oy: 0.5 },
+            note: 'Título muito apertado',
+          },
+          {
+            id: `cmt_${hex()}`,
+            rev: 2,
+            pin: 2,
+            anchor: {
+              form: 'source',
+              line: 42,
+              el: 'button.cta',
+              ox: 0.94,
+              oy: 0.5,
+            },
+            note: 'Botão deveria ser secundário',
+          },
+        ],
+        turns: [
+          {
+            type: 'user',
+            text: 'Cria um preview do checkout novo, com o resumo do pedido.',
+            commentIds: [],
+          },
+          {
+            type: 'agent',
+            blocks: [
+              {
+                kind: 'tool',
+                name: 'Papercraft preview',
+                summary: 'Checkout · rev 2',
+              },
+              { kind: 'node', rev: 2 },
+              {
+                kind: 'text',
+                text: 'Publiquei o preview do checkout com o novo layout. Comente direto nos elementos.',
+              },
+            ],
+          },
+        ],
+        log: [],
+        sent: [],
+        text: 'Ajusta isso e mantém o resto igual.',
+        revs: [2],
+        armed: 2,
+        pop: null,
+        popText: '',
+        popAnchor: '',
+        menu: null,
+        openStack: null,
+        showResolved: true,
+        running: false,
+        tab: 'prompt',
+        flags: {
+          drafted: true,
+          edited: false,
+          sent: false,
+          answered: false,
+          followed: false,
+        },
+        seq: 0,
+        promptN: 1,
+      });
+
+      /* ---------- anchors ---------- */
+      const anchorLabel = (a) =>
+        a.form === 'source' ? `Checkout.tsx:${a.line}` : `(${a.x}, ${a.y})`;
+      const anchorAttrs = (a) =>
+        a.form === 'source'
+          ? { anchor: `${SOURCE}:${a.line}`, element: a.el.replace(/:\d$/, '') }
+          : {
+              anchor: `point ${a.x},${a.y}`,
+              ...(a.near ? { near: a.near.replace(/:\d$/, '') } : {}),
+            };
+      const anchorLine = (a, rev) =>
+        a.form === 'source'
+          ? `${SOURCE}:${a.line} · ${a.el.replace(/:\d$/, '')} · rev ${rev}`
+          : `espaço em (${a.x}, ${a.y})${a.near ? ` · perto de ${a.near.replace(/:\d$/, '')}` : ''} · rev ${rev}`;
+
+      /* ---------- derived ---------- */
+      const roots = (rev) =>
+        S.comments.filter(
+          (c) => !c.inReplyTo && (rev === undefined || c.rev === rev),
+        );
+      const repliesOf = (rootId) =>
+        S.comments.filter((c) => c.inReplyTo === rootId);
+      const byId = (id) => S.comments.find((c) => c.id === id);
+      const rootOf = (c) => (c.inReplyTo ? byId(c.inReplyTo) : c);
+      const stateOf = (root) => {
+        if (root.resolved) return 'done';
+        const thread = [root, ...repliesOf(root.id)];
+        return isAgent(thread[thread.length - 1].author) ? 'await' : 'open';
+      };
+      const marker = (root, opts = {}) => {
+        const st = stateOf(root);
+        const n = repliesOf(root.id).filter((r) => isAgent(r.author)).length;
+        const short =
+          (st === 'done' ? '✓' : st === 'await' ? '?' : '…') +
+          (n ? ` ↩${n}` : '');
+        const long =
+          st === 'done'
+            ? '✓ resolvido'
+            : st === 'await'
+              ? '? aguardando você'
+              : 'aberto';
+        const cls = `marker marker--${st}`;
+        if (opts.button)
+          return `<button type="button" class="${cls}" data-action="goto-reply" data-root="${root.id}" title="${long}: ver resposta">${short}</button>`;
+        return `<span class="${cls}">${opts.long ? long : short}</span>`;
+      };
+      const nextPin = (rev) =>
+        Math.max(
+          0,
+          ...roots(rev).map((c) => c.pin),
+          ...S.stack
+            .filter((d) => d.rev === rev && !d.inReplyTo)
+            .map((d) => d.pin),
+        ) + 1;
+      const latestRev = () => Math.max(...S.revs);
+
+      /* ---------- envelope ---------- */
+      const attrs = (o) =>
+        Object.entries(o)
+          .map(
+            ([k, v]) =>
+              ` ${k}="${String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`,
+          )
+          .join('');
+      const body = (s) =>
+        s.replace(
+          /<\/(comment|comments|target|message|user-request)/gi,
+          '<\\/$1',
+        );
+      const buildEnvelope = (text, items) => {
+        const notes = items.filter((i) => i.note.trim());
+        if (!notes.length && !text.trim()) return '';
+        const lines = ['<user-request>'];
+        if (notes.length) {
+          lines.push('<comments>');
+          for (const rev of [...new Set(notes.map((n) => n.rev))].sort(
+            (a, b) => a - b,
+          )) {
+            lines.push(
+              `<target${attrs({ kind: 'artifact', id: ARTIFACT, revision: rev, title: 'Checkout', source: SOURCE })}>`,
+            );
+            for (const n of notes.filter((x) => x.rev === rev)) {
+              lines.push(
+                `<comment${attrs({ id: n.id, ...(n.inReplyTo ? { 'in-reply-to': n.inReplyTo } : {}), pin: n.pin, ...anchorAttrs(n.anchor) })}>${body(n.note.trim())}</comment>`,
+              );
+            }
+            lines.push('</target>');
+          }
+          lines.push('</comments>');
+        }
+        if (text.trim())
+          lines.push('<message>', body(text.trim()), '</message>');
+        lines.push('</user-request>');
+        return lines.join('\n');
+      };
+      const highlight = (xml) =>
+        xml
+          .split('\n')
+          .map((line) => {
+            if (line === '<user-request>' || line === '</user-request>')
+              return `<span class="x">${esc(line)}</span>`;
+            return esc(line).replace(
+              /&lt;(\/?)([\w-]+)((?:\s+[\w-]+=&quot;.*?&quot;)*)\s*(\/?)&gt;/g,
+              (m, slash, name, at, self) =>
+                `<span class="t">&lt;${slash}${name}</span>${at.replace(/([\w-]+)=(&quot;.*?&quot;)/g, '<span class="a">$1</span>=<span class="s">$2</span>')}<span class="t">${self}&gt;</span>`,
+            );
+          })
+          .join('\n');
+
+      const log = (kind, type, data) => {
+        S.log.push({ seq: ++S.seq, kind, type, data });
+      };
+
+      /* ---------- the mock component, per revision ---------- */
+      const mock = (rev) => {
+        const v = rev >= 3 ? 3 : 2;
+        const lines =
+          v >= 3
+            ? {
+                h2: 14,
+                'li.item:1': 21,
+                'li.item:2': 22,
+                'div.coupon': 31,
+                'div.total': 34,
+                'button.cta': 46,
+                'a.secondary': 49,
+              }
+            : {
+                h2: 14,
+                'li.item:1': 21,
+                'li.item:2': 22,
+                'div.total': 30,
+                'button.cta': 42,
+                'a.secondary': 45,
+              };
+        const at = (el) => `data-el="${el}" data-line="${lines[el]}"`;
+        const swapped = rev >= 4;
+        return `<div class="mock">
+      <h2 class="m-title${v >= 3 ? ' roomy' : ''}" ${at('h2')}>Resumo do pedido</h2>
+      <ul class="m-items">
+        <li ${at('li.item:1')}><span>Camiseta básica</span><span>R$ 79,00</span></li>
+        <li ${at('li.item:2')}><span>Frete</span><span>R$ 12,00</span></li>
+      </ul>
+      ${v >= 3 ? `<div class="m-coupon" ${at('div.coupon')}><span>Cupom de desconto</span><span>Aplicar</span></div>` : ''}
+      <div class="m-total" ${at('div.total')}><span>Total</span><b>R$ 91,00</b></div>
+      ${
+        swapped
+          ? `<div class="m-link primary" ${at('a.secondary')}>Continuar</div><div class="m-cta secondary" ${at('button.cta')}>Pagar R$ 91,00</div>`
+          : `<div class="m-cta" ${at('button.cta')}>Pagar R$ 91,00</div><div class="m-link" ${at('a.secondary')}>Continuar comprando</div>`
+      }
+    </div>`;
+      };
+
+      /* ---------- the node ---------- */
+      const posAttrs = (a) =>
+        a.form === 'source'
+          ? `data-el="${a.el}" data-ox="${a.ox}" data-oy="${a.oy}"`
+          : `data-fx="${a.fx}" data-fy="${a.fy}"`;
+
+      const pinsFor = (rev) => {
+        const out = [];
+        for (const c of roots(rev)) {
+          const st = stateOf(c);
+          if (st === 'done' && !S.showResolved) continue;
+          const n = repliesOf(c.id).length;
+          const active =
+            S.pop && S.pop.kind === 'thread' && S.pop.rootId === c.id;
+          const badge =
+            st === 'done'
+              ? '<span class="badge">✓</span>'
+              : st === 'await'
+                ? '<span class="badge">?</span>'
+                : n
+                  ? `<span class="badge">${n}</span>`
+                  : '';
+          out.push(
+            `<button type="button" class="pin pin--${st}${active ? ' is-active' : ''}" data-action="pin" data-key="c:${c.id}" ${posAttrs(c.anchor)} aria-label="Comentário ${c.pin}">${c.pin}${badge}</button>`,
+          );
+        }
+        for (const d of S.stack.filter((x) => x.rev === rev && !x.inReplyTo)) {
+          const focused =
+            document.activeElement?.dataset &&
+            document.activeElement.dataset.note === d.id;
+          const active =
+            focused || (S.pop && S.pop.kind === 'edit' && S.pop.id === d.id);
+          out.push(
+            `<button type="button" class="pin pin--draft${active ? ' is-active' : ''}" data-action="pin" data-key="d:${d.id}" ${posAttrs(d.anchor)} aria-label="Rascunho ${d.pin}">${d.pin}</button>`,
+          );
+        }
+        return out.join('');
+      };
+
+      const timeAgo = (t) => {
+        const s = Math.round((Date.now() - (t || Date.now())) / 1000);
+        if (s < 45) return 'agora';
+        const m = Math.round(s / 60);
+        return m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
+      };
+      const menuFor = (items) =>
+        `<div class="menu" role="menu">${items.map(([action, label, id]) => `<button type="button" role="menuitem" data-action="${action}"${id ? ` data-id="${id}"` : ''}>${label}</button>`).join('')}</div>`;
+      const msgRow = (
+        m,
+        { draft = false, status = '' } = {},
+      ) => `<div class="msg${draft ? ' is-draft' : ''}">
+      ${avatar(m.author)}
+      <div class="meta"><span class="name">${nameOf(m.author)}</span><span class="time">${draft ? 'na pilha' : timeAgo(m.createdAt)}</span></div>
+      <button type="button" class="msg-more" data-action="msg-menu" data-id="${m.id}" aria-label="Mais ações" aria-expanded="${S.menu === m.id}">${ICON.more}</button>
+      <p>${esc(m.note)}</p>${status}
+      ${
+        S.menu === m.id
+          ? menuFor(
+              draft
+                ? [
+                    ['edit-draft', 'Editar', m.id],
+                    ['remove-draft', 'Remover da pilha', m.id],
+                  ]
+                : [['copy-msg', 'Copiar texto', m.id]],
+            )
+          : ''
+      }
+    </div>`;
+
+      /* Creating a pin keeps the app's gesture (pins-layer.tsx): the pending pin and the
+     inline input beside it — a one-line pill that opens into a box once written. */
+      const creationFor = (
+        p,
+      ) => `<span class="pin-pending" ${posAttrs(p.anchor)} aria-hidden="true"></span>
+      <div class="cinput" ${posAttrs(p.anchor)}>
+        <div class="igroup"><textarea id="pop-text" rows="1" placeholder="Adicionar comentário" aria-label="Adicionar comentário">${esc(S.popText)}</textarea></div>
+        <button type="button" class="btn-solid pop-send" data-action="pop-send" aria-label="Confirmar comentário" title="Confirmar comentário"${S.popText.trim() ? '' : ' disabled'}>${ICON.arrowUp}</button>
+      </div>`;
+
+      /* The thread: once a pin holds its first comment, opening it shows this. */
+      const popFor = (rev) => {
+        const p = S.pop;
+        if (!p || p.rev !== rev) return '';
+        if (p.kind === 'new') return creationFor(p);
+        let a,
+          num,
+          thread = '',
+          placeholder,
+          sendIcon = ICON.arrowUp,
+          sendTitle = 'Adicionar à pilha',
+          value = S.popText,
+          resolve = '',
+          headMenu = [];
+        if (p.kind === 'edit') {
+          // A draft pin: its first comment still sits in the stack, and so do replies to it.
+          const d = S.stack.find((x) => x.id === p.id);
+          if (!d) return '';
+          a = d.anchor;
+          num = d.pin;
+          const msgs = [d, ...S.stack.filter((x) => x.inReplyTo === d.id)];
+          thread = `<div class="thread">${msgs.map((m) => msgRow({ ...m, author: 'você' }, { draft: true })).join('')}</div>`;
+          placeholder = 'Responder…';
+          headMenu = [
+            ['copy-anchor', 'Copiar âncora'],
+            ['remove-draft', 'Remover da pilha', d.id],
+          ];
+        } else {
+          const root = byId(p.rootId);
+          if (!root) return '';
+          a = root.anchor;
+          num = root.pin;
+          placeholder = 'Responder…';
+          const msgs = [root, ...repliesOf(root.id)];
+          const st = stateOf(root);
+          const drafts = S.stack.filter((d) => d.inReplyTo === root.id);
+          thread = `<div class="thread">${msgs.map((m, i) => msgRow(m, { status: i === msgs.length - 1 && st !== 'open' ? `<span class="status">${marker(root, { long: true })}</span>` : '' })).join('')}${drafts.map((d) => msgRow({ ...d, author: 'você' }, { draft: true })).join('')}</div>`;
+          resolve = `<button type="button" class="picon${root.resolved ? ' is-on' : ''}" data-action="toggle-resolve" data-id="${root.id}" title="${root.resolved ? 'Reabrir' : 'Resolver'}" aria-pressed="${root.resolved}">${root.resolved ? ICON.checkCircleOn : ICON.checkCircle}</button>`;
+          headMenu = [
+            ['copy-anchor', 'Copiar âncora'],
+            [
+              'toggle-show-resolved',
+              S.showResolved ? 'Esconder resolvidos' : 'Mostrar resolvidos',
+            ],
+          ];
+        }
+        if (p.editing) {
+          placeholder = 'Editar comentário…';
+          sendIcon = ICON.check;
+          sendTitle = 'Salvar';
+        }
+        S.popAnchor = anchorLine(a, rev);
+        const where =
+          a.form === 'source'
+            ? `Checkout<span class="loc">:${a.line}</span>`
+            : `Checkout<span class="loc"> (${a.x}, ${a.y})</span>`;
+        return `<div class="pop" ${posAttrs(a)} role="dialog" aria-label="Comentário em ${esc(S.popAnchor)}">
+      <div class="pop-h">
+        <span class="title" title="${esc(S.popAnchor)}"><span class="num">${num}</span><span class="where">${where}</span></span>
+        <button type="button" class="picon" data-action="head-menu" title="Mais ações" aria-expanded="${S.menu === 'head'}">${ICON.more}</button>
+        ${resolve}
+        <button type="button" class="picon" data-action="pop-close" title="Fechar">${ICON.x}</button>
+        ${S.menu === 'head' ? menuFor(headMenu) : ''}
+      </div>
+      ${thread}
+      <div class="reply-row">${avatar('você')}
+        <div class="field"><textarea id="pop-text" rows="1" placeholder="${placeholder}" aria-label="${placeholder}">${esc(value)}</textarea></div>
+        <button type="button" class="btn-solid pop-send" data-action="pop-send" title="${sendTitle}" aria-label="${sendTitle}"${value.trim() ? '' : ' disabled'}>${sendIcon}</button>
+      </div>
+    </div>`;
+      };
+
+      const node = (rev) => {
+        const count =
+          roots(rev).filter((c) => !c.resolved).length +
+          S.stack.filter((d) => d.rev === rev && !d.inReplyTo).length;
+        const anyDone = roots(rev).some((c) => c.resolved);
+        const armed = S.armed === rev;
+        return `<div class="node${armed ? ' is-armed' : ''}" id="node-${rev}">
+      <div class="node-h">
+        <span class="node-title">Checkout</span><span class="rev">rev ${rev}</span>
+        <div class="node-tools">
+          <button type="button" class="ibtn" data-action="arm" data-rev="${rev}" aria-pressed="${armed}" title="Comentar (C)">${ICON.comment}${count ? `<span class="count">${count}</span>` : ''}</button>
+          ${anyDone ? `<button type="button" class="ibtn" data-action="toggle-show-resolved" title="${S.showResolved ? 'Esconder' : 'Mostrar'} resolvidos">${S.showResolved ? ICON.eye : ICON.eyeOff}</button>` : ''}
+          <button type="button" class="ibtn" disabled title="Abrir no canvas">${ICON.expand}</button>
+        </div>
+      </div>
+      <div class="stage" data-stage="${rev}">${mock(rev)}${pinsFor(rev)}${popFor(rev)}</div>
+      <div class="node-f"><span class="path">${SOURCE}</span><span>${armed ? 'Clique para comentar' : '<span class="kbd">C</span> comenta'}</span></div>
+    </div>`;
+      };
+
+      /* ---------- comment rows ---------- */
+      const CE = (() => {
+        const d = document.createElement('div');
+        d.contentEditable = 'plaintext-only';
+        return d.contentEditable === 'plaintext-only'
+          ? 'plaintext-only'
+          : 'true';
+      })();
+      const crow = (c, end = '', editable = false) =>
+        `${avatar(c.author)}<span class="name">${c.inReplyTo ? '↩ ' : ''}${nameOf(c.author)}</span>${
+          editable
+            ? `<span class="note" id="sn-${c.id}" data-note="${c.id}" contenteditable="${CE}" role="textbox" aria-label="Comentário ${c.pin} em ${esc(anchorLabel(c.anchor))}" spellcheck="false">${esc(c.note)}</span>`
+            : `<span class="note">${esc(c.note || '…')}</span>`
+        }<span class="end"><span>${esc(anchorLabel(c.anchor))}</span><span class="pinno">[${c.pin}]</span>${end}</span>`;
+
+      /* ---------- turns ---------- */
+      const userTurn = (t) => {
+        const cs = t.commentIds.map(byId).filter(Boolean);
+        let html = authorLine('você');
+        if (cs.length) {
+          html += '<div class="user-comments">';
+          for (const rev of [...new Set(cs.map((c) => c.rev))]) {
+            html += `<div class="grp"><button type="button" data-action="goto-node" data-rev="${rev}">Checkout · rev ${rev}</button></div><ul class="crows">`;
+            for (const c of cs.filter((x) => x.rev === rev))
+              html += `<li class="crow">${crow(c, marker(rootOf(c), { button: true }))}</li>`;
+            html += '</ul>';
+          }
+          html += '</div>';
+        }
+        if (t.text) html += `<p>${esc(t.text)}</p>`;
+        return `<section class="turn">${html}</section>`;
+      };
+
+      const replyCard = (r) => {
+        const asked = byId(r.answers);
+        const root = rootOf(r);
+        if (!asked || !root) return '';
+        const st = stateOf(root);
+        return `<div class="reply" id="reply-${r.id}" data-root="${root.id}">
+      <button type="button" class="reply-src" data-action="goto-pin" data-root="${root.id}" title="Ver no preview"><span class="crow">${crow(asked)}</span></button>
+      <div class="reply-main">${authorLine('agent')}<p>${esc(r.note)}</p>
+        <div class="reply-foot">${marker(root, { long: true })}<button type="button" class="link" data-action="goto-pin" data-root="${root.id}">${st === 'await' ? 'Responder' : 'Abrir thread'}</button></div>
+      </div>
+    </div>`;
+      };
+
+      const agentTurn = (t) =>
+        `<section class="turn">${authorLine('agent')}<div class="turn-body">${t.blocks
+          .map((b) => {
+            if (b.kind === 'thinking')
+              return '<div class="tool"><span class="shimmer">Thinking</span></div>';
+            if (b.kind === 'tool')
+              return `<div class="tool"><span>Called</span><b>${esc(b.name)}</b>${ICON.chev.replace('<svg aria-hidden="true"', '<svg aria-hidden="true" class="chev"')}<span class="sum">${esc(b.summary)}</span></div>`;
+            if (b.kind === 'node') return node(b.rev);
+            if (b.kind === 'replies')
+              return `<div class="replies">${b.ids.map(byId).filter(Boolean).map(replyCard).join('')}</div>`;
+            return `<p>${esc(b.text)}</p>`;
+          })
+          .join('')}</div></section>`;
+
+      /* ---------- stack ---------- */
+      const renderStack = () => {
+        const el = $('#stack');
+        if (!S.stack.length) {
+          el.innerHTML = '';
+          return;
+        }
+        el.innerHTML = `<section aria-label="Comentários para enviar"><h2 class="comments-h">Comments <span>${S.stack.length}</span></h2><ol class="crows">${S.stack
+          .map((d) => {
+            const linked = S.pop && S.pop.kind === 'edit' && S.pop.id === d.id;
+            return `<li class="crow srow${linked ? ' is-linked' : ''}" data-row="${d.id}">${crow({ ...d, author: 'você' }, '', true)}</li>`;
+          })
+          .join('')}</ol></section>`;
+      };
+
+      /* ---------- inspector ---------- */
+      const SYSTEM = `- Each input arrives in one envelope: <user-request>, <parent-instruction>,
+  <child-result> or <terminal-output>. The request itself is the text in <message>.
+- <comments> holds the user's review comments, grouped by <target> (its kind, id,
+  revision and the owner's references, such as the source file). Each <comment>
+  has an id, an anchor (file:line, a selector, or a point with the nearest
+  element) and the note. in-reply-to names the comment it continues.
+  Anchors name the revision the user saw.
+- Address every comment. Answer each one with comment_reply: say what changed,
+  or ask what is unclear. Set resolve when it is done.`;
+      const TOOL = `comment_reply({
+  comment_id: string,   // the root comment's id
+  text: string,         // Markdown
+  resolve?: boolean     // also writes comments.resolved/v1
+})`;
+
+      const renderPanel = () => {
+        document
+          .querySelectorAll('.tab')
+          .forEach(
+            (t) =>
+              void t.setAttribute(
+                'aria-selected',
+                String(t.dataset.tab === S.tab),
+              ),
+          );
+        const p = $('#panel');
+        if (S.tab === 'prompt') {
+          const xml = buildEnvelope(S.text, S.stack);
+          p.innerHTML = `<h3>Próximo envio</h3>
+        <p class="lede">Montado a cada tecla: as notas da pilha viram <code>&lt;comments&gt;</code> agrupados por artefato, e o texto do prompt vira <code>&lt;message&gt;</code>.</p>
+        ${xml ? `<pre class="code">${highlight(xml)}</pre>` : '<p class="empty">Nada a enviar. Escreva no prompt ou comente no preview.</p>'}
+        <div class="legend"><span class="l-chat">montado pelo chat (fica no log)</span><span class="l-exec">envelope do executor</span></div>
+        ${S.sent.length ? `<h3>Enviados</h3>${S.sent.map((s, i) => `<details class="sent"${i === 0 ? ' open' : ''}><summary>${esc(s.promptId)}</summary><pre class="code">${highlight(s.xml)}</pre></details>`).join('')}` : ''}`;
+        } else if (S.tab === 'log') {
+          p.innerHTML = `<h3>Log durável</h3><p class="lede">O que fica gravado. Rascunhos da pilha só chegam aqui depois que o envio é aceito.</p>
+        ${S.log.length ? `<ol class="log">${S.log.map((e) => `<li><div class="lt"><span class="seq">#${e.seq}</span><span class="ty ${e.kind}">${esc(e.type)}</span></div><pre>${esc(JSON.stringify(e.data, null, 1).replace(/\n\s*/g, ' '))}</pre></li>`).join('')}</ol>` : '<p class="empty">Vazio. Envie o prompt para ver os eventos.</p>'}`;
+          p.scrollTop = p.scrollHeight;
+        } else {
+          p.innerHTML = `<h3>Linhas novas do system prompt</h3><p class="lede">Substituem a linha atual sobre os headers de entrada em <code>prompts/system.ts</code>.</p><pre class="code">${esc(SYSTEM)}</pre>
+        <h3>Ferramenta</h3><p class="lede">Do bundle <code>comments</code>. Grava <code>comments.added/v1</code> com <code>inReplyTo</code> e <code>author: "agent"</code>. Na conversa, a linha da ferramenta some e o bloco de resposta toma o lugar.</p><pre class="code">${esc(TOOL)}</pre>`;
+        }
+      };
+
+      /* ---------- steps & footer ---------- */
+      const STEPS = [
+        ['drafted', 'Comente no preview'],
+        ['edited', 'Edite na pilha'],
+        ['sent', 'Envie com ⌘↵'],
+        ['answered', 'Agente responde'],
+        ['followed', 'Responda ou resolva'],
+      ];
+      const renderChrome = () => {
+        const now = S.running ? 3 : STEPS.findIndex(([k]) => !S.flags[k]);
+        $('#steps').innerHTML = STEPS.map(
+          ([k, label], i) =>
+            `<li class="step${S.flags[k] && i !== now ? ' is-done' : ''}${i === now ? ' is-now' : ''}"><i>${S.flags[k] && i !== now ? '✓' : i + 1}</i>${label}</li>`,
+        ).join('');
+        const notes = S.stack.filter((d) => d.note.trim()).length;
+        $('#send').disabled = S.running || !(S.text.trim() || notes);
+        $('#status').textContent = S.running
+          ? 'Doric está trabalhando…'
+          : notes
+            ? `${notes} comentário${notes > 1 ? 's' : ''} sai${notes > 1 ? 'em' : ''} com o próximo envio`
+            : '';
+      };
+
+      /* ---------- render with focus restore ---------- */
+      const render = () => {
+        const active = document.activeElement;
+        const keep =
+          active?.id && active.id !== 'prompt'
+            ? {
+                id: active.id,
+                start: active.selectionStart,
+                end: active.selectionEnd,
+                caret: active.dataset?.note ? caretOffset(active) : null,
+              }
+            : null;
+        const scroller = $('#convo');
+        const top = scroller.scrollTop;
+        $('#turns').innerHTML = S.turns
+          .map((t) => (t.type === 'user' ? userTurn(t) : agentTurn(t)))
+          .join('');
+        renderStack();
+        renderPanel();
+        renderChrome();
+        scroller.scrollTop = top;
+        layoutPins();
+        if (keep) {
+          const el = document.getElementById(keep.id);
+          if (el?.dataset.note)
+            setCaret(el, keep.caret ?? el.textContent.length);
+          else if (el) {
+            el.focus({ preventScroll: true });
+            if (keep.start != null && el.setSelectionRange)
+              el.setSelectionRange(keep.start, keep.end);
+          }
+        }
+      };
+
+      /* ---------- caret in the stack's notes ---------- */
+      function caretOffset(el) {
+        const s = getSelection();
+        if (!s.rangeCount || !el.contains(s.anchorNode)) return null;
+        const r = s.getRangeAt(0);
+        const pre = r.cloneRange();
+        pre.selectNodeContents(el);
+        pre.setEnd(r.endContainer, r.endOffset);
+        return pre.toString().length;
+      }
+      function setCaret(el, offset) {
+        el.focus({ preventScroll: true });
+        const r = document.createRange();
+        const node = el.firstChild;
+        if (node && node.nodeType === 3)
+          r.setStart(node, Math.min(offset, node.length));
+        else {
+          r.selectNodeContents(el);
+          r.collapse(!(offset > 0));
+        }
+        r.collapse(true);
+        const s = getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      }
+      const placeCaret = (el, atEnd) => {
+        setCaret(el, atEnd ? el.textContent.length : 0);
+        el.scrollIntoView({ block: 'nearest' });
+      };
+      const caretRect = () => {
+        const s = getSelection();
+        if (!s.rangeCount) return null;
+        const r = s.getRangeAt(0).cloneRange();
+        r.collapse(true);
+        return r.getClientRects()[0] || null;
+      };
+      const lineHeight = (el) =>
+        parseFloat(getComputedStyle(el).lineHeight) || 20;
+      const onFirstLine = (el) => {
+        const r = caretRect();
+        return (
+          !r || r.top - el.getBoundingClientRect().top < lineHeight(el) * 0.8
+        );
+      };
+      const onLastLine = (el) => {
+        const r = caretRect();
+        return (
+          !r ||
+          el.getBoundingClientRect().bottom - r.bottom < lineHeight(el) * 0.8
+        );
+      };
+      const notes = () => [...document.querySelectorAll('#stack [data-note]')];
+      const focusPrompt = (atEnd) => {
+        const p = $('#prompt');
+        p.focus();
+        const at = atEnd ? p.value.length : 0;
+        p.setSelectionRange(at, at);
+      };
+
+      /* Deletes one draft from the stack and leaves the caret on its neighbour, or in the prompt. */
+      const deleteDraft = (id) => {
+        const list = notes();
+        const i = list.findIndex((n) => n.dataset.note === id);
+        const prev = list[i - 1] && list[i - 1].dataset.note;
+        const next = list[i + 1] && list[i + 1].dataset.note;
+        S.stack = S.stack.filter((x) => x.id !== id);
+        if (S.pop && S.pop.id === id) S.pop = null;
+        S.flags.edited = true;
+        render();
+        const target = document.getElementById(`sn-${prev || next}`);
+        if (target) placeCaret(target, Boolean(prev));
+        else focusPrompt(false);
+      };
+      const light = () => {
+        renderPanel();
+        renderChrome();
+      };
+
+      /* Pins resolve against the element they were placed on, like pinPointOf. */
+      const layoutPins = () => {
+        document.querySelectorAll('[data-stage]').forEach((stage) => {
+          const sr = stage.getBoundingClientRect();
+          stage
+            .querySelectorAll('.pin, .pin-pending, .cinput, .pop')
+            .forEach((p) => {
+              let x, y;
+              if (p.dataset.el) {
+                const t = stage.querySelector(
+                  `.mock [data-el="${p.dataset.el}"]`,
+                );
+                if (!t) {
+                  p.hidden = true;
+                  return;
+                }
+                const r = t.getBoundingClientRect();
+                x = r.left - sr.left + r.width * Number(p.dataset.ox);
+                y = r.top - sr.top + r.height * Number(p.dataset.oy);
+              } else {
+                x = sr.width * Number(p.dataset.fx);
+                y = sr.height * Number(p.dataset.fy);
+              }
+              if (
+                p.classList.contains('pin') ||
+                p.classList.contains('pin-pending')
+              ) {
+                p.style.left = `${x}px`;
+                p.style.top = `${y}px`;
+              } else if (p.classList.contains('cinput')) {
+                // inputPlacement: right of the pin, or left of it without room; level with the pin.
+                const PIN = 32,
+                  GAP = 10,
+                  W = 280,
+                  H = 44;
+                const right = x + PIN + GAP;
+                p.style.left = `${
+                  right + W <= sr.width - 4 ? right : Math.max(4, x - GAP - W)
+                }px`;
+                p.style.top = `${Math.max(
+                  4,
+                  Math.min(
+                    y - PIN - (H - PIN) / 2,
+                    sr.height - p.offsetHeight - 4,
+                  ),
+                )}px`;
+              } else {
+                const w = p.offsetWidth,
+                  h = p.offsetHeight;
+                const left = Math.max(8, Math.min(x + 18, sr.width - w - 8));
+                const below = y + 10 + h < sr.height - 8;
+                p.style.left = `${left}px`;
+                p.style.top = `${below ? y + 10 : Math.max(8, y - h - 30)}px`;
+              }
+            });
+        });
+      };
+      addEventListener('resize', layoutPins);
+
+      /* ---------- actions ---------- */
+      const focusPop = () =>
+        requestAnimationFrame(() => {
+          const t = $('#pop-text');
+          if (t) {
+            t.focus({ preventScroll: true });
+            t.setSelectionRange(t.value.length, t.value.length);
+          }
+        });
+
+      const confirmPop = () => {
+        const p = S.pop;
+        if (!p) return;
+        const note = S.popText.trim();
+        if (p.editing) {
+          // Editing one draft of the thread in the field: an emptied note drops it (and its replies).
+          const d = S.stack.find((x) => x.id === p.target);
+          if (d && note) {
+            d.note = note;
+            S.flags.edited = true;
+          } else if (d)
+            S.stack = S.stack.filter((x) => x !== d && x.inReplyTo !== d.id);
+        } else if (p.kind === 'new' && note) {
+          S.stack.push({
+            id: `cmt_${hex()}`,
+            rev: p.rev,
+            pin: nextPin(p.rev),
+            anchor: p.anchor,
+            note,
+          });
+          S.flags.drafted = true;
+        } else if (p.kind === 'edit') {
+          const d = S.stack.find((x) => x.id === p.id);
+          if (d && note) {
+            S.stack.push({
+              id: `cmt_${hex()}`,
+              rev: d.rev,
+              pin: d.pin,
+              anchor: d.anchor,
+              note,
+              inReplyTo: d.id,
+            });
+          }
+        } else if (p.kind === 'thread' && note) {
+          const root = byId(p.rootId);
+          S.stack.push({
+            id: `cmt_${hex()}`,
+            rev: root.rev,
+            pin: root.pin,
+            anchor: root.anchor,
+            note,
+            inReplyTo: root.id,
+          });
+          S.flags.followed = true;
+        }
+        S.pop = null;
+        S.popText = '';
+        S.menu = null;
+      };
+
+      const copy = async (text) => {
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          /* the frame may refuse it */
+        }
+      };
+
+      const openThread = (rootId) => {
+        const root = byId(rootId);
+        if (!root) return;
+        if (S.pop) confirmPop();
+        S.openStack = null;
+        S.pop = { rev: root.rev, kind: 'thread', rootId };
+        S.popText = '';
+        if (stateOf(root) === 'done') S.showResolved = true;
+        render();
+        const n = document.getElementById(`node-${root.rev}`);
+        n?.scrollIntoView({
+          block: 'center',
+          behavior: reduced ? 'auto' : 'smooth',
+        });
+        focusPop();
+      };
+
+      const nearestEl = (mockEl, x, y) => {
+        let best = null,
+          bd = Infinity;
+        mockEl.querySelectorAll('[data-el]').forEach((el) => {
+          const r = el.getBoundingClientRect();
+          const d = Math.hypot(
+            Math.max(r.left - x, 0, x - r.right),
+            Math.max(r.top - y, 0, y - r.bottom),
+          );
+          if (d < bd) {
+            bd = d;
+            best = el;
+          }
+        });
+        return best;
+      };
+
+      const stageClick = (stage, e) => {
+        const rev = Number(stage.dataset.stage);
+        if (S.armed !== rev) {
+          if (S.pop) {
+            confirmPop();
+            render();
+          }
+          return;
+        }
+        if (S.pop) confirmPop();
+        S.openStack = null;
+        const sr = stage.getBoundingClientRect();
+        const hit = e.target.closest('.mock [data-el]');
+        let anchor;
+        if (hit) {
+          const r = hit.getBoundingClientRect();
+          anchor = {
+            form: 'source',
+            line: Number(hit.dataset.line),
+            el: hit.dataset.el,
+            ox: +((e.clientX - r.left) / r.width).toFixed(3),
+            oy: +((e.clientY - r.top) / r.height).toFixed(3),
+          };
+        } else {
+          const near = nearestEl(
+            stage.querySelector('.mock'),
+            e.clientX,
+            e.clientY,
+          );
+          anchor = {
+            form: 'point',
+            x: Math.round(e.clientX - sr.left),
+            y: Math.round(e.clientY - sr.top),
+            fx: +((e.clientX - sr.left) / sr.width).toFixed(3),
+            fy: +((e.clientY - sr.top) / sr.height).toFixed(3),
+            near: near ? near.dataset.el : undefined,
+          };
+        }
+        S.pop = { rev, kind: 'new', anchor };
+        S.popText = '';
+        render();
+        focusPop();
+      };
+
+      const shake = () => {
+        const c = $('#composer');
+        c.classList.remove('shake');
+        void c.offsetWidth;
+        c.classList.add('shake');
+      };
+
+      const scrollEnd = () =>
+        requestAnimationFrame(() => {
+          const c = $('#convo');
+          const behavior = reduced ? 'auto' : 'smooth';
+          if (getComputedStyle(c).overflowY === 'auto')
+            c.scrollTo({ top: c.scrollHeight, behavior });
+          else
+            scrollTo({
+              top:
+                $('.dock').getBoundingClientRect().bottom +
+                scrollY -
+                innerHeight +
+                48,
+              behavior,
+            });
+        });
+
+      const sendNow = async () => {
+        if (S.pop) confirmPop();
+        S.openStack = null;
+        if (S.running) {
+          shake();
+          render();
+          return;
+        }
+        const items = S.stack.filter((d) => d.note.trim());
+        const text = S.text.trim();
+        const xml = buildEnvelope(text, items);
+        if (!xml) {
+          shake();
+          render();
+          return;
+        }
+        const promptId = `prm_${++S.promptN}${hex()}`;
+        log('call', 'runtime.threads/v1.prompt', {
+          promptId,
+          prompt: `${xml.length} chars (ver aba Prompt montado)`,
+        });
+        const ids = [];
+        for (const d of items) {
+          const c = {
+            id: d.id,
+            rev: d.rev,
+            pin: d.pin,
+            anchor: d.anchor,
+            note: d.note.trim(),
+            author: 'você',
+            inReplyTo: d.inReplyTo,
+            promptId,
+            resolved: false,
+            createdAt: Date.now(),
+          };
+          S.comments.push(c);
+          ids.push(c.id);
+          log('ev', 'comments.added/v1', {
+            commentId: c.id,
+            ...(c.inReplyTo ? { inReplyTo: c.inReplyTo } : {}),
+            target: {
+              kind: 'artifact',
+              id: ARTIFACT,
+              revision: c.rev,
+              anchor: anchorAttrs(c.anchor),
+            },
+            text: c.note,
+          });
+        }
+        S.turns.push({ type: 'user', text, commentIds: ids, promptId });
+        S.sent.unshift({ promptId, xml });
+        S.stack = [];
+        S.text = '';
+        $('#prompt').value = '';
+        S.flags.sent = true;
+        S.running = true;
+        S.armed = null;
+        render();
+        scrollEnd();
+        await runAgent(ids.map(byId), text);
+      };
+
+      /* ---------- the scripted agent ---------- */
+      const replyFor = (c) => {
+        const el =
+          c.anchor.form === 'source' ? c.anchor.el.replace(/:\d$/, '') : null;
+        if (c.inReplyTo)
+          return {
+            text: `Combinado. Segui sua resposta (“${trunc(c.note, 48)}”) na nova revisão.`,
+            resolve: true,
+          };
+        if (el === 'button.cta')
+          return {
+            text: 'Qual botão fica como primário: “Continuar comprando” ou “Pagar”? Hoje os dois disputam atenção.',
+            resolve: false,
+          };
+        if (el === 'h2')
+          return {
+            text: 'Aumentei o espaço acima do título para 24px e alinhei com o resumo.',
+            resolve: true,
+          };
+        if (el === 'li.item')
+          return {
+            text: 'Alinhei o preço à direita e deixei o peso regular nessa linha.',
+            resolve: true,
+          };
+        if (el === 'div.total')
+          return {
+            text: 'Reforcei o total: peso 600 e uma linha divisória acima.',
+            resolve: true,
+          };
+        if (el === 'a.secondary')
+          return {
+            text: 'Transformei o link em botão secundário, logo abaixo do principal.',
+            resolve: true,
+          };
+        if (el === 'div.coupon')
+          return {
+            text: 'Encurtei o campo de cupom e trouxe “Aplicar” para dentro dele.',
+            resolve: true,
+          };
+        if (!el)
+          return {
+            text: `Usei esse espaço${c.anchor.near ? ` perto de ${c.anchor.near.replace(/:\d$/, '')}` : ''} para o campo de cupom, acima do total.`,
+            resolve: true,
+          };
+        return { text: 'Ajustei conforme o comentário.', resolve: true };
+      };
+
+      const runAgent = async (comments, text) => {
+        const turn = { type: 'agent', blocks: [{ kind: 'thinking' }] };
+        S.turns.push(turn);
+        render();
+        scrollEnd();
+        await wait(900);
+        turn.blocks = [
+          {
+            kind: 'tool',
+            name: 'Edit',
+            summary: `${SOURCE} · +${6 + comments.length * 2} −${3 + comments.length}`,
+          },
+        ];
+        log('call', 'tool.call edit', { path: SOURCE });
+        render();
+        await wait(500);
+        const rev = latestRev() + 1;
+        S.revs.push(rev);
+        turn.blocks.push(
+          {
+            kind: 'tool',
+            name: 'Papercraft preview',
+            summary: `Checkout · rev ${rev}`,
+          },
+          { kind: 'node', rev },
+        );
+        log('call', 'tool.call papercraft_preview', {
+          artifact_id: ARTIFACT,
+          note: 'aplica os comentários',
+        });
+        log('ev', 'artifacts.revised/v1', {
+          artifactId: ARTIFACT,
+          revision: rev,
+        });
+        render();
+        scrollEnd();
+        await wait(600);
+
+        const resolved = [],
+          asked = [];
+        if (comments.length) {
+          const block = { kind: 'replies', ids: [] };
+          turn.blocks.push(block);
+          for (const c of comments) {
+            const root = rootOf(c);
+            const r = replyFor(c);
+            const reply = {
+              id: `cmt_${hex()}`,
+              rev: root.rev,
+              pin: root.pin,
+              anchor: root.anchor,
+              note: r.text,
+              author: 'agent',
+              inReplyTo: root.id,
+              answers: c.id,
+              resolved: false,
+              createdAt: Date.now(),
+            };
+            log('call', 'tool.call comment_reply', {
+              comment_id: root.id,
+              text: trunc(r.text, 60),
+              ...(r.resolve ? { resolve: true } : {}),
+            });
+            S.comments.push(reply);
+            log('ev', 'comments.added/v1', {
+              commentId: reply.id,
+              inReplyTo: root.id,
+              author: 'agent',
+              text: trunc(r.text, 60),
+            });
+            if (r.resolve) {
+              root.resolved = true;
+              log('ev', 'comments.resolved/v1', {
+                commentId: root.id,
+                resolved: true,
+              });
+              resolved.push(`[${root.pin}]`);
+            } else asked.push(`[${root.pin}]`);
+            block.ids.push(reply.id);
+            render();
+            scrollEnd();
+            await wait(650);
+          }
+        }
+        let final = comments.length
+          ? `Publiquei a rev ${rev}.`
+          : `Publiquei a rev ${rev} com o ajuste pedido.`;
+        if (resolved.length)
+          final += ` Resolvi ${[...new Set(resolved)].join(', ')}.`;
+        if (asked.length)
+          final += ` Em ${asked.join(', ')} preciso da sua decisão antes de seguir.`;
+        const tb = { kind: 'text', text: '' };
+        turn.blocks.push(tb);
+        for (let i = 0; i <= final.length; i += 4) {
+          tb.text = final.slice(0, i);
+          render();
+          await wait(18);
+        }
+        tb.text = final;
+        S.running = false;
+        S.flags.answered = true;
+        S.armed = rev;
+        render();
+        scrollEnd();
+      };
+
+      /* ---------- events ---------- */
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('[data-action]');
+        const stage = e.target.closest('[data-stage]');
+        const menuWasOpen = S.menu;
+        if (
+          S.menu &&
+          !e.target.closest(
+            '.menu, [data-action="msg-menu"], [data-action="head-menu"]',
+          )
+        )
+          S.menu = null;
+        if (a) {
+          const act = a.dataset.action;
+          if (act === 'msg-menu' || act === 'head-menu') {
+            const key = act === 'head-menu' ? 'head' : a.dataset.id;
+            S.menu = S.menu === key ? null : key;
+            render();
+            return;
+          }
+          if (act === 'pop-send') {
+            confirmPop();
+            render();
+            return;
+          }
+          if (act === 'edit-draft') {
+            const d = S.stack.find((x) => x.id === a.dataset.id);
+            if (d && S.pop) {
+              S.pop = { ...S.pop, editing: true, target: d.id };
+              S.popText = d.note;
+            }
+            S.menu = null;
+            render();
+            focusPop();
+            return;
+          }
+          if (act === 'copy-msg') {
+            const c = byId(a.dataset.id);
+            c && copy(c.note);
+            S.menu = null;
+            render();
+            return;
+          }
+          if (act === 'copy-anchor') {
+            copy(S.popAnchor || '');
+            S.menu = null;
+            render();
+            return;
+          }
+          if (act === 'arm') {
+            const rev = Number(a.dataset.rev);
+            if (S.pop) confirmPop();
+            S.armed = S.armed === rev ? null : rev;
+            render();
+            return;
+          }
+          if (act === 'toggle-show-resolved') {
+            S.showResolved = !S.showResolved;
+            S.menu = null;
+            render();
+            return;
+          }
+          if (act === 'pin') {
+            const [k, id] = a.dataset.key.split(':');
+            if (S.pop) confirmPop();
+            S.openStack = null;
+            if (k === 'd') {
+              const d = S.stack.find((x) => x.id === id);
+              if (d) {
+                S.pop = { rev: d.rev, kind: 'edit', id };
+                S.popText = '';
+              }
+              render();
+              focusPop();
+            } else openThread(id);
+            return;
+          }
+          if (act === 'pop-close') {
+            confirmPop();
+            render();
+            return;
+          }
+          if (act === 'remove-draft') {
+            S.stack = S.stack.filter((x) => x.id !== a.dataset.id);
+            S.menu = null;
+            if (S.pop && S.pop.id === a.dataset.id) S.pop = null;
+            if (S.openStack === a.dataset.id) S.openStack = null;
+            S.flags.edited = true;
+            render();
+            return;
+          }
+          if (act === 'toggle-resolve') {
+            const c = byId(a.dataset.id);
+            c.resolved = !c.resolved;
+            log('ev', 'comments.resolved/v1', {
+              commentId: c.id,
+              resolved: c.resolved,
+              author: 'você',
+            });
+            S.flags.followed = true;
+            render();
+            return;
+          }
+          if (act === 'goto-pin') {
+            openThread(a.dataset.root);
+            return;
+          }
+          if (act === 'goto-node') {
+            const n = document.getElementById(`node-${a.dataset.rev}`);
+            n?.scrollIntoView({
+              block: 'center',
+              behavior: reduced ? 'auto' : 'smooth',
+            });
+            return;
+          }
+          if (act === 'goto-reply') {
+            const cards = [
+              ...document.querySelectorAll(
+                `.reply[data-root="${a.dataset.root}"]`,
+              ),
+            ];
+            const card = cards[cards.length - 1];
+            if (card) {
+              card.scrollIntoView({
+                block: 'center',
+                behavior: reduced ? 'auto' : 'smooth',
+              });
+              card.classList.add('flash');
+              setTimeout(() => card.classList.remove('flash'), 1200);
+            } else openThread(a.dataset.root);
+            return;
+          }
+        }
+        if (stage && !e.target.closest('.pop, .pin')) {
+          stageClick(stage, e);
+          return;
+        }
+        // A click on a stack row, off its text, puts the caret at the end of the note.
+        const row = e.target.closest('.srow');
+        if (row && !e.target.closest('[data-note]')) {
+          if (S.pop) {
+            confirmPop();
+            render();
+          }
+          const n = document.getElementById(`sn-${row.dataset.row}`);
+          n && placeCaret(n, true);
+          return;
+        }
+        // A click elsewhere keeps a written note as a draft, like the app does.
+        if (S.pop && !e.target.closest('.pop')) {
+          confirmPop();
+          render();
+          return;
+        }
+        if (menuWasOpen && !S.menu) render();
+      });
+
+      document.querySelectorAll('.tab').forEach(
+        (t) =>
+          void t.addEventListener('click', () => {
+            S.tab = t.dataset.tab;
+            renderPanel();
+          }),
+      );
+      $('#send').addEventListener('click', () => sendNow());
+      $('#reset').addEventListener('click', () => {
+        S = initial();
+        $('#prompt').value = S.text;
+        render();
+      });
+
+      document.addEventListener('input', (e) => {
+        const t = e.target;
+        if (t.id === 'prompt') {
+          S.text = t.value;
+          light();
+        } else if (t.id === 'pop-text') {
+          S.popText = t.value;
+          const box = t.closest('.reply-row, .cinput');
+          const send = box?.querySelector('.pop-send');
+          if (send) send.disabled = !t.value.trim();
+          // Only the field grows with the text; the button keeps its place at the bottom.
+          t.style.height = 'auto';
+          t.style.height = `${Math.min(t.scrollHeight, 140)}px`;
+          light();
+        } else if (t.dataset?.note) {
+          const d = S.stack.find((x) => x.id === t.dataset.note);
+          if (d) {
+            d.note = t.textContent;
+            S.flags.edited = true;
+          }
+          light();
+        }
+      });
+
+      // The pin of the draft being edited lights up while its note holds the caret.
+      document.addEventListener('focusin', (e) => {
+        const id = e.target.dataset?.note;
+        if (!id) return;
+        if (S.pop && S.pop.kind !== 'edit') {
+          confirmPop();
+          const off = caretOffset(e.target);
+          render();
+          const n = document.getElementById(`sn-${id}`);
+          n && setCaret(n, off ?? n.textContent.length);
+        }
+        const pin = document.querySelector(`.pin[data-key="d:${id}"]`);
+        pin?.classList.add('is-active');
+      });
+      document.addEventListener('focusout', (e) => {
+        const id = e.target.dataset?.note;
+        if (!id) return;
+        const pin = document.querySelector(`.pin[data-key="d:${id}"]`);
+        pin?.classList.remove('is-active');
+      });
+      // Pasting into a note keeps it plain text, where the browser lacks plaintext-only.
+      document.addEventListener('paste', (e) => {
+        if (!e.target.dataset?.note || CE === 'plaintext-only') return;
+        e.preventDefault();
+        document.execCommand(
+          'insertText',
+          false,
+          (e.clipboardData || window.clipboardData).getData('text/plain'),
+        );
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        const stage = e.target.closest?.('[data-stage]');
+        document
+          .querySelectorAll('.mock .is-hover')
+          .forEach((n) => void n.classList.remove('is-hover'));
+        document.querySelectorAll('.hover-tag').forEach((n) => void n.remove());
+        if (
+          !stage ||
+          Number(stage.dataset.stage) !== S.armed ||
+          e.target.closest('.pop, .pin')
+        )
+          return;
+        const hit = e.target.closest('.mock [data-el]');
+        if (!hit) return;
+        hit.classList.add('is-hover');
+        const sr = stage.getBoundingClientRect(),
+          r = hit.getBoundingClientRect();
+        const tag = document.createElement('span');
+        tag.className = 'hover-tag';
+        tag.textContent = `${hit.dataset.el.replace(/:\d$/, '')} · Checkout.tsx:${hit.dataset.line}`;
+        tag.style.left = `${r.left - sr.left}px`;
+        tag.style.top = `${r.top - sr.top - 22}px`;
+        stage.appendChild(tag);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        const t = e.target;
+        const mod = e.metaKey || e.ctrlKey;
+        if (e.key === 'Enter' && mod) {
+          e.preventDefault();
+          if (!e.repeat) sendNow();
+          return;
+        }
+        if (t.id === 'pop-text') {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            confirmPop();
+            render();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            S.pop = null;
+            S.popText = '';
+            S.menu = null;
+            render();
+            return;
+          }
+          return;
+        }
+        // A stack note is a line of the document: the caret walks in and out of it, and
+        // Cmd/Ctrl+Backspace (or Backspace/Delete on an empty note) removes the comment.
+        if (t.dataset?.note) {
+          const id = t.dataset.note;
+          const list = notes();
+          const i = list.indexOf(t);
+          if (e.key === 'Backspace' && mod) {
+            e.preventDefault();
+            deleteDraft(id);
+            return;
+          }
+          if (
+            (e.key === 'Backspace' || e.key === 'Delete') &&
+            t.textContent.length === 0
+          ) {
+            e.preventDefault();
+            deleteDraft(id);
+            return;
+          }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            list[i + 1] ? placeCaret(list[i + 1], true) : focusPrompt(true);
+            return;
+          }
+          if (e.key === 'ArrowUp' && onFirstLine(t)) {
+            if (list[i - 1]) {
+              e.preventDefault();
+              placeCaret(list[i - 1], true);
+            }
+            return;
+          }
+          if (e.key === 'ArrowDown' && onLastLine(t)) {
+            e.preventDefault();
+            list[i + 1] ? placeCaret(list[i + 1], false) : focusPrompt(false);
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            focusPrompt(true);
+          }
+          return;
+        }
+        if (t.id === 'prompt') {
+          const onFirst =
+            t.value.lastIndexOf('\n', t.selectionStart - 1) === -1;
+          if (
+            e.key === 'ArrowUp' &&
+            onFirst &&
+            t.selectionStart === t.selectionEnd
+          ) {
+            const list = notes();
+            if (list.length) {
+              e.preventDefault();
+              placeCaret(list[list.length - 1], true);
+            }
+          }
+          return;
+        }
+        if (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT') return;
+        if ((e.key === 'c' || e.key === 'C') && !mod && !e.altKey) {
+          S.armed = S.armed ? null : latestRev();
+          render();
+          return;
+        }
+        if (e.key === 'Escape') {
+          if (S.pop) {
+            S.pop = null;
+            S.popText = '';
+            S.menu = null;
+          } else S.armed = null;
+          render();
+        }
+      });
+
+      /* ---------- boot ---------- */
+      S = initial();
+      $('#prompt').value = S.text;
+      $('#prompt-author').innerHTML = `${avatar('você')}<span>${ME}</span>`;
+      $('#send').innerHTML = ICON.arrowUp;
+      render();
+      if (document.fonts?.ready) document.fonts.ready.then(layoutPins);
+      setTimeout(layoutPins, 300);
+    })();
+  </script>
+</html>

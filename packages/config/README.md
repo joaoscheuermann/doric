@@ -3,7 +3,7 @@
 `config` validates agent configuration carried in message metadata. It owns the
 GitHub repository, provider, model, and task shape used by that message-based
 surface; the Direct host's persisted REST configuration is documented in
-`agents/doric` instead.
+`app/backend/doric-host` instead.
 
 ## Use
 

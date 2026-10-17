@@ -1,9 +1,8 @@
+import { isRecord } from 'tool';
+
 export const asRecord = (
   value: unknown,
-): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+): Record<string, unknown> | undefined => (isRecord(value) ? value : undefined);
 
 export const stringField = (
   record: Record<string, unknown>,

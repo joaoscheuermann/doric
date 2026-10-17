@@ -164,6 +164,13 @@ Omitting `promptTarget` selects `default`. Additional targets use the same
 three-file layout under their own target directory; OKF does not fall back when
 a selected target is missing.
 
+## Repository runner
+
+`npm run okf -- <model-id>` uses the OpenAI Responses-compatible provider.
+Its default base URL is `http://localhost:1234/v1`; set `OKF_BASE_URL` for
+another Responses endpoint and `OKF_API_KEY` when it requires authentication.
+The former LM Studio native adapter has been removed.
+
 ## Development
 
 ```console

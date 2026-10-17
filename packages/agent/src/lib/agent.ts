@@ -5,6 +5,7 @@ import type {
   ProviderRequest,
   ProviderStreamEvent,
 } from 'llms';
+import type { ToolCall } from 'tool';
 
 import { AgentErrorObject } from './classes/agent-error.js';
 import type {
@@ -14,24 +15,28 @@ import type {
   AgentRunOptions,
 } from './types/agent.js';
 import type { ToolCallRecord } from './types/tool-call-storage.js';
-import { runTools } from './utils/run-tools.js';
 import {
   notifyStructuredAttempt,
   notifyToolCallRepair,
   pushIncompleteToolResults,
   repairLimit,
   responseFromFinish,
+  type TurnGuard,
   toolCallCorrection,
+  toolFailureEnvelope,
   toolResultEnvelope,
   turnGuard,
 } from './utils/run.js';
+import { runTools } from './utils/run-tools.js';
+import { describeToolFailure } from './utils/serialize.js';
 import {
   createStructuredOutputTool,
   nextStructuredOutputRepair,
   parseStructuredOutputTool,
-  structuredOutputInstruction,
   type StructuredOutputBaseline,
+  type StructuredOutputRepair,
   type StructuredOutputTool,
+  structuredOutputInstruction,
 } from './utils/structured-output.js';
 
 /** Creates an embeddable agent runtime from injected provider, tool, and message boundaries. */
@@ -142,11 +147,23 @@ export const createAgent = (options: AgentOptions): Agent => {
     pendingCalls.delete(callId);
   };
 
-  const pushObservedToolResult = (record: ToolCallRecord): string => {
-    const content = toolResultEnvelope(record);
-    pushToolResult(record.callId, content);
-    return content;
-  };
+  const observedToolResult =
+    (maxChars?: number) =>
+    (record: ToolCallRecord): string => {
+      const content = toolResultEnvelope(record, maxChars);
+      pushToolResult(record.callId, content);
+      return content;
+    };
+
+  /** A thrown handler answers its call with the failure, never a record. */
+  const observedToolFailure =
+    (maxChars?: number) =>
+    (call: ToolCall, error: unknown): void => {
+      pushToolResult(
+        call.id,
+        toolFailureEnvelope(describeToolFailure(error), maxChars),
+      );
+    };
 
   const storeAssistant = (finish: ProviderFinished<unknown>): void => {
     /** Message storage preserves both semantic calls and opaque provider replay. */
@@ -160,20 +177,50 @@ export const createAgent = (options: AgentOptions): Agent => {
     for (const call of finish.toolCalls) pendingCalls.add(call.id);
   };
 
-  const validatedCalls = (finish: ProviderFinished<unknown>) =>
-    options.tools.calls(finish).map((call) => options.tools.validate(call));
+  /**
+   * Stores the caller's steering messages as user turns and returns them. A run
+   * with no turn left asks for none, so they stay with the caller.
+   */
+  const takeSteering = async <Output>(
+    runOptions: AgentRunOptions<Output>,
+    turns: TurnGuard,
+  ): Promise<readonly string[]> => {
+    if (runOptions.steering === undefined || !turns.available()) return [];
+    runOptions.signal?.throwIfAborted();
+    const inputs = await runOptions.steering();
+    for (const content of inputs) {
+      options.messages.push({ role: 'user', content });
+    }
+    return inputs;
+  };
+
+  /** Validates calls in order and stops at the first failure. */
+  const validatedCalls = async (
+    finish: ProviderFinished<unknown>,
+  ): Promise<ToolCall[]> => {
+    const calls: ToolCall[] = [];
+
+    for (const call of options.tools.calls(finish)) {
+      calls.push(await options.tools.validate(call));
+    }
+
+    return calls;
+  };
 
   return {
     complete: async <Output = JsonValue>(
       input: string,
       runOptions: AgentRunOptions<Output> = {},
     ): Promise<AgentResponse<Output>> => {
-      const beginTurn = turnGuard(runOptions.maxTurns);
+      const turns = turnGuard(runOptions.maxTurns);
       acquire();
 
       try {
         /** The caller input starts the run-local conversation. */
-        options.messages.push({ role: 'user', content: input });
+        if (!runOptions.resume)
+          options.messages.push({ role: 'user', content: input });
+        /** A resumed run reads steering that waited for it before its first turn. */ else
+          await takeSteering(runOptions, turns);
 
         /** This value remains stable across every provider turn in the run. */
         const terminal = outputTool(runOptions);
@@ -186,7 +233,7 @@ export const createAgent = (options: AgentOptions): Agent => {
         while (true) {
           /** Ask the provider for either executable calls or the terminal result. */
           runOptions.signal?.throwIfAborted();
-          beginTurn();
+          turns.begin();
           const request = buildRequest(runOptions, terminal, correction);
           correction = undefined;
           runOptions.signal?.throwIfAborted();
@@ -207,7 +254,7 @@ export const createAgent = (options: AgentOptions): Agent => {
             if (submission.type === 'invalid') {
               storeAssistant(finish);
               pushIncompleteToolResults(finish, pushToolResult);
-              let repair;
+              let repair: StructuredOutputRepair;
               try {
                 repair = nextStructuredOutputRepair(
                   terminal,
@@ -269,12 +316,18 @@ export const createAgent = (options: AgentOptions): Agent => {
           storeAssistant(finish);
 
           if (finish.toolCalls.length === 0) {
+            /** Steering that arrived during the answer continues the run. */
+            if (
+              terminal === undefined &&
+              (await takeSteering(runOptions, turns)).length > 0
+            )
+              continue;
             return responseFromFinish(finish);
           }
 
-          let calls: ReturnType<typeof validatedCalls>;
+          let calls: Awaited<ReturnType<typeof validatedCalls>>;
           try {
-            calls = validatedCalls(finish);
+            calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
             if (invalidSubmissions >= maxRepairs) throw error;
@@ -292,10 +345,14 @@ export const createAgent = (options: AgentOptions): Agent => {
             options,
             calls,
             runOptions,
-            pushObservedToolResult,
+            observedToolResult(runOptions.maxToolResultChars),
+            observedToolFailure(runOptions.maxToolResultChars),
           )) {
             void event;
           }
+
+          /** A finished tool batch is the safe point to read steering. */
+          await takeSteering(runOptions, turns);
         }
       } finally {
         release();
@@ -306,12 +363,13 @@ export const createAgent = (options: AgentOptions): Agent => {
       input: string,
       runOptions: AgentRunOptions<Output> = {},
     ) {
-      const beginTurn = turnGuard(runOptions.maxTurns);
+      const turns = turnGuard(runOptions.maxTurns);
       acquire();
 
       try {
         /** Streaming uses the same message and terminal-tool contract as complete. */
-        options.messages.push({ role: 'user', content: input });
+        if (!runOptions.resume)
+          options.messages.push({ role: 'user', content: input });
         const terminal = outputTool(runOptions);
         const maxRepairs = repairLimit(runOptions.maxToolCallRepairs);
         let invalidSubmissions = 0;
@@ -323,12 +381,18 @@ export const createAgent = (options: AgentOptions): Agent => {
           model: options.model,
           input,
         } as const;
+        /** A resumed run reads steering that waited for it before its first turn. */
+        if (runOptions.resume) {
+          for (const steered of await takeSteering(runOptions, turns)) {
+            yield { type: 'agent.steered', input: steered } as const;
+          }
+        }
 
         while (true) {
           runOptions.signal?.throwIfAborted();
           let finish: ProviderFinished<Output> | undefined;
           const buffered: ProviderStreamEvent<Output>[] = [];
-          beginTurn();
+          turns.begin();
           const request = buildRequest(runOptions, terminal, correction);
           correction = undefined;
 
@@ -351,7 +415,7 @@ export const createAgent = (options: AgentOptions): Agent => {
                 if (submission.type === 'invalid') {
                   storeAssistant(event.finish);
                   pushIncompleteToolResults(event.finish, pushToolResult);
-                  let repair;
+                  let repair: StructuredOutputRepair;
                   try {
                     repair = nextStructuredOutputRepair(
                       terminal,
@@ -437,9 +501,9 @@ export const createAgent = (options: AgentOptions): Agent => {
           if (finish.toolCalls.length > 0) baseline = undefined;
 
           /** A normalized terminal finish has no calls and completes the stream. */
-          let calls: ReturnType<typeof validatedCalls>;
+          let calls: Awaited<ReturnType<typeof validatedCalls>>;
           try {
-            calls = validatedCalls(finish);
+            calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
             if (invalidSubmissions >= maxRepairs) throw error;
@@ -458,6 +522,17 @@ export const createAgent = (options: AgentOptions): Agent => {
           }
 
           if (calls.length === 0) {
+            /** Steering that arrived during the answer continues the run. */
+            const steered =
+              terminal === undefined
+                ? await takeSteering(runOptions, turns)
+                : [];
+            if (steered.length > 0) {
+              for (const input of steered) {
+                yield { type: 'agent.steered', input } as const;
+              }
+              continue;
+            }
             const response = responseFromFinish(finish);
             yield {
               type: 'agent.finished',
@@ -470,9 +545,15 @@ export const createAgent = (options: AgentOptions): Agent => {
             options,
             calls,
             runOptions,
-            pushObservedToolResult,
+            observedToolResult(runOptions.maxToolResultChars),
+            observedToolFailure(runOptions.maxToolResultChars),
           )) {
             yield event;
+          }
+
+          /** A finished tool batch is the safe point to read steering. */
+          for (const input of await takeSteering(runOptions, turns)) {
+            yield { type: 'agent.steered', input } as const;
           }
         }
       } finally {

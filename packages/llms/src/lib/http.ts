@@ -1,10 +1,17 @@
-import type { HttpRequest, HttpResponse, HttpTransport } from './types/http.js';
 import { HttpStreamError } from './classes/http-error.js';
+import type { HttpRequest, HttpResponse, HttpTransport } from './types/http.js';
 
 const headersToRecord = (headers: Headers): Record<string, string> =>
   Object.fromEntries(headers.entries());
 
-/** Creates a production transport around Fetch while keeping providers testable. */
+/**
+ * Creates a production transport around Fetch while keeping providers testable.
+ *
+ * Tolerated duplication: `oauth` owns a near-identical `createFetchTransport`
+ * and depends on nothing beyond `tslib`, so sharing would cost a new package or
+ * a cross-package dependency. Extract only when a third consumer appears (see
+ * `packages/AGENTS.md`).
+ */
 export const createFetchTransport = (
   fetcher: typeof fetch = fetch,
 ): HttpTransport => ({

@@ -2,19 +2,19 @@ export type HttpMethod = 'GET' | 'POST';
 
 export type HttpHeaders = Readonly<Record<string, string>>;
 
-export type HttpRequest = {
+export interface HttpRequest {
   readonly method: HttpMethod;
   readonly url: string;
   readonly headers?: HttpHeaders;
   readonly body?: string;
   readonly signal?: AbortSignal;
-};
+}
 
-export type HttpResponse = {
+export interface HttpResponse {
   readonly status: number;
   readonly headers: HttpHeaders;
   readonly body: string;
-};
+}
 
 export type HttpStreamChunk = string | Uint8Array;
 

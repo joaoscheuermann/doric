@@ -13,16 +13,16 @@ import {
 
 const logger = pino({ enabled: false });
 
-type Document = {
+interface Document {
   readonly id: string;
-};
+}
 
 const result = (id: string, score: number): SearchResult<Document> => ({
   data: { id },
   score,
 });
 
-test('combines the real lexical and vector indexes without losing shared candidates', async () => {
+void test('combines the real lexical and vector indexes without losing shared candidates', async () => {
   const lexical = createLexicalIndex<Document>({ logger });
   const vectors: Record<string, number[]> = {
     lexical: [0, 1],
@@ -61,7 +61,7 @@ test('combines the real lexical and vector indexes without losing shared candida
   assert.equal(results[0].score, 2 / 62);
 });
 
-test('fuses lexical and semantic ranks with RRF and canonical-key deduplication', async () => {
+void test('fuses lexical and semantic ranks with RRF and canonical-key deduplication', async () => {
   const lexical: Search<Document> = {
     search: async () => [result('alpha', 100), result('beta', 50)],
   };
@@ -88,7 +88,7 @@ test('fuses lexical and semantic ranks with RRF and canonical-key deduplication'
   assert.equal(results[2]?.score, 1 / 61);
 });
 
-test('uses the requested query and limit for both sources', async () => {
+void test('uses the requested query and limit for both sources', async () => {
   const source = (id: string): Search<Document> => ({
     search: async (query, topK) =>
       query === 'requested query' && topK === 2 ? [result(id, 1)] : [],
@@ -108,7 +108,7 @@ test('uses the requested query and limit for both sources', async () => {
   );
 });
 
-test('counts a canonical key only once per source without compressing later ranks', async () => {
+void test('counts a canonical key only once per source without compressing later ranks', async () => {
   const hybrid = createHybridSearch({
     lexical: {
       search: async () => [
@@ -132,7 +132,7 @@ test('counts a canonical key only once per source without compressing later rank
   assert.equal(results[1]?.score, 1 / 63);
 });
 
-test('limits source rankings before fusion and the final ranking after fusion', async () => {
+void test('limits source rankings before fusion and the final ranking after fusion', async () => {
   const hybrid = createHybridSearch({
     lexical: {
       search: async () => [
@@ -156,7 +156,7 @@ test('limits source rankings before fusion and the final ranking after fusion', 
   );
 });
 
-test('does not query either source when topK is zero', async () => {
+void test('does not query either source when topK is zero', async () => {
   let calls = 0;
 
   const source: Search<Document> = {
@@ -179,7 +179,7 @@ test('does not query either source when topK is zero', async () => {
   assert.equal(calls, 0);
 });
 
-test('propagates source failures without returning a partial ranking', async () => {
+void test('propagates source failures without returning a partial ranking', async () => {
   const failure = new Error('private lexical failure');
 
   const hybrid = createHybridSearch<Document>({

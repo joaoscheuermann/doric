@@ -1,0 +1,204 @@
+import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
+
+import { Badge } from '../components/badge.js';
+import {
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+} from '../components/sidebar.js';
+import { cn } from '../lib/utils.js';
+import {
+  indentation,
+  rowInteraction,
+  TreeGuides,
+  treeClassName,
+} from './tree-guides.js';
+
+/** One tree node: a file, or a directory that carries its own children. */
+export type TreeNode = {
+  readonly name: string;
+  readonly path: string;
+  readonly type: 'directory' | 'file';
+  /** Present for directories; empty when every child is hidden or ignored. */
+  readonly children?: readonly TreeNode[];
+};
+
+/**
+ * What a decorated row shows beside its name, stated by the bundle that knows
+ * what the marks mean. A row with no `tone` shows no change.
+ */
+export type TreeDecoration = {
+  /** The row's accessible label and tooltip suffix. */
+  readonly description: string;
+  /** The badge a directory row carries: how many changes lie below it. */
+  readonly count: number;
+  /** Class names of the decorated name and badge (the change's colour). */
+  readonly tone?: string;
+  /** The letter a changed file's badge carries. */
+  readonly letter?: string;
+  /** Whether a file's name is struck through (a deleted file). */
+  readonly struck?: boolean;
+};
+
+/** The sentence an empty directory shows instead of nothing at all. */
+export const emptyDirectoryNotice = 'This directory is empty.';
+
+export type FileTreeActions = {
+  readonly open: (path: string) => void;
+  readonly toggle: (path: string) => void;
+};
+
+type FileTreeProps = {
+  readonly actions: FileTreeActions;
+  readonly depth: number;
+  readonly entries: readonly TreeNode[];
+  readonly expanded: ReadonlySet<string>;
+  readonly selectedPath?: string;
+  readonly decorations?: ReadonlyMap<string, TreeDecoration>;
+};
+
+/**
+ * One level of a tree, recursing into the directories that are open. The whole
+ * tree arrives through `entries`, so this reads nothing and asks for nothing:
+ * expanding a directory only decides what is drawn.
+ *
+ * A directory is a row that expands — on click, Enter, Space or ArrowRight —
+ * and collapses on ArrowLeft; a file is a row that selects. A directory that is
+ * not expanded renders no children at all.
+ */
+export function FileTree({
+  actions,
+  depth,
+  entries,
+  expanded,
+  selectedPath,
+  decorations,
+}: FileTreeProps) {
+  return (
+    <>
+      {entries.map((entry) => {
+        const directory = entry.type === 'directory';
+        const open = directory && expanded.has(entry.path);
+        const selected = !directory && selectedPath === entry.path;
+        const activate = (): void => {
+          if (directory) actions.toggle(entry.path);
+          else actions.open(entry.path);
+        };
+        const children = directory ? (entry.children ?? []) : [];
+        const decoration = decorations?.get(entry.path);
+
+        return (
+          <SidebarMenuItem
+            key={entry.path}
+            role="presentation"
+            className="w-full min-w-0"
+          >
+            <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+              <TreeGuides depth={depth} />
+              <SidebarMenuButton
+                isActive={selected}
+                size="sm"
+                className={cn(
+                  'h-7 w-full min-w-0 rounded-none pr-8',
+                  rowInteraction(selected),
+                )}
+                style={{ paddingLeft: indentation(depth) }}
+                render={
+                  <div
+                    role="treeitem"
+                    tabIndex={0}
+                    aria-expanded={directory ? open : undefined}
+                    aria-selected={selected}
+                    aria-label={
+                      decoration === undefined
+                        ? entry.name
+                        : `${entry.name}, ${decoration.description}`
+                    }
+                    title={
+                      decoration === undefined
+                        ? entry.path
+                        : `${entry.path}\n${decoration.description}`
+                    }
+                    onClick={activate}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        activate();
+                      } else if (
+                        event.key === 'ArrowRight' &&
+                        directory &&
+                        !open
+                      ) {
+                        event.preventDefault();
+                        actions.toggle(entry.path);
+                      } else if (event.key === 'ArrowLeft' && open) {
+                        event.preventDefault();
+                        actions.toggle(entry.path);
+                      }
+                    }}
+                  />
+                }
+              >
+                {directory && (
+                  <ChevronRightIcon
+                    aria-hidden
+                    className={cn(
+                      'transition-transform duration-[50ms] ease-out',
+                      open ? 'rotate-90' : 'rotate-0',
+                    )}
+                  />
+                )}
+                {directory ? <FolderIcon /> : <FileIcon />}
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate',
+                    decoration?.tone !== undefined && decoration.tone,
+                    decoration?.tone !== undefined
+                      ? 'font-normal'
+                      : 'font-light',
+                    !directory && decoration?.struck && 'line-through',
+                  )}
+                >
+                  {entry.name}
+                </span>
+              </SidebarMenuButton>
+              {decoration !== undefined && (
+                <SidebarMenuBadge className="z-10 bg-sidebar/90">
+                  <Badge variant="ghost" className="px-1" aria-hidden>
+                    <span className={decoration.tone}>
+                      {directory ? decoration.count : (decoration.letter ?? '')}
+                    </span>
+                  </Badge>
+                </SidebarMenuBadge>
+              )}
+            </div>
+            {open && (
+              <SidebarMenuSub role="group" className={treeClassName}>
+                {children.length === 0 ? (
+                  <SidebarMenuSubItem
+                    role="presentation"
+                    className="w-full py-1 text-xs text-muted-foreground"
+                    style={{ paddingLeft: indentation(depth + 1) }}
+                  >
+                    {emptyDirectoryNotice}
+                  </SidebarMenuSubItem>
+                ) : (
+                  <FileTree
+                    actions={actions}
+                    depth={depth + 1}
+                    entries={children}
+                    expanded={expanded}
+                    selectedPath={selectedPath}
+                    decorations={decorations}
+                  />
+                )}
+              </SidebarMenuSub>
+            )}
+          </SidebarMenuItem>
+        );
+      })}
+    </>
+  );
+}

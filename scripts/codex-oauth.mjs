@@ -184,12 +184,14 @@ const tokenStore = () => {
   let record;
 
   return {
-    async load() {
-      return record;
+    load() {
+      return Promise.resolve(record);
     },
 
-    async save(next) {
+    save(next) {
       record = next;
+
+      return Promise.resolve();
     },
   };
 };

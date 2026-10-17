@@ -11,11 +11,11 @@ import {
 import { DEFAULT_BATCH_SIZE } from './constants.js';
 import { filterIgnored } from './git.js';
 
-export type WalkOptions = {
+export interface WalkOptions {
   readonly batchSize?: number;
   readonly ignore?: readonly string[];
   readonly signal?: AbortSignal;
-};
+}
 
 /** Discovers every eligible file, then processes sequential concurrent batches. */
 export async function walk(

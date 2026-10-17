@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "doric-host-e2e",
+  "projectType": "application",
+  "implicitDependencies": ["doric-host"],
+  "targets": {
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": [{ "projects": "doric-host", "target": "build" }],
+      "cache": false,
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p app/backend/doric-host-e2e/tsconfig.json",
+          "node -e \"if (!process.env.DORIC_TEST_DATABASE_URL || process.env.DORIC_TEST_SANDBOX !== 'true') { console.error('doric-host-e2e requires DORIC_TEST_DATABASE_URL and DORIC_TEST_SANDBOX=true'); process.exit(1) }\"",
+          "node --test app/backend/doric-host-e2e/dist-tests/doric-host-e2e/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": []
+}

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { promisify } from 'node:util';
 import test from 'node:test';
+import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
 const script = new URL('../spawn-agent.mjs', import.meta.url);
@@ -88,8 +88,16 @@ for (const [outcome, terminate] of [
       result = error;
     }
     const expectedCreation = [
-      { method: 'POST', path: '/projects', body: {} },
-      { method: 'POST', path: '/projects/project-1/threads', body: {} },
+      {
+        method: 'POST',
+        path: '/projects',
+        body: { name: 'spawn-agent project' },
+      },
+      {
+        method: 'POST',
+        path: '/projects/project-1/threads',
+        body: { name: 'spawn-agent root' },
+      },
       {
         method: 'POST',
         path: '/threads/thread-1/prompt',

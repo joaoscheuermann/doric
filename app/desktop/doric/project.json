@@ -1,0 +1,105 @@
+{
+  "name": "doric-app",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "app/desktop/doric/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx-electron:build",
+      "outputs": [
+        "{options.outputPath}/main.js",
+        "{options.outputPath}/main.js.map",
+        "{options.outputPath}/preload.js",
+        "{options.outputPath}/preload.js.map",
+        "{options.outputPath}/package.json",
+        "{options.outputPath}/3rdpartylicenses.txt",
+        "{options.outputPath}/assets/legacy-origin.html"
+      ],
+      "options": {
+        "outputPath": "dist/app/desktop/doric",
+        "main": "app/desktop/doric/src/main.ts",
+        "tsConfig": "app/desktop/doric/tsconfig.app.json",
+        "assets": ["app/desktop/doric/src/assets"],
+        "externalDependencies": ["socket.io-client"],
+        "webpackConfig": "app/desktop/doric/webpack.config.js"
+      },
+      "configurations": {
+        "production": {
+          "optimization": true,
+          "extractLicenses": true,
+          "inspect": false
+        }
+      },
+      "dependsOn": ["^build", "doric-platform:build", "build-runner"]
+    },
+    "build-runner": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build", "doric-platform:build"],
+      "inputs": [
+        "{projectRoot}/build-runner.mjs",
+        "{projectRoot}/src/**/*",
+        "^production",
+        {
+          "env": "NODE_ENV"
+        }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/app/desktop/doric/assets/generation-runner.mjs",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/generation-runner-main.mjs",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/generation-contracts.mjs",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/generation-chunks",
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/splash@1.0.0"
+      ],
+      "options": {
+        "command": "node app/desktop/doric/build-runner.mjs --out dist/app/desktop/doric/assets"
+      }
+    },
+    "serve-electron": {
+      "executor": "nx-electron:execute",
+      "options": {
+        "buildTarget": "doric-app:build"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node app/desktop/doric/serve.mjs"
+      }
+    },
+    "package": {
+      "executor": "nx-electron:package",
+      "options": {
+        "name": "doric",
+        "frontendProject": "doric-renderer",
+        "sourcePath": "dist/app",
+        "outputPath": "dist/packages",
+        "prepackageOnly": true
+      }
+    },
+    "make": {
+      "executor": "nx-electron:make",
+      "options": {
+        "name": "doric",
+        "frontendProject": "doric-renderer",
+        "sourcePath": "dist/app",
+        "outputPath": "dist/executables"
+      }
+    },
+    "lint": {
+      "command": "biome check app/desktop/doric --formatter-enabled=false"
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf app/desktop/doric/dist-tests/tests app/desktop/doric/dist-tests/src",
+          "tsc -p app/desktop/doric/tsconfig.spec.json",
+          "node --test app/desktop/doric/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      },
+      "dependsOn": ["^build"]
+    }
+  }
+}

@@ -1,0 +1,131 @@
+import { Badge } from 'desktop/ui/badge';
+import {
+  FileTree,
+  indentation,
+  rowInteraction,
+  treeClassName,
+} from 'desktop/ui/panels';
+import {
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+} from 'desktop/ui/sidebar';
+import { cn } from 'desktop/ui/utils';
+import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+import { memo, useMemo } from 'react';
+
+import type { ProjectChange } from '../../contracts/index.js';
+import {
+  type ChangeRepository,
+  changeDirectoryKey,
+  changesTreeView,
+} from '../reads/change-tree.js';
+import { ChangeCounts } from './change-counts.js';
+
+type ChangesTreeProps = {
+  readonly repository: ChangeRepository & {
+    readonly added: number;
+    readonly removed: number;
+  };
+  readonly collapsed: ReadonlySet<string>;
+  readonly selectedPath?: string;
+  readonly onToggle: (key: string) => void;
+  readonly onOpen: (repository: string, change: ProjectChange) => void;
+};
+
+/**
+ * One repository and its changed paths, drawn as the same tree row Files uses:
+ * the repository is a row at depth 0 that expands like a directory, and its
+ * changed paths are the same `FileTree` rows nested under it. The branch icon
+ * and the repository's line totals are that row's own content, not a second
+ * header shape. A refresh that answers the same repository leaves the row, and
+ * the tree it derives, as they were.
+ */
+export const ChangesTree = memo(function ChangesTree({
+  repository,
+  collapsed,
+  selectedPath,
+  onToggle,
+  onOpen,
+}: ChangesTreeProps) {
+  const { entries, key, open, expanded, decorations, changes } = useMemo(
+    () => changesTreeView(repository, '', collapsed),
+    [repository, collapsed],
+  );
+  if (entries.length === 0) return null;
+  const label = repository.path || 'workspace';
+  return (
+    <SidebarMenuItem role="presentation" className="w-full min-w-0">
+      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+        <SidebarMenuButton
+          size="sm"
+          className={cn(
+            'h-7 w-full min-w-0 rounded-none pr-8',
+            rowInteraction(false),
+          )}
+          style={{ paddingLeft: indentation(0) }}
+          render={
+            <div
+              role="treeitem"
+              tabIndex={0}
+              aria-expanded={open}
+              aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
+              title={repository.path || 'Workspace repository'}
+              onClick={() => onToggle(key)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onToggle(key);
+                } else if (event.key === 'ArrowRight' && !open) {
+                  event.preventDefault();
+                  onToggle(key);
+                } else if (event.key === 'ArrowLeft' && open) {
+                  event.preventDefault();
+                  onToggle(key);
+                }
+              }}
+            />
+          }
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              'transition-transform duration-[50ms] ease-out',
+              open ? 'rotate-90' : 'rotate-0',
+            )}
+          />
+          <GitBranchIcon />
+          <span className="min-w-0 flex-1 truncate font-light">{label}</span>
+        </SidebarMenuButton>
+        <SidebarMenuBadge className="z-10 bg-sidebar/90">
+          <Badge variant="ghost" className="px-1" aria-hidden>
+            <ChangeCounts
+              added={repository.added}
+              removed={repository.removed}
+            />
+          </Badge>
+        </SidebarMenuBadge>
+      </div>
+      {open && (
+        <SidebarMenuSub role="group" className={treeClassName}>
+          <FileTree
+            entries={entries}
+            depth={1}
+            expanded={expanded}
+            decorations={decorations}
+            selectedPath={selectedPath}
+            actions={{
+              toggle: (path) =>
+                onToggle(changeDirectoryKey(repository.path, path)),
+              open: (path) => {
+                const change = changes.get(path);
+                if (change !== undefined) onOpen(repository.path, change);
+              },
+            }}
+          />
+        </SidebarMenuSub>
+      )}
+    </SidebarMenuItem>
+  );
+});

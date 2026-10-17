@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { jsonl, JsonlParseError } from '../src/index.js';
+import { JsonlParseError, jsonl } from '../src/index.js';
 
-test('writes one JSON line when append receives a record', async () => {
+void test('writes one JSON line when append receives a record', async () => {
   await withTempJsonl(async (path) => {
     const file = jsonl(path);
 
@@ -21,7 +21,7 @@ test('writes one JSON line when append receives a record', async () => {
   });
 });
 
-test('preserves call order when append is called concurrently', async () => {
+void test('preserves call order when append is called concurrently', async () => {
   await withTempJsonl(async (path) => {
     const file = jsonl(path);
 
@@ -40,7 +40,7 @@ test('preserves call order when append is called concurrently', async () => {
   });
 });
 
-test('streams parsed records when read receives JSON lines', async () => {
+void test('streams parsed records when read receives JSON lines', async () => {
   await withTempJsonl(async (path) => {
     await writeFile(
       path,
@@ -60,7 +60,7 @@ test('streams parsed records when read receives JSON lines', async () => {
   });
 });
 
-test('rejects with line context when read receives invalid JSON', async () => {
+void test('rejects with line context when read receives invalid JSON', async () => {
   await withTempJsonl(async (path) => {
     await writeFile(path, '{"kind":"started"}\nnot json\n');
 

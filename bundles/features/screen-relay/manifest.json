@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 1,
+  "id": "screen-relay",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "The screen relay: the token tree of every Project screen, served on the origin the host already exposes.",
+  "provides": ["screen.relay/v1@1.0.0"]
+}

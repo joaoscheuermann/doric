@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "src/host/**/*.ts",
+    "src/sandbox/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/block.ts",
+    "tests/*.ts",
+    "tests/support/**/*.ts"
+  ],
+  "exclude": [],
+  "references": [
+    { "path": "../../../packages/bundle/tsconfig.lib.json" },
+    { "path": "../../../packages/tool/tsconfig.lib.json" },
+    { "path": "../../runtime/runtime" }
+  ]
+}

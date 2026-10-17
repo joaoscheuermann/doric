@@ -1,6 +1,6 @@
 import type { JsonValue, ProviderFinished } from 'llms';
-import { AgentErrorObject } from '../classes/agent-error.js';
 
+import { AgentErrorObject } from '../classes/agent-error.js';
 import type {
   AgentResponse,
   AgentRunOptions,
@@ -12,7 +12,15 @@ import type { ToolCallRecord } from '../types/tool-call-storage.js';
 
 const defaultMaxToolCallRepairs = 2;
 
-export const turnGuard = (maxTurns: number | undefined): (() => void) => {
+/** Counts provider turns against an optional run budget. */
+export interface TurnGuard {
+  /** Claims one turn, or throws once the budget is spent. */
+  readonly begin: () => void;
+  /** Whether another turn may still begin. */
+  readonly available: () => boolean;
+}
+
+export const turnGuard = (maxTurns: number | undefined): TurnGuard => {
   if (
     maxTurns !== undefined &&
     (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)
@@ -21,14 +29,18 @@ export const turnGuard = (maxTurns: number | undefined): (() => void) => {
   }
 
   let turns = 0;
-  return (): void => {
-    if (maxTurns !== undefined && turns >= maxTurns) {
-      throw new AgentErrorObject({
-        code: 'turn_limit_exceeded',
-        message: `Agent exceeded its ${maxTurns}-turn limit.`,
-      });
-    }
-    turns += 1;
+  const available = (): boolean => maxTurns === undefined || turns < maxTurns;
+  return {
+    begin: (): void => {
+      if (!available()) {
+        throw new AgentErrorObject({
+          code: 'turn_limit_exceeded',
+          message: `Agent exceeded its ${maxTurns}-turn limit.`,
+        });
+      }
+      turns += 1;
+    },
+    available,
   };
 };
 
@@ -85,7 +97,21 @@ export const notifyToolEvent = async <Output>(
   await options.onToolEvent?.(event);
 };
 
-export const toolResultEnvelope = (record: ToolCallRecord): string =>
+/**
+ * Trims a tool result to the model-facing cap. The full output is still stored
+ * on the record, so this only limits what reaches the next turn.
+ */
+const capOutput = (value: string, maxChars?: number): string => {
+  if (maxChars === undefined || value.length <= maxChars) return value;
+
+  const omitted = value.length - maxChars;
+  return `${value.slice(0, maxChars)}\n… [truncated ${omitted} of ${value.length} characters]`;
+};
+
+export const toolResultEnvelope = (
+  record: ToolCallRecord,
+  maxChars?: number,
+): string =>
   [
     '# Tool Result',
     '',
@@ -95,7 +121,25 @@ export const toolResultEnvelope = (record: ToolCallRecord): string =>
     '',
     '## Output',
     '',
-    fenced(record.output),
+    fenced(capOutput(record.output, maxChars)),
+  ].join('\n');
+
+/**
+ * What the model reads for a call whose handler threw: no observation, only
+ * the failure, so it can correct the call, work around it or report it.
+ */
+export const toolFailureEnvelope = (
+  failure: string,
+  maxChars?: number,
+): string =>
+  [
+    '# Tool Failure',
+    '',
+    'The tool call failed and returned no result.',
+    '',
+    '## Error',
+    '',
+    fenced(capOutput(failure, maxChars)),
   ].join('\n');
 
 const fenced = (value: string): string => {

@@ -1,22 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
-
 import { createMessageStorage } from 'messages';
+import { z } from 'zod';
 
 import { AgentErrorObject } from '../src/index.js';
 import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';
 
-test('complete uses a terminal tool for structured output with empty tool storage', async () => {
+void test('complete uses a terminal tool for structured output with empty tool storage', async () => {
   const schema = z.object({ answer: z.string() });
 
   const fake = createProvider({
@@ -61,7 +60,7 @@ test('complete uses a terminal tool for structured output with empty tool storag
   ]);
 });
 
-test('complete uses a terminal tool for structured output after executable tools', async () => {
+void test('complete uses a terminal tool for structured output after executable tools', async () => {
   const schema = z.object({ answer: z.string() });
   const lookup = call('lookup', { query: 'doric' });
 
@@ -140,7 +139,7 @@ test('complete uses a terminal tool for structured output after executable tools
   ]);
 });
 
-test('complete rejects terminal tool arguments that fail the output schema', async () => {
+void test('complete rejects terminal tool arguments that fail the output schema', async () => {
   const schema = z.object({ answer: z.string() });
 
   const fake = createProvider({
@@ -177,7 +176,7 @@ test('complete rejects terminal tool arguments that fail the output schema', asy
   );
 });
 
-test('complete rejects a text finish when a terminal structured output is required', async () => {
+void test('complete rejects a text finish when a terminal structured output is required', async () => {
   const agent = createAgent({
     provider: createProvider({
       complete: () => completeFinish('Unstructured answer.'),
@@ -202,7 +201,7 @@ test('complete rejects a text finish when a terminal structured output is requir
   );
 });
 
-test('complete rejects terminal structured output mixed with executable calls', async () => {
+void test('complete rejects terminal structured output mixed with executable calls', async () => {
   const fake = createProvider({
     complete: (request) => {
       const terminal = request.tools?.find(
@@ -246,7 +245,7 @@ test('complete rejects terminal structured output mixed with executable calls', 
   assert.deepEqual(tools.calls, []);
 });
 
-test('stream uses a terminal tool for structured output with empty tool storage', async () => {
+void test('stream uses a terminal tool for structured output with empty tool storage', async () => {
   const schema = z.object({ answer: z.string() });
 
   const fake = createProvider({
@@ -290,7 +289,7 @@ test('stream uses a terminal tool for structured output with empty tool storage'
   ]);
 });
 
-test('stream uses a terminal tool for structured output after executable tools', async () => {
+void test('stream uses a terminal tool for structured output after executable tools', async () => {
   const schema = z.object({ answer: z.string() });
   const lookup = call('lookup', { query: 'stream' });
 

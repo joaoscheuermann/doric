@@ -16,7 +16,7 @@ import type { ToolCall, ToolStorage } from 'tool';
 
 import type { ToolCallRecord, ToolCallStorage } from './tool-call-storage.js';
 
-export type AgentOptions = {
+export interface AgentOptions {
   readonly provider: LlmProvider;
   readonly tools: ToolStorage;
   readonly messages: MessageStorage;
@@ -27,7 +27,7 @@ export type AgentOptions = {
   readonly flags?: ProviderCallFlags;
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
-};
+}
 
 /** Safe runtime evidence for one terminal structured-output submission. */
 export interface AgentStructuredAttemptEvent {
@@ -61,13 +61,31 @@ export type AgentToolEvent =
       readonly error: unknown;
     };
 
-export type AgentRunOptions<
-  Output = JsonValue,
+export interface AgentRunOptions<
+  _Output = JsonValue,
   Schema extends StructuredOutputSchema = StructuredOutputSchema,
-> = {
+> {
+  /** Continue the supplied message history without appending input again. */
+  readonly resume?: boolean;
   readonly maxTurns?: number;
   readonly maxToolCallRepairs?: number;
+  /**
+   * The most a single tool result may carry into the model, in characters.
+   * Absent means no cap. The full result is always stored on the record, so this
+   * only bounds what the next turn reads.
+   */
+  readonly maxToolResultChars?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Takes the messages a caller sent the running loop since it last asked.
+   * The loop asks before the first turn of a resumed run, after every executed
+   * tool batch, and once more before an ordinary run would finish, so a
+   * message that arrives while the model answers continues the run instead. Each message is stored as a user
+   * message before the next provider turn. The loop does not ask when no turn
+   * is left or when a structured run submits its result, so those messages
+   * stay with the caller.
+   */
+  readonly steering?: () => readonly string[] | Promise<readonly string[]>;
   readonly schema?: Schema;
   readonly onStructuredAttempt?: (
     event: AgentStructuredAttemptEvent,
@@ -76,9 +94,9 @@ export type AgentRunOptions<
     event: AgentToolCallRepairEvent,
   ) => void | Promise<void>;
   readonly onToolEvent?: (event: AgentToolEvent) => void | Promise<void>;
-};
+}
 
-export type Agent = {
+export interface Agent {
   readonly complete: {
     <
       Schema extends StructuredOutputSchema,
@@ -111,13 +129,13 @@ export type Agent = {
       options?: AgentRunOptions<Output>,
     ): AsyncIterable<AgentEvent<Output>>;
   };
-};
+}
 
 export type AgentComplete = Agent['complete'];
 
 export type AgentStream = Agent['stream'];
 
-export type AgentResponse<Output = JsonValue> = {
+export interface AgentResponse<Output = JsonValue> {
   readonly text: string;
   readonly finishReason: FinishReason;
   readonly usage?: UsageMetadata;
@@ -125,7 +143,7 @@ export type AgentResponse<Output = JsonValue> = {
   readonly refusal?: string;
   readonly structured?: Output;
   readonly finish: ProviderFinished<Output>;
-};
+}
 
 export type AgentEvent<Output = JsonValue> =
   | ProviderStreamEvent<Output>
@@ -137,6 +155,11 @@ export type AgentEvent<Output = JsonValue> =
   | {
       readonly type: 'agent.finished';
       readonly response: AgentResponse<Output>;
+    }
+  | {
+      /** One steering message the loop stored for its next provider turn. */
+      readonly type: 'agent.steered';
+      readonly input: string;
     }
   | AgentToolEvent;
 
@@ -150,8 +173,8 @@ export type AgentErrorCode =
   | 'turn_limit_exceeded'
   | 'tool_result_serialization_failed';
 
-export type AgentError = {
+export interface AgentError {
   readonly code: AgentErrorCode;
   readonly message: string;
   readonly diagnostic?: string;
-};
+}

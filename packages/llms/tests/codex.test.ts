@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+interface RequestBody extends Record<string, unknown> {
+  instructions: string;
+  text?: { format?: { type?: string } };
+}
+
 import { z } from 'zod';
 
 import { ProviderErrorObject, type ProviderStreamEvent } from '../src/index.js';
 import { collect, createCodexProvider, fakeTransport } from './fakes.js';
 
-test('sends Codex ChatGPT account headers to the Codex backend', async () => {
+void test('sends Codex ChatGPT account headers to the Codex backend', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -36,7 +41,7 @@ test('sends Codex ChatGPT account headers to the Codex backend', async () => {
     effort: 'high',
     temperature: 0,
   });
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal(provider.metadata.id, 'codex');
 
@@ -72,7 +77,7 @@ test('sends Codex ChatGPT account headers to the Codex backend', async () => {
   assert.equal(transport.requests[0]?.headers?.['X-OpenAI-Fedramp'], 'true');
 });
 
-test('allows overriding the Codex backend base URL', async () => {
+void test('allows overriding the Codex backend base URL', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -106,7 +111,7 @@ test('allows overriding the Codex backend base URL', async () => {
   );
 });
 
-test('preserves caller-provided Codex instructions', async () => {
+void test('preserves caller-provided Codex instructions', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -137,12 +142,13 @@ test('preserves caller-provided Codex instructions', async () => {
   });
 
   assert.equal(
-    JSON.parse(transport.requests[0]?.body ?? '{}').instructions,
+    (JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody)
+      .instructions,
     'Use the repository conventions.',
   );
 });
 
-test('adds a schema instruction to Codex requests while retaining text format', async () => {
+void test('adds a schema instruction to Codex requests while retaining text format', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -174,14 +180,14 @@ test('adds a schema instruction to Codex requests while retaining text format', 
     flags: { includeStructuredSchemaOnSystemPrompt: true },
   });
 
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.match(
     body.instructions,
     /^Follow policy\.[\s\S]*Return exactly one JSON object[\s\S]*JSON Schema/u,
   );
 
-  assert.equal(body.text.format.type, 'json_schema');
+  assert.equal(body.text?.format?.type, 'json_schema');
 
   assert.deepEqual(body.input, [
     {
@@ -191,7 +197,7 @@ test('adds a schema instruction to Codex requests while retaining text format', 
   ]);
 });
 
-test('rejects Codex complete when the stream emits a provider error', async () => {
+void test('rejects Codex complete when the stream emits a provider error', async () => {
   const transport = fakeTransport({
     streams: [['data: not-json\n\n']],
   });
@@ -213,7 +219,7 @@ test('rejects Codex complete when the stream emits a provider error', async () =
   );
 });
 
-test('rejects Codex complete refusals when structured output is required', async () => {
+void test('rejects Codex complete refusals when structured output is required', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -245,7 +251,7 @@ test('rejects Codex complete refusals when structured output is required', async
   );
 });
 
-test('maps Codex stream provider identity', async () => {
+void test('maps Codex stream provider identity', async () => {
   const transport = fakeTransport({
     streams: [
       [
@@ -280,7 +286,7 @@ test('maps Codex stream provider identity', async () => {
     model: 'gpt-5.5',
   } satisfies ProviderStreamEvent);
 
-  const body = JSON.parse(transport.requests[0]?.body ?? '{}');
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as RequestBody;
 
   assert.equal(body.store, false);
 

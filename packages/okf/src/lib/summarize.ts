@@ -1,21 +1,21 @@
 import { stringify } from 'yaml';
 
-import { completeText, type CompletionConfig } from './agent.js';
+import { type CompletionConfig, completeText } from './agent.js';
 import { SUMMARY_MAX_OUTPUT_TOKENS } from './constants.js';
 import type { ModuleInterface } from './types/interface.js';
 
-type Evidence = {
+interface Evidence {
   readonly content: string;
   readonly interface?: ModuleInterface;
   readonly path: string;
   readonly type: string;
-};
+}
 
-export type Summary = {
+export interface Summary {
   readonly analysis: string;
   readonly description: string;
   readonly tags: readonly string[];
-};
+}
 
 const validAnalysis = (value: string): boolean =>
   value.length > 0 && !/^---(?:\r?\n|$)/u.test(value);
@@ -26,7 +26,7 @@ const unwrapFence = (value: string): string | undefined => {
   const match =
     /^(?<fence>`{3,}|~{3,})[^\n]*\n(?<body>[\s\S]*)\n\k<fence>$/u.exec(value);
 
-  return match?.groups?.['body']?.trim();
+  return match?.groups?.body?.trim();
 };
 
 const jsonTags = (value: string): readonly string[] | undefined => {

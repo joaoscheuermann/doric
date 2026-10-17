@@ -1,0 +1,23 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.client-spec.tsbuildinfo",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["node"]
+  },
+  "include": ["src/client/**/*.ts", "tests/client/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/desktop/tsconfig.lib.json"
+    }
+  ]
+}

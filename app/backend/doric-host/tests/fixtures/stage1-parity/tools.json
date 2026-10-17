@@ -1,0 +1,1541 @@
+[
+  {
+    "definition": {
+      "name": "cwd",
+      "description": "Report this thread's working directory, or move it to a given path. A relative path resolves against the current directory, the way cd does. A move takes effect only when the path is a directory inside the workspace root, and every other tool resolves its relative paths against this directory. Move here as soon as the work moves into a repository or a subdirectory - after a clone, for instance - so the other tools run in it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "reported",
+              "set",
+              "refused"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "outside",
+              "missing",
+              "not-directory"
+            ]
+          }
+        },
+        "required": [
+          "cwd",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "edit",
+      "description": "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit. A relative path resolves against the current working directory.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "oldText": {
+                  "type": "string"
+                },
+                "newText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "oldText",
+                "newText"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "path",
+          "edits"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "diff": {
+            "type": "string"
+          },
+          "first_changed_line": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "diff"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "find",
+      "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. A relative path resolves against the current working directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "results",
+          "total",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "grep",
+      "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. A relative path resolves against the current working directory. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "glob": {
+            "type": "string"
+          },
+          "ignoreCase": {
+            "type": "boolean"
+          },
+          "literal": {
+            "type": "boolean"
+          },
+          "context": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "context_before": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "context_after": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "text",
+                "context_before",
+                "context_after"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "lines_truncated": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "matches",
+          "total",
+          "truncated",
+          "lines_truncated"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "terminal",
+      "description": "Executes tracked shell commands in the current working directory. Foreground returns compact output and exit status. Set background to continue working immediately; the host delivers the terminal result to this Thread when it ends. Set pty for interactive commands (stdout and stderr are combined). A relative working_directory resolves against the current directory.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "working_directory": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "background": {
+            "type": "boolean"
+          },
+          "pty": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "schema": {
+                "type": "string",
+                "const": "terminal.compact.v1"
+              },
+              "trace_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "command": {
+                "type": "string"
+              },
+              "working_directory": {
+                "type": "string"
+              },
+              "exit_code": {
+                "type": "number"
+              },
+              "duration_ms": {
+                "type": "number"
+              },
+              "termination_reason": {
+                "type": "string",
+                "enum": [
+                  "exited",
+                  "timeout",
+                  "terminated",
+                  "failed"
+                ]
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "stdout": {
+                "type": "object",
+                "properties": {
+                  "bytes": {
+                    "type": "number"
+                  },
+                  "lines": {
+                    "type": "number"
+                  },
+                  "head": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tail": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "omitted_lines": {
+                    "type": "number"
+                  },
+                  "omitted_bytes": {
+                    "type": "number"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "bytes",
+                  "lines",
+                  "head",
+                  "tail",
+                  "omitted_lines",
+                  "omitted_bytes",
+                  "truncated"
+                ],
+                "additionalProperties": false
+              },
+              "stderr": {
+                "type": "object",
+                "properties": {
+                  "bytes": {
+                    "type": "number"
+                  },
+                  "lines": {
+                    "type": "number"
+                  },
+                  "head": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tail": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "omitted_lines": {
+                    "type": "number"
+                  },
+                  "omitted_bytes": {
+                    "type": "number"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "bytes",
+                  "lines",
+                  "head",
+                  "tail",
+                  "omitted_lines",
+                  "omitted_bytes",
+                  "truncated"
+                ],
+                "additionalProperties": false
+              },
+              "diagnostics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "stream": {
+                      "type": "string",
+                      "enum": [
+                        "stdout",
+                        "stderr"
+                      ]
+                    },
+                    "line": {
+                      "type": "number"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "context": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "line": {
+                            "type": "number"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "line",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "repeat_count": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "stream",
+                    "line",
+                    "text",
+                    "context"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "truncation": {
+                "type": "object",
+                "properties": {
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "truncated",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              "raw_output_ref": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "trace_error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "schema",
+              "trace_id",
+              "command",
+              "working_directory",
+              "exit_code",
+              "duration_ms",
+              "success",
+              "stdout",
+              "stderr",
+              "diagnostics",
+              "truncation",
+              "raw_output_ref"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "terminal_id": {
+                "type": "string"
+              },
+              "background": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "terminal_id",
+              "background"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "tree",
+      "description": "Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents. A relative path resolves against the current working directory.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "web",
+      "description": "Search the web, open HTTP(S) pages as extracted text, or find literal text in a page.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "search",
+              "open_page",
+              "find_in_page"
+            ]
+          },
+          "query": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "ignoreCase": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "maxChars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "snippet": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "url",
+                "snippet"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "line",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "detail",
+          "results",
+          "matches",
+          "total",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "write",
+      "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. A relative path resolves against the current working directory.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "bytes_written": {
+            "type": "number"
+          },
+          "diff": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "bytes_written"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "git",
+      "description": "Runs one non-interactive Git command in the sandbox from structured arguments, without shell interpretation. Supports repository inspection and mutation, including clone, worktree, commit, fetch, push, rebase, and conflict workflows. Runs in the current working directory, and a relative working_directory resolves against it. After a clone, move the thread's working directory into the repository with the cwd tool.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "args": {
+            "minItems": 1,
+            "maxItems": 128,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          },
+          "working_directory": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "const": "git.command.v1"
+          },
+          "working_directory": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "stdout": {
+            "type": "object",
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "omitted_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "bytes",
+              "text",
+              "truncated",
+              "omitted_bytes"
+            ],
+            "additionalProperties": false
+          },
+          "stderr": {
+            "type": "object",
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "omitted_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "bytes",
+              "text",
+              "truncated",
+              "omitted_bytes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "schema",
+          "working_directory",
+          "exit_code",
+          "duration_ms",
+          "success",
+          "stdout",
+          "stderr"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-spawn",
+      "description": "Create a child chat and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-list",
+      "description": "List your direct child chats and their states. Use the next cursor to continue.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-get",
+      "description": "Read a direct child chat's state and, when a prompt has finished, the result of its most recent finished prompt. It never carries the transcript; use thread-events only when intermediate progress is needed.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-events",
+      "description": "Read a bounded page of a direct child chat's persisted events after an exclusive sequence cursor, as a compact digest. The returned nextSequence continues the read. Prefer thread-get: the child's result already arrives automatically, so reach for this only to inspect intermediate progress.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "afterSequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-send",
+      "description": "Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "threadId",
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-interrupt",
+      "description": "Cancel only the identified active prompt of a direct child. Keeps its queued inputs, descendants and chat open. Does not undo effects.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "promptId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "threadId",
+          "promptId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-terminate",
+      "description": "Close a direct child and its descendants, cancelling active and queued work. Keeps history and the shared project sandbox.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "papercraft_preview",
+      "description": "Publish a visual change as a live preview node of the conversation, built from real code, instead of describing it. Use it when the change is easier to judge by looking than by reading a diff: layout, spacing, a component states, a new screen. Without `artifact_id` it creates a preview; with the `artifact_id` of an earlier preview it publishes that preview's next revision. It returns the revision, the unresolved comments with their anchors and replies, and the review state. The preview is a window, not a gate: publish it and implement the change, unless the review state says an approval is pending. Answer each comment with `comment_reply`, resolving it when it is done.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "html",
+              "component"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lines": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "snippet": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "revisions": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "title": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "html",
+              "component"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "commentId": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "text": {
+                  "type": "string"
+                },
+                "author": {
+                  "type": "string"
+                },
+                "anchor": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "line": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "selector": {
+                          "type": "string"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "form": {
+                          "type": "string",
+                          "const": "source"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "form"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "selector": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "form": {
+                          "type": "string",
+                          "const": "selector"
+                        }
+                      },
+                      "required": [
+                        "selector",
+                        "form"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "selector": {
+                          "type": "string"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "form": {
+                          "type": "string",
+                          "const": "point"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "form"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "selector": {
+                          "type": "string"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "form": {
+                          "type": "string",
+                          "const": "range"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "form"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  ]
+                },
+                "replies": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "commentId": {
+                        "type": "string"
+                      },
+                      "author": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "commentId",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "commentId",
+                "text",
+                "anchor",
+                "replies"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "review": {
+            "type": "object",
+            "properties": {
+              "policy": {
+                "type": "string",
+                "enum": [
+                  "proceed",
+                  "request"
+                ]
+              },
+              "pending": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "policy",
+              "pending"
+            ],
+            "additionalProperties": false
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "artifactId",
+          "revision",
+          "revisions",
+          "title",
+          "source",
+          "path",
+          "files",
+          "comments",
+          "review"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "comment_reply",
+      "description": "Answer one review comment the user left, in the comment's thread. Say what you changed, or ask what is unclear. Set `resolve` to true when the comment is done.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resolve": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "comment_id",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "commentId": {
+            "type": "string"
+          },
+          "inReplyTo": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "commentId",
+          "inReplyTo",
+          "resolved"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "settings": []
+  }
+]

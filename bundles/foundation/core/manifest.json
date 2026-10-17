@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 1,
+  "id": "core",
+  "version": "1.9.0",
+  "engines": {
+    "doric": "^1.0.0"
+  },
+  "description": "Default provider of the basic Doric services.",
+  "provides": [
+    "hooks/v1@1.0.0",
+    "log/v1@1.0.0",
+    "tools/v1@1.2.0",
+    "skills/v1@1.1.0",
+    "settings/v1@1.0.0",
+    "secrets/v1@1.1.0",
+    "storage/v1@1.0.0",
+    "events/v1@1.0.0",
+    "models/v1@1.1.0",
+    "core.settings/v1@1.0.0",
+    "core.settings-generation/v1@1.0.0",
+    "commands/v1@1.0.0",
+    "windows/v1@1.1.0",
+    "menus/v1@1.0.0",
+    "core.hooks/v1@1.0.0",
+    "core.event-hooks/v1@1.0.0",
+    "core.open-settings/v1@1.0.0",
+    "ui/v1@1.0.0",
+    "navigation/v1@1.0.0",
+    "regions/v1@1.0.0",
+    "core.commands/v1@1.0.0"
+  ],
+  "requires": ["storage.backend/v1@^1.0.0", "secrets.backend/v1@^1.0.0"],
+  "desktopScope": {
+    "windows/v1": ["projectId", "threadId", "promptId"],
+    "menus/v1": ["projectId", "threadId", "promptId"],
+    "core.commands/v1": ["projectId", "threadId", "promptId"],
+    "secrets/v1": ["projectId", "threadId", "promptId"],
+    "models/v1": ["projectId", "threadId", "promptId"],
+    "tools/v1": ["projectId", "threadId", "promptId"]
+  }
+}

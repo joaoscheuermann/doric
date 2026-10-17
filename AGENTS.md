@@ -72,6 +72,11 @@ revising model-facing prompts.
 - Request Markdown or text output by default. Reserve JSON output for results
   that are genuinely machine-structured, and prefer the runtime's schema and
   validation mechanism over prompt-only JSON instructions.
+- Narrow exception: the runtime's input envelope and the chat's prompt
+  structure use XML tags (`<user-request>`, `<parent-instruction>`,
+  `<child-result>`, `<terminal-output>`, `<comments>`, `<target>`,
+  `<comment>`, `<message>`); the content inside stays readable text or
+  Markdown, and system prompts and all other model inputs remain Markdown.
 - These prompt rules do not govern provider transport JSON, JSON-RPC,
   configuration, storage or persistence, tools or tool payloads, schemas, or
   other non-prompt JSON.
@@ -93,8 +98,9 @@ revising model-facing prompts.
 
 ## Validation And Response
 
-After every file-editing task, format the changed files with
-`npx prettier --write <files>` (for supported, non-ignored files), then always
+After every file-editing task, format changed code with
+`npx biome format --write <files>` and changed supported files Biome cannot
+format with `npx prettier --write <files>`, then always
 run `npm run format:check` and `npm run lint` before the final response.
 Fix violations introduced by the task and rerun the checks after corrections.
 Do not run workspace-wide autofixes or reformat unrelated files unless asked.

@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-papercraft",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/papercraft/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/papercraft/tsconfig.json",
+          "tsc -p bundles/features/papercraft/tsconfig.parts.json",
+          "tsc -p bundles/features/papercraft/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/papercraft",
+          "esbuild bundles/features/papercraft/src/sandbox/main.ts --bundle --platform=node --target=node22 --format=esm --log-level=warning --outfile=bundles/features/papercraft/dist/sandbox/runner.mjs"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/papercraft/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/papercraft/tsconfig.parts.json",
+          "tsc -p bundles/features/papercraft/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/papercraft/dist-tests",
+          "tsc -p bundles/features/papercraft/tsconfig.spec.json",
+          "tsc -p bundles/features/papercraft/tsconfig.client-spec.json",
+          "node --test bundles/features/papercraft/dist-tests/tests/*.test.js bundles/features/papercraft/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

@@ -1,7 +1,7 @@
-export type SessionEntry<Value> = {
+export interface SessionEntry<Value> {
   readonly id: string;
   readonly value: Value;
-};
+}
 
 export interface SessionStore<Value> {
   get(id: string): Value | undefined;
@@ -17,10 +17,10 @@ export interface SessionStore<Value> {
   clear(): void;
 }
 
-type InFlightSession<Value> = {
+interface InFlightSession<Value> {
   readonly promise: Promise<Value>;
   readonly token: symbol;
-};
+}
 
 /** Creates a process-local in-memory session store keyed by string IDs. */
 export const createSessionStore = <Value>(): SessionStore<Value> => {

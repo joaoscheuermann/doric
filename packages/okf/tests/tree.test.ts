@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { outputPath, parseDescription, renderTree } from '../src/lib/tree.js';
 
-test('maps reserved names away at every depth without collisions', () => {
+void test('maps reserved names away at every depth without collisions', () => {
   assert.equal(outputPath('index'), 'index.md.md');
 
   assert.equal(outputPath('InDeX'), 'InDeX.md.md');
@@ -27,7 +27,7 @@ test('maps reserved names away at every depth without collisions', () => {
   assert.equal(outputPath('index.ts'), 'index.ts.md');
 });
 
-test('renders deterministic links to mirrored outputs without folder indexes', () => {
+void test('renders deterministic links to mirrored outputs without folder indexes', () => {
   const entries = [
     { path: 'src/z.ts', description: 'Zed.' },
     {
@@ -70,7 +70,7 @@ test('renders deterministic links to mirrored outputs without folder indexes', (
   assert.doesNotMatch(renderTree(entries), /\]\(src\/nested\/index\.md\)/u);
 });
 
-test('parses a quoted YAML description from CRLF frontmatter', () => {
+void test('parses a quoted YAML description from CRLF frontmatter', () => {
   const description = 'Explains "quoted" values at C:\\repo.\nSecond line.';
 
   const markdown = [
@@ -88,7 +88,7 @@ test('parses a quoted YAML description from CRLF frontmatter', () => {
   assert.equal(parseDescription(markdown), description);
 });
 
-test('parses Unicode line separators and normalizes them in rendered descriptions', () => {
+void test('parses Unicode line separators and normalizes them in rendered descriptions', () => {
   const description = 'First\u2028Second\u2029Third';
 
   const markdown = [
@@ -105,7 +105,7 @@ test('parses Unicode line separators and normalizes them in rendered description
   );
 });
 
-test('escapes Markdown-active filename characters without changing path separators', () => {
+void test('escapes Markdown-active filename characters without changing path separators', () => {
   assert.equal(
     renderTree([
       {
@@ -123,7 +123,7 @@ test('escapes Markdown-active filename characters without changing path separato
   );
 });
 
-test('rejects missing and non-string YAML frontmatter descriptions', () => {
+void test('rejects missing and non-string YAML frontmatter descriptions', () => {
   assert.throws(
     () =>
       parseDescription(

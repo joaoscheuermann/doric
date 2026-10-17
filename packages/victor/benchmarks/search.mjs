@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
-import { performance } from 'node:perf_hooks';
 import { resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
 import pino from 'pino';

@@ -1,0 +1,72 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
+    "emitDeclarationOnly": false,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../bundles/foundation/transport"
+    },
+    {
+      "path": "../../../packages/tool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../bundles/features/terminal"
+    },
+    {
+      "path": "../../../packages/session/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/sandpool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../bundles/runtime/runtime"
+    },
+    {
+      "path": "../../../bundles/foundation/postgres"
+    },
+    {
+      "path": "../../../packages/oauth/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/messages/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/llms/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../bundles/foundation/host-config"
+    },
+    {
+      "path": "../../../packages/firecracker-sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/docker-sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../bundles/foundation/core"
+    },
+    {
+      "path": "../../../packages/config/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/agent/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/storage/tsconfig.lib.json"
+    }
+  ]
+}

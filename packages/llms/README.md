@@ -4,28 +4,12 @@ Provider-neutral model and streaming boundaries for Doric's TypeScript
 agent core. The package keeps provider credentials and HTTP injected so tests
 can use fakes and host surfaces can own sensitive behavior.
 
-## Unified OpenRouter provider
+## OpenRouter
 
-Use `createUnifiedProvider` for heterogeneous OpenRouter models. It discovers
+Use `createOpenRouterProvider` for heterogeneous OpenRouter models. It discovers
 the selected model's live capabilities, applies the curated laboratory policy,
 preserves opaque reasoning replay, normalizes tool controls, and validates or
 repairs direct structured output locally.
-
-```ts
-import pino from 'pino';
-import { createFetchTransport, createUnifiedProvider } from 'llms';
-
-const provider = createUnifiedProvider({
-  transport: createFetchTransport(),
-  apiKey: process.env.OPENROUTER_API_KEY ?? '',
-  logger: pino(),
-});
-```
-
-See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
-matrix, fallback rules, primary sources, and paid live-conformance command.
-
-## OpenRouter with an API key
 
 ```ts
 import pino from 'pino';
@@ -36,69 +20,25 @@ const provider = createOpenRouterProvider({
   apiKey: process.env.OPENROUTER_API_KEY ?? '',
   logger: pino(),
 });
-
-const result = await provider.complete({
-  model: 'openai/gpt-5',
-  messages: [{ role: 'user', content: 'Summarize the plan.' }],
-  tools: [
-    {
-      name: 'lookup',
-      inputSchema: { type: 'object', properties: {} },
-    },
-  ],
-});
 ```
 
-### Jev decisions
+The advertised catalog contains only `openai` and `openrouter`. Codex remains
+available to internal callers but is not listed by `providerKinds`. The former
+`unified`, `openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions
+API have been removed.
 
-Jev is a System One decision model rather than a chat model. Use the raw
-OpenRouter provider's typed `decide` method, which calls OpenRouter's Decisions
-API with the same injected transport and API key.
+Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
+`${baseUrl}/models`. Configuration and execution use the same endpoint.
 
-```ts
-const result = await provider.decide({
-  model: '~typesafe/jev-latest',
-  state: 'Help! My payouts have been failing for 3 days.',
-  questions: {
-    isUrgent: {
-      type: 'noul',
-      instructions: 'Does this message convey urgency?',
-      criteria: {
-        true: 'Explicitly time-sensitive',
-        false: 'No urgency expressed',
-      },
-    },
-    department: {
-      type: 'choice',
-      instructions: 'Which team should handle this?',
-      criteria: {
-        billing: 'Payments, invoicing, refunds',
-        technical: 'Bugs, outages, integrations',
-        sales: 'Pricing, upgrades, new accounts',
-      },
-    },
-    frustration: {
-      type: 'score',
-      instructions: 'How frustrated is the customer?',
-      criteria: ['Calm', 'Frustrated', 'Very angry'],
-    },
-  },
-});
+See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
+matrix, fallback rules, primary sources, and paid live-conformance command.
 
-if (
-  result.answers.isUrgent.noul > 0.8 &&
-  result.answers.department.choice === 'billing'
-) {
-  // Escalate to billing.
-}
-```
+## OpenAI Responses-compatible endpoints
 
-Each question is inferred independently: Noul answers expose `noul`, Choice
-answers expose `choice`, `probabilities`, and `confidence`, and Score answers
-expose `score`, `legend`, `probabilities`, and `confidence`. State,
-instructions, and criteria may contain strings or structured JSON.
-
-## OpenAI with an API key
+The OpenAI provider is the former compatible adapter. Set `baseUrl` for a
+Responses-compatible endpoint and optionally set `identity: { id, name }`.
+Configured providers preserve their own identity in events and diagnostics.
+The protocol is `/responses`; a Chat Completions-only endpoint is not supported.
 
 ```ts
 import pino from 'pino';
@@ -106,7 +46,7 @@ import { createFetchTransport, createOpenAiProvider } from 'llms';
 
 const provider = createOpenAiProvider({
   transport: createFetchTransport(),
-  apiKey: process.env.CODEX_API_KEY ?? '',
+  apiKey: process.env.OPENAI_API_KEY ?? '',
   logger: pino(),
 });
 
@@ -135,7 +75,7 @@ strict-compatible.
 
 ## Embeddings
 
-OpenAI, OpenRouter, and LM Studio OpenAI-compatible providers accept an
+OpenAI and OpenRouter providers accept an
 optional positive-integer `dimensions` value for models that support a
 configurable embedding size.
 
@@ -152,7 +92,7 @@ usage includes token counts and billed cost in credits.
 
 ## Reranking
 
-OpenAI, OpenRouter, and LM Studio OpenAI-compatible providers expose a common
+OpenAI and OpenRouter providers expose a common
 text-document reranking API. The request is sent to `/rerank` below the
 provider's configured base URL (for example, OpenRouter uses
 `https://openrouter.ai/api/v1/rerank`).
@@ -182,7 +122,7 @@ all non-system messages. Omitting the flag, setting it to `false`, or using it
 without `schema` leaves messages unchanged. Native structured-output fields
 remain enabled for providers that support them.
 
-## Codex with a rendered authorization header
+## Internal Codex integration with a rendered authorization header
 
 ```ts
 import pino from 'pino';

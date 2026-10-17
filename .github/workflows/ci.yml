@@ -36,21 +36,21 @@ jobs:
       # Cache node_modules
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+
+      # Keep npm's lockfile resolution aligned with the Docker builder.
+      - run: npm install --global npm@11.13.0
 
       - run: npm ci
 
-      - name: Test lint configuration
+      - name: Test Biome configuration
         run: npm run lint:test
 
-      # Report existing style debt until the initial cleanup is complete.
-      - name: Check formatting (adoption report)
-        continue-on-error: true
+      - name: Check formatting
         run: npm run format:check
 
-      - name: Lint workspace (adoption report)
-        continue-on-error: true
+      - name: Lint workspace
         run: npm run lint
 
       - name: Apply Doric test migrations

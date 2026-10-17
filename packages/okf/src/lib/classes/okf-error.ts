@@ -26,12 +26,12 @@ export type OkfErrorStage =
   | 'write'
   | 'index';
 
-type Definition = {
+interface Definition {
   readonly stage: OkfErrorStage;
   readonly message: string;
   readonly hint: string;
   readonly source?: true;
-};
+}
 
 const DEFINITIONS: Readonly<Record<OkfErrorCode, Definition>> = {
   OKF_ROOT_INVALID: {
@@ -80,7 +80,7 @@ const DEFINITIONS: Readonly<Record<OkfErrorCode, Definition>> = {
   OKF_SUMMARY_FAILED: {
     stage: 'summary',
     message: 'The model could not produce a valid source summary for <source>.',
-    hint: 'Confirm LM Studio is running, the model is loaded, and it can return non-empty text.',
+    hint: 'Confirm the configured provider is reachable, the model is available, and it can return non-empty text.',
     source: true,
   },
   OKF_DESCRIPTION_FAILED: {

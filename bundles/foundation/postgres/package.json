@@ -1,0 +1,40 @@
+{
+  "name": "postgres",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./contracts": {
+      "@org/source": "./src/contracts/index.ts",
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "default": "./dist/contracts/index.js"
+    },
+    "./prisma": {
+      "@org/source": "./src/prisma.ts",
+      "types": "./dist/prisma.d.ts",
+      "import": "./dist/prisma.js",
+      "default": "./dist/prisma.js"
+    },
+    "./testing": {
+      "@org/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
+    }
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "bundle": "0.0.1",
+    "storage": "0.0.1",
+    "tslib": "^2.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/pg": "8.15.5",
+    "pg": "8.16.3",
+    "prisma": "7.9.1"
+  }
+}

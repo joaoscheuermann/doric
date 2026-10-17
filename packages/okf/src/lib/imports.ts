@@ -43,7 +43,7 @@ export const extractImports = (nodes: readonly Node[]): ExtractedImport[] => {
     const args = node.childForFieldName('arguments');
     const source = args?.namedChildren[0];
 
-    if (!called || !source || source.type !== 'string') {
+    if (!called || source?.type !== 'string') {
       continue;
     }
 

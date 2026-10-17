@@ -8,7 +8,7 @@ import {
   type MessageStorageEntry,
 } from '../src/index.js';
 
-test('preserves initial order and returns defensive snapshots', () => {
+void test('preserves initial order and returns defensive snapshots', () => {
   const initial: readonly ProviderMessage[] = [
     { role: 'system', content: 'Follow instructions.' },
     { role: 'user', content: 'Draft a plan.' },
@@ -37,7 +37,7 @@ test('preserves initial order and returns defensive snapshots', () => {
   assert.deepEqual(storage.list(), second);
 });
 
-test('copies initial messages before caller-owned arrays can be mutated', () => {
+void test('copies initial messages before caller-owned arrays can be mutated', () => {
   const initial: ProviderMessage[] = [
     { role: 'system', content: 'Follow instructions.' },
     { role: 'user', content: 'Draft a plan.' },
@@ -52,7 +52,7 @@ test('copies initial messages before caller-owned arrays can be mutated', () => 
   ]);
 });
 
-test('stores provider messages and returns the new length', () => {
+void test('stores provider messages and returns the new length', () => {
   const storage = createMessageStorage();
 
   const message: ProviderMessage = {
@@ -66,7 +66,7 @@ test('stores provider messages and returns the new length', () => {
   assert.deepEqual(storage.list(), [message]);
 });
 
-test('normalizes finished turns with text and tool calls into assistant messages', () => {
+void test('normalizes finished turns with text and tool calls into assistant messages', () => {
   const storage = createMessageStorage();
 
   const finish: ProviderFinished = {
@@ -93,7 +93,7 @@ test('normalizes finished turns with text and tool calls into assistant messages
   ]);
 });
 
-test('uses refusal as assistant content when finished text is empty', () => {
+void test('uses refusal as assistant content when finished text is empty', () => {
   const storage = createMessageStorage();
 
   storage.push({
@@ -111,7 +111,7 @@ test('uses refusal as assistant content when finished text is empty', () => {
   ]);
 });
 
-test('omits public reasoning metadata while preserving opaque provider replay', () => {
+void test('omits public reasoning metadata while preserving opaque provider replay', () => {
   const storage = createMessageStorage();
 
   storage.push({
@@ -141,7 +141,7 @@ test('omits public reasoning metadata while preserving opaque provider replay', 
   ]);
 });
 
-test('accepts message lists as provider request messages', () => {
+void test('accepts message lists as provider request messages', () => {
   const storage = createMessageStorage([{ role: 'user', content: 'Hello.' }]);
 
   const request = {

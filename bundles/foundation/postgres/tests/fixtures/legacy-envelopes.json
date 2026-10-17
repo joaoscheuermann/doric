@@ -1,0 +1,26 @@
+{
+  "description": "Envelopes written by the pre-move agents/doric/src/lib/credentials/secret.ts (createSecretCipher) with this key and a fixed nonce per case. Never regenerate them with the moved code.",
+  "key": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw=",
+  "cases": [
+    {
+      "name": "ascii",
+      "plaintext": "sk-or-v1-0123456789abcdef",
+      "envelope": "v1:AQEBAQEBAQEBAQEB:6gSOUdzcMMGv2RDa3TiboQ==:u6BWi5JNa3nwJq54Dn3dWbDecbVIDnFTwA=="
+    },
+    {
+      "name": "utf8",
+      "plaintext": "chave secreta: ção 🔑 秘密 Ωμέγα",
+      "envelope": "v1:AgICAgICAgICAgIC:nCKIfzziZ8l7eXO16TlESg==:ByIjZjsEEJ+HrMmaJ921O2dpdNwI+7AxYPfCqozvS0GPRe7yh2lMMBZN5Q=="
+    },
+    {
+      "name": "long",
+      "plaintext": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
+      "envelope": "v1:AwMDAwMDAwMDAwMD:xtpCZQz1rjHSF3ACR8bZgw==:cVDhqC7zEQQ+3cTxNmYv9CipZI8uUHMohe6gm9OcGFoXfIlcQYwTdu5+qYBsv8dcrgnFm/p2Wv9pHuoYZ0etqc/glaVAO49WFCT4EeSII5s2tK3HodTeo0uoxELLlMGCO6DT/yq94tSXrZVKS8CdE7miZKbyXKdRlcun55UFD4RRzMQ30U7uudpdTzw4cXMvkMv6WNQX0GomwG1r/bBCpOQfcSI9RkcS8F1NxXN0P3tAkGRyVvRxfVR1juTThVDfZpyly3vtWS7MYgo7T14vXfW2m3+Ssnzyis4I0M8cfFRj4ebs6OABWF66Dvzt0CYnl0tiQX0AYrxT+AI/faBLAwlbXUnzik5VALyHsgJezFr5JiN/PQNj9f+iM+v942IFOZCAhUvtuJeMQZ6TBAt2XY2SB0hBiVw+2X5GG76DclxGDUlc4+MtJOYMdujwe31ZfFwYep3pRWwuZdGJN26fi3L363/adx09KDByqnAu6s629j+vZul/VZRmC8Pt5LWzXDkQSY+t4JCVTrF65dMVB9IUdtNGhD4N7WJ5mBR1UJAomcrir/KcRl4ajBD10MdX77Ldtl2USRrY/NemVme5hAnMK/JOkWwMSnj78sa38SyQaaFHuie5GjiyCH0ySiq9Sv49NH9BBnfQBRsJliejrQJ7HOopIcxiG2XlK/f3vgI="
+    },
+    {
+      "name": "empty",
+      "plaintext": "",
+      "envelope": ""
+    }
+  ]
+}

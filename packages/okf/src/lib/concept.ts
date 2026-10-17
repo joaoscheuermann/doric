@@ -82,7 +82,9 @@ const markFlowSequences = (document: Document, metadata: object): void => {
         node.flow = true;
       }
 
-      value.forEach((item, index) => walk(item, [...location, index]));
+      value.forEach((item, index) => {
+        walk(item, [...location, index]);
+      });
 
       return;
     }
@@ -91,9 +93,9 @@ const markFlowSequences = (document: Document, metadata: object): void => {
       return;
     }
 
-    Object.entries(value).forEach(([key, item]) =>
-      walk(item, [...location, key]),
-    );
+    Object.entries(value).forEach(([key, item]) => {
+      walk(item, [...location, key]);
+    });
   };
 
   walk(metadata, []);

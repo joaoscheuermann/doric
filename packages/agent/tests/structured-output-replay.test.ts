@@ -1,22 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
-
 import { createMessageStorage } from 'messages';
+import { z } from 'zod';
 
 import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   createTools,
   streamEvents,
 } from './fakes.js';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} retains opaque replay from a rejected structured submission`, async () => {
+  void test(`${mode} retains opaque replay from a rejected structured submission`, async () => {
     const replay = [{ type: 'opaque-reasoning', id: `replay-${mode}` }];
 
     const provider = createProvider({

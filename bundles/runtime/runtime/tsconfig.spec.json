@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/sandpool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../features/terminal"
+    },
+    {
+      "path": "../../../packages/storage"
+    },
+    {
+      "path": "../../foundation/postgres"
+    }
+  ]
+}

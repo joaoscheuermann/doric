@@ -1,11 +1,11 @@
 import type { LlmProvider, ReasoningEffort } from 'llms';
 
-export type CompletionConfig = {
+export interface CompletionConfig {
   readonly effort?: ReasoningEffort;
   readonly model: string;
   readonly provider: LlmProvider;
   readonly signal?: AbortSignal;
-};
+}
 
 export type TextCompletionInput = CompletionConfig & {
   readonly input: string;

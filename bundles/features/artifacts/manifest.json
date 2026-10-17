@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "id": "artifacts",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "The Project's reviewable deliverables: stable identity, immutable revisions, their events and the review policy.",
+  "provides": [
+    "artifacts/v1@1.0.0",
+    "artifact.kind/v1@1.0.0",
+    "artifacts.cache/v1@1.0.0",
+    "artifacts.created/v1@1.0.0",
+    "artifacts.revised/v1@1.0.0",
+    "artifacts.applied/v1@1.0.0",
+    "artifacts.approved/v1@1.0.0",
+    "artifacts.review-policy/v1@1.0.0"
+  ],
+  "requires": [
+    "events/v1@^1.0.0",
+    "settings/v1@^1.0.0",
+    "runtime.lease/v1@^1.1.0",
+    "ui/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "navigation/v1@^1.0.0",
+    "chat.views/v1@^1.0.0",
+    "comments/v1@^1.0.0"
+  ],
+  "desktopScope": {
+    "artifacts/v1": ["projectId", "threadId", "promptId"],
+    "artifact.kind/v1": ["projectId", "threadId", "promptId"],
+    "artifacts.cache/v1": ["projectId", "threadId", "promptId"]
+  }
+}

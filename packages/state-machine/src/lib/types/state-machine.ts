@@ -5,11 +5,11 @@ export type StateMachineErrorCode =
   | 'invalid_handler_return'
   | 'missing_handler';
 
-export type StateMachineErrorData<Handlers extends string = string> = {
+export interface StateMachineErrorData<Handlers extends string = string> {
   readonly code: StateMachineErrorCode;
   readonly message: string;
   readonly handler: Handlers;
-};
+}
 
 /**
  * A top-level data record. Runtime also checks for Object.prototype or null;
@@ -18,24 +18,24 @@ export type StateMachineErrorData<Handlers extends string = string> = {
  */
 export type StateMachineState = Record<string, unknown>;
 
-export type StateMachineTransition<
+export interface StateMachineTransition<
   Handlers extends string,
   State extends StateMachineState,
-> = {
+> {
   readonly type: 'transition';
   readonly handler: Handlers;
   readonly state: State;
-};
+}
 
-export type StateMachineFinish<Finished> = {
+export interface StateMachineFinish<Finished> {
   readonly type: 'finish';
   readonly value: Finished | undefined;
-};
+}
 
-export type StateMachineFail<Failed> = {
+export interface StateMachineFail<Failed> {
   readonly type: 'fail';
   readonly error: Failed;
-};
+}
 
 export type StateMachineAction<
   Handlers extends string,
@@ -63,16 +63,16 @@ export type StateMachineFailFunction<Failed> = (
   error: Failed,
 ) => StateMachineFail<Failed>;
 
-export type StateMachineHandlerActions<
+export interface StateMachineHandlerActions<
   Handlers extends string,
   State extends StateMachineState,
   Finished,
   Failed,
-> = {
+> {
   readonly transition: StateMachineTransitionFunction<Handlers, State>;
   readonly finish: StateMachineFinishFunction<Finished>;
   readonly fail: StateMachineFailFunction<Failed>;
-};
+}
 
 export type StateMachineHandler<
   Context,
@@ -88,25 +88,25 @@ export type StateMachineHandler<
   | StateMachineAction<Handlers, State, Finished, Failed>
   | Promise<StateMachineAction<Handlers, State, Finished, Failed>>;
 
-export type StateMachineRunInput<
+export interface StateMachineRunInput<
   Handlers extends string,
   State extends StateMachineState,
   Context,
-> = {
+> {
   readonly initial: Handlers;
   readonly state: State;
   readonly context: Context;
-};
+}
 
-type StateMachineResultBase<
+interface StateMachineResultBase<
   Handlers extends string,
   State extends StateMachineState,
   Context,
-> = {
+> {
   readonly handler: Handlers;
   readonly state: State;
   readonly context: Context;
-};
+}
 
 export type StateMachineFinishedResult<
   Handlers extends string,
@@ -148,14 +148,14 @@ export type StateMachineResult<
   | StateMachineFailedResult<Handlers, State, Context, Failed>
   | StateMachineErrorResult<Handlers, State, Context>;
 
-export type StateMachineDefinition<
+export interface StateMachineDefinition<
   Handlers extends string,
   State extends StateMachineState,
   Context,
   Finished,
   Failed,
-> = {
+> {
   readonly run: (
     input: StateMachineRunInput<Handlers, State, Context>,
   ) => Promise<StateMachineResult<Handlers, State, Context, Finished, Failed>>;
-};
+}

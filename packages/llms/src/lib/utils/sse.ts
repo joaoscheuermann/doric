@@ -1,15 +1,15 @@
 import type { HttpStreamChunk } from '../types/http.js';
 
-export type SseEvent = {
+export interface SseEvent {
   readonly event?: string;
   readonly data: string;
   readonly done: boolean;
-};
+}
 
 /** Parses server-sent events across arbitrary chunk boundaries. */
 export async function* parseSseEvents(
   chunks: AsyncIterable<HttpStreamChunk>,
-): AsyncIterable<SseEvent> {
+): AsyncGenerator<SseEvent, void, unknown> {
   const decoder = new TextDecoder();
   let buffer = '';
   let event: string | undefined;
