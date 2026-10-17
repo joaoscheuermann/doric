@@ -50,8 +50,6 @@ export const readsSandbox = (tab: WorkspaceTab): boolean =>
 export type WorkspaceTabs = {
   readonly items: readonly WorkspaceTab[];
   readonly selected?: string;
-  readonly manualId?: string;
-  readonly manualIds?: readonly string[];
 };
 
 export const emptyTabs: WorkspaceTabs = { items: [] };
@@ -103,43 +101,6 @@ export const moveTab = (
   ),
 });
 
-export const moveManualTab = (
-  state: WorkspaceTabs,
-  from: string,
-  to: string,
-): WorkspaceTabs => ({
-  ...state,
-  manualIds: moveItem(
-    state.manualIds ?? [],
-    state.manualIds?.indexOf(from) ?? -1,
-    state.manualIds?.indexOf(to) ?? -1,
-  ),
-});
-
-export const openManual = (
-  state: WorkspaceTabs,
-  id?: string,
-): WorkspaceTabs => ({
-  ...state,
-  manualId: id,
-  manualIds:
-    id === undefined || state.manualIds?.includes(id)
-      ? state.manualIds
-      : [...(state.manualIds ?? []), id],
-});
-
-export const closeManual = (
-  state: WorkspaceTabs,
-  id: string,
-): WorkspaceTabs => {
-  const manualIds = state.manualIds?.filter((item) => item !== id);
-  return {
-    ...state,
-    manualIds,
-    manualId: state.manualId === id ? manualIds?.at(-1) : state.manualId,
-  };
-};
-
 export const openTab = (
   state: WorkspaceTabs,
   tab: WorkspaceTab,
@@ -158,14 +119,4 @@ export const closeTab = (state: WorkspaceTabs, id: string): WorkspaceTabs => {
     items,
     selected: state.selected === id ? items.at(-1)?.id : state.selected,
   };
-};
-
-export const removeTerminal = (
-  state: WorkspaceTabs,
-  terminalId: string,
-): WorkspaceTabs => {
-  const tab = state.items.find(
-    (item) => item.kind === 'terminal' && item.terminalId === terminalId,
-  );
-  return closeManual(tab ? closeTab(state, tab.id) : state, terminalId);
 };

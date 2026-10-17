@@ -105,12 +105,14 @@ function ProjectTab({
   const [editing, setEditing] = useState(false);
   const renameFromMenu = useRef(false);
   const sortable = useSortableTab(project.id, events.frozen?.get(project.id));
-  const node = useRef<HTMLDivElement>(null);
   // Reordering is a visibility trigger even when the active flag stays true.
   // biome-ignore lint/correctness/useExhaustiveDependencies: index triggers scrolling after keyboard reordering
   useLayoutEffect(() => {
     if (active && !events.sorting)
-      node.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      sortable.node.current?.scrollIntoView({
+        inline: 'nearest',
+        block: 'nearest',
+      });
   }, [active, events.sorting, index]);
 
   const closeThis = () => close(project.id);
@@ -118,10 +120,10 @@ function ProjectTab({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          ref={(element) => {
-            node.current = element;
-            sortable.setNodeRef(element);
-          }}
+          // The sortable's own ref is stable: a drag re-renders every tab on
+          // each pointer move, and a new ref callback would detach and
+          // re-observe each tab's node every time.
+          ref={sortable.setNodeRef}
           data-tab-id={project.id}
           className={cn(
             tab,

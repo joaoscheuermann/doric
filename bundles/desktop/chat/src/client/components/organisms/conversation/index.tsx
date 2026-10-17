@@ -1,6 +1,5 @@
 import { ClipboardDOMImportExtension } from '@lexical/clipboard';
 import { CodeNode } from '@lexical/code';
-import { EditorStateExtension, HMRExtension } from '@lexical/extension';
 import { HistoryExtension } from '@lexical/history';
 import {
   DOMImportExtension,
@@ -13,7 +12,6 @@ import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
-import { TreeViewExtension } from '@lexical/react/TreeViewExtension';
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import type { Ui } from 'bundle/contracts';
@@ -28,7 +26,14 @@ import {
   ParagraphNode,
   TextNode,
 } from 'lexical';
-import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 
 import {
   isReadOnlyBlock,
@@ -199,22 +204,21 @@ const PromptInitialState = defineExtension({
 });
 
 /**
- * The editor the example mounts. Only the HMR hook differs: webpack hands a
- * module `module.hot` and not the Vite-shaped `import.meta.hot` the extension
- * reads, so the editor keeps none of its own.
+ * The conversation's editor: rich text, the clipboard's DOM import with the
+ * style rules above, a bounded undo history, the prompt as the first block,
+ * and what other bundles add through `chat.lexical/v1`. Nothing a window
+ * never uses rides along — no HMR, no editor-state signal, no debug tree view
+ * — so no listener runs per update for a reader who cannot see its result.
  */
 const defineConversationExtension = (
   added: ReturnType<ChatLexicalRegistry['freeze']>,
 ) =>
   defineExtension({
     dependencies: [
-      configExtension(HMRExtension, { hot: null }),
       RichTextExtension,
       ClipboardDOMImportExtension,
       StyleImportExportExtension,
-      EditorStateExtension,
       configExtension(HistoryExtension, { maxDepth: 50 }),
-      TreeViewExtension,
       PromptInitialState,
       ...added.extensions,
     ],
@@ -304,16 +308,19 @@ export const ChatUiContext = createContext<Pick<
  * The conversation surface: one Lexical editor holding the Thread's projected
  * turns and the reader's prompt. `useThreadChat` owns the subscription, the
  * projection and the sending; this surface renders them in a centred column.
- */
-/**
- * The conversation's own send and stop, which the shell's control drives.
  *
- * The shell counts its requests and passes the count down: a value travelling
- * one way only. Nothing here writes state in the shell, because a child that
- * does that writes it during the shell's commit — which is what a render loop is
- * made of — and the shell has no way to read the editor anyway.
+ * The shell's control drives the conversation's own send and stop. The shell
+ * counts its requests and passes the count down: a value travelling one way
+ * only. Nothing here writes state in the shell, because a child that does that
+ * writes it during the shell's commit — which is what a render loop is made of
+ * — and the shell has no way to read the editor anyway.
+ *
+ * Memoised on its props: the view around it re-renders on every change of the
+ * window's workspace tree (another Thread's state, a rename), and the surface
+ * has nothing to draw for those — its own changes reach it through the stores
+ * it reads.
  */
-export function Conversation({
+export const Conversation = memo(function Conversation({
   thread,
   promptSignal,
   sendRequest,
@@ -372,6 +379,14 @@ export function Conversation({
     () => ({ threadId: thread.id, projectId: thread.projectId }),
     [thread.id, thread.projectId],
   );
+  // The Thread as the transcript's plugins key their work: its id and its
+  // Project's, which never change, rather than the record, which changes with
+  // every state the Thread passes through — a sync pass or a re-registered
+  // transform per lifecycle change would draw nothing new.
+  const threadScope = useMemo(
+    () => ({ id: thread.id, projectId: thread.projectId }),
+    [thread.id, thread.projectId],
+  );
   useEffect(() => retainProjectTerminals(thread.projectId), [thread.projectId]);
 
   return (
@@ -402,7 +417,7 @@ export function Conversation({
                   <PasteIntoPrompt />
                   <InsertThreadTurnNodes
                     autoFocus={autoFocus}
-                    thread={thread}
+                    thread={threadScope}
                     turns={turns}
                     blocks={external.placed}
                     onResume={chat.resume}
@@ -427,7 +442,7 @@ export function Conversation({
                     }
                   />
                   <EditQueuePrompt threadId={thread.id} />
-                  <CommentSelection thread={thread} />
+                  <CommentSelection thread={threadScope} />
                   <StackCaret />
                 </LexicalExtensionComposer>
               </ChatBlocksContext.Provider>
@@ -446,4 +461,4 @@ export function Conversation({
       </ScrollArea>
     </div>
   );
-}
+});

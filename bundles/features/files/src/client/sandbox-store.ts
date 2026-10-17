@@ -103,13 +103,37 @@ export const createSandboxStore = (
           ? false
           : pendingReadInterval(query.state.data),
     });
+    // An unchanged answer keeps its read, and a notification that changes
+    // nothing the observation carries (a retry count, a timestamp) is not sent.
+    let last:
+      | {
+          readonly data: ProjectTreeResult | undefined;
+          readonly failed: boolean;
+          readonly observation: TreeObservation;
+        }
+      | undefined;
     const emit = () => {
       const result = observer.getCurrentResult();
-      listener({
-        read: treeReadState(result.data, result.isError),
-        ...(result.isError ? { error: messageFrom(result.error) } : {}),
+      const error = result.isError ? messageFrom(result.error) : undefined;
+      const kept =
+        last !== undefined &&
+        last.data === result.data &&
+        last.failed === result.isError
+          ? last.observation
+          : undefined;
+      if (
+        kept !== undefined &&
+        kept.error === error &&
+        kept.fetching === result.isFetching
+      )
+        return;
+      const observation: TreeObservation = {
+        read: kept?.read ?? treeReadState(result.data, result.isError),
+        ...(error === undefined ? {} : { error }),
         fetching: result.isFetching,
-      });
+      };
+      last = { data: result.data, failed: result.isError, observation };
+      listener(observation);
     };
     const stop = observer.subscribe(emit);
     emit();

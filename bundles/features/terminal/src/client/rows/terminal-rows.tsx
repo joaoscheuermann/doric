@@ -24,10 +24,14 @@ export function TerminalRows({
   readonly onStop?: (id: string) => void;
 }) {
   const [now, setNow] = useState(Date.now);
+  // Only an agent row shows an elapsed time, so only it needs the clock: the
+  // rows of every other Thread stay still instead of rendering each second.
+  const timed = terminals.some((terminal) => terminal.origin !== 'user');
   useEffect(() => {
+    if (!timed) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [timed]);
   return terminals.map((terminal) => (
     <SidebarMenuSubItem
       key={terminal.id}

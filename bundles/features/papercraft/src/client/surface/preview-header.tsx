@@ -23,7 +23,7 @@ import {
   MessageSquarePlusIcon,
   SendIcon,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 export interface PreviewHeaderProps {
   readonly chrome: 'node' | 'canvas';
@@ -87,8 +87,11 @@ function IconButton({
   );
 }
 
-/** The overlay header of one preview frame. */
-export function PreviewHeader({
+/**
+ * The overlay header of one preview frame. Memoised on stable actions: a pan
+ * or a zoom of the canvas under it changes nothing it shows.
+ */
+export const PreviewHeader = memo(function PreviewHeader({
   chrome,
   title,
   controls = true,
@@ -189,4 +192,4 @@ export function PreviewHeader({
       ) : null}
     </div>
   );
-}
+});

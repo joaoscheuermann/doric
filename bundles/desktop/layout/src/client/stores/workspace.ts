@@ -124,7 +124,10 @@ export const workspaceStore = createStore<WorkspaceState>()((set) => ({
       treeState(forgetTreeThread(state.tree, projectId, threadId)),
     ),
   select: (selection) =>
-    set((state) => treeState(withSelection(state.tree, selection))),
+    set((state) => {
+      const tree = withSelection(state.tree, selection);
+      return tree === state.tree ? state : treeState(tree);
+    }),
   selectProject: (project) =>
     set((state) => ({
       ...treeState(withSelection(state.tree, { projectId: project.id })),
@@ -173,15 +176,22 @@ export const workspaceStore = createStore<WorkspaceState>()((set) => ({
   clearError: () => set((state) => sidebarState(clearError(state.sidebar))),
 
   setLoadingProjects: (loading) => set(() => ({ loadingProjects: loading })),
+  // A load that changes nothing keeps the set and notifies no one: ending a
+  // load is also how a write discards loads that may not be running.
   beginThreadsLoad: (projectId) =>
-    set((state) => ({
-      loadingProjectThreads: new Set([
-        ...state.loadingProjectThreads,
-        projectId,
-      ]),
-    })),
+    set((state) =>
+      state.loadingProjectThreads.has(projectId)
+        ? state
+        : {
+            loadingProjectThreads: new Set([
+              ...state.loadingProjectThreads,
+              projectId,
+            ]),
+          },
+    ),
   endThreadsLoad: (projectId) =>
     set((state) => {
+      if (!state.loadingProjectThreads.has(projectId)) return state;
       const next = new Set(state.loadingProjectThreads);
       next.delete(projectId);
       return { loadingProjectThreads: next };

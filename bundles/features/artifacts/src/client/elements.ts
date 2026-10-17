@@ -268,12 +268,46 @@ const buildFrame = (root: ShadowRoot): FrameView => {
 };
 
 /** `<artifacts-node>`: the registry's frame around the kind's body. */
-export const defineFrameElement = () =>
-  class ArtifactsFrameElement extends HTMLElement {
+export const defineFrameElement = () => {
+  // The kinds the host registered are host state, complete before any
+  // window client part activates (as the activation's projector claim
+  // assumes): one read per window serves every frame, instead of one per
+  // frame per render. A read that fails is not kept, so the next render asks
+  // again.
+  const kindLists = new WeakMap<
+    Services,
+    Promise<readonly ArtifactKindDescriptor[]>
+  >();
+
+  const kindsOf = (
+    services: Services,
+  ): Promise<readonly ArtifactKindDescriptor[]> => {
+    const known = kindLists.get(services);
+
+    if (known !== undefined) return known;
+
+    const pending = (
+      tryUse(() => services.use(ArtifactKindV1))?.list() ??
+      Promise.resolve([] as readonly ArtifactKindDescriptor[])
+    ).catch(() => {
+      kindLists.delete(services);
+
+      return [] as readonly ArtifactKindDescriptor[];
+    });
+
+    kindLists.set(services, pending);
+
+    return pending;
+  };
+
+  return class ArtifactsFrameElement extends HTMLElement {
     #services: Services | undefined;
     #block: unknown;
     #view: FrameView | undefined;
     #token = 0;
+    /** Whether a render is under way, and whether another was asked meanwhile. */
+    #rendering = false;
+    #again = false;
     /** The body element and the key (tag and block id) it was made for. */
     #body: { readonly key: string; readonly node: object } | undefined;
 
@@ -378,7 +412,32 @@ export const defineFrameElement = () =>
       view.hint.hidden = false;
     }
 
+    /**
+     * Renders the frame for its block. The conversation sets the block again
+     * on every reading of the log, so renders asked for while one is under
+     * way are folded into one more, after it: the frame reads the registry
+     * once for the latest block, not once per reading.
+     */
     async #render(): Promise<void> {
+      if (this.#rendering) {
+        this.#again = true;
+
+        return;
+      }
+
+      this.#rendering = true;
+
+      try {
+        do {
+          this.#again = false;
+          await this.#draw();
+        } while (this.#again);
+      } finally {
+        this.#rendering = false;
+      }
+    }
+
+    async #draw(): Promise<void> {
       const data = frameDataOf(this.#block);
 
       if (data === undefined) return;
@@ -407,40 +466,45 @@ export const defineFrameElement = () =>
 
       this.#token += 1;
       const token = this.#token;
-      const bound = callScopeOf(data);
-      const artifacts = tryUse(() => services.use(ArtifactsV1, bound));
-      const [kinds, records, policy, pending] = await Promise.all([
-        tryUse(() => services.use(ArtifactKindV1))
-          ?.list()
-          .catch(() => []) ?? Promise.resolve([]),
-        artifacts
-          ?.revisions({ artifactId: data.artifactId })
-          .catch(() => [] as readonly ArtifactRecord[]) ??
-          Promise.resolve([] as readonly ArtifactRecord[]),
-        artifacts?.policy().catch(() => undefined) ??
-          Promise.resolve(undefined),
-        pendingByRevision(services, data.artifactId, data),
-      ]);
+      const kinds = await kindsOf(services);
 
       if (token !== this.#token) return;
 
       // The body is the kind's; without one, the entries are what the frame
-      // can stand behind, and only then is the artifact an orphan.
+      // can stand behind, and only then is the artifact an orphan. It mounts
+      // before the registry answers the rest: the body has its own reads.
       const kind = kinds.find((candidate) => candidate.id === data.kind);
       const bodied = this.#mountBody(services, kind);
 
       view.entries.hidden = bodied;
       view.orphan.hidden = bodied;
 
+      // A body that draws its own header takes the bar's place: the frame
+      // keeps `Autorizar` below the body, beside nothing else of the bar —
+      // and counts no comments for a bar it does not draw.
+      const bodyHeader = bodied && kind?.header === 'body';
+
+      const bound = callScopeOf(data);
+      const artifacts = tryUse(() => services.use(ArtifactsV1, bound));
+      const [records, policy, pending] = await Promise.all([
+        artifacts
+          ?.revisions({ artifactId: data.artifactId })
+          .catch(() => [] as readonly ArtifactRecord[]) ??
+          Promise.resolve([] as readonly ArtifactRecord[]),
+        artifacts?.policy().catch(() => undefined) ??
+          Promise.resolve(undefined),
+        bodyHeader
+          ? Promise.resolve(new Map<number, number>())
+          : pendingByRevision(services, data.artifactId, data),
+      ]);
+
+      if (token !== this.#token) return;
+
       const record = records.find(
         (candidate) => candidate.revision === data.revision,
       );
       const approved = record?.state === 'approved';
       const authorizable = policy?.policy === 'request' && !approved;
-
-      // A body that draws its own header takes the bar's place: the frame
-      // keeps `Autorizar` below the body, beside nothing else of the bar.
-      const bodyHeader = bodied && kind?.header === 'body';
 
       view.bar.hidden = bodyHeader;
       if (bodyHeader) view.below.append(view.authorize);
@@ -465,3 +529,4 @@ export const defineFrameElement = () =>
       view.comment.textContent = count > 0 ? `Comentar (${count})` : 'Comentar';
     }
   };
+};

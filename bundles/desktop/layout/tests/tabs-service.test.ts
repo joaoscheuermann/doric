@@ -133,6 +133,23 @@ describe('layout.tabs/v1', () => {
     await dispose();
   });
 
+  test('focusing or reopening the selected tab notifies no subscriber', async () => {
+    const { tabs, tabsOf, dispose } = setup('thread-1');
+    await tabs.open({ id: 'a', title: 'A', tag: 'x-a' });
+    let heard = 0;
+    const subscription = tabs.subscribe(() => {
+      heard += 1;
+    });
+
+    await tabs.focus({ id: 'a' });
+    await tabs.open({ id: 'a', title: 'A', tag: 'x-a' });
+
+    assert.equal(heard, 0);
+    assert.equal(tabsOf('thread-1').selected, 'a');
+    subscription.dispose();
+    await dispose();
+  });
+
   test('without a Thread or a Project, opening is refused as unavailable', async () => {
     const { ui, tabs, dispose } = setup(undefined);
 

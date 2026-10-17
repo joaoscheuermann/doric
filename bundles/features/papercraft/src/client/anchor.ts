@@ -154,27 +154,3 @@ export const pointAnchorOf = (
         label: nearest.tagName.toLowerCase(),
       }),
 });
-
-/** The reading a card shows at the end of its line: `Checkout.tsx:42`, or `espaço em (412, 180)`. */
-export const anchorLabelOf = (anchor: {
-  readonly form: CommentAnchor['form'];
-  readonly path?: string;
-  readonly line?: number;
-  readonly selector?: string;
-  readonly x?: number;
-  readonly y?: number;
-  readonly label?: string;
-  readonly text?: string;
-}): string => {
-  if (anchor.form === 'source' && anchor.path !== undefined)
-    return anchor.line === undefined
-      ? anchor.path
-      : `${anchor.path}:${String(anchor.line)}`;
-
-  if (anchor.form === 'point')
-    return `espaço em (${String(Math.round(anchor.x ?? 0))}, ${String(
-      Math.round(anchor.y ?? 0),
-    )})`;
-
-  return anchor.selector ?? anchor.label ?? anchor.text ?? '';
-};

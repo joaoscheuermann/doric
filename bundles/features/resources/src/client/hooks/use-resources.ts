@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { pendingReadInterval } from 'desktop/reads';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import type { ResourcesReads } from '../api/resources.js';
 import { type CpuSustain, cpuSustained } from '../domain/resources.js';
@@ -65,21 +65,19 @@ export const useProjectResources = (
 /**
  * The sustained cpu verdict for a polled reading. Only a new reading advances the
  * reducer — a re-render in place does not — so one hot snapshot counts once, and a
- * reading of the same moment cannot climb to a warning on its own.
+ * reading of the same moment cannot climb to a warning on its own. The verdict is
+ * derived while rendering the new reading, so a poll commits once rather than
+ * once for the reading and again for its verdict.
  */
 export const useCpuSustain = (
   at: string | undefined,
   percent: number | undefined,
 ): boolean => {
-  const [sustain, setSustain] = useState<CpuSustain>({
-    count: 0,
-    sustained: false,
-  });
-  const lastAt = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (at === undefined || at === lastAt.current) return;
-    lastAt.current = at;
-    setSustain((previous) => cpuSustained(previous, percent));
-  }, [at, percent]);
+  const [sustain, setSustain] = useState<CpuSustain & { readonly at?: string }>(
+    { count: 0, sustained: false },
+  );
+  if (at !== undefined && at !== sustain.at) {
+    setSustain({ ...cpuSustained(sustain, percent), at });
+  }
   return sustain.sustained;
 };

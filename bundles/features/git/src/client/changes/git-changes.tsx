@@ -12,7 +12,7 @@ import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
 import { sandboxNotice } from 'files/contracts';
 import { LayoutTabsV1 } from 'layout/contracts';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useStore } from 'zustand/react';
 
 import {
@@ -58,6 +58,19 @@ export function GitChangesView({ services }: { readonly services: Services }) {
   const tree = useTree(files, projectId, cwd);
   const changes = useChanges(projectId, cwd);
   useProjectReads(projectId);
+  const open = useCallback(
+    (repository: string, change: ProjectChange) => {
+      if (projectId === undefined) return;
+      void commands
+        ?.execute(OPEN_COMPARISON_COMMAND, {
+          projectId,
+          repository,
+          path: change.path,
+        })
+        .catch(() => undefined);
+    },
+    [commands, projectId],
+  );
 
   if (!selection.available) return null;
 
@@ -80,15 +93,7 @@ export function GitChangesView({ services }: { readonly services: Services }) {
             changes={changes}
             scope={collapsedScope(projectId, rootOf(cwd))}
             selectedPath={selectedPath}
-            onOpen={(repository, change) => {
-              void commands
-                ?.execute(OPEN_COMPARISON_COMMAND, {
-                  projectId,
-                  repository,
-                  path: change.path,
-                })
-                .catch(() => undefined);
-            }}
+            onOpen={open}
           />
         )}
       </SandboxGate>
@@ -208,6 +213,10 @@ function ChangesList({
   const collapsed = useStore(collapsedStore, (state) =>
     collapsedOf(state, scope),
   );
+  const toggle = useCallback(
+    (key: string) => collapsedStore.getState().toggle(scope, key),
+    [collapsedStore, scope],
+  );
   const { read } = changes;
   const repositories = read.status === 'ready' ? read.value.repositories : [];
 
@@ -258,7 +267,7 @@ function ChangesList({
             repository={repository}
             collapsed={collapsed}
             selectedPath={selectedPath}
-            onToggle={(key) => collapsedStore.getState().toggle(scope, key)}
+            onToggle={toggle}
             onOpen={onOpen}
           />
         ))}

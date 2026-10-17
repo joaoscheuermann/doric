@@ -13,6 +13,7 @@ import {
   activeMarkerIndex,
   markerEmphasis,
   markerScrollTop,
+  sameMarkers,
   threadMarkers,
 } from '../src/client/domain/thread-nav.js';
 import type { ThreadEvent } from '../src/client/domain/workspace.js';
@@ -180,6 +181,57 @@ describe('threadMarkers', () => {
     assert.deepEqual(
       markers.map((marker) => marker.text),
       ['question'],
+    );
+  });
+});
+
+describe('sameMarkers', () => {
+  const turns: readonly Turn[] = [
+    user('a', 1),
+    agent('a', 2),
+    delegated('d', 3),
+    queued('q', 4),
+  ];
+
+  test('reads two readings of the same transcript as the same handles', () => {
+    assert.equal(sameMarkers(threadMarkers(turns), threadMarkers(turns)), true);
+  });
+
+  test('reads a streamed answer as changing no handle', () => {
+    const streamed = [...turns, { ...agent('q', 5), text: 'more' }];
+    assert.equal(
+      sameMarkers(threadMarkers(turns), threadMarkers(streamed)),
+      true,
+    );
+  });
+
+  test('reads a new prompt, other words or another child as new handles', () => {
+    const before = threadMarkers(turns);
+    assert.equal(
+      sameMarkers(before, threadMarkers([...turns, user('b', 6)])),
+      false,
+    );
+    assert.equal(
+      sameMarkers(
+        before,
+        threadMarkers([user('a', 1, 'other words'), ...turns.slice(1)]),
+      ),
+      false,
+    );
+    assert.equal(
+      sameMarkers(
+        before,
+        threadMarkers([
+          turns[0] as Turn,
+          turns[1] as Turn,
+          {
+            ...delegated('d', 3),
+            delegated: { ...delegatedInput, threadId: 'other' },
+          },
+          turns[3] as Turn,
+        ]),
+      ),
+      false,
     );
   });
 });

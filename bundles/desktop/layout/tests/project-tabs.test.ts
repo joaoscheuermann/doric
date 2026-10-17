@@ -41,6 +41,15 @@ test('invalid local paths and removed Projects are discarded', () => {
   );
 });
 
+test('reconciling keeps the same tabs when every Project still exists', () => {
+  const opened = rememberPath(
+    rememberPath(emptyProjectTabs, '/projects/p1/threads/t1'),
+    '/projects/p2',
+  );
+  assert.equal(reconcileProjectTabs(opened, new Set(['p1', 'p2'])), opened);
+  assert.deepEqual(reconcileProjectTabs(opened, new Set(['p2'])).order, ['p2']);
+});
+
 test('closing a group of tabs preserves the remaining order and paths', () => {
   const opened = ['p1', 'p2', 'p3'].reduce(
     (state, id) => rememberPath(state, `/projects/${id}`),

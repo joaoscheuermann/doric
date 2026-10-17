@@ -14,6 +14,7 @@ import {
   builtInClaims,
   externalBlocks,
   GENERIC_BLOCK_TYPE,
+  reuseBlocks,
 } from '../src/client/domain/external-blocks.js';
 import type { ThreadEvent } from '../src/client/domain/workspace.js';
 import {
@@ -160,6 +161,48 @@ describe('chat.views/v1', () => {
       ],
     );
     assert.deepEqual(replay, blocks);
+  });
+
+  test('a replay that reads the same keeps the blocks it read before', () => {
+    const events = [
+      event(2, 'y.other/v1'),
+      event(3, 'x.thing/v1', { note: ['a', { deep: 1 }] }),
+    ];
+    const projectors = [counter('y.other/v1'), counter('x.thing/v1')];
+    const first = externalBlocks(events, projectors, builtInAliases);
+
+    // The same log read again: the same list, the same blocks.
+    const again = reuseBlocks(
+      first,
+      externalBlocks(events, projectors, builtInAliases),
+    );
+    assert.equal(again, first);
+
+    // One more event: the blocks read before stand, the new one is new.
+    const grown = reuseBlocks(
+      first,
+      externalBlocks(
+        [...events, event(4, 'x.thing/v1')],
+        projectors,
+        builtInAliases,
+      ),
+    );
+    assert.notEqual(grown, first);
+    assert.equal(grown[0], first[0]);
+    assert.equal(grown[1], first[1]);
+    assert.equal(grown[2]?.id, 'x.thing/v1:4');
+
+    // A block whose data changed under the same id is a new block.
+    const changed = reuseBlocks(first, [
+      first[0] as ChatBlock,
+      { ...(first[1] as ChatBlock), data: 2 },
+    ]);
+    assert.equal(changed[0], first[0]);
+    assert.notEqual(changed[1], first[1]);
+    assert.equal(changed[1]?.data, 2);
+
+    // Fewer blocks than before is a new list, however the kept ones read.
+    assert.notEqual(reuseBlocks(first, [first[0] as ChatBlock]), first);
   });
 
   test('a versioned type nobody claims is one generic block; built-in types add none', () => {

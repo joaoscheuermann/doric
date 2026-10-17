@@ -166,14 +166,21 @@ export function DiffEditor({
     const current = view.current;
     const element = container.current;
     if (!current || !element) return;
+    // Monaco's `automaticLayout` already follows the size; a resize only
+    // matters here when it crosses the split breakpoint, so a drag does not
+    // reapply the options and the view state on every frame.
+    let applied: boolean | undefined;
     const updateLayout = () => {
+      // Compact mode removes the original-number gutter in unified view.
+      // Disable it in wide split views so Monaco honors the chosen layout
+      // even for simple additions/deletions that it would otherwise inline.
+      const compactMode = layout === 'unified' || element.clientWidth <= 700;
+      if (compactMode === applied) return;
+      applied = compactMode;
       const position = current.saveViewState();
       current.updateOptions({
         renderSideBySide: layout === 'split',
-        // Compact mode removes the original-number gutter in unified view.
-        // Disable it in wide split views so Monaco honors the chosen layout
-        // even for simple additions/deletions that it would otherwise inline.
-        compactMode: layout === 'unified' || element.clientWidth <= 700,
+        compactMode,
       });
       if (position) current.restoreViewState(position);
     };

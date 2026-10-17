@@ -4,6 +4,7 @@ import {
   $getNodeByKey,
   $getSelection,
   $isNodeSelection,
+  $isRangeSelection,
   $setSelection,
   CLICK_COMMAND,
   COMMAND_PRIORITY_LOW,
@@ -27,24 +28,29 @@ type WidgetSelectionStore = {
 
 const selectionStores = new WeakMap<LexicalEditor, WidgetSelectionStore>();
 
-/** Reads the set of selected node keys in the editor's current state. */
+/**
+ * Reads the set of selected widget keys in the editor's current state: the
+ * widgets among the selection's nodes, read once over those nodes rather than
+ * once per widget. Every widget is a block decorator, for which Lexical's own
+ * `isSelected` is exactly that membership — except a range selection that
+ * rests collapsed between blocks, which selects none of them.
+ */
 const $selectedNodeKeys = (
   keys: ReadonlyMap<NodeKey, unknown>,
 ): Set<NodeKey> => {
-  const selection = $getSelection();
-  if (selection === null) return new Set();
-  if ($isNodeSelection(selection)) {
-    const selected = new Set<NodeKey>();
-    for (const node of selection.getNodes()) {
-      const key = node.getKey();
-      if (keys.has(key)) selected.add(key);
-    }
-    return selected;
-  }
   const selected = new Set<NodeKey>();
-  for (const key of keys.keys()) {
-    const node = $getNodeByKey(key);
-    if (node?.isSelected(selection)) selected.add(key);
+  const selection = $getSelection();
+  if (selection === null) return selected;
+  if (
+    $isRangeSelection(selection) &&
+    selection.anchor.type === 'element' &&
+    selection.focus.type === 'element' &&
+    selection.isCollapsed()
+  )
+    return selected;
+  for (const node of selection.getNodes()) {
+    const key = node.getKey();
+    if (keys.has(key)) selected.add(key);
   }
   return selected;
 };

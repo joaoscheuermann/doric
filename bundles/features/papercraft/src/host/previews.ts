@@ -137,11 +137,19 @@ const stampTag = (tag: string, path: string, line: number): string => {
   );
 };
 
-/**
- * The 1-based line the `index` position of a content sits on.
- */
-const lineCount = (value: string): number =>
-  [...value].filter((char) => char === '\n').length;
+/** How many line breaks a chunk carries: the lines the scanner advances by. */
+const lineCount = (value: string): number => {
+  let count = 0;
+
+  for (
+    let at = value.indexOf('\n');
+    at !== -1;
+    at = value.indexOf('\n', at + 1)
+  )
+    count += 1;
+
+  return count;
+};
 
 /**
  * Stamps every element of one source with the file and the line it came

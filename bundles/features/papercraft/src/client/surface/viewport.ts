@@ -47,14 +47,6 @@ export const zoomAt = (
   };
 };
 
-/** One step in (`− 100% +`), keeping the surface centre stable. */
-export const zoomStep = (
-  viewport: Viewport,
-  factor: number,
-  area: { readonly width: number; readonly height: number },
-): Viewport =>
-  zoomAt(viewport, factor, { x: area.width / 2, y: area.height / 2 });
-
 /** A content box, in content coordinates. */
 export interface ContentBounds {
   readonly x: number;

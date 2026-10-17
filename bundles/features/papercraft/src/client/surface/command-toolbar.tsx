@@ -44,7 +44,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 import {
   APPROVE_COMMAND,
@@ -156,8 +156,12 @@ export interface CommandToolbarProps {
   readonly approvalNeeded: boolean;
 }
 
-/** The four groups and the three dividers of the window's command bar. */
-export function CommandToolbar({
+/**
+ * The four groups and the three dividers of the window's command bar.
+ * Memoised: a pan of the canvas changes none of its readings, so its
+ * tooltips, toggle group and menu are not drawn again for one.
+ */
+export const CommandToolbar = memo(function CommandToolbar({
   artifactId,
   execute,
   tool,
@@ -357,4 +361,4 @@ export function CommandToolbar({
       ) : null}
     </div>
   );
-}
+});

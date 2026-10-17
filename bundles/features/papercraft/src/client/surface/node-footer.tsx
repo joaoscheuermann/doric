@@ -7,7 +7,7 @@ import { Button } from 'desktop/ui/button';
 import { Separator } from 'desktop/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import { FocusIcon, MinusIcon, PlusIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 export interface NodeFooterProps {
   /** The zoom reading, `100%` at identity. */
@@ -49,8 +49,11 @@ function Control({
   );
 }
 
-/** The node's floating footer, bottom centre over the canvas. */
-export function NodeFooter({
+/**
+ * The node's floating footer, bottom centre over the canvas. Memoised on the
+ * controller's stable actions: only the zoom reading changes it.
+ */
+export const NodeFooter = memo(function NodeFooter({
   zoom,
   onZoomOut,
   onZoomReset,
@@ -98,4 +101,4 @@ export function NodeFooter({
       </Control>
     </div>
   );
-}
+});

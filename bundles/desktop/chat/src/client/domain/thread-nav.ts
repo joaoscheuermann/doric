@@ -60,6 +60,29 @@ export const threadMarkers = (
       : [];
   });
 
+/**
+ * Whether two readings of the rail are the same handles: the same kinds,
+ * blocks, words and child Threads in the same order. A flush of deltas
+ * changes no handle, and a rail that is told so keeps the handles it drew.
+ */
+export const sameMarkers = (
+  previous: readonly ThreadMarker[],
+  next: readonly ThreadMarker[],
+): boolean =>
+  previous === next ||
+  (previous.length === next.length &&
+    previous.every((marker, index) => {
+      const other = next[index];
+      return (
+        other !== undefined &&
+        marker.kind === other.kind &&
+        marker.promptId === other.promptId &&
+        marker.text === other.text &&
+        (marker.kind === 'result' ? marker.threadId : undefined) ===
+          (other.kind === 'result' ? other.threadId : undefined)
+      );
+    }));
+
 /** Where a clicked block's top rests in the viewport when scrolling permits it. */
 const READING_LINE = 0.4;
 

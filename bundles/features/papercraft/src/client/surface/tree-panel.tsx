@@ -8,6 +8,7 @@
 import { Button } from 'desktop/ui/button';
 import { cn } from 'desktop/ui/utils';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
+import { memo } from 'react';
 
 import {
   nodeLabel,
@@ -16,7 +17,10 @@ import {
   stampLabel,
 } from './scene-graph.js';
 
-export function TreePanel({
+// Memoised: the tree draws up to the derivation's limit of rows, and only a
+// new derivation, the selection or the layers change it — never a pan or a
+// zoom of the canvas beside it.
+export const TreePanel = memo(function TreePanel({
   graph,
   selectedId,
   hidden,
@@ -77,4 +81,4 @@ export function TreePanel({
       ))}
     </aside>
   );
-}
+});

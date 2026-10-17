@@ -3,7 +3,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from 'desktop/ui/resizable';
-import { type ReactNode, useLayoutEffect, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useRef } from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 
 type WorkspaceLayoutProps = {
@@ -46,11 +46,25 @@ export function WorkspaceLayout({
   sidebar,
 }: WorkspaceLayoutProps) {
   const filesPanel = usePanelRef();
-  const [viewerWidth, setViewerWidth] = useState(0);
-  const [filesWidth, setFilesWidth] = useState(0);
+  const viewerHeader = useRef<HTMLDivElement>(null);
+  const widths = useRef({ viewer: 0, files: 0 });
   const viewerOpen = fileViewer !== undefined;
-  const rightWidth = viewerWidth + (filesOpen ? filesWidth + 1 : 0) + 1;
   const mac = navigator.userAgent.includes('Mac');
+
+  // The header seam follows the division beside it. The panels report their
+  // widths on every frame of a drag, so the width goes to the header element
+  // directly, in the frame it was measured, instead of re-rendering the layout.
+  const fitViewerHeader = () => {
+    const element = viewerHeader.current;
+    if (element === null) return;
+    const { viewer, files } = widths.current;
+    element.style.width = viewerOpen
+      ? `${viewer + (filesOpen ? files + 1 : 0) + 1}px`
+      : '';
+  };
+
+  // Opening or closing the division or the panel refits the seam too.
+  useLayoutEffect(fitViewerHeader, [viewerOpen, filesOpen]);
 
   useLayoutEffect(() => {
     try {
@@ -66,9 +80,9 @@ export function WorkspaceLayout({
       <div className="flex h-10 shrink-0 bg-[var(--paper-panel)]">
         <div className="min-w-0 flex-1">{header}</div>
         <div
+          ref={viewerHeader}
           data-slot="workspace-viewer-header"
           className={`flex min-w-0 items-center gap-2 border-b border-[var(--paper-separator)] px-2 [-webkit-app-region:drag] ${viewerOpen ? 'border-l' : ''} ${mac ? '' : 'pr-[140px]'}`}
-          style={viewerOpen ? { width: rightWidth } : undefined}
         >
           {viewerTabs}
           <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
@@ -106,7 +120,10 @@ export function WorkspaceLayout({
               defaultSize="34rem"
               minSize="18rem"
               maxSize="60rem"
-              onResize={(size) => setViewerWidth(size.inPixels)}
+              onResize={(size) => {
+                widths.current.viewer = size.inPixels;
+                fitViewerHeader();
+              }}
             >
               <div className="flex h-full min-h-0 flex-col">{fileViewer}</div>
             </ResizablePanel>
@@ -131,7 +148,8 @@ export function WorkspaceLayout({
               minSize="14rem"
               maxSize="30rem"
               onResize={(size) => {
-                setFilesWidth(size.inPixels);
+                widths.current.files = size.inPixels;
+                fitViewerHeader();
                 onFilesOpenChange?.(size.inPixels > 0);
               }}
             >

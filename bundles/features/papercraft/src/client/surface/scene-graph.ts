@@ -83,15 +83,10 @@ export const buildSceneGraph = (root: ParentNode, limit = 400): SceneGraph => {
   const byId = new Map<string, SceneNode>();
   const childrenOf = new Map<string | undefined, SceneNode[]>();
 
-  const visit = (parent: ParentNode, depth: number, parentNodeId?: string) => {
-    for (const child of [...parent.children]) {
+  const visit = (parent: ParentNode, depth: number, parentNode?: SceneNode) => {
+    for (const child of parent.children) {
       if (nodes.length >= limit) return;
       if (SKIP_TAGS.has(child.tagName)) continue;
-
-      const parent =
-        parentNodeId === undefined
-          ? undefined
-          : (byId.get(parentNodeId) as SceneNode);
 
       const node: SceneNode = {
         id: `n${nodes.length}`,
@@ -100,32 +95,26 @@ export const buildSceneGraph = (root: ParentNode, limit = 400): SceneGraph => {
           .trim()
           .split(/\s+/)
           .filter((name) => name !== ''),
-        stamp: inheritedStamp(child, parent),
+        stamp: inheritedStamp(child, parentNode),
         element: child,
         depth,
-        ...(parentNodeId === undefined ? {} : { parentId: parentNodeId }),
+        ...(parentNode === undefined ? {} : { parentId: parentNode.id }),
       };
 
       nodes.push(node);
       byId.set(node.id, node);
 
-      const siblings = childrenOf.get(parentNodeId) ?? [];
+      const siblings = childrenOf.get(parentNode?.id) ?? [];
       siblings.push(node);
-      childrenOf.set(parentNodeId, siblings);
+      childrenOf.set(parentNode?.id, siblings);
 
-      visit(child, depth + 1, node.id);
+      visit(child, depth + 1, node);
     }
   };
 
   visit(root, 0);
 
-  return {
-    nodes,
-    byId,
-    childrenOf: new Map(
-      [...childrenOf.entries()].map(([key, value]) => [key, [...value]]),
-    ),
-  };
+  return { nodes, byId, childrenOf };
 };
 
 /** The label a derived node shows in the tree: `tag#id`, `tag.a`, else `tag`. */
@@ -276,9 +265,6 @@ export const isolateHiddenIds = (
     graph.nodes.filter((node) => !visible.has(node.id)).map((node) => node.id),
   );
 };
-
-/** Everything visible again: what `Mostrar tudo` clears. */
-export const noHiddenIds = (): ReadonlySet<string> => new Set();
 
 /**
  * The content box around every node's bounds, for `⤢ ajustar`; undefined when

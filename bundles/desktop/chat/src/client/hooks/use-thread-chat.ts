@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useStore } from 'zustand/react';
 
 import type { CommentThreads } from '../domain/comment-threads.js';
 import type { PendingSend } from '../domain/pending-turns.js';
-import {
-  emptyProjection,
-  sandboxWrites,
-  type Turn,
-} from '../domain/projector.js';
+import { emptyProjection, type Turn } from '../domain/projector.js';
 import { queueItems } from '../domain/queue.js';
 import type { Thread, ThreadEvent } from '../domain/workspace.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
@@ -23,11 +19,6 @@ export type ThreadChat = {
   readonly turns: readonly Turn[];
   /** The log's comment threads, by root comment id, with their state. */
   readonly threads: CommentThreads;
-  /**
-   * How many finished `write`, `edit` or `terminal` calls the log holds: the
-   * signal that the sandbox the Thread shares has changed.
-   */
-  readonly writes: number;
   /** A subscription failure, which the surface is expected to show. */
   readonly error: string | undefined;
   readonly sending: boolean;
@@ -85,10 +76,6 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   );
 
   const projection = chat?.projection ?? emptyProjection;
-  const writes = useMemo(
-    () => sandboxWrites(projection.events),
-    [projection.events],
-  );
 
   const prompt = useCallback(
     async (text: string) => {
@@ -130,7 +117,6 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     events: projection.events,
     turns: projection.turns,
     threads: projection.threads,
-    writes,
     // A Thread the surface no longer holds is one a `deleted` update dropped.
     error:
       chat !== undefined

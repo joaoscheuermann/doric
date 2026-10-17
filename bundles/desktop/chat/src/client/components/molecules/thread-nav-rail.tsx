@@ -14,7 +14,7 @@ import { Separator } from 'desktop/ui/separator';
 import { cn } from 'desktop/ui/utils';
 import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
 import type { RefObject } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   AGENT_NAME,
@@ -77,8 +77,15 @@ function ResultThreadLink({ threadId }: { readonly threadId: string }) {
   );
 }
 
-/** One handle on the rail: the pill that widens, and the popover it opens. */
-function RailHandle({
+/**
+ * One handle on the rail: the pill that widens, and the popover it opens.
+ *
+ * Memoised on its props, which are values and the rail's stable callbacks: a
+ * flush of deltas re-renders the rail, and the handles — one Radix popover
+ * each, dozens on a long transcript — stay as they were unless the active
+ * one, the hovered cascade or an open popover moved.
+ */
+const RailHandle = memo(function RailHandle({
   active = false,
   author,
   emphasis = 3,
@@ -86,11 +93,12 @@ function RailHandle({
   id,
   label,
   kind = 'prompt',
+  marker,
   onHandleHover,
+  onJump,
   open,
   text,
   threadId,
-  onClick,
 }: {
   /** Whether the reader is looking at this handle's prompt, and it takes the highlight. */
   readonly active?: boolean;
@@ -104,15 +112,18 @@ function RailHandle({
   /** The handle's own name, the only thing a screen reader says. */
   readonly label: string;
   readonly kind?: ThreadMarker['kind'];
+  /** The block this handle jumps to; the input handle, the last, names none. */
+  readonly marker?: ThreadMarker;
   /** Tracks pointer hover on the handle, separately from the popover. */
   readonly onHandleHover: (id: string | null) => void;
+  /** Jumps to the handle's block, or to the input when it names none. */
+  readonly onJump: (marker: ThreadMarker | undefined) => void;
   /** The handle's popover is open. */
   readonly open: boolean;
   /** The popover's content; a handle with no words shows no popover. */
   readonly text: string;
   /** The child Thread that produced this result. */
   readonly threadId?: string;
-  readonly onClick: () => void;
 }) {
   return (
     <Popover
@@ -133,7 +144,7 @@ function RailHandle({
             // click unless the handler says otherwise, and a toggle here would
             // close the preview the hover just opened.
             event.preventDefault();
-            onClick();
+            onJump(marker);
           }}
           onFocus={() => hover(id)}
           onMouseEnter={() => {
@@ -207,7 +218,7 @@ function RailHandle({
       </PopoverContent>
     </Popover>
   );
-}
+});
 
 export function ThreadNavRail({
   turns,
@@ -250,6 +261,16 @@ export function ThreadNavRail({
     },
     [],
   );
+  // One jump for every handle, so a handle's props are the same across the
+  // renders that change nothing about it.
+  const { jumpTo, jumpToInput } = nav;
+  const jump = useCallback(
+    (marker: ThreadMarker | undefined) => {
+      if (marker === undefined) jumpToInput();
+      else jumpTo(marker);
+    },
+    [jumpTo, jumpToInput],
+  );
 
   return (
     <nav
@@ -280,11 +301,12 @@ export function ThreadNavRail({
             id={id}
             kind={marker.kind}
             label={`${label} ${index + 1}`}
+            marker={marker}
             onHandleHover={setHoveredHandle}
+            onJump={jump}
             open={open === id}
             text={marker.text}
             threadId={marker.kind === 'result' ? marker.threadId : undefined}
-            onClick={() => nav.jumpTo(marker)}
           />
         );
       })}
@@ -294,9 +316,9 @@ export function ThreadNavRail({
         id="prompt-input"
         label="Prompt input"
         onHandleHover={setHoveredHandle}
+        onJump={jump}
         open={open === 'prompt-input'}
         text="Prompt input"
-        onClick={nav.jumpToInput}
       />
     </nav>
   );

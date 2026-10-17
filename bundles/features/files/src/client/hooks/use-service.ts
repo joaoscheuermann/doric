@@ -4,7 +4,7 @@ import type {
   Disposable,
   Services,
 } from 'bundle/contracts';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 /**
  * A contract's API while a provider serves it, else undefined: elements
@@ -37,11 +37,15 @@ export const useSubscribed = <T>(
   fallback: T,
 ): T => {
   const value = useSyncExternalStore(
-    (notify) => {
-      if (source === undefined) return () => undefined;
-      const subscription = source.subscribe(notify);
-      return () => subscription.dispose();
-    },
+    // One subscription per source, not one per render.
+    useCallback(
+      (notify: () => void) => {
+        if (source === undefined) return () => undefined;
+        const subscription = source.subscribe(notify);
+        return () => subscription.dispose();
+      },
+      [source],
+    ),
     () => (source === undefined ? fallback : read()),
   );
   return value;

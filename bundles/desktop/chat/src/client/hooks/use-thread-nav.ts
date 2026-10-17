@@ -7,6 +7,7 @@ import type { Turn } from '../domain/projector.js';
 import {
   activeMarkerIndex,
   markerScrollTop,
+  sameMarkers,
   type ThreadMarker,
   threadMarkers,
 } from '../domain/thread-nav.js';
@@ -131,7 +132,13 @@ export function useThreadNav({
   readonly navigating: RefObject<boolean>;
   readonly following: RefObject<boolean>;
 }): ThreadNav {
-  const markers = useMemo(() => threadMarkers(turns), [turns]);
+  // The handles keep their identity while they read the same: a flush of
+  // deltas changes the turns, not the handles, and a rail handed the same
+  // handles measures nothing twice and re-renders no handle for it.
+  const fresh = useMemo(() => threadMarkers(turns), [turns]);
+  const held = useRef(fresh);
+  if (!sameMarkers(held.current, fresh)) held.current = fresh;
+  const markers = held.current;
   const [active, setActive] = useState(-1);
   const suppressResume = useRef(false);
   const jumpFrame = useRef<number | null>(null);

@@ -294,10 +294,12 @@ export function usePreviewData({
   /* The durable comments of the preview, on every revision ------------------- */
 
   // `comments/v1.list` filters a target by its exact revision, so the list is
-  // read by kind and narrowed to this preview here.
+  // read by kind and narrowed to this preview here. While the Thread's log
+  // answers, the threads are read off it and the list would go unread, so it
+  // is not asked for again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the ticks are the reread's triggers
   useEffect(() => {
-    if (projectId === undefined) return;
+    if (projectId === undefined || logEvents !== undefined) return;
 
     let cancelled = false;
 
@@ -328,7 +330,15 @@ export function usePreviewData({
     return () => {
       cancelled = true;
     };
-  }, [services, projectId, threadId, artifactId, reloadTick, commentsTick]);
+  }, [
+    services,
+    projectId,
+    threadId,
+    artifactId,
+    reloadTick,
+    commentsTick,
+    logEvents,
+  ]);
 
   /* The comments of the Thread's log, shared by every frame of the Thread ---- */
 

@@ -165,6 +165,8 @@ interface Harness {
   readonly policy: { value: 'proceed' | 'request' };
   /** The durable comments `comments/v1.list` answers. */
   readonly durable: unknown[];
+  /** How many times the frame listed the durable comments. */
+  readonly lists: number;
   /** Every `comments/v1.resolve` the frame asked for, with its scope. */
   readonly resolves: { input: unknown; scope: unknown }[];
   /**
@@ -194,6 +196,7 @@ const harness = (): Harness => {
 
   const registry: Registry = new Map();
   const durable: unknown[] = [];
+  const counts = { lists: 0 };
   const resolves: { input: unknown; scope: unknown }[] = [];
   const thread: { log: unknown[] | undefined } = { log: undefined };
   const scopes: unknown[] = [];
@@ -264,7 +267,11 @@ const harness = (): Harness => {
                 createdAt: '',
               };
             },
-            list: async () => durable,
+            list: async () => {
+              counts.lists += 1;
+
+              return durable;
+            },
             resolve: async (input: unknown) => {
               resolves.push({ input, scope });
 
@@ -349,6 +356,9 @@ const harness = (): Harness => {
     approvals,
     policy,
     durable,
+    get lists() {
+      return counts.lists;
+    },
     resolves,
     get log() {
       return thread.log;
@@ -1483,6 +1493,51 @@ test('a sent thread resolves under the prompt its root was written in', async ()
     threadId: 't-123',
     promptId: 'prompt-root',
   });
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+  h.log = undefined;
+});
+
+test('the durable comments are not listed again while the Thread log answers', async () => {
+  const h = harness();
+  const target = {
+    kind: 'artifact',
+    id: 'checkout-7f3a',
+    revision: 1,
+    anchor: { form: 'source', path: 'src/checkout.html', line: 42 },
+  };
+  h.log = [
+    logged('comments.added/v1', 'prompt-root', {
+      commentId: 'c1',
+      target,
+      text: 'mais respiro',
+    }),
+  ];
+  const { mounted } = await commenting(h);
+
+  const pin = await settle(
+    () => query(mounted.frame, 'papercraft-pin'),
+    (found) => found !== null,
+    'the logged thread never became a pin',
+  );
+  const listed = h.lists;
+
+  // A resolve asks the comments to be read again: the log answers, so the
+  // list is not.
+  await react.act(async () => pin?.click());
+  await react.act(async () => {
+    query(mounted.frame, 'papercraft-thread-resolve')?.click();
+  });
+  await settle(
+    () => h.resolves.length,
+    (length) => length === 1,
+    'the resolve was never asked',
+  );
+  await tick();
+  await tick();
+
+  assert.equal(h.lists, listed);
 
   comment.setComposerAvailable(false);
   await mounted.unmount();

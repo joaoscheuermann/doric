@@ -171,18 +171,45 @@ export const createGitStore = (
           ? false
           : pendingReadInterval(query.state.data),
     });
+    // The read and its marks are derived once per answer: a refresh that
+    // answers the same changes keeps both, and a notification that changes
+    // nothing the observation carries (a retry count, a timestamp) is not sent.
+    let last:
+      | {
+          readonly data: ProjectChangesResult | undefined;
+          readonly pending: boolean;
+          readonly observation: ChangesObservation;
+        }
+      | undefined;
     const emit = () => {
       const result = observer.getCurrentResult();
-      const read = changesReadState(result.data, result.isPending);
-      listener({
+      const error = result.isError ? messageFrom(result.error) : undefined;
+      const kept =
+        last !== undefined &&
+        last.data === result.data &&
+        last.pending === result.isPending
+          ? last.observation
+          : undefined;
+      if (
+        kept !== undefined &&
+        kept.error === error &&
+        kept.fetching === result.isFetching
+      )
+        return;
+      const read =
+        kept?.read ?? changesReadState(result.data, result.isPending);
+      const observation: ChangesObservation = {
         read,
         decorations:
-          read.status === 'ready'
+          kept?.decorations ??
+          (read.status === 'ready'
             ? changeMarks(read.value.repositories)
-            : new Map(),
-        ...(result.isError ? { error: messageFrom(result.error) } : {}),
+            : new Map()),
+        ...(error === undefined ? {} : { error }),
         fetching: result.isFetching,
-      });
+      };
+      last = { data: result.data, pending: result.isPending, observation };
+      listener(observation);
     };
     const stop = observer.subscribe(emit);
     emit();

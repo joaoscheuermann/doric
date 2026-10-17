@@ -54,15 +54,18 @@ export const closeProjectTabs = (
 export const reconcileProjectTabs = (
   state: ProjectTabs,
   ids: ReadonlySet<string>,
-): ProjectTabs => ({
-  ...state,
-  order: state.order.filter((id) => ids.has(id)),
-  paths: Object.fromEntries(
-    Object.entries(state.paths).filter(
-      ([id, path]) => ids.has(id) && projectIdFromPath(path) === id,
-    ),
-  ),
-});
+): ProjectTabs => {
+  const order = state.order.filter((id) => ids.has(id));
+  const paths = Object.entries(state.paths).filter(
+    ([id, path]) => ids.has(id) && projectIdFromPath(path) === id,
+  );
+  // Nothing to discard keeps the tabs, so the view neither renders nor saves
+  // them again when only a Project's record changed.
+  return order.length === state.order.length &&
+    paths.length === Object.keys(state.paths).length
+    ? state
+    : { ...state, order, paths: Object.fromEntries(paths) };
+};
 
 export const parseProjectTabs = (raw: string | null): ProjectTabs => {
   if (raw === null) return emptyProjectTabs;

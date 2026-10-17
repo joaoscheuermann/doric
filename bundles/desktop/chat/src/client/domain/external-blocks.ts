@@ -87,8 +87,17 @@ export const externalBlocks = (
     }
   }
 
+  // The built-in claim is a property of the type, read once per type rather
+  // than once per event: a long log repeats a few types thousands of times.
+  const builtIn = new Map<string, boolean>();
   for (const event of events) {
-    if (builtInClaims(event.type, aliases) || claimed.has(event.type)) continue;
+    if (claimed.has(event.type)) continue;
+    let claim = builtIn.get(event.type);
+    if (claim === undefined) {
+      claim = builtInClaims(event.type, aliases);
+      builtIn.set(event.type, claim);
+    }
+    if (claim) continue;
     const data: GenericBlockData = {
       eventType: event.type,
       createdAt: event.createdAt,
@@ -112,4 +121,71 @@ export const externalBlocks = (
         left.block.sequence - right.block.sequence || left.order - right.order,
     )
     .map(({ block }) => block);
+};
+
+/** Whether a value is a plain object: what a block's JSON-shaped data is made of. */
+const isPlainObject = (
+  value: unknown,
+): value is Readonly<Record<string, unknown>> => {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+/**
+ * Whether two readings of a block's data say the same thing: plain objects
+ * and arrays member by member, everything else by identity — a projector's
+ * data is the JSON its events carry, and anything richer is its own.
+ */
+const sameData = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => sameData(item, right[index]))
+    );
+  }
+  if (!isPlainObject(left) || !isPlainObject(right)) return false;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every(
+      (key) => Object.hasOwn(right, key) && sameData(left[key], right[key]),
+    )
+  );
+};
+
+const sameBlock = (left: ChatBlock, right: ChatBlock): boolean =>
+  left === right ||
+  (left.id === right.id &&
+    left.type === right.type &&
+    left.promptId === right.promptId &&
+    left.sequence === right.sequence &&
+    sameData(left.data, right.data));
+
+/**
+ * `next` with every block that reads the same as the one `previous` held
+ * under its id standing in as that held block, and `previous` itself when
+ * the two lists read the same throughout. The projectors run from scratch
+ * over the whole log on every batch, so every block they return is a new
+ * object; a surface that keys its work on the block — the element drawn for
+ * it, the hook answered for it — needs the block to keep its identity while
+ * it says the same thing.
+ */
+export const reuseBlocks = (
+  previous: readonly ChatBlock[],
+  next: readonly ChatBlock[],
+): readonly ChatBlock[] => {
+  const held = new Map(previous.map((block) => [block.id, block]));
+  let unchanged = previous.length === next.length;
+  const reused = next.map((block, index) => {
+    const before = held.get(block.id);
+    const kept =
+      before !== undefined && sameBlock(before, block) ? before : block;
+    if (kept !== previous[index]) unchanged = false;
+    return kept;
+  });
+  return unchanged ? previous : reused;
 };

@@ -1305,6 +1305,47 @@ describe('a projection is never altered after it was returned', () => {
 
     assert.deepEqual(first, held);
   });
+
+  test('keeps the comment threads it holds across a batch that writes no comment', () => {
+    const first = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Hi',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', {
+        type: 'comments.added/v1',
+        commentId: 'c1',
+        author: 'user',
+        text: 'look here',
+        target: { kind: 'message', id: 'm1' },
+        createdAt: '2026-01-01T00:00:02.000Z',
+      }),
+      event(3, 'one', { type: 'text.delta', delta: 'Hel' }),
+    ]);
+    assert.equal(first.threads.size, 1);
+
+    // A flush of deltas changes no thread: the threads a surface was handed
+    // are the threads it is handed again, so nothing that draws them is told
+    // they changed.
+    const streamed = projectEvents(first, [
+      event(4, 'one', { type: 'text.delta', delta: 'lo' }),
+      event(5, 'one', { type: 'tool.started', call: call('c1', 'read_file') }),
+    ]);
+    assert.equal(streamed.threads, first.threads);
+
+    // A resolution is a new reading, and the one before keeps its own.
+    const resolved = projectEvents(streamed, [
+      event(6, 'one', {
+        type: 'comments.resolved/v1',
+        commentId: 'c1',
+        resolved: true,
+      }),
+    ]);
+    assert.notEqual(resolved.threads, streamed.threads);
+    assert.equal(resolved.threads.get('c1')?.resolved, true);
+    assert.equal(first.threads.get('c1')?.resolved, false);
+  });
 });
 
 describe('projecting a long log', () => {

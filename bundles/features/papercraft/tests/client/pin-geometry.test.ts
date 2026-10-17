@@ -20,6 +20,7 @@ for (const name of ['window', 'document', 'Element', 'Node'] as const) {
 import { anchorOf } from '../../src/client/anchor.js';
 import {
   anchorIndexOf,
+  anchorResolver,
   type ContentPoint,
   offsetIn,
   pinPointOf,
@@ -149,6 +150,38 @@ test('pins on three cells stay on their own cells when the edited file moves eve
   assert.deepEqual(
     anchors.map((anchor) => pinOn(REVISION_2, anchor)),
     CELLS,
+  );
+});
+
+test('a revision places each anchor once, however often its pins are laid again', () => {
+  const anchors = CELLS.map((text) => clickOn(REVISION_1, text));
+  let measured = 0;
+  const counting: BoundsOf = (node) => {
+    measured += 1;
+
+    return REVISION_2.bounds(node);
+  };
+  const resolve = anchorResolver(REVISION_2.graph, counting);
+
+  // The first laying places the pins as a direct reading would.
+  const first = anchors.map((anchor) => resolve(anchor));
+  assert.deepEqual(
+    first.map((point) => landsOn(REVISION_2, point)),
+    CELLS,
+  );
+
+  // A zoom lays the same pins again: nothing is measured a second time.
+  const after = measured;
+  assert.deepEqual(
+    anchors.map((anchor) => resolve(anchor)),
+    first,
+  );
+  assert.equal(measured, after);
+
+  // A fallback stands in only for an anchor nothing places.
+  assert.deepEqual(
+    resolve({ form: 'point' } as CommentAnchor, { x: 1, y: 2 }),
+    { x: 1, y: 2 },
   );
 });
 

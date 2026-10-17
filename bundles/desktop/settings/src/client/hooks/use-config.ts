@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api/settings-api.js';
 import {
@@ -160,23 +160,30 @@ export const useConfig = (
     await save();
   }, [kinds, saved, save]);
 
+  // The draft is validated and compared once per change, not again on every
+  // render (a save starting or landing) nor a second time by the autosave.
+  const issue = useMemo(
+    () => (draft === undefined ? undefined : configurationIssue(draft, kinds)),
+    [draft, kinds],
+  );
+  const dirty = useMemo(
+    () =>
+      draft !== undefined &&
+      saved !== undefined &&
+      !isSameConfiguration(saved.configuration, draft),
+    [draft, saved],
+  );
+
   // A valid change sends itself once typing settles; a draft the host would
-  // refuse is left to the section that explains it.
+  // refuse is left to the section that explains it. Each new draft, and each
+  // answer the host saves, starts the settle over.
   useEffect(() => {
     if (draft === undefined || saved === undefined) return;
-    if (isSameConfiguration(saved.configuration, draft)) return;
-    if (configurationIssue(draft, kinds) !== undefined) return;
+    if (!dirty || issue !== undefined) return;
     const timer = setTimeout(() => void save(), saveDelayMs);
     pending.current = timer;
     return () => clearTimeout(timer);
-  }, [draft, kinds, saved, save]);
-
-  const issue =
-    draft === undefined ? undefined : configurationIssue(draft, kinds);
-  const dirty =
-    draft !== undefined &&
-    saved !== undefined &&
-    !isSameConfiguration(saved.configuration, draft);
+  }, [draft, dirty, issue, saved, save]);
 
   return {
     dirty,

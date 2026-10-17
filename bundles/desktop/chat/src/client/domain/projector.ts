@@ -953,15 +953,24 @@ const readInto = (
   const status = new Map(current.status);
   const executions = new Map(current.executions);
   const inputs = new Map(current.inputs);
-  const comments = new Map(
-    [...current.comments].map(([promptId, held]): [string, TurnComment[]] => [
-      promptId,
-      [...held],
-    ]),
-  );
-  // A thread a batch changes is a new record in a copy of the map, so the
+  // Only a comment event writes the comments held per prompt or the threads
+  // (`readEvent`), so a batch without one reads with the maps the projection
+  // already holds and returns them as they are: the threads a conversation
+  // provides keep their identity across a flush of deltas, and nothing that
+  // draws them is told they changed. A batch with one writes a copy — a
+  // thread it changes is a new record in a copy of the map — so the
   // projection returned before keeps the threads it was read with.
-  const threads = new Map(current.threads);
+  const touchesComments = incoming.some(isCommentEvent);
+  const comments = touchesComments
+    ? new Map(
+        [...current.comments].map(
+          ([promptId, held]): [string, TurnComment[]] => [promptId, [...held]],
+        ),
+      )
+    : (current.comments as Map<string, TurnComment[]>);
+  const threads = touchesComments
+    ? new Map(current.threads)
+    : (current.threads as Map<string, CommentThread>);
   for (const item of incoming)
     readEvent(drafts, status, executions, inputs, comments, threads, item);
   settle(drafts, status, executions, inputs);
@@ -1041,6 +1050,10 @@ const truncation = (
 /** Whether an event is the marker of a rewind, which discards the log before it. */
 const isTruncation = (event: ThreadEvent): boolean =>
   record(event.event)?.type === 'history.truncated';
+
+/** Whether an event writes a comment or its resolution: the two the threads read. */
+const isCommentEvent = (event: ThreadEvent): boolean =>
+  event.type === COMMENTS_ADDED_EVENT || event.type === COMMENTS_RESOLVED_EVENT;
 
 /** Drops held events that a rewind already discarded. */
 const survivors = (events: readonly ThreadEvent[]): readonly ThreadEvent[] => {

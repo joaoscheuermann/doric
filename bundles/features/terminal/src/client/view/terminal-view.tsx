@@ -102,14 +102,23 @@ export function TerminalView({
       const input = terminal.onData((data) => {
         void api.input(session.id, data).catch(report);
       });
+      // The PTY hears only a grid that changed: a resize that keeps the
+      // columns and rows (a pixel-wide drag) sends nothing.
+      let sent: string | undefined;
       const resize = () => {
         if (!container.current?.clientWidth || !container.current.clientHeight)
           return;
         fit.fit();
-        if (session.state !== 'exited' && session.pty)
-          void api
-            .resize(session.id, terminal.cols, terminal.rows)
-            .catch(report);
+        const grid = `${terminal.cols}x${terminal.rows}`;
+        if (session.state === 'exited' || !session.pty || grid === sent) return;
+        sent = grid;
+        void api
+          .resize(session.id, terminal.cols, terminal.rows)
+          .catch((reason: unknown) => {
+            // A refused resize is sent again on the next one.
+            sent = undefined;
+            report(reason);
+          });
       };
       const observer = new ResizeObserver(resize);
       observer.observe(container.current);

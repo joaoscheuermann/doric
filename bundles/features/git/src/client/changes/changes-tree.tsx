@@ -13,6 +13,7 @@ import {
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
 import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+import { memo, useMemo } from 'react';
 
 import type { ProjectChange } from '../../contracts/index.js';
 import {
@@ -38,17 +39,20 @@ type ChangesTreeProps = {
  * the repository is a row at depth 0 that expands like a directory, and its
  * changed paths are the same `FileTree` rows nested under it. The branch icon
  * and the repository's line totals are that row's own content, not a second
- * header shape.
+ * header shape. A refresh that answers the same repository leaves the row, and
+ * the tree it derives, as they were.
  */
-export function ChangesTree({
+export const ChangesTree = memo(function ChangesTree({
   repository,
   collapsed,
   selectedPath,
   onToggle,
   onOpen,
 }: ChangesTreeProps) {
-  const { entries, key, open, expanded, decorations, changes } =
-    changesTreeView(repository, '', collapsed);
+  const { entries, key, open, expanded, decorations, changes } = useMemo(
+    () => changesTreeView(repository, '', collapsed),
+    [repository, collapsed],
+  );
   if (entries.length === 0) return null;
   const label = repository.path || 'workspace';
   return (
@@ -124,4 +128,4 @@ export function ChangesTree({
       )}
     </SidebarMenuItem>
   );
-}
+});

@@ -333,6 +333,83 @@ test('a body that draws its header leaves no bar, and Autorizar below the body',
   );
 });
 
+test('the kinds are read once for every frame of a window, and blocks set during a render draw once after it', async () => {
+  const counts = { kinds: 0, revisions: 0 };
+  const services = servicesFor((id) => {
+    if (id === ArtifactKindV1.id) {
+      return {
+        list: async () => {
+          counts.kinds += 1;
+
+          return [
+            {
+              id: 'diagram',
+              blockType: 'diagram.body/v1',
+              bodyTag: 'diagram-body',
+            },
+          ];
+        },
+      };
+    }
+
+    if (id === UiV1.id) {
+      return {
+        create: (_tag: string, props?: Record<string, unknown>) =>
+          Object.assign(window.document.createElement('div'), props ?? {}),
+        dispose: () => undefined,
+      };
+    }
+
+    if (id === ArtifactsV1.id) {
+      return {
+        policy: async () => ({ policy: 'proceed' }),
+        revisions: async () => {
+          counts.revisions += 1;
+
+          return [{ artifactId: 'checkout-7f3a', revision: 1, state: 'open' }];
+        },
+      };
+    }
+
+    if (id === CommentsV1.id) return commentsApi([]);
+
+    return undefined;
+  });
+
+  // One definition per window, as the activation makes it; two frames of it.
+  const name = `artifacts-element-${tag++}`;
+  window.customElements.define(name, defineFrameElement() as never);
+  const frames = [1, 2].map(
+    () =>
+      window.document.createElement(name) as unknown as Record<
+        string,
+        unknown
+      > &
+        Element,
+  );
+
+  for (const frame of frames) {
+    frame.services = services;
+    frame.block = frameBlock;
+  }
+  await settle();
+
+  assert.equal(counts.kinds, 1);
+  assert.equal(counts.revisions, 2);
+
+  // The conversation reads the log again and again while a prompt runs:
+  // three readings of the same block, back to back, draw the frame twice —
+  // the one under way, then one more for the latest reading.
+  const [first] = frames as [Record<string, unknown> & Element];
+  first.block = { ...frameBlock };
+  first.block = { ...frameBlock };
+  first.block = { ...frameBlock };
+  await settle();
+
+  assert.equal(counts.kinds, 1);
+  assert.equal(counts.revisions, 4);
+});
+
 test('the comment gesture goes to a surface that takes it, else to the body', async () => {
   const frame = mount(defineFrameElement);
   const asked: unknown[] = [];

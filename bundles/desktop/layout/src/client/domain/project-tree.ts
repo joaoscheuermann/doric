@@ -52,13 +52,16 @@ export const withSelection = (
   const first = threadsOf(tree, selection.projectId).find(
     (thread) => thread.parentThreadId === undefined,
   );
-  return {
-    ...tree,
-    selection:
-      selection.threadId === undefined && first !== undefined
-        ? { ...selection, threadId: first.id }
-        : selection,
-  };
+  const next =
+    selection.threadId === undefined && first !== undefined
+      ? { ...selection, threadId: first.id }
+      : selection;
+  // Selecting what is already selected keeps the tree, so it changes nothing
+  // for the views and watchers that compare it.
+  return next.projectId === tree.selection.projectId &&
+    next.threadId === tree.selection.threadId
+    ? tree
+    : { ...tree, selection: next };
 };
 
 /**

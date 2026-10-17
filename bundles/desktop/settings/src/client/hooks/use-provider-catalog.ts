@@ -30,6 +30,9 @@ export type ProviderCatalog = {
  * The values are read through a reference, so a draft that changes — the name
  * being typed, a model being chosen — never re-reads the endpoint on its own.
  */
+/** The models until a read lists some, one value the table's memos can keep. */
+const noModels: readonly CatalogModel[] = [];
+
 export const useProviderCatalog = (
   values: ProviderValuesRef,
 ): ProviderCatalog => {
@@ -47,7 +50,7 @@ export const useProviderCatalog = (
   });
 
   return {
-    models: catalog.data ?? [],
+    models: catalog.data ?? noModels,
     loading: catalog.isPending || catalog.isFetching,
     error: catalog.isError ? messageFrom(catalog.error) : undefined,
     reload: () => setRead((value) => value + 1),

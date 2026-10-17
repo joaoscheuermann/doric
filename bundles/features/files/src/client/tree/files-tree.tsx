@@ -18,7 +18,7 @@ import {
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
 import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
-import { type ReactNode, useEffect, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useStore } from 'zustand/react';
 
 import {
@@ -92,6 +92,15 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
   const tree = useTree(projectId, cwd);
   const changes = useChanges(git, projectId, cwd);
   useProjectReads(projectId);
+  const open = useCallback(
+    (path: string) => {
+      if (projectId === undefined) return;
+      void commands
+        ?.execute(OPEN_FILE_COMMAND, { projectId, path })
+        .catch(() => undefined);
+    },
+    [commands, projectId],
+  );
 
   if (workspace === undefined) return null;
 
@@ -116,12 +125,8 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
             entries={tree.read.status === 'ready' ? tree.read.value : []}
             scope={expansionScope(projectId, root)}
             selectedPath={selectedPath}
-            changes={changes}
-            onOpen={(path) => {
-              void commands
-                ?.execute(OPEN_FILE_COMMAND, { projectId, path })
-                .catch(() => undefined);
-            }}
+            decorations={changes?.decorations}
+            onOpen={open}
           />
         )}
       </SandboxGate>
@@ -213,19 +218,21 @@ function SandboxGate({
 
 /**
  * The directory tree, read whole. A file row opens its tab beside this panel
- * rather than replacing the tree, so what was opened stays reachable.
+ * rather than replacing the tree, so what was opened stays reachable. Its props
+ * keep their identity while the tree and its marks are unchanged, so a refresh
+ * that only starts and settles a read leaves every row as it was.
  */
-function FilesView({
+const FilesView = memo(function FilesView({
   entries,
   scope,
   selectedPath,
-  changes,
+  decorations,
   onOpen,
 }: {
   readonly entries: TreeEntries;
   readonly scope: string;
   readonly selectedPath?: string;
-  readonly changes?: ChangesObservation;
+  readonly decorations?: ChangesObservation['decorations'];
   readonly onOpen: (path: string) => void;
 }) {
   const expanded = useStore(
@@ -250,12 +257,12 @@ function FilesView({
           entries={entries}
           expanded={expanded}
           selectedPath={selectedPath}
-          decorations={changes?.decorations}
+          decorations={decorations}
         />
       </SidebarMenu>
     </ScrollArea>
   );
-}
+});
 
 type TreeEntries = Extract<
   TreeObservation['read'],

@@ -107,8 +107,13 @@ export const defineTerminalElements = (client: TerminalClient) => {
     readonly terminalId?: string;
     readonly showHeader?: boolean;
   }) {
-    const terminals = useTerminals();
-    const session = terminals.find((terminal) => terminal.id === terminalId);
+    // The store keeps each unchanged record, so another terminal's update
+    // leaves this view's snapshot, and the view, as they were.
+    const session = useSubscribed(
+      store,
+      () => store.terminals().find((terminal) => terminal.id === terminalId),
+      undefined,
+    );
     return session ? (
       <TerminalView
         api={api}

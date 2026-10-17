@@ -98,4 +98,34 @@ describe('layout.workspace/v1', () => {
     assert.equal(heard, afterChange);
     await dispose();
   });
+
+  test('subscribers hear nothing when a selection or a load changes nothing', async () => {
+    const { workspace, dispose } = setup();
+    setTree({
+      threadsByProject: { p1: [thread('t1', 'p1')] },
+      selection: { projectId: 'p1', threadId: 't1' },
+    });
+    workspaceStore.setState({ loadingProjectThreads: new Set() });
+    let heard = 0;
+    const subscription = workspace.subscribe(() => {
+      heard += 1;
+    });
+    const store = workspaceStore.getState();
+
+    store.select({ projectId: 'p1', threadId: 't1' });
+    store.select({ projectId: 'p1' });
+    store.endThreadsLoad('p1');
+    const unchanged = heard;
+    store.beginThreadsLoad('p1');
+    store.beginThreadsLoad('p1');
+    const started = heard;
+    store.endThreadsLoad('p1');
+
+    assert.equal(unchanged, 0);
+    assert.equal(started, 1);
+    assert.equal(heard, 2);
+    assert.equal(workspace.selectedThread()?.id, 't1');
+    subscription.dispose();
+    await dispose();
+  });
 });

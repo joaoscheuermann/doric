@@ -31,11 +31,9 @@ export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 let workspace: LayoutWorkspace | undefined;
 let attached: Disposable | undefined;
-let version = 0;
 const listeners = new Set<() => void>();
 
 const bump = (): void => {
-  version += 1;
   for (const listener of [...listeners]) listener();
 };
 
@@ -60,8 +58,6 @@ const subscribe = (listener: () => void): (() => void) => {
     listeners.delete(listener);
   };
 };
-const snapshot = (): number => version;
-
 const read = (threadId: string): WorkspaceThread | undefined => {
   if (workspace === undefined) return undefined;
   try {
@@ -79,16 +75,20 @@ export const threadPath = (projectId: string, threadId: string): string =>
  * subscription. Opening it navigates to its conversation.
  */
 export function useDelegatedSource(threadId: string, services: Services) {
-  useSyncExternalStore(subscribe, snapshot, snapshot);
-  const thread = read(threadId);
+  // The two fields drawn are the snapshots, so a workspace change that leaves
+  // them alone (another Thread's lifecycle) does not re-render the block.
+  const projectIdOf = () => read(threadId)?.projectId;
+  const nameOf = () => read(threadId)?.name;
+  const projectId = useSyncExternalStore(subscribe, projectIdOf, projectIdOf);
+  const name = useSyncExternalStore(subscribe, nameOf, nameOf);
   return {
-    label: threadLabel(threadId, thread?.name),
+    label: threadLabel(threadId, name),
     open:
-      thread === undefined
+      projectId === undefined
         ? undefined
         : () =>
             services
               .use(NavigationV1)
-              .navigate(threadPath(thread.projectId, thread.id)),
+              .navigate(threadPath(projectId, threadId)),
   };
 }

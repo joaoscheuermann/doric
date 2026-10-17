@@ -262,3 +262,27 @@ export const pinPointOf = (
 
   return fallback;
 };
+
+/**
+ * `pinPointOf` over one derivation, resolving each anchor once. The pins
+ * are laid again on every zoom and every reading of the threads and drafts,
+ * and an anchor's element does not move between two readings of the same
+ * derivation — only a new derivation, or new bounds, measure again.
+ */
+export const anchorResolver = (
+  graph: SceneGraph | undefined,
+  bounds: BoundsOf | undefined,
+): ((
+  anchor: CommentAnchor,
+  fallback?: ContentPoint,
+) => ContentPoint | undefined) => {
+  const resolved = new Map<CommentAnchor, ContentPoint | undefined>();
+
+  return (anchor, fallback) => {
+    if (!resolved.has(anchor)) {
+      resolved.set(anchor, pinPointOf(anchor, graph, bounds));
+    }
+
+    return resolved.get(anchor) ?? fallback;
+  };
+};

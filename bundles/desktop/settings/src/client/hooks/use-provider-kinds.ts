@@ -26,6 +26,13 @@ export type ProviderKinds = {
  * nothing to reload: a failed read is the one thing a surface reports, because
  * without it no provider can be drawn.
  */
+/**
+ * The list until the catalog arrives, one value for every render: the autosave
+ * and its flush depend on the list, and a fresh empty one each render would
+ * restart the autosave's settle timer on renders that changed nothing.
+ */
+const noKinds: readonly ProviderKind[] = [];
+
 export const useProviderKinds = (): ProviderKinds => {
   const kinds = useQuery({
     queryKey: queryKeys.providerKinds,
@@ -34,7 +41,7 @@ export const useProviderKinds = (): ProviderKinds => {
   });
 
   return {
-    list: kinds.data ?? [],
+    list: kinds.data ?? noKinds,
     loading: kinds.isPending || kinds.isFetching,
     error: kinds.isError ? messageFrom(kinds.error) : undefined,
   };
