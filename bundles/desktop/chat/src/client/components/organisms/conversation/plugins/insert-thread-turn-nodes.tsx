@@ -19,6 +19,7 @@ import {
   syncPlan,
 } from '../../../../domain/conversation-sync.js';
 import type { Turn } from '../../../../domain/projector.js';
+import { terminalResultEquals } from '../../../../domain/terminal-result.js';
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -78,6 +79,11 @@ import {
   type RepliesTurnNode,
 } from '../nodes/replies-turn-node.js';
 import {
+  $createTerminalResultNode,
+  $isTerminalResultNode,
+  type TerminalResultNode,
+} from '../nodes/terminal-result-node.js';
+import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
@@ -110,6 +116,7 @@ type TurnBlock =
   | QueuedTurnNode
   | UserTurnNode
   | DelegatedTurnNode
+  | TerminalResultNode
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
@@ -135,6 +142,7 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isQueuedTurnNode(node) ||
   $isUserTurnNode(node) ||
   $isDelegatedTurnNode(node) ||
+  $isTerminalResultNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
@@ -154,6 +162,12 @@ const $createBlock = (
     case 'queued':
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
+      if (turn.terminal !== undefined)
+        return $createTerminalResultNode({
+          turnKey: key,
+          promptId: turn.promptId,
+          result: turn.terminal,
+        });
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
           turnKey: key,
@@ -289,7 +303,13 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         ) &&
         left.delegated?.kind === other.delegated?.kind &&
         left.delegated?.threadId === other.delegated?.threadId &&
-        left.delegated?.text === other.delegated?.text
+        left.delegated?.text === other.delegated?.text &&
+        // A terminal's answer is read from the prompt's own fields, so the
+        // block repaints only when one of them changed.
+        (left.terminal === undefined) === (other.terminal === undefined) &&
+        (left.terminal === undefined ||
+          other.terminal === undefined ||
+          terminalResultEquals(left.terminal, other.terminal))
       );
     }
     case 'activity': {
@@ -374,7 +394,9 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
   }
   if (
     turn.type === 'user' &&
-    ($isUserTurnNode(block) || $isDelegatedTurnNode(block))
+    ($isUserTurnNode(block) ||
+      $isDelegatedTurnNode(block) ||
+      $isTerminalResultNode(block))
   )
     block.setTurn(turn);
   else if (turn.type === 'agent' && $isAgentTurnNode(block))

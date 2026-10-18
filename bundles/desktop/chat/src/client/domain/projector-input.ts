@@ -3,6 +3,7 @@ import { delegatedInput } from './delegated.js';
 import type { Draft } from './projector.js';
 import { promptMessage, promptSummary } from './prompt-envelope.js';
 import type { QueueItem } from './queue.js';
+import { terminalResultInput } from './terminal-result.js';
 import type { ThreadEvent } from './workspace.js';
 
 /** Accepted input and its two distinct positions in the conversation. */
@@ -96,12 +97,17 @@ export const readInput = (
   )
     return undefined;
   inputs.set(item.promptId, { ...input, shown: true });
-  const delegated = delegatedInput(input.source, input.text);
+  const terminal = terminalResultInput(input.source, input.text);
+  const delegated =
+    terminal === undefined
+      ? delegatedInput(input.source, input.text)
+      : undefined;
   return {
     type: 'user',
     promptId: item.promptId,
     events: [item],
-    text: delegated === undefined ? shownText(input) : '',
+    text:
+      delegated === undefined && terminal === undefined ? shownText(input) : '',
     accepted: true,
     // The comments the log wrote below this input — the flush of a send —
     // are the margin of the words it carries: they render above them, the
@@ -109,6 +115,7 @@ export const readInput = (
     comments: [...(comments.get(item.promptId) ?? [])],
     awaiting: false,
     ...(delegated === undefined ? {} : { delegated }),
+    ...(terminal === undefined ? {} : { terminal }),
   };
 };
 

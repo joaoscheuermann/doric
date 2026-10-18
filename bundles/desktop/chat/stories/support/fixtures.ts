@@ -267,6 +267,41 @@ export const terminalResult = (input: {
 
 export const testCommand = 'npm test -- --run src/checkout';
 
+/**
+ * The prompt a settled background command writes into its Thread, as
+ * `terminal/v1` frames it: the header, the outcome, and the last of each
+ * stream the host kept.
+ */
+export const backgroundResult = (input: {
+  readonly terminalId: string;
+  /** The prompt that started the command. */
+  readonly promptId: string;
+  readonly command: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+  readonly reason?: 'exited' | 'timeout' | 'terminated' | 'failed';
+  readonly durationMs?: number;
+}): string =>
+  [
+    '# Background terminal result',
+    '',
+    `Terminal: ${input.terminalId}`,
+    `Originating prompt: ${input.promptId}`,
+    `Command: ${input.command}`,
+    `Exit code: ${input.exitCode ?? 0}`,
+    `Reason: ${input.reason ?? 'exited'}`,
+    `Duration: ${input.durationMs ?? 2_340} ms`,
+    '',
+    '## Standard output (last 12000 characters)',
+    '',
+    input.stdout ?? '',
+    '',
+    '## Standard error (last 12000 characters)',
+    '',
+    input.stderr ?? '',
+  ].join('\n');
+
 export const terminalArgs = (command: string, background = false): string =>
   JSON.stringify({
     command,

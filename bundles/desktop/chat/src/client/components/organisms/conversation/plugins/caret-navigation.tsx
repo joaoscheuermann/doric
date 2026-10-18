@@ -68,6 +68,7 @@ import { TURN_AUTHOR_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { $isActivityTurnNode } from '../nodes/activity-turn-node.js';
 import { $isDelegatedTurnNode } from '../nodes/delegated-turn-node.js';
 import { $isQueueNode } from '../nodes/queue-node.js';
+import { $isTerminalResultNode } from '../nodes/terminal-result-node.js';
 import { $isThinkingTurnNode } from '../nodes/thinking-turn-node.js';
 import { $isToolTurnNode } from '../nodes/tool-turn-node.js';
 import { $atBlockEnd, $atBlockStart, $blockOf } from './blocks.js';
@@ -336,7 +337,8 @@ const $toggleFocused = (): void => {
   if (
     $isThinkingTurnNode(node) ||
     $isToolTurnNode(node) ||
-    $isDelegatedTurnNode(node)
+    $isDelegatedTurnNode(node) ||
+    $isTerminalResultNode(node)
   )
     node.toggle();
 };

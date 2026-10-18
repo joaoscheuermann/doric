@@ -142,6 +142,55 @@ describe('thread event projection', () => {
     assert.equal(textOf(turn), '');
   });
 
+  test("carries a background terminal result as the turn's own block", () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: [
+          '# Background terminal result',
+          '',
+          'Terminal: terminal-3f8a',
+          'Originating prompt: prompt-9',
+          'Command: npm test',
+          'Exit code: 3',
+          'Reason: exited',
+          'Duration: 1940 ms',
+          '',
+          '## Standard output (last 12000 characters)',
+          '',
+          'ok',
+          '',
+          '## Standard error (last 12000 characters)',
+          '',
+        ].join('\n'),
+        source: { kind: 'terminal', terminalId: 'terminal-3f8a' },
+      }),
+    ]);
+
+    const turn = projection.turns[0];
+    const terminal = turn?.type === 'user' ? turn.terminal : undefined;
+    assert.equal(terminal?.terminalId, 'terminal-3f8a');
+    assert.equal(terminal?.command, 'npm test');
+    assert.equal(terminal?.exitCode, 3);
+    assert.equal(terminal?.stdout, 'ok');
+    assert.equal(terminal?.stderr, '');
+    assert.equal(textOf(turn), '');
+  });
+
+  test('shows a terminal prompt the host did not frame as its own text', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'output without the host header',
+        source: { kind: 'terminal', terminalId: 'terminal-3f8a' },
+      }),
+    ]);
+
+    const turn = projection.turns[0];
+    assert.equal(turn?.type === 'user' ? turn.terminal : 'x', undefined);
+    assert.equal(textOf(turn), 'output without the host header');
+  });
+
   test('accumulates consecutive reasoning deltas into one thinking turn', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'Let me ' }),

@@ -83,3 +83,15 @@ export const replyOpenness = (
   hasContent: text.trim().length > 0,
   defaultOpen: state !== 'done',
 });
+
+/**
+ * A background terminal's answer: open when the command did not finish
+ * cleanly — the one result a reader must not scroll past — and folded away
+ * when it did, since its output is what the reader asked for earlier and the
+ * header already names the command.
+ */
+export const terminalResultOpenness = (failed: boolean): Openness => ({
+  active: false,
+  hasContent: true,
+  defaultOpen: failed,
+});

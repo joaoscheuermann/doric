@@ -5,6 +5,7 @@ import {
   formatCommandPreview,
   formatDuration,
   parseTerminalCall,
+  wholeStream,
 } from '../src/client/domain/terminal-tool.js';
 
 describe('terminal tool domain parsing', () => {
@@ -101,5 +102,21 @@ describe('terminal tool domain parsing', () => {
     assert.equal(formatDuration(1500), '1.5s');
     assert.equal(formatDuration(2000), '2s');
     assert.equal(formatDuration(65_000), '1m 5s');
+  });
+
+  test('reads a whole output text as one stream that keeps every line', () => {
+    const stream = wholeStream(
+      'Test Files  2 passed (2)\nTests  12 passed (12)\n',
+    );
+
+    assert.deepEqual(stream?.head, [
+      'Test Files  2 passed (2)',
+      'Tests  12 passed (12)',
+    ]);
+    assert.equal(stream?.lines, 2);
+    assert.equal(stream?.tail.length, 0);
+    assert.equal(stream?.omittedLines, 0);
+    // A text with no lines left is no stream at all, so the card draws nothing.
+    assert.equal(wholeStream('\n\n'), undefined);
   });
 });

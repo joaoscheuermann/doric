@@ -27,6 +27,7 @@ import {
   statesFailure,
 } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
+import type { TerminalResult } from './terminal-result.js';
 import type { ThreadEvent } from './workspace.js';
 
 export type PromptStatus =
@@ -49,10 +50,16 @@ type TurnBase = {
   readonly events: readonly ThreadEvent[];
 };
 
-/** The human's prompt, or another Thread's input, opening a job. */
+/**
+ * The human's prompt, another Thread's input or a background terminal's answer,
+ * opening a job.
+ */
 export type UserTurn = TurnBase & {
   readonly type: 'user';
-  /** The prompt as written; empty when another Thread wrote it. */
+  /**
+   * The prompt as written; empty when another Thread or a background terminal
+   * wrote it, since the block reads the input's own fields instead.
+   */
   readonly text: string;
   readonly accepted: boolean;
   /**
@@ -63,6 +70,12 @@ export type UserTurn = TurnBase & {
   readonly comments: readonly TurnComment[];
   /** Set when another Thread wrote this input rather than the human. */
   readonly delegated?: DelegatedInput;
+  /**
+   * Set when a background terminal wrote this input: the settled command, read
+   * from the prompt the host enqueued, which the transcript draws as its own
+   * block instead of the Markdown the host framed it in.
+   */
+  readonly terminal?: TerminalResult;
   /**
    * Whether the agent has still to do anything about this prompt: the log has
    * accepted it and not moved past it, so a surface can show that it is waiting

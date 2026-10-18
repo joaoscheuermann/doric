@@ -74,7 +74,9 @@ const readStream = (value: unknown): TerminalStream | undefined => {
   };
 };
 
-const isTerminationReason = (value: unknown): value is TerminationReason =>
+export const isTerminationReason = (
+  value: unknown,
+): value is TerminationReason =>
   value === 'exited' ||
   value === 'timeout' ||
   value === 'terminated' ||
@@ -173,6 +175,28 @@ export const formatCommandPreview = (
   const collapsed = command.replace(/\s+/g, ' ').trim();
   if (collapsed.length <= maxChars) return collapsed;
   return `${collapsed.slice(0, maxChars - 1)}…`;
+};
+
+/**
+ * A whole output text as a stream a terminal card can draw: every line kept, so
+ * nothing reads as omitted and the two halves of a stream are just its lines.
+ * A text with no lines left once its trailing newlines are trimmed is no stream
+ * at all, which is what a card draws as nothing.
+ */
+export const wholeStream = (text: string): TerminalStream | undefined => {
+  const trimmed = text.trimEnd();
+  if (trimmed.length === 0) return undefined;
+
+  const lines = trimmed.split('\n');
+  return {
+    bytes: new TextEncoder().encode(text).length,
+    lines: lines.length,
+    head: lines,
+    tail: [],
+    omittedLines: 0,
+    omittedBytes: 0,
+    truncated: false,
+  };
 };
 
 /** Human-readable duration for a completed terminal command. */

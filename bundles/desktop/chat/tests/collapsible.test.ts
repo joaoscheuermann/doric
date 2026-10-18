@@ -6,6 +6,7 @@ import {
   blockToggled,
   replyOpenness,
   settledOpenness,
+  terminalResultOpenness,
   thinkingOpenness,
   toolOpenness,
 } from '../src/client/domain/collapsible.js';
@@ -132,5 +133,19 @@ describe('what opens each block on its own', () => {
       blockOpen(false, replyOpenness('await', '40 or 48px?')),
       false,
     );
+  });
+
+  test('a background terminal result is folded when it finished cleanly', () => {
+    assert.equal(blockOpen(null, terminalResultOpenness(false)), false);
+    assert.equal(blockToggled(null, terminalResultOpenness(false)), true);
+  });
+
+  test('a background terminal result is open when its command did not finish cleanly', () => {
+    assert.equal(blockOpen(null, terminalResultOpenness(true)), true);
+  });
+
+  test("the reader's choice on a terminal result stands over the outcome", () => {
+    assert.equal(blockOpen(true, terminalResultOpenness(false)), true);
+    assert.equal(blockOpen(false, terminalResultOpenness(true)), false);
   });
 });

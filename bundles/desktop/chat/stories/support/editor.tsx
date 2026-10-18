@@ -82,6 +82,10 @@ import {
   RepliesTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/replies-turn-node.js';
 import {
+  $createTerminalResultNode,
+  TerminalResultNode,
+} from '../../src/client/components/organisms/conversation/nodes/terminal-result-node.js';
+import {
   $createThinkingTurnNode,
   ThinkingTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/thinking-turn-node.js';
@@ -238,6 +242,7 @@ export function StoryWindow({
 const conversationNodes = [
   UserTurnNode,
   DelegatedTurnNode,
+  TerminalResultNode,
   AgentTurnNode,
   ThinkingTurnNode,
   ToolTurnNode,
@@ -359,6 +364,12 @@ const $createTurnBlock = (
     case 'queued':
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
+      if (turn.terminal !== undefined)
+        return $createTerminalResultNode({
+          turnKey: key,
+          promptId: turn.promptId,
+          result: turn.terminal,
+        });
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
           turnKey: key,
@@ -441,6 +452,7 @@ export const $appendTurns = (
     if (
       turn.type === 'user' &&
       turn.delegated === undefined &&
+      turn.terminal === undefined &&
       turn.comments.length > 0
     )
       root.append($createCommentLinesNode(turn.promptId, turn.comments));
