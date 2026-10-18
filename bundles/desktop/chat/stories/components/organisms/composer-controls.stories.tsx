@@ -103,7 +103,7 @@ export const EditingQueuedPrompt = {
   },
 };
 
-/** An edit open while the Thread runs: Pause execution beside Save. */
+/** An edit open while the Thread runs: Stop execution beside Save. */
 export const EditingWhileRunning = {
   render: () => {
     seedQueueEdit(

@@ -17,7 +17,7 @@ export const InFooter = {
         main
       </Button>
       <ToolbarDivider />
-      <Button size="icon-sm" variant="solid" aria-label="Send (Cmd+Enter)">
+      <Button size="icon-sm" variant="default" aria-label="Send (Cmd+Enter)">
         <ArrowUpIcon />
       </Button>
     </footer>

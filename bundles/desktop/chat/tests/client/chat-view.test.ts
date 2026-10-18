@@ -601,7 +601,7 @@ test('without a selected Thread the composer offers a disabled send', async () =
   assert.equal(send?.disabled, true);
 });
 
-test('while the selected Thread runs, the composer pauses its active prompt', async () => {
+test('while the selected Thread runs, the composer stops its active prompt', async () => {
   opened = await openChatWindow({
     url: 'doric://app/elsewhere',
     host: host(thread(), {
@@ -613,9 +613,9 @@ test('while the selected Thread runs, the composer pauses its active prompt', as
   });
   const region = await footer(opened);
 
-  const pause = button(region, 'Pause (Esc)');
-  assert.equal(pause !== null, true);
-  pause?.click();
+  const stop = button(region, 'Stop (Esc)');
+  assert.equal(stop !== null, true);
+  stop?.click();
   await settle();
 
   const paused = opened
@@ -721,7 +721,7 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   );
 });
 
-test('a child conversation footer pauses its Thread while the main Thread stays selected', async () => {
+test('a child conversation footer stops its Thread while the main Thread stays selected', async () => {
   const childId = '44444444-4444-4444-8444-444444444444';
   const childPrompt = '55555555-5555-4555-8555-555555555555';
   let create:
@@ -753,14 +753,14 @@ test('a child conversation footer pauses its Thread while the main Thread stays 
   const panel = create('chat-thread-panel', { projectId, threadId: childId });
   opened.document.body.append(panel);
   await settle(100);
-  assert.ok(button(panel, 'Pause (Esc)'));
-  button(panel, 'Pause (Esc)')?.click();
+  assert.ok(button(panel, 'Stop (Esc)'));
+  button(panel, 'Stop (Esc)')?.click();
   await settle();
   assert.deepEqual(
     opened.received('runtime.threads/v1.pause').map((call) => call.input),
     [{ id: childId, promptId: childPrompt }],
   );
-  button(mainFooter, 'Pause (Esc)')?.click();
+  button(mainFooter, 'Stop (Esc)')?.click();
   await settle();
   assert.deepEqual(
     opened.received('runtime.threads/v1.pause').map((call) => call.input),

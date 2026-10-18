@@ -4,25 +4,39 @@ import {
   ArrowUpIcon,
   CheckIcon,
   type LucideProps,
-  PauseIcon,
   PlayIcon,
+  RotateCcwIcon,
+  SquareIcon,
 } from 'lucide-react';
 
 /**
- * A pause drawn solid: inside the solid footer button the outline alone reads
- * faint, so the icon carries its whole fill.
+ * The send glyph, a touch thicker than the drawn default: the arrow alone
+ * inside the filled button reads light beside the solid stop.
  */
-const SolidPauseIcon = (props: LucideProps) => (
-  <PauseIcon fill="currentColor" {...props} />
+const SendIcon = (props: LucideProps) => (
+  <ArrowUpIcon strokeWidth={2.5} {...props} />
 );
 
-/** One control sends a draft, resumes queued work, or pauses dispatch. */
+/**
+ * The solid glyphs the control wears: inside its filled button an outline
+ * alone reads faint, so the play and the stop carry their whole fill.
+ */
+const SolidPlayIcon = (props: LucideProps) => (
+  <PlayIcon fill="currentColor" {...props} />
+);
+
+const SolidStopIcon = (props: LucideProps) => (
+  <SquareIcon fill="currentColor" {...props} />
+);
+
+/** One control sends a draft, resumes queued work, or stops the running prompt. */
 export function ComposerButton({
   canSend,
   disabled = false,
   onSend,
   onStop,
   onResume,
+  onRetry,
   action,
 }: {
   readonly canSend: boolean;
@@ -30,19 +44,26 @@ export function ComposerButton({
   readonly onSend: () => void;
   readonly onStop: () => void;
   readonly onResume: () => void;
-  readonly action: 'send' | 'resume' | 'pause' | 'save';
+  /**
+   * Nothing reaches a retry yet — `composerAction` never picks one — so the
+   * state is defined ahead of the footer that will offer it.
+   */
+  readonly onRetry?: () => void;
+  readonly action: 'send' | 'resume' | 'pause' | 'save' | 'retry';
 }) {
   const label = {
     send: 'Send (Cmd+Enter)',
     resume: 'Resume queue',
-    pause: 'Pause (Esc)',
+    pause: 'Stop (Esc)',
     save: 'Save edit (Cmd/Ctrl+Enter)',
+    retry: 'Retry',
   }[action];
   const Icon = {
-    send: ArrowUpIcon,
-    resume: PlayIcon,
-    pause: SolidPauseIcon,
+    send: SendIcon,
+    resume: SolidPlayIcon,
+    pause: SolidStopIcon,
     save: CheckIcon,
+    retry: RotateCcwIcon,
   }[action];
   return (
     <Tooltip>
@@ -54,11 +75,15 @@ export function ComposerButton({
               disabled || ((action === 'send' || action === 'save') && !canSend)
             }
             size="icon-sm"
-            variant="solid"
+            variant="default"
             onClick={
-              { send: onSend, resume: onResume, pause: onStop, save: onSend }[
-                action
-              ]
+              {
+                send: onSend,
+                resume: onResume,
+                pause: onStop,
+                save: onSend,
+                retry: onRetry,
+              }[action]
             }
           />
         }

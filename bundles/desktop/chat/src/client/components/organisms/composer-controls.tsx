@@ -1,5 +1,5 @@
 import { Button } from 'desktop/ui/button';
-import { PauseIcon } from 'lucide-react';
+import { SquareIcon } from 'lucide-react';
 import { useStore } from 'zustand/react';
 
 import { composerAction } from '../../domain/queue.js';
@@ -23,7 +23,7 @@ type ComposerControlsProps = {
 
 /**
  * The composer's part of the conversation footer (`workspace-footer.tsx`
- * 62-88): the divider, "Pause execution" while a queued edit is open and the
+ * 62-88): the divider, "Stop execution" while a queued edit is open and the
  * Thread runs, and the send/stop/resume/save button.
  */
 export function ComposerControls({
@@ -45,11 +45,11 @@ export function ComposerControls({
       {edit && running && (
         <Button
           size="icon-sm"
-          variant="solid"
-          aria-label="Pause execution"
+          variant="default"
+          aria-label="Stop execution"
           onClick={onStop}
         >
-          <PauseIcon fill="currentColor" />
+          <SquareIcon fill="currentColor" />
         </Button>
       )}
       <ComposerButton

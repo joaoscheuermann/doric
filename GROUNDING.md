@@ -223,7 +223,7 @@ with no conversation header. Opening a subthread from the tree or a conversation
 link opens a reusable workspace tab on the right, preserving the current main
 Thread in the same Project. A direct subthread route first establishes its root
 conversation on the left. The subthread tab contains its history, composer and
-send/pause/queue controls, scoped to that Thread; composer signals and send requests
+send/stop/queue controls, scoped to that Thread; composer signals and send requests
 are isolated by Thread so simultaneous conversations cannot send each other's draft.
 Transcript synchronization does not enter the editor's undo history. User edits
 retain at most 50 undo entries per conversation, bounding retained editor states.
