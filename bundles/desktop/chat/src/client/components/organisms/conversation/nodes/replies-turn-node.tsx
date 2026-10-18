@@ -32,9 +32,8 @@ import type {
   RepliesTurn,
 } from '../../../../domain/projector.js';
 import { useCommentThreads } from '../../../../hooks/use-comment-threads.js';
-import { openCommentThread } from '../../../../utility/comment-thread.js';
 import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
-import { CommentStateGlyph } from '../../../molecules/comment-marker.js';
+import { CommentThreadPin } from '../../../molecules/comment-thread-pin.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
@@ -63,7 +62,7 @@ function ReplyRow({
   const thread = threads.get(reply.rootId);
   const state = thread === undefined ? 'open' : threadState(thread);
   const target = thread?.target ?? reply.reply.target;
-  const pin = reply.asked?.pin;
+  const pin = reply.asked?.pin ?? thread?.messages[0]?.pin;
   const note = reply.asked?.text.trim() ?? '';
 
   return (
@@ -77,28 +76,25 @@ function ReplyRow({
         focused={focused}
         openness={replyOpenness(state, reply.reply.text)}
         onChosenChange={onChosenChange}
-        toggleLabel={`Replied to comment${pin === undefined ? '' : ` ${pin}`}${note.length === 0 ? '' : `: ${note}`}`}
+        toggleLabel={`Replied to: ${note}`}
         label={
           <span className="flex min-w-0 items-center gap-1">
-            <span className="shrink-0 font-normal">Replied to</span>
-            {pin !== undefined && (
-              <span className="shrink-0 font-light tabular-nums">[{pin}]</span>
-            )}
+            <span className="shrink-0 font-normal">Replied to:</span>
             {note.length > 0 && (
               <span className="min-w-0 truncate font-light">{note}</span>
             )}
           </span>
         }
         trailing={
-          <CommentStateGlyph
-            state={state}
-            onClick={(event) =>
-              openCommentThread(event.currentTarget, {
-                commentId: reply.rootId,
-                target,
-              })
-            }
-          />
+          pin === undefined ? undefined : (
+            <CommentThreadPin
+              pin={pin}
+              state={state}
+              thread={thread}
+              target={target}
+              rootId={reply.rootId}
+            />
+          )
         }
       >
         <ReadonlyMarkdown text={reply.reply.text} />

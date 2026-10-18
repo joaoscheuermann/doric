@@ -907,12 +907,15 @@ comment threads with the states `done`, `await` (the agent replied last) and
 `open`. Agent replies draw where they happened in the agent turn as collapsible
 `Replied to [pin]` rows (folded when the thread is `done`, open otherwise, the
 reader's toggle winning), and successful `comment_reply` tool rows are hidden;
-the comment lines of a user turn draw no state chip (the state is read out to
-screen readers only). A click on a user-turn comment line or on a reply row's state glyph dispatches the
-bubbling, composed DOM event `doric:comment-thread-open` with
-`detail: { commentId, target }` (the root's id, the target without `revision`,
-which means the artifact's latest revision) and reveals the latest block of that
-target; external blocks carry `data-chat-block-id`.
+the comment lines of a user turn draw no state (it is read out to screen
+readers only). A reply row wears the comment's **pin** — the teardrop, numbered,
+coloured by the thread's state — which opens a popover with the thread and, in
+its header, the button that takes the reader to the comment on the canvas. That
+button, and a click on a user-turn comment line, dispatch the bubbling, composed
+DOM event `doric:comment-thread-open` with `detail: { commentId, target }` (the
+root's id, the target without `revision`, which means the artifact's latest
+revision) and reveal the latest block of that target; external blocks carry
+`data-chat-block-id`.
 
 `/bundles/features/papercraft` owns the `preview` artifact kind, the
 `papercraft.previews/v1` service, the `papercraft_preview` tool (order 1700)
@@ -948,9 +951,9 @@ elements stamped from the file (or all elements with that selector), the one
 whose text matches, then the recorded `index`, then the only candidate, then
 the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
 It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
-root's target. Pins show the thread state: a draft is dashed, an open comment primary
-with its reply count, an awaiting one an orange `?`, a done one a muted green
-`✓`; a control shows or hides the resolved ones. A dashed hover outline with
+root's target. Pins show the thread state by colour alone — a draft is dashed,
+an open comment primary, an awaiting one orange, a done one green (no badge);
+a control shows or hides the resolved ones. A dashed hover outline with
 the label `element · file:line` follows the pointer in any mode, focused or
 not: to the element a comment would land on while the comment tool is armed
 (`Alt` forces a free point), else to the element under the pointer; nothing is

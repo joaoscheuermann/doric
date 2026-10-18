@@ -1354,24 +1354,13 @@ test('sent pins say where their thread stands, and the control counts the open o
     (state) => state === 'done',
     'the resolved thread never became a pin',
   );
-  // The reader answered last: open, with its replies counted.
+  // The reader answered last: open; the colour alone says the state, no badge.
   assert.equal(stateOfPin('1')?.dataset.state, 'open');
-  assert.equal(
-    stateOfPin('1')?.querySelector('[data-testid="papercraft-pin-badge"]')
-      ?.textContent,
-    '2',
-  );
   // The agent asked last: the thread awaits the reader.
   assert.equal(stateOfPin('2')?.dataset.state, 'await');
   assert.equal(
-    stateOfPin('2')?.querySelector('[data-testid="papercraft-pin-badge"]')
-      ?.textContent,
-    '?',
-  );
-  assert.equal(
-    stateOfPin('3')?.querySelector('[data-testid="papercraft-pin-badge"]')
-      ?.textContent,
-    '✓',
+    mounted.frame.querySelector('[data-testid="papercraft-pin-badge"]'),
+    null,
   );
   // The replies are no pins; the control counts the unresolved roots.
   assert.equal(

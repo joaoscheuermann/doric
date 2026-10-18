@@ -25,6 +25,7 @@
 // place things. What confirming the note means is the surface's: a new draft
 // joins the stack.
 
+import { type CommentPinState, CommentPin as Pin } from 'desktop/ui/comment-pin';
 import { cn } from 'desktop/ui/utils';
 import { type ReactNode, useRef } from 'react';
 
@@ -99,7 +100,7 @@ function PendingPin({
     <span
       data-testid="papercraft-pending-pin"
       aria-hidden="true"
-      className="papercraft-pin papercraft-pin-pending pointer-events-none absolute z-20"
+      className="papercraft-pin-pending pointer-events-none absolute z-20 rounded-[9999px_9999px_9999px_0] shadow-md"
       style={pinBox(surfacePoint(point, viewport), PENDING_SIZE)}
     />
   );
@@ -125,15 +126,6 @@ const titleOf = (pin: CommentPin): string | undefined => {
   return parts.length === 0 ? undefined : parts.join(' · ');
 };
 
-/** The badge a pin wears: `?` awaiting, `✓` resolved, else its reply count. */
-const badgeOf = (pin: CommentPin): string | undefined => {
-  if (pin.state === 'await') return '?';
-  if (pin.state === 'done') return '✓';
-  if (pin.state === 'open' && pin.replies > 0) return String(pin.replies);
-
-  return undefined;
-};
-
 /** The pin of a comment already there: its number, its state. */
 function Balloon({
   pin,
@@ -146,14 +138,11 @@ function Balloon({
   readonly viewport: Viewport;
   readonly onOpen?: () => void;
 }) {
-  const badge = badgeOf(pin);
-
   return (
-    <button
-      type="button"
+    <Pin
+      state={pin.state as CommentPinState}
       data-testid="papercraft-pin"
       data-pin={String(pin.pin)}
-      data-state={pin.state}
       data-active={active ? 'true' : undefined}
       data-detached={pin.detached === true ? 'true' : undefined}
       aria-label={`Comentário ${String(pin.pin)} · ${STATE_LABEL[pin.state]}${
@@ -161,8 +150,7 @@ function Balloon({
       }`}
       title={titleOf(pin)}
       className={cn(
-        'papercraft-pin papercraft-pin-placed pointer-events-auto absolute z-20 flex items-center justify-center text-[11px] font-semibold tabular-nums',
-        `papercraft-pin-${pin.state}`,
+        'pointer-events-auto absolute z-20',
         pin.detached === true && 'papercraft-pin-detached',
         active && 'papercraft-pin-active',
       )}
@@ -173,16 +161,7 @@ function Balloon({
       }}
     >
       {String(pin.pin)}
-      {badge === undefined ? null : (
-        <span
-          data-testid="papercraft-pin-badge"
-          aria-hidden="true"
-          className="papercraft-pin-badge absolute -top-1.5 -right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] leading-none"
-        >
-          {badge}
-        </span>
-      )}
-    </button>
+    </Pin>
   );
 }
 

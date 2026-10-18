@@ -1,11 +1,11 @@
 // The agent's answers to the reader's comments as the reader meets them in a
 // window: each answer a row of the agent's turn, drawn like a tool call —
-// `Replied to [n]`, the note it answers and the thread's state as one glyph,
+// `Replied to [n]`, the note it answers and the thread's state as its pin,
 // folded once the thread is resolved and open while the agent waits for the
-// reader; the user turn's lines, which draw no state chip and read the
-// thread's state out, following later resolutions live; and the event a line or a row's glyph dispatches for the
-// bundle that owns the comment's target to open its thread on the target's
-// latest drawing.
+// reader; the user turn's lines, which draw no pin and read the thread's state
+// out, following later resolutions live; and the event a line, or a row's pin
+// header button, dispatches for the bundle that owns the comment's target to
+// open its thread on the target's latest drawing.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -181,9 +181,17 @@ const row = (window: ChatWindow): HTMLElement | null =>
 const header = (window: ChatWindow): HTMLButtonElement | null =>
   row(window)?.querySelector('button[aria-label^="Replied to"]') ?? null;
 
-/** The glyph at the row's end, which opens the thread. */
-const glyph = (window: ChatWindow): HTMLButtonElement | null =>
-  row(window)?.querySelector('button[data-comment-state]') ?? null;
+/** The pin at the row's end, which opens the thread's popover. */
+const pin = (window: ChatWindow): HTMLButtonElement | null =>
+  row(window)?.querySelector('button[data-comment-pin]') ?? null;
+
+/** The thread popover a pin opens; it portals out of the row. */
+const popover = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector('[data-comment-thread="comment-a"]');
+
+/** The popover's header button, which takes the reader to the comment in the canvas. */
+const jump = (window: ChatWindow): HTMLButtonElement | null =>
+  popover(window)?.querySelector('button[data-comment-jump]') ?? null;
 
 /** Whether the row shows the agent's words. */
 const showsAnswer = (window: ChatWindow): boolean =>
@@ -215,7 +223,7 @@ test("the agent's answer is a row of its turn, after its words, naming the comme
   assert.ok(reply, 'the reply row stands in the transcript');
   assert.match(
     header(window)?.textContent ?? '',
-    /Replied to\s*\[1\]\s*aumenta o botão/,
+    /Replied to:\s*aumenta o botão/,
   );
   // It stands where the agent wrote it: after the words before the call.
   const words = [
@@ -233,10 +241,11 @@ test("the agent's answer is a row of its turn, after its words, naming the comme
   );
 });
 
-test('a resolved thread folds its row to the glyph `✓`, and the reader opens it', async () => {
+test('a resolved thread folds its row, its pin wearing the done state, and the reader opens it', async () => {
   const window = await open(answered);
 
-  assert.equal(glyph(window)?.textContent, '✓');
+  assert.equal(pin(window)?.textContent, '1');
+  assert.equal(pin(window)?.getAttribute('data-comment-state'), 'done');
   assert.equal(showsAnswer(window), false);
 
   header(window)?.click();
@@ -245,7 +254,7 @@ test('a resolved thread folds its row to the glyph `✓`, and the reader opens i
   assert.equal(showsAnswer(window), true);
 });
 
-test('a thread waiting for the reader opens its row with the glyph `?`, and a later resolution folds it', async () => {
+test('a thread waiting for the reader opens its row, its pin wearing the await state, and a later resolution folds it', async () => {
   const window = await open(answered);
   await push(
     window,
@@ -256,9 +265,10 @@ test('a thread waiting for the reader opens its row with the glyph `?`, and a la
     }),
   );
 
-  assert.equal(glyph(window)?.textContent, '?');
+  assert.equal(pin(window)?.getAttribute('data-comment-state'), 'await');
+  assert.equal(pin(window)?.textContent, '1');
   assert.match(spoken(window), /waiting on you, 1 reply$/);
-  // The line draws no chip: the reply row's glyph is where the state shows.
+  // The line draws no pin: the reply row's pin is where the state shows.
   assert.equal(
     window.document.querySelector('[data-turn-comments] [data-comment-state]'),
     null,
@@ -274,7 +284,7 @@ test('a thread waiting for the reader opens its row with the glyph `?`, and a la
     }),
   );
 
-  assert.equal(glyph(window)?.textContent, '✓');
+  assert.equal(pin(window)?.getAttribute('data-comment-state'), 'done');
   assert.match(spoken(window), /resolved, 1 reply$/);
   assert.equal(showsAnswer(window), false);
 });
@@ -324,11 +334,19 @@ test("clicking a sent comment's line opens its thread on the latest preview of i
   );
 });
 
-test("a row's glyph opens the thread on the latest preview too, without folding the row", async () => {
+test("a row's pin opens the thread's popover, and its header button reaches the latest preview without folding the row", async () => {
   const window = await open(answered);
   const seen = asked(window);
 
-  glyph(window)?.click();
+  pin(window)?.click();
+  await settle(20);
+
+  // The pin opens the thread in place; the canvas is not asked yet.
+  assert.deepEqual(seen, []);
+  assert.match(popover(window)?.textContent ?? '', /aumenta o botão/);
+  assert.equal(showsAnswer(window), false);
+
+  jump(window)?.click();
   await settle(20);
 
   assert.deepEqual(seen, [{ commentId: 'comment-a', target: latestTarget }]);

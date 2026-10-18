@@ -54,62 +54,14 @@
 }
 
 /*
- * A comment pin: a teardrop, round but for its bottom-left corner — the tip,
- * which sits on the point it annotates. It grows from its tip on hover.
+ * A pin's shape, its fills and its growth live in the pin component
+ * (`desktop/ui/comment-pin`); what the canvas owns stays here: the pending
+ * marker, the active ring and the detached stacking.
  */
-.papercraft-pin {
-  border-radius: 9999px 9999px 9999px 0;
-  box-shadow: var(--shadow-md);
-  transform-origin: 0 100%;
-  transition: transform 0.12s;
-}
-
-.papercraft-pin-placed:hover {
-  transform: scale(1.08);
-}
 
 /* The pin of a comment being written: where it will land. */
 .papercraft-pin-pending {
   background: var(--primary);
-}
-
-/* A draft: its first comment is still in the composer stack. */
-.papercraft-pin-draft {
-  background: var(--popover);
-  color: var(--primary);
-  border: 1.5px dashed var(--primary);
-}
-
-/* An open thread. */
-.papercraft-pin-open {
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-
-/* A thread awaiting the reader: the agent spoke last. */
-.papercraft-pin-await {
-  background: var(--paper-orange);
-  /* The orange is the same in both themes, and so is the ink on it. */
-  color: #1d1300;
-}
-
-/* A resolved thread. */
-.papercraft-pin-done {
-  background: var(--popover);
-  color: var(--muted-foreground);
-  border: 1px solid var(--border);
-}
-
-/* The badge a pin wears: its reply count, `?` or `✓`. */
-.papercraft-pin-badge {
-  background: var(--foreground);
-  color: var(--background);
-  font-weight: 600;
-}
-
-.papercraft-pin-done .papercraft-pin-badge {
-  background: var(--paper-green);
-  color: var(--primary-foreground);
 }
 
 /* The pin whose thread is open. */

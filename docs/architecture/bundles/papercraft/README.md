@@ -259,14 +259,14 @@ O flush roda **depois** que o host aceita o prompt (`send(text)` devolve o aceit
 
 ### Threads no canvas
 
-Os comentários do log são agrupados em **threads** (a raiz e as respostas dela, [comentários](../comments.md#threads-estados-e-respostas-do-agente)), e o pino mostra o estado da thread:
+Os comentários do log são agrupados em **threads** (a raiz e as respostas dela, [comentários](../comments.md#threads-estados-e-respostas-do-agente)), e o pino mostra o estado da thread pela **cor** (o desenho do pino é um componente compartilhado com a conversa, `desktop/ui/comment-pin`):
 
 | Estado   | Pino                                             |
 | -------- | ------------------------------------------------ |
 | Rascunho | Tracejado                                        |
-| `open`   | Primário, com a contagem de respostas            |
-| `await`  | Laranja, com `?` (o agente respondeu por último) |
-| `done`   | Verde apagado, com `✓`                           |
+| `open`   | Primário                                         |
+| `await`  | Laranja (o agente respondeu por último)          |
+| `done`   | Verde                                            |
 
 As threads **atravessam as revisões**: o canvas mostra todas as threads do artefato (e os rascunhos dele) na revisão que está na tela — a mais nova, por padrão —, cada uma com o mesmo número em qualquer revisão. O pino se recoloca pela âncora na revisão da tela; quando o elemento não existe mais nela, o pino vai para o ponto que a âncora guardou e, sem ponto guardado (comentários antigos), fica **destacado**, empilhado na borda esquerda do conteúdo — continua contado e abre a thread. Um comentário novo é escrito contra a revisão da tela; uma resposta, contra o alvo da raiz (a revisão em que ela foi escrita), e resolver vale em qualquer revisão.
 

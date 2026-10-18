@@ -73,9 +73,8 @@ export default {
 };
 
 /**
- * Every pin state side by side: open with its reply count, awaiting the
- * reader (`?`), resolved (`✓`), a draft (dashed) and a detached pin stacked
- * by the content's edge.
+ * Every pin state side by side: open, awaiting the reader, resolved, a draft
+ * (dashed) and a detached pin stacked by the content's edge.
  */
 export const AllStates = {
   render: () => <Pins />,
