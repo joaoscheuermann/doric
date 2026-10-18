@@ -4,7 +4,14 @@
  * rules moved from the renderer's sheet with their layering unchanged: the
  * Lexical placeholder and the conversation scroll and trail rules in the base
  * layer, the queue-edit surface and the markdown theme unlayered.
+ *
+ * The layer order is stated here, not only in the platform theme: a preview (or
+ * a page) that loads this sheet before `theme.css` would otherwise create the
+ * `utilities` layer first, and the base and theme layers would then outrank
+ * every utility — the whole window drawn unstyled.
  */
+@layer theme, base, components, utilities;
+
 @import 'tailwindcss/utilities.css' layer(utilities);
 @reference 'desktop/ui/tailwind.css';
 @source './';
@@ -53,6 +60,32 @@
      Native scroll anchoring would apply the same offset a second time. */
   .conversation-scroll > [data-slot='scroll-area-viewport'] {
     overflow-anchor: none;
+  }
+
+  /*
+   * The trail's arrow is drawn in ink, not in a bar's translucent fill: where
+   * the chevron crosses its own stem, an alpha stroke composites twice and the
+   * joins read darker than the rest of the glyph. These are the same muted
+   * foreground laid over the conversation's background once — `in srgb`, the
+   * space alpha composites in — so each step is the colour an alpha bar shows
+   * there, opaque, with nothing to overlap.
+   */
+  .conversation-trail {
+    --trail-ink-60: color-mix(
+      in srgb,
+      var(--muted-foreground) 60%,
+      var(--background)
+    );
+    --trail-ink-45: color-mix(
+      in srgb,
+      var(--muted-foreground) 45%,
+      var(--background)
+    );
+    --trail-ink-30: color-mix(
+      in srgb,
+      var(--muted-foreground) 30%,
+      var(--background)
+    );
   }
 
   /* A trail click briefly uses the same neutral surface as a hovered button.

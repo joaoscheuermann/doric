@@ -4,15 +4,24 @@
  * the viewport's vertical centre. A handle under the reader's hover widens with
  * an animated transition and opens a popover to its left with the prompt's
  * words; the block the reader is looking at wears the app's primary colour.
- * The last handle throws the scroll to the end and follows new content until
- * the reader scrolls again.
+ * The last handle is the way to the end of the conversation: a down arrow, the
+ * one glyph that says "down there", that throws the scroll to the end and
+ * follows new content until the reader scrolls again. It grows in place under
+ * the pointer — a scale on its own centre, the way a canvas comment pin grows —
+ * instead of the bars' widening, so it never looks like a prompt's handle. The
+ * column is a pixel wider than the bars need, which is what lets the arrow be
+ * bigger than they are; the bars keep their own look and right inset. The
+ * arrow's row gives up two of the four pixels the bars inset by, because the
+ * glyph sits inset in its own box (lucide draws it 4:24 in from each side):
+ * four minus that inset is the bars' edge on screen, and the two end up on one
+ * line.
  */
 
 import { Button } from 'desktop/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { Separator } from 'desktop/ui/separator';
 import { cn } from 'desktop/ui/utils';
-import { ArrowUpRightIcon, BotIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpRightIcon, BotIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -45,6 +54,20 @@ const HANDLE_COLORS = {
   ],
   queued: ['bg-primary/50', 'bg-primary/35', 'bg-primary/25', 'bg-primary/20'],
 } as const;
+
+/**
+ * The arrow is ink, not a bar's translucent fill: where the chevron crosses its
+ * own stem an alpha stroke would composite twice and the joins would read
+ * darker than the rest. `--trail-ink-*` (the bundle's sheet) is the muted
+ * foreground laid over the conversation's background once, so the arrow takes
+ * one even colour at each step — the colour a bar's alpha shows there.
+ */
+const ARROW_COLORS = [
+  'text-foreground',
+  'text-[color:var(--trail-ink-60)]',
+  'text-[color:var(--trail-ink-45)]',
+  'text-[color:var(--trail-ink-30)]',
+] as const;
 
 /** The child Thread that produced a result, using the same navigation as its transcript block. */
 function ResultThreadLink({ threadId }: { readonly threadId: string }) {
@@ -91,6 +114,7 @@ const RailHandle = memo(function RailHandle({
   emphasis = 3,
   hover,
   id,
+  input = false,
   label,
   kind = 'prompt',
   marker,
@@ -118,6 +142,8 @@ const RailHandle = memo(function RailHandle({
   readonly onHandleHover: (id: string | null) => void;
   /** Jumps to the handle's block, or to the input when it names none. */
   readonly onJump: (marker: ThreadMarker | undefined) => void;
+  /** This is the way to the input: a down arrow, aligned with the bars' edge. */
+  readonly input?: boolean;
   /** The handle's popover is open. */
   readonly open: boolean;
   /** The popover's content; a handle with no words shows no popover. */
@@ -146,7 +172,11 @@ const RailHandle = memo(function RailHandle({
             type="button"
             aria-current={active ? 'location' : undefined}
             aria-label={label}
-            className="group flex h-2.5 w-6 cursor-pointer justify-end p-1"
+            className={
+              input
+                ? 'group flex h-4 w-7 cursor-pointer items-center justify-end pr-0.5'
+                : 'group flex h-2.5 w-7 cursor-pointer justify-end p-1'
+            }
             onBlur={() => hover(null)}
             onClick={() => onJump(marker)}
             onFocus={() => hover(id)}
@@ -161,17 +191,27 @@ const RailHandle = memo(function RailHandle({
           />
         }
       >
-        <span
-          className={cn(
-            'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
-            HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
-            active
-              ? 'bg-primary'
-              : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
-                  emphasis
-                ],
-          )}
-        />
+        {input ? (
+          <ArrowDownIcon
+            aria-hidden="true"
+            className={cn(
+              'size-3.5 shrink-0 origin-center transition-transform duration-120 ease-out group-hover:scale-110 group-focus-visible:scale-110 motion-reduce:transition-none',
+              ARROW_COLORS[emphasis],
+            )}
+          />
+        ) : (
+          <span
+            className={cn(
+              'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
+              HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
+              active
+                ? 'bg-primary'
+                : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
+                    emphasis
+                  ],
+            )}
+          />
+        )}
       </PopoverTrigger>
       {/* The popover never moves the focus on its own — both ends are cut
         deliberately. By default it focuses its popup on open and refocuses
@@ -279,7 +319,7 @@ export function ThreadNavRail({
   return (
     <nav
       aria-label="Conversation trail"
-      className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-end"
+      className="conversation-trail absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-end"
     >
       {nav.markers.map((marker, index) => {
         const id = `${marker.kind}:${marker.promptId}`;
@@ -318,6 +358,7 @@ export function ThreadNavRail({
         emphasis={markerEmphasis(nav.markers.length, hoveredIndex)}
         hover={hover}
         id="prompt-input"
+        input
         label="Prompt input"
         onHandleHover={setHoveredHandle}
         onJump={jump}
