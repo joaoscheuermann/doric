@@ -25,7 +25,7 @@ const providers = (control: ThreadControl, registered: ContractTool[]) => [
     spawn: defineMethod({
       input: runtimeThreadsMethods.spawn.input,
       output: runtimeThreadsMethods.spawn.output,
-      execute: (prompt) => control.spawn(prompt),
+      execute: ([prompt, title]) => control.spawn(prompt, title),
     }),
     list: defineMethod({
       input: runtimeThreadsMethods.list.input,

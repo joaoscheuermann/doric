@@ -41,8 +41,9 @@ void test('registers thread tools in the established model-visible order', async
 
 void test('preserves thread control arguments, defaults, and serialized results', async () => {
   const control: ThreadControl = {
-    spawn: async (prompt) => {
+    spawn: async (prompt, title) => {
       assert.equal(prompt, ' task ');
+      assert.equal(title, ' Task ');
       return { threadId, promptId };
     },
     list: async (limit, cursor) => {
@@ -80,7 +81,7 @@ void test('preserves thread control arguments, defaults, and serialized results'
     storage.execute({ id: 'call', name, payload });
 
   assert.equal(
-    await execute('thread-spawn', { prompt: ' task ' }),
+    await execute('thread-spawn', { prompt: ' task ', title: ' Task ' }),
     JSON.stringify({ threadId, promptId }),
   );
   assert.equal(await execute('thread-list', {}), JSON.stringify({ items: [] }));
@@ -110,6 +111,7 @@ void test('rejects invalid thread control inputs at the tool boundary', async ()
   const storage = createToolStorage(await activatedTools({} as never));
   for (const [name, payload] of [
     ['thread-spawn', { prompt: '   ' }],
+    ['thread-spawn', { prompt: 'task', title: '  ' }],
     ['thread-send', { threadId, prompt: '' }],
     ['thread-list', { limit: 0 }],
     ['thread-list', { limit: 101 }],

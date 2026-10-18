@@ -638,7 +638,8 @@ stopping or paused parent queues it, and a terminal parent is never reopened.
 Human follow-ups in a child do not bounce responses back to its parent.
 The thread delegation tools act only on direct children in the same Project,
 reached through the per-prompt host facade; each child has its own history, not
-an automatic copy of its parent's history.
+an automatic copy of its parent's history. A spawned child is named after the
+optional title its parent gives it, or the start of its prompt without one.
 
 The Direct executor and its system prompt live in `/bundles/runtime/direct`; the
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The

@@ -168,6 +168,53 @@ void test('derives delegated Thread names without splitting Unicode characters',
   await harness.dispose();
 });
 
+void test('names a delegated Thread after its title instead of its prompt', async () => {
+  const spawned = deferred<{ threadId: string; promptId: string }>();
+  const harness = createHarness({
+    execute: async ({ job, tools }) => {
+      if (job.prompt === 'coordinate')
+        spawned.resolve(
+          await tools.threads.spawn(
+            'Audit every package',
+            `  ${'t'.repeat(81)} `,
+          ),
+        );
+      return 'done';
+    },
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const parent = await harness.createThread(project.id);
+  await service.threads.prompt(parent.id, 'coordinate');
+  const child = await spawned.promise;
+  assert.equal(
+    (await service.threads.find(child.threadId))?.name,
+    't'.repeat(80),
+  );
+  await harness.dispose();
+});
+
+void test('refuses to delegate under a blank title', async () => {
+  const refused = deferred<unknown>();
+  const harness = createHarness({
+    execute: async ({ job, tools }) => {
+      if (job.prompt === 'coordinate')
+        await tools.threads.spawn('task', '   ').catch(refused.resolve);
+      return 'done';
+    },
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const parent = await harness.createThread(project.id);
+  await service.threads.prompt(parent.id, 'coordinate');
+  assert.ok((await refused.promise) instanceof TypeError);
+  assert.deepEqual(
+    (await service.threads.list(project.id, 10))?.items.map(({ id }) => id),
+    [parent.id],
+  );
+  await harness.dispose();
+});
+
 void test('shares one Project lease while Threads run independently and each preserves FIFO', {
   timeout: 5000,
 }, async () => {

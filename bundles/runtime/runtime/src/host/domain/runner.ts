@@ -1328,14 +1328,16 @@ export const createThreadRunner = (context: RunnerContext) => {
       promptId: job.id,
     };
     return {
-      spawn: (prompt) =>
+      spawn: (prompt, title) =>
         exclusive(project.project.id, async () => {
           allowed();
           if (prompt.trim().length === 0)
             throw new TypeError('A non-empty prompt is required.');
+          if (title !== undefined && title.trim().length === 0)
+            throw new TypeError('A non-empty title is required.');
           const created = await create(
             project,
-            nameFromPrompt(prompt),
+            nameFromPrompt(title ?? prompt),
             parent.thread.id,
           );
           if (created.status !== 'created')

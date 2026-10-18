@@ -16,7 +16,8 @@ import type {
  * `runtime.threads/v1` contract's own types.
  */
 export interface ThreadControl {
-  spawn(prompt: string): Promise<SpawnedThread>;
+  /** Names the child `title`, or the start of `prompt` without one. */
+  spawn(prompt: string, title?: string): Promise<SpawnedThread>;
   list(limit: number, cursor?: string): Promise<ThreadPage>;
   /** The child's state and, when a prompt has finished, its materialized result. */
   get(threadId: string): Promise<ThreadSummary>;

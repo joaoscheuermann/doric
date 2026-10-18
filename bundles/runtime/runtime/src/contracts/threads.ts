@@ -207,7 +207,8 @@ export const interruptResultSchema = z.enum([
  * `Error('Thread control is no longer active.')`.
  */
 export interface RuntimeThreadControls {
-  spawn(prompt: string, call?: CallArg): Promise<SpawnedThread>;
+  /** Names the child `title`, or the start of `prompt` without one. */
+  spawn(prompt: string, title?: string, call?: CallArg): Promise<SpawnedThread>;
   list(limit: number, cursor?: string, call?: CallArg): Promise<ThreadPage>;
   /** The child's state and, when a prompt has finished, its result. */
   get(threadId: string, call?: CallArg): Promise<ThreadSummary>;
@@ -401,7 +402,10 @@ export const threadEventLogSchema: z.ZodType<ThreadEventLog, ThreadEventLog> =
   });
 
 export const runtimeThreadsMethods = {
-  spawn: { input: z.string(), output: spawnedThreadSchema },
+  spawn: {
+    input: z.tuple([z.string(), z.string().optional()]),
+    output: spawnedThreadSchema,
+  },
   list: {
     input: z.tuple([z.number(), z.string().optional()]),
     output: threadPageSchema,
