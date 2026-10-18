@@ -69,6 +69,13 @@ const ARROW_COLORS = [
   'text-[color:var(--trail-ink-30)]',
 ] as const;
 
+/**
+ * Lucide draws every icon at a stroke of 2 on a 24 box, which at the arrow's
+ * 14px is a hair over a pixel. Half a unit more gives the glyph the weight the
+ * bars carry there without turning it heavy.
+ */
+const ARROW_STROKE_WIDTH = 2.5;
+
 /** The child Thread that produced a result, using the same navigation as its transcript block. */
 function ResultThreadLink({ threadId }: { readonly threadId: string }) {
   const source = useDelegatedSource(threadId);
@@ -194,6 +201,7 @@ const RailHandle = memo(function RailHandle({
         {input ? (
           <ArrowDownIcon
             aria-hidden="true"
+            strokeWidth={ARROW_STROKE_WIDTH}
             className={cn(
               'size-3.5 shrink-0 origin-center transition-transform duration-120 ease-out group-hover:scale-110 group-focus-visible:scale-110 motion-reduce:transition-none',
               ARROW_COLORS[emphasis],
