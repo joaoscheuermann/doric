@@ -86,12 +86,9 @@ That builds the generation runner, serves `doric-renderer` on
 
 | Variable                    | Default                 | Meaning                                                     |
 | --------------------------- | ----------------------- | ----------------------------------------------------------- |
-| `DORIC_HOST_URL`            | `http://127.0.0.1:3000` | The host the app's bridge (`/doric/bridge`) connects to.    |
+| `DORIC_HOST_URL`            | `http://127.0.0.1:3000` | The host the app's bridge and connection monitor reach.     |
 | `DORIC_RENDERER_DEV_URL`    | `http://localhost:4200` | The renderer dev server the shell is forwarded from.        |
 | `DORIC_ELECTRON_NO_SANDBOX` | unset                   | `1` starts Electron with `--no-sandbox` without being root. |
-
-The `/status` monitor behind the footer's connection indicator always watches
-`http://127.0.0.1:3000`, whatever `DORIC_HOST_URL` names.
 
 Chromium cannot use its setuid sandbox helper as root, so when the process runs
 as root — a root container, for instance — the `serve` target starts Electron

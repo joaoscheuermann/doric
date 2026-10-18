@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { createServer, type IncomingMessage } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, test } from 'node:test';
 
+import { createConnectionManager } from '../src/connection/manager';
 import {
   type ConnectionSocket,
   type ConnectionStatus,
   createConnectionMonitor,
+  createConnectionService,
 } from '../src/connection/status';
 
 type SocketEvent = 'connect' | 'disconnect' | 'connect_error';
@@ -87,5 +92,27 @@ describe('connection monitor', () => {
     assert.equal(monitor.status(), 'disconnected');
     assert.deepEqual(statuses, ['disconnected']);
     assert.equal(closes(), 1);
+  });
+});
+
+describe('connection service', () => {
+  test('reaches the host it is given, not the loopback default', async () => {
+    const server = createServer();
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const upgrade = once(server, 'upgrade') as Promise<[IncomingMessage]>;
+
+    const monitor = createConnectionService(
+      createConnectionManager(`http://127.0.0.1:${port}`),
+    );
+    try {
+      const [request] = await upgrade;
+      assert.match(request.url ?? '', /^\/socket\.io\//);
+    } finally {
+      monitor.close();
+      server.closeAllConnections();
+      server.close();
+    }
   });
 });

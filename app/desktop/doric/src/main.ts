@@ -29,12 +29,14 @@ const electronNotifications: NotificationApi = {
 void app.whenReady().then(async () => {
   nativeTheme.themeSource = 'system';
   const log = createPlatformLog();
+  // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
+  // that is not on the app's own loopback, the loopback default otherwise.
+  // The bridge and the `/status` monitor both follow it.
+  const hostUrl = process.env.DORIC_HOST_URL ?? HOST_URL;
   const platform = new DesktopPlatform({
     mainDir: __dirname,
     userData: app.getPath('userData'),
-    // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
-    // that is not on the app's own loopback, the loopback default otherwise.
-    hostUrl: process.env.DORIC_HOST_URL ?? HOST_URL,
+    hostUrl,
     packaged: app.isPackaged,
     argv: process.argv,
     notifications: electronNotifications,
@@ -55,7 +57,7 @@ void app.whenReady().then(async () => {
 
   // Every window follows the `/status` monitor through the single IPC
   // (doric.shell/v1.connection).
-  connection = createConnectionService(createConnectionManager());
+  connection = createConnectionService(createConnectionManager(hostUrl));
   platform.connection.attach(connection);
   app.once('will-quit', () => {
     connection?.close();

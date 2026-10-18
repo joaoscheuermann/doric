@@ -1,14 +1,13 @@
 import { Manager } from 'socket.io-client';
 
-import { HOST_URL } from '../platform/bridge/host-bridge';
-
 /**
  * The connection manager of the host's `/status` monitor, over the websocket
- * transport. Every window follows that status through
+ * transport, for the host at `hostUrl` — the same origin the platform's
+ * bridge reaches. Every window follows that status through
  * `doric.shell/v1.connection`.
  */
-export const createConnectionManager = (): Manager =>
-  new Manager(HOST_URL, {
+export const createConnectionManager = (hostUrl: string): Manager =>
+  new Manager(hostUrl, {
     transports: ['websocket'],
     reconnection: true,
   });
