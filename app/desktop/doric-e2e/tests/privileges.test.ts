@@ -121,6 +121,7 @@ describe('doric:// privileges', () => {
               ? part
               : undefined,
         },
+        artifacts: { root: join(root, 'artifacts') },
         shell: {
           render: () =>
             createShellRenderer({

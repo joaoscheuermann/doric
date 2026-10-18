@@ -21,6 +21,13 @@
         ],
         "parallel": false
       }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^typecheck"],
+      "options": {
+        "command": "tsc -p app/desktop/doric-e2e/tsconfig.json --noEmit"
+      }
     }
   },
   "tags": []
