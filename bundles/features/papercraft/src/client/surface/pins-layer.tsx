@@ -58,7 +58,7 @@ export interface CommentPin {
 
 /** The pin of a comment being written. */
 const PENDING_SIZE = 32;
-/** The pin of a comment already there. */
+/** The pin of a comment already there: the shared pin's `md`. */
 const PIN_SIZE = 24;
 const INPUT_GAP = 10;
 const INPUT_WIDTH = 280;
@@ -141,6 +141,7 @@ function Balloon({
   return (
     <Pin
       state={pin.state as CommentPinState}
+      size="md"
       data-testid="papercraft-pin"
       data-pin={String(pin.pin)}
       data-active={active ? 'true' : undefined}

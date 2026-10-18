@@ -47,6 +47,12 @@
       "import": "./dist/tokens/tokens.js",
       "default": "./dist/tokens/tokens.js"
     },
+    "./ui/comment-pin": {
+      "@org/source": "./src/comment-pin.tsx",
+      "types": "./dist/comment-pin.d.ts",
+      "import": "./dist/comment-pin.js",
+      "default": "./dist/comment-pin.js"
+    },
     "./ui/chrome-bar": {
       "@org/source": "./src/chrome-bar.tsx",
       "types": "./dist/chrome-bar.d.ts",

@@ -259,7 +259,7 @@ O flush roda **depois** que o host aceita o prompt (`send(text)` devolve o aceit
 
 ### Threads no canvas
 
-Os comentários do log são agrupados em **threads** (a raiz e as respostas dela, [comentários](../comments.md#threads-estados-e-respostas-do-agente)), e o pino mostra o estado da thread pela **cor** (o desenho do pino é um componente compartilhado com a conversa, `desktop/ui/comment-pin`):
+Os comentários do log são agrupados em **threads** (a raiz e as respostas dela, [comentários](../comments.md#threads-estados-e-respostas-do-agente)), e o pino mostra o estado da thread pela **cor** (o desenho do pino é um componente compartilhado com a conversa, `desktop/ui/comment-pin`, em três tamanhos — o canvas usa o médio):
 
 | Estado   | Pino                                             |
 | -------- | ------------------------------------------------ |

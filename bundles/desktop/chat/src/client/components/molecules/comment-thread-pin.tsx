@@ -11,7 +11,7 @@
 // in place.
 
 import { Button } from 'desktop/ui/button';
-import { CommentPin, commentPinClass } from 'desktop/ui/comment-pin';
+import { CommentPin, commentPinVariants } from 'desktop/ui/comment-pin';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { cn } from 'desktop/ui/utils';
 import { ArrowUpLeftIcon, BotIcon } from 'lucide-react';
@@ -62,7 +62,7 @@ export function CommentThreadPin({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<CommentPin state={state} />}
+        render={<CommentPin state={state} size="sm" />}
         data-comment-pin={pin}
         data-comment-state={state}
         title="Open comment"
@@ -78,7 +78,7 @@ export function CommentThreadPin({
         <header className="flex items-center gap-2 border-b border-border py-1.5 pr-1.5 pl-3">
           <span
             aria-hidden="true"
-            className={cn(commentPinClass(state), 'pointer-events-none')}
+            className={cn(commentPinVariants({ state, size: 'sm' }), 'pointer-events-none')}
           >
             {pin}
           </span>

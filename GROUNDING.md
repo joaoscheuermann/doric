@@ -957,8 +957,9 @@ whose text matches, then the recorded `index`, then the only candidate, then
 the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
 It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
 root's target. Pins show the thread state by colour alone — a draft is dashed,
-an open comment primary, an awaiting one orange, a done one green (no badge);
-a control shows or hides the resolved ones. A dashed hover outline with
+an open comment primary, an awaiting one orange, a done one green (no badge) —
+and come in three sizes, of which the conversation's reply row takes the small
+one; a control shows or hides the resolved ones. A dashed hover outline with
 the label `element · file:line` follows the pointer in any mode, focused or
 not: to the element a comment would land on while the comment tool is armed
 (`Alt` forces a free point), else to the element under the pointer; nothing is
