@@ -17,7 +17,10 @@ import { cn } from 'desktop/ui/utils';
 import { ArrowUpLeftIcon, BotIcon } from 'lucide-react';
 import { useState } from 'react';
 
-import type { CommentThread, CommentThreadState } from '../../domain/comment-threads.js';
+import type {
+  CommentThread,
+  CommentThreadState,
+} from '../../domain/comment-threads.js';
 import { anchorLabel } from '../../domain/composer-stack.js';
 import { AGENT_NAME, READER_NAME } from '../../domain/conversation-authors.js';
 import { openCommentThread } from '../../utility/comment-thread.js';
@@ -78,7 +81,10 @@ export function CommentThreadPin({
         <header className="flex items-center gap-2 border-b border-border py-1.5 pr-1.5 pl-3">
           <span
             aria-hidden="true"
-            className={cn(commentPinVariants({ state, size: 'sm' }), 'pointer-events-none')}
+            className={cn(
+              commentPinVariants({ state, size: 'sm' }),
+              'pointer-events-none',
+            )}
           >
             {pin}
           </span>
@@ -96,7 +102,10 @@ export function CommentThreadPin({
             aria-label="Show comment in the preview"
             title="Show comment in the preview"
             onClick={(event) => {
-              openCommentThread(event.currentTarget, { commentId: rootId, target });
+              openCommentThread(event.currentTarget, {
+                commentId: rootId,
+                target,
+              });
               setOpen(false);
             }}
           >
@@ -115,9 +124,13 @@ export function CommentThreadPin({
                   ) : (
                     <ReaderAvatar name={message.author ?? READER_NAME} />
                   )}
-                  <span className="shrink-0 font-medium">{authorName(message.author)}</span>
+                  <span className="shrink-0 font-medium">
+                    {authorName(message.author)}
+                  </span>
                 </span>
-                <p className="break-words whitespace-pre-wrap text-sm">{message.text}</p>
+                <p className="break-words whitespace-pre-wrap text-sm">
+                  {message.text}
+                </p>
               </li>
             ))
           )}

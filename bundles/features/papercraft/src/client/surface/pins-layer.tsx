@@ -25,7 +25,10 @@
 // place things. What confirming the note means is the surface's: a new draft
 // joins the stack.
 
-import { type CommentPinState, CommentPin as Pin } from 'desktop/ui/comment-pin';
+import {
+  type CommentPinState,
+  CommentPin as Pin,
+} from 'desktop/ui/comment-pin';
 import { cn } from 'desktop/ui/utils';
 import { type ReactNode, useRef } from 'react';
 

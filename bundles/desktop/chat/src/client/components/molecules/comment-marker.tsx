@@ -14,5 +14,8 @@ export const STATE_LABEL: Readonly<Record<CommentThreadState, string>> = {
 };
 
 /** The words a marker reads out: the state, and the agent's replies. */
-export const markerLabel = (state: CommentThreadState, replies: number): string =>
+export const markerLabel = (
+  state: CommentThreadState,
+  replies: number,
+): string =>
   `${STATE_LABEL[state]}${replies > 0 ? `, ${replies} ${replies === 1 ? 'reply' : 'replies'}` : ''}`;
