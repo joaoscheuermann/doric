@@ -1,31 +1,58 @@
 # Threads bundle
 
-`threads` contains the delegation capabilities Doric exposes to its agent. Its
-build writes `bundles/features/threads/dist`, which `doric-host:build-bundles` stages into
-`app/backend/doric-host/dist/bundles/threads`; the Direct host loads it through the
-`bundle` loader.
+`threads` lets one Doric agent run a team: it can split a large task into
+child threads, hand each one a self-contained job, check on their progress,
+steer or stop them, and collect their results. Every child is a normal
+conversation you can open, read and redirect in the desktop app.
 
-## Capabilities
+It is a feature bundle with a host part (the delegation tools) and a client
+part (how delegated messages appear in chat), loaded by the `bundle` platform.
+See the [main README](../../../README.md) for Doric as a whole and
+[`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
-The bundle provides these always-available tools, which act only on the calling
-prompt's direct child threads in the same project:
+## What it provides
 
-- `thread-spawn` — create a child chat, optionally titled, and delegate a self-contained task;
-- `thread-list`, `thread-get` — observe a direct child's state and, once a prompt
-  has finished, its materialized result;
-- `thread-events` — read a bounded, digested page of a child's persisted events;
+- **Tools:** seven always-available delegation tools.
+- **Skills:** delegating, inspecting and steering child threads.
+- **UI:** `<threads-delegated-turn>`, the chat renderer for another Thread's
+  instruction or result.
+
+The bundle provides no contract of its own.
+
+## Tools
+
+The tools act only on the calling prompt's direct child threads in the same
+project, and take global model-visible positions 1000 to 1600 in this order:
+
+- `thread-spawn` — create a child chat, optionally titled (up to 80
+  characters; without a title it is named after the start of its prompt), and
+  delegate a self-contained task. It returns immediately, and the child's
+  result arrives in the parent's chat;
+- `thread-list`, `thread-get` — observe a direct child's state and, once a
+  prompt has finished, its materialized result;
+- `thread-events` — read a bounded, digested page of a child's persisted
+  events;
 - `thread-send` — queue a follow-up instruction in a child;
 - `thread-interrupt`, `thread-terminate` — cancel one active prompt or close a
   child subtree.
 
-Each tool reaches the calling prompt's children through `runtime.threads/v1`
+A child shares the Project's workspace but has its own history. Each tool
+reaches the calling prompt's children through `runtime.threads/v1`
 (`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
-the serialized result. The bundle never imports `app/backend/doric-host` internals.
+the serialized result. The bundle never imports `app/backend/doric-host`
+internals.
 
-Skills cover delegating self-contained work, inspecting delegated work, and
-steering or closing children. Skills live in `src/skills/<name>/SKILL.md` and
-are registered in lexical folder order; `thread-delegation` is marked
-`alwaysAvailable` in its frontmatter.
+## Skills
+
+- `thread-delegation` — delegate self-contained work and keep working while
+  children run; always available.
+- `thread-inspection` — observe children through their durable events without
+  disturbing them.
+- `thread-steering` — redirect or close children with the narrowest effective
+  control.
+
+Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
+(3100 to 3300) sets its global position in the system prompt.
 
 ## Client part
 
@@ -44,7 +71,7 @@ else its short id), `Status: …` and the text through chat's
    `src/host/index.ts`.
 2. Reach the runtime only through contracts declared in `manifest.json`
    `requires`.
-3. Keep each skill's `allowed-tools` references local to this bundle.
+3. A skill's `allowed-tools` resolve against the whole `tools/v1` catalog.
 4. Build and test; the build validates the manifest and skills and
    dry-activates the host part.
 
@@ -56,7 +83,10 @@ npx nx typecheck bundle-threads
 npx nx test bundle-threads
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+The build writes `bundles/features/threads/dist`, which
+`doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/threads`; the Direct host loads it through
+the `bundle` loader. To rebuild and stage every bundle used by the Direct host:
 
 ```console
 npx nx run doric-host:build-bundles

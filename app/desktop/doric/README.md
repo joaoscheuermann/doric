@@ -1,84 +1,101 @@
 # Doric desktop
 
-`doric-app` owns the Electron main process. It loads `doric-renderer`,
-communicates with the local Direct host at `http://127.0.0.1:3000` over HTTP and
-Socket.IO, and exposes only named Project and Thread operations, three read-only
-Project filesystem reads (one directory listing, one bounded file content read,
-and the workspace Git diff), the Thread working directory and the Git summary of
-its repository, the host configuration, an event subscription for
-every watched Thread and for one selected Project, and semantic connection
-status through a sandboxed, origin-checked preload bridge. The `/status` and
-`/projects` namespaces share one process-long Engine.IO connection, while each
-watched Thread owns a connection of its own, so a Thread's subscription ends
-when the renderer stops watching it; the renderer never accesses any transport
-directly.
+The Doric desktop app is where you work with your agents: it connects to a
+Doric host, downloads and verifies the UI bundles that host serves, and opens
+the workspace where you chat with agents, follow their child Threads, and
+browse each Project's files and changes. This package, `doric-app`, is the
+Electron main process — the technical platform under that UI. Read this if you
+run the app in development, package it, or change what crosses the boundary
+between a window and the main process.
 
-The `config` namespace crosses the same boundary: `config.get` reads the host
-configuration, which is credential-free except for GitHub's username, email and
-write-only token — a token is answered as `hasToken` and never as itself — and
-`config.update` replaces the whole configuration with the one it is given, so a
-Settings surface needs no HTTP client of its own. The GitHub block is guarded
-before it is sent: it carries exactly `username`, `email` and an optional
-`token`, where an absent or `null` token keeps the stored one, `''` clears it and
-any other value replaces it. A token is never logged, never named in an error
-message and never part of what `config.get` answers with.
+For the product overview and setup, start with the
+[main README](../../../README.md).
 
-Every Project filesystem call validates its workspace-relative path before it
-reaches the host — no absolute path, no `..` segment, no NUL character — and
-returns the host's lease states (`pending` with the host's `Retry-After` hint,
-`expired`, `unavailable`, `missing`) as data instead of throwing, so the
-renderer can explain a Project whose sandbox is not usable yet.
+## What you see
 
-The `threads` namespace crosses that boundary too. `threads.setCwd` moves a
-Thread's working directory — an absolute sandbox path, or one relative to the
-directory it is in — and answers the updated Thread; `threads.git` answers the
-Git summary of that directory, or `{ repo: false }` when it holds no repository.
-`threads.resume` takes up a prompt an interruption left unfinished — the one the
-renderer's own stop paused, or a prompt the host stopped and does not take up
-again — and answers the Thread the host is running it on. A Thread record carries
-the directory as `cwd` and the cheap repository hint as `cwdRepo`, and the main
-process refuses a working-directory value it could not even forward: a non-string,
-an empty or over-long value, or one holding NUL. What the path may resolve to —
-inside the sandbox, an existing directory — stays the host's rule, and the host is
-what reports a refusal.
+### Splash and recovery
 
-The `notifications` namespace is the one write this boundary carries into the
-operating system. `notifications.show` draws a native notification for a prompt
-that just finished: the renderer's Thread chat store decides that a completion
-happened, that it is not one the reader is already reading in a focused window,
-and what it reads as — the Thread's name, the outcome, and a bounded preview of
-the answer — and the main process bounds both lines again before they reach the
-OS, answers only a renderer at one of the two expected URLs, and drops the notice
-in silence on a platform that supports none. A completion is durable in the
-Thread's log either way, so a missing notice never hides what happened. On macOS
-the system delivers these only for a code-signed app: the UNNotification API
-refuses an unsigned binary with a `failed` event rather than a throw, which the
-main process now reports on the terminal so a development build is explained
-instead of merely silent.
+At startup a frameless 420×260 splash window shows the `Doric` name and one
+status line while the app gets ready:
 
-At startup a frameless, square, dark splash window shows the centered `Doric`
-name while the main process waits for the local Direct API to answer. The splash
-stays visible for at least five seconds, and the dark workspace window replaces
-it once that window is ready to show.
+1. `Connecting to the host`
+2. `Reading the catalog`
+3. `Downloading bundles (done/total)`
+4. `Verifying bundles`
+5. `Activating`
 
-On macOS the workspace window keeps always-visible native traffic lights over a
-custom draggable renderer title bar. A segmented footer follows the same
-resizable boundary and reports `Connected` or `Disconnected` from the main
-process's `/status` Socket.IO subscription.
+The splash stays visible for at least five seconds, and the workspace window
+replaces it once that window is ready to show.
+
+When something goes wrong, the same window becomes the recovery surface:
+
+| Situation                                | What it shows                | Actions                                                                                 |
+| ---------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------- |
+| The host does not answer                 | `Cannot reach <host URL>`    | `Retry`, and `Open last known composition` when a snapshot exists                       |
+| Some bundles failed                      | Each bundle with its reasons | `Continue without them`, `Disable` per bundle, `Retry`                                  |
+| The core bundle failed, or recovery mode | The core or the reason       | `Use last core that worked` (when one exists), `Return to default composition`, `Retry` |
+
+The splash also turns into the recovery surface when a window is not ready
+within 30 seconds. `Disable` and `Return to default composition` ask the host
+to write or delete `composition.overrides.json` beside its composition; the
+core cannot be disabled.
+
+### The workspace
+
+- The workspace window reopens at the last path it showed (the selected
+  Thread is part of that path).
+- On macOS, the window keeps always-visible native traffic lights over the
+  app's own draggable title bar.
+- Windows follow the system light or dark theme.
+- The footer reports `Connected` or `Disconnected` from the main process's
+  subscription to the host's `/status` Socket.IO namespace.
+
+### Notifications
+
+When a prompt finishes in a Thread you are not already reading in a focused
+window, the app draws a native notification titled with the Thread's name and
+naming the outcome (`Prompt completed`, `Prompt failed`, `Prompt cancelled`)
+with a short preview of the answer.
+
+- The `notifications` bundle decides whether a completion deserves a notice;
+  the main process draws it, bounding each line to 200 characters before it
+  reaches the OS.
+- On a platform that supports no notifications, the notice is dropped in
+  silence. A completion is durable in the Thread's log either way, so a
+  missing notice never hides what happened.
+- On macOS the system delivers notifications only for a code-signed app: the
+  UNNotification API refuses an unsigned binary with a `failed` event rather
+  than a throw, which the main process reports on the terminal
+  (`Doric: notification failed: …`) so a development build is explained
+  instead of merely silent.
 
 ## Development
 
-Start the Direct backend first, then run both desktop development processes from
-the repository root:
+Start a host first — the real one (see the
+[host README](../../backend/doric-host/README.md)) or the in-memory
+[development fake host](../../../scripts/fake-host/README.md) — then run both
+desktop development processes from the repository root:
 
 ```console
 npm run doric:dev
 ```
 
+That builds the generation runner, serves `doric-renderer` on
+`http://localhost:4200`, waits for it, and starts Electron through
+`nx serve doric-app`.
+
+| Variable                    | Default                 | Meaning                                                     |
+| --------------------------- | ----------------------- | ----------------------------------------------------------- |
+| `DORIC_HOST_URL`            | `http://127.0.0.1:3000` | The host the app's bridge (`/doric/bridge`) connects to.    |
+| `DORIC_RENDERER_DEV_URL`    | `http://localhost:4200` | The renderer dev server the shell is forwarded from.        |
+| `DORIC_ELECTRON_NO_SANDBOX` | unset                   | `1` starts Electron with `--no-sandbox` without being root. |
+
+The `/status` monitor behind the footer's connection indicator always watches
+`http://127.0.0.1:3000`, whatever `DORIC_HOST_URL` names.
+
 Chromium cannot use its setuid sandbox helper as root, so when the process runs
 as root — a root container, for instance — the `serve` target starts Electron
-with `--no-sandbox`; a normal user keeps the sandbox. Set
-`DORIC_ELECTRON_NO_SANDBOX=1` to opt out without being root.
+with `--no-sandbox`; a normal user keeps the sandbox.
 
 Build, test, or package the desktop boundary directly:
 
@@ -87,8 +104,89 @@ npx nx run doric-app:typecheck
 npx nx run doric-app:lint
 npx nx run doric-app:test
 npx nx build doric-app
-npm run nxe:package:app
+npx nx run doric-app:package   # prepackaged app in dist/packages
+npx nx run doric-app:make      # installers in dist/executables
+npx nx run doric-app-e2e:e2e
 ```
 
-Project and Thread deletion terminates the resource before retrying physical
-deletion until the asynchronous lifecycle reaches a terminal state.
+## Architecture
+
+The app owns only what must work without any bundle: the `doric://app`
+protocol, native windows and menus, the bridge to the host, the verified
+artifact cache, one generation process per desktop generation, the single IPC
+dispatcher, and the splash and recovery surface. Which windows open, their
+sizes, the menu and the whole UI belong to bundles: the core bundle's
+`desktopMain` part and the client bundles (`layout`, `chat`, `settings` and the
+feature bundles) that run in each window.
+
+### Startup
+
+1. Before any window, the splash downloads the host's
+   `doric.catalog/v1.distribution()` over the host bridge Socket.IO namespace
+   `/doric/bridge` and verifies each artifact's SHA-256 into the local cache.
+2. The main process runs one Electron `utilityProcess` per desktop generation,
+   executing the core's `desktopMain` part, which opens the window the core
+   marks `primary` (the `workspace` key today) at the last path stored for
+   that key.
+3. Each window loads the shell built by
+   [`doric-renderer`](../doric-renderer/README.md), which boots the client
+   bundles.
+
+An allowed quit waits for pending window-path and platform-state writes before
+exiting.
+
+### The `doric://app` origin
+
+Every app window loads only `doric://app/<path>`, a privileged standard scheme
+whose handler serves the shell, the platform files under `/platform/`, and the
+verified bundle artifacts from the local cache with their schemas. A missing
+file is a 404, never the shell. In development the windows still open through
+`doric://app`, and the handler forwards the shell and its assets to the
+renderer dev server. A view window loads a page from the host's own origin
+instead and carries no preload.
+
+### Main-process boundary
+
+Windows are sandboxed and context-isolated. The preload exposes exactly one
+namespace, `window.doric.desktop`, over two IPC channels: `doric:desktop` for
+requests and `doric:desktop:push` for what main pushes back. Through it a
+window can describe itself, report readiness or failure, answer close
+requests, follow chrome changes, read the catalog, and make, cancel or
+subscribe to contract calls. There is no semantic Project, Thread,
+configuration or terminal API in the preload, and the window never opens HTTP
+or Socket.IO itself.
+
+One dispatcher handles every request. Main is the trust point:
+
+- it checks that the sender is a `doric://app` page;
+- it pins the window's generation and fills in the caller and the window key
+  (a window may not send the key itself);
+- it validates inputs and outputs against the published JSON Schemas;
+- it routes each call to the window, the `desktopMain` generation, or the
+  host.
+
+A host method reaches a window only when its contract declares
+`expose: 'desktop'`; everything else is denied.
+
+Main itself provides the platform contracts a window or generation needs from
+Electron:
+
+- `doric.shell/v1`, including the `connection` status every window follows;
+- `doric.windows/v1`, which focuses or navigates the window a key names;
+- `doric.notifications/v1`, the one native notification function;
+- `doric.cache/v1`, one cache directory per bundle;
+- `doric.migrations/v1`, the one-time copy of a bundle's local storage from
+  the packaged `file://` origin to `doric://app`.
+
+### Local state
+
+Under Electron's `userData` directory:
+
+| Path                          | Contents                                                 |
+| ----------------------------- | -------------------------------------------------------- |
+| `bundles/`                    | Verified bundle artifacts (`<id>@<version>/…`).          |
+| `artifacts/`                  | Verified artifact revisions, served under `/artifacts/`. |
+| `bundle-cache/<bundleId>/`    | Each bundle's `doric.cache/v1` directory.                |
+| `doric/state.json`            | Migrations and the last core that worked.                |
+| `doric/windows.json`          | The last path per window key (no bounds).                |
+| `doric/catalog-snapshot.json` | The last distribution that activated.                    |

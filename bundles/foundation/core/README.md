@@ -1,14 +1,39 @@
 # Core bundle
 
-`core` is the bundle the composition names as its core: it activates right
-after the foundation on the host and provides the basic services every other
-bundle uses. It requires `storage.backend/v1` and `secrets.backend/v1`, so the
-composition must choose a provider for each in `providers` (`postgres` in the
-shipped host, the `storage/memory` foundation in tests). Its build writes
-`bundles/foundation/core/dist`, which `doric-host:build-bundles` stages into
-`app/backend/doric-host/dist/bundles/core`.
+`core` supplies the basic services every other Doric bundle builds on: the
+tool and skill registries the agent sees, model provider resolution, settings,
+stored credentials, storage, events, logging and hooks, plus the desktop
+app's windows, menus, commands, navigation and UI regions. Most of what a
+bundle can do in Doric, it does through a contract the core provides.
 
-## Services
+The composition names this bundle as its core: it activates right after the
+foundation on the host. It requires `storage.backend/v1` and
+`secrets.backend/v1`, so the composition must choose a provider for each in
+`providers` (`postgres` in the shipped host, the `storage/memory` foundation in
+tests). See the [main README](../../../README.md) for Doric as a whole and
+[`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
+
+## What it provides
+
+- **Host:** `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `storage/v1`,
+  `secrets/v1`, `events/v1`, `settings/v1` and `models/v1`, plus the
+  `core.settings/v1` and `core.settings-generation/v1` storage types; it
+  defines `core.event-hooks/v1` (`onEventAppendedHook`).
+- **Desktop main process:** hooks, log, local settings, `commands/v1`, the
+  client commands bridge (`core.commands/v1`), `windows/v1` and `menus/v1`; it
+  defines `core.hooks/v1`, registers `core.open-settings/v1` and opens the
+  workspace window once the app is ready.
+- **Window client:** hooks, log, `ui/v1`, `navigation/v1`, `regions/v1` and
+  `commands/v1`; the structural elements `core-outlet`, `core-region`,
+  `core-not-found` and `core-unavailable`; same-origin link interception and
+  the menu context of the window path.
+
+Each part's `provide` is inert when the composition chose another provider for
+that contract; the core then uses the chosen one through its contract.
+Activation does no I/O: storage types are declared to the backend on first use
+and credentials are read on the first secrets call.
+
+## Host services
 
 The host part provides these basic contracts from `bundle/contracts`:
 
@@ -22,10 +47,17 @@ The host part provides these basic contracts from `bundle/contracts`:
   call scope, trace ID and environment, written through `doric.log/v1` into the
   host's log destinations. A level never throws.
 - `tools/v1` — one ordered registry of tools bound to the bundle that
-  registered them; names are unique across bundles.
-- `skills/v1` — canonical skill records in bundle order; names are unique and
-  `allowed-tools` resolve only against tools the same bundle registered.
-
+  registered them, sorted by the global `order` key, then activation order;
+  names are unique across bundles.
+- `skills/v1` — canonical skill records sorted by the global `order` key, then
+  bundle order; names are unique and `allowed-tools` resolve against every tool
+  in the caller's `tools/v1` list.
+- `models/v1` — the model layer over the `models.provider/v1` records that
+  provider bundles register: `kinds` lists the advertised kinds, `kind`
+  resolves any kind by id, `catalog` reads a kind's live model catalog with its
+  stored credential, `prepare` builds the configured providers, `resolve`
+  answers a provider's language model, and `contextWindow` reads a model's
+  context capacity from a cached provider's catalog.
 - `storage/v1` — a facade over the chosen `storage.backend/v1`. A storage
   type is defined by the bundle its namespace names, and only when it lists
   the type in `provides`. Only the owner reads or writes the type's documents,
@@ -54,20 +86,21 @@ The host part provides these basic contracts from `bundle/contracts`:
   for `runtime.thread.events/{threadId}`. No shipped bundle other than the
   runtime registers an event (a test pins it).
 
-`settings.set` and the secrets writes share one queue, which keeps a
-configuration from naming a credential that a concurrent delete removes.
-`log/v1` replaces every secret of `secrets/v1.view().redactions()` with
-`[REDACTED]` in the message and in the string leaves of the fields.
+## Guarantees
 
-A composition may choose another provider for any of them in `providers`; the
-core's own `provide` is then inert, and the other facades reach it through
-its contract.
+- `settings.set` and the secrets writes share one queue, which keeps a
+  configuration from naming a credential that a concurrent delete removes.
+- `log/v1` replaces every secret of `secrets/v1.view().redactions()` with
+  `[REDACTED]` in the message and in the string leaves of the fields.
 
-The public `core/contracts` entrypoint exports `CoreHooksV1` and
-`OpenSettingsCommandV1`, typed references whose providers arrive with the
-core's desktop part, and the storage types `settingsType` and
-`settingsGenerationType` (with `settingsGenerationId`), so data migrations use
-the same definitions.
+## Public contracts
+
+The public `core/contracts` entrypoint exports `CoreHooksV1`,
+`CoreEventHooksV1` and `OpenSettingsCommandV1`, typed references whose
+providers arrive with the core's parts; `CoreCommandsV1`; the storage types
+`settingsType` and `settingsGenerationType` (with `settingsGenerationId`), so
+data migrations use the same definitions; and the model catalog fill helpers
+that the host configuration runs over `models/v1.catalog`.
 
 ## Development
 
@@ -77,7 +110,10 @@ npx nx typecheck bundle-core
 npx nx test bundle-core
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+The build writes `bundles/foundation/core/dist`, which
+`doric-host:build-bundles` stages into
+`app/backend/doric-host/dist/bundles/core`. To rebuild and stage every bundle
+used by the Direct host:
 
 ```console
 npx nx run doric-host:build-bundles

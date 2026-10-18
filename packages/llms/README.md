@@ -1,44 +1,31 @@
 # llms
 
-Provider-neutral model and streaming boundaries for Doric's TypeScript
-agent core. The package keeps provider credentials and HTTP injected so tests
-can use fakes and host surfaces can own sensitive behavior.
+One TypeScript interface for chat, streaming, tool calls, structured output,
+embeddings, and reranking across model providers. Each provider factory takes
+an injected HTTP transport and logger, so tests can swap in a fake transport
+and hosts decide how credentials, networking, and logs are handled. Use it when
+you want to call OpenAI Responses-compatible endpoints or OpenRouter without
+tying the rest of your code to either.
 
-## OpenRouter
+Part of [Doric](../../README.md), whose provider bundles build on it.
 
-Use `createOpenRouterProvider` for heterogeneous OpenRouter models. It discovers
-the selected model's live capabilities, applies the curated laboratory policy,
-preserves opaque reasoning replay, normalizes tool controls, and validates or
-repairs direct structured output locally.
+## Highlights
 
-```ts
-import pino from 'pino';
-import { createFetchTransport, createOpenRouterProvider } from 'llms';
+- **One `LlmProvider` contract.** `complete`, `stream`, `embedding`, `rerank`,
+  and `models` behave the same way across providers.
+- **Injectable transport.** `HttpTransport` is a two-method interface;
+  `createFetchTransport()` is the production default and tests pass a fake.
+- **Credentials stay with the host.** Providers accept an API key or an exact
+  `authorization` header, either as a string or as a function read at call
+  time, so a rotated credential reaches an existing provider.
+- **Structured output.** Requests can carry a Zod schema; OpenRouter validates
+  and repairs direct structured output locally.
+- **Multi-turn replay.** Opaque provider output, including encrypted
+  reasoning, is kept for exact replay without being logged.
+- **Settings-ready metadata.** `providerKinds` describes each provider's
+  configuration fields so a settings UI can render them.
 
-const provider = createOpenRouterProvider({
-  transport: createFetchTransport(),
-  apiKey: process.env.OPENROUTER_API_KEY ?? '',
-  logger: pino(),
-});
-```
-
-The advertised catalog contains only `openai` and `openrouter`. Codex remains
-available to internal callers but is not listed by `providerKinds`. The former
-`unified`, `openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions
-API have been removed.
-
-Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
-`${baseUrl}/models`. Configuration and execution use the same endpoint.
-
-See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
-matrix, fallback rules, primary sources, and paid live-conformance command.
-
-## OpenAI Responses-compatible endpoints
-
-The OpenAI provider is the former compatible adapter. Set `baseUrl` for a
-Responses-compatible endpoint and optionally set `identity: { id, name }`.
-Configured providers preserve their own identity in events and diagnostics.
-The protocol is `/responses`; a Chat Completions-only endpoint is not supported.
+## Usage
 
 ```ts
 import pino from 'pino';
@@ -63,21 +50,97 @@ for await (const event of provider.stream({
 }
 ```
 
-`*-fast` OpenAI model aliases are sent to the Responses API without the
-suffix and with `service_tier: "priority"`.
+## Providers
 
-OpenAI Responses requests use `store: false`. `ProviderFinished.replay`
-retains opaque output items for exact multi-turn replay, including encrypted
-reasoning, without exposing them through provider logs. Requests may set
-`toolChoice` and `parallelToolCalls`; tool results may be marked `incomplete`.
-Schemas are sent unchanged and marked strict only when they are already
-strict-compatible.
+### OpenAI Responses-compatible endpoints
+
+`createOpenAiProvider` talks to any endpoint that answers the OpenAI Responses
+API. Set `baseUrl` for a Responses-compatible endpoint and optionally set
+`identity: { id, name }`; configured providers preserve their own identity in
+events and diagnostics. The protocol is `/responses`; a Chat Completions-only
+endpoint is not supported. `apiKey` is optional: without it the request carries
+no authorization header, which some compatible endpoints accept.
+
+- `*-fast` model aliases are sent without the suffix and with
+  `service_tier: "priority"`.
+- Requests use `store: false`. `ProviderFinished.replay` retains opaque output
+  items for exact multi-turn replay, including encrypted reasoning, without
+  exposing them through provider logs.
+- Requests may set `toolChoice` and `parallelToolCalls`; tool results may be
+  marked `incomplete`.
+- Schemas are sent unchanged and marked strict only when they are already
+  strict-compatible.
+
+### OpenRouter
+
+Use `createOpenRouterProvider` for heterogeneous OpenRouter models. It
+discovers the selected model's live capabilities, applies the curated
+laboratory policy, preserves opaque reasoning replay, normalizes tool controls,
+and validates or repairs direct structured output locally
+(`maxStructuredOutputRepairs`, two by default).
+
+```ts
+import pino from 'pino';
+import { createFetchTransport, createOpenRouterProvider } from 'llms';
+
+const provider = createOpenRouterProvider({
+  transport: createFetchTransport(),
+  apiKey: process.env.OPENROUTER_API_KEY ?? '',
+  logger: pino(),
+});
+```
+
+Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
+`${baseUrl}/models`. Configuration and execution use the same endpoint.
+
+See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
+matrix, fallback rules, primary sources, and paid live-conformance command.
+
+### Internal Codex integration
+
+`createCodexProvider` sends a rendered authorization header to ChatGPT's Codex
+backend, not the public OpenAI Responses API. It is available to internal
+callers but is not listed by `providerKinds`.
+
+```ts
+import pino from 'pino';
+import { createCodexProvider, createFetchTransport } from 'llms';
+import { createCodexOAuth } from 'oauth';
+
+// tokenStore, browserOpener, and localCallbackServer are host-supplied.
+const codex = createCodexOAuth({
+  transport: createFetchTransport(),
+  tokenStore,
+  redirectUri: localCallbackServer.redirectUri,
+  browserOpener,
+  callbackServer: localCallbackServer,
+});
+
+const credential = await codex.credential();
+const provider = createCodexProvider({
+  transport: createFetchTransport(),
+  authorization: credential.authorization,
+  logger: pino(),
+});
+```
+
+OAuth is owned by the `oauth` package. `llms` only accepts an API key rendered
+as `Bearer ${apiKey}` or an exact `authorization` header supplied by the host;
+passing both is an error.
+
+### Configuring providers from settings
+
+`providerKinds` lists the advertised kinds (`openai` and `openrouter`), each
+with the fields a settings surface should show. `providerKind(id)` looks up a
+kind, and `createProviderForKind(id, values, deps)` builds a provider from
+field values, rejecting missing required fields. The former `unified`,
+`openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions API have
+been removed.
 
 ## Embeddings
 
-OpenAI and OpenRouter providers accept an
-optional positive-integer `dimensions` value for models that support a
-configurable embedding size.
+OpenAI and OpenRouter providers accept an optional positive-integer
+`dimensions` value for models that support a configurable embedding size.
 
 ```ts
 const { embedding, usage } = await provider.embedding({
@@ -92,10 +155,9 @@ usage includes token counts and billed cost in credits.
 
 ## Reranking
 
-OpenAI and OpenRouter providers expose a common
-text-document reranking API. The request is sent to `/rerank` below the
-provider's configured base URL (for example, OpenRouter uses
-`https://openrouter.ai/api/v1/rerank`).
+OpenAI and OpenRouter providers expose a common text-document reranking API.
+The request is sent to `/rerank` below the provider's configured base URL (for
+example, OpenRouter uses `https://openrouter.ai/api/v1/rerank`).
 
 ```ts
 const { results, usage } = await provider.rerank({
@@ -114,44 +176,16 @@ const { results, usage } = await provider.rerank({
 Reranking usage may include total tokens, search units, and provider-reported
 cost. Providers that omit accounting data return no `usage` field.
 
-Structured requests may set
-`flags.includeStructuredSchemaOnSystemPrompt: true` to append a deterministic
-system message containing the converted JSON Schema. Authored system messages
-remain first and in order, followed by the generated schema message and then
-all non-system messages. Omitting the flag, setting it to `false`, or using it
-without `schema` leaves messages unchanged. Native structured-output fields
-remain enabled for providers that support them.
+## Structured schema on the system prompt
 
-## Internal Codex integration with a rendered authorization header
+Structured requests may set `flags.includeStructuredSchemaOnSystemPrompt: true`
+to append a deterministic system message containing the converted JSON Schema.
+Authored system messages remain first and in order, followed by the generated
+schema message and then all non-system messages. Omitting the flag, setting it
+to `false`, or using it without `schema` leaves messages unchanged. Native
+structured-output fields remain enabled for providers that support them.
 
-```ts
-import pino from 'pino';
-import { createCodexProvider, createFetchTransport } from 'llms';
-import { createCodexOAuth } from 'oauth';
-
-const codex = createCodexOAuth({
-  transport: createFetchTransport(),
-  tokenStore,
-  clientId: 'client-id',
-  redirectUri: 'http://127.0.0.1:3000/callback',
-  browserOpener,
-  callbackServer: localCallbackServer,
-});
-
-const credential = await codex.credential();
-const provider = createCodexProvider({
-  transport: createFetchTransport(),
-  authorization: credential.authorization,
-  logger: pino(),
-});
-```
-
-OAuth is owned by the `oauth` package. `llms` only accepts an API key rendered
-as `Bearer ${apiKey}` or an exact `authorization` header supplied by the host.
-The Codex provider sends that authorization header to ChatGPT's Codex backend,
-not the public OpenAI Responses API.
-
-## Fake transport tests
+## Testing with a fake transport
 
 ```ts
 import pino from 'pino';
@@ -180,6 +214,8 @@ const provider = createOpenRouterProvider({
 });
 ```
 
+## Logging and content privacy
+
 Every provider requires a Pino logger and creates a child bound to
 `{ component: 'llms', provider }`. Operational events contain counts, model
 identifiers, finish reasons, and token usage, not request or response bodies.
@@ -194,16 +230,20 @@ per-request sensitive-output flag or content sanitizer.
 ### Migrating content policies
 
 Remove `flags.sensitiveOutput` from requests. The `redactSecrets` and
-`redactDiagnosticValue` exports have been removed; `diagnosticExcerpt` now
-only truncates text. Apply any application-specific sanitization at the
-consumer boundary, and configure the injected logger to control log output.
-Embedding and rerank requests no longer expose `flags`, which had no other
-supported behavior for those operations.
+`redactDiagnosticValue` exports have been removed; `diagnosticExcerpt` now only
+truncates text. Apply any application-specific sanitization at the consumer
+boundary, and configure the injected logger to control log output. Embedding
+and rerank requests no longer expose `flags`, which had no other supported
+behavior for those operations.
 
-## Building
+## Development
 
-Run `nx build llms` to build the library.
+```console
+npx nx build llms
+npx nx typecheck llms
+npx nx test llms
+```
 
-## Testing
-
-Run `nx test llms` to compile and run the package tests.
+`npx nx run llms:conformance-live -- --yes-paid-conformance` runs the paid live
+conformance suite described in
+[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md); it is not part of `test`.
