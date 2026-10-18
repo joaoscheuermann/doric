@@ -1,6 +1,9 @@
+import { attachmentLine } from 'runtime/contracts';
+
 import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { humanize } from '../../utility/humanize.js';
+import { AttachmentImage } from './attachment-image.js';
 import { CollapsibleBlock } from './collapsible-block.js';
 import { EditToolItem } from './edit-tool-item.js';
 import { TerminalToolItem } from './terminal-tool-item.js';
@@ -79,9 +82,7 @@ export function ToolItem({
         {args.length > 0 ? (
           <div className="whitespace-pre-wrap break-words">{args}</div>
         ) : null}
-        {result === undefined ? null : (
-          <div className="whitespace-pre-wrap break-words">{result}</div>
-        )}
+        {result === undefined ? null : <ToolResult result={result} />}
         {error === undefined ? null : (
           <div className="text-destructive whitespace-pre-wrap break-words">
             {error}
@@ -89,5 +90,15 @@ export function ToolItem({
         )}
       </div>
     </CollapsibleBlock>
+  );
+}
+
+/** A call's result: the image an attachment's line names, or its text. */
+function ToolResult({ result }: { readonly result: string }) {
+  const image = attachmentLine(result);
+  return image === undefined ? (
+    <div className="whitespace-pre-wrap break-words">{result}</div>
+  ) : (
+    <AttachmentImage id={image.id} name={image.name} />
   );
 }

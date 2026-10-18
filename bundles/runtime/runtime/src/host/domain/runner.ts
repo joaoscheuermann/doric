@@ -25,6 +25,7 @@ import type {
   WorkspaceControl,
 } from '../../contracts/tool-host/index.js';
 import { cwdRepoHint, threadGit } from '../provisional/git-status.js';
+import type { AttachmentStore } from '../store/attachments.js';
 import {
   queuedPrompt,
   queuedPrompts,
@@ -73,6 +74,8 @@ export interface RunnerContext {
     readonly summaryMaxChars: number;
   }>;
   readonly checkStorage?: () => Promise<void>;
+  /** The images each Project holds, read back for the prompts it runs. */
+  readonly attachments?: AttachmentStore;
   /**
    * runtime.hooks/v1 onThreadsClosingHook, awaited where the terminals of
    * closing Threads close: the `terminal` bundle owns the sessions (stage 10)
@@ -339,6 +342,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     } catch (cause) {
       throw new ThreadPersistenceError(cause);
     }
+    const attachments = context.attachments;
     const session = createSession({
       threadId: thread.thread.id,
       promptId: job.id,
@@ -346,6 +350,12 @@ export const createThreadRunner = (context: RunnerContext) => {
       store,
       redactor: context.redactor,
       publish: (event) => publisher.event(event),
+      ...(attachments === undefined
+        ? {}
+        : {
+            attachment: (id: string) =>
+              attachments.read(thread.thread.projectId, id),
+          }),
       steering: {
         take: () => {
           const steers = active.steers.splice(0);

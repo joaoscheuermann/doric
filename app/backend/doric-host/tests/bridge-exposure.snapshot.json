@@ -36,6 +36,7 @@
     "models/v1": ["catalog", "kind", "kinds"],
     "papercraft.previews/v1": ["build", "read"],
     "resources/v1": ["host", "project"],
+    "runtime.attachments/v1": ["attach", "read"],
     "runtime.lease/v1": [
       "branches",
       "changes",

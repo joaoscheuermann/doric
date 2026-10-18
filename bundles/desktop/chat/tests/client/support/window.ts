@@ -93,6 +93,7 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
       'runtime.threads/v1@1.3.0',
+      'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
     ],
     requires: [],
@@ -104,6 +105,7 @@ const hostCandidate: CatalogCandidate = {
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
       ['runtime.threads/v1', '1.3.0'],
+      ['runtime.attachments/v1', '1.0.0'],
       ['comments/v1', '1.0.0'],
     ].map(([id, version]) => ({
       id,
@@ -133,6 +135,19 @@ const threadsRemote: RemoteContract = {
       ]),
     ),
     watchThread: { tuple: 2, local: false, stream: true },
+  },
+};
+
+const attachmentsRemote: RemoteContract = {
+  id: 'runtime.attachments/v1',
+  environment: 'host',
+  bundleId: 'host',
+  version: '1.0.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    attach: { tuple: null, local: false, stream: false },
+    read: { tuple: null, local: false, stream: false },
   },
 };
 
@@ -360,7 +375,7 @@ export const openChatWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [threadsRemote, composerRemote, commentsRemote],
+    remote: [threadsRemote, attachmentsRemote, composerRemote, commentsRemote],
     hostId: 'host-1',
     storageGeneration: 1,
   };

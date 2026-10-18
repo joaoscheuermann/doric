@@ -1,6 +1,10 @@
 import { defineStorageType } from 'bundle/contracts';
 import { z } from 'zod';
 
+import {
+  attachmentIdSchema,
+  attachmentMediaTypeSchema,
+} from './attachments.js';
 import { inputSourceSchema } from './model.js';
 import { runtimeOwnerSchema } from './runtime.js';
 
@@ -178,6 +182,42 @@ export const historyType = defineStorageType({
   type: 'runtime.history/v1',
   schema: historyDocumentSchema,
   indexes: [{ name: 'byThread', fields: ['threadId'] }],
+});
+
+/**
+ * One image a Thread attached; the id is `<threadId>:<attachment id>`. The
+ * bytes are the blob the attachment id names. The record is what lets the
+ * Thread's Project read it, and what keeps the blob: deleting the Thread or
+ * its Project deletes the record, and a blob no record names any more is
+ * deleted after it.
+ */
+export const attachmentDocumentSchema = z
+  .object({
+    projectId: z.uuid(),
+    threadId: z.uuid(),
+    id: attachmentIdSchema,
+    name: z.string(),
+    mediaType: attachmentMediaTypeSchema,
+    size: z.number().int().positive(),
+    createdAt: iso,
+  })
+  .strict();
+
+export type AttachmentDocument = z.output<typeof attachmentDocumentSchema>;
+
+export const attachmentDocumentId = (
+  threadId: string,
+  attachmentId: string,
+): string => `${threadId}:${attachmentId}`;
+
+export const attachmentType = defineStorageType({
+  type: 'runtime.attachment/v1',
+  schema: attachmentDocumentSchema,
+  indexes: [
+    { name: 'byProject', fields: ['projectId', 'id'] },
+    { name: 'byThread', fields: ['threadId'] },
+    { name: 'byBlob', fields: ['id'] },
+  ],
 });
 
 export const migrationType = defineStorageType({

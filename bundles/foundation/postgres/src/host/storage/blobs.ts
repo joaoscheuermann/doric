@@ -4,8 +4,15 @@ import { ContractError } from 'bundle/contracts';
 
 import type { Database } from '../../prisma.js';
 
-const base64 =
-  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+/**
+ * Canonical base64: whole four-character groups, padding only at the end. A
+ * single character-class scan, since a repeated group overflows the regex
+ * engine's stack on a blob of a few megabytes.
+ */
+const base64 = {
+  test: (value: string): boolean =>
+    value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/u.test(value),
+};
 
 /** Stores base64 bytes once under `sha256:<hex>`; storing them again is a no-op. */
 export const putBlob = async (
@@ -43,4 +50,17 @@ export const getBlob = async (
   return row === undefined
     ? undefined
     : Buffer.from(row.bytes).toString('base64');
+};
+
+/** Removes a stored blob; an unknown or malformed hash is a no-op. */
+export const deleteBlob = async (
+  database: Database,
+  hash: string,
+): Promise<void> => {
+  if (!/^sha256:[0-9a-f]{64}$/.test(hash)) {
+    return;
+  }
+
+  await database.$executeRaw`
+    DELETE FROM "storage_blob" WHERE "hash" = ${hash}`;
 };

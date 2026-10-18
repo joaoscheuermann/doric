@@ -1,6 +1,7 @@
 import { type CallArg, ref } from 'bundle/contracts';
 import { z } from 'zod';
 
+import type { AttachmentContent } from './attachments.js';
 import {
   type InputSource,
   inputSourceSchema,
@@ -59,6 +60,12 @@ export interface PromptSession {
    * input it never records returns to the Thread's queue once the run ends.
    */
   steers?(): Promise<readonly SteerInput[]>;
+  /**
+   * One attachment of the Thread's Project, bytes and all, or undefined when
+   * the Project holds none by that id: a reference line names an image only
+   * for the Project it was attached to.
+   */
+  attachment?(id: string): Promise<AttachmentContent | undefined>;
 }
 
 export interface ExecutorRunInput {

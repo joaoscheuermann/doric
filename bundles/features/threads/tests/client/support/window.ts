@@ -80,6 +80,7 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
       'runtime.threads/v1@1.3.0',
+      'runtime.attachments/v1@1.0.0',
       'tools/v1@1.2.0',
     ],
     requires: [],
@@ -91,6 +92,7 @@ const hostCandidate: CatalogCandidate = {
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
       ['runtime.threads/v1', '1.3.0'],
+      ['runtime.attachments/v1', '1.0.0'],
       ['tools/v1', '1.2.0'],
     ].map(([id, version]) => ({
       id,

@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import {
   type Call,
+  ContractError,
   defineMethod,
   defineService,
   type RegisteredTool,
@@ -10,10 +13,13 @@ import {
 import { createTestServices } from 'bundle/testing';
 import {
   type Host,
+  RuntimeAttachmentsV1,
   RuntimeLeaseV1,
   RuntimeWorkspaceV1,
+  runtimeAttachmentsMethods,
   runtimeLeaseMethods,
   runtimeWorkspaceMethods,
+  sniffImageMediaType,
 } from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
 import { type Terminal, TerminalV1, terminalMethods } from 'terminal/contracts';
@@ -30,8 +36,11 @@ import { activate } from '../../src/host/index.js';
 /** The sandbox operations the fake lease forwards. */
 export type LeasedSandbox = Pick<
   Sandbox,
-  'id' | 'root' | 'exec' | 'readFile' | 'writeFile'
+  'id' | 'root' | 'exec' | 'readFile' | 'writeFile' | 'getFile'
 >;
+
+/** What the fake runtime.attachments/v1 kept, by attachment id. */
+export type AttachedImages = Map<string, { name: string; bytes: string }>;
 
 /**
  * Fake providers of the contracts this bundle requires, standing for the
@@ -39,7 +48,39 @@ export type LeasedSandbox = Pick<
  * forwards to `sandbox`, the working directory to `host.workspace`, and, when
  * the facade carries terminals, `terminal/v1` to `host.terminals`.
  */
-const providers = (sandbox: LeasedSandbox, host: Host) => [
+/**
+ * runtime.attachments/v1 as the runtime answers it: an image keeps its
+ * sha256 id, and bytes that are no image are refused.
+ */
+const attachments = (attached: AttachedImages) =>
+  defineService(RuntimeAttachmentsV1, {
+    attach: defineMethod({
+      ...runtimeAttachmentsMethods.attach,
+      execute: async ({ name, bytes }) => {
+        const decoded = Buffer.from(bytes, 'base64');
+        const mediaType = sniffImageMediaType(decoded);
+        if (mediaType === undefined)
+          throw new ContractError(
+            'invalid_input',
+            'The attachment is not a PNG, JPEG, WebP or GIF image.',
+          );
+        const id = `sha256-${createHash('sha256').update(decoded).digest('hex')}`;
+        attached.set(id, { name, bytes });
+        return { id, name, mediaType, size: decoded.length };
+      },
+    }),
+    read: defineMethod({
+      ...runtimeAttachmentsMethods.read,
+      execute: async () => undefined,
+    }),
+  });
+
+const providers = (
+  sandbox: LeasedSandbox,
+  host: Host,
+  attached: AttachedImages = new Map(),
+) => [
+  attachments(attached),
   // By id: the stage-1 methods only; withThread (1.1.0) has no fake here.
   defineService(RuntimeWorkspaceV1.id, {
     cwd: defineMethod({
@@ -78,6 +119,12 @@ const providers = (sandbox: LeasedSandbox, host: Host) => [
       output: runtimeLeaseMethods.readFile.output,
       execute: (path) => sandbox.readFile(path),
     }),
+    readFileBytes: defineMethod({
+      input: runtimeLeaseMethods.readFileBytes.input,
+      output: runtimeLeaseMethods.readFileBytes.output,
+      execute: async (path) =>
+        Buffer.from(await sandbox.getFile(path)).toString('base64'),
+    }),
     writeFile: defineMethod({
       input: runtimeLeaseMethods.writeFile.input,
       output: runtimeLeaseMethods.writeFile.output,
@@ -110,10 +157,11 @@ export interface BoundServices {
 export const filesServices = (
   sandbox: LeasedSandbox,
   host: Host,
+  attached?: AttachedImages,
 ): BoundServices => {
   const harness = createTestServices({
     bundle: { id: 'files' },
-    provide: providers(sandbox, host),
+    provide: providers(sandbox, host, attached),
   });
   const terminal =
     host.terminals === undefined ? undefined : harness.services.use(TerminalV1);
@@ -136,8 +184,9 @@ export const bindTool = <I extends ToolInput, O extends ToolOutput>(
     | ((terminals: () => Terminal | undefined) => ToolDefinitionObject<I, O>),
   sandbox: LeasedSandbox,
   host: Host,
+  attached?: AttachedImages,
 ): Tool<I, O> => {
-  const { services, call, terminals } = filesServices(sandbox, host);
+  const { services, call, terminals } = filesServices(sandbox, host, attached);
   const resolved =
     typeof definition === 'function' ? definition(terminals) : definition;
 

@@ -1,11 +1,13 @@
 import type { Storage } from 'bundle/contracts';
 
 import {
+  attachmentType,
   historyType,
   migrationType,
   projectType,
   threadType,
 } from '../../contracts/storage.js';
+import { type AttachmentStore, createAttachmentStore } from './attachments.js';
 import { createDocumentSet } from './documents.js';
 import { createProjectStore } from './projects.js';
 import { createThreadStore, type ThreadStoreOptions } from './threads.js';
@@ -24,11 +26,14 @@ export const runtimeStorageTypes = [
   threadType,
   historyType,
   migrationType,
+  attachmentType,
 ] as const;
 
 export interface RuntimeStores {
   readonly projects: ProjectStore;
   readonly threads: ThreadStore;
+  /** The images the Threads attached; deleted with their Thread or Project. */
+  readonly attachments: AttachmentStore;
 }
 
 export const createRuntimeStores = (
@@ -36,9 +41,11 @@ export const createRuntimeStores = (
   options: ThreadStoreOptions,
 ): RuntimeStores => {
   const set = createDocumentSet(storage);
+  const attachments = createAttachmentStore(storage);
   return {
-    projects: createProjectStore(set),
-    threads: createThreadStore(set, options),
+    projects: createProjectStore(set, attachments),
+    threads: createThreadStore(set, options, attachments),
+    attachments,
   };
 };
 

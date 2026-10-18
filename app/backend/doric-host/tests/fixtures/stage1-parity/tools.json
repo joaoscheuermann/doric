@@ -772,6 +772,32 @@
   },
   {
     "definition": {
+      "name": "view-image",
+      "description": "Look at an image file in the workspace: a PNG, JPEG, WebP or GIF of at most 5 MiB. The image itself comes back with the result, so you see it, and the result's line shows it to the reader in the conversation. A relative path resolves against the current working directory.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
       "name": "git",
       "description": "Runs one non-interactive Git command in the sandbox from structured arguments, without shell interpretation. Supports repository inspection and mutation, including clone, worktree, commit, fetch, push, rebase, and conflict workflows. Runs in the current working directory, and a relative working_directory resolves against it. After a clone, move the thread's working directory into the repository with the cwd tool.",
       "inputSchema": {

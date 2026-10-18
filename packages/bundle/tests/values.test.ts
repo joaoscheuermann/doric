@@ -117,6 +117,9 @@ void test('every basic and platform method has a stated way across the envelope'
       read: 'crosses',
       commit: 'crosses',
       health: 'crosses',
+      putBlob: 'crosses',
+      getBlob: 'crosses',
+      deleteBlob: 'crosses',
     },
     'storage.backend/v1': {
       declareType: 'crosses',
@@ -127,6 +130,7 @@ void test('every basic and platform method has a stated way across the envelope'
       feed: 'crosses',
       putBlob: 'crosses',
       getBlob: 'crosses',
+      deleteBlob: 'crosses',
       capabilities: 'crosses',
       health: 'crosses',
       identity: 'crosses',

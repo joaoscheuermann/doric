@@ -170,6 +170,28 @@ const replacementStorage = (seen: string[]): EmbeddedBundle => {
                 return { status: 'ok' as const, writable: true };
               },
             }),
+            putBlob: defineMethod({
+              ...storageMethods.putBlob,
+              execute: async () => {
+                await Promise.resolve();
+
+                return { hash: `sha256:${'0'.repeat(64)}` };
+              },
+            }),
+            getBlob: defineMethod({
+              ...storageMethods.getBlob,
+              execute: async () => {
+                await Promise.resolve();
+
+                return undefined;
+              },
+            }),
+            deleteBlob: defineMethod({
+              ...storageMethods.deleteBlob,
+              execute: async () => {
+                await Promise.resolve();
+              },
+            }),
           }),
         );
       },

@@ -28,6 +28,7 @@ import {
   ResourcesV1,
 } from './peers.js';
 import { createPorts, type RuntimePorts } from './ports.js';
+import { attachmentsService } from './services/attachments.js';
 import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
 import { terminalSessionsService } from './services/terminal-sessions.js';
@@ -35,6 +36,7 @@ import { threadsService } from './services/threads.js';
 import { usageService } from './services/usage.js';
 import { createWatches } from './services/watches.js';
 import { workspaceService } from './services/workspace.js';
+import type { AttachmentStore } from './store/attachments.js';
 import {
   createRuntimeStores,
   type ProjectStore,
@@ -66,9 +68,12 @@ export const provideRuntime = (
     notices: injectedNotices,
     terminal = () => undefined,
     resources = () => undefined,
+    attachments,
   }: {
     readonly projects: ProjectStore;
     readonly threads: ThreadStore;
+    /** The images the Threads attached; a test may leave them out. */
+    readonly attachments?: AttachmentStore;
     readonly ports: RuntimePorts;
     readonly notices?: Notices;
     /** The prompt bindings; a test passes its own to observe them. */
@@ -96,6 +101,7 @@ export const provideRuntime = (
     redactor,
     bindings,
     terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
+    ...(attachments === undefined ? {} : { attachments }),
   });
 
   // The remote watches read what the transport socket reads (R-STREAM).
@@ -124,6 +130,8 @@ export const provideRuntime = (
   services.provide(usageService(service));
   services.provide(leaseService({ service, bindings, resources }));
   services.provide(terminalSessionsService(watches, terminal));
+  if (attachments !== undefined)
+    services.provide(attachmentsService({ attachments, threads }));
 
   // Idempotent: the stop step already disposed it on a normal stop.
   return {

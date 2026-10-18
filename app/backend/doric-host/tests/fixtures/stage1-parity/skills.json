@@ -169,6 +169,10 @@
       {
         "name": "write",
         "alwaysAvailable": true
+      },
+      {
+        "name": "view-image",
+        "alwaysAvailable": true
       }
     ]
   },

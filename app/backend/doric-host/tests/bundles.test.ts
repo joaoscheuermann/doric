@@ -169,6 +169,7 @@ void test('the default composition exposes the pre-migration tools, in order, by
         'tree',
         'web',
         'write',
+        'view-image',
         'git',
         'thread-spawn',
         'thread-list',

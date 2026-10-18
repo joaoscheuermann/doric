@@ -40,6 +40,7 @@ void describe('files activation', () => {
         ['grep', true],
         ['tree', true],
         ['write', true],
+        ['view-image', true],
       ],
     );
   });

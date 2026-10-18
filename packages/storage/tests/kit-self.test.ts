@@ -25,6 +25,7 @@ const forward = (backend: StorageBackend): StorageBackend => ({
   feed: (request) => backend.feed(request),
   putBlob: (bytes) => backend.putBlob(bytes),
   getBlob: (hash) => backend.getBlob(hash),
+  deleteBlob: (hash) => backend.deleteBlob(hash),
   capabilities: () => backend.capabilities(),
   health: () => backend.health(),
   identity: () => backend.identity(),
@@ -199,7 +200,7 @@ void test('case IDs are unique and every group of the design is covered', () => 
     ...numbered('P', 2),
     ...numbered('F', 4),
     ...numbered('X', 5),
-    ...numbered('B', 3),
+    ...numbered('B', 5),
     ...numbered('L', 3),
     ...numbered('H', 2),
   ];

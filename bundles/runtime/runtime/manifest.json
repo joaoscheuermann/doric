@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "runtime",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -10,7 +10,8 @@
     "runtime/v1@1.3.0",
     "runtime.threads/v1@1.3.0",
     "runtime.workspace/v1@1.1.0",
-    "runtime.lease/v1@1.1.0",
+    "runtime.lease/v1@1.2.0",
+    "runtime.attachments/v1@1.0.0",
     "runtime.terminals/v1@1.1.0",
     "runtime.hooks/v1@1.1.0",
     "runtime.usage/v1@1.0.0",
@@ -18,10 +19,11 @@
     "runtime.project/v1@1.1.0",
     "runtime.thread/v1@1.0.0",
     "runtime.history/v1@1.0.0",
-    "runtime.migration/v1@1.0.0"
+    "runtime.migration/v1@1.0.0",
+    "runtime.attachment/v1@1.0.0"
   ],
   "requires": [
-    "storage/v1@^1.0.0",
+    "storage/v1@^1.1.0",
     "events/v1@^1.0.0",
     "hooks/v1@^1.0.0",
     "core.event-hooks/v1@^1.0.0",
@@ -36,6 +38,7 @@
     "runtime/v1": ["projectId", "threadId", "promptId"],
     "runtime.threads/v1": ["projectId", "threadId", "promptId"],
     "runtime.lease/v1": ["projectId", "threadId", "promptId"],
+    "runtime.attachments/v1": ["projectId", "threadId", "promptId"],
     "runtime.terminals/v1": ["projectId", "threadId", "promptId"]
   }
 }

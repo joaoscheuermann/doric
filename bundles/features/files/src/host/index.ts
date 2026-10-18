@@ -6,6 +6,7 @@ import { tool as edit } from './tools/edit.js';
 import { tool as find } from './tools/find.js';
 import { tool as grep } from './tools/grep.js';
 import { tool as tree } from './tools/tree.js';
+import { tool as viewImage } from './tools/view-image.js';
 import { tool as write } from './tools/write.js';
 
 /**
@@ -27,4 +28,5 @@ export const activate = ({ services }: HostContext): void => {
   tools.register(grep, { alwaysAvailable: true, order: 400 });
   tools.register(tree, { alwaysAvailable: true, order: 600 });
   tools.register(write, { alwaysAvailable: true, order: 800 });
+  tools.register(viewImage, { alwaysAvailable: true, order: 850 });
 };

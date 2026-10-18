@@ -73,4 +73,35 @@ export const blobCases = [
       assert.equal(await backend.getBlob(''), undefined);
     },
   ),
+  blobs('B4', 'a blob of several megabytes round trips', async (harness) => {
+    const backend = await open(harness);
+    const bytes = Uint8Array.from(
+      { length: 6 * 1024 * 1024 },
+      (_, index) => (index * 31) % 256,
+    );
+    const encoded = Buffer.from(bytes).toString('base64');
+    const { hash } = await backend.putBlob(encoded);
+
+    assert.equal(hash, sha256(bytes));
+    assert.equal(await backend.getBlob(hash), encoded);
+  }),
+  blobs(
+    'B5',
+    'deleteBlob removes a blob, and an unknown hash is a no-op',
+    async (harness) => {
+      const backend = await open(harness);
+      const encoded = Buffer.from('gone soon', 'utf8').toString('base64');
+      const { hash } = await backend.putBlob(encoded);
+      const kept = await backend.putBlob(
+        Buffer.from('kept', 'utf8').toString('base64'),
+      );
+
+      await backend.deleteBlob(hash);
+      await backend.deleteBlob(hash);
+      await backend.deleteBlob('md5:abc');
+
+      assert.equal(await (await open(harness)).getBlob(hash), undefined);
+      assert.notEqual(await backend.getBlob(kept.hash), undefined);
+    },
+  ),
 ];

@@ -6,6 +6,7 @@ import { SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
 import pretty from 'pino-pretty';
+import { ATTACHMENT_MAX_BYTES } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
 
 import { installBridge } from './lib/bridge/socket.js';
@@ -79,7 +80,15 @@ async function main() {
   // `destroyUpgradeTimeout`, so a relayed handshake waiting on xpra could be
   // killed by a timer that does not own it. The relay answers and enforces its
   // own token tree; Socket.IO still handles `/socket.io/` alone.
-  const io = new SocketServer(server, { destroyUpgrade: false });
+  //
+  // A desktop call carries an image attachment whole, base64 in its envelope,
+  // so one message must hold the largest attachment the runtime keeps: its
+  // base64 (4 characters per 3 bytes) plus room for the envelope. Socket.IO's
+  // own default, 1 MB, would drop the connection on the first photo.
+  const io = new SocketServer(server, {
+    destroyUpgrade: false,
+    maxHttpBufferSize: Math.ceil(ATTACHMENT_MAX_BYTES / 3) * 4 + 1024 * 1024,
+  });
 
   // The enabled bundles build their own pools in the generation process, from
   // their own environment, and log them at their start steps.
