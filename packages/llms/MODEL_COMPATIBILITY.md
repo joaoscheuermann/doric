@@ -1,4 +1,4 @@
-# Unified model compatibility
+# OpenRouter model compatibility
 
 Research checked on 2026-08-08. This is a transport and behavioral contract,
 not a claim that every model from a laboratory supports every feature.
@@ -8,7 +8,7 @@ and a conservative fallback when discovery is unavailable.
 
 ## Normalized contract
 
-`createUnifiedProvider` keeps the public `LlmProvider` request and response
+`createOpenRouterProvider` keeps the public `LlmProvider` request and response
 types while using OpenRouter Chat Completions underneath.
 
 - Tool requests map `toolChoice`, advertised `parallelToolCalls`,
@@ -35,7 +35,7 @@ types while using OpenRouter Chat Completions underneath.
 
 ## Laboratory divergences
 
-| Laboratory / family       | Documented divergence                                                                                                                                 | Unified behavior                                                                                                                                                             |
+| Laboratory / family       | Documented divergence                                                                                                                                 | OpenRouter behavior                                                                                                                                                          |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenAI                    | Strict functions and JSON schemas require a supported schema subset; stateless reasoning models require opaque output/reasoning items to be replayed. | Marks only already-compatible schemas strict and replays ordered opaque items.                                                                                               |
 | Anthropic Claude          | Forced `any`/named tools are incompatible with manual extended thinking; strict tool use and JSON output have distinct controls.                      | Rejects forced choice plus requested reasoning before completion; preserves replay.                                                                                          |

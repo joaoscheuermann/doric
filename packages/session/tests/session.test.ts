@@ -3,11 +3,11 @@ import test from 'node:test';
 
 import { createSessionStore } from '../src/index.js';
 
-type StoredValue = {
+interface StoredValue {
   readonly name: string;
-};
+}
 
-test('stores and returns typed values by ID', async () => {
+void test('stores and returns typed values by ID', async () => {
   const store = createSessionStore<StoredValue>();
   const value = await store.getOrCreate('alpha', () => ({ name: 'first' }));
 
@@ -18,7 +18,7 @@ test('stores and returns typed values by ID', async () => {
   await assertResolves(store.load('alpha'), { name: 'first' });
 });
 
-test('reuses the existing value when the same ID is requested again', async () => {
+void test('reuses the existing value when the same ID is requested again', async () => {
   const store = createSessionStore<StoredValue>();
   let calls = 0;
 
@@ -39,7 +39,7 @@ test('reuses the existing value when the same ID is requested again', async () =
   assert.equal(second, first);
 });
 
-test('dedupes concurrent creation for the same ID', async () => {
+void test('dedupes concurrent creation for the same ID', async () => {
   const store = createSessionStore<StoredValue>();
   let calls = 0;
   const pending = deferred<StoredValue>();
@@ -67,7 +67,7 @@ test('dedupes concurrent creation for the same ID', async () => {
   assert.deepEqual(store.get('alpha'), { name: 'first' });
 });
 
-test('allows retry after creation fails', async () => {
+void test('allows retry after creation fails', async () => {
   const store = createSessionStore<StoredValue>();
   let calls = 0;
 
@@ -91,7 +91,7 @@ test('allows retry after creation fails', async () => {
   assert.deepEqual(value, { name: 'retry' });
 });
 
-test('deletes resolved sessions by ID', async () => {
+void test('deletes resolved sessions by ID', async () => {
   const store = createSessionStore<StoredValue>();
 
   await store.getOrCreate('alpha', () => ({ name: 'first' }));
@@ -105,7 +105,7 @@ test('deletes resolved sessions by ID', async () => {
   assert.equal(store.load('alpha'), undefined);
 });
 
-test('lists resolved sessions in insertion order', async () => {
+void test('lists resolved sessions in insertion order', async () => {
   const store = createSessionStore<StoredValue>();
 
   await store.getOrCreate('alpha', () => ({ name: 'first' }));
@@ -118,7 +118,7 @@ test('lists resolved sessions in insertion order', async () => {
   ]);
 });
 
-test('clears resolved and in-flight sessions', async () => {
+void test('clears resolved and in-flight sessions', async () => {
   const store = createSessionStore<StoredValue>();
   const pending = deferred<StoredValue>();
 

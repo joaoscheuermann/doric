@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ProviderErrorObject } from '../src/index.js';
 import { createOpenAiProvider, fakeTransport, response } from './fakes.js';
 
-test('rejects OpenAI requests that are missing model or input', async () => {
+void test('rejects OpenAI requests that are missing model or input', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({}),
     apiKey: 'sk-testSecret123',
@@ -30,7 +30,7 @@ test('rejects OpenAI requests that are missing model or input', async () => {
   );
 });
 
-test('parses OpenAI completion output usage reasoning and tool calls', async () => {
+void test('parses OpenAI completion output usage reasoning and tool calls', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -94,7 +94,7 @@ test('parses OpenAI completion output usage reasoning and tool calls', async () 
   ]);
 });
 
-test('returns parsed OpenAI structured output from completions', async () => {
+void test('returns parsed OpenAI structured output from completions', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -122,7 +122,7 @@ test('returns parsed OpenAI structured output from completions', async () => {
   assert.equal(answer, 4);
 });
 
-test('returns parsed OpenAI nested union structured output from completions', async () => {
+void test('returns parsed OpenAI nested union structured output from completions', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -154,7 +154,7 @@ test('returns parsed OpenAI nested union structured output from completions', as
   });
 });
 
-test('rejects OpenAI top-level discriminated union structured output from completions', async () => {
+void test('rejects OpenAI top-level discriminated union structured output from completions', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({}),
     apiKey: 'sk-testSecret123',
@@ -175,7 +175,7 @@ test('rejects OpenAI top-level discriminated union structured output from comple
   );
 });
 
-test('rejects OpenAI refusals when structured output is required', async () => {
+void test('rejects OpenAI refusals when structured output is required', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -207,7 +207,7 @@ test('rejects OpenAI refusals when structured output is required', async () => {
   );
 });
 
-test('rejects OpenAI tool calls when structured output is required', async () => {
+void test('rejects OpenAI tool calls when structured output is required', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
@@ -239,7 +239,7 @@ test('rejects OpenAI tool calls when structured output is required', async () =>
   );
 });
 
-test('sends OpenAI API key auth as bearer token', async () => {
+void test('sends OpenAI API key auth as bearer token', async () => {
   const transport = fakeTransport({
     responses: [
       response({ status: 'completed', output_text: 'ok', output: [] }),
@@ -262,7 +262,7 @@ test('sends OpenAI API key auth as bearer token', async () => {
   );
 });
 
-test('sends exact OpenAI authorization header when supplied', async () => {
+void test('sends exact OpenAI authorization header when supplied', async () => {
   const transport = fakeTransport({
     responses: [
       response({ status: 'completed', output_text: 'ok', output: [] }),
@@ -285,7 +285,7 @@ test('sends exact OpenAI authorization header when supplied', async () => {
   );
 });
 
-test('omits OpenAI authorization header when credentials are omitted', async () => {
+void test('omits OpenAI authorization header when credentials are omitted', async () => {
   const transport = fakeTransport({
     responses: [
       response({ status: 'completed', output_text: 'ok', output: [] }),
@@ -304,7 +304,7 @@ test('omits OpenAI authorization header when credentials are omitted', async () 
   );
 });
 
-test('omits OpenAI authorization header when credentials are blank', async () => {
+void test('omits OpenAI authorization header when credentials are blank', async () => {
   const transport = fakeTransport({
     responses: [
       response({ status: 'completed', output_text: 'ok', output: [] }),
@@ -328,7 +328,7 @@ test('omits OpenAI authorization header when credentials are blank', async () =>
   );
 });
 
-test('rejects ambiguous OpenAI auth configuration', async () => {
+void test('rejects ambiguous OpenAI auth configuration', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({}),
     apiKey: 'sk-testSecret123',
@@ -346,7 +346,7 @@ test('rejects ambiguous OpenAI auth configuration', async () => {
   );
 });
 
-test('rejects schema-invalid OpenAI structured JSON', async () => {
+void test('rejects schema-invalid OpenAI structured JSON', async () => {
   const provider = createOpenAiProvider({
     transport: fakeTransport({
       responses: [
@@ -373,7 +373,7 @@ test('rejects schema-invalid OpenAI structured JSON', async () => {
   );
 });
 
-test('does not refresh OpenAI auth after 401 responses', async () => {
+void test('does not refresh OpenAI auth after 401 responses', async () => {
   const transport = fakeTransport({
     responses: [response({ error: 'expired' }, 401)],
   });

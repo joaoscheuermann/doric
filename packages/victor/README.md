@@ -1,9 +1,83 @@
 # Victor
 
-Process-local, in-memory lexical, vector, and hybrid retrieval. The public
-entrypoint exports `createLexicalIndex`, `createVectorIndex`, and
-`createHybridSearch`. Embedding generation and the logger are injected by the
-caller; Victor has no provider integration or persistence.
+Victor gives a TypeScript process ranked, in-memory search over a corpus
+without running a search server or a vector database. It provides
+lexical (BM25), vector, and hybrid retrieval behind one small `search`
+interface. You bring the embedding function and the logger; Victor brings
+deterministic ranking with no provider integration and no persistence. It
+suits agent tools, tests and local features that need ranked results
+without extra infrastructure.
+
+Part of [Doric](../../README.md).
+
+## Highlights
+
+- **Three retrieval modes.** `createLexicalIndex`, `createVectorIndex` and
+  `createHybridSearch` share the `Search` and `SearchIndex` interfaces.
+- **Exact, deterministic results.** Vector search is exact, not approximate;
+  equal scores keep insertion order.
+- **Bounded selection.** Only the best `K` candidates are kept, with a heap.
+- **Hybrid by rank fusion.** Lexical and vector results are fused with
+  reciprocal rank fusion and deduplicated by a caller-supplied key.
+- **No hidden I/O.** Embedding generation and logging are injected; nothing
+  is written to disk.
+
+## Usage
+
+```ts
+import pino from 'pino';
+import {
+  createHybridSearch,
+  createLexicalIndex,
+  createVectorIndex,
+} from 'victor';
+
+interface Doc {
+  readonly id: string;
+  readonly text: string;
+}
+
+const logger = pino();
+const lexical = createLexicalIndex<Doc>({ logger });
+const semantic = createVectorIndex<Doc>({
+  dimensions: 384,
+  embedding: (text) => embed(text), // your model; returns 384 numbers
+  logger,
+});
+
+for (const doc of docs) {
+  await lexical.add(doc, (d) => d.text);
+  await semantic.add(doc, (d) => d.text);
+}
+
+const search = createHybridSearch<Doc>({
+  lexical,
+  semantic,
+  key: (d) => d.id,
+  logger,
+});
+
+for (const { data, score } of await search.search('session persistence', 10)) {
+  console.log(data.id, score);
+}
+```
+
+## API
+
+| Export                        | Returns       | Options                                |
+| ----------------------------- | ------------- | -------------------------------------- |
+| `createLexicalIndex(options)` | `SearchIndex` | `logger`                               |
+| `createVectorIndex(options)`  | `SearchIndex` | `dimensions`, `embedding`, `logger`    |
+| `createHybridSearch(options)` | `Search`      | `lexical`, `semantic`, `key`, `logger` |
+
+- `SearchIndex.add(data, transform)` indexes `data` under the text
+  `transform(data)` returns.
+- `Search.search(query, topK)` resolves up to `topK` `{ data, score }`
+  results, best first.
+- `Embedding` is `(text: string) => Promise<readonly number[]>`; each result
+  must have exactly `dimensions` finite numbers and a non-zero magnitude.
+- The logger must provide `debug` and `child`; Victor logs under
+  `component: 'victor'`.
 
 ## Retrieval
 
@@ -22,6 +96,8 @@ caller; Victor has no provider integration or persistence.
   with equal-weight reciprocal rank fusion (`k = 60`), and canonical keys
   deduplicate results and break ties.
 
+### Complexity
+
 The vector scan costs `O(N × D)` for `N` stored vectors of dimension `D`.
 Selection costs `O(N log K + K log K)` and retains at most `K` candidates.
 Lexical scoring visits the queried posting lists, accumulates scores for their
@@ -29,7 +105,7 @@ matching documents, and applies the same bounded selection to those matches.
 It still needs a per-query score accumulator proportional to the matching
 documents; the heap does not make that accumulator constant-space.
 
-## Validation
+## Development
 
 ```sh
 npx nx run-many -t build,typecheck,test -p victor

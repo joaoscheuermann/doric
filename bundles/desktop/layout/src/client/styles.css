@@ -1,0 +1,45 @@
+/*
+ * The layout bundle's own rules (design §9.4), moved from the renderer's sheet:
+ * the Monaco and xterm scrollbar sliders, unlayered as before. The build
+ * appends the CSS the client part imports (xterm's) after them; Monaco's CSS
+ * ships once per window in `desktop/ui/theme.css` (WP-10P).
+ *
+ * No utilities are emitted here: the shell's sheet emits the whole sorted set
+ * the in-repo surfaces use, this bundle's included, so the cascade stays the
+ * one the single renderer stylesheet had (implementation-decisions, WP6).
+ */
+/*
+ * Monaco's scrollbar slider is a plain `<div class="slider">` that no option can
+ * shape — the class is `.monaco-scrollable-element > .scrollbar > .slider`, in
+ * `node_modules/monaco-editor/esm/vs/base/browser/ui/scrollbar/media/scrollbars.css`
+ * — so the `ScrollAreaThumb` in `desktop/ui/scroll-area` has to be
+ * restated here. The rule sits outside `@layer base` because Monaco's stylesheet
+ * is unlayered and would win inside a layer.
+ *
+ * The thumb it restates is a pill whose painted width is the lane minus its
+ * inset: that lane is `w-2.5` (10px, the size the editor is configured with)
+ * less `p-px` and a transparent `border-l`, so the pill our scroll views show is
+ * 7px. The slider's own width is set from JavaScript, so the inset is drawn with
+ * a transparent border and `background-clip` rather than by widening it: the
+ * lane keeps its 10px of drag area and the pill inside it is the one the app
+ * draws. `box-sizing: border-box` comes from Tailwind's preflight.
+ */
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background-clip: padding-box;
+  border: 1.5px solid transparent;
+  border-radius: 9999px;
+}
+
+/* Match ScrollArea's 10px lane, 1px padding and transparent left border.
+ * The scope outranks xterm's injected hover/active background shorthand so it
+ * cannot reset the clip and paint over the thumb's transparent inset. */
+[data-slot='terminal-view']
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-left-width: 2px;
+  border-radius: 9999px;
+}

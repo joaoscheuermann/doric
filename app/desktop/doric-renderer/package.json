@@ -1,0 +1,13 @@
+{
+  "name": "@org/doric-renderer",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "desktop": "1.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.3.3"
+  }
+}

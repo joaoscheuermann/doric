@@ -1,0 +1,39 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "src/contracts/**/*.ts",
+    "src/client/api/**/*.ts",
+    "src/client/domain/**/*.ts",
+    "src/client/queries/**/*.ts",
+    "src/client/services/**/*.ts",
+    "src/client/stores/**/*.ts",
+    "src/client/utility/**/*.ts",
+    "src/desktop/**/*.ts",
+    "tests/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../features/comments"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../history"
+    }
+  ]
+}

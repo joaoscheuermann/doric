@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import pino from 'pino';
-
 import type { SandboxSession } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
-test('warms, leases, replaces, releases, and shuts down sandboxes', async () => {
+void test('warms, leases, replaces, releases, and shuts down sandboxes', async () => {
   let nextId = 0;
   const disposed: string[] = [];
 
@@ -60,6 +59,7 @@ const session = (id: string, disposed: string[]): SandboxSession => ({
   getFile: async () => new Uint8Array(),
   diff: async () => '',
   ssh: async () => undefined,
+  stats: async () => undefined,
   dispose: async () => {
     disposed.push(id);
   },

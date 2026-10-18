@@ -2,11 +2,22 @@ import type { ProviderFinished, ProviderMessage } from 'llms';
 
 export type MessageStorageEntry = ProviderMessage | ProviderFinished;
 
-export type MessageStorage = {
+export interface MessageStorage {
   list(): readonly ProviderMessage[];
 
   push(entry: MessageStorageEntry): number;
-};
+
+  /**
+   * Replaces `messages[start..end)` with `entries` in place: the history
+   * rewrite a compaction applies between provider turns. The next request
+   * reads `list` fresh, so the replacement is what it carries.
+   */
+  replaceRange(
+    start: number,
+    end: number,
+    entries: readonly ProviderMessage[],
+  ): void;
+}
 
 const isFinished = (entry: MessageStorageEntry): entry is ProviderFinished =>
   'finishReason' in entry;
@@ -37,6 +48,9 @@ export const createMessageStorage = (
       entries.push(isFinished(entry) ? assistant(entry) : entry);
 
       return entries.length;
+    },
+    replaceRange(start, end, replacement) {
+      entries.splice(start, end - start, ...replacement);
     },
   };
 };

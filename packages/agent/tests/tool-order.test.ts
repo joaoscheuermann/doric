@@ -1,22 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { z } from 'zod';
-
 import { createMessageStorage } from 'messages';
 import { createToolStorage, defineTool } from 'tool';
+import { z } from 'zod';
 
 import {
   call,
   collect,
   completeFinish,
-  createProvider,
   createTestAgent as createAgent,
+  createProvider,
   streamEvents,
 } from './fakes.js';
 
 for (const mode of ['complete', 'stream'] as const) {
-  test(`${mode} finishes each tool before starting the next provider-ordered call`, async () => {
+  void test(`${mode} finishes each tool before starting the next provider-ordered call`, async () => {
     const trace: string[] = [];
     let releaseFirst!: () => void;
     let markFirstStarted!: () => void;
@@ -45,7 +44,9 @@ for (const mode of ['complete', 'stream'] as const) {
 
           return 'first result';
         },
-      })(undefined as never),
+      })
+        .bind(undefined as never)
+        .toTool(undefined as never),
       defineTool({
         name: 'second',
         input: z.object({}),
@@ -55,7 +56,9 @@ for (const mode of ['complete', 'stream'] as const) {
 
           return 'second result';
         },
-      })(undefined as never),
+      })
+        .bind(undefined as never)
+        .toTool(undefined as never),
     ]);
 
     const provider = createProvider({

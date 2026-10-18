@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "references": [
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../../features/resources"
+    },
+    {
+      "path": "../../features/files"
+    },
+    {
+      "path": "../../features/git"
+    },
+    {
+      "path": "../../features/terminal"
+    },
+    {
+      "path": "../../features/usage"
+    },
+    {
+      "path": "../../../packages/llms/tsconfig.lib.json"
+    }
+  ]
+}

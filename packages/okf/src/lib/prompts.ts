@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 const TARGET = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u;
 const DEVICE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/u;
 
-export type Prompts = {
+export interface Prompts {
   readonly summary: string;
   readonly description: string;
   readonly tags: string;
-};
+}
 
 /** Loads all prompts selected by promptTarget as one required prompt set. */
 export const loadPrompts = async (target = 'default'): Promise<Prompts> => {
@@ -55,7 +55,7 @@ export const readPrompt = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    throw new Error(`Cannot load OKF ${label}: ${message}`);
+    throw new Error(`Cannot load OKF ${label}: ${message}`, { cause: error });
   }
 };
 

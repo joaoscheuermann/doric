@@ -1,0 +1,155 @@
+{
+  "renderer": {
+    "commit": "20775a6"
+  },
+  "registry": {
+    "cli": "shadcn@4.21.0",
+    "style": "base-nova"
+  },
+  "files": {
+    "components/alert-dialog.tsx": {
+      "origin": "registry",
+      "sha256": "0352276f14874f6d736021fe4635efc144e95bca1771dfc02ac4166514c8bd1b"
+    },
+    "components/alert.tsx": {
+      "origin": "renderer",
+      "sha256": "deede872c6c7bacad1a1007ab985c500cdb0677c6e5bc203da9499c5d3c004ed"
+    },
+    "components/badge.tsx": {
+      "origin": "registry",
+      "sha256": "178d098163f9fe48102dcda6749760d884eeb0af0d4f47c5bde56ce6fa27e7e8"
+    },
+    "components/breadcrumb.tsx": {
+      "origin": "registry",
+      "sha256": "1c2adac6f66ee0f9e52efe292f57044a9a07a1598523286e7bb036f7562a9ba8"
+    },
+    "components/button.tsx": {
+      "origin": "registry",
+      "sha256": "4be386b6fa62073e6ce11ff07dc078ae7dcb5255eef51989e2afb30e2c35c21c"
+    },
+    "components/checkbox.tsx": {
+      "origin": "registry",
+      "sha256": "4d497d343fc50098b4c3b815fea3b68443e018bb2287a22cb8360f3bf4de29b0"
+    },
+    "components/collapsible.tsx": {
+      "origin": "registry",
+      "sha256": "352d442d789a812760382ac635a5514b33a7c009758f55b9ed7772c126d53e59"
+    },
+    "components/combobox.tsx": {
+      "origin": "registry",
+      "sha256": "cdd80e1f604dc4e9cbc5550172b7d7f9fcb9307e68401360f2abce1f5a8b7478"
+    },
+    "components/command.tsx": {
+      "origin": "registry",
+      "sha256": "82a2473ded82691dd9aea9218f96b43e83bd1be406f558afd2ff58343e770189"
+    },
+    "components/context-menu.tsx": {
+      "origin": "registry",
+      "sha256": "1e64944795c319a9285dc68da619a380e486095d0c278dda86db76bf34a4fc6b"
+    },
+    "components/dialog.tsx": {
+      "origin": "registry",
+      "sha256": "b92caafe7ee44ca6dceb785ac1afae05e2aaaafb9463732b7b5d0d30bc131359"
+    },
+    "components/dropdown-menu.tsx": {
+      "origin": "registry",
+      "sha256": "3256555acbf37c3be3a3c62718ec6f8d8365cc7eed7afa5066bda23a862295d4"
+    },
+    "components/empty.tsx": {
+      "origin": "renderer",
+      "sha256": "fea1220c97db111f27d370bc34f7e4bcf90611d710f8db8cf4b0fcd317e0bb19"
+    },
+    "components/field.tsx": {
+      "origin": "renderer",
+      "sha256": "7126e5db2311b0546f6df9c76b5e72f2070d98440472b087ebfd7601b859a934"
+    },
+    "components/input-group.tsx": {
+      "origin": "registry",
+      "sha256": "fad245efb82ad7e4e240695f3b6683a0a9b6ec8582f4cc6d738ad84904b6d94d"
+    },
+    "components/input.tsx": {
+      "origin": "registry",
+      "sha256": "84133eccf3e1690c48fa0e2ed4fe843fcc8b2f48a4a7ec120dffddb9eb2f3cef"
+    },
+    "components/label.tsx": {
+      "origin": "registry",
+      "sha256": "4fbffeb5f2dc0a59659ebf93251476dcb371c16b5be1f5a0f3cb34618d4ac78e"
+    },
+    "components/marker.tsx": {
+      "origin": "registry",
+      "sha256": "fa3b1a29c02189b198944f9e5314ece9b0b6f129b7aece1a0d275f06469b6d4f"
+    },
+    "components/popover.tsx": {
+      "origin": "registry",
+      "sha256": "6aa69f7716c0c229348a929b56e62a7b860cfc9657400cd0c6d68cf06bfc2064"
+    },
+    "components/progress.tsx": {
+      "origin": "registry",
+      "sha256": "9e957bacd93f80345fd1e4b188244a52260bed604177ced67d70666760da37aa"
+    },
+    "components/resizable.tsx": {
+      "origin": "renderer",
+      "sha256": "d61297eadd0b74df66dbbfe6877d8f22b035f83af7d3a82cb23d9300ecd3c67d"
+    },
+    "components/scroll-area.tsx": {
+      "origin": "registry",
+      "sha256": "09f65f461fe8a77e7d296a13f3146f12c33b0f2ece0915e91e87da763d4966b9"
+    },
+    "components/select.tsx": {
+      "origin": "registry",
+      "sha256": "3447ad2d67f88e5f98b6364b6e94511d5fd32b5eb708b29854c2709e5082a0d0"
+    },
+    "components/separator.tsx": {
+      "origin": "registry",
+      "sha256": "ba6971a0057a87c64d284f76ac0e64c2d549ec783d0158c1928a398b6a530144"
+    },
+    "components/sheet.tsx": {
+      "origin": "registry",
+      "sha256": "4d39bb42dba49221ffa9edde702eb231c133a3fdbd3f2646a441dfb67283b2b4"
+    },
+    "components/sidebar.tsx": {
+      "origin": "registry",
+      "sha256": "35fdf330470b73465d2392bbe7e2e89c2d50083b66d6f26295951929ab5af41e"
+    },
+    "components/skeleton.tsx": {
+      "origin": "renderer",
+      "sha256": "0aeeb7f0922e9f5dea1c7a3dd981f5c9819e27fa477a155806ed4b62ada40edd"
+    },
+    "components/sonner.tsx": {
+      "origin": "renderer",
+      "sha256": "1b8f01ece6190509e6fd365af92a294b1b95629cf708fbd388d16204d3a34a2b"
+    },
+    "components/table.tsx": {
+      "origin": "renderer",
+      "sha256": "30ef4790ebf2d0e5b776da3b0955ee22f62a3319eda15c1b92012ddde943ce72"
+    },
+    "components/tabs.tsx": {
+      "origin": "registry",
+      "sha256": "a9f6a888e2fa72bceccb8a51c2853071810fa5bc41330b29798f2824516238e2"
+    },
+    "components/textarea.tsx": {
+      "origin": "renderer",
+      "sha256": "69f1395980cc1dc1d66e9d983a9455f9c4779b3fc0d4532b8300fba14086f9d1"
+    },
+    "components/toggle-group.tsx": {
+      "origin": "registry",
+      "sha256": "6bb2a17998c4ca5ffdcb9cacd0145132bd91888569aec57729e1c3e42ea346bb"
+    },
+    "components/toggle.tsx": {
+      "origin": "registry",
+      "sha256": "34efac4265b6f6a06c066c3e44b0963dadeef9155390befbedf6ced0a9c023de"
+    },
+    "components/tooltip.tsx": {
+      "origin": "registry",
+      "sha256": "2a24191023b79a91f49a94687141fe52ee651cd9c4ea321b5b5caad2da33e29f"
+    },
+    "hooks/use-mobile.ts": {
+      "origin": "renderer",
+      "sha256": "71013a891fd58215803e0620c7f2b8b01aef09d2d770f870f741e459c29e1d07"
+    },
+    "lib/utils.ts": {
+      "origin": "renderer",
+      "sha256": "a8950be0d3981383f2897a00a5a58913ae927d96e51557d915a76e81fbef4f30"
+    }
+  }
+}

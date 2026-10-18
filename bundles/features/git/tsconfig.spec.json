@@ -1,0 +1,43 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "src/host/**/*.ts",
+    "src/contracts/**/*.ts",
+    "src/client/api/**/*.ts",
+    "src/client/domain/**/*.ts",
+    "src/client/changes/store.ts",
+    "src/client/commands.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/tool/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/sandbox/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../packages/desktop/tsconfig.lib.json"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../../desktop/layout"
+    }
+  ]
+}

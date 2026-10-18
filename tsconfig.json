@@ -7,7 +7,7 @@
       "path": "./packages/jsonl"
     },
     {
-      "path": "./packages/docker"
+      "path": "./packages/desktop"
     },
     {
       "path": "./packages/sandbox"
@@ -25,7 +25,7 @@
       "path": "./packages/agent"
     },
     {
-      "path": "./agents/doric"
+      "path": "./app/backend/doric-host"
     },
     {
       "path": "./packages/config"
@@ -46,22 +46,118 @@
       "path": "./packages/tool"
     },
     {
-      "path": "./bundles/core"
+      "path": "./bundles/foundation/core"
     },
     {
       "path": "./packages/sandpool"
     },
     {
-      "path": "./packages/firecracker"
-    },
-    {
-      "path": "./bundles/git"
+      "path": "./bundles/features/git"
     },
     {
       "path": "./packages/state-machine"
     },
     {
       "path": "./packages/victor"
+    },
+    {
+      "path": "./app/desktop/doric-renderer"
+    },
+    {
+      "path": "./app/desktop/doric"
+    },
+    {
+      "path": "./bundles/features/threads"
+    },
+    {
+      "path": "./bundles/features/files"
+    },
+    {
+      "path": "./bundles/runtime/runtime"
+    },
+    {
+      "path": "./bundles/features/terminal"
+    },
+    {
+      "path": "./bundles/foundation/postgres"
+    },
+    {
+      "path": "./packages/storage"
+    },
+    {
+      "path": "./bundles/foundation/transport"
+    },
+    {
+      "path": "./bundles/runtime/direct"
+    },
+    {
+      "path": "./bundles/desktop/history"
+    },
+    {
+      "path": "./bundles/desktop/notifications"
+    },
+    {
+      "path": "./bundles/features/usage"
+    },
+    {
+      "path": "./bundles/features/resources"
+    },
+    {
+      "path": "./bundles/desktop/chat"
+    },
+    {
+      "path": "./bundles/desktop/layout"
+    },
+    {
+      "path": "./packages/firecracker-sandbox"
+    },
+    {
+      "path": "./packages/docker-sandbox"
+    },
+    {
+      "path": "./bundles/providers/openrouter"
+    },
+    {
+      "path": "./bundles/providers/openai"
+    },
+    {
+      "path": "./bundles/providers/codex"
+    },
+    {
+      "path": "./bundles/features/web"
+    },
+    {
+      "path": "./bundles/sandboxes/firecracker"
+    },
+    {
+      "path": "./bundles/sandboxes/docker"
+    },
+    {
+      "path": "./bundles/foundation/host-config"
+    },
+    {
+      "path": "./bundles/desktop/settings"
+    },
+    {
+      "path": "./app/backend/doric-host-e2e"
+    },
+    {
+      "path": "./app/desktop/doric-e2e"
+    },
+    {
+      "path": "./bundles/features/screen"
+    },
+    {
+      "path": "./bundles/features/screen-relay"
+    },
+    {
+      "path": "./bundles/features/papercraft"
+    },
+    {
+      "path": "./bundles/features/artifacts"
+    },
+    {
+      "path": "./bundles/features/comments"
     }
   ]
 }

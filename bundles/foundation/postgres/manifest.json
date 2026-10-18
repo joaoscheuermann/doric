@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "postgres",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "PostgreSQL storage and secrets backends over Prisma.",
+  "provides": [
+    "storage.backend/v1@1.0.0",
+    "secrets.backend/v1@1.0.0",
+    "postgres.database/v1@1.0.0"
+  ],
+  "requires": []
+}

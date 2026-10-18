@@ -12,31 +12,33 @@ import type {
   ProviderFinished,
   ProviderMetadata,
   ProviderRequest,
-  ProviderRerankRequest,
   ProviderRerankFinished,
-  ProviderStructuredFinished,
+  ProviderRerankRequest,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   ProviderToolCall,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
 import {
-  asRecord,
   arrayField,
+  asRecord,
   recordField,
   stringField,
 } from '../utils/json.js';
+import { parseSseEvents } from '../utils/sse.js';
+import { authorization, type SecretSource } from './auth.js';
 import {
   parseEmbedding,
-  parseRerank,
   parseJsonBody,
+  parseRerank,
   requireEmbeddingInput,
-  requireRerankInput,
   requireRequestInput,
+  requireRerankInput,
   streamErrorEvent,
 } from './common.js';
-import { parseStructuredOutput } from './structured.js';
-import { authorization, type SecretSource } from './auth.js';
+import { requestJson, withProviderErrors } from './http.js';
+import { withProviderLogging } from './logging.js';
 import { openAiBody } from './openai/body.js';
 import {
   createTextSnapshots,
@@ -45,27 +47,19 @@ import {
   streamEvent,
   streamText,
 } from './openai/parse.js';
-import { parseSseEvents } from '../utils/sse.js';
-import { withProviderLogging } from './logging.js';
-import { requestJson, withProviderErrors } from './http.js';
+import { parseStructuredOutput } from './structured.js';
 
 export type { SecretSource } from './auth.js';
 export { openAiBody } from './openai/body.js';
 
-export type OpenAiProviderDeps = {
+export interface OpenAiProviderDeps {
   readonly transport: HttpTransport;
   readonly apiKey?: SecretSource;
   readonly authorization?: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
-};
-
-export type OpenAiCompatibleProviderDeps = OpenAiProviderDeps & {
-  readonly identity: {
-    readonly id: string;
-    readonly name: string;
-  };
-};
+  readonly identity?: { readonly id: string; readonly name: string };
+}
 
 export const openAiMetadata: ProviderMetadata = {
   id: 'openai',
@@ -85,15 +79,10 @@ export const openAiCapabilities: ProviderCapabilities = {
   structuredOutputs: true,
 };
 
-export const createOpenAiProvider = (deps: OpenAiProviderDeps): LlmProvider =>
-  withProviderLogging(createOpenAiProviderCore(deps), deps.logger);
-
 /** Creates a Responses-compatible provider while preserving its configured identity. */
-export const createOpenAiCompatibleProvider = (
-  deps: OpenAiCompatibleProviderDeps,
-): LlmProvider => {
+export const createOpenAiProvider = (deps: OpenAiProviderDeps): LlmProvider => {
   const baseUrl = deps.baseUrl ?? openAiMetadata.baseUrl;
-  const metadata = { ...deps.identity, baseUrl };
+  const metadata = { ...(deps.identity ?? openAiMetadata), baseUrl };
   return withProviderLogging(
     createOpenAiProviderCore(deps, metadata),
     deps.logger,

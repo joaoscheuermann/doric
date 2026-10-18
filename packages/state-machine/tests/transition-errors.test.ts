@@ -6,7 +6,7 @@ import {
   type StateMachineTransition,
 } from '../src/index.js';
 
-test('executes the captured fields of a transition with changing getters', async () => {
+void test('executes the captured fields of a transition with changing getters', async () => {
   const supplied = { count: 2 };
   const action: StateMachineTransition<'done', typeof supplied> = {
     get type() {
@@ -42,7 +42,7 @@ test('executes the captured fields of a transition with changing getters', async
   }
 });
 
-test('preserves the source state and cause when copying a transition throws', async () => {
+void test('preserves the source state and cause when copying a transition throws', async () => {
   const cause = { reason: 'unreadable property' };
   const initial = { count: 0 };
   const context = { runId: 'copy-error' };
@@ -51,6 +51,7 @@ test('preserves the source state and cause when copying a transition throws', as
       state.count = 1;
       return transition('done', {
         get count(): number {
+          // Copy failures preserve arbitrary thrown values as their cause.
           throw cause;
         },
       });

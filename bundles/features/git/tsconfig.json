@@ -1,0 +1,39 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": ["node"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
+  "references": [
+    {
+      "path": "../../../packages/tool"
+    },
+    {
+      "path": "../../runtime/runtime"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/sandbox"
+    },
+    {
+      "path": "../../../packages/desktop"
+    },
+    {
+      "path": "../../desktop/layout"
+    },
+    {
+      "path": "../files"
+    }
+  ]
+}

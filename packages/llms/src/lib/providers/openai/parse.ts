@@ -1,3 +1,5 @@
+import { isRecord } from 'tool';
+
 import type {
   ProviderFinished,
   ProviderReplayItem,
@@ -11,13 +13,13 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
-import { finishReason, parseUsage } from '../common.js';
+import { deltaEvent, finishReason, parseUsage } from '../common.js';
 
-export type TextSnapshots = {
+export interface TextSnapshots {
   readonly outputItems: string[];
   readonly outputTexts: string[];
   readonly contentParts: string[];
-};
+}
 
 export const createTextSnapshots = (): TextSnapshots => ({
   outputItems: [],
@@ -34,24 +36,18 @@ export const streamEvent = (
   const type = stringField(payload, 'type');
 
   if (type === 'response.output_text.delta') {
-    return { type: 'text.delta', delta: stringField(payload, 'delta') ?? '' };
+    return deltaEvent('text.delta', stringField(payload, 'delta'));
   }
 
   if (
     type === 'response.reasoning_summary_text.delta' ||
     type === 'response.reasoning_text.delta'
   ) {
-    return {
-      type: 'reasoning.delta',
-      delta: stringField(payload, 'delta') ?? '',
-    };
+    return deltaEvent('reasoning.delta', stringField(payload, 'delta'));
   }
 
   if (type === 'response.refusal.delta') {
-    return {
-      type: 'refusal.delta',
-      delta: stringField(payload, 'delta') ?? '',
-    };
+    return deltaEvent('refusal.delta', stringField(payload, 'delta'));
   }
 
   if (type === 'response.function_call_arguments.delta') {
@@ -284,7 +280,3 @@ const contentText = (item: Record<string, unknown>): string =>
 
 const nonEmptyText = (value: string | undefined): string | undefined =>
   value === '' ? undefined : value;
-
-const isRecord = (
-  value: Record<string, unknown> | undefined,
-): value is Record<string, unknown> => value !== undefined;

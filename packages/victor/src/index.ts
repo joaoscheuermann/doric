@@ -1,9 +1,5 @@
 export { createHybridSearch } from './lib/hybrid.js';
-
 export { createLexicalIndex } from './lib/lexical.js';
-
-export { createVectorIndex } from './lib/vector.js';
-
 export type {
   Embedding,
   HybridSearchOptions,
@@ -13,3 +9,4 @@ export type {
   SearchResult,
   VectorIndexOptions,
 } from './lib/types/search.js';
+export { createVectorIndex } from './lib/vector.js';

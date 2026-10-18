@@ -10,63 +10,63 @@ import { parseTokenClaims } from './utils/jwt.js';
 
 const DEFAULT_REFRESH_SKEW_MS = 5 * 60 * 1000;
 
-export type CodexCredential = {
+export interface CodexCredential {
   readonly source: 'codex';
   readonly kind: 'api-key' | 'chatgpt' | 'personal-access-token';
   readonly token: string;
   readonly authorization: string;
   readonly accountId?: string;
   readonly fedramp?: boolean;
-};
+}
 
-export type ResolveCodexAuthOptions = {
+export interface ResolveCodexAuthOptions {
   readonly codexHome?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly now?: () => number;
   readonly transport?: OAuthTransport;
   readonly signal?: AbortSignal;
-};
+}
 
-type CodexAuthJson = {
+interface CodexAuthJson {
   readonly auth_mode?: string;
   readonly OPENAI_API_KEY?: string;
   readonly tokens?: CodexTokenData;
   readonly last_refresh?: string;
   readonly personal_access_token?: string;
   readonly agent_identity?: unknown;
-};
+}
 
-type CodexTokenData = {
+interface CodexTokenData {
   readonly id_token?: string;
   readonly access_token?: string;
   readonly refresh_token?: string;
   readonly account_id?: string;
-};
+}
 
-type RefreshResponse = {
+interface RefreshResponse {
   readonly id_token?: string;
   readonly access_token?: string;
   readonly refresh_token?: string;
-};
+}
 
 /** Resolves credentials from Codex CLI-compatible env and auth.json state. */
 export const resolveCodexAuth = async (
   options: ResolveCodexAuthOptions = {},
 ): Promise<CodexCredential> => {
   const env = options.env ?? process.env;
-  const authorization = clean(env['CODEX_AUTHORIZATION']);
+  const authorization = clean(env.CODEX_AUTHORIZATION);
 
   if (authorization !== undefined) {
     return codexCredentialFromToken(authorization);
   }
 
-  const apiKey = clean(env['CODEX_API_KEY']);
+  const apiKey = clean(env.CODEX_API_KEY);
 
   if (apiKey !== undefined) {
     return apiKeyCredential(apiKey);
   }
 
-  const accessToken = clean(env['CODEX_ACCESS_TOKEN']);
+  const accessToken = clean(env.CODEX_ACCESS_TOKEN);
 
   if (accessToken !== undefined) {
     return accessToken.startsWith('at-')
@@ -398,8 +398,7 @@ const readAuthJson = async (
 const codexHome = (
   options: ResolveCodexAuthOptions,
   env: Readonly<Record<string, string | undefined>>,
-): string =>
-  options.codexHome ?? env['CODEX_HOME'] ?? join(homedir(), '.codex');
+): string => options.codexHome ?? env.CODEX_HOME ?? join(homedir(), '.codex');
 
 const clean = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();

@@ -1,0 +1,47 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-threads",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/threads/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/threads/tsconfig.json",
+          "tsc -p bundles/features/threads/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/threads"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/threads/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/threads/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/threads/dist-tests",
+          "tsc -p bundles/features/threads/tsconfig.spec.json",
+          "tsc -p bundles/features/threads/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/features/threads/dist-tests/tests/*.test.js bundles/features/threads/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

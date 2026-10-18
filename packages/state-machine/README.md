@@ -1,6 +1,26 @@
 # state-machine
 
-Typed, reusable state-machine definitions for the TypeScript agent core.
+Typed, reusable state machines built from a plain map of async handlers. Each
+handler does its work and returns what happens next: move to another handler,
+finish with a value, or fail with a domain error. TypeScript infers the handler
+names from the map, so a typo in a transition is a compile error, and every
+outcome, including a thrown exception, comes back as a result instead of an
+unhandled rejection.
+
+Part of [Doric](../../README.md).
+
+## Highlights
+
+- **Inferred handler names.** `initial` and `transition` accept only names
+  that exist in the handler map.
+- **Three explicit outcomes.** Every run resolves `finished`, `failed`, or
+  `error`, with the terminal handler, state, and context attached.
+- **Reusable definitions.** Run state is local to each call, so one definition
+  can run repeatedly or concurrently.
+- **No side effects.** Process-local, no persistence, listeners, or
+  dependencies beyond `tslib`.
+
+## Usage
 
 ```ts
 import { createStateMachine } from 'state-machine';
@@ -39,13 +59,17 @@ const result = await definition.run({
 });
 ```
 
-`Context` and the state object are the only required configured types.
-The initializer infers the available handler names from the exhaustive handler
-map, so both `initial` and `transition` accept only those names.
+`createStateMachine<Context, State, Finished, Failed>()` takes the context,
+state, finish-value, and failure types; `Finished` defaults to `void` and
+`Failed` to `unknown`, so `Context` and the state object are the only required
+configured types. The initializer infers the available handler names from the
+exhaustive handler map, so both `initial` and `transition` accept only those
+names.
 
-Each handler receives the current state, the run context, and
-`transition`, `finish`, and `fail` actions. Handlers may mutate their state.
-The actions object is read-only and frozen, created once per run.
+Each handler receives the current state, the run context, and `transition`,
+`finish`, and `fail` actions. Handlers may be synchronous or asynchronous and
+may mutate their state. The actions object is read-only and frozen, created
+once per run.
 
 ## State and transitions
 
@@ -54,15 +78,15 @@ Top-level state must be a plain data object whose prototype is this realm's
 not supported as top-level state. Property values are unrestricted: nested
 objects, arrays, class instances, functions, and promises are allowed.
 
-The exported `StateMachineState` constraint is `Record<string, unknown>`.
-Use a record-shaped type alias like `State` above; interfaces without an index
+The exported `StateMachineState` constraint is `Record<string, unknown>`. Use a
+record-shaped type alias like `State` above; interfaces without an index
 signature may not satisfy this TypeScript constraint. This filters common
 unsupported types but does not prove an object's prototype: structural typing,
 type assertions, and JavaScript callers can still supply unsupported objects.
 Runtime validates the top-level prototype, not generic domain property types.
 
-Handlers explicitly pass the next state to `transition`. The executor creates
-a shallow copy **after the handler returns or its promise resolves**, before
+Handlers explicitly pass the next state to `transition`. The executor creates a
+shallow copy **after the handler returns or its promise resolves**, before
 calling the next handler. Calling the helper does not snapshot the state:
 mutations made between `transition(...)` and handler completion are included.
 Literal actions follow exactly the same rule:
@@ -71,11 +95,11 @@ Literal actions follow exactly the same rule:
 return { type: 'transition', handler: 'review', state };
 ```
 
-The copy has a new top-level identity, with the supplied object's own enumerable
-properties, but shares nested references. A null-prototype object's transition
-copy is an ordinary object with `Object.prototype`. No deep cloning occurs.
-The initial state is validated but passed by reference, so mutations by the
-first handler affect the caller's object.
+The copy has a new top-level identity, with the supplied object's own
+enumerable properties, but shares nested references. A null-prototype object's
+transition copy is an ordinary object with `Object.prototype`. No deep cloning
+occurs. The initial state is validated but passed by reference, so mutations by
+the first handler affect the caller's object.
 
 A definition stores only its handler map. Every `run` keeps its context,
 current handler, and current state local to that call, so the same definition
@@ -86,9 +110,11 @@ caller-owned state or context objects shared between runs.
 
 `run` resolves one of three results:
 
-- `status: 'finished'` contains the value passed to `finish`.
-- `status: 'failed'` contains the exact domain value passed to `fail`.
-- `status: 'error'` contains a `StateMachineError`.
+| `status`   | Carries                                           |
+| ---------- | ------------------------------------------------- |
+| `finished` | `value`: the value passed to `finish`.            |
+| `failed`   | `error`: the exact domain value passed to `fail`. |
+| `error`    | `error`: a `StateMachineError`.                   |
 
 Every result also contains the terminal `handler`, current `state`, and run
 `context`. Engine errors use only `handler_failed`, `invalid_handler_return`,
@@ -116,9 +142,13 @@ the generic `Finished`, `Failed`, or state property types.
 The package is process-local and has no persistence, listeners, recovery
 hooks, or external side effects.
 
-## Testing
+## Development
 
-Run `npx nx test state-machine` to compile the source and tests with TypeScript
-(including inference and `@ts-expect-error` checks), then run the behavioral
-tests with `node --test`. Run `npx nx typecheck state-machine` and
-`npx nx build state-machine` for the library targets.
+```console
+npx nx build state-machine
+npx nx typecheck state-machine
+npx nx test state-machine
+```
+
+`test` compiles the source and tests with TypeScript (including inference and
+`@ts-expect-error` checks), then runs the behavioral tests with `node --test`.

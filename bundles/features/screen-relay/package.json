@@ -1,0 +1,20 @@
+{
+  "name": "screen-relay",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./contracts": {
+      "@org/source": "./src/contracts/index.ts",
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "default": "./dist/contracts/index.js"
+    }
+  },
+  "dependencies": {
+    "bundle": "0.0.1",
+    "tslib": "^2.3.0",
+    "zod": "^4.4.3"
+  }
+}

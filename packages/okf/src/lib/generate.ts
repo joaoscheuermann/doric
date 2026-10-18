@@ -29,10 +29,10 @@ import type {
 } from './types/okf.js';
 import { walk } from './walk.js';
 
-type Paths = {
+interface Paths {
   readonly root: string;
   readonly output: string;
-};
+}
 
 type WorkContext = Paths & {
   readonly config: OkfConfig;
@@ -43,10 +43,10 @@ type WorkContext = Paths & {
 
 type WorkOutcome = 'cached' | 'generated';
 
-type WorkResult = {
+interface WorkResult {
   readonly source: string;
   readonly outcome: WorkOutcome;
-};
+}
 
 type ResultInput = Paths & {
   readonly index: string;

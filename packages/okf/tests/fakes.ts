@@ -3,8 +3,8 @@ import type {
   LlmProvider,
   ProviderFinished,
   ProviderRequest,
-  ProviderStructuredFinished,
   ProviderStreamEvent,
+  ProviderStructuredFinished,
   StructuredOutputSchema,
   StructuredOutputValue,
 } from 'llms';
@@ -14,12 +14,12 @@ type Output = (
   input: string,
   index: number,
   request: ProviderRequest<unknown>,
-) => unknown | Promise<unknown>;
+) => unknown;
 
-export type ProviderFake = {
+export interface ProviderFake {
   readonly provider: LlmProvider;
   readonly requests: readonly ProviderRequest<unknown>[];
-};
+}
 
 export const createProvider = (
   output: Output = defaultOutput,
@@ -104,9 +104,10 @@ const defaultOutput: Output = (_system, _input, index) =>
       : 'documentation';
 
 export const evidencePath = (input: string): string => {
-  const match = input.match(
-    /^## Path\r?\n\r?\n(`{3,}|~{3,})text\r?\n([\s\S]*?)\r?\n\1\r?$/mu,
-  );
+  const match =
+    /^## Path\r?\n\r?\n(`{3,}|~{3,})text\r?\n([\s\S]*?)\r?\n\1\r?$/mu.exec(
+      input,
+    );
   if (match?.[2] === undefined) throw new Error('Missing Path evidence');
   return match[2];
 };

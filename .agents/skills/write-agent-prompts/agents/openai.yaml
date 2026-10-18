@@ -1,4 +1,4 @@
 interface:
-  display_name: "Write Agent Prompts"
-  short_description: "Write concise, self-contained agent prompts"
-  default_prompt: "Use $write-agent-prompts to draft a concise system prompt for this agent."
+  display_name: 'Write Agent Prompts'
+  short_description: 'Write concise, self-contained agent prompts'
+  default_prompt: 'Use $write-agent-prompts to draft a concise system prompt for this agent.'

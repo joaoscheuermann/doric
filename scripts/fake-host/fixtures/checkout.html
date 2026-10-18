@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: #f6f6f7;
+        color: #18181b;
+      }
+
+      .checkout {
+        max-width: 360px;
+        margin: 0 auto;
+        padding: 24px;
+        border: 1px solid #e4e4e7;
+        border-radius: 12px;
+        background: #ffffff;
+      }
+
+      h1 {
+        margin: 0 0 16px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      dl {
+        margin: 0 0 20px;
+        font-size: 14px;
+      }
+
+      dl > div {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+      }
+
+      dt,
+      dd {
+        margin: 0;
+      }
+
+      .total {
+        margin-top: 8px;
+        border-top: 1px solid #e4e4e7;
+        font-weight: 600;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px 14px;
+        border: 0;
+        border-radius: 8px;
+        background: #18181b;
+        color: #fafafa;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #3f3f46;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="checkout">
+      <h1>Checkout</h1>
+      <dl>
+        <div>
+          <dt>Subtotal</dt>
+          <dd>R$ 128,00</dd>
+        </div>
+        <div>
+          <dt>Frete</dt>
+          <dd>R$ 12,00</dd>
+        </div>
+        <div class="total">
+          <dt>Total</dt>
+          <dd>R$ 140,00</dd>
+        </div>
+      </dl>
+      <button type="button">Pagar agora</button>
+    </main>
+  </body>
+</html>

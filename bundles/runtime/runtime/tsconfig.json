@@ -1,0 +1,37 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../features/terminal"
+    },
+    {
+      "path": "../../../packages/sandpool"
+    },
+    {
+      "path": "../../../packages/sandbox"
+    },
+    {
+      "path": "../../foundation/host-config"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/storage"
+    },
+    {
+      "path": "../../foundation/postgres"
+    }
+  ]
+}

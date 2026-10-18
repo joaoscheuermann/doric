@@ -1,11 +1,25 @@
 # config
 
-`config` validates agent configuration carried in message metadata. It owns the
-GitHub repository, provider, model, and task shape used by that message-based
-surface; the Direct host's persisted REST configuration is documented in
-`agents/doric` instead.
+A dependency-free validator for agent configuration carried in message
+metadata. It turns untrusted input into a typed `AgentConfig` describing the
+GitHub repository, providers, models, and tasks, and it reports the exact path
+of the first invalid value. Use it on a message-based surface where the first
+message carries the configuration and later messages may update it.
 
-## Use
+Part of [Doric](../../README.md). The Direct host's persisted REST
+configuration is documented in `app/backend/doric-host` instead.
+
+## Highlights
+
+- **Typed result.** Returns a plain `AgentConfig` with optional fields omitted
+  rather than set to `undefined`.
+- **Precise errors.** `ConfigParseError` carries a `code` and a `path` such as
+  `message.metadata.configuration.models[0].effort`.
+- **Message-aware helpers.** Separate parsers for the required initial
+  configuration and for optional later updates.
+- **No dependencies** beyond `tslib`.
+
+## Usage
 
 ```ts
 import { parseConfig } from 'config';
@@ -37,18 +51,39 @@ const config = parseConfig({
 });
 ```
 
-Use `parseInitialMessageConfig(message)` when the first message must contain
-`message.metadata.configuration`. Use `parseMessageConfigUpdate(message)` for
-later messages; it returns `undefined` when no update is present.
+## API
+
+| Function                             | Behavior                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `parseConfig(value, path?)`          | Validates a configuration object; `path` prefixes error paths (`config` default). |
+| `parseInitialMessageConfig(message)` | Requires `message.metadata.configuration` and validates it.                       |
+| `parseMessageConfigUpdate(message)`  | Validates `message.metadata.configuration` if present; otherwise `undefined`.     |
+
+## Shape
+
+| Field         | Required fields           | Optional fields                       |
+| ------------- | ------------------------- | ------------------------------------- |
+| `github`      | `repo.url`, `token`       | `repo.branch`                         |
+| `providers[]` | `id`, `type`              | `token`, `baseUrl`                    |
+| `models[]`    | `id`, `provider`, `model` | `effort`, `reasoning`, `internal_key` |
+| `tasks[]`     | `id`, `model`             |                                       |
+
+Reasoning effort accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+or `max`. `reasoning` is the legacy name for `effort`; when both are set they
+must match. The parser checks shape and types only; it does not check that a
+task's `model` or a model's `provider` names an entry that exists.
+
+## Errors
 
 Invalid input throws `ConfigParseError`, whose `code` distinguishes an invalid
-message, missing configuration, or invalid field and whose `path` identifies
-the failing value. Reasoning effort accepts `none`, `minimal`, `low`, `medium`,
-`high`, or `xhigh`.
+message (`invalid_message`), missing configuration (`missing_configuration`),
+or invalid field (`invalid_config_field`) and whose `path` identifies the
+failing value.
 
 ## Development
 
 ```console
 npx nx build config
+npx nx typecheck config
 npx nx test config
 ```

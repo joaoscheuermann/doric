@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { openRouterBody, ProviderErrorObject } from '../src/index.js';
 import { createOpenRouterProvider, fakeTransport, response } from './fakes.js';
 
-test('maps OpenRouter chat completions DTO with messages tools and reasoning', () => {
+void test('maps OpenRouter chat completions DTO with messages tools and reasoning', () => {
   const body = openRouterBody(
     {
       model: 'openai/gpt-5',
@@ -95,7 +95,7 @@ test('maps OpenRouter chat completions DTO with messages tools and reasoning', (
   assert.equal('response_format' in body, false);
 });
 
-test('supports conservative OpenRouter structured-output fallbacks', () => {
+void test('supports conservative OpenRouter structured-output fallbacks', () => {
   const request = {
     model: 'mistralai/mistral-small',
     messages: [{ role: 'user' as const, content: 'Return JSON.' }],
@@ -128,7 +128,7 @@ test('supports conservative OpenRouter structured-output fallbacks', () => {
   );
 });
 
-test('maps top-level OpenRouter effort before legacy reasoning effort', () => {
+void test('maps top-level OpenRouter effort before legacy reasoning effort', () => {
   const body = openRouterBody(
     {
       model: 'openai/gpt-5',
@@ -142,7 +142,7 @@ test('maps top-level OpenRouter effort before legacy reasoning effort', () => {
   assert.deepEqual(body.reasoning, { effort: 'none', summary: 'detailed' });
 });
 
-test('maps OpenRouter structured output schemas to response format DTOs', () => {
+void test('maps OpenRouter structured output schemas to response format DTOs', () => {
   const body = openRouterBody(
     {
       model: 'openai/gpt-5',
@@ -168,7 +168,7 @@ test('maps OpenRouter structured output schemas to response format DTOs', () => 
   });
 });
 
-test('adds a schema system instruction while retaining OpenRouter response format', () => {
+void test('adds a schema system instruction while retaining OpenRouter response format', () => {
   const messages = [
     { role: 'system' as const, content: 'Follow policy.' },
     { role: 'user' as const, content: 'Return JSON.' },
@@ -211,7 +211,7 @@ test('adds a schema system instruction while retaining OpenRouter response forma
   assert.deepEqual(request.messages, messages);
 });
 
-test('maps OpenRouter nested union structured output schemas to response format DTOs', () => {
+void test('maps OpenRouter nested union structured output schemas to response format DTOs', () => {
   const body = openRouterBody(
     {
       model: 'openai/gpt-5',
@@ -255,7 +255,7 @@ test('maps OpenRouter nested union structured output schemas to response format 
   );
 });
 
-test('rejects OpenRouter top-level union structured output schemas', () => {
+void test('rejects OpenRouter top-level union structured output schemas', () => {
   const request = {
     model: 'openai/gpt-5',
     messages: [{ role: 'user', content: 'Return JSON.' }],
@@ -279,7 +279,7 @@ test('rejects OpenRouter top-level union structured output schemas', () => {
   );
 });
 
-test('parses OpenRouter completion and preserves auth failure diagnostics', async () => {
+void test('parses OpenRouter completion and preserves auth failure diagnostics', async () => {
   const transport = fakeTransport({
     responses: [
       response({
@@ -384,9 +384,10 @@ test('parses OpenRouter completion and preserves auth failure diagnostics', asyn
   );
 });
 
-test('returns parsed OpenRouter structured output from completions', async () => {
+void test('returns parsed OpenRouter structured output from completions', async () => {
   const transport = fakeTransport({
     responses: [
+      response({ data: [] }),
       response({
         choices: [
           {
@@ -397,7 +398,11 @@ test('returns parsed OpenRouter structured output from completions', async () =>
       }),
     ],
   });
-  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+  const provider = createOpenRouterProvider({
+    transport,
+    apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
+  });
 
   const result = await provider.complete({
     model: 'openai/gpt-5',
@@ -408,10 +413,11 @@ test('returns parsed OpenRouter structured output from completions', async () =>
   assert.deepEqual(result.structured, { answer: 'Done' });
 });
 
-test('rejects OpenRouter requests that are missing model or input', async () => {
+void test('rejects OpenRouter requests that are missing model or input', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({}),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(
@@ -432,7 +438,7 @@ test('rejects OpenRouter requests that are missing model or input', async () => 
   );
 });
 
-test('fetches and validates OpenRouter models with context fallback', async () => {
+void test('fetches and validates OpenRouter models with context fallback', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
@@ -449,6 +455,7 @@ test('fetches and validates OpenRouter models with context fallback', async () =
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
   const models = await provider.models();
 
@@ -457,17 +464,18 @@ test('fetches and validates OpenRouter models with context fallback', async () =
     [
       ['a', 8192],
       ['b', 4096],
-      ['c', 4096],
+      ['c', undefined],
     ],
   );
 
   assert.equal((await provider.validateModel('b')).contextWindow, 4096);
 });
 
-test('rejects schema-invalid OpenRouter structured JSON', async () => {
+void test('rejects schema-invalid OpenRouter structured JSON', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
+        response({ data: [] }),
         response({
           choices: [
             {
@@ -479,6 +487,7 @@ test('rejects schema-invalid OpenRouter structured JSON', async () => {
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(
@@ -494,10 +503,11 @@ test('rejects schema-invalid OpenRouter structured JSON', async () => {
   );
 });
 
-test('describes an empty structured response without exposing response data', async () => {
+void test('describes an empty structured response without exposing response data', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({
       responses: [
+        response({ data: [] }),
         response({
           choices: [
             {
@@ -513,6 +523,7 @@ test('describes an empty structured response without exposing response data', as
       ],
     }),
     apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
   });
 
   await assert.rejects(
@@ -531,7 +542,7 @@ test('describes an empty structured response without exposing response data', as
   );
 });
 
-test('rejects blank OpenRouter API keys', async () => {
+void test('rejects blank OpenRouter API keys', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({}),
     apiKey: ' ',

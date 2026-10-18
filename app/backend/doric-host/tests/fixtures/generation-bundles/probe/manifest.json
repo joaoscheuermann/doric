@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "probe",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Reports the generation process its tool runs in.",
+  "provides": [],
+  "requires": ["tools/v1@^1.0.0"]
+}

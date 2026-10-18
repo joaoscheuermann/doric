@@ -1,0 +1,33 @@
+{
+  "name": "firecracker-sandbox",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/firecracker-sandbox/src",
+  "projectType": "library",
+  "tags": [],
+  "// targets": "to see all targets run: nx show project firecracker-sandbox --web",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p packages/firecracker-sandbox/tsconfig.spec.json",
+          "node --test packages/firecracker-sandbox/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-e2e"],
+      "options": {
+        "commands": [
+          "tsc -p packages/firecracker-sandbox/tsconfig.e2e.json",
+          "node --test packages/firecracker-sandbox/dist-e2e/tests/*.e2e.js"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

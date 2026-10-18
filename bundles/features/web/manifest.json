@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "web",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Web research capability for the Doric agent.",
+  "provides": [],
+  "requires": ["tools/v1@^1.2.0"]
+}

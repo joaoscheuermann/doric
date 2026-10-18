@@ -2,25 +2,24 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import pino from 'pino';
-
 import type { SandboxSession } from 'sandbox';
 
 import { createSandpool } from '../src/index.js';
 
-type Deferred<T> = {
+interface Deferred<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
   readonly reject: (cause: unknown) => void;
-};
+}
 
-type Fake = {
+interface Fake {
   readonly session: SandboxSession;
   readonly disposals: () => number;
-};
+}
 
 const logger = pino({ enabled: false });
 
-test('validates pool limits synchronously', () => {
+void test('validates pool limits synchronously', () => {
   const create = async () => fake('unused').session;
 
   for (const minIdle of [-1, 0.5, Number.NaN]) {
@@ -52,7 +51,7 @@ test('validates pool limits synchronously', () => {
   }
 });
 
-test('returns synchronously and warms the minimum idle sessions in parallel', async () => {
+void test('returns synchronously and warms the minimum idle sessions in parallel', async () => {
   const creations = [deferred<SandboxSession>(), deferred<SandboxSession>()];
   let calls = 0;
 
@@ -89,7 +88,7 @@ test('returns synchronously and warms the minimum idle sessions in parallel', as
   await pool.dispose();
 });
 
-test('serves acquisitions in FIFO order without exceeding capacity', async () => {
+void test('serves acquisitions in FIFO order without exceeding capacity', async () => {
   let id = 0;
 
   const pool = createSandpool({
@@ -124,7 +123,229 @@ test('serves acquisitions in FIFO order without exceeding capacity', async () =>
   await pool.dispose();
 });
 
-test('cancels queued acquisitions and heat waiters', async () => {
+void test('provisions each identified acquisition its own session', async () => {
+  const created: (string | undefined)[] = [];
+  let warm = 0;
+
+  const pool = createSandpool({
+    minIdle: 1,
+    maxSandboxes: 3,
+    logger,
+    create: async (identity) => {
+      created.push(identity);
+
+      if (identity === undefined) warm += 1;
+
+      return fake(
+        identity === undefined
+          ? `warm-${String(warm)}`
+          : `${identity}-${String(created.length)}`,
+      ).session;
+    },
+  });
+
+  await pool.waitUntilHeated();
+
+  const idle = pool.status().idle;
+
+  assert.ok(idle >= 1);
+
+  const first = await pool.acquire({ identity: 'project-a' });
+
+  assert.match(first.sandbox.id, /^project-a-/u);
+
+  assert.equal(pool.status().idle, idle);
+
+  await first.release();
+
+  const second = await pool.acquire({ identity: 'project-a' });
+
+  assert.match(second.sandbox.id, /^project-a-/u);
+
+  assert.notEqual(second.sandbox.id, first.sandbox.id);
+
+  assert.equal(pool.status().idle, idle);
+
+  // The warmed sessions stay reserved for callers that name no identity.
+  const unnamed = await pool.acquire();
+
+  assert.match(unnamed.sandbox.id, /^warm-/u);
+
+  await unnamed.release();
+
+  await second.release();
+
+  await pool.dispose();
+});
+
+void test('serves an acquisition without an identity from an idle session', async () => {
+  let created = 0;
+
+  const pool = createSandpool({
+    minIdle: 1,
+    maxSandboxes: 3,
+    logger,
+    create: async () => {
+      created += 1;
+
+      return fake(`warm-${String(created)}`).session;
+    },
+  });
+
+  await pool.waitUntilHeated();
+
+  const idle = pool.status().idle;
+
+  const lease = await pool.acquire();
+
+  assert.match(lease.sandbox.id, /^warm-/u);
+
+  assert.equal(pool.status().idle, idle - 1);
+
+  assert.equal(created, idle);
+
+  assert.equal(pool.status().total, idle);
+
+  await lease.release();
+
+  await pool.dispose();
+});
+
+void test('provisions mixed acquisitions in queue order within capacity', async () => {
+  const identities: (string | undefined)[] = [];
+  const creations: Deferred<SandboxSession>[] = [];
+
+  const pool = createSandpool({
+    minIdle: 0,
+    maxSandboxes: 2,
+    logger,
+    create: (identity) => {
+      identities.push(identity);
+
+      const creation = deferred<SandboxSession>();
+
+      creations.push(creation);
+
+      return creation.promise;
+    },
+  });
+
+  const identified = pool.acquire({ identity: 'project-a' });
+  const unnamed = pool.acquire();
+  const later = pool.acquire({ identity: 'project-c' });
+
+  // Two sessions fit, so the first two callers are provisioned in queue order.
+  assert.deepEqual(identities, ['project-a', undefined]);
+
+  creations[0]?.resolve(fake('session-a').session);
+
+  const first = await identified;
+
+  assert.equal(first.sandbox.id, 'session-a');
+
+  assert.equal(pool.status().total, 2);
+
+  creations[1]?.resolve(fake('session-b').session);
+
+  const second = await unnamed;
+
+  assert.equal(second.sandbox.id, 'session-b');
+
+  assert.deepEqual(identities, ['project-a', undefined]);
+
+  await first.release();
+
+  // The release frees the capacity the third caller was waiting for.
+  assert.deepEqual(identities, ['project-a', undefined, 'project-c']);
+
+  creations[2]?.resolve(fake('session-c').session);
+
+  const third = await later;
+
+  assert.equal(third.sandbox.id, 'session-c');
+
+  assert.equal(pool.status().total, 2);
+
+  await second.release();
+
+  await third.release();
+
+  await pool.dispose();
+});
+
+void test('counts failed identified creations toward the attempt batch', async () => {
+  const failure = new Error('factory unavailable');
+  let attempts = 0;
+
+  const pool = createSandpool({
+    minIdle: 0,
+    maxSandboxes: 1,
+    maxCreateAttempts: 2,
+    logger,
+    create: async () => {
+      attempts += 1;
+
+      if (attempts <= 2) {
+        throw failure;
+      }
+
+      return fake(`recovered-${String(attempts)}`).session;
+    },
+  });
+
+  await assert.rejects(
+    pool.acquire({ identity: 'project-a' }),
+    /after 2 attempts/u,
+  );
+
+  assert.equal(attempts, 2);
+
+  assert.equal(pool.status().lastFailure, failure);
+
+  const recovered = await pool.acquire({ identity: 'project-a' });
+
+  assert.equal(recovered.sandbox.id, 'recovered-3');
+
+  assert.equal(pool.status().queued, 0);
+
+  await recovered.release();
+
+  await pool.dispose();
+});
+
+void test('disposes a session whose identified caller cancelled the acquisition', async () => {
+  const creation = deferred<SandboxSession>();
+  const provisioned = fake('provisioned');
+
+  const pool = createSandpool({
+    minIdle: 0,
+    maxSandboxes: 1,
+    logger,
+    create: () => creation.promise,
+  });
+
+  const controller = new AbortController();
+  const acquisition = pool.acquire({
+    identity: 'project-a',
+    signal: controller.signal,
+  });
+
+  controller.abort();
+
+  await assert.rejects(acquisition, { name: 'AbortError' });
+
+  creation.resolve(provisioned.session);
+
+  await settle();
+
+  assert.equal(provisioned.disposals(), 1);
+
+  assert.equal(pool.status().total, 0);
+
+  await pool.dispose();
+});
+
+void test('cancels queued acquisitions and heat waiters', async () => {
   const creation = deferred<SandboxSession>();
 
   const pool = createSandpool({
@@ -158,7 +379,7 @@ test('cancels queued acquisitions and heat waiters', async () => {
   assert.equal(created.disposals(), 1);
 });
 
-test('release is idempotent, invalidates the lease, and replaces with a new session', async () => {
+void test('release is idempotent, invalidates the lease, and replaces with a new session', async () => {
   const sessions: Fake[] = [];
 
   const pool = createSandpool({
@@ -209,7 +430,7 @@ test('release is idempotent, invalidates the lease, and replaces with a new sess
   await pool.dispose();
 });
 
-test('retries transient creation failures and preserves the last failure', async () => {
+void test('retries transient creation failures and preserves the last failure', async () => {
   const failure = new Error('factory unavailable');
   let attempts = 0;
 
@@ -237,7 +458,7 @@ test('retries transient creation failures and preserves the last failure', async
   await pool.dispose();
 });
 
-test('rejects pending acquisitions after the creation limit and allows a later retry batch', async () => {
+void test('rejects pending acquisitions after the creation limit and allows a later retry batch', async () => {
   const failure = new Error('factory unavailable');
   let attempts = 0;
 
@@ -280,7 +501,7 @@ test('rejects pending acquisitions after the creation limit and allows a later r
   await pool.dispose();
 });
 
-test('counts disposal until a transient disposal failure recovers', async () => {
+void test('counts disposal until a transient disposal failure recovers', async () => {
   let attempts = 0;
 
   const created = fake('retry-dispose', async () => {
@@ -315,7 +536,7 @@ test('counts disposal until a transient disposal failure recovers', async () => 
   await pool.dispose();
 });
 
-test('dispose rejects waits, invalidates leases, and waits for pending factories', async () => {
+void test('dispose rejects waits, invalidates leases, and waits for pending factories', async () => {
   const pending = deferred<SandboxSession>();
   const first = fake('leased');
   let calls = 0;
@@ -388,6 +609,9 @@ const fake = (
 
   return { session, disposals: () => count };
 };
+
+const settle = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
 
 const deferred = <T>(): Deferred<T> => {
   let resolve!: (value: T) => void;

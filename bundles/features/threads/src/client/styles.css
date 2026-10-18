@@ -1,0 +1,20 @@
+/*
+ * The threads bundle's styles: the utilities its delegated-turn element
+ * uses, over the platform theme the window loads once.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities);
+@reference 'desktop/ui/tailwind.css';
+@source './';
+/*
+ * The shared components' classes too, so this sheet's utilities are the
+ * whole sorted set the window uses (as chat's sheet does).
+ */
+@source '../../../../../packages/desktop/src';
+/*
+ * WP-10N: and the stage-9 window bundles' classes, so a later sheet never
+ * re-emits a shared class (`inline-flex`) after their responsive variants
+ * (`md:hidden` in the settings window's bar).
+ */
+@source '../../../../desktop/layout/src/client';
+@source '../../../../desktop/chat/src/client';
+@source '../../../../desktop/settings/src/client';

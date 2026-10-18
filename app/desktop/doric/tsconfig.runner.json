@@ -1,0 +1,21 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc/doric-runner",
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../../dist/out-tsc/doric-runner.tsbuildinfo",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+    "types": ["node"]
+  },
+  "include": [
+    "src/splash-page/**/*.ts",
+    "src/platform/generation/runner-bootstrap.ts",
+    "src/platform/generation/runner-entry.ts",
+    "src/platform/generation/module-hooks.ts",
+    "src/platform/generation/electron-transport.ts",
+    "src/platform/bridge/validation.ts",
+    "src/platform/splash/protocol.ts"
+  ]
+}

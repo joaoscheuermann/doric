@@ -17,7 +17,7 @@ const captureLogger = (): {
   const records: LogRecord[] = [];
 
   const destination = new Writable({
-    write(chunk, _encoding, callback) {
+    write(chunk: Buffer, _encoding, callback) {
       records.push(JSON.parse(chunk.toString('utf8')) as LogRecord);
 
       callback();
@@ -30,17 +30,17 @@ const captureLogger = (): {
   };
 };
 
-type Skill = {
+interface Skill {
   readonly direction: string;
   readonly id: string;
-  readonly tags?: ReadonlyArray<string>;
-};
+  readonly tags?: readonly string[];
+}
 
-type TextData = {
+interface TextData {
   readonly text: string;
-};
+}
 
-test('returns the closest stored structured data and cosine scores', async () => {
+void test('returns the closest stored structured data and cosine scores', async () => {
   const vectors = createVectorIndex<Skill>({
     dimensions: 2,
     logger: silentLogger,
@@ -63,7 +63,7 @@ test('returns the closest stored structured data and cosine scores', async () =>
 
   await vectors.add(east, transform);
 
-  const result: ReadonlyArray<SearchResult<Skill>> = await vectors.search(
+  const result: readonly SearchResult<Skill>[] = await vectors.search(
     'query',
     2,
   );
@@ -77,7 +77,7 @@ test('returns the closest stored structured data and cosine scores', async () =>
   assert.ok(Math.abs((result[1]?.score ?? 0) - Math.SQRT1_2) < 1e-12);
 });
 
-test('embeds only text returned by the transformer and runs it once per add', async () => {
+void test('embeds only text returned by the transformer and runs it once per add', async () => {
   const texts: string[] = [];
 
   const vectors = createVectorIndex<{
@@ -108,7 +108,7 @@ test('embeds only text returned by the transformer and runs it once per add', as
   assert.deepEqual(texts, ['Indexed body']);
 });
 
-test('rejects invalid transformers before embedding or retaining data', async () => {
+void test('rejects invalid transformers before embedding or retaining data', async () => {
   let embeddings = 0;
 
   const vectors = createVectorIndex<TextData>({
@@ -142,7 +142,7 @@ test('rejects invalid transformers before embedding or retaining data', async ()
   assert.equal(embeddings, 0);
 });
 
-test('limits results to topK and retains insertion order for equal scores', async () => {
+void test('limits results to topK and retains insertion order for equal scores', async () => {
   const vectors = createVectorIndex<{
     readonly text: string;
     readonly order: number;
@@ -173,7 +173,7 @@ test('limits results to topK and retains insertion order for equal scores', asyn
   ]);
 });
 
-test('returns no results without embedding zero-topK or empty-database queries', async () => {
+void test('returns no results without embedding zero-topK or empty-database queries', async () => {
   let calls = 0;
 
   const vectors = createVectorIndex({
@@ -195,7 +195,7 @@ test('returns no results without embedding zero-topK or empty-database queries',
   assert.equal(calls, 0);
 });
 
-test('rejects invalid configuration, malformed embeddings, and invalid topK values', async () => {
+void test('rejects invalid configuration, malformed embeddings, and invalid topK values', async () => {
   for (const dimensions of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
     assert.throws(() =>
       createVectorIndex({
@@ -234,7 +234,7 @@ test('rejects invalid configuration, malformed embeddings, and invalid topK valu
   }
 });
 
-test('rejects sparse embeddings without retaining data or returning invalid scores', async () => {
+void test('rejects sparse embeddings without retaining data or returning invalid scores', async () => {
   const sparse = new Array<number>(2);
   sparse[0] = 1;
   const vectors = createVectorIndex<string>({
@@ -255,7 +255,7 @@ test('rejects sparse embeddings without retaining data or returning invalid scor
   ]);
 });
 
-test('keeps cosine scores finite for extreme finite embedding magnitudes', async () => {
+void test('keeps cosine scores finite for extreme finite embedding magnitudes', async () => {
   for (const scale of [Number.MAX_VALUE, Number.MIN_VALUE]) {
     const vectors = createVectorIndex<string>({
       dimensions: 2,
@@ -277,7 +277,7 @@ test('keeps cosine scores finite for extreme finite embedding magnitudes', async
   }
 });
 
-test('keeps stored embeddings independent of later provider mutations', async () => {
+void test('keeps stored embeddings independent of later provider mutations', async () => {
   const stored = [1, 0];
   const vectors = createVectorIndex<string>({
     dimensions: 2,
@@ -293,7 +293,7 @@ test('keeps stored embeddings independent of later provider mutations', async ()
   ]);
 });
 
-test('selects exact top-K with stable ties across mixed positive and negative scores', async () => {
+void test('selects exact top-K with stable ties across mixed positive and negative scores', async () => {
   const directions = [0, -3, 2, 1, -1, 4, 2, -2, 3, 1, -4, 4, 0, 5, -5, 3];
   const vectors = createVectorIndex<number>({
     dimensions: 2,
@@ -330,7 +330,7 @@ test('selects exact top-K with stable ties across mixed positive and negative sc
   }
 });
 
-test('does not retain data when its transformer or embedding fails', async () => {
+void test('does not retain data when its transformer or embedding fails', async () => {
   const vectors = createVectorIndex<{
     readonly text: string;
     readonly retained?: boolean;
@@ -363,7 +363,7 @@ test('does not retain data when its transformer or embedding fails', async () =>
   ]);
 });
 
-test('requires a logger with debug and child functions synchronously', () => {
+void test('requires a logger with debug and child functions synchronously', () => {
   assert.throws(
     () =>
       createVectorIndex({
@@ -375,7 +375,7 @@ test('requires a logger with debug and child functions synchronously', () => {
   );
 });
 
-test('logs failures without exposing private data or changing error identity', async () => {
+void test('logs failures without exposing private data or changing error identity', async () => {
   const privateData = 'PRIVATE_STORED_DATA';
   const privateText = 'PRIVATE_TRANSFORMED_TEXT';
   const privateQuery = 'PRIVATE_QUERY';

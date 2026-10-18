@@ -11,14 +11,14 @@ import {
 
 const logger = pino({ enabled: false });
 
-type Document = {
+interface Document {
   readonly id: string;
   readonly text: string;
-};
+}
 
 const text = (document: Document): string => document.text;
 
-test('ranks shorter matching documents ahead of longer ones', async () => {
+void test('ranks shorter matching documents ahead of longer ones', async () => {
   const index: SearchIndex<Document> = createLexicalIndex({ logger });
 
   const focused = {
@@ -38,7 +38,7 @@ test('ranks shorter matching documents ahead of longer ones', async () => {
 
   await index.add({ id: 'unrelated', text: 'database migration' }, text);
 
-  const results: ReadonlyArray<SearchResult<Document>> = await index.search(
+  const results: readonly SearchResult<Document>[] = await index.search(
     'slack channel publish',
     3,
   );
@@ -57,7 +57,7 @@ test('ranks shorter matching documents ahead of longer ones', async () => {
   assert.ok((results[0]?.score ?? 0) > (results[1]?.score ?? 0));
 });
 
-test('normalizes Unicode case and retains insertion order for equal scores', async () => {
+void test('normalizes Unicode case and retains insertion order for equal scores', async () => {
   const index = createLexicalIndex<Document>({ logger });
   const first = { id: 'first', text: 'Publicação Slack' };
   const second = { id: 'second', text: 'PUBLICAÇÃO SLACK' };
@@ -78,7 +78,7 @@ test('normalizes Unicode case and retains insertion order for equal scores', asy
   assert.equal(results[0]?.score, results[1]?.score);
 });
 
-test('returns no results for empty indexes, unmatched queries, or a zero limit', async () => {
+void test('returns no results for empty indexes, unmatched queries, or a zero limit', async () => {
   const index = createLexicalIndex<Document>({ logger });
 
   assert.deepEqual(await index.search('searchable', 5), []);
@@ -90,7 +90,7 @@ test('returns no results for empty indexes, unmatched queries, or a zero limit',
   assert.deepEqual(await index.search('searchable', 0), []);
 });
 
-test('rewards repeated document terms without counting repeated query terms', async () => {
+void test('rewards repeated document terms without counting repeated query terms', async () => {
   const index = createLexicalIndex<Document>({ logger });
 
   await index.add({ id: 'once', text: 'search other other' }, text);
@@ -102,12 +102,12 @@ test('rewards repeated document terms without counting repeated query terms', as
     results.map(({ data }) => data.id),
     ['repeated', 'once'],
   );
-  assert.ok(results[0]!.score > results[1]!.score);
+  assert.ok(results[0].score > results[1].score);
   assert.deepEqual(await index.search('search search', 2), results);
   assert.deepEqual(await index.search('search', 1), results.slice(0, 1));
 });
 
-test('updates BM25 weights after inserting documents with existing terms', async () => {
+void test('updates BM25 weights after inserting documents with existing terms', async () => {
   const index = createLexicalIndex<Document>({ logger });
   await index.add({ id: 'alpha-first', text: 'alpha' }, text);
   await index.add({ id: 'beta', text: 'beta' }, text);
@@ -131,7 +131,7 @@ test('updates BM25 weights after inserting documents with existing terms', async
   assert.equal(after[1].score, after[2].score);
 });
 
-test('preserves insertion ties across different query terms and top-K boundaries', async () => {
+void test('preserves insertion ties across different query terms and top-K boundaries', async () => {
   const index = createLexicalIndex<Document>({ logger });
   const ids = Array.from(
     { length: 16 },
@@ -159,7 +159,7 @@ test('preserves insertion ties across different query terms and top-K boundaries
   }
 });
 
-test('leaves results and corpus statistics unchanged after rejected additions', async () => {
+void test('leaves results and corpus statistics unchanged after rejected additions', async () => {
   const index = createLexicalIndex<Document>({ logger });
   await index.add({ id: 'stored', text: 'alpha beta beta' }, text);
   const before = await index.search('alpha beta', 10);
@@ -183,7 +183,7 @@ test('leaves results and corpus statistics unchanged after rejected additions', 
   assert.deepEqual(await index.search('alpha beta', 10), before);
 });
 
-test('matches compatibility and decomposed Unicode forms', async () => {
+void test('matches compatibility and decomposed Unicode forms', async () => {
   const index = createLexicalIndex<Document>({ logger });
   await index.add({ id: 'stored', text: 'Ｃａｆé' }, text);
 
@@ -195,7 +195,7 @@ test('matches compatibility and decomposed Unicode forms', async () => {
 });
 
 for (const topK of [-1, 0.5, NaN, Infinity]) {
-  test(`rejects an invalid result limit of ${topK}`, async () => {
+  void test(`rejects an invalid result limit of ${topK}`, async () => {
     const index = createLexicalIndex<Document>({ logger });
 
     await assert.rejects(index.search('query', topK), TypeError);

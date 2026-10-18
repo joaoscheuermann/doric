@@ -1,0 +1,28 @@
+{
+  "name": "doric-renderer",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "app/desktop/doric-renderer/src",
+  "projectType": "application",
+  "tags": [],
+  "// targets": "to see all targets run: nx show project doric-renderer --web",
+  "targets": {
+    "build": {
+      "dependsOn": ["^build", "desktop:build"]
+    },
+    "serve": {
+      "dependsOn": ["desktop:build"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf app/desktop/doric-renderer/dist-tests",
+          "tsc -p app/desktop/doric-renderer/tsconfig.spec.json",
+          "node --test app/desktop/doric-renderer/dist-tests/tests/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  }
+}

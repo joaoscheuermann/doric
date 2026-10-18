@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 1,
+  "id": "usage",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Thread usage and cost, with the context capacity from the live model catalog.",
+  "provides": ["usage/v1@1.0.0"],
+  "requires": [
+    "runtime.usage/v1@^1.0.0",
+    "runtime.threads/v1@^1.0.0",
+    "host-config/v1@^1.0.0",
+    "models/v1@^1.1.0",
+    "ui/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "layout.workspace/v1@^1.0.0"
+  ],
+  "desktopScope": {
+    "usage/v1": ["projectId", "threadId", "promptId"]
+  }
+}

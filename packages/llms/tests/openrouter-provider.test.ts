@@ -1,0 +1,434 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { z } from 'zod';
+
+import { ProviderErrorObject, type ProviderRequest } from '../src/index.js';
+import {
+  collect,
+  createOpenRouterProvider,
+  fakeTransport,
+  response,
+} from './fakes.js';
+
+const modelCatalog = (id: string, supportedParameters: readonly string[]) =>
+  response({
+    data: [
+      {
+        id,
+        name: id,
+        supported_parameters: supportedParameters,
+      },
+    ],
+  });
+
+void test('reports advertised context capacity alongside openrouter streaming usage', async () => {
+  const transport = fakeTransport({
+    responses: [
+      response({
+        data: [
+          {
+            id: 'test/model',
+            context_length: 200000,
+            supported_parameters: [],
+          },
+        ],
+      }),
+    ],
+    streams: [
+      [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 48000, completion_tokens: 2, cost: 0.75 } })}\n\ndata: [DONE]\n\n`,
+      ],
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+  const events = await collect(
+    provider.stream({
+      model: 'test/model',
+      messages: [{ role: 'user', content: 'Hello' }],
+    }),
+  );
+  const start = events.find((event) => event.type === 'response.started');
+  assert.equal(start?.contextWindow, 200000);
+  const finish = events.find((event) => event.type === 'response.finished');
+  assert.equal(finish?.finish.usage?.cost?.amount, 0.75);
+  assert.equal(finish?.finish.usage?.inputTokens, 48000);
+  assert.equal((await provider.models())[0]?.contextWindow, 200000);
+  assert.equal(
+    (await provider.validateModel('test/model')).contextWindow,
+    200000,
+  );
+});
+
+void test('selects native structured output from live OpenRouter capabilities', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('openai/gpt-5', [
+        'tools',
+        'tool_choice',
+        'structured_outputs',
+      ]),
+      response({
+        choices: [
+          { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
+        ],
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  const result = await provider.complete({
+    model: 'openai/gpt-5',
+    messages: [{ role: 'user', content: 'Answer.' }],
+    schema: z.object({ answer: z.string() }),
+  });
+
+  const body = JSON.parse(transport.requests[1]?.body ?? '{}') as Record<
+    string,
+    unknown
+  >;
+
+  assert.deepEqual(result.structured, { answer: 'ok' });
+
+  assert.equal(
+    (body.response_format as { readonly type?: string }).type,
+    'json_schema',
+  );
+
+  assert.deepEqual(body.provider, { require_parameters: true });
+});
+
+void test('falls back from JSON mode to a schema prompt and repairs locally', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('google/gemma-3-27b-it', []),
+      response({
+        choices: [
+          { finish_reason: 'stop', message: { content: '{"answer":42}' } },
+        ],
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 2,
+          total_tokens: 3,
+          cost: 0.01,
+          cost_details: { upstream_inference_cost: 0.008 },
+        },
+      }),
+      response({
+        choices: [
+          { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
+        ],
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 5,
+          total_tokens: 9,
+          cost: 0.02,
+          cost_details: { upstream_inference_cost: 0.015 },
+        },
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  const result = await provider.complete({
+    model: 'google/gemma-3-27b-it',
+    messages: [{ role: 'user', content: 'Answer.' }],
+    schema: z.object({ answer: z.string() }),
+  });
+
+  const first = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+    readonly messages?: readonly { readonly role?: string; content?: string }[];
+    readonly response_format?: unknown;
+  };
+
+  const second = JSON.parse(transport.requests[2]?.body ?? '{}') as {
+    readonly messages?: readonly { readonly role?: string; content?: string }[];
+  };
+
+  assert.equal(first.response_format, undefined);
+
+  assert.equal(first.messages?.[0]?.role, 'system');
+
+  assert.match(first.messages?.[0]?.content ?? '', /JSON Schema/u);
+
+  assert.match(
+    second.messages?.at(-1)?.content ?? '',
+    /Structured output correction/u,
+  );
+
+  assert.deepEqual(result.structured, { answer: 'ok' });
+
+  assert.deepEqual(result.usage, {
+    inputTokens: 5,
+    outputTokens: 7,
+    totalTokens: 12,
+    cost: {
+      amount: 0.03,
+      unit: 'credits',
+      upstreamAmount: 0.023,
+    },
+  });
+});
+
+void test('buffers direct structured streams until validation succeeds', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('mistralai/mistral-small', ['response_format']),
+      response({
+        choices: [
+          { finish_reason: 'stop', message: { content: '{"answer":"ok"}' } },
+        ],
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  const events = await collect(
+    provider.stream({
+      model: 'mistralai/mistral-small',
+      messages: [{ role: 'user', content: 'Answer.' }],
+      schema: z.object({ answer: z.string() }),
+    }),
+  );
+
+  assert.deepEqual(
+    events.map(({ type }) => type),
+    ['response.started', 'text.delta', 'response.finished'],
+  );
+
+  assert.equal(transport.requests.length, 2);
+
+  assert.equal(transport.requests[1]?.headers?.accept, 'application/json');
+});
+
+void test('rejects non-emulatable feature combinations before completion', async () => {
+  const transport = fakeTransport({
+    responses: [modelCatalog('anthropic/claude-sonnet-4', ['tools'])],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'anthropic/claude-sonnet-4',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      effort: 'high',
+    }),
+    (error: unknown) =>
+      error instanceof ProviderErrorObject &&
+      error.data.code === 'incompatible_model_request',
+  );
+
+  assert.equal(transport.requests.length, 1);
+});
+
+const disabledReasoning: readonly {
+  readonly name: string;
+  readonly options: Pick<ProviderRequest, 'effort' | 'flags'>;
+}[] = [
+  {
+    name: 'nested none',
+    options: { flags: { reasoning: { effort: 'none' } } },
+  },
+  {
+    name: 'explicit none over enabled flag',
+    options: { effort: 'none', flags: { reasoning: true } },
+  },
+  {
+    name: 'explicit none over nested effort',
+    options: { effort: 'none', flags: { reasoning: { effort: 'high' } } },
+  },
+];
+
+for (const { name, options } of disabledReasoning) {
+  void test(`allows forced tools when reasoning is disabled by ${name}`, async () => {
+    const transport = fakeTransport({
+      responses: [
+        modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
+        response({
+          choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+        }),
+      ],
+    });
+    const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+    await provider.complete({
+      model: 'anthropic/claude-sonnet-4',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      ...options,
+    });
+
+    const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+      readonly reasoning?: unknown;
+    };
+    assert.deepEqual(body.reasoning, { effort: 'none' });
+  });
+}
+
+void test('rejects forced tools when explicit effort overrides a disabled reasoning flag', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('anthropic/claude-sonnet-4', ['tools', 'tool_choice']),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'anthropic/claude-sonnet-4',
+      messages: [{ role: 'user', content: 'Use a tool.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      toolChoice: 'required',
+      effort: 'high',
+      flags: { reasoning: false },
+    }),
+    (error: unknown) =>
+      error instanceof ProviderErrorObject &&
+      error.data.code === 'incompatible_model_request',
+  );
+});
+
+void test('allows an unknown laboratory only when live capabilities prove tools and forced choice', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('acme/model', ['tools', 'tool_choice']),
+      response({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: '',
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  function: { name: 'lookup', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  const finish = await provider.complete({
+    model: 'acme/model',
+    messages: [{ role: 'user', content: 'Look it up.' }],
+    tools: [
+      { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+    ],
+    toolChoice: { name: 'lookup' },
+  });
+
+  assert.equal(finish.toolCalls[0]?.name, 'lookup');
+});
+
+void test('emulates sequential tools when the model does not advertise parallel control', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('openai/gpt-5', ['tools']),
+      response({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: '',
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  function: { name: 'lookup', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  await provider.complete({
+    model: 'openai/gpt-5',
+    messages: [{ role: 'user', content: 'Look it up.' }],
+    tools: [
+      { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+    ],
+    parallelToolCalls: false,
+  });
+
+  const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+    readonly messages?: readonly {
+      readonly role?: string;
+      readonly content?: string;
+    }[];
+    readonly parallel_tool_calls?: boolean;
+    readonly provider?: unknown;
+  };
+
+  assert.equal(body.parallel_tool_calls, undefined);
+
+  assert.deepEqual(body.provider, { require_parameters: true });
+
+  assert.match(
+    body.messages?.find(({ role }) => role === 'system')?.content ?? '',
+    /limit applies only to the current response, not to the task or node/u,
+  );
+});
+
+void test('forwards parallel tool control when the model advertises it', async () => {
+  const transport = fakeTransport({
+    responses: [
+      modelCatalog('z-ai/glm-5', ['tools', 'parallel_tool_calls']),
+      response({
+        choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+      }),
+    ],
+  });
+  const provider = createOpenRouterProvider({ transport, apiKey: 'key' });
+
+  await provider.complete({
+    model: 'z-ai/glm-5',
+    messages: [{ role: 'user', content: 'Use a tool if needed.' }],
+    tools: [
+      { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+    ],
+    parallelToolCalls: false,
+  });
+
+  const body = JSON.parse(transport.requests[1]?.body ?? '{}') as {
+    readonly parallel_tool_calls?: boolean;
+  };
+
+  assert.equal(body.parallel_tool_calls, false);
+});
+
+void test('rejects native schema and tools in the same openrouter request', async () => {
+  const provider = createOpenRouterProvider({
+    transport: fakeTransport({}),
+    apiKey: 'key',
+  });
+
+  await assert.rejects(
+    provider.complete({
+      model: 'openai/gpt-5',
+      messages: [{ role: 'user', content: 'Answer.' }],
+      tools: [
+        { name: 'lookup', inputSchema: { type: 'object' }, outputSchema: {} },
+      ],
+      schema: z.object({ answer: z.string() }),
+    }),
+    (error: unknown) =>
+      error instanceof ProviderErrorObject &&
+      error.data.code === 'unsupported_structured_tools',
+  );
+});
