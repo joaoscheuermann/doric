@@ -586,6 +586,8 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) => {
             definedFields({
               artifactId: artifact.artifactId,
               revision,
+              kind: artifact.kind,
+              title: artifact.title,
               changeNote: input.changeNote,
               // The log is the durable truth: the revision's resolved anchors
               // and entries travel with the event, so replay rebuilds the

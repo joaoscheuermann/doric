@@ -13,7 +13,8 @@
           "tsc --build bundles/features/papercraft/tsconfig.json",
           "tsc -p bundles/features/papercraft/tsconfig.parts.json",
           "tsc -p bundles/features/papercraft/tsconfig.client.json",
-          "node packages/bundle/dist/build/cli.js build bundles/features/papercraft"
+          "node packages/bundle/dist/build/cli.js build bundles/features/papercraft",
+          "esbuild bundles/features/papercraft/src/sandbox/main.ts --bundle --platform=node --target=node22 --format=esm --log-level=warning --outfile=bundles/features/papercraft/dist/sandbox/runner.mjs"
         ],
         "parallel": false
       }

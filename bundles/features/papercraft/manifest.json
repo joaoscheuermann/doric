@@ -21,6 +21,7 @@
   ],
   "requires": [
     "files/v1@^1.0.0",
+    "runtime.lease/v1@^1.1.0",
     "artifacts/v1@^1.0.0",
     "artifacts.cache/v1@^1.0.0",
     "artifact.kind/v1@^1.0.0",

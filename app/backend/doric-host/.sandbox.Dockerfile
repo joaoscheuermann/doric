@@ -25,6 +25,10 @@
 # `/var/run/docker.sock` or the privileges it needs, so without one of those
 # the CLI reports that it cannot reach a daemon rather than the command being
 # missing.
+#
+# esbuild is installed under `/opt/doric/bundler` last, so the papercraft
+# previews bundle a component where its files are instead of reading each one
+# through the host; an image without it still previews, through the host.
 FROM node:22-bookworm
 
 ARG GH_VERSION=2.101.0
@@ -116,3 +120,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && docker --version \
  && dockerd --version
+
+# The esbuild the papercraft previews bundle a component with inside the
+# sandbox, where the Project's files are: the host copies its runner script in
+# and runs it with this esbuild, so the version must be the one the papercraft
+# bundle depends on (its tests compare the two). npm installs the native
+# binary of the image's own architecture, and the check fails the build on an
+# esbuild that does not load or is another version, rather than leaving
+# previews to fall back to bundling through the host.
+ARG ESBUILD_VERSION=0.28.2
+RUN npm install --prefix /opt/doric/bundler --no-save --no-audit --no-fund \
+      "esbuild@${ESBUILD_VERSION}" \
+ && node -e "const {version} = require('/opt/doric/bundler/node_modules/esbuild'); if (version !== process.argv[1]) throw new Error('esbuild ' + version); require('/opt/doric/bundler/node_modules/esbuild').transformSync('let a = 1')" "${ESBUILD_VERSION}"

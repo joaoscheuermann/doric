@@ -778,13 +778,17 @@ export const artifactsCreatedEvent = defineEvent({
 /**
  * The artifact gained a revision; every earlier revision still exists. The
  * payload carries the revision's resolved anchors and entries — the log is the
- * durable truth, so replay rebuilds the revision without the work copy.
+ * durable truth, so replay rebuilds the revision without the work copy — and
+ * the artifact's kind and title, since the revising Thread's log may hold no
+ * `created` (another Thread created it). Logs written before carry neither.
  */
 export const artifactsRevisedEvent = defineEvent({
   type: 'artifacts.revised/v1',
   payload: z.looseObject({
     artifactId: z.string(),
     revision: z.number().int(),
+    kind: z.string().optional(),
+    title: z.string().optional(),
     changeNote: z.string().optional(),
     targets: z.array(artifactTargetSchema),
     entries: z.array(artifactEntrySchema),

@@ -17,6 +17,9 @@
       "path": "../../../packages/tool"
     },
     {
+      "path": "../../runtime/runtime"
+    },
+    {
       "path": "../../../packages/bundle"
     },
     {

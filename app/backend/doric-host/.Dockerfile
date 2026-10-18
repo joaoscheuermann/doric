@@ -34,6 +34,9 @@ RUN npm install --global npm@11.13.0
 # contract descriptor and JSON Schemas, and `stage` copies each bundle's whole
 # `dist` (`desktop/`, `client/` and `contracts/` included, which the host
 # distributes to the desktop) into `app/backend/doric-host/dist/bundles/<id>`.
+# The papercraft bundle also gets its sandbox runner, `dist/sandbox/runner.mjs`,
+# the one script the host copies into a sandbox to bundle a preview there (as
+# its Nx `build` target writes it).
 # The `web-research` skill is the `web` bundle's; the copy left in `files`
 # is removed from its dist until the source is deleted.
 # A failing bundle build stops the image build here rather than at boot. The
@@ -78,6 +81,9 @@ RUN npm ci --ignore-scripts \
  && for manifest in bundles/*/*/manifest.json; do \
       node packages/bundle/dist/build/cli.js build "${manifest%/manifest.json}" || exit 1; \
     done \
+ && npx esbuild bundles/features/papercraft/src/sandbox/main.ts --bundle \
+      --platform=node --target=node22 --format=esm --log-level=warning \
+      --outfile=bundles/features/papercraft/dist/sandbox/runner.mjs \
  && node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles \
       bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads \
       bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter \

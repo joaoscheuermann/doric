@@ -21,6 +21,7 @@
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "runtime": "0.0.1",
     "tailwindcss": "4.3.3",
     "tool": "0.0.1",
     "tslib": "^2.3.0",

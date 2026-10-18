@@ -7,8 +7,8 @@
 //   with its origin (`data-papercraft-source="path:line"`). The revision's
 //   only entry is `index.html`, which the node mounts directly.
 // - `component` (path B): `compile.ts` bundles the source with esbuild (the
-//   window's import-map specifiers external, Project files read through
-//   `files/v1`) into `index.js`, an ESM module exporting
+//   window's import-map specifiers external; in the Project's sandbox, else
+//   on the host reading through `files/v1`) into `index.js`, an ESM module exporting
 //   `mount(root, { theme })` that renders the chosen export with the
 //   window's own React, and compiles its Tailwind into `index.css`. The
 //   revision also keeps `index.html` — the source text in a `<pre>` — as the
@@ -51,6 +51,7 @@ import {
   papercraftPreviewsMethods,
 } from '../contracts/index.js';
 import { compileComponent } from './compile.js';
+import { sandboxBundler } from './sandbox.js';
 
 /** The largest source file the builder reads. */
 export const MAX_SOURCE_BYTES = 1_048_576;
@@ -420,6 +421,7 @@ export const snapshotPreview = async (
         path: input.path,
         ...(input.entry === undefined ? {} : { entry: input.entry }),
       },
+      sandboxBundler(services, call),
     );
 
     built.push(
