@@ -17,6 +17,7 @@ import {
   type SteerResult,
   type Thread,
   type ThreadGit,
+  type ThreadOrigin,
 } from '../../contracts/model.js';
 import type { InterruptResult } from '../../contracts/threads.js';
 import type {
@@ -623,6 +624,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     project: ProjectRuntime,
     name: string,
     parentThreadId?: string,
+    origin?: ThreadOrigin,
   ) => {
     if (project.closing) return { status: 'inactive' as const };
     let inherit:
@@ -632,6 +634,11 @@ export const createThreadRunner = (context: RunnerContext) => {
       const parent = project.threads.get(parentThreadId);
       if (parent === undefined) return { status: 'invalid_parent' as const };
       if (parent.closing) return { status: 'inactive' as const };
+      // The reader branches a main Thread into a sub-thread, and only an agent
+      // nests deeper: it spawns a sub-agent under whatever Thread it is working
+      // in. So a Thread the reader opens hangs off the root of its tree.
+      if (origin !== 'agent' && parent.thread.parentThreadId !== undefined)
+        return { status: 'invalid_parent' as const };
       // A child reads the same sandbox as its parent, so it starts where its
       // parent is right now and carries the hint that directory had.
       inherit = {
@@ -646,6 +653,7 @@ export const createThreadRunner = (context: RunnerContext) => {
       name,
       parentThreadId,
       inherit,
+      origin,
     );
     const runtime: ThreadRuntime = {
       thread: record.thread,
@@ -1349,6 +1357,7 @@ export const createThreadRunner = (context: RunnerContext) => {
             project,
             nameFromPrompt(title ?? prompt),
             parent.thread.id,
+            'agent',
           );
           if (created.status !== 'created')
             throw new Error('Thread cannot be created.');

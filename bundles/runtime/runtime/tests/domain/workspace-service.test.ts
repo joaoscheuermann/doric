@@ -8,7 +8,7 @@ import {
   type Project,
   type Thread,
 } from '../../src/contracts/model.js';
-import { createHarness, deferred } from './support/harness.js';
+import { createHarness, deferred, spawner } from './support/harness.js';
 
 /*
  * Ported from agents/doric tests/workspace-service.test.ts (design 57 §13.1,
@@ -328,24 +328,38 @@ void test('pauses reader dispatch without interrupting the daughter Thread', {
 void test('terminates a subtree without terminating its sibling or Project', {
   timeout: 5000,
 }, async () => {
-  const harness = createHarness();
+  const tree = spawner();
+  const harness = createHarness({ execute: tree.execute });
   const { service } = harness;
   const project = await harness.readyProject();
   const root = await harness.createThread(project.id);
   const child = await harness.createThread(project.id, root.id);
-  const grandchild = await harness.createThread(project.id, child.id);
   const otherChild = await harness.createThread(project.id, root.id);
-  const otherGrandchild = await harness.createThread(project.id, otherChild.id);
+  // The reader branches a main Thread; what hangs under a sub-thread is the
+  // agent Thread that sub-thread spawns, as in the product.
+  const agentThreads: string[] = [];
+  for (const subThread of [child, otherChild]) {
+    assert.equal(
+      (await service.threads.prompt(subThread.id, 'spawn')).status,
+      'accepted',
+    );
+    agentThreads.push(await tree.spawned(subThread.id));
+  }
   const sibling = await harness.createThread(project.id);
   await service.threads.terminate(root.id);
-  for (const thread of [root, child, grandchild, otherChild, otherGrandchild]) {
-    await harness.threadState(thread.id, 'cancelled');
-    assert.equal(
-      (await service.threads.prompt(thread.id, 'later')).status,
-      'inactive',
-    );
+  const subtree: readonly (readonly [string, string])[] = [
+    [root.id, 'inactive'],
+    [child.id, 'inactive'],
+    [otherChild.id, 'inactive'],
+    ...agentThreads.map((id) => [id, 'forbidden'] as const),
+  ];
+  for (const [id, answer] of subtree) {
+    await harness.threadState(id, 'cancelled');
+    // A cancelled Thread takes no work: the reader's own answers `inactive`, and
+    // an agent Thread `forbidden` before its state is even read.
+    assert.equal((await service.threads.prompt(id, 'later')).status, answer);
     assert.notEqual(
-      (await service.threads.create(project.id, 'Child', thread.id)).status,
+      (await service.threads.create(project.id, 'Child', id)).status,
       'created',
     );
   }
@@ -500,7 +514,6 @@ void test('steers one correlated delegation result into its busy parent and keep
   const childStarted = deferred();
   const finishChild = deferred();
   const childFinished = deferred();
-  const humanStarted = deferred();
   const priorHumanStarted = deferred();
   const childInputs: InputSource[] = [];
   const steered: InputSource[] = [];
@@ -524,9 +537,6 @@ void test('steers one correlated delegation result into its busy parent and keep
         childStarted.resolve();
         await finishChild.promise;
         return 'child result';
-      } else if (job.prompt === 'human follow-up') {
-        childInputs.push(job.source);
-        humanStarted.resolve();
       } else if (job.source.kind === 'result') {
         parentInputs.push('result');
       } else if (job.prompt === 'prior human input') {
@@ -544,19 +554,19 @@ void test('steers one correlated delegation result into its busy parent and keep
   const child = await spawned.promise;
   await childStarted.promise;
   await service.threads.prompt(parent.id, 'prior human input');
+  // The child is an agent Thread: the reader writes nothing into it. Its work
+  // belongs to the agent that spawned it, and the result arrives at the parent.
   assert.equal(
     (await service.threads.prompt(child.threadId, 'human follow-up')).status,
-    'accepted',
+    'forbidden',
   );
   finishChild.resolve();
-  await humanStarted.promise;
   await harness.threadState(child.threadId, 'ready');
   childFinished.resolve();
   await priorHumanStarted.promise;
   await harness.threadState(parent.id, 'ready');
   assert.deepEqual(childInputs, [
     { kind: 'parent', threadId: parent.id, promptId: request.promptId },
-    { kind: 'user' },
   ]);
   // The result reached the running prompt and never ran as a prompt of its own.
   assert.deepEqual(steered, [

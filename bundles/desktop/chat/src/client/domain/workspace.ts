@@ -18,6 +18,12 @@ export type Thread = {
   readonly name: string;
   readonly projectId: string;
   readonly parentThreadId?: string;
+  /**
+   * Who opened the Thread: a reader (`'user'`) or the agent that spawned it
+   * (`'agent'`). Absent on a Thread written before the host recorded it, which
+   * reads as the reader's.
+   */
+  readonly origin?: 'user' | 'agent';
   readonly state: string;
   /** The prompt the Thread is running, present only while one is. */
   readonly activePromptId?: string;
@@ -35,6 +41,17 @@ export type Thread = {
   readonly createdAt: string;
   readonly updatedAt: string;
 };
+
+/**
+ * Whether an agent spawned this Thread and holds its control: the reader may
+ * watch it, pause it, continue it and retry it, and nothing else. A Thread
+ * without `origin` is the reader's, so an old workspace controls as it always
+ * did.
+ */
+export const isAgentThread = (thread: Thread | undefined): boolean =>
+  thread !== undefined &&
+  thread.parentThreadId !== undefined &&
+  thread.origin === 'agent';
 
 export type ThreadEvent = {
   readonly projectId: string;

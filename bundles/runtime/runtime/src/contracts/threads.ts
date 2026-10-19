@@ -115,7 +115,11 @@ export interface SpawnedThread {
 
 export type PromptResult =
   | { readonly status: 'accepted'; readonly promptId: string }
-  | { readonly status: 'missing' | 'inactive' };
+  /**
+   * The reader may not write here: an agent Thread takes only pause, continue
+   * and retry.
+   */
+  | { readonly status: 'missing' | 'inactive' | 'forbidden' };
 
 export type InterruptResult =
   | 'interrupted'
@@ -189,7 +193,7 @@ export const spawnedThreadSchema: z.ZodType<SpawnedThread, SpawnedThread> =
 export const promptResultSchema: z.ZodType<PromptResult, PromptResult> =
   z.union([
     z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
-    z.looseObject({ status: z.enum(['missing', 'inactive']) }),
+    z.looseObject({ status: z.enum(['missing', 'inactive', 'forbidden']) }),
   ]);
 
 export const interruptResultSchema = z.enum([
@@ -294,6 +298,16 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     input: { readonly id: string; readonly promptId: string },
     call?: CallArg,
   ): Promise<ResumeResult>;
+  /**
+   * 1.4.0: sends the Thread's last prompt again, without the reader writing
+   * anything — the third lever an agent Thread offers beside pause and
+   * continue. The text comes from the Thread's own log, so this cannot become a
+   * way to prompt an agent Thread.
+   */
+  retry(
+    input: { readonly id: string },
+    call?: CallArg,
+  ): Promise<PromptAcceptResult>;
   rewind(
     input: {
       readonly id: string;
@@ -458,6 +472,10 @@ export const runtimeThreadsMethods = {
   },
   prompt: {
     input: z.object({ id: z.string(), prompt: z.string() }).strict(),
+    output: promptResultSchema,
+  },
+  retry: {
+    input: z.object({ id: z.string() }).strict(),
     output: promptResultSchema,
   },
   steer: {

@@ -45,6 +45,8 @@ export interface ChatThreadsApi {
     options: { readonly promptId: string; readonly interrupt?: boolean },
   ): Promise<SteerReceipt>;
   resume(threadId: string, promptId: string): Promise<Thread>;
+  /** Sends the Thread's last prompt again; the host reads it from the log. */
+  retry(threadId: string): Promise<PromptReceipt>;
   rewind(
     threadId: string,
     promptId: string,
@@ -253,6 +255,13 @@ export const createThreadsApi = (
         return { ...receiptFrom(result.promptId), status: result.status };
       if (result.status === 'missing') return fail(notFound);
       return conflict('inactive');
+    },
+
+    retry: async (id) => {
+      const checked = threadId(id);
+      const result = await host((threads) => threads.retry({ id: checked }));
+      if (result.status !== 'accepted') return conflict(result.status);
+      return receiptFrom(result.promptId);
     },
 
     resume: async (id, promptId) => {

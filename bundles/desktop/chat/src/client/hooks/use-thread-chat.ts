@@ -39,6 +39,11 @@ export type ThreadChat = {
   readonly rewind: (promptId: string, text: string) => Promise<boolean>;
   /** Takes up a paused prompt through `threads.resume`. */
   readonly resume: (promptId: string) => Promise<boolean>;
+  /**
+   * Sends the Thread's last prompt again through `threads.retry`: the retry
+   * lever on an agent Thread, where the reader writes nothing.
+   */
+  readonly retry: () => Promise<boolean>;
 };
 
 /**
@@ -111,6 +116,10 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
       threadChatsStore.getState().resume(thread.id, promptId),
     [thread.id],
   );
+  const retry = useCallback(
+    () => threadChatsStore.getState().retry(thread.id),
+    [thread.id],
+  );
 
   return {
     thread: chat?.thread ?? thread,
@@ -131,5 +140,6 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     steer,
     rewind,
     resume,
+    retry,
   };
 };

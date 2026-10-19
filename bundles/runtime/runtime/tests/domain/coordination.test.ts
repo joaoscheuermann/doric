@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { Thread } from '../../src/contracts/model.js';
 import type { RuntimeThreads } from '../../src/contracts/threads.js';
 import type { WorkspaceService } from '../../src/host/domain/types.js';
-import { createHarness, deferred } from './support/harness.js';
+import { createHarness, deferred, spawner } from './support/harness.js';
 
 /*
  * Ported from agents/doric tests/coordination.test.ts (design 57 §13.1,
@@ -30,6 +30,7 @@ void test('allows bound parent controls to interrupt and terminate child work', 
   const bound = deferred<ThreadControl>();
   const parentFinish = deferred();
   const started = deferred();
+  const spawned = deferred<{ threadId: string; promptId: string }>();
   const settle = deferred();
   const next = deferred();
   const nextFinish = deferred();
@@ -45,6 +46,10 @@ void test('allows bound parent controls to interrupt and terminate child work', 
         await parentFinish.promise;
       } else if (job.prompt === 'child') {
         activeSignal = signal;
+        // The descendant hangs off the Thread whose agent spawned it: the reader
+        // branches a main Thread into a sub-thread, and only an agent nests
+        // deeper than that.
+        spawned.resolve(await tools.threads.spawn('descendant'));
         started.resolve();
         await settle.promise;
       } else if (job.prompt === 'descendant') {
@@ -63,14 +68,13 @@ void test('allows bound parent controls to interrupt and terminate child work', 
   const project = await service.projects.create('Project');
   const parent = await create(service, project.id);
   const child = await create(service, project.id, parent.id);
-  const descendant = await create(service, project.id, child.id);
   await service.threads.prompt(parent.id, 'parent');
   const control = await bound.promise;
   const request = await control.send(child.id, 'child');
   assert.ok(request.status === 'accepted');
   await started.promise;
+  const descendant = await spawned.promise;
   assert.equal((await control.send(child.id, 'next')).status, 'accepted');
-  await service.threads.prompt(descendant.id, 'descendant');
   await descendantStarted.promise;
   assert.equal(
     await control.interrupt(child.id, request.promptId),
@@ -88,7 +92,7 @@ void test('allows bound parent controls to interrupt and terminate child work', 
   nextFinish.resolve();
   descendantFinish.resolve();
   await harness.threadState(child.id, 'cancelled');
-  await harness.threadState(descendant.id, 'cancelled');
+  await harness.threadState(descendant.threadId, 'cancelled');
   assert.equal((await service.projects.find(project.id))?.state, 'ready');
   assert.equal((await service.threads.find(parent.id))?.state, 'running');
   parentFinish.resolve();
@@ -100,10 +104,12 @@ void test('binds coordination to direct children and to the lifetime of the call
 }, async () => {
   const started = deferred();
   const finish = deferred();
+  const tree = spawner();
   let control!: ThreadControl;
   const harness = createHarness({
-    execute: async ({ tools }) => {
-      control = tools.threads;
+    execute: async (run) => {
+      if (run.job.prompt !== 'coordinate') return tree.execute(run);
+      control = run.tools.threads;
       started.resolve();
       await finish.promise;
       return 'done';
@@ -114,7 +120,13 @@ void test('binds coordination to direct children and to the lifetime of the call
   const otherProject = await service.projects.create('Other project');
   const parent = await create(service, project.id);
   const child = await create(service, project.id, parent.id);
-  const grandchild = await create(service, project.id, child.id);
+  // The grandchild is an agent Thread the child spawns: the reader cannot open a
+  // sub-thread under a sub-thread, and the parent cannot reach past its own.
+  assert.equal(
+    (await service.threads.prompt(child.id, 'spawn')).status,
+    'accepted',
+  );
+  const grandchild = await tree.spawned(child.id);
   const sibling = await create(service, project.id);
   const foreign = await create(service, otherProject.id);
   const prompt = await service.threads.prompt(parent.id, 'coordinate');
@@ -125,7 +137,7 @@ void test('binds coordination to direct children and to the lifetime of the call
     (await control.list(100)).items.map(({ id }) => id),
     [child.id],
   );
-  for (const id of [parent.id, sibling.id, grandchild.id, foreign.id]) {
+  for (const id of [parent.id, sibling.id, grandchild, foreign.id]) {
     await assert.rejects(control.get(id));
     await assert.rejects(control.send(id, 'forged access'));
     await assert.rejects(control.interrupt(id, prompt.promptId));

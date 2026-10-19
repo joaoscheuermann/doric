@@ -4,19 +4,19 @@
 
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
-import {
-  FileDiffIcon,
-  FileIcon,
-  MessageSquareIcon,
-  TerminalIcon,
-} from 'lucide-react';
+import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { LayoutTabsV1, type TabIcon } from '../../../contracts/index.js';
-import type { WorkspaceTabs as TabsState } from '../../domain/workspace-tabs.js';
+import { LayoutTabsV1 } from '../../../contracts/index.js';
+import { type ThreadKind, threadKind } from '../../domain/thread-kind.js';
+import type {
+  WorkspaceTabs as TabsState,
+  WorkspaceTab,
+} from '../../domain/workspace-tabs.js';
 import { layoutServices } from '../../services/layout-services.js';
 import { workspaceStore } from '../../stores/workspace.js';
 import { workspaceTabsStore } from '../../stores/workspace-tabs.js';
+import { ThreadKindIcon } from '../molecules/thread-mark.js';
 
 export function WorkspaceTabBar({
   state,
@@ -48,7 +48,7 @@ export function WorkspaceTabBar({
                 label: tab.title,
                 ariaLabel: tab.ariaLabel ?? tab.title,
                 title: tab.tooltip ?? tab.title,
-                icon: tabIcon(tab.icon),
+                icon: tabIcon(tab),
               },
             ]
           : [],
@@ -87,21 +87,42 @@ export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
   );
 }
 
-/** The trigger icon an element tab asked for (`layout.tabs/v1@1.1.0`). */
-function tabIcon(icon: TabIcon | undefined) {
-  switch (icon) {
+/**
+ * The trigger icon of an element tab. A conversation tab wears the mark of the
+ * Thread it shows — the bubble, the bubble with a plus or the bot, sized with
+ * the label — read from the tree the window already holds, so the strip says
+ * which Threads are agent Threads.
+ */
+function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
+  switch (tab.icon) {
     case 'file':
       return <FileIcon />;
     case 'file-diff':
       return <FileDiffIcon />;
     case 'terminal':
       return <TerminalIcon />;
-    case 'thread':
-      return <MessageSquareIcon />;
+    case 'thread': {
+      const thread = threadOfTab(tab);
+      const kind: ThreadKind = thread === undefined ? 'main' : threadKind(thread);
+      return <ThreadKindIcon kind={kind} />;
+    }
     default:
       return null;
   }
 }
+
+/** The Thread a conversation tab names, when the window's tree holds it. */
+const threadOfTab = (
+  tab: Extract<WorkspaceTab, { readonly kind: 'element' }>,
+) => {
+  const projectId = tab.props?.projectId;
+  const threadId = tab.props?.threadId;
+  if (typeof projectId !== 'string' || typeof threadId !== 'string')
+    return undefined;
+  return workspaceStore
+    .getState()
+    .tree.threadsByProject[projectId]?.find((thread) => thread.id === threadId);
+};
 
 /** Keeps another bundle's tab element mounted in a host of this panel. */
 function ElementTab({ element }: { readonly element: object }) {

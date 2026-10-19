@@ -87,3 +87,39 @@ export const BoundToThread = {
     </ChatHost>
   ),
 };
+
+/**
+ * An agent Thread, running: where the composer would be, the three levers the
+ * reader has on a run it did not start, with only Pause available.
+ */
+export const AgentRunning = {
+  render: () => (
+    <ChatHost selectedThread={threadIds.agentRunning}>
+      <Footer>
+        <ThreadComposer thread={threads.agentRunning} />
+      </Footer>
+    </ChatHost>
+  ),
+};
+
+/** An agent Thread the reader paused: only Continue applies. */
+export const AgentPaused = {
+  render: () => (
+    <ChatHost selectedThread={threadIds.agentPaused}>
+      <Footer>
+        <ThreadComposer thread={threads.agentPaused} />
+      </Footer>
+    </ChatHost>
+  ),
+};
+
+/** An agent Thread whose prompt failed: only Retry applies. */
+export const AgentFailed = {
+  render: () => (
+    <ChatHost selectedThread={threadIds.agentFailed}>
+      <Footer>
+        <ThreadComposer thread={threads.agentFailed} />
+      </Footer>
+    </ChatHost>
+  ),
+};

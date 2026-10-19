@@ -19,7 +19,10 @@ for how bundles work.
     `/projects/:projectId/threads/:threadId`, a child route of the
     [`layout`](../layout/README.md) bundle's `/`;
   - `<chat-composer>`, the send, stop, resume and save controls, a
-    `layout.footer` item (order 40) present with or without a Thread;
+    `layout.footer` item (order 40) present with or without a Thread. On an
+    agent Thread — one an agent spawned — it draws the reader's three levers
+    instead: pause the run, continue the prompt it left unfinished, or retry
+    the last one (`domain/agent-control.ts`);
   - `<chat-thread-panel>`, a conversation with its own footer, which the layout
     uses for a child Thread's tab;
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for

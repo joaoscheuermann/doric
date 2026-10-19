@@ -5,7 +5,9 @@
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
-import type { ComponentProps } from 'react';
+import { type ComponentProps, createElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 
 import type { RuntimeHost, ThreadsHost } from '../../src/client/api/host.js';
 import type { ProjectPanel } from '../../src/client/components/organisms/project-panel.js';
@@ -14,6 +16,7 @@ import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
 import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
 import { placeholderElement } from './placeholder.js';
+import { type FixtureTerminal, TerminalRowsFixture } from './terminal-rows.js';
 
 export type { StackPane, ThreadRows };
 
@@ -51,20 +54,49 @@ export interface HostOptions {
 
 const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
 
+/** One fixture terminal per row: the reader's first, then the agent's runs. */
+const fixtureTerminals = (count: number): readonly FixtureTerminal[] =>
+  Array.from({ length: count }, (_, index) => {
+    const command = terminalCommands[index % terminalCommands.length] ?? '';
+    const agent = index % 2 === 1;
+    return {
+      id: `terminal-${index}`,
+      label: agent ? `${command} · 00:12 (10:00)` : command,
+      origin: agent ? 'agent' : 'user',
+    };
+  });
+
 /**
- * The terminal bundle's rows under one Thread: one row per terminal, none
- * when the Thread has no terminal, as `<terminal-rows thread-id>` draws them.
+ * How deep a Thread's terminal rows sit: one level under a main Thread, one
+ * more for each ancestor it was opened inside.
  */
-const terminalRowsElement = (count: number): HTMLElement => {
+const rowsDepth = (threadId: string, threads: readonly Thread[]): number => {
+  const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  let depth = 1;
+  let thread = byId.get(threadId);
+  while (thread?.parentThreadId !== undefined) {
+    depth += 1;
+    thread = byId.get(thread.parentThreadId);
+  }
+  return depth;
+};
+
+/**
+ * The terminal bundle's rows under one Thread, as `<terminal-rows thread-id>`
+ * draws them: one row per terminal, none when the Thread has no terminal, with
+ * the app's row styling (its icon, its command, and the stop or discard button
+ * that appears on hover).
+ */
+const terminalRowsElement = (count: number, depth: number): HTMLElement => {
   const element = document.createElement('div');
   element.style.display = 'contents';
-  element.append(
-    ...Array.from({ length: count }, (_, index) =>
-      placeholderElement(
-        'terminal-rows',
-        undefined,
-        `Terminal · ${terminalCommands[index % terminalCommands.length]}`,
-      ),
+  const root = createRoot(element);
+  flushSync(() =>
+    root.render(
+      createElement(TerminalRowsFixture, {
+        depth,
+        terminals: fixtureTerminals(count),
+      }),
     ),
   );
   return element;
@@ -364,7 +396,10 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
         const threadId = props?.['thread-id'];
         return tag === 'terminal-rows' && typeof threadId === 'string'
-          ? terminalRowsElement(options.terminalRows?.[threadId] ?? 0)
+          ? terminalRowsElement(
+              options.terminalRows?.[threadId] ?? 0,
+              rowsDepth(threadId, options.threads ?? []),
+            )
           : placeholderElement(tag, props);
       },
       dispose: () => undefined,

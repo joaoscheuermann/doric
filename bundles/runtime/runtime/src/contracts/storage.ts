@@ -79,6 +79,8 @@ export const threadDocumentSchema = z
     id: z.uuid(),
     projectId: z.uuid(),
     parentThreadId: z.uuid().nullable(),
+    /** Who opened it; absent on a Thread written before the distinction. */
+    origin: z.enum(['user', 'agent']).optional(),
     name: z.string(),
     state: z.enum([
       'queued',

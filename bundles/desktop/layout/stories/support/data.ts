@@ -116,7 +116,12 @@ export const validationThread = thread(
   '33333333-3333-4333-8333-333333333333',
   checkout.id,
   'Validate card numbers',
-  { parentThreadId: formThread.id, lastExecutionMs: 12_500 },
+  {
+    parentThreadId: formThread.id,
+    // An agent spawned this one: the reader may pause, continue or retry it.
+    origin: 'agent',
+    lastExecutionMs: 12_500,
+  },
 );
 export const copyThread = thread(
   '44444444-4444-4444-8444-444444444444',
@@ -130,6 +135,46 @@ export const auditThread = thread(
   'Accessibility audit',
   { lastExecutionMs: 260_000 },
 );
+
+/** An agent Thread the agent is running right now, under the plan Thread. */
+export const traceAgentThread = thread(
+  'cccccccc-cccc-4ccc-8ccc-000000000001',
+  checkout.id,
+  'Trace the flaky checkout test',
+  {
+    parentThreadId: planThread.id,
+    origin: 'agent',
+    state: 'running',
+    activePromptId: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d',
+    executionStartedAt: minutesAgo(1),
+  },
+);
+
+/** An agent Thread the reader paused, under the sub-thread that spawned it. */
+export const mapAgentThread = thread(
+  'cccccccc-cccc-4ccc-8ccc-000000000002',
+  checkout.id,
+  'Map the checkout error states',
+  {
+    parentThreadId: formThread.id,
+    origin: 'agent',
+    lastExecutionMs: 41_000,
+  },
+);
+
+/**
+ * The three kinds side by side, for a surface that has to say which is which: a
+ * main Thread, the sub-thread the reader opened inside it, the agent Threads the
+ * agent spawned, and a second main Thread.
+ */
+export const kindThreads: readonly Thread[] = [
+  planThread,
+  formThread,
+  traceAgentThread,
+  validationThread,
+  mapAgentThread,
+  auditThread,
+];
 export const untitledThread = thread(
   '66666666-6666-4666-8666-666666666666',
   checkout.id,

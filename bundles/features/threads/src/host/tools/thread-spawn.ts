@@ -6,7 +6,7 @@ import { threadsOf } from '../threads.js';
 export const tool = defineTool({
   name: 'thread-spawn',
   description:
-    'Create a child chat and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the chat is named after the start of the prompt.',
+    'Create an agent thread and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. The reader can watch it, pause it, continue it and retry it, but never prompt or delete it, so the task must stand on its own. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the thread is named after the start of the prompt.',
   input: z
     .object({
       prompt: z

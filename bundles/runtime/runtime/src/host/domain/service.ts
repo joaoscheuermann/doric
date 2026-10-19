@@ -945,6 +945,7 @@ export const createWorkspaceService = ({
       editQueued: async (id, promptId, text, revision) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
+        if (record.origin === 'agent') return { status: 'forbidden' };
         if (isTerminal(record.state)) return { status: 'inactive' };
         const project = await projectFor(record.projectId);
         const thread = project?.threads.get(id);
@@ -957,6 +958,7 @@ export const createWorkspaceService = ({
       removeQueued: async (id, promptId) => {
         const record = await threads.record(id);
         if (record === undefined) return 'missing';
+        if (record.origin === 'agent') return 'forbidden';
         const project = await projectFor(record.projectId);
         const thread = project?.threads.get(id);
         if (project === undefined || thread === undefined) return 'inactive';
@@ -1167,6 +1169,9 @@ export const createWorkspaceService = ({
       prompt: async (id, prompt) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
+        // An agent Thread takes no input from the reader: pause, continue and
+        // retry are its levers, and a retry sends the log's own text again.
+        if (record.origin === 'agent') return { status: 'forbidden' };
         // New input also brings a Project back if boot has not reached it yet:
         // acquire its sandbox first, then enqueue the prompt as usual. A lease
         // that cannot be acquired ends the Project, so the prompt is answered as
@@ -1184,9 +1189,31 @@ export const createWorkspaceService = ({
           return runner.enqueue(current, thread, prompt, { kind: 'user' });
         });
       },
+      /**
+       * Sends the Thread's last prompt again, without the reader writing
+       * anything: on an agent Thread this is the retry lever, so the host — not
+       * the renderer — decides which text runs.
+       */
+      retry: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        const last = await threads.lastPrompt(id);
+        if (last === undefined) return { status: 'inactive' };
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return { status: 'inactive' };
+        await applyCurrentGit(runtimes.get(record.projectId));
+        return exclusive<PromptAcceptResult>(record.projectId, () => {
+          const current = runtimes.get(record.projectId);
+          const thread = current?.threads.get(id);
+          if (current === undefined || thread === undefined)
+            return Promise.resolve({ status: 'inactive' as const });
+          return runner.enqueue(current, thread, last.text, last.source);
+        });
+      },
       steer: async (id, prompt, options) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
+        if (record.origin === 'agent') return { status: 'forbidden' };
         // A steer that falls back to the queue is a prompt: it brings the
         // Project back and refreshes credentials the same way.
         const project = await projectFor(record.projectId);
@@ -1237,6 +1264,7 @@ export const createWorkspaceService = ({
       rewind: async (id, promptId, prompt) => {
         const record = await threads.record(id);
         if (record === undefined) return { status: 'missing' };
+        if (record.origin === 'agent') return { status: 'forbidden' };
         // A rewind enqueues its replacement input the same way a prompt does.
         await applyCurrentGit(runtimes.get(record.projectId));
         return exclusive<RewindResult>(record.projectId, () => {
@@ -1299,6 +1327,7 @@ export const createWorkspaceService = ({
       delete: async (id) => {
         const record = await threads.record(id);
         if (record === undefined) return 'missing';
+        if (record.origin === 'agent') return 'forbidden';
         return exclusive(record.projectId, async () => {
           const values = await threads.listByProject(record.projectId);
           const ids = subtreeIds(values, id);

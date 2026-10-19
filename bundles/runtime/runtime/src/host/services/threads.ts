@@ -103,6 +103,11 @@ export const threadsService = ({
       ...methods.prompt,
       execute: ({ id, prompt }) => service.threads.prompt(id, prompt),
     }),
+    retry: defineMethod({
+      expose: 'desktop',
+      ...methods.retry,
+      execute: ({ id }) => service.threads.retry(id),
+    }),
     steer: defineMethod({
       expose: 'desktop',
       ...methods.steer,

@@ -255,7 +255,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
                 ? model.editing.value.id
                 : undefined
             }
-            icon={threadIconKind}
+            repo={threadIconKind}
             level={threadLevel(threads, model.draft, projectId)}
             onExpand={expandThread}
             onToggle={toggleThread}

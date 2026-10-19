@@ -17,8 +17,8 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   activity), the runtime's watch streams, and the lifecycle methods recover,
   adopt and drain.
 - `runtime.threads/v1` — the Thread model: create, read, rename, prompt,
-  steer, resume, rewind, compact, pause, terminate and delete Threads, manage
-  their prompt queues, and watch a Thread. Its prompt-scoped members `spawn`,
+  steer, resume, retry, rewind, compact, pause, terminate and delete Threads,
+  manage their prompt queues, and watch a Thread. Its prompt-scoped members `spawn`,
   `list`, `get`, `events`, `send`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
@@ -43,6 +43,23 @@ use to reach a prompt's Thread, working directory and sandbox. See the
 
 Every method is scoped by the `Call` it receives. Record schemas are loose, so
 records with more fields than the contract names travel unchanged.
+
+### Thread kinds
+
+A Thread records who opened it in `origin`. A Thread without one was opened by
+the reader, so a workspace written before the field keeps every Thread it had.
+
+The reader's own Threads — a main Thread at the Project root and the
+sub-threads it is branched into — take prompts, steer, rewind, rename and
+delete. An agent Thread is one the `thread-spawn` tool created: the reader may
+watch it, pause it, continue a paused prompt and `retry` the last one, and the
+host refuses the rest. `retry` is therefore its own method: it sends the
+Thread's last prompt again, read from the Thread's own log, so a retry can never
+become a way to prompt an agent Thread. The reader branches a main Thread in the
+sidebar, and the host enforces the same tree: `create` answers `invalid_parent`
+to a Thread the reader opens under anything but a main Thread, while an agent
+may spawn under any Thread it is working in, as deep as the work goes. A
+sub-thread is a branch already, so no surface offers a branch under it either.
 
 ## How it works
 

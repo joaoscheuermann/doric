@@ -122,10 +122,19 @@ export type ThreadGit =
       readonly submodules: number;
     };
 
+/**
+ * Who opened a Thread: the reader (`user`) or the agent that spawned it
+ * (`agent`). A Thread that predates the distinction carries none and reads as
+ * the reader's, so an old workspace keeps every Thread it had.
+ */
+export type ThreadOrigin = 'user' | 'agent';
+
 export interface Thread {
   readonly id: string;
   readonly projectId: string;
   readonly parentThreadId?: string;
+  /** Absent on a Thread that predates the distinction: the reader opened it. */
+  readonly origin?: ThreadOrigin;
   readonly name: string;
   readonly state: ThreadState;
   readonly lastSequence: number;
@@ -177,7 +186,11 @@ export interface Page<Value> {
   readonly nextCursor?: string;
 }
 
-export type DeleteResult = 'deleted' | 'active' | 'missing';
+/**
+ * What a delete became. `forbidden` is an agent Thread: the reader watches it,
+ * pauses, continues and retries it, but never deletes it.
+ */
+export type DeleteResult = 'deleted' | 'active' | 'missing' | 'forbidden';
 
 /** `ThreadResult` of the workspace types, renamed: stage 1 owns that name. */
 export type ThreadCreateResult =
@@ -190,7 +203,12 @@ export type PromptAcceptResult = PromptResult;
 export type RewindResult =
   | { readonly status: 'accepted'; readonly promptId: string }
   | {
-      readonly status: 'missing' | 'inactive' | 'busy' | 'unknown_prompt';
+      readonly status:
+        | 'missing'
+        | 'inactive'
+        | 'busy'
+        | 'unknown_prompt'
+        | 'forbidden';
     };
 
 /**
@@ -203,7 +221,7 @@ export type SteerResult =
       readonly status: 'steered' | 'queued';
       readonly promptId: string;
     }
-  | { readonly status: 'missing' | 'inactive' };
+  | { readonly status: 'missing' | 'inactive' | 'forbidden' };
 
 /** The answers one on-demand compaction can give. */
 export type CompactResult =
@@ -410,6 +428,7 @@ export type EditQueueResult =
         | 'unknown_prompt'
         | 'not_editable'
         | 'conflict'
+        | 'forbidden'
         | 'invalid_prompt';
     };
 
@@ -428,7 +447,8 @@ export type RemoveQueuedResult =
   | 'missing'
   | 'inactive'
   | 'busy'
-  | 'unknown_prompt';
+  | 'unknown_prompt'
+  | 'forbidden';
 
 export interface UsageTotals {
   readonly calls: number;
@@ -579,6 +599,7 @@ export const threadSchema: z.ZodType<Thread, Thread> = z.looseObject({
   id: z.string(),
   projectId: z.string(),
   parentThreadId: z.string().optional(),
+  origin: z.enum(['user', 'agent']).optional(),
   name: z.string(),
   state: threadStateSchema,
   lastSequence: z.number(),
@@ -616,7 +637,12 @@ export const pageSchema = <V>(item: z.ZodType<V, V>) =>
 export const projectPageSchema = pageSchema(projectSchema);
 export const threadPageRecordsSchema = pageSchema(threadSchema);
 
-export const deleteResultSchema = z.enum(['deleted', 'active', 'missing']);
+export const deleteResultSchema = z.enum([
+  'deleted',
+  'active',
+  'missing',
+  'forbidden',
+]);
 
 export const threadCreateResultSchema: z.ZodType<
   ThreadCreateResult,
@@ -629,7 +655,7 @@ export const threadCreateResultSchema: z.ZodType<
 export const rewindResultSchema: z.ZodType<RewindResult, RewindResult> =
   z.union([
     z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
-    statuses(['missing', 'inactive', 'busy', 'unknown_prompt']),
+    statuses(['missing', 'inactive', 'busy', 'unknown_prompt', 'forbidden']),
   ]);
 
 export const steerResultSchema: z.ZodType<SteerResult, SteerResult> = z.union([
@@ -637,7 +663,7 @@ export const steerResultSchema: z.ZodType<SteerResult, SteerResult> = z.union([
     status: z.enum(['steered', 'queued']),
     promptId: z.string(),
   }),
-  statuses(['missing', 'inactive']),
+  statuses(['missing', 'inactive', 'forbidden']),
 ]);
 
 export const compactResultSchema: z.ZodType<CompactResult, CompactResult> =
@@ -930,6 +956,7 @@ export const editQueueResultSchema: z.ZodType<
     'not_editable',
     'conflict',
     'invalid_prompt',
+    'forbidden',
   ]),
 ]);
 
@@ -950,6 +977,7 @@ export const removeQueuedResultSchema = z.enum([
   'inactive',
   'busy',
   'unknown_prompt',
+  'forbidden',
 ]);
 
 const usageTotalsShape = {

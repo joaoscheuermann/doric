@@ -10,6 +10,7 @@ import type {
   ProjectState,
   Thread,
   ThreadEvent,
+  ThreadOrigin,
   ThreadOutcome,
   ThreadQueue,
   ThreadState,
@@ -143,6 +144,7 @@ export interface ThreadStore {
     name: string,
     parentThreadId?: string,
     inherit?: { readonly cwd: string; readonly cwdRepo?: CwdRepo },
+    origin?: ThreadOrigin,
   ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
   record(id: string): Promise<Thread | undefined>;
@@ -201,6 +203,14 @@ export interface ThreadStore {
   setResult(id: string, result: ThreadOutcome): Promise<void>;
   /** Every unfinished prompt in log order, or one Thread's alone. */
   unfinishedPrompts(id?: string): Promise<readonly PromptProgress[]>;
+  /**
+   * The most recent prompt the log accepted, with the source it arrived from:
+   * what `retry` sends again without the reader writing anything.
+   */
+  lastPrompt(id: string): Promise<
+    | { readonly text: string; readonly source: InputSource }
+    | undefined
+  >;
   /** Closes one unfinished prompt as a failure, in the shape a run leaves. */
   failPrompt(prompt: PromptProgress, failure: PromptFailure): Promise<void>;
   deleteSubtree(id: string): Promise<DeleteResult>;
