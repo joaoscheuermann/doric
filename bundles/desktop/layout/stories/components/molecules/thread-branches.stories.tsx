@@ -12,6 +12,7 @@ import {
   checkout,
   checkoutThreads,
   formThread,
+  kindThreads,
   manyThreads,
   planThread,
   validationThread,
@@ -78,7 +79,7 @@ function ThreadTree({
           collapsed={collapsed}
           depth={0}
           editingThreadId={editingId}
-          icon={threadIconKind}
+          repo={threadIconKind}
           level={threadLevel(threads, draft, checkout.id)}
           onExpand={(id) =>
             setCollapsed((current) => {
@@ -119,6 +120,15 @@ export default {
  */
 export const CheckoutTree = {
   render: () => <ThreadTree />,
+};
+
+/**
+ * The three kinds in one tree: a main Thread, the sub-thread the reader opened
+ * inside it, and the agent Threads an agent spawned — one running, one paused.
+ * Only the main Thread offers a branch; an agent Thread offers none.
+ */
+export const ThreadKinds = {
+  render: () => <ThreadTree threads={kindThreads} selected={formThread.id} />,
 };
 
 /** A child Thread selected deep in the tree. */

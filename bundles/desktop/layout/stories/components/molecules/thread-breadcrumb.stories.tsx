@@ -75,6 +75,18 @@ export const DeepPath = {
   ),
 };
 
+/** An agent Thread: the bot mark, under the Thread that spawned it. */
+export const AgentThread = {
+  render: () => (
+    <ThreadBreadcrumb
+      project={checkout}
+      path={pathTo(checkoutThreads, validationThread)}
+      onSelectProject={ignore}
+      onSelectThread={ignore}
+    />
+  ),
+};
+
 /** Long names truncate inside each crumb. */
 export const LongNames = {
   render: () => (

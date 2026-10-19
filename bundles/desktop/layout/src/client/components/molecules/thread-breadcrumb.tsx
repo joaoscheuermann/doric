@@ -6,11 +6,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from 'desktop/ui/breadcrumb';
-import { MessageSquareIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 
+import { threadKind } from '../../domain/thread-kind.js';
 import type { Project, Thread } from '../../domain/workspace.js';
 import { ProjectAvatar } from './project-avatar.js';
+import { ThreadKindIcon } from './thread-mark.js';
 
 type ThreadBreadcrumbProps = {
   readonly onSelectProject: (project: Project) => void;
@@ -39,9 +40,14 @@ function CrumbLabel({
   );
 }
 
-/** A Thread's mark: the same bubble its sidebar row carries. */
-function ThreadMark() {
-  return <MessageSquareIcon className="size-3.5 shrink-0" />;
+/**
+ * A Thread's mark: the one its sidebar row leads with. A main Thread keeps the
+ * bubble; a sub-thread wears the bubble with the plus that opened it, and an
+ * agent Thread the bot that owns it, so the crumb already says what the reader
+ * may do here.
+ */
+function ThreadMark({ thread }: { readonly thread: Thread }) {
+  return <ThreadKindIcon kind={threadKind(thread)} />;
 }
 
 /**
@@ -107,7 +113,10 @@ export function ThreadBreadcrumb({
                   />
                 }
               >
-                <CrumbLabel mark={<ThreadMark />} name={thread.name} />
+                <CrumbLabel
+                  mark={<ThreadMark thread={thread} />}
+                  name={thread.name}
+                />
               </BreadcrumbLink>
             </BreadcrumbItem>
           </Fragment>
@@ -117,7 +126,10 @@ export function ThreadBreadcrumb({
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbPage className="flex max-w-48 items-center gap-2">
-                <CrumbLabel mark={<ThreadMark />} name={current.name} />
+                <CrumbLabel
+                  mark={<ThreadMark thread={current} />}
+                  name={current.name}
+                />
               </BreadcrumbPage>
             </BreadcrumbItem>
           </>

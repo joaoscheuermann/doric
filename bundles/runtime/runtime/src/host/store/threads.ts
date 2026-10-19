@@ -4,10 +4,11 @@ import type { StreamEntry } from 'bundle/contracts';
 import { z } from 'zod';
 
 import type { HistoryPatch, HistoryReader } from '../../contracts/executor.js';
-import type {
-  Thread,
-  ThreadEvent,
-  ThreadState,
+import {
+  inputSourceSchema,
+  type Thread,
+  type ThreadEvent,
+  type ThreadState,
 } from '../../contracts/model.js';
 import {
   createdKey,
@@ -105,6 +106,9 @@ export const toThread = (stored: ThreadDocument): Thread => ({
   ...(stored.parentThreadId === null
     ? {}
     : { parentThreadId: stored.parentThreadId }),
+  ...(stored.origin === undefined || stored.origin === null
+    ? {}
+    : { origin: stored.origin }),
   name: stored.name,
   state: stored.state,
   queuePaused: stored.queuePaused,
@@ -613,7 +617,7 @@ export const createThreadStore = (
       return threadUsage(rows);
     },
 
-    create(projectId, name, parentThreadId, inherit) {
+    create(projectId, name, parentThreadId, inherit, origin) {
       const id = randomUUID();
       return projects.mutate(projectId, async (owner) => {
         if (
@@ -641,6 +645,7 @@ export const createThreadStore = (
           id,
           projectId,
           parentThreadId: parentThreadId ?? null,
+          ...(origin === undefined ? {} : { origin }),
           name,
           state: 'queued',
           open: true,
@@ -890,6 +895,26 @@ export const createThreadStore = (
 
     async unfinishedPrompts(id) {
       return unfinished(await openThreads(id));
+    },
+
+    async lastPrompt(id) {
+      const entries = await entriesAfter(storage, id, 0);
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const value = entries[index]?.value as ThreadEventEnvelope | undefined;
+        if (value?.type !== 'prompt.accepted') continue;
+        const event = value.event as
+          | { readonly text?: unknown; readonly source?: unknown }
+          | null
+          | undefined;
+        const text = event?.text;
+        if (typeof text !== 'string' || text.trim().length === 0) continue;
+        const source = inputSourceSchema.safeParse(event?.source);
+        return {
+          text,
+          source: source.success ? source.data : { kind: 'user' as const },
+        };
+      }
+      return undefined;
     },
 
     failPrompt: (prompt, failure) =>

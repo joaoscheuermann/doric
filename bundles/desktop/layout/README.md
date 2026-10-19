@@ -48,6 +48,29 @@ The selection is the window path (`/`, `/projects/<projectId>` or
 `/projects/<projectId>/threads/<threadId>`); a saved selection is validated
 against the host on startup.
 
+## Thread kinds
+
+A Thread is one of three kinds, decided by where it came from
+(`domain/thread-kind.ts`):
+
+| Kind         | How it is opened                                  | What the reader may do                                                  |
+| ------------ | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `main`       | The reader, at the Project root                   | Everything: prompts, stop, rename, delete, and open sub-threads         |
+| `sub-thread` | The reader, inside a main Thread                  | The same, except opening further sub-threads                            |
+| `sub-agent`  | The agent, with its `thread-spawn` tool, anywhere | Watch it, and pause, continue or retry the run — never prompt or delete |
+
+The host records who opened a Thread (`Thread.origin` in `runtime/contracts`,
+written by the runner's `spawn`); a Thread without it reads as the reader's, so
+an older workspace keeps every Thread it had. The sidebar draws the kind as the
+row's leading mark — a bubble for a main Thread, a bubble with a plus for the
+sub-thread that opened it, the bot that owns an agent Thread (`threadKindIcon`) —
+and offers `+` only where the reader may open a sub-thread, revealing it on hover
+in the same trailing slot that shows the repository the Thread's cwd sits in (a
+branch, or the GitHub mark). Rename/delete stay hidden where the kind forbids
+them, and the row's tooltip names the kind. The breadcrumb and a conversation tab
+wear the same mark. The reader's three levers on an agent Thread live in `chat`'s
+footer, where the composer would be.
+
 ## Contracts
 
 | Contract              | What another bundle can do                                                                                                                         | Used by                                                                       |

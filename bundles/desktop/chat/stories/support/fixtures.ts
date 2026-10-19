@@ -42,6 +42,9 @@ export const threadIds = {
   composerEditingRunning: '05b3a0c2-d1e4-4f56-8708-192a3b4c5d6e',
   composerStopping: '16c4b1d3-e2f5-4067-9819-2a3b4c5d6e7f',
   composerQueueError: '27d5c2e4-f306-4178-892a-3b4c5d6e7f80',
+  agentRunning: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+  agentPaused: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
+  agentFailed: 'c3d4e5f6-a7b8-4c9d-8e1f-2a3b4c5d6e7f',
 } as const;
 
 const base = {
@@ -143,6 +146,32 @@ export const threads: Readonly<Record<keyof typeof threadIds, Thread>> = {
     ...base,
     id: threadIds.composerQueueError,
     name: 'Bump dependencies',
+    state: 'idle',
+  },
+  agentRunning: {
+    ...base,
+    id: threadIds.agentRunning,
+    name: 'Trace the flaky checkout test',
+    parentThreadId: threadIds.conversation,
+    origin: 'agent',
+    state: 'running',
+    activePromptId: promptIdOf(601),
+    executionStartedAt: '2026-10-16T08:41:12.000Z',
+  },
+  agentPaused: {
+    ...base,
+    id: threadIds.agentPaused,
+    name: 'Map the checkout error states',
+    parentThreadId: threadIds.conversation,
+    origin: 'agent',
+    state: 'idle',
+  },
+  agentFailed: {
+    ...base,
+    id: threadIds.agentFailed,
+    name: 'Summarize the payment diff',
+    parentThreadId: threadIds.conversation,
+    origin: 'agent',
     state: 'idle',
   },
 };
@@ -637,6 +666,54 @@ const delegatedLog = () => {
   return log.events;
 };
 
+/**
+ * An agent Thread the agent is still working in: it accepted the task, is
+ * thinking, and has written nothing final yet.
+ */
+const agentRunningLog = () => {
+  const log = logOf(threadIds.agentRunning);
+  const prompt = promptIdOf(601);
+  log.prompt(prompt, 'Find out why the checkout test flakes in CI.');
+  log.thinking(prompt, 'Run it twenty times and read the failure. ');
+  log.text(
+    prompt,
+    'The test reads a module-level counter, so parallel workers share it. ',
+  );
+  return log.events;
+};
+
+/** An agent Thread the reader paused: its only prompt is unfinished. */
+const agentPausedLog = () => {
+  const log = logOf(threadIds.agentPaused);
+  const prompt = promptIdOf(602);
+  log.prompt(prompt, 'Map every error state the checkout form can reach.');
+  log.thinking(prompt, 'Start from the reducer, then the network layer. ');
+  log.push(prompt, { type: 'prompt.paused', reason: 'reader_stopped' });
+  return log.events;
+};
+
+/** An agent Thread whose prompt the host closed as a failure. */
+const agentFailedLog = () => {
+  const log = logOf(threadIds.agentFailed);
+  const prompt = promptIdOf(603);
+  log.prompt(prompt, 'Summarize the payment diff for the release notes.');
+  log.push(prompt, {
+    type: 'agent.failed',
+    error: {
+      name: 'ProviderError',
+      code: 'timeout',
+      message: 'The model provider timed out.',
+    },
+  });
+  log.push(prompt, {
+    type: 'prompt.finished',
+    status: 'failed',
+    text: '',
+    source: { kind: 'user' },
+  });
+  return log.events;
+};
+
 /** Every Thread's durable log, as the host replays it. */
 export const threadEvents: Readonly<Record<string, readonly ThreadEvent[]>> = {
   [threadIds.conversation]: conversationLog(),
@@ -645,6 +722,9 @@ export const threadEvents: Readonly<Record<string, readonly ThreadEvent[]>> = {
   [threadIds.paused]: pausedLog(),
   [threadIds.comments]: commentsLog(),
   [threadIds.delegated]: delegatedLog(),
+  [threadIds.agentRunning]: agentRunningLog(),
+  [threadIds.agentPaused]: agentPausedLog(),
+  [threadIds.agentFailed]: agentFailedLog(),
 };
 
 /** The turns the conversation projects from one Thread's log. */

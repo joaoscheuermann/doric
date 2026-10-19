@@ -486,6 +486,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
           ...(cwd === undefined ? {} : { cwd }),
         }),
       prompt: (id, prompt) => threadsApi.prompt({ id, prompt }),
+      retry: (id) => threadsApi.retry({ id }),
       steer: (id, prompt, options) =>
         threadsApi.steer({ id, prompt, ...options }),
       resume: (id, promptId) => threadsApi.resume({ id, promptId }),
@@ -583,6 +584,44 @@ export const createHarness = (options: HarnessOptions = {}) => {
 };
 
 export type Harness = ReturnType<typeof createHarness>;
+
+/**
+ * An `execute` for cases that build a nested tree the way the product does:
+ * the reader branches a main Thread, and an agent nests under whatever Thread
+ * it works in. Prompting a Thread with `'spawn'` makes that Thread's own agent
+ * create a child through `thread-spawn`; `spawned(threadId)` resolves with the
+ * child's id once it exists. Every other prompt, the child's own included,
+ * finishes at once.
+ */
+export const spawner = () => {
+  const slots = new Map<
+    string,
+    {
+      readonly promise: Promise<string>;
+      readonly resolve: (id: string) => void;
+    }
+  >();
+  const slot = (threadId: string) => {
+    const known = slots.get(threadId);
+    if (known !== undefined) return known;
+    let resolve!: (id: string) => void;
+    const promise = new Promise<string>((done) => {
+      resolve = done;
+    });
+    const created = { promise, resolve };
+    slots.set(threadId, created);
+    return created;
+  };
+  const execute = async ({ job, thread, tools }: HarnessRun) => {
+    if (job.prompt !== 'spawn') return 'done';
+    const { threadId } = await tools.threads.spawn('task');
+    slot(thread.id).resolve(threadId);
+    return 'done';
+  };
+  /** The child the agent of `threadId` spawns, once it has spawned it. */
+  const spawned = (threadId: string) => slot(threadId).promise;
+  return { execute, spawned };
+};
 
 /** A lease over a sandbox, released through `release`. */
 export const leaseOver = (

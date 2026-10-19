@@ -42,6 +42,32 @@ const fixtures = {
       ],
     },
   },
+  /** A sub-thread and an agent Thread open side by side, the agent's selected. */
+  threadKinds: {
+    ...workspace,
+    path: threadRoute(validationThread),
+    // An open terminal and a running one under the sub-thread, and the same
+    // under the agent Thread: the rows the sidebar always drew.
+    terminalRows: { [formThread.id]: 2, [validationThread.id]: 2 },
+    tabs: {
+      [planThread.id]: [
+        {
+          id: `thread:${formThread.id}`,
+          title: formThread.name,
+          tag: 'chat-thread-panel',
+          icon: 'thread',
+          props: { projectId: checkout.id, threadId: formThread.id },
+        },
+        {
+          id: `thread:${validationThread.id}`,
+          title: validationThread.name,
+          tag: 'chat-thread-panel',
+          icon: 'thread',
+          props: { projectId: checkout.id, threadId: validationThread.id },
+        },
+      ],
+    },
+  },
   terminals: { ...workspace, bottom: true },
   changes: { ...workspace, panel: { active: 'changes' } },
   focused: { ...workspace, tabs: {}, panel: { open: false } },
@@ -80,6 +106,15 @@ export const Thread = {
 export const ChildThread = {
   render: () => (
     <LayoutHost fixture={fixtures.childThread}>
+      <WorkspaceView />
+    </LayoutHost>
+  ),
+};
+
+/** A sub-thread and an agent Thread open as tabs: each trigger wears its kind. */
+export const ThreadKindTabs = {
+  render: () => (
+    <LayoutHost fixture={fixtures.threadKinds}>
       <WorkspaceView />
     </LayoutHost>
   ),

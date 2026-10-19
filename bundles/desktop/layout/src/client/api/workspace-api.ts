@@ -130,7 +130,7 @@ const wait = (milliseconds: number) =>
  * retried after `pause`, `missing` is the REST 404.
  */
 export const deleteWhenTerminal = async (
-  remove: () => Promise<'deleted' | 'active' | 'missing'>,
+  remove: () => Promise<'deleted' | 'active' | 'missing' | 'forbidden'>,
   missingMessage: string,
   pause: () => Promise<void> = () => wait(500),
 ): Promise<void> => {
@@ -138,6 +138,12 @@ export const deleteWhenTerminal = async (
     const result = await host(remove);
     if (result === 'deleted') return;
     if (result === 'missing') throw new Error(missingMessage);
+    // An agent Thread is the agent's to delete: the reader may only pause,
+    // continue and retry it, and the host says so instead of deleting.
+    if (result === 'forbidden')
+      throw new Error(
+        'An agent opened this Thread, so it cannot be deleted.',
+      );
     await pause();
   }
 };

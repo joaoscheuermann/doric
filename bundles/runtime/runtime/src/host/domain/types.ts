@@ -145,6 +145,11 @@ export interface WorkspaceService {
     git(id: string): Promise<ThreadGitResult>;
     branches(id: string, branch?: string, cwd?: string): Promise<BranchResult>;
     prompt(id: string, prompt: string): Promise<PromptAcceptResult>;
+    /**
+     * Sends the Thread's last prompt again, from the log and never from the
+     * renderer: the retry lever on an agent Thread.
+     */
+    retry(id: string): Promise<PromptAcceptResult>;
     /** Sends input into the running prompt `promptId`; see `SteerResult`. */
     steer(
       id: string,

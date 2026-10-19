@@ -10,14 +10,14 @@ import {
   SidebarMenuSubItem,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import {
-  ChevronRightIcon,
-  GitBranchIcon,
-  GithubIcon,
-  MessageSquareIcon,
-} from 'lucide-react';
+import { ChevronRightIcon } from 'lucide-react';
 
 import type { ThreadIconKind } from '../../domain/sidebar.js';
+import {
+  threadControl,
+  threadKind,
+  threadKindHint,
+} from '../../domain/thread-kind.js';
 import type { ThreadLevel } from '../../domain/thread-tree.js';
 import type { Thread } from '../../domain/workspace.js';
 import { useThreadRows } from '../../hooks/use-thread-rows.js';
@@ -28,6 +28,7 @@ import { EditableName } from './editable-name.js';
 import { ElementHost } from './element-host.js';
 import { ItemContextMenu } from './item-context-menu.js';
 import { RowAddAction } from './row-add-action.js';
+import { ThreadKindIcon } from './thread-mark.js';
 
 export type ThreadBranchesActions = {
   readonly beginChild: (thread: Thread) => void;
@@ -47,23 +48,17 @@ type ThreadBranchesProps = {
   readonly depth: number;
   readonly editingThreadId?: string;
   /**
-   * The icon kind each row leads with, decided by the caller from the Thread
-   * alone. It defaults to a conversation, so a caller that knows no better draws
-   * the rows it always drew.
+   * The repository each Thread's cwd sits in, decided by the caller from the
+   * Thread alone and drawn at the row's trailing edge. It defaults to no
+   * repository, so a caller that knows no better draws the rows it always drew.
    */
-  readonly icon?: (thread: Thread) => ThreadIconKind;
+  readonly repo?: (thread: Thread) => ThreadIconKind;
   readonly level: ThreadLevel;
   readonly onExpand: (id: string) => void;
   readonly onToggle: (id: string) => void;
   readonly selectedThreadId?: string;
 };
 
-/** The glyph each semantic icon kind paints. */
-const iconByKind: Record<ThreadIconKind, typeof MessageSquareIcon> = {
-  conversation: MessageSquareIcon,
-  git: GitBranchIcon,
-  github: GithubIcon,
-};
 
 /**
  * Renders one level of the thread tree and recurses into each node's children.
@@ -75,7 +70,7 @@ export function ThreadBranches({
   collapsed,
   depth,
   editingThreadId,
-  icon = () => 'conversation',
+  repo = () => 'conversation',
   level,
   onExpand,
   onToggle,
@@ -92,7 +87,12 @@ export function ThreadBranches({
           thread.state === 'running' && thread.activePromptId !== undefined;
         const expandable = node.expandable || hasThreadRows(rows, thread.id);
         const expanded = expandable && !collapsed.has(thread.id);
-        const Icon = iconByKind[icon(thread)];
+        const kind = threadKind(thread);
+        const control = threadControl(thread);
+        const repository = repo(thread);
+        const marked = control.branches
+          ? `New sub-thread in ${thread.name || 'Untitled'}`
+          : undefined;
         const addChild = () => {
           onExpand(thread.id);
           actions.beginChild(thread);
@@ -101,24 +101,30 @@ export function ThreadBranches({
           if (selected && expandable) onToggle(thread.id);
           else actions.select(thread);
         };
+        const title = [
+          threadKindHint[kind],
+          !running && thread.lastExecutionMs !== undefined
+            ? `Last execution: ${duration(thread.lastExecutionMs)}`
+            : undefined,
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join('\n');
 
         return (
           <SidebarMenuSubItem key={thread.id} className="w-full">
             <ItemContextMenu
-              addLabel="New child thread"
-              deleteLabel="Delete thread"
-              onAdd={addChild}
+              {...(marked === undefined
+                ? {}
+                : { addLabel: marked, onAdd: addChild })}
+              {...(control.deletes
+                ? {
+                    deleteLabel: 'Delete thread',
+                    onDelete: () => actions.delete(thread),
+                  }
+                : {})}
               onCopyId={() => actions.copyId(thread.id)}
-              onDelete={() => actions.delete(thread)}
             >
-              <div
-                className="group/tree-row relative w-full"
-                title={
-                  !running && thread.lastExecutionMs !== undefined
-                    ? `Last execution: ${duration(thread.lastExecutionMs)}`
-                    : undefined
-                }
-              >
+              <div className="group/tree-row relative w-full" title={title}>
                 <TreeGuides depth={depth} />
                 <SidebarMenuSubButton
                   render={
@@ -143,7 +149,7 @@ export function ThreadBranches({
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >
-                  <Icon />
+                  <ThreadKindIcon kind={kind} />
                   {expandable && (
                     <ChevronRightIcon
                       aria-hidden
@@ -159,14 +165,22 @@ export function ThreadBranches({
                     label="Thread name"
                     placeholder="Untitled"
                     value={thread.name}
-                    onStart={() => actions.startRename(thread)}
+                    onStart={
+                      control.renames
+                        ? () => actions.startRename(thread)
+                        : undefined
+                    }
                     onCancel={actions.cancelRename}
                     onSubmit={(name) => actions.rename(thread, name)}
                   />
                 </SidebarMenuSubButton>
+                {/* Drawn on every row: the repository it works in sits where
+                    the plus appears, and a row the reader cannot open under
+                    (an agent thread) still shows that and its elapsed time. */}
                 <RowAddAction
-                  label={`New child thread in ${thread.name || 'Untitled'}`}
-                  onAdd={addChild}
+                  label={marked}
+                  onAdd={marked === undefined ? undefined : addChild}
+                  repo={repository}
                   startedAt={running ? thread.executionStartedAt : undefined}
                 />
               </div>
@@ -187,7 +201,7 @@ export function ThreadBranches({
                   collapsed={collapsed}
                   depth={depth + 1}
                   editingThreadId={editingThreadId}
-                  icon={icon}
+                  repo={repo}
                   level={node.children}
                   onExpand={onExpand}
                   onToggle={onToggle}
@@ -202,7 +216,7 @@ export function ThreadBranches({
         <SidebarMenuSubItem className="w-full">
           <DraftName
             depth={depth}
-            label="New thread name"
+            label={depth === 0 ? 'New thread name' : 'New sub-thread name'}
             onCancel={actions.cancelDraft}
             onSubmit={actions.create}
           />

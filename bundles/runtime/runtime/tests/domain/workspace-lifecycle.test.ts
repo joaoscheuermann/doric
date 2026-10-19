@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { InputSource } from '../../src/contracts/model.js';
 import type { RuntimeThreads } from '../../src/contracts/threads.js';
-import { createHarness, deferred } from './support/harness.js';
+import { createHarness, deferred, spawner } from './support/harness.js';
 
 /*
  * Ported from agents/doric tests/workspace-lifecycle.test.ts (design 57
@@ -14,7 +14,8 @@ import { createHarness, deferred } from './support/harness.js';
 void test('publishes deletion for the entire subtree only after the store accepts it', {
   timeout: 3000,
 }, async () => {
-  const harness = createHarness();
+  const tree = spawner();
+  const harness = createHarness({ execute: tree.execute });
   const { service } = harness;
   const deleted: string[] = [];
   harness.listen((notice) => {
@@ -29,21 +30,29 @@ void test('publishes deletion for the entire subtree only after the store accept
   };
   const root = await create();
   const child = await create(root.id);
-  const grandchild = await create(child.id);
   const otherChild = await create(root.id);
-  const otherGrandchild = await create(otherChild.id);
+  // What hangs under a sub-thread is the agent Thread that sub-thread spawns:
+  // the reader branches a main Thread, and only an agent nests deeper.
+  const agentThreads: string[] = [];
+  for (const subThread of [child, otherChild]) {
+    assert.equal(
+      (await service.threads.prompt(subThread.id, 'spawn')).status,
+      'accepted',
+    );
+    agentThreads.push(await tree.spawned(subThread.id));
+  }
   const sibling = await create();
-  const subtree = [root, child, grandchild, otherChild, otherGrandchild];
+  const subtree = [root.id, child.id, otherChild.id, ...agentThreads];
 
   assert.equal(await service.threads.delete(root.id), 'active');
   assert.deepEqual(deleted, []);
   await service.threads.terminate(root.id);
-  for (const thread of subtree) {
-    await harness.threadState(thread.id, 'cancelled');
+  for (const id of subtree) {
+    await harness.threadState(id, 'cancelled');
   }
   assert.equal(await service.threads.delete(root.id), 'deleted');
   assert.equal(deleted.length, subtree.length);
-  assert.deepEqual(new Set(deleted), new Set(subtree.map(({ id }) => id)));
+  assert.deepEqual(new Set(deleted), new Set(subtree));
   for (const id of deleted) {
     assert.equal(
       (await service.threads.create(project.id, 'Child', id)).status,

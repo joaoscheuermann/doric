@@ -101,6 +101,11 @@ export type ThreadChatsState = {
    */
   readonly resume: (id: string, promptId: string) => Promise<boolean>;
   /**
+   * Sends the Thread's last prompt again through `threads.retry`, the third
+   * lever on an agent Thread: the host reads the text from the log.
+   */
+  readonly retry: (id: string) => Promise<boolean>;
+  /**
    * Releases every watch and forgets every Thread: the chat part is
    * deactivating, so nothing it opened may outlive it.
    */
@@ -112,7 +117,7 @@ export interface ThreadChatsDependencies {
   readonly watch: ThreadWatch;
   readonly threads: Pick<
     ChatThreadsApi,
-    'history' | 'prompt' | 'steer' | 'rewind' | 'resume'
+    'history' | 'prompt' | 'steer' | 'rewind' | 'resume' | 'retry'
   >;
   readonly history: HistoryFeed;
   /**
@@ -402,6 +407,20 @@ export const createThreadChatsStore = (
           (value) => dependencies.threads.rewind(id, promptId, value),
           text,
         ),
+
+      retry: async (id) => {
+        setChats(withSending(get().chats, id, true));
+        setChats(withSendError(get().chats, id, undefined));
+        try {
+          await dependencies.threads.retry(id);
+          return true;
+        } catch (reason) {
+          setChats(withSendError(get().chats, id, messageFrom(reason)));
+          return false;
+        } finally {
+          setChats(withSending(get().chats, id, false));
+        }
+      },
 
       resume: async (id, promptId) => {
         setChats(withSending(get().chats, id, true));
