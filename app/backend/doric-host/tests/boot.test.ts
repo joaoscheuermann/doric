@@ -60,7 +60,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
         startup(lines).find((entry) => entry.msg === msg);
 
       assert.equal(line('Bundles loaded')?.bundleCount, 27);
-      assert.equal(line('Bundles loaded')?.toolCount, 18);
+      assert.equal(line('Bundles loaded')?.toolCount, 19);
       assert.equal(
         line('Sandbox pool configured')?.sandboxProviderName,
         'docker',
