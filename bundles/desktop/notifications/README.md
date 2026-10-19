@@ -59,7 +59,7 @@ The tests cover the observer and the decision: which events are announced,
 the wording, the 160 code point bound and the focused-Thread rule. The build
 writes `bundles/desktop/notifications/dist`, which `doric-host:build-bundles`
 stages into `app/backend/doric-host/dist/bundles/notifications`. To rebuild and
-stage every bundle used by the Direct host:
+stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

@@ -1,8 +1,8 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
-  "name": "bundle-direct",
+  "name": "bundle-default",
   "projectType": "library",
-  "sourceRoot": "bundles/runtime/direct/src",
+  "sourceRoot": "bundles/runtime/default/src",
   "targets": {
     "build": {
       "executor": "nx:run-commands",
@@ -10,8 +10,8 @@
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "commands": [
-          "tsc --build bundles/runtime/direct/tsconfig.json",
-          "node packages/bundle/dist/build/cli.js build bundles/runtime/direct"
+          "tsc --build bundles/runtime/default/tsconfig.json",
+          "node packages/bundle/dist/build/cli.js build bundles/runtime/default"
         ],
         "parallel": false
       }
@@ -20,7 +20,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/runtime/direct/tsconfig.json --emitDeclarationOnly"
+        "command": "tsc --build bundles/runtime/default/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
@@ -29,8 +29,8 @@
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
-          "tsc -p bundles/runtime/direct/tsconfig.spec.json",
-          "node --test bundles/runtime/direct/dist-tests/tests/*.test.js"
+          "tsc -p bundles/runtime/default/tsconfig.spec.json",
+          "node --test bundles/runtime/default/dist-tests/tests/*.test.js"
         ],
         "parallel": false
       }

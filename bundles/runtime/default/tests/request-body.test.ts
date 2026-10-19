@@ -15,9 +15,9 @@ import pino from 'pino';
 import type { ConfigurationValue } from 'runtime/contracts';
 import { z } from 'zod';
 
-import { directSystemPrompt } from '../src/host/executor.js';
+import { systemPromptWith } from '../src/host/executor.js';
 import {
-  directServices,
+  bundleServices,
   fakeThreadState,
   runPrompt,
   testConfiguration,
@@ -225,7 +225,7 @@ const runFresh = async (
       identity: { id: provider.id, name: provider.id },
     },
   );
-  const services = directServices({
+  const services = bundleServices({
     configuration,
     provider: languageModel,
     tools: tools.map(recordedTool) as never,
@@ -266,9 +266,9 @@ void test('builds the recorded system prompt from the base instruction and the s
   const system = await readFile(join(fixtures, 'system-prompt.md'), 'utf8');
   const { base, skills } = recordedSkills(system);
 
-  assert.equal(base, directSystemPrompt([]));
+  assert.equal(base, systemPromptWith([]));
   assert.equal(skills.length, 22);
-  assert.equal(directSystemPrompt(skills), system);
+  assert.equal(systemPromptWith(skills), system);
 });
 
 void test('sends the exact OpenRouter chat body the stage-1 host sent for a fresh Thread', async () => {

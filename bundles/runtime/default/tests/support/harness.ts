@@ -1,7 +1,10 @@
 import {
+  type AnyHookHandler,
   type CallScope,
   defineMethod,
   defineService,
+  HooksV1,
+  hooksMethods,
   ModelsV1,
   modelsMethods,
   type RegisteredSkill,
@@ -18,11 +21,14 @@ import type { ProviderMessage } from 'llms';
 import {
   type AttachmentContent,
   type ConfigurationValue,
+  type CwdRepo,
   ExecutorV1,
   type HistoryPatch,
   type HistoryReader,
   type InputSource,
   type PromptSession,
+  RuntimeThreadsV1,
+  runtimeThreadsMethods,
   type SteerInput,
   type Thread,
 } from 'runtime/contracts';
@@ -179,20 +185,74 @@ export interface HarnessOptions {
   readonly provider: object;
   readonly tools?: readonly RegisteredTool[];
   readonly skills?: readonly RegisteredSkill['skill'][];
+  /**
+   * The repository hint `runtime.threads/v1` reads on the Thread's record at
+   * each call; absent, the Thread works outside any repository.
+   */
+  readonly cwdRepo?: () => CwdRepo | undefined;
 }
 
 /**
- * The `direct` bundle activated over fake `host-config/v1`, `models/v1`,
+ * A `hooks/v1` that runs every handler of a transform hook in registration
+ * order, each on the previous one's output, as the core's provider does.
+ */
+const transformHooks = () => {
+  const handlers = new Map<string, AnyHookHandler[]>();
+  const none = { dispose: () => undefined };
+
+  return defineService(HooksV1, {
+    define: defineMethod({ ...hooksMethods.define, execute: () => none }),
+    register: defineMethod({
+      ...hooksMethods.register,
+      execute: ([contract, hook, handler]) => {
+        const key = `${contract.id}#${hook}`;
+        handlers.set(key, [...(handlers.get(key) ?? []), handler]);
+        return none;
+      },
+    }),
+    whenDefined: defineMethod({
+      ...hooksMethods.whenDefined,
+      execute: ([, callback]) => {
+        callback();
+        return none;
+      },
+    }),
+    execute: defineMethod({
+      ...hooksMethods.execute,
+      execute: async ([contract, hook, input], call) => {
+        let value = input;
+        for (const handler of handlers.get(`${contract.id}#${hook}`) ?? [])
+          value = await handler(value, call);
+        return value;
+      },
+    }),
+  });
+};
+
+/**
+ * The `default` bundle activated over fake `host-config/v1`, `models/v1`,
  * `tools/v1` and `skills/v1` providers, run through `executor/v1` the way the
  * runtime calls it: scoped to the prompt, with the prompt's abort signal.
  */
-export const directServices = (options: HarnessOptions) => {
+export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
   const languageModel = toLanguageModel(options.provider);
   const harness = createTestServices({
-    bundle: { id: 'direct' },
+    bundle: { id: 'default' },
     provide: [
+      transformHooks(),
+      defineService(RuntimeThreadsV1.id, {
+        thread: defineMethod({
+          ...runtimeThreadsMethods.thread,
+          execute: (id) => {
+            const cwdRepo = options.cwdRepo?.();
+            return id === threadId
+              ? { ...thread(), ...(cwdRepo === undefined ? {} : { cwdRepo }) }
+              : undefined;
+          },
+        }),
+      }),
       defineService(ConfigurationV1.id, {
         current: defineMethod({
           input: configurationMethods.current.input,
@@ -309,7 +369,7 @@ export const thread = (): Thread => ({
 
 /** Runs one prompt through `executor/v1`, as the runtime dispatcher does. */
 export const runPrompt = async (
-  services: ReturnType<typeof directServices>,
+  services: ReturnType<typeof bundleServices>,
   state: ReturnType<typeof fakeThreadState>,
   prompt: string,
   {
@@ -346,7 +406,7 @@ export const seedHistory = (
 ): void => {
   const messages = value.messages ?? [];
   state.apply({
-    format: 'direct.history/v1',
+    format: 'default.history/v1',
     parts: {
       messages,
       meta: {

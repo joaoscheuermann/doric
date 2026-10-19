@@ -4,7 +4,7 @@
 Threads, conversation history, settings and the other documents bundles
 store, plus your credentials, which are encrypted at rest.
 
-It is the foundation bundle of the Direct host: the composition chooses it in
+It is the foundation bundle of the Doric host: the composition chooses it in
 `providers` for `storage.backend/v1` and `secrets.backend/v1`, so it activates
 before the core, which builds `storage/v1` and `secrets/v1` on top of it. See
 the [main README](../../../README.md) for Doric as a whole and
@@ -60,7 +60,7 @@ The PostgreSQL suites skip without `DORIC_TEST_DATABASE_URL`. `migrate` runs
 `prisma migrate deploy`. The build writes `bundles/foundation/postgres/dist`,
 which `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/postgres`; to rebuild and stage every
-bundle used by the Direct host:
+bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

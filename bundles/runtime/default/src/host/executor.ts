@@ -4,6 +4,7 @@ type AgentOptions = Parameters<typeof createAgent>[0];
 
 import {
   type Call,
+  type HookHandle,
   ModelsV1,
   type RegisteredTool,
   type Services,
@@ -26,6 +27,7 @@ import {
   ToolErrorObject,
 } from 'tool';
 
+import type { DefaultHooksV1 } from '../contracts/index.js';
 import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflow } from './compaction/project.js';
@@ -37,8 +39,8 @@ import { resolveToolConfigs } from './tool-config.js';
 // Every history and event write goes through the runtime's PromptSession, which
 // redacts, sanitizes, persists and publishes, and keeps the persistence retry.
 
-/** Common Direct policy for human chats and delegated child chats. */
-export const directSystemPrompt = (
+/** Common default-agent policy for human chats and delegated child chats. */
+export const systemPromptWith = (
   skills: readonly Pick<SkillRecord, 'name' | 'body'>[],
 ): string => {
   let prompt = systemPrompt;
@@ -198,11 +200,14 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * Runs one prompt input, retaining provider-ready history for its Thread
  * through the runtime's session. Every tool and skill the bundles registered
  * is offered, in bundle order, and each tool runs under the prompt's call.
+ * Before every model request the system prompt passes through
+ * `onBeforeModelRequestHook`, under the prompt's call.
  */
-export const runDirect = async (
+export const runPrompt = async (
   { job, session }: ExecutorRunInput,
   call: Call,
   services: Services,
+  hooks: HookHandle<typeof DefaultHooksV1>,
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
   const signal = call.signal;
   signal.throwIfAborted();
@@ -245,11 +250,14 @@ export const runDirect = async (
    * paused prompt is durable before its pause is recorded.
    */
   const history = () => saved(messages.list(), checkpoints);
+  const base = systemPromptWith(skills);
   const agent = createAgent({
     provider,
     model: execution.model,
     effort: execution.effort as AgentOptions['effort'],
-    system: directSystemPrompt(skills),
+    system: async () =>
+      (await hooks.onBeforeModelRequestHook.execute({ system: base }, call))
+        .system,
     tools: createToolStorage(
       (() => {
         // Tool values reach tools through settings/v1 from stage 2; resolving

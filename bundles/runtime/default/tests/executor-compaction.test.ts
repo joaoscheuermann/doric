@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { ProviderMessage, ProviderRequest } from 'llms';
 
 import {
-  directServices,
+  bundleServices,
   fakeThreadState,
   projectId,
   promptId,
@@ -19,7 +19,7 @@ const scope = { projectId, threadId, promptId };
 
 test('repeating manual compaction without new eligible content does not call the model or append events', async () => {
   const state = fakeThreadState();
-  const services = directServices({
+  const services = bundleServices({
     configuration: compactionConfiguration(),
     provider: {
       stream: () => {
@@ -95,7 +95,7 @@ void test('a resumed run condenses the old span before its first provider call',
     ],
     checkpoints: { 'old-prompt': 20 },
   });
-  const services = directServices({
+  const services = bundleServices({
     configuration: compactionConfiguration(),
     provider: finishing(requests),
   });
@@ -167,7 +167,7 @@ void test('a disabled compaction leaves the history untouched', async () => {
     ],
   });
   const configuration = compactionConfiguration({ enabled: false });
-  const services = directServices({
+  const services = bundleServices({
     configuration,
     provider: finishing(requests),
   });
@@ -187,7 +187,7 @@ void test('a disabled compaction leaves the history untouched', async () => {
 
 void test('the on-demand compact refuses an empty history and answers nothing_to_compact', async () => {
   const state = fakeThreadState();
-  const services = directServices({
+  const services = bundleServices({
     configuration: compactionConfiguration(),
     provider: { stream: async function* () {} },
   });
@@ -216,7 +216,7 @@ void test('the on-demand compact refuses an empty history and answers nothing_to
 
 void test('the on-demand compact condenses a big history and records the bracket', async () => {
   const state = fakeThreadState();
-  const services = directServices({
+  const services = bundleServices({
     configuration: compactionConfiguration(),
     provider: {
       metadata: { id: 'provider', name: 'provider' },
@@ -279,7 +279,7 @@ void test('the on-demand compact condenses a big history and records the bracket
 
 void test('a disabled executor refuses the on-demand compact before planning', async () => {
   const state = fakeThreadState();
-  const services = directServices({
+  const services = bundleServices({
     configuration: compactionConfiguration({ enabled: false }),
     provider: { stream: async function* () {} },
   });

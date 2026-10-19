@@ -8,7 +8,7 @@ import { defineTool } from 'tool';
 import { z } from 'zod';
 
 import {
-  directServices,
+  bundleServices,
   fakeThreadState,
   runPrompt,
 } from './support/harness.js';
@@ -24,7 +24,7 @@ const cat = {
 const catUrl = 'data:image/png;base64,iVBORw0KGgo=';
 
 /**
- * A Direct run whose model answers once, or first calls `show` when the
+ * A default-agent run whose model answers once, or first calls `show` when the
  * prompt asks for it; every request it was sent is kept.
  */
 const imageHarness = () => {
@@ -61,7 +61,7 @@ const imageHarness = () => {
     output: z.string(),
     execute: () => attachmentReference('cat.png', catId),
   }).bind(owner.services);
-  const services = directServices({
+  const services = bundleServices({
     provider,
     tools: [{ bundleId: 'tools-owner', alwaysAvailable: false, tool: show }],
   });

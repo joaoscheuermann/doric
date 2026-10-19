@@ -4,13 +4,13 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { directSystemPrompt } from '../src/host/executor.js';
+import { systemPromptWith } from '../src/host/executor.js';
 import { skill } from './support/harness.js';
 
 // Ported from agents/doric/tests/direct-prompts.test.ts.
 
 /**
- * The test target compiles to bundles/runtime/direct/dist-tests/tests, so the
+ * The test target compiles to bundles/runtime/default/dist-tests/tests, so the
  * repository root is five folders above this file, where the bundle skill
  * bodies live.
  */
@@ -33,12 +33,12 @@ const workingDirectoryInstruction =
 /** A step that moves the Thread's working directory with the `cwd` tool. */
 const workingDirectoryStep = /working directory[^.]*`cwd` tool/u;
 
-void test('states the per-thread working directory in the base Direct prompt', () => {
-  assert.match(directSystemPrompt([]), workingDirectoryInstruction);
+void test('states the per-thread working directory in the base default prompt', () => {
+  assert.match(systemPromptWith([]), workingDirectoryInstruction);
 });
 
-void test('keeps the working-directory instruction in the assembled Direct prompt', () => {
-  const prompt = directSystemPrompt([
+void test('keeps the working-directory instruction in the assembled default prompt', () => {
+  const prompt = systemPromptWith([
     skill('sandbox', 'Inspect before reporting.'),
   ]);
 

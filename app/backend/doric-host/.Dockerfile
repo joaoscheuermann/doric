@@ -55,7 +55,7 @@ RUN npm ci --ignore-scripts \
       bundles/features/threads/tsconfig.json \
       bundles/runtime/runtime/tsconfig.json \
       bundles/features/terminal/tsconfig.json \
-      bundles/runtime/direct/tsconfig.json \
+      bundles/runtime/default/tsconfig.json \
       bundles/providers/openai/tsconfig.json \
       bundles/providers/openrouter/tsconfig.json \
       bundles/providers/codex/tsconfig.json \
@@ -86,7 +86,7 @@ RUN npm ci --ignore-scripts \
       --outfile=bundles/features/papercraft/dist/sandbox/runner.mjs \
  && node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles \
       bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads \
-      bundles/runtime/runtime bundles/runtime/direct bundles/providers/openai bundles/providers/openrouter \
+      bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter \
       bundles/providers/codex bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
       bundles/features/terminal bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications \
       bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/foundation/transport bundles/foundation/host-config \

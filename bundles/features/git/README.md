@@ -91,8 +91,8 @@ npx nx test bundle-git
 ```
 
 The build writes `bundles/features/git/dist`, which `doric-host:build-bundles`
-stages into `app/backend/doric-host/dist/bundles/git` for the Direct host to
-load at startup. To rebuild and stage every bundle used by the Direct host:
+stages into `app/backend/doric-host/dist/bundles/git` for the Doric host to
+load at startup. To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

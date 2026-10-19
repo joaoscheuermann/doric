@@ -2,8 +2,9 @@ import type { ProviderMessage } from 'llms';
 import type { HistoryPatch, HistoryReader } from 'runtime/contracts';
 
 /*
- * direct.history/v1 (design 57 §5.2): the Thread's provider history in two
- * parts, so a checkpoint write stays small.
+ * default.history/v1 (design 57 §5.2): the Thread's provider history in two
+ * parts, so a checkpoint write stays small. Before the bundle was renamed it
+ * wrote the same parts as `direct.history/v1`, which it still reads.
  *
  * - `messages`: the provider-ready messages (the runtime redacts and
  *   sanitizes them on write), formerly `thread.messages`.
@@ -12,7 +13,10 @@ import type { HistoryPatch, HistoryReader } from 'runtime/contracts';
  *   `jsonb_array_length(messages)`.
  */
 
-export const historyFormat = 'direct.history/v1';
+export const historyFormat = 'default.history/v1';
+
+/** The format the bundle wrote as `direct`: the same parts, read as they are. */
+export const legacyHistoryFormat = 'direct.history/v1';
 
 export interface HistoryMeta {
   readonly checkpoints: Readonly<Record<string, number>>;

@@ -28,7 +28,7 @@ export interface Condensation {
 
 /**
  * The `meta` part of a history: turn boundaries by prompt ID and the length
- * of the stored `messages`. Shape of `direct.history/v1`'s meta part.
+ * of the stored `messages`. Shape of `default.history/v1`'s meta part.
  */
 export interface HistoryMeta {
   readonly checkpoints: Readonly<Record<string, number>>;

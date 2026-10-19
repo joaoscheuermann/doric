@@ -112,7 +112,7 @@ sidebar stack, Thread navigation and the contract services. Stories under
 them. The build writes `bundles/desktop/layout/dist`, which
 `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/layout`. To rebuild and stage every bundle
-used by the Direct host:
+used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

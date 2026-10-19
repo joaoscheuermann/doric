@@ -8,9 +8,9 @@ import type { ProviderMessage, ProviderRequest } from 'llms';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import { directSystemPrompt } from '../src/host/executor.js';
+import { systemPromptWith } from '../src/host/executor.js';
 import {
-  directServices,
+  bundleServices,
   fakeThreadState,
   PersistenceFailure,
   projectId,
@@ -27,7 +27,7 @@ import {
 
 const callId = 'call-1';
 
-const directHarness = (
+const harnessOf = (
   configuration = testConfiguration(),
   onEvent: (value: unknown) => void = () => undefined,
   tools?: (inspect: unknown) => readonly unknown[],
@@ -86,7 +86,7 @@ const directHarness = (
       };
     },
   };
-  const services = directServices({
+  const services = bundleServices({
     configuration,
     provider,
     tools: (tools?.(inspect) ?? [inspect]).map((tool) => ({
@@ -134,7 +134,7 @@ const inspectTool = (executed: () => void, scopes: (CallScope | undefined)[]) =>
   });
 
 void test('retains a completed tool result and its event when a full disk rejects persistence until recovery', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   let full = false;
   harness.state.failWhen((entry) => {
     if (
@@ -167,8 +167,8 @@ void test('retains a completed tool result and its event when a full disk reject
   assert.equal(harness.executions(), 1);
 });
 
-void test('includes the Direct instruction and every skill body once in bundle order', () => {
-  const system = directSystemPrompt([
+void test('includes the default instruction and every skill body once in bundle order', () => {
+  const system = systemPromptWith([
     skill('first', 'First body.'),
     skill('second', 'Second body.'),
   ]);
@@ -183,23 +183,21 @@ void test('includes the Direct instruction and every skill body once in bundle o
 
 void test('preserves skill whitespace and separates each skill from the preceding prompt', () => {
   assert.equal(
-    directSystemPrompt([
+    systemPromptWith([
       skill('first', '\nFirst body.\n'),
       skill('second', 'Second body.'),
     ]),
-    `${directSystemPrompt([])}\n\n## Skill: first\n\n\nFirst body.\n\n\n## Skill: second\n\nSecond body.`,
+    `${systemPromptWith([])}\n\n## Skill: first\n\n\nFirst body.\n\n\n## Skill: second\n\nSecond body.`,
   );
 });
 
-void test('sends the Direct instruction with the skills tools/v1 and skills/v1 list', async () => {
-  const harness = directHarness();
+void test('sends the default instruction with the skills tools/v1 and skills/v1 list', async () => {
+  const harness = harnessOf();
   await harness.run('prompt-1');
 
   assert.deepEqual(harness.requests[0]?.messages[0], {
     role: 'system',
-    content: directSystemPrompt([
-      skill('sandbox', 'Inspect before reporting.'),
-    ]),
+    content: systemPromptWith([skill('sandbox', 'Inspect before reporting.')]),
   });
   assert.deepEqual(
     harness.requests[0]?.tools?.map(({ name }) => name),
@@ -207,8 +205,8 @@ void test('sends the Direct instruction with the skills tools/v1 and skills/v1 l
   );
 });
 
-void test('feeds complete persisted history into each fresh Direct agent', async () => {
-  const harness = directHarness();
+void test('feeds complete persisted history into each fresh default agent', async () => {
+  const harness = harnessOf();
   await harness.run('prompt-1');
   await harness.run('prompt-2');
 
@@ -219,12 +217,12 @@ void test('feeds complete persisted history into each fresh Direct agent', async
   ]);
 });
 
-void test('writes the history in the direct.history/v1 format with its message count', async () => {
-  const harness = directHarness();
+void test('writes the history in the default.history/v1 format with its message count', async () => {
+  const harness = harnessOf();
   seedHistory(harness.state, { checkpoints: { [promptId]: 0 } });
   await harness.run('prompt-1');
 
-  assert.equal(harness.state.format(), 'direct.history/v1');
+  assert.equal(harness.state.format(), 'default.history/v1');
   assert.deepEqual(harness.state.parts().meta, {
     checkpoints: { [promptId]: 0 },
     messageCount: 2,
@@ -233,14 +231,14 @@ void test('writes the history in the direct.history/v1 format with its message c
 });
 
 void test('binds every tool to a call scoped to the running prompt', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   await harness.run('use-tool').catch(() => undefined);
 
   assert.deepEqual(harness.toolScopes, [{ projectId, threadId, promptId }]);
 });
 
 void test('refuses a tool that defineTool did not bind before asking the model', async () => {
-  const harness = directHarness(undefined, undefined, () => [
+  const harness = harnessOf(undefined, undefined, () => [
     {
       name: 'loose',
       definition: { name: 'loose' },
@@ -268,7 +266,7 @@ void test('refuses a prompt whose tool settings are unmet before asking the mode
     ],
     execute: () => Promise.resolve({}),
   }).bind(owner.services);
-  const harness = directHarness(undefined, undefined, () => [configured]);
+  const harness = harnessOf(undefined, undefined, () => [configured]);
 
   await assert.rejects(harness.run('prompt'), {
     message: 'Tool configured requires a apiKey value.',
@@ -279,7 +277,7 @@ void test('refuses a prompt whose tool settings are unmet before asking the mode
 
 void test('fails with the models/v1 refusal when the configured provider is unavailable', async () => {
   const configuration = testConfiguration();
-  const harness = directHarness({
+  const harness = harnessOf({
     ...configuration,
     models: {
       execution: { ...configuration.models.execution, providerId: 'gone' },
@@ -298,8 +296,8 @@ void test('fails with the models/v1 refusal when the configured provider is unav
   ]);
 });
 
-void test('persists streamed Direct events with the configured provider id on response.started', async () => {
-  const harness = directHarness();
+void test('persists streamed default-agent events with the configured provider id on response.started', async () => {
+  const harness = harnessOf();
   await harness.run('prompt');
 
   assert.ok(harness.events().includes('reasoning.delta'));
@@ -317,13 +315,13 @@ void test('persists streamed Direct events with the configured provider id on re
 });
 
 void test('answers the final text of the run', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
 
   assert.equal(await harness.run('prompt'), 'answer-prompt');
 });
 
 void test('persists partial history after failure for the next prompt', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   await assert.rejects(harness.run('fail'));
   await harness.run('after-failure');
 
@@ -335,7 +333,7 @@ void test('persists partial history after failure for the next prompt', async ()
 
 void test('uses the configured execution model and effort', async () => {
   const configuration = testConfiguration();
-  const harness = directHarness({
+  const harness = harnessOf({
     ...configuration,
     models: {
       execution: {
@@ -352,8 +350,8 @@ void test('uses the configured execution model and effort', async () => {
   assert.equal(harness.requests[0]?.effort, 'high');
 });
 
-void test('enforces the configured Direct turn limit', async () => {
-  const harness = directHarness({
+void test('enforces the configured default-agent turn limit', async () => {
+  const harness = harnessOf({
     ...testConfiguration(),
     execution: { maxTurns: 1 },
   });
@@ -368,7 +366,7 @@ void test('enforces the configured Direct turn limit', async () => {
 
 void test('does not start a sandbox tool after interruption and retains resumable tool history', async () => {
   const controller = new AbortController();
-  const harness = directHarness(testConfiguration(), (value) => {
+  const harness = harnessOf(testConfiguration(), (value) => {
     if ((value as { type: string }).type === 'tool.started') controller.abort();
   });
   await assert.rejects(harness.run('use-tool', controller.signal), {
@@ -387,7 +385,7 @@ void test('does not start a sandbox tool after interruption and retains resumabl
 
 void test('resumes an interrupted run from the history it had already written', async () => {
   const controller = new AbortController();
-  const harness = directHarness(testConfiguration(), (value) => {
+  const harness = harnessOf(testConfiguration(), (value) => {
     if ((value as { type: string }).type === 'tool.finished')
       controller.abort();
   });
@@ -415,7 +413,7 @@ void test('resumes an interrupted run from the history it had already written', 
 });
 
 void test('answers a resumed history that ends in a tool call with no result', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   // A host stop in the middle of a tool leaves a history no provider accepts: an
   // assistant call the run never answered.
   seedHistory(harness.state, {
@@ -451,7 +449,7 @@ void test('answers a resumed history that ends in a tool call with no result', a
 
 void test('keeps the original input and every assistant turn across successive resumptions', async () => {
   const controller = new AbortController();
-  const harness = directHarness(undefined, (event) => {
+  const harness = harnessOf(undefined, (event) => {
     if ((event as { type: string }).type === 'response.finished')
       controller.abort();
   });
@@ -474,7 +472,7 @@ void test('keeps the original input and every assistant turn across successive r
 });
 
 void test('repairs only unanswered calls after a partially completed tool batch', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   const history: readonly ProviderMessage[] = [
     { role: 'user', content: '<user-request>\ncontinue\n</user-request>' },
     {
@@ -501,7 +499,7 @@ void test('repairs only unanswered calls after a partially completed tool batch'
 });
 
 void test('saves the history on response.finished and tool.finished and once more when the run ends', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   await harness.run('use-tool').catch(() => undefined);
 
   const saves = harness.state.writes.map(({ history, event }) =>
@@ -526,7 +524,7 @@ void test('saves the history on response.finished and tool.finished and once mor
 });
 
 void test('takes the reader steering in after a tool and saves it before announcing it', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   harness.state.onEvent((value) => {
     if ((value as { type: string }).type === 'tool.started')
       harness.state.steer('summarize');
@@ -550,7 +548,7 @@ void test('takes the reader steering in after a tool and saves it before announc
 });
 
 void test('leaves steering untaken when the run answers without a further turn', async () => {
-  const harness = directHarness({
+  const harness = harnessOf({
     ...testConfiguration(),
     execution: { maxTurns: 1 },
   });
@@ -567,7 +565,7 @@ void test('leaves steering untaken when the run answers without a further turn',
 });
 
 void test('takes a background terminal result in within its own envelope', async () => {
-  const harness = directHarness();
+  const harness = harnessOf();
   harness.state.onEvent((value) => {
     if ((value as { type: string }).type === 'tool.started')
       harness.state.steer('Command: npm test\nExit: 0', {
@@ -611,7 +609,7 @@ void test('pauses without recording the failure when the generation running a to
       );
     },
   }).bind(owner.services);
-  const harness = directHarness(undefined, undefined, () => [crashing]);
+  const harness = harnessOf(undefined, undefined, () => [crashing]);
 
   await assert.rejects(harness.run('use-tool', controller.signal), {
     message: 'generation lost',

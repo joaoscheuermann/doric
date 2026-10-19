@@ -53,7 +53,7 @@ npx nx typecheck bundle-usage
 npx nx test bundle-usage
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

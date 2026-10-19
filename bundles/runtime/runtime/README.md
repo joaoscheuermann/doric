@@ -64,7 +64,7 @@ sub-thread is a branch already, so no surface offers a branch under it either.
 ## How it works
 
 - **Prompts:** the runner executes each prompt through `executor/v1` (the
-  [`direct`](../direct/README.md) bundle in the shipped host) with the
+  [`default`](../default/README.md) bundle in the shipped host) with the
   runtime's `PromptSession`, and the executor's checkpoint patch marks the turn
   boundary. Only queue and state mutations take the Project lock.
 - **Host facade:** each prompt gets a `Host`, whose types live in
@@ -94,7 +94,7 @@ npx nx typecheck bundle-runtime
 npx nx test bundle-runtime
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

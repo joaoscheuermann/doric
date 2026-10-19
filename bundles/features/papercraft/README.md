@@ -128,7 +128,7 @@ npx nx typecheck bundle-papercraft
 npx nx test bundle-papercraft
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

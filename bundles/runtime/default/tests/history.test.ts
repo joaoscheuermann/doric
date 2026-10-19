@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { ProviderRequest } from 'llms';
 
 import {
-  directServices,
+  bundleServices,
   fakeThreadState,
   projectId,
   promptId,
@@ -27,7 +27,7 @@ const answering = (requests: ProviderRequest[] = []) => ({
 });
 
 const activated = async (requests?: ProviderRequest[]) => {
-  const services = directServices({ provider: answering(requests) });
+  const services = bundleServices({ provider: answering(requests) });
   await services.activate();
   return services;
 };
@@ -38,12 +38,36 @@ const messages = (count: number) =>
     content: `message ${index}`,
   }));
 
-void test('reads only the direct.history/v1 format', async () => {
+void test('reads its own format and the one it wrote as the direct bundle', async () => {
   const services = await activated();
 
-  assert.deepEqual(await services.executor(scope).formats(), [
+  assert.deepEqual([...(await services.executor(scope).formats())].sort(), [
+    'default.history/v1',
     'direct.history/v1',
   ]);
+});
+
+void test('continues a history written as direct.history/v1 in its own format', async () => {
+  const requests: ProviderRequest[] = [];
+  const services = await activated(requests);
+  const state = fakeThreadState();
+  state.apply({
+    format: 'direct.history/v1',
+    parts: {
+      messages: messages(2),
+      meta: { checkpoints: {}, messageCount: 2 },
+    },
+  });
+
+  await runPrompt(services, state, 'next');
+
+  assert.deepEqual(
+    requests[0]?.messages
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content),
+    ['message 0', 'message 1', '<user-request>\nnext\n</user-request>'],
+  );
+  assert.equal(state.format(), 'default.history/v1');
 });
 
 void test('records a prompt boundary at the stored message count', async () => {
@@ -56,7 +80,7 @@ void test('records a prompt boundary at the stored message count', async () => {
       .executor(scope)
       .checkpoint({ history: state.reader(), promptId }),
     {
-      format: 'direct.history/v1',
+      format: 'default.history/v1',
       parts: {
         meta: { checkpoints: { [promptId]: 3, other: 1 }, messageCount: 3 },
       },
@@ -91,7 +115,7 @@ void test('records a boundary of zero on a Thread with no history yet', async ()
     .checkpoint({ history: state.reader(), promptId });
 
   assert.deepEqual(patch, {
-    format: 'direct.history/v1',
+    format: 'default.history/v1',
     parts: { meta: { checkpoints: { [promptId]: 0 }, messageCount: 0 } },
   });
 });
@@ -112,7 +136,7 @@ void test('rewinds to the boundary and drops every removed prompt boundary', asy
       removedPromptIds: [promptId, 'later'],
     }),
     {
-      format: 'direct.history/v1',
+      format: 'default.history/v1',
       parts: {
         messages: stored.slice(0, 2),
         meta: { checkpoints: { kept: 0 }, messageCount: 2 },

@@ -67,21 +67,25 @@ export const createAgent = (options: AgentOptions): Agent => {
     running = false;
   };
 
-  const buildRequest = <Output = JsonValue>(
+  const buildRequest = async <Output = JsonValue>(
     runOptions: AgentRunOptions<Output>,
     outputTool?: StructuredOutputTool,
     correction?: string,
-  ): ProviderRequest<Output> => {
+  ): Promise<ProviderRequest<Output>> => {
     /** Executable definitions come from the caller-owned tool storage. */
     const definitions = options.tools.definitions();
+    const prompt =
+      typeof options.system === 'string'
+        ? options.system
+        : await options.system();
 
     /**
      * Keep the authored system prompt first. Tool-enabled structured runs add
      * one generated instruction that tells the model how to end the loop.
      */
     const system: readonly ProviderMessage[] = [
-      ...(options.system.length > 0
-        ? [{ role: 'system' as const, content: options.system }]
+      ...(prompt.length > 0
+        ? [{ role: 'system' as const, content: prompt }]
         : []),
       ...(outputTool === undefined
         ? []
@@ -234,7 +238,7 @@ export const createAgent = (options: AgentOptions): Agent => {
           /** Ask the provider for either executable calls or the terminal result. */
           runOptions.signal?.throwIfAborted();
           turns.begin();
-          const request = buildRequest(runOptions, terminal, correction);
+          const request = await buildRequest(runOptions, terminal, correction);
           correction = undefined;
           runOptions.signal?.throwIfAborted();
           const finish = await options.provider.complete(request);
@@ -393,7 +397,7 @@ export const createAgent = (options: AgentOptions): Agent => {
           let finish: ProviderFinished<Output> | undefined;
           const buffered: ProviderStreamEvent<Output>[] = [];
           turns.begin();
-          const request = buildRequest(runOptions, terminal, correction);
+          const request = await buildRequest(runOptions, terminal, correction);
           correction = undefined;
 
           runOptions.signal?.throwIfAborted();

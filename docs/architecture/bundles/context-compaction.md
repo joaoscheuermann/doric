@@ -76,9 +76,9 @@ Quando o provider falha com erro classificado como estouro de contexto (heuríst
 
 ## Fases implementadas
 
-1. **Núcleo puro** (`bundles/runtime/direct/src/host/compaction/`): `markers`, `boundaries`, `rewrite` (seleção de span, re-base de checkpoints, meta), `project` (projeção de pressão), `summarize` (backend), `compact` (orquestração com bracket e códigos). Testes unitários para cada uma.
+1. **Núcleo puro** (`bundles/runtime/default/src/host/compaction/`): `markers`, `boundaries`, `rewrite` (seleção de span, re-base de checkpoints, meta), `project` (projeção de pressão), `summarize` (backend), `compact` (orquestração com bracket e códigos). Testes unitários para cada uma.
 2. **Contrato** (`bundles/runtime/runtime/src/contracts/executor.ts`): método `compact` do `Executor` (entrada: `thread`, `session`, `policy`; saída fechada) — o `runtime` continua sem conhecer `llms`.
-3. **Executor automático** (`bundles/runtime/direct/src/host/executor.ts`): captura de `usage`/`contextWindow` no stream, verificação de pressão após gravar o estado do turno, compactação entre turnos, e interceptação de overflow.
+3. **Executor automático** (`bundles/runtime/default/src/host/executor.ts`): captura de `usage`/`contextWindow` no stream, verificação de pressão após gravar o estado do turno, compactação entre turnos, e interceptação de overflow.
 4. **On-demand** (`runtime` services/runner/domain + `transport`): rota `POST /threads/:id/compact`, recusa `busy`, sessão sintética com `promptId` próprio, publicação dos eventos.
 5. **Configuração** (`bundles/foundation/host-config`): seção opcional `contextCompaction` com defaults; leitura pelo executor.
 6. **UI** (`bundles/desktop/chat`): projeção do bracket como um turno `compaction` próprio (linha discreta, estilo lifecycle), read-only e indeletável.

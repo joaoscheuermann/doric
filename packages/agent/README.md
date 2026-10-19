@@ -139,7 +139,9 @@ Per-run options for `complete` and `stream`:
 `createAgent` does not create dependency defaults. The caller owns provider
 credentials, tool registration, isolated message and tool-call storages, model
 selection, and per-call cancellation. The system prompt is included in provider
-requests but is not persisted into external message storage.
+requests but is not persisted into external message storage. `system` is a
+string, or a function the agent calls before every provider request, so the
+prompt can follow state that changes during a run.
 
 One agent owns one mutable message history, so it runs serially: starting a
 second run while one is active throws `AgentErrorObject` with code

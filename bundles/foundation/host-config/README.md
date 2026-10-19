@@ -31,7 +31,7 @@ it needs a host restart. The composition's `required` block also names
   stage.
 
 It requires `hooks/v1`, `settings/v1`, `secrets/v1`, `models/v1` and
-`tools/v1`. `runtime`, `direct`, `usage`, `transport` and the desktop
+`tools/v1`. `runtime`, `default`, `usage`, `transport` and the desktop
 `settings` bundle require `host-config/v1`; `transport` serves it as
 `GET /config` and `PUT /config`.
 
@@ -134,7 +134,7 @@ npx nx test bundle-host-config
 The build writes `bundles/foundation/host-config/dist`, which
 `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/host-config`. To rebuild and stage every
-bundle used by the Direct host:
+bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

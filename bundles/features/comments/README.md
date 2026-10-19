@@ -107,7 +107,7 @@ npx nx typecheck bundle-comments
 npx nx test bundle-comments
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

@@ -39,8 +39,8 @@ npx nx typecheck bundle-web
 npx nx test bundle-web
 ```
 
-The build writes `bundles/features/web/dist`; the Direct host loads it through
-the `bundle` loader. To rebuild and stage every bundle used by the Direct host:
+The build writes `bundles/features/web/dist`; the Doric host loads it through
+the `bundle` loader. To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles
