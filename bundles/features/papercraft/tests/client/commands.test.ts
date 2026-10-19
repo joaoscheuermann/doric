@@ -1,6 +1,8 @@
-// `papercraft.approve/v1` as the keybinding dispatches it: `CmdOrCtrl+Enter`
-// carries no input, so the approval targets the canvas the reader touched
-// last, at the revision it shows, in that canvas's Project and Thread.
+// The canvas window's chords and `papercraft.approve/v1` as its keybinding
+// dispatches it: `CmdOrCtrl+Enter` is the window's send, the approval is
+// `CmdOrCtrl+Shift+Enter`, which carries no input, so it targets the canvas
+// the reader touched last, at the revision it shows, in that canvas's Project
+// and Thread.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -35,6 +37,7 @@ const controller = (
   selectRevision: () => undefined,
   currentRevision: () => revision,
   reload: () => reloads.push(artifactId),
+  sendNow: async () => undefined,
 });
 
 const servicesRecording = (
@@ -56,14 +59,16 @@ const servicesRecording = (
     },
   }) as unknown as Services;
 
-test('the approve shortcut is CmdOrCtrl+Enter', () => {
-  assert.ok(
-    PAPERCRAFT_KEYBINDINGS.some(
-      (binding) =>
-        binding.command === 'papercraft.approve/v1' &&
-        binding.key === 'CmdOrCtrl+Enter',
-    ),
-  );
+test('in the canvas window CmdOrCtrl+Enter sends, and the approval is CmdOrCtrl+Shift+Enter', () => {
+  const commandOf = (key: string) =>
+    PAPERCRAFT_KEYBINDINGS.filter((binding) => binding.key === key).map(
+      (binding) => binding.command,
+    );
+
+  assert.deepEqual(commandOf('CmdOrCtrl+Enter'), ['papercraft.send/v1']);
+  assert.deepEqual(commandOf('CmdOrCtrl+Shift+Enter'), [
+    'papercraft.approve/v1',
+  ]);
 });
 
 test('the input-less approval targets the canvas touched last, in its scope', async () => {

@@ -721,6 +721,105 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   );
 });
 
+test('Cmd+Enter sends the Thread of the conversation holding the focus', async () => {
+  const childId = '44444444-4444-4444-8444-444444444444';
+  const records = [thread(), thread({ id: childId, parentThreadId: threadId })];
+  const editors = new Set<LexicalEditor>();
+  let create:
+    | ((tag: string, props: Record<string, string>) => HTMLElement)
+    | undefined;
+  const workspace = workspaceProbe(
+    () => records[0],
+    (id) => records.find((entry) => entry.id === id),
+  );
+  // On the conversation's route, where the window binds the send chord.
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), {
+      'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
+    }),
+    probe: {
+      provides: workspace.provides,
+      requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
+      activate: async (context: ClientContext) => {
+        await workspace.activate(context);
+        const ui = context.services.use(UiV1);
+        create = (tag, props) => ui.create(tag, props) as HTMLElement;
+        context.services.use(ChatLexicalV1).registerExtension(
+          defineExtension({
+            name: 'test/editor-input',
+            register: (editor) => {
+              editors.add(editor);
+              return () => {
+                editors.delete(editor);
+              };
+            },
+          }),
+        );
+      },
+    },
+  });
+  assert.ok(create);
+  const panel = create('chat-thread-panel', { projectId, threadId: childId });
+  opened.document.body.append(panel);
+  await settle(100);
+  const editorIn = (inPanel: boolean) => {
+    const editor = [...editors].find((candidate) => {
+      const root = candidate.getRootElement();
+      return root?.isConnected === true && panel.contains(root) === inPanel;
+    });
+    assert.ok(editor);
+    return editor;
+  };
+  const write = async (editor: LexicalEditor, text: string) => {
+    editor.update(() => {
+      const prompt = $getRoot()
+        .getChildren()
+        .find((node) => node.getType() === 'user-prompt-node');
+      assert.ok($isElementNode(prompt));
+      prompt.clear().append($createTextNode(text));
+    });
+    await settle();
+  };
+  const chord = async (target: HTMLElement) => {
+    target.focus();
+    // `CmdOrCtrl+Enter`: Ctrl here, as happy-dom reports no macOS platform.
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await settle(100);
+  };
+  const main = editorIn(false);
+  const child = editorIn(true);
+  await write(main, 'Keep this main draft');
+  await write(child, 'Send only this child draft');
+
+  await chord(child.getRootElement() as HTMLElement);
+  assert.deepEqual(
+    opened.received('runtime.threads/v1.prompt').map((call) => call.input),
+    [
+      {
+        id: childId,
+        prompt: '<message>\nSend only this child draft\n</message>',
+      },
+    ],
+  );
+
+  await chord(main.getRootElement() as HTMLElement);
+  assert.deepEqual(
+    opened
+      .received('runtime.threads/v1.prompt')
+      .map((call) => call.input)
+      .slice(1),
+    [{ id: threadId, prompt: '<message>\nKeep this main draft\n</message>' }],
+  );
+});
+
 test('a child conversation footer stops its Thread while the main Thread stays selected', async () => {
   const childId = '44444444-4444-4444-8444-444444444444';
   const childPrompt = '55555555-5555-4555-8555-555555555555';

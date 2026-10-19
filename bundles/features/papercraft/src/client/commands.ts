@@ -21,6 +21,7 @@ import {
   PAN_COMMAND,
   SELECT_COMMAND,
   SELECT_REVISION_COMMAND,
+  SEND_COMMAND,
   SHOW_ALL_COMMAND,
   ZOOM_FIT_COMMAND,
   ZOOM_IN_COMMAND,
@@ -108,10 +109,21 @@ export const selectRevisionCommand = defineCommand({
 });
 
 /**
+ * `papercraft.send/v1`: the canvas window's `CmdOrCtrl+Enter`, the chord's one
+ * owner there — the open note is confirmed and the Thread's stack goes out
+ * through chat's `chat.send/v1`, wherever the focus is in the window.
+ */
+export const sendCommand = defineCommand({
+  id: SEND_COMMAND,
+  input: canvasCommandInput,
+  execute: async (input) => of(input)?.sendNow(),
+});
+
+/**
  * `papercraft.approve/v1`: under the `request` policy, writes the approval of
  * the revision the canvas shows and refreshes it, so `Autorizar` becomes the
  * reading `Autorizado`. The window's bar owns the button; the node shows the
- * waiting as a reading only. The `CmdOrCtrl+Enter` keybinding dispatches it
+ * waiting as a reading only. The `CmdOrCtrl+Shift+Enter` keybinding dispatches it
  * with no input, so the canvas is the one named, else the one the reader last
  * touched — and the call carries that canvas's Project and Thread as its scope.
  */
@@ -151,4 +163,5 @@ export const canvasCommands = [
   zoomInCommand,
   zoomFitCommand,
   selectRevisionCommand,
+  sendCommand,
 ] as const;

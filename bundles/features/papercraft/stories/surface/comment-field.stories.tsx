@@ -26,7 +26,6 @@ function Field({
         placeholder="Adicionar comentário"
         onConfirm={() => setValue('')}
         onCancel={() => setValue('')}
-        onSend={() => setValue('')}
         {...props}
         value={value}
         onChange={setValue}

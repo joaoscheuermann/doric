@@ -106,6 +106,20 @@ export const CHAT_COMMENT_LINE_TAG = 'chat-comment-line';
  */
 export const COMMENT_THREAD_OPEN_EVENT = 'doric:comment-thread-open';
 
+/**
+ * The DOM event chat's `CmdOrCtrl+Enter` (`chat.send-prompt/v1`) dispatches on
+ * the document before it reads the stack: a surface holding a note the reader
+ * has not confirmed yet confirms it and hands the confirmation to
+ * `waitUntil`, so the note goes with the prompt.
+ */
+export const PROMPT_SEND_EVENT = 'doric:prompt-send';
+
+/** What `PROMPT_SEND_EVENT` carries. */
+export interface PromptSendDetail {
+  readonly threadId: string;
+  waitUntil(pending: Promise<unknown>): void;
+}
+
 /** What `COMMENT_THREAD_OPEN_EVENT` carries. */
 export interface CommentThreadOpenDetail {
   readonly commentId: string;
@@ -244,7 +258,7 @@ export const ChatComposerV1 = ref<ChatComposer>('chat.composer/v1');
  * `chat.send/v1` (client, one per window): sends a Thread's comment stack now,
  * as its own prompt — the composer's own send path: the stack's lines with
  * their anchors become the prompt, and the stack flushes into the log only
- * after the host accepts it. The canvas sends with it on `Cmd+Enter`.
+ * after the host accepts it. The canvas window sends with it on `Cmd+Enter`.
  */
 export interface ChatSend {
   send(

@@ -55,6 +55,11 @@ export interface ComposerStackState {
   focus(id: string | undefined): void;
   /** One Thread's stack, empty while no watch has answered yet. */
   stack(threadId: string): readonly ComposerItem[];
+  /**
+   * Reads a held Thread's stack back from the service, for a send that must
+   * see an item another surface added a moment ago, before its echo arrives.
+   */
+  sync(threadId: string): Promise<void>;
 }
 
 const emptyStacks: ReadonlyMap<string, readonly ComposerItem[]> = new Map();
@@ -165,6 +170,21 @@ export const createComposerStackStore = (feed: ComposerFeed = composerFeed) => {
       },
       focus: (id) => set({ focused: id }),
       stack: (threadId) => get().stacks.get(threadId) ?? [],
+      sync: async (threadId) => {
+        const held = watches.get(threadId);
+        if (held === undefined) return;
+        const snapshot = await feed.read(held.thread);
+        // Released while the read was out: the stack is no longer held here.
+        if (snapshot === undefined || !watches.has(threadId)) return;
+        set((state) => ({
+          stacks: applyDelta(state.stacks, {
+            kind: 'snapshot',
+            threadId,
+            text: snapshot.text,
+            items: [...snapshot.items],
+          }),
+        }));
+      },
     };
   });
 

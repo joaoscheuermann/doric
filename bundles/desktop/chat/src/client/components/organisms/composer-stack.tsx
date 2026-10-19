@@ -51,7 +51,6 @@ import {
   STACK_NOTE_ATTRIBUTE,
   StackNote,
 } from '../molecules/stack-note.js';
-import { SEND_PROMPT_COMMAND } from './conversation/commands.js';
 import { focusPrompt } from './conversation/plugins/stack-caret.js';
 
 /** The properties a stack item's own element carries. */
@@ -257,10 +256,9 @@ function StackLine({
     if (action.kind === 'default') return;
     event.preventDefault();
     if (action.kind === 'send') {
-      if (event.repeat) return;
-      // The note as written goes with the send, whatever the echo says.
+      // The window's chord sends (`chat.send-prompt/v1`); the note as written
+      // goes with it, whatever the echo says.
       onNote(noteText(element));
-      editor.dispatchCommand(SEND_PROMPT_COMMAND, undefined);
       return;
     }
     if (action.kind === 'remove') {

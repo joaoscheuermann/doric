@@ -10,8 +10,9 @@
 // is something to send.
 //
 // The field owns its keys — the canvas's `C`, `Esc` and space never see them:
-// `Enter` confirms, `Shift+Enter` breaks the line, `Esc` cancels and
-// `Cmd/Ctrl+Enter` confirms and sends the stack.
+// `Enter` confirms, `Shift+Enter` breaks the line and `Esc` cancels.
+// `Cmd/Ctrl+Enter` is the window's send chord, which confirms the note and
+// sends the stack; the field only keeps it from writing a line.
 
 import { Button } from 'desktop/ui/button';
 import { InputGroup, InputGroupTextarea } from 'desktop/ui/input-group';
@@ -27,8 +28,6 @@ export interface CommentFieldProps {
   readonly onChange: (value: string) => void;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
-  /** Confirms the note and sends the stack (`Cmd/Ctrl+Enter`). */
-  readonly onSend: () => void;
   readonly onBlur?: (event: FocusEvent<HTMLTextAreaElement>) => void;
   /** Whether the field takes the focus as it opens. */
   readonly autoFocus?: boolean;
@@ -48,7 +47,6 @@ export function CommentField({
   onChange,
   onConfirm,
   onCancel,
-  onSend,
   onBlur,
   autoFocus = false,
   fieldRef,
@@ -93,7 +91,6 @@ export function CommentField({
 
             if (event.metaKey || event.ctrlKey) {
               event.preventDefault();
-              onSend();
 
               return;
             }

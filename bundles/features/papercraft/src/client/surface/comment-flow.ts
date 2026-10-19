@@ -3,7 +3,9 @@
 // input of a new comment at its pin; a pin that holds its first comment opens
 // its thread, whose field replies (or edits one of its drafts). Only a
 // confirmed note reaches the Thread's composer stack — as a draft, nothing
-// durable — and `Cmd/Ctrl+Enter` sends the stack through chat's own send.
+// durable. `Cmd/Ctrl+Enter` is the window's: in the conversation chat's send
+// asks first (`doric:prompt-send`) and the open note joins the stack before
+// it goes; in the canvas window `papercraft.send/v1` runs `sendNow`.
 //
 // The actions are one stable set for the frame's lifetime: each reads the
 // latest render (`self`) when it runs, so the header, the footer and the
@@ -12,7 +14,12 @@
 import type { Services } from 'bundle/contracts';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CommentAnchor, PreviewScope } from '../../contracts/index.js';
+import {
+  type CommentAnchor,
+  PROMPT_SEND_EVENT,
+  type PreviewScope,
+  type PromptSendDetail,
+} from '../../contracts/index.js';
 import { targetOf } from '../anchor.js';
 import {
   beginComment,
@@ -300,6 +307,22 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
       toggleResolved,
     };
   }, []);
+
+  // Chat's send is about to read the stack of this canvas's Thread: the note
+  // open here joins it first, so the send carries it.
+  useEffect(() => {
+    const onPromptSend = (event: Event): void => {
+      const detail = (event as CustomEvent<PromptSendDetail>).detail;
+      const { open: current, scope } = self.current;
+
+      if (current === undefined || detail?.threadId !== scope?.threadId) return;
+      detail.waitUntil(actions.confirmInput());
+    };
+
+    document.addEventListener(PROMPT_SEND_EVENT, onPromptSend);
+
+    return () => document.removeEventListener(PROMPT_SEND_EVENT, onPromptSend);
+  }, [actions]);
 
   return { open, text, editing, thread, ...actions };
 };

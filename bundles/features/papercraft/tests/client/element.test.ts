@@ -4,7 +4,9 @@
 // overlays the canvas, the comment flow is Figma's — an inline input at the
 // pin, and the composer stack only hears of a note once it is confirmed; a
 // comment that is never sent never becomes an event — sent comments stay as
-// pins, `Cmd+Enter` sends the stack through chat's send, the command bar shows
+// pins, `Cmd+Enter` is the window's send (chat's in the conversation, which
+// the open note joins first; `papercraft.send/v1` in the canvas window), the
+// command bar shows
 // its four groups and obeys the `request` policy, and the revision reading
 // switches the revision on screen.
 
@@ -1738,14 +1740,79 @@ test('a thread asked for without a revision opens on the node of the newest revi
   await second.unmount();
 });
 
-test('Cmd+Enter confirms the open note and sends the stack through chat', async () => {
+/** Chat's send asking before it reads the stack, as `chat.send-prompt/v1` does. */
+const askBeforeSend = async (threadId: string): Promise<Promise<unknown>[]> => {
+  const pending: Promise<unknown>[] = [];
+
+  await react.act(async () => {
+    document.dispatchEvent(
+      new window.CustomEvent('doric:prompt-send', {
+        detail: {
+          threadId,
+          waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+        },
+      }) as never,
+    );
+  });
+
+  return pending;
+};
+
+test('in the conversation the canvas never sends on Cmd+Enter: chat does, after the open note joins the stack', async () => {
   const h = harness();
   const { mounted, composer } = await commenting(h);
 
   await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
   const field = inputOf(mounted.frame) as HTMLTextAreaElement;
   await react.act(async () => type(field, 'manda já'));
+
+  // The chord reaches the field and the canvas, and neither sends: the
+  // window's one send is chat's.
   await key(field, 'Enter', { metaKey: true });
+  await key(
+    mounted.frame.querySelector('.papercraft-canvas') as Element,
+    'Enter',
+    { ctrlKey: true },
+  );
+  await tick();
+  assert.equal(h.sends.length, 0);
+  assert.equal(composer.added.length, 0);
+
+  // Another Thread's send leaves the note where it is.
+  assert.deepEqual(await askBeforeSend('t-other'), []);
+
+  // This Thread's send waits for the note to join its stack.
+  const pending = await askBeforeSend('t-123');
+  assert.equal(pending.length, 1);
+  await react.act(async () => {
+    await Promise.all(pending);
+  });
+  assert.equal(composer.added.length, 1);
+  assert.equal(composer.added[0]?.note, 'manda já');
+  assert.equal(h.sends.length, 0);
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('in the canvas window Cmd+Enter (`papercraft.send/v1`) confirms the open note and sends the stack through chat', async () => {
+  const h = harness();
+  const composer = fakeComposer();
+  h.composer = composer.api;
+  comment.setComposerAvailable(true);
+  const mounted = await h.mount('canvas', {});
+  const commands = h.services.use(CommandsV1);
+
+  await react.act(async () => {
+    await commands.execute('papercraft.comment/v1', {});
+  });
+  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+  const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+  await react.act(async () => type(field, 'manda já'));
+
+  await react.act(async () => {
+    await commands.execute('papercraft.send/v1', {});
+  });
 
   await settle(
     () => h.sends.length,
@@ -1755,18 +1822,6 @@ test('Cmd+Enter confirms the open note and sends the stack through chat', async 
   assert.equal(composer.added.length, 1);
   assert.equal(composer.added[0]?.note, 'manda já');
   assert.deepEqual(h.sends[0]?.input, { projectId: 'p1', threadId: 't-123' });
-
-  // On the focused canvas, with nothing open, it sends too.
-  await key(
-    mounted.frame.querySelector('.papercraft-canvas') as Element,
-    'Enter',
-    { ctrlKey: true },
-  );
-  await settle(
-    () => h.sends.length,
-    (length) => length === 2,
-    'the canvas never sent',
-  );
 
   comment.setComposerAvailable(false);
   await mounted.unmount();

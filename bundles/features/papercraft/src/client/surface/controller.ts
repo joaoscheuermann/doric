@@ -41,6 +41,7 @@ export interface ControllerInput {
   readonly fitContent: () => boolean;
   readonly selectRevision: (revision: number) => void;
   readonly reload: () => void;
+  readonly sendNow: () => Promise<void>;
 }
 
 export const usePreviewController = ({
@@ -57,6 +58,7 @@ export const usePreviewController = ({
   fitContent,
   selectRevision,
   reload,
+  sendNow,
 }: ControllerInput): PreviewController => {
   const controller = useMemo<PreviewController>(() => {
     /** One zoom step about the surface centre. */
@@ -105,6 +107,7 @@ export const usePreviewController = ({
       },
       currentRevision: () => latest.current.revision ?? undefined,
       reload,
+      sendNow,
     };
   }, [
     artifactId,
@@ -119,6 +122,7 @@ export const usePreviewController = ({
     fitContent,
     selectRevision,
     reload,
+    sendNow,
   ]);
 
   useEffect(() => {

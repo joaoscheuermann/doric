@@ -7,14 +7,16 @@
 import {
   type Cleanup,
   type ClientContext,
+  CommandsV1,
   HooksV1,
+  MenusV1,
   NavigationV1,
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
 import { RuntimeTerminalsV1 } from 'runtime/contracts';
 
-import { ChatHooksV1 } from '../contracts/index.js';
+import { ChatHooksV1, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
 import {
   fromRuntimeTerminals,
@@ -42,6 +44,7 @@ import {
 } from './services/lexical.js';
 import { watchSandboxActivity } from './services/sandbox-activity.js';
 import { createChatSend } from './services/send.js';
+import { sendPromptCommand } from './services/send-command.js';
 import {
   createChatViews,
   GENERIC_BLOCK_TAG,
@@ -89,6 +92,14 @@ export function activate({ services }: ClientContext): Cleanup {
   const composer = services
     .use(RegionsV1)
     .add('layout.footer', { id: 'composer', tag: 'chat-composer', order: 40 });
+  // The send's chord, owned by the window on the conversation's route: no
+  // surface inside it answers `Cmd+Enter` on its own.
+  const sendCommand = services.use(CommandsV1).register(sendPromptCommand);
+  void services.use(MenusV1).addKeybinding({
+    command: SEND_PROMPT_COMMAND,
+    key: 'CmdOrCtrl+Enter',
+    when: { path: THREAD_ROUTE },
+  });
 
   const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
     setWorkspace(api);
@@ -116,6 +127,7 @@ export function activate({ services }: ClientContext): Cleanup {
     history.dispose();
     workspace.dispose();
     composer.dispose();
+    sendCommand.dispose();
     route.dispose();
     for (const element of elements.reverse()) element.dispose();
     resetLiveTerminalsStore();

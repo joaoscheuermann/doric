@@ -559,6 +559,13 @@ export const canvasPathOf = (input: {
 /** The command that approves a revision under the `request` policy. */
 export const APPROVE_COMMAND = 'papercraft.approve/v1';
 
+/**
+ * The canvas window's send: confirms the open note and sends the Thread's
+ * stack through chat's `chat.send/v1`. In the conversation, the window's
+ * `CmdOrCtrl+Enter` is chat's own send instead.
+ */
+export const SEND_COMMAND = 'papercraft.send/v1';
+
 /* The command bar (papercraft/README.md, "A barra de comandos") ------------------ */
 
 /** The armed tool of the canvas: `select` is the entry default. */
@@ -586,7 +593,12 @@ export const PAPERCRAFT_KEYBINDINGS = [
   { command: ZOOM_RESET_COMMAND, key: 'CmdOrCtrl+0', label: 'Zoom 100%' },
   { command: ZOOM_IN_COMMAND, key: 'CmdOrCtrl+=', label: 'Mais zoom' },
   { command: ZOOM_FIT_COMMAND, key: 'Shift+1', label: 'Ajustar' },
-  { command: APPROVE_COMMAND, key: 'CmdOrCtrl+Enter', label: 'Autorizar' },
+  { command: SEND_COMMAND, key: 'CmdOrCtrl+Enter', label: 'Enviar' },
+  {
+    command: APPROVE_COMMAND,
+    key: 'CmdOrCtrl+Shift+Enter',
+    label: 'Autorizar',
+  },
 ] as const;
 
 /** The composer stack item kind of a papercraft comment draft. */

@@ -384,14 +384,13 @@ export interface KeyInput {
   readonly setSpaceHeld: (held: boolean) => void;
   readonly setCommentMode: (on: boolean) => void;
   readonly closeInput: () => void;
-  /** Confirms what the open field holds and sends the stack. */
-  readonly sendNow: () => Promise<void>;
 }
 
 /**
- * The canvas's keys: space pans, `Cmd/Ctrl+Enter` sends the stack, `Esc`
- * closes what is open, else disarms the comment tool, else (in the node)
- * hands the focus back, and `C` toggles comment mode.
+ * The canvas's keys: space pans, `Esc` closes what is open, else disarms the
+ * comment tool, else (in the node) hands the focus back, and `C` toggles
+ * comment mode. `Cmd/Ctrl+Enter` is the window's send chord, not the canvas's:
+ * chat's in the conversation, `papercraft.send/v1` in the canvas window.
  */
 export const canvasKeys = (
   input: KeyInput,
@@ -403,13 +402,6 @@ export const canvasKeys = (
     if (event.key === ' ') {
       event.preventDefault();
       input.setSpaceHeld(true);
-
-      return;
-    }
-
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      void input.sendNow();
 
       return;
     }

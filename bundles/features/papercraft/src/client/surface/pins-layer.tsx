@@ -177,8 +177,6 @@ export interface CommentInputProps {
   readonly onChange: (value: string) => void;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
-  /** Confirms the note and sends the stack (`Cmd/Ctrl+Enter`). */
-  readonly onSend: () => void;
   /** Focus left the input for outside the canvas. */
   readonly onBlurOutside: () => void;
 }
@@ -216,7 +214,6 @@ function CommentInput({
   onChange,
   onConfirm,
   onCancel,
-  onSend,
   onBlurOutside,
 }: CommentInputProps & {
   readonly viewport: Viewport;
@@ -246,7 +243,6 @@ function CommentInput({
           onChange={onChange}
           onConfirm={onConfirm}
           onCancel={onCancel}
-          onSend={onSend}
           onBlur={(event) => {
             const next = event.relatedTarget as Node | null;
             const overlay = event.currentTarget.closest(

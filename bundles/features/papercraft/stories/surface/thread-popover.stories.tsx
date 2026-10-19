@@ -123,7 +123,6 @@ function Thread({
             setEditing(undefined);
           }}
           onClose={() => setOpen(false)}
-          onSend={confirm}
           onEdit={(id) => {
             setEditing(id);
             setValue(messages.find((message) => message.id === id)?.text ?? '');

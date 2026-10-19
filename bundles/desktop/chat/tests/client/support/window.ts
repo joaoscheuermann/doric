@@ -5,7 +5,9 @@
 // the conversation. The boundaries faked are the preload API
 // (`window.doric.desktop`) and, behind it, the host's `runtime.threads/v1`
 // and main's shell streams: a test answers them as the host would and reads
-// what they were asked.
+// what they were asked. Main's keybinding routing is played as main plays it:
+// the `menus/v1` bindings that match the window's `path` context are the
+// window's table, and a chord the table matches runs its command here.
 
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -169,6 +171,27 @@ const composerRemote: RemoteContract = {
     registerFlush: { tuple: null, local: true, stream: false },
   },
 };
+
+const menusRemote: RemoteContract = {
+  id: 'menus/v1',
+  environment: 'desktopMain',
+  bundleId: 'core',
+  version: '1.0.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    addItem: { tuple: null, local: false, stream: false },
+    addKeybinding: { tuple: null, local: false, stream: false },
+    setContext: { tuple: null, local: false, stream: false },
+  },
+};
+
+/** One `menus/v1.addKeybinding` registration. */
+interface Keybinding {
+  readonly command: string;
+  readonly key: string;
+  readonly when?: { readonly path?: string };
+}
 
 const commentsRemote: RemoteContract = {
   id: 'comments/v1',
@@ -375,13 +398,67 @@ export const openChatWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [threadsRemote, attachmentsRemote, composerRemote, commentsRemote],
+    remote: [
+      threadsRemote,
+      attachmentsRemote,
+      composerRemote,
+      commentsRemote,
+      menusRemote,
+    ],
     hostId: 'host-1',
     storageGeneration: 1,
   };
   const calls: BridgeCallEnvelope[] = [];
   const streams: OpenStream[] = [];
   const connectionListeners = new Set<(event: BridgeStreamEvent) => void>();
+
+  // Main's keybinding routing: the window's table is every binding whose
+  // `when.path` is the window's route pattern (or that has none), and a chord
+  // it matches comes back as `keybinding`, which main answers by asking the
+  // window to run the bound command.
+  const keybindings: Keybinding[] = [];
+  let contextPath: string | null = null;
+  const tableListeners = new Set<(event: BridgeStreamEvent) => void>();
+  const commandListeners = new Set<(event: BridgeStreamEvent) => void>();
+  let commandRequests = 0;
+  const table = () =>
+    keybindings
+      .filter(
+        ({ when }) => when?.path === undefined || when.path === contextPath,
+      )
+      .map(({ key, command }) => ({ key, command }));
+  const publishTable = () => {
+    for (const listener of [...tableListeners]) {
+      listener({ type: 'event', event: table() });
+    }
+  };
+  const routeMenus = (envelope: BridgeCallEnvelope) => {
+    if (envelope.method === 'addKeybinding') {
+      keybindings.push(envelope.input as Keybinding);
+      publishTable();
+    } else if (envelope.method === 'setContext') {
+      const entry = envelope.input as { key: string; value: string | null };
+      if (entry.key !== 'path') return;
+      contextPath = entry.value;
+      publishTable();
+    }
+  };
+  const routeKeybinding = (input: unknown) => {
+    const { key } = input as { key: string };
+    const binding = table().find((candidate) => candidate.key === key);
+    if (binding === undefined) return;
+    commandRequests += 1;
+    for (const listener of [...commandListeners]) {
+      listener({
+        type: 'event',
+        event: {
+          id: `command-${String(commandRequests)}`,
+          command: binding.command,
+          input: {},
+        },
+      });
+    }
+  };
 
   const answer = async (
     envelope: BridgeCallEnvelope,
@@ -428,6 +505,13 @@ export const openChatWindow = async (input: {
     call: async (envelope) => {
       calls.push(envelope);
 
+      if (envelope.contract === 'menus/v1') routeMenus(envelope);
+      if (
+        envelope.contract === 'doric.shell/v1' &&
+        envelope.method === 'keybinding'
+      )
+        routeKeybinding(envelope.input);
+
       return envelope.contract === 'doric.shell/v1'
         ? { ok: true, output: undefined }
         : answer(envelope);
@@ -442,6 +526,21 @@ export const openChatWindow = async (input: {
         connectionListeners.add(listener);
         listener({ type: 'event', event: 'connected' });
         return () => connectionListeners.delete(listener);
+      }
+      if (
+        envelope.contract === 'doric.shell/v1' &&
+        envelope.method === 'keybindings'
+      ) {
+        tableListeners.add(listener);
+        listener({ type: 'event', event: table() });
+        return () => tableListeners.delete(listener);
+      }
+      if (
+        envelope.contract === 'doric.shell/v1' &&
+        envelope.method === 'commands'
+      ) {
+        commandListeners.add(listener);
+        return () => commandListeners.delete(listener);
       }
       if (
         envelope.contract === 'runtime.threads/v1' &&
@@ -516,10 +615,10 @@ export const openChatWindow = async (input: {
     },
     elementRegistry: () =>
       window.customElements as unknown as CustomElementRegistry,
-    keyTarget: {
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-    },
+    keyTarget: window as unknown as Pick<
+      EventTarget,
+      'addEventListener' | 'removeEventListener'
+    >,
   });
   await settle();
 

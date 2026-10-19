@@ -2,9 +2,9 @@
 // tests: the chat bundle's built desktop part, a test core providing
 // `hooks/v1`, and a test shell standing for the bundles that provide the rest
 // of what the chat manifest declares in `requires` (`ui/v1`, `navigation/v1`,
-// `regions/v1`, `commands/v1`, `runtime.threads/v1` and `comments/v1`). The
-// parts of that shell are never called — the composer service reaches nothing
-// but its own state and the flushes registered with it.
+// `regions/v1`, `commands/v1`, `menus/v1`, `runtime.threads/v1` and
+// `comments/v1`). The parts of that shell are never called — the composer
+// service reaches nothing but its own state and the flushes registered with it.
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -82,6 +82,7 @@ const shell: DesktopBundle = {
       'navigation/v1@1.0.0',
       'regions/v1@1.0.0',
       'commands/v1@1.0.0',
+      'menus/v1@1.0.0',
       'runtime.threads/v1@1.3.0',
       'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
@@ -96,6 +97,7 @@ const shell: DesktopBundle = {
       'navigation/v1',
       'regions/v1',
       'commands/v1',
+      'menus/v1',
       'comments/v1',
     ]
       .map((id) => ({
