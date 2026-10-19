@@ -307,6 +307,11 @@ export const executedCommands: { command: string; input?: unknown }[] = [];
 
 const implementations: Readonly<Record<string, unknown>> = {
   'runtime.threads/v1': runtimeThreads,
+  // Stories hold no images: an attach is refused and a reference reads as its name.
+  'runtime.attachments/v1': {
+    attach: () => Promise.reject(new Error('Stories keep no attachments.')),
+    read: () => Promise.resolve(undefined),
+  },
   'chat.composer/v1': chatComposer,
   'comments/v1': { add: async () => undefined },
   'doric.connection/v1': {

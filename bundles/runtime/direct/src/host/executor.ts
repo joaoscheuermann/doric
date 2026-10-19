@@ -26,6 +26,7 @@ import {
   ToolErrorObject,
 } from 'tool';
 
+import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflow } from './compaction/project.js';
 import { readMessages, readMeta, saved } from './history.js';
@@ -228,7 +229,14 @@ export const runDirect = async (
     },
     call,
   );
-  const provider = languageModel as unknown as LlmProvider;
+  const textProvider = languageModel as unknown as LlmProvider;
+  // The run reads attachments through its session; compaction keeps the
+  // reference lines as text, so a summary never carries image bytes.
+  const attachment = session.attachment?.bind(session);
+  const provider =
+    attachment === undefined
+      ? textProvider
+      : withAttachments(textProvider, attachment);
   const messages = createMessageStorage(repaired(stored));
   /**
    * The history the run has built so far. A resumed run reads it back and
@@ -273,7 +281,7 @@ export const runDirect = async (
       messages,
       checkpoints,
       config: compaction,
-      provider,
+      provider: textProvider,
       model: execution.model,
       promptChars,
       ...(lastInputTokens === undefined ? {} : { lastInputTokens }),

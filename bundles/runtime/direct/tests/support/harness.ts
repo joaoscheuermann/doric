@@ -16,6 +16,7 @@ import { createTestServices } from 'bundle/testing';
 import { ConfigurationV1, configurationMethods } from 'host-config/contracts';
 import type { ProviderMessage } from 'llms';
 import {
+  type AttachmentContent,
   type ConfigurationValue,
   ExecutorV1,
   type HistoryPatch,
@@ -96,6 +97,8 @@ export const fakeThreadState = () => {
   }[] = [];
   /** Steering inputs that no run has taken yet. */
   const steering: SteerInput[] = [];
+  /** The attachments the Thread's Project holds, by id. */
+  const attachments = new Map<string, AttachmentContent>();
   let failWrite: ((entry: { readonly event?: unknown }) => boolean) | undefined;
   let onEvent: (event: unknown) => void = () => undefined;
 
@@ -143,6 +146,7 @@ export const fakeThreadState = () => {
         }
       },
       steers: async () => steering.splice(0),
+      attachment: async (attachmentId) => attachments.get(attachmentId),
     };
   };
 
@@ -158,6 +162,9 @@ export const fakeThreadState = () => {
       steering.push({ prompt, source });
     },
     steering,
+    attach: (content: AttachmentContent) => {
+      attachments.set(content.id, content);
+    },
     failWhen: (test: typeof failWrite) => {
       failWrite = test;
     },

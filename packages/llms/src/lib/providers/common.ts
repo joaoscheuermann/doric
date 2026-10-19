@@ -5,6 +5,7 @@ import type {
   ProviderEmbeddingRequest,
   ProviderError,
   ProviderId,
+  ProviderImagePart,
   ProviderMessage,
   ProviderRequest,
   ProviderRerankFinished,
@@ -132,6 +133,16 @@ export const messageText = (message: ProviderMessage): string => {
     .map((part) => part.text)
     .join('\n');
 };
+
+/** The images a message carries, in order; a text-only message has none. */
+export const messageImages = (
+  message: ProviderMessage,
+): readonly ProviderImagePart[] =>
+  typeof message.content === 'string' || message.content === undefined
+    ? []
+    : message.content.filter(
+        (part): part is ProviderImagePart => part.type === 'image',
+      );
 
 export const httpError = (
   provider: ProviderId,

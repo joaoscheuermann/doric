@@ -225,7 +225,7 @@ const createDocuments = <Value>(
  * many are read (the page sizes stay within the protocol's 1000).
  */
 export const queryAll = async (
-  storage: Storage,
+  storage: Pick<Storage, 'query'>,
   query: Omit<StorageQuery, 'limit' | 'cursor'>,
   count = Number.POSITIVE_INFINITY,
 ): Promise<StoredDocument[]> => {

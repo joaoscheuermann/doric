@@ -280,5 +280,21 @@ export const createStorage = (state: CoreState) => {
       execute: async (_input, call, services) =>
         await backendOf(services).health(call),
     }),
+    putBlob: defineMethod({
+      ...storageMethods.putBlob,
+      execute: async (bytes, call, services) =>
+        await backendOf(services).putBlob(bytes, call),
+    }),
+    getBlob: defineMethod({
+      ...storageMethods.getBlob,
+      execute: async (hash, call, services) =>
+        await backendOf(services).getBlob(hash, call),
+    }),
+    deleteBlob: defineMethod({
+      ...storageMethods.deleteBlob,
+      execute: async (hash, call, services) => {
+        await backendOf(services).deleteBlob(hash, call);
+      },
+    }),
   });
 };

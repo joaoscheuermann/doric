@@ -534,8 +534,15 @@ const feed = (
     })),
 });
 
-const base64 =
-  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+/**
+ * Canonical base64: whole four-character groups, padding only at the end. A
+ * single character-class scan, since a repeated group overflows the regex
+ * engine's stack on a blob of a few megabytes.
+ */
+const base64 = {
+  test: (value: string): boolean =>
+    value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/u.test(value),
+};
 
 const putBlob = (store: MemoryStore, encoded: string): { hash: string } => {
   if (!base64.test(encoded)) {
@@ -559,6 +566,11 @@ const getBlob = (store: MemoryStore, hash: string): string | undefined => {
   return bytes === undefined
     ? undefined
     : Buffer.from(bytes).toString('base64');
+};
+
+const deleteBlob = (store: MemoryStore, hash: string): void => {
+  const match = /^sha256:([0-9a-f]{64})$/.exec(hash);
+  if (match !== null) store.blobs.delete(match[1] ?? '');
 };
 
 /**
@@ -618,6 +630,13 @@ export const memoryStorageBackend = (
     getBlob: defineMethod({
       ...methods.getBlob,
       execute: (hash) => later(() => getBlob(store, hash)),
+    }),
+    deleteBlob: defineMethod({
+      ...methods.deleteBlob,
+      execute: (hash) =>
+        later(() => {
+          deleteBlob(store, hash);
+        }),
     }),
     capabilities: defineMethod({
       ...methods.capabilities,

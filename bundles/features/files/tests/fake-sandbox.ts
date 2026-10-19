@@ -33,8 +33,8 @@ export const createFakeSandbox = (
     throw unsupported();
   },
 
-  async getFile() {
-    throw unsupported();
+  async getFile(file) {
+    return new Uint8Array(await readFile(toLocalPath(localRoot, root, file)));
   },
 
   async diff() {

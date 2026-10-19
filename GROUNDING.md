@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-17
+Last reviewed: 2026-10-18
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -819,7 +819,11 @@ exactly once, by the one commit that moves the document past it. `/bundles/featu
 working directory and moves it, and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
 resolves one against the current directory; a move that resolves outside the
-workspace root changes nothing. `/bundles/features/git` owns the routable `git` tool
+workspace root changes nothing. Its `view-image` tool reads an image file of the
+sandbox as bytes (`runtime.lease/v1.readFileBytes`), keeps it as an attachment of
+the Project and answers the attachment's reference line, so the model sees the
+image with the call's result and the transcript draws it in the tool's row.
+`/bundles/features/git` owns the routable `git` tool
 plus focused skills for cloning, commit preparation, conflict resolution,
 rebasing, remote synchronization, and linked worktrees. The Git tool executes
 structured argv directly without shell interpretation, forces non-interactive
@@ -1198,14 +1202,16 @@ out of the kernel; decisions D-S5-01 to D-S7-01 are indexed in
 `implementation-decisions.md`. `/bundles/runtime/runtime` owns Projects, Threads,
 queues, leases, recovery and the prompt runner through `runtime/v1`,
 `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.lease/v1`,
-`runtime.terminals/v1` and `runtime.hooks/v1`. Stage 10 adds the local
+`runtime.terminals/v1`, `runtime.hooks/v1` and `runtime.attachments/v1`,
+the images of a Project. Stage 10 adds the local
 `runtime.lease/v1.withLease` and `runtime.workspace/v1.withThread`, the
 terminal result delivery on `runtime.threads/v1`, `onThreadsClosingHook` and
 the unfilled `runtime.usage/v1.read`; the core adds
 `models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
 `secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and
-`runtime.history/v1` documents and each Thread's events in the
+`runtime.history/v1` documents, the images a Project holds as
+`runtime.attachment/v1` records over `storage/v1` blobs, and each Thread's events in the
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
 `pending` queue projection and the usage aggregate into the same commit as
 the event. `/bundles/runtime/direct` provides the local `executor/v1`, whose `run`
@@ -2416,6 +2422,35 @@ at weight 400. The footer checkmark and Cmd/Ctrl+Enter save; Escape restores the
 draft without pausing execution. No cancel button is shown. Pause remains
 available while running. Save conflicts retain the typed edit, and text entered
 while a save is pending is never discarded by the response.
+
+Images reach the model as attachments, never as bytes in text. An attachment is
+one content-addressed `storage/v1` blob (`putBlob`/`getBlob`/`deleteBlob`,
+`storage/v1` 1.1.0 over `storage.backend/v1` 1.1.0) plus one
+`runtime.attachment/v1` record per Thread that attached it;
+`runtime.attachments/v1` (desktop-exposed) attaches in a Thread scope PNG, JPEG,
+WebP or GIF bytes of at most 5 MiB, decided by the bytes rather than the name,
+and reads them back for any Thread of the Project that holds a record. Deleting
+a Thread subtree or a Project deletes its attachment records in the same commit
+that deletes its documents, histories and event streams; afterwards each blob
+no record names any more, in any Project, is deleted. The runtime serializes an
+attach and that collection per blob in its one process; a collection that fails
+after the commit leaves the unnamed blob behind without failing the delete. Text
+names an attachment with a Markdown line of its own,
+`![name](doric-attachment:sha256-<hex>)`, so prompts, queued inputs, edits,
+steers, events, tool results and the persisted history stay text. Direct
+resolves the lines the Thread's Project holds only in the request a model
+reads (`PromptSession.attachment`, `executor/v1` 1.2.0): each becomes
+`[Image: name]` followed by the image as a `data:` URL, in its place among the
+words of a user or tool message; any other line stays text, and compaction
+summarizes the lines as text. OpenAI and Codex send images as `input_image`
+parts, also inside `function_call_output`; OpenRouter sends them as
+`image_url` parts of the user turn and follows a run of tool results with one
+user message carrying the images those calls returned. The desktop composer
+attaches an image the reader pastes or drops into the prompt before writing
+its line, and the prompt and every turn draw a reference line as the image, as
+wide as the column at most; queue rows, receipts and the edit header show it as
+`[name]`. The host's Socket.IO message limit is sized to carry one attachment's
+base64 in a bridge envelope.
 
 A failed tool call's row and a prompt's failure marker read the stored error,
 not only its outermost message: its message, then each cause's on its own line

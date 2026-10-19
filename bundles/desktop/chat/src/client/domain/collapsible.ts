@@ -52,7 +52,8 @@ export const thinkingOpenness = (
 
 /**
  * A tool call's answer: open while it runs, once the call shows anything, and
- * open by default for `edit` calls so the diff stands visible in the transcript.
+ * open by default for `edit` calls so the diff stands visible in the transcript,
+ * and for `view-image` so the image the agent looked at stands beside it.
  */
 export const toolOpenness = (
   status: ToolStatus,
@@ -63,7 +64,9 @@ export const toolOpenness = (
 ): Openness => ({
   active: status === 'running',
   hasContent: args.length > 0 || result !== undefined || error !== undefined,
-  ...(name === 'edit' || name === 'write' ? { defaultOpen: true } : {}),
+  ...(name === 'edit' || name === 'write' || name === 'view-image'
+    ? { defaultOpen: true }
+    : {}),
 });
 
 /** A settled burst's answer: an activity summary is never the live one. */

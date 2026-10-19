@@ -10,7 +10,7 @@ import { defaultStorageCapabilities } from 'storage';
 
 import type { Database } from '../../prisma.js';
 import type { DiskMeasurement, Environment } from '../options.js';
-import { getBlob, putBlob } from './blobs.js';
+import { deleteBlob, getBlob, putBlob } from './blobs.js';
 import { commit } from './commit.js';
 import { declareType } from './declare.js';
 import { feed } from './feed.js';
@@ -79,6 +79,10 @@ export const storageBackend = (
     getBlob: defineMethod({
       ...methods.getBlob,
       execute: (hash) => on((client) => getBlob(client, hash)),
+    }),
+    deleteBlob: defineMethod({
+      ...methods.deleteBlob,
+      execute: (hash) => on((client) => deleteBlob(client, hash)),
     }),
     capabilities: defineMethod({
       ...methods.capabilities,

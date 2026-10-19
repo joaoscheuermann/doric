@@ -1,3 +1,5 @@
+import { withAttachmentPlaceholders } from 'runtime/contracts';
+
 import { READER_NAME } from './conversation-authors.js';
 import {
   parsePromptEnvelope,
@@ -139,9 +141,9 @@ export const queueItemText = (
   stored: string | undefined,
 ): string => {
   if (item.source.kind !== 'user') return stored ?? item.preview;
-  return stored === undefined
-    ? previewSummary(item.preview)
-    : promptSummary(stored);
+  return withAttachmentPlaceholders(
+    stored === undefined ? previewSummary(item.preview) : promptSummary(stored),
+  );
 };
 
 /**
@@ -154,6 +156,8 @@ export const queueRowText = (
 ): string => {
   if (item.source.kind !== 'user') return item.preview;
   if (stored !== undefined && parsePromptEnvelope(stored) !== undefined)
-    return promptSummary(stored).replace(/\s+/g, ' ').trim();
-  return previewSummary(item.preview);
+    return withAttachmentPlaceholders(promptSummary(stored))
+      .replace(/\s+/g, ' ')
+      .trim();
+  return withAttachmentPlaceholders(previewSummary(item.preview));
 };

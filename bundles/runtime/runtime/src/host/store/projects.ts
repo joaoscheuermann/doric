@@ -15,6 +15,7 @@ import {
   threadEventsStream,
   threadType,
 } from '../../contracts/storage.js';
+import { type AttachmentStore, collect } from './attachments.js';
 import { type DocumentSet, queryAll } from './documents.js';
 import { historyParts } from './history.js';
 import {
@@ -63,7 +64,10 @@ const touched = (
   return { ...next, open: isOpenState(next.state) };
 };
 
-export const createProjectStore = (set: DocumentSet): ProjectStore => {
+export const createProjectStore = (
+  set: DocumentSet,
+  attachments: Pick<AttachmentStore, 'records' | 'collect'>,
+): ProjectStore => {
   const { storage } = set;
   const projects = set.documents<ProjectDocument>(projectType.type);
 
@@ -187,6 +191,7 @@ export const createProjectStore = (set: DocumentSet): ProjectStore => {
             threads.map(({ id: threadId }) => historyParts(storage, threadId)),
           )
         ).flat();
+        const images = await attachments.records({ projectId: id });
         return {
           batch: {
             expect: threads.map(({ id: threadId, revision }) => ({
@@ -201,6 +206,7 @@ export const createProjectStore = (set: DocumentSet): ProjectStore => {
                 id: threadId,
               })),
               ...parts,
+              ...images.keys,
             ],
             ...(threads.length === 0
               ? {}
@@ -210,7 +216,10 @@ export const createProjectStore = (set: DocumentSet): ProjectStore => {
                   ),
                 }),
           },
-          done: () => 'deleted' as const,
+          done: async () => {
+            await collect(attachments, images.ids);
+            return 'deleted' as const;
+          },
         };
       }),
 

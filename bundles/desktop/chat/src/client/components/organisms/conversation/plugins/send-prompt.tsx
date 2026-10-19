@@ -1,6 +1,5 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
-  $createTextNode,
   $getSelection,
   $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
@@ -17,6 +16,7 @@ import { composerStackStore } from '../../../../stores/composer-stack.js';
 import { queueEditStore } from '../../../../stores/queue-edit.js';
 import type { PromptSignal } from '../../../../utility/prompt-signal.js';
 import { SAVE_QUEUE_EDIT_COMMAND, SEND_PROMPT_COMMAND } from '../commands.js';
+import { $appendPromptText } from '../nodes/attachment-image-node.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
 /**
@@ -28,7 +28,7 @@ import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 export const $restore = (text: string): void => {
   const prompt = $getUserPromptNode();
   if (prompt === undefined || prompt.getTextContent().length > 0) return;
-  prompt.append($createTextNode(text));
+  $appendPromptText(prompt, text);
 };
 
 /** What the composer's plugin needs from its surface. */

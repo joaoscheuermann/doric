@@ -13,6 +13,7 @@ import { ConfigurationV1, configurationMethods } from 'host-config/contracts';
 import type { z } from 'zod';
 
 import {
+  attachmentType,
   createdKey,
   ExecutorV1,
   executorMethods,
@@ -25,6 +26,7 @@ import {
   projectType,
   promptFinishedEvent,
   qualifiedType,
+  RuntimeAttachmentsV1,
   RuntimeHooksV1,
   RuntimeLeaseV1,
   type RuntimeNotice,
@@ -33,6 +35,7 @@ import {
   RuntimeUsageV1,
   RuntimeV1,
   RuntimeWorkspaceV1,
+  runtimeAttachmentsMethods,
   runtimeLeaseMethods,
   runtimeMethods,
   runtimeTerminalsMethods,
@@ -71,6 +74,7 @@ const serializable: Record<string, Specs> = {
   'runtime.threads/v1': runtimeThreadsMethods,
   'runtime.workspace/v1': runtimeWorkspaceMethods,
   'runtime.lease/v1': runtimeLeaseMethods,
+  'runtime.attachments/v1': runtimeAttachmentsMethods,
   'runtime.terminals/v1': runtimeTerminalsMethods,
   'host-config/v1': configurationMethods,
 };
@@ -176,8 +180,10 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${RuntimeThreadsV1.id}@1.3.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     `${RuntimeWorkspaceV1.id}@1.1.0`,
-    // 1.1.0: withLease (stage 10 R-5.1).
-    `${RuntimeLeaseV1.id}@1.1.0`,
+    // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.
+    `${RuntimeLeaseV1.id}@1.2.0`,
+    // The images a Project holds, for prompts and tool results.
+    `${RuntimeAttachmentsV1.id}@1.0.0`,
     // 1.1.0: watchProject (stage 9 R-STREAM).
     `${RuntimeTerminalsV1.id}@1.1.0`,
     // 1.1.0: onThreadsClosingHook (stage 10 R-5.4).
@@ -193,9 +199,11 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${threadType.type}@1.0.0`,
     `${historyType.type}@1.0.0`,
     `${migrationType.type}@1.0.0`,
+    `${attachmentType.type}@1.0.0`,
   ]);
   assert.deepEqual(manifest.requires, [
-    'storage/v1@^1.0.0',
+    // 1.1.0: putBlob and getBlob, which hold the attachments' bytes.
+    'storage/v1@^1.1.0',
     'events/v1@^1.0.0',
     'hooks/v1@^1.0.0',
     // The core's hooks: an append another bundle made reaches the runtime.

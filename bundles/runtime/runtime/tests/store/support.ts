@@ -96,6 +96,9 @@ export const storageOver = (backend: StorageBackend): Storage => {
       return backend.commit(batch);
     },
     health: () => backend.health(),
+    putBlob: (bytes) => backend.putBlob(bytes),
+    getBlob: (hash) => backend.getBlob(hash),
+    deleteBlob: (hash) => backend.deleteBlob(hash),
   };
 };
 

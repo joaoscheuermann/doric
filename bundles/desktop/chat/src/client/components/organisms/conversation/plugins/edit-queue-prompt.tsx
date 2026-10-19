@@ -2,7 +2,6 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'desktop/ui/sonner';
 import {
-  $createTextNode,
   $parseSerializedNode,
   CLEAR_HISTORY_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
@@ -11,6 +10,7 @@ import {
   type SerializedElementNode,
 } from 'lexical';
 import { useEffect, useRef } from 'react';
+import { withAttachmentPlaceholders } from 'runtime/contracts';
 
 import { threadsApi } from '../../../../api/threads-api.js';
 import { USER_PROMPT_BLOCK } from '../../../../domain/conversation-nodes.js';
@@ -26,6 +26,7 @@ import {
   EDIT_QUEUE_PROMPT_COMMAND,
   SAVE_QUEUE_EDIT_COMMAND,
 } from '../commands.js';
+import { $appendPromptText } from '../nodes/attachment-image-node.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
 /** Reuses the composer without letting saving, streaming or switching Threads consume its draft. */
@@ -44,7 +45,7 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
       editor.update(() => {
         const prompt = $getUserPromptNode();
         if (prompt === undefined) return;
-        prompt.clear().append($createTextNode(text));
+        $appendPromptText(prompt.clear(), text);
         prompt.selectEnd();
       });
       editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
@@ -126,7 +127,9 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
                 item,
                 revision: detail.revision,
                 stored: detail.text,
-                original: promptSummary(detail.text),
+                original: withAttachmentPlaceholders(
+                  promptSummary(detail.text),
+                ),
                 text: words,
                 draft,
                 saving: false,

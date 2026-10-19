@@ -32,6 +32,7 @@ import {
 } from '../provisional/file-changes.js';
 import { projectChanges, readProjectFile } from '../provisional/files.js';
 import { threadGit } from '../provisional/git-status.js';
+import type { AttachmentStore } from '../store/attachments.js';
 import { queuedPrompt, storageQueueError } from '../store/queue.js';
 import type {
   ProjectStore,
@@ -89,6 +90,8 @@ export interface WorkspaceServiceOptions {
    * the stage-10 host switch; none without one.
    */
   readonly terminals?: (projectId: string) => Promise<readonly Terminal[]>;
+  /** The images the Threads attached; without it, prompts read none. */
+  readonly attachments?: AttachmentStore;
 }
 
 /**
@@ -111,6 +114,7 @@ export const createWorkspaceService = ({
   redactor,
   bindings,
   terminals: sessions = async () => [],
+  attachments,
 }: WorkspaceServiceOptions): WorkspaceService => {
   const { log } = ports;
   const runtimes = new Map<string, ProjectRuntime>();
@@ -176,6 +180,7 @@ export const createWorkspaceService = ({
     redactor,
     bindings,
     executor: ports.executor,
+    ...(attachments === undefined ? {} : { attachments }),
     // The compaction policy the configuration in force names, read where
     // the runner needs it (one on-demand compaction at a time reads it).
     compactionPolicy: async () => {

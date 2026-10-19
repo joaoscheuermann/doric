@@ -99,6 +99,8 @@ export interface RuntimeLease {
   describe(call?: CallArg): Promise<LeaseDescription>;
   exec(input: LeaseExecInput, call?: CallArg): Promise<LeaseExecResult>;
   readFile(path: string, call?: CallArg): Promise<string>;
+  /** The file's exact bytes, base64: what `readFile` would decode as UTF-8. */
+  readFileBytes(path: string, call?: CallArg): Promise<string>;
   writeFile(path: string, content: string, call?: CallArg): Promise<void>;
 
   // Lease reads answering the current lease state without acquiring. Scope:
@@ -167,6 +169,7 @@ export const runtimeLeaseMethods = {
   describe: { input: z.tuple([]), output: leaseDescriptionSchema },
   exec: { input: leaseExecInputSchema, output: leaseExecResultSchema },
   readFile: { input: z.string(), output: z.string() },
+  readFileBytes: { input: z.string(), output: z.string() },
   writeFile: { input: z.tuple([z.string(), z.string()]), output: z.void() },
   ssh: { input: z.tuple([]), output: projectSshSchema },
   files: { input: optionalPath, output: projectFilesSchema },

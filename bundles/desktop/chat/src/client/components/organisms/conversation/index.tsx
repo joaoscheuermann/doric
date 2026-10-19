@@ -57,6 +57,7 @@ import type { PromptSignal } from '../../../utility/prompt-signal.js';
 import { ThreadNavRail } from '../../molecules/thread-nav-rail.js';
 import { ActivityTurnNode } from './nodes/activity-turn-node.js';
 import { AgentTurnNode } from './nodes/agent-turn-node.js';
+import { AttachmentImageNode } from './nodes/attachment-image-node.js';
 import {
   CHAT_BLOCK_NODE,
   ChatBlockNode,
@@ -81,6 +82,7 @@ import {
   UserPromptNode,
 } from './nodes/user-prompt-node.js';
 import { UserTurnNode } from './nodes/user-turn-node.js';
+import { AttachImages } from './plugins/attach-images.js';
 import { CaretNavigation } from './plugins/caret-navigation.js';
 import { CommentSelection } from './plugins/comment-selection.js';
 import { ComposerDraft } from './plugins/composer-draft.js';
@@ -245,6 +247,7 @@ const defineConversationExtension = (
       FailureTurnNode,
       RepliesTurnNode,
       UserPromptNode,
+      AttachmentImageNode,
       // The blocks the agent's markdown becomes; a heading, a quote, a list, a
       // fence and a table are nodes the editor has to know to hold the answer's
       // own text — a table's cells are the editor's nodes, so the caret crosses
@@ -416,6 +419,7 @@ export const Conversation = memo(function Conversation({
                   <TableBlocksPlugin />
                   <MarkdownPromptPlugin />
                   <PromptLineBreaks />
+                  <AttachImages threadId={thread.id} />
                   <PasteIntoPrompt />
                   <InsertThreadTurnNodes
                     autoFocus={autoFocus}

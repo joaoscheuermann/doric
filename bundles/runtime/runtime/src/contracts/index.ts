@@ -2,6 +2,7 @@
 // and types only. Stage 1's adapter provided the first three; from stage 5 the
 // bundle's own host part provides them under this same import path.
 
+export * from './attachments.js';
 export * from './configuration.js';
 export * from './events.js';
 export * from './executor.js';

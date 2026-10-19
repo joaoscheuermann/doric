@@ -43,8 +43,11 @@ export type ProviderContentPart =
     }
   | {
       readonly type: 'image';
+      /** A `data:` URL carrying the bytes, or an `https:` URL the provider fetches. */
       readonly imageUrl: string;
     };
+
+export type ProviderImagePart = Extract<ProviderContentPart, { type: 'image' }>;
 
 /** Opaque provider output item retained only for exact multi-turn replay. */
 export type ProviderReplayItem = JsonObject;

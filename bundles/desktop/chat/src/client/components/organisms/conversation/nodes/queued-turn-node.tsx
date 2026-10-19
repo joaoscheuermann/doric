@@ -9,6 +9,7 @@ import {
   type Spread,
 } from 'lexical';
 import type { JSX } from 'react';
+import { withAttachmentPlaceholders } from 'runtime/contracts';
 
 import {
   type Chosen,
@@ -106,7 +107,9 @@ export class QueuedTurnNode extends DecoratorNode<JSX.Element> {
                 <span className="inline-flex max-w-full items-center gap-2 align-middle font-light [&>svg]:size-4.5">
                   <span className="shrink-0 font-normal">Queued</span>
                   <PromptAuthor source={first.source} />
-                  <span className="min-w-0 truncate">“{first.text}”</span>
+                  <span className="min-w-0 truncate">
+                    “{withAttachmentPlaceholders(first.text)}”
+                  </span>
                 </span>
               )
             )
@@ -117,7 +120,7 @@ export class QueuedTurnNode extends DecoratorNode<JSX.Element> {
               {this.__items.map((item) => (
                 <li key={item.promptId}>
                   <div className="whitespace-pre-wrap break-words select-text">
-                    {item.text}
+                    {withAttachmentPlaceholders(item.text)}
                   </div>
                   <div className="mt-1 flex items-center gap-2 [&>svg]:size-4.5">
                     <PromptAuthor source={item.source} />
@@ -127,7 +130,9 @@ export class QueuedTurnNode extends DecoratorNode<JSX.Element> {
             </ol>
           ) : (
             <div className="whitespace-pre-wrap break-words select-text">
-              {first?.text}
+              {first === undefined
+                ? undefined
+                : withAttachmentPlaceholders(first.text)}
             </div>
           )}
         </CollapsibleBlock>

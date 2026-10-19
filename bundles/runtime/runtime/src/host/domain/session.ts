@@ -30,6 +30,8 @@ export const createSession = (context: {
   readonly store: ThreadStore;
   readonly redactor: Redactor;
   readonly publish: (event: ThreadEvent) => void;
+  /** Reads one attachment of the Thread's Project; absent, it reads none. */
+  readonly attachment?: PromptSession['attachment'];
   /** The prompt's steering; a session without it offers the executor none. */
   readonly steering?: {
     /** Hands the waiting steers to the executor, oldest first. */
@@ -131,6 +133,9 @@ export const createSession = (context: {
         fail(cause);
       }
     },
+    ...(context.attachment === undefined
+      ? {}
+      : { attachment: context.attachment }),
     ...(steering === undefined
       ? {}
       : {

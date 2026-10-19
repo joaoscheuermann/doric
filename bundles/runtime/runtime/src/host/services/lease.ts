@@ -104,6 +104,13 @@ export const leaseService = ({
       execute: (path, call) =>
         runWithSandbox(call, (sandbox) => sandbox.readFile(path)),
     }),
+    readFileBytes: defineMethod({
+      ...methods.readFileBytes,
+      execute: (path, call) =>
+        runWithSandbox(call, async (sandbox) =>
+          Buffer.from(await sandbox.getFile(path)).toString('base64'),
+        ),
+    }),
     writeFile: defineMethod({
       ...methods.writeFile,
       execute: async ([path, content], call) => {

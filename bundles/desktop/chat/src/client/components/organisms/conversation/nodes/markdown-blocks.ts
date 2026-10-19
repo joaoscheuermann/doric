@@ -50,6 +50,7 @@ import {
   type MarkdownRun,
   markdownBlocks,
 } from '../../../../domain/markdown.js';
+import { $createAttachmentImageNode } from './attachment-image-node.js';
 
 /** The format a run wears; `text` wears none, which is what plain text is. */
 const runFormats: Readonly<
@@ -180,6 +181,13 @@ const $blockNode = (block: MarkdownBlock): LexicalNode => {
     }
     case 'table': {
       return $tableNode(block);
+    }
+    case 'image': {
+      // The reference line, drawn as its image: the paragraph still reads
+      // back as the line, through the image node's own text.
+      const paragraph = $createParagraphNode();
+      paragraph.append($createAttachmentImageNode(block.name, block.id));
+      return paragraph;
     }
   }
 };

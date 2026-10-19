@@ -30,7 +30,7 @@ import { $isUserPromptNode } from '../nodes/user-prompt-node.js';
 import { $blockOf } from './blocks.js';
 
 /** Whether the selection lies wholly inside the prompt. */
-const $inPrompt = (): boolean => {
+export const $inPrompt = (): boolean => {
   const selection = $getSelection();
   if (!$isRangeSelection(selection)) return false;
   const anchor = $blockOf(selection.anchor.getNode());

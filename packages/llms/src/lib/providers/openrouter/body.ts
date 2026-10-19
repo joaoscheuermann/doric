@@ -1,9 +1,11 @@
 import type {
   ProviderId,
+  ProviderImagePart,
   ProviderMessage,
   ProviderRequest,
 } from '../../types/provider.js';
 import {
+  messageImages,
   messageText,
   requestReasoningEffort,
   requireRequestInput,
@@ -49,20 +51,7 @@ export const openRouterBody = (
 
   return prune({
     model: request.model,
-    messages: messages.map((message) =>
-      prune({
-        role: message.role,
-        content: messageText(message),
-        reasoning_details: replayItems(message, options.replay ?? 'all'),
-        tool_call_id: message.toolCallId,
-        tool_calls: message.toolCalls?.map((call) => ({
-          id: call.id,
-          type: 'function',
-          function: { name: call.name, arguments: call.arguments },
-        })),
-        name: message.name,
-      }),
-    ),
+    messages: chatMessages(messages, options.replay ?? 'all'),
     tools: request.tools?.map((tool) => ({
       type: 'function',
       function: prune({
@@ -91,6 +80,80 @@ export const openRouterBody = (
         : { include_usage: true },
   });
 };
+
+/**
+ * The history as Chat Completions messages. A user turn's images travel as
+ * `image_url` parts beside its text. A tool message carries text alone on most
+ * models, so the images tool results returned follow the run of tool messages
+ * they belong to as one user message, each set introduced by the call that
+ * returned it: that keeps every tool message right after its assistant turn.
+ */
+const chatMessages = (
+  messages: readonly ProviderMessage[],
+  replay: NonNullable<OpenRouterBodyOptions['replay']>,
+): readonly Record<string, unknown>[] => {
+  const result: Record<string, unknown>[] = [];
+  let returned: Record<string, unknown>[] = [];
+  const flush = () => {
+    if (returned.length === 0) return;
+    result.push({ role: 'user', content: returned });
+    returned = [];
+  };
+
+  for (const message of messages) {
+    if (message.role !== 'tool') flush();
+    result.push(chatMessage(message, replay));
+    const images = message.role === 'tool' ? messageImages(message) : [];
+    if (images.length > 0) {
+      returned.push(
+        {
+          type: 'text',
+          text: `The tool call \`${message.toolCallId ?? ''}\` returned these images:`,
+        },
+        ...images.map(imagePart),
+      );
+    }
+  }
+  flush();
+
+  return result;
+};
+
+const chatMessage = (
+  message: ProviderMessage,
+  replay: NonNullable<OpenRouterBodyOptions['replay']>,
+): Record<string, unknown> =>
+  prune({
+    role: message.role,
+    content: chatContent(message),
+    reasoning_details: replayItems(message, replay),
+    tool_call_id: message.toolCallId,
+    tool_calls: message.toolCalls?.map((call) => ({
+      id: call.id,
+      type: 'function',
+      function: { name: call.name, arguments: call.arguments },
+    })),
+    name: message.name,
+  });
+
+/** A user turn with images as parts in order; every other message as text. */
+const chatContent = (
+  message: ProviderMessage,
+): string | readonly Record<string, unknown>[] =>
+  message.role !== 'user' ||
+  typeof message.content === 'string' ||
+  messageImages(message).length === 0
+    ? messageText(message)
+    : (message.content ?? []).map((part) =>
+        part.type === 'text'
+          ? { type: 'text', text: part.text }
+          : imagePart(part),
+      );
+
+const imagePart = (part: ProviderImagePart): Record<string, unknown> => ({
+  type: 'image_url',
+  image_url: { url: part.imageUrl },
+});
 
 const replayItems = (
   message: ProviderMessage,

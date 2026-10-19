@@ -4,7 +4,7 @@ import type {
   ProviderRequest,
   ProviderToolCall,
 } from '../../types/provider.js';
-import { messageText, requireRequestInput } from '../common.js';
+import { messageImages, messageText, requireRequestInput } from '../common.js';
 import {
   isStrictCompatible,
   messagesWithStructuredSchema,
@@ -70,13 +70,17 @@ const inputItems = (
       prune({
         type: 'function_call_output',
         call_id: message.toolCallId,
-        output: messageText(message),
+        // A result that carries images is a list of input parts; one that
+        // carries only text stays the plain string every model accepts.
+        output:
+          messageImages(message).length === 0
+            ? messageText(message)
+            : contentItems(message),
         status: message.toolResultStatus,
       }),
     ];
   }
 
-  const text = messageText(message);
   if (message.role === 'assistant') {
     if (message.replay !== undefined && message.replay.length > 0) {
       return message.replay;
@@ -85,17 +89,24 @@ const inputItems = (
     return message.toolCalls?.map(functionCallItem) ?? [];
   }
 
-  const item = {
-    role: message.role,
-    content: [
-      {
-        type: 'input_text',
-        text,
-      },
-    ],
-  };
-  return [item];
+  const content =
+    messageImages(message).length === 0
+      ? [{ type: 'input_text', text: messageText(message) }]
+      : contentItems(message);
+  return [{ role: message.role, content }];
 };
+
+/** A message's parts as Responses input parts, text and images in order. */
+const contentItems = (
+  message: ProviderMessage,
+): readonly Record<string, unknown>[] =>
+  typeof message.content === 'string' || message.content === undefined
+    ? [{ type: 'input_text', text: messageText(message) }]
+    : message.content.map((part) =>
+        part.type === 'text'
+          ? { type: 'input_text', text: part.text }
+          : { type: 'input_image', image_url: part.imageUrl },
+      );
 
 const functionCallItem = (call: ProviderToolCall): Record<string, unknown> => ({
   type: 'function_call',

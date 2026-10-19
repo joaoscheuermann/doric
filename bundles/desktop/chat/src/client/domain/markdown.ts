@@ -24,6 +24,11 @@
  * table draws a rule instead — so the source still joins back, and the alignment
  * the `:` markers ask for is read out of it as a field.
  *
+ * An image is a line that is nothing but an attachment's reference,
+ * `![name](doric-attachment:sha256-…)`: the block keeps that line as its one
+ * plain line, so the source still joins back, and names the attachment it
+ * draws. A reference with words around it on its line is text.
+ *
  * The rules are deliberately the shallow ones a transcript needs, stated here
  * rather than hidden in a component so they can be checked without a DOM: a fence
  * runs to its own closing fence or to the end, a blank line ends a paragraph,
@@ -32,6 +37,8 @@
  * rules do not recognize is a paragraph, which is the one answer that never loses
  * anything.
  */
+
+import { attachmentLine } from 'runtime/contracts';
 
 /** The emphasis one run wears, and the source it wears it over. */
 export type MarkdownRun = {
@@ -57,6 +64,15 @@ export type MarkdownBlock =
       /** How many `#` opened it, from one to six. */
       readonly depth: number;
       readonly lines: readonly MarkdownLine[];
+    }
+  | {
+      readonly kind: 'image';
+      /** The reference line itself, as one plain run. */
+      readonly lines: readonly [MarkdownLine];
+      /** The attachment's name, as the reference writes it. */
+      readonly name: string;
+      /** The attachment id, `sha256-<hex>`. */
+      readonly id: string;
     }
   | {
       readonly kind: 'bullet';
@@ -201,6 +217,7 @@ const listMarker = /^\s*(?:[-*+]|\d+[.)])\s+/;
  */
 const opensBlock = (line: string): boolean =>
   fenceOf(line) !== undefined ||
+  attachmentLine(line) !== undefined ||
   headingLine.test(line) ||
   quoteLine.test(line) ||
   listMarker.test(line);
@@ -402,6 +419,19 @@ export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
       continue;
     }
 
+    const image = attachmentLine(line);
+    if (image !== undefined) {
+      endParagraph();
+      blocks.push({
+        kind: 'image',
+        lines: [plainLine(line)],
+        name: image.name,
+        id: image.id,
+      });
+      index += 1;
+      continue;
+    }
+
     const heading = headingLine.exec(line);
     if (heading !== null) {
       endParagraph();
@@ -520,6 +550,7 @@ export const blockEquals = (
 ): boolean => {
   if (left.kind !== right.kind) return false;
   switch (left.kind) {
+    case 'image':
     case 'paragraph':
     case 'quote':
     case 'code':

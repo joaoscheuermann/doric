@@ -208,6 +208,17 @@ export interface Storage {
   commit(batch: CommitBatch, call?: CallArg): Promise<{ position: number }>;
   /** API mínima: the backend's measurements for the caller's own policy. */
   health(call?: CallArg): Promise<StorageHealth>;
+  /**
+   * Base64 bytes in, `sha256:<hex>` out. Blobs are content-addressed and
+   * shared by every bundle: who may read one is the caller's own record of it.
+   */
+  putBlob(bytes: string, call?: CallArg): Promise<{ hash: string }>;
+  getBlob(hash: string, call?: CallArg): Promise<string | undefined>;
+  /**
+   * Removes a blob, for the caller whose records no longer name it; an
+   * unknown or malformed hash is a no-op.
+   */
+  deleteBlob(hash: string, call?: CallArg): Promise<void>;
 }
 
 export const StorageV1 = ref<Storage>('storage/v1');
@@ -219,6 +230,12 @@ export const storageMethods = {
   read: { input: streamReadSchema, output: streamPageSchema },
   commit: { input: commitBatchSchema, output: commitResultSchema },
   health: { input: noInput, output: storageHealthSchema },
+  putBlob: {
+    input: z.string(),
+    output: z.object({ hash: z.string() }).strict(),
+  },
+  getBlob: { input: z.string(), output: z.string().optional() },
+  deleteBlob: { input: z.string(), output: z.void() },
 } as const satisfies MethodSpecs;
 
 export const storageCapabilitiesSchema = z
@@ -292,6 +309,8 @@ export interface StorageBackend {
   /** Base64 bytes in, `sha256:<hex>` out. */
   putBlob(bytes: string, call?: CallArg): Promise<{ hash: string }>;
   getBlob(hash: string, call?: CallArg): Promise<string | undefined>;
+  /** 1.1.0: removes a blob; an unknown or malformed hash is a no-op. */
+  deleteBlob(hash: string, call?: CallArg): Promise<void>;
   capabilities(call?: CallArg): Promise<StorageCapabilities>;
   health(call?: CallArg): Promise<StorageHealth>;
   /** The reserved metadata record; created by the first call. */
@@ -318,6 +337,7 @@ export const storageBackendMethods = {
     output: z.object({ hash: z.string() }).strict(),
   },
   getBlob: { input: z.string(), output: z.string().optional() },
+  deleteBlob: { input: z.string(), output: z.void() },
   capabilities: { input: noInput, output: storageCapabilitiesSchema },
   health: { input: noInput, output: storageHealthSchema },
   identity: { input: noInput, output: storageIdentitySchema },

@@ -9,7 +9,7 @@ import {
 /**
  * The sandbox as the tools of this bundle reach it: the lease of the calling
  * prompt's Project through `runtime.lease/v1`. It answers only what the tools
- * read (root, text output of a command, file text) and never forwards an
+ * read (root, text output of a command, file text and bytes) and never forwards an
  * abort signal to the sandbox, as the tools never did.
  */
 export interface LeaseSandbox {
@@ -19,6 +19,8 @@ export interface LeaseSandbox {
     input: LeaseExecInput & { readonly signal?: AbortSignal },
   ): Promise<LeaseExecResult>;
   readFile(path: string): Promise<string>;
+  /** The file's exact bytes, base64. */
+  readFileBytes(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
 }
 
@@ -38,6 +40,7 @@ export const leaseSandbox = async (
     exec: async ({ signal: _signal, ...input }) =>
       await lease.exec(input, call),
     readFile: async (path) => await lease.readFile(path, call),
+    readFileBytes: async (path) => await lease.readFileBytes(path, call),
     writeFile: async (path, content) =>
       await lease.writeFile(path, content, call),
   };

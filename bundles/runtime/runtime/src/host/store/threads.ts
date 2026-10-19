@@ -19,6 +19,7 @@ import {
   threadEventsStream,
   threadType,
 } from '../../contracts/storage.js';
+import { type AttachmentStore, collect } from './attachments.js';
 import { type Cached, type DocumentSet, queryAll } from './documents.js';
 import {
   entriesAfter,
@@ -182,6 +183,7 @@ interface Appended {
 export const createThreadStore = (
   set: DocumentSet,
   options: ThreadStoreOptions,
+  attachments: Pick<AttachmentStore, 'records' | 'collect'>,
 ): ThreadStore => {
   const { storage } = set;
   const threads = set.documents<ThreadDocument>(threadType.type);
@@ -1025,6 +1027,9 @@ export const createThreadStore = (
             subtree.map(({ value }) => historyParts(storage, value.id)),
           )
         ).flat();
+        const images = await attachments.records({
+          threadIds: subtree.map(({ value }) => value.id),
+        });
         return {
           batch: {
             expect: subtree
@@ -1040,12 +1045,16 @@ export const createThreadStore = (
                 id: value.id,
               })),
               ...parts,
+              ...images.keys,
             ],
             dropStreams: subtree.map(({ value }) =>
               threadEventsStream(value.id),
             ),
           },
-          done: () => 'deleted' as const,
+          done: async () => {
+            await collect(attachments, images.ids);
+            return 'deleted' as const;
+          },
         };
       }),
 

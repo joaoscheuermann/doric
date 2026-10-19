@@ -366,4 +366,26 @@ describe('blocks shared between two reads of a growing source', () => {
       '| a | b |\n| --- | --- |\n| 1 | 3 |',
     );
   });
+
+  test('reads a line that is only an attachment reference as its image', () => {
+    const line = `![cat.png](doric-attachment:sha256-${'a'.repeat(64)})`;
+    const blocks = markdownBlocks(`Before.\n${line}\nAfter.`);
+
+    assert.deepEqual(
+      blocks.map((block) => block.kind),
+      ['paragraph', 'image', 'paragraph'],
+    );
+    const image = blocks[1];
+    assert.equal(image?.kind === 'image' ? image.name : undefined, 'cat.png');
+    assert.equal(source(blocks), `Before.\n${line}\nAfter.`);
+  });
+
+  test('reads a reference with words around it on its line as text', () => {
+    const line = `See ![cat.png](doric-attachment:sha256-${'a'.repeat(64)}) here.`;
+
+    assert.deepEqual(
+      markdownBlocks(line).map((block) => block.kind),
+      ['paragraph'],
+    );
+  });
 });

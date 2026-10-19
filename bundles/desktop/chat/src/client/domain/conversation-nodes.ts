@@ -47,6 +47,8 @@ export const REPLIES_TURN_BLOCK = 'chat-replies-turn-node';
 
 /** The block the reader writes the next prompt in. */
 export const USER_PROMPT_BLOCK = 'user-prompt-node';
+/** An attachment's image, inline in a prompt or a turn, on a line of its own. */
+export const ATTACHMENT_IMAGE_NODE = 'attachment-image-node';
 export const QUEUE_BLOCK = 'queue-node';
 export const QUEUED_TURN_BLOCK = 'queued-turn-node';
 export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';

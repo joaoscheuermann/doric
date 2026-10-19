@@ -105,6 +105,9 @@ void test('activation registers the runtime sink with events/v1 and releases it 
     read: defineMethod({ ...storageMethods.read, execute: unused }),
     commit: defineMethod({ ...storageMethods.commit, execute: unused }),
     health: defineMethod({ ...storageMethods.health, execute: unused }),
+    putBlob: defineMethod({ ...storageMethods.putBlob, execute: unused }),
+    getBlob: defineMethod({ ...storageMethods.getBlob, execute: unused }),
+    deleteBlob: defineMethod({ ...storageMethods.deleteBlob, execute: unused }),
   });
   const hooks = defineService('hooks/v1', {
     define: defineMethod({ ...hooksMethods.define, execute: disposable }),
