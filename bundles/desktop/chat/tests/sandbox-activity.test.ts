@@ -39,6 +39,7 @@ describe('sandbox activity', () => {
         steer: async () => ({ promptId: 'p', status: 'steered' as const }),
         rewind: async () => ({ promptId: 'p' }),
         resume: async () => thread('x', 'x'),
+        retry: async () => ({ promptId: 'p' }),
       },
       history: { write: () => undefined },
     });
