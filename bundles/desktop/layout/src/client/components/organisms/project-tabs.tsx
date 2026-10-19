@@ -18,6 +18,7 @@ import {
   useTabStrip,
 } from 'desktop/ui/panels';
 import { cn } from 'desktop/ui/utils';
+import { HouseIcon } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
@@ -28,19 +29,21 @@ import { ProjectAvatar } from '../molecules/project-avatar.js';
 
 const tab = cn('group', compactTabClassName);
 
-function HomeTabIcon({ active }: { readonly active: boolean }) {
+/**
+ * The Dashboard tab's mark: lucide's house, drawn as lucide draws it.
+ *
+ * Its color is solid on purpose: the paper grays are translucent, and this
+ * glyph's strokes overlap at the door, so a translucent color doubles up into
+ * patches instead of a clean line. `--muted-foreground` and `--foreground` are
+ * the solid pair of the tab's idle and active grays.
+ */
+function HomeTabIcon() {
   return (
-    <svg
+    <HouseIcon
       aria-hidden="true"
-      className="-ml-[1px] shrink-0"
-      width="15"
-      height="15"
-      viewBox="0 0 15 15"
-      fill="currentColor"
-      fillOpacity={active ? 1 : 0.8}
-    >
-      <path d="M6 2.5C6 2.22386 5.77614 2 5.5 2H2.5C2.22386 2 2 2.22386 2 2.5V5.5C2 5.77614 2.22386 6 2.5 6H5.5C5.77614 6 6 5.77614 6 5.5V2.5ZM7 5.5C7 6.32843 6.32843 7 5.5 7H2.5C1.67157 7 1 6.32843 1 5.5V2.5C1 1.67157 1.67157 1 2.5 1H5.5C6.32843 1 7 1.67157 7 2.5V5.5ZM6 9.5C6 9.22386 5.77614 9 5.5 9H2.5C2.22386 9 2 9.22386 2 9.5V12.5C2 12.7761 2.22386 13 2.5 13H5.5C5.77614 13 6 12.7761 6 12.5V9.5ZM7 12.5C7 13.3284 6.32843 14 5.5 14H2.5C1.67157 14 1 13.3284 1 12.5V9.5C1 8.67157 1.67157 8 2.5 8H5.5C6.32843 8 7 8.67157 7 9.5V12.5ZM13 2.5C13 2.22386 12.7761 2 12.5 2H9.5C9.22386 2 9 2.22386 9 2.5V5.5C9 5.77614 9.22386 6 9.5 6H12.5C12.7761 6 13 5.77614 13 5.5V2.5ZM14 5.5C14 6.32843 13.3284 7 12.5 7H9.5C8.67157 7 8 6.32843 8 5.5V2.5C8 1.67157 8.67157 1 9.5 1H12.5C13.3284 1 14 1.67157 14 2.5V5.5ZM13 9.5C13 9.22386 12.7761 9 12.5 9H9.5C9.22386 9 9 9.22386 9 9.5V12.5C9 12.7761 9.22386 13 9.5 13H12.5C12.7761 13 13 12.7761 13 12.5V9.5ZM14 12.5C14 13.3284 13.3284 14 12.5 14H9.5C8.67157 14 8 13.3284 8 12.5V9.5C8 8.67157 8.67157 8 9.5 8H12.5C13.3284 8 14 8.67157 14 9.5V12.5Z" />
-    </svg>
+      className="-ml-[1px] shrink-0 text-muted-foreground group-data-[active=true]:text-foreground"
+      size={15}
+    />
   );
 }
 
@@ -282,11 +285,13 @@ export function ProjectTabBar({
         type="button"
         className={`${tab} shrink-0 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-[var(--paper-focus)]`}
         data-active={selected === undefined ? 'true' : undefined}
+        // The tab draws its icon alone; the name it lost stays its label.
+        aria-label="Dashboard"
+        title="Dashboard"
         aria-current={selected === undefined ? 'page' : undefined}
         onClick={() => navigate('/projects')}
       >
-        <HomeTabIcon active={selected === undefined} />
-        <span>Dashboard</span>
+        <HomeTabIcon />
       </button>
       <div
         aria-hidden="true"
