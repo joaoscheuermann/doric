@@ -81,6 +81,7 @@ const hostCandidate: CatalogCandidate = {
       'secrets.backend/v1@1.0.0',
       'runtime.threads/v1@1.3.0',
       'runtime.attachments/v1@1.0.0',
+      'comments/v1@1.0.0',
       'tools/v1@1.2.0',
     ],
     requires: [],
@@ -93,6 +94,7 @@ const hostCandidate: CatalogCandidate = {
       ['secrets.backend/v1', '1.0.0'],
       ['runtime.threads/v1', '1.3.0'],
       ['runtime.attachments/v1', '1.0.0'],
+      ['comments/v1', '1.0.0'],
       ['tools/v1', '1.2.0'],
     ].map(([id, version]) => ({
       id,
@@ -105,6 +107,58 @@ const hostCandidate: CatalogCandidate = {
     })),
   },
   errors: [],
+};
+
+/** The window's `menus/v1`: chat binds `CmdOrCtrl+Enter` through it. */
+const menusRemote: RemoteContract = {
+  id: 'menus/v1',
+  environment: 'desktopMain',
+  bundleId: 'core',
+  version: '1.0.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    addItem: { tuple: null, local: false, stream: false },
+    addKeybinding: { tuple: null, local: false, stream: false },
+    setContext: { tuple: null, local: false, stream: false },
+  },
+};
+
+/**
+ * `chat.composer/v1` as main routes it: chat's desktop part provides it, and a
+ * window that draws the conversation reads the empty draft and stack from it.
+ */
+const composerRemote: RemoteContract = {
+  id: 'chat.composer/v1',
+  environment: 'desktopMain',
+  bundleId: 'chat',
+  version: '1.5.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    read: { tuple: null, local: false, stream: false },
+    setText: { tuple: null, local: false, stream: false },
+    addItem: { tuple: null, local: false, stream: false },
+    updateNote: { tuple: null, local: false, stream: false },
+    removeItem: { tuple: null, local: false, stream: false },
+    flush: { tuple: null, local: false, stream: false },
+    watch: { tuple: 2, local: false, stream: true },
+  },
+};
+
+/** `comments/v1` as main routes it: the conversation's comments, behind chat. */
+const commentsRemote: RemoteContract = {
+  id: 'comments/v1',
+  environment: 'host',
+  bundleId: 'host',
+  version: '1.0.0',
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    add: { tuple: null, local: false, stream: false },
+    list: { tuple: null, local: false, stream: false },
+    resolve: { tuple: null, local: false, stream: false },
+  },
 };
 
 const threadsRemote: RemoteContract = {
@@ -219,6 +273,15 @@ export const openThreadsWindow = async (input: {
   readonly probe?: Probe;
 }): Promise<ThreadsWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
+  // happy-dom runs no Web Animations and implements `getAnimations` on shadow
+  // roots alone; the shared scroll area asks its viewport for the animations
+  // in progress, and here, truthfully, there are none.
+  const element = window.Element.prototype as unknown as Record<
+    string,
+    unknown
+  >;
+  if (typeof element.getAnimations !== 'function')
+    element.getAnimations = (): unknown[] => [];
   const globals = globalThis as unknown as Record<string, unknown>;
   const names = globalNames(window);
   const previous = new Map(
@@ -320,7 +383,7 @@ export const openThreadsWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [threadsRemote],
+    remote: [threadsRemote, commentsRemote, composerRemote, menusRemote],
     hostId: 'host-1',
     storageGeneration: 1,
   };
@@ -333,7 +396,23 @@ export const openThreadsWindow = async (input: {
   ): Promise<BridgeResultPayload> => {
     const handler = input.host[`${envelope.contract}.${envelope.method}`];
 
-    if (handler === undefined) return { ok: true, output: undefined };
+    if (handler === undefined) {
+      // The conversation reads its draft on mount: an empty one, as a Thread
+      // the reader has not written in.
+      if (
+        envelope.contract === 'chat.composer/v1' &&
+        envelope.method === 'read'
+      )
+        return {
+          ok: true,
+          output: {
+            threadId: (envelope.input as { threadId: string }).threadId,
+            text: '',
+            items: [],
+          },
+        };
+      return { ok: true, output: undefined };
+    }
 
     try {
       return { ok: true, output: await handler(envelope.input) };
@@ -443,7 +522,6 @@ export const openThreadsWindow = async (input: {
     },
   });
   await settle();
-
   return {
     window,
     document: window.document as unknown as Document,

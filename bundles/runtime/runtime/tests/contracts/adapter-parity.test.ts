@@ -6,6 +6,7 @@ import type { CallScope } from 'bundle/contracts';
 import { createHarness, deferred } from '../domain/support/harness.js';
 import {
   type CaptureDriver,
+  type Outcome,
   readTranscript,
   runScenario,
   setup,
@@ -116,6 +117,38 @@ const runtimeDriver = (): CaptureDriver => {
   };
 };
 
+/**
+ * A Thread view is the record a Thread method answers with: it is the only
+ * value in the transcript carrying the Thread's `lastSequence`. The runtime
+ * records who opened a Thread in `origin`, and the golden — a recording of the
+ * stage-1 adapter, which cannot be recorded again — predates the field. It is
+ * dropped from both sides for the same reason the `terminal/v1` steps are:
+ * what moved on is named here, and everything else still has to match byte for
+ * byte.
+ */
+const withoutThreadOrigin = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutThreadOrigin);
+  if (value === null || typeof value !== 'object') return value;
+  const opens = 'lastSequence' in value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== 'origin' || !opens)
+      .map(([key, entry]) => [key, withoutThreadOrigin(entry)]),
+  );
+};
+
+/** The transcript as the comparison reads it: without what the golden predates. */
+const comparable = <T extends { readonly steps: readonly unknown[] }>(
+  transcript: T,
+): T => ({
+  ...transcript,
+  steps: transcript.steps.map((step) => ({
+    ...(step as object),
+    outcome: withoutThreadOrigin((step as { outcome: Outcome }).outcome),
+  })) as T['steps'],
+});
+
 void test('the runtime providers answer the stage-1 adapter transcript', {
   timeout: 20_000,
 }, async () => {
@@ -131,8 +164,10 @@ void test('the runtime providers answer the stage-1 adapter transcript', {
         (step) => (step as { contract?: string }).contract !== 'terminal/v1',
       ),
     });
-    const replayed = runtimeSteps(transcriptOf(await runScenario(driver)));
-    const golden = runtimeSteps(await readTranscript());
+    const replayed = comparable(
+      runtimeSteps(transcriptOf(await runScenario(driver))),
+    );
+    const golden = comparable(runtimeSteps(await readTranscript()));
     for (const [index, step] of golden.steps.entries())
       assert.deepEqual(
         replayed.steps[index],

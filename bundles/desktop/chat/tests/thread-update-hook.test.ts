@@ -55,6 +55,7 @@ const setup = async (observe?: ObserveUpdate) => {
       steer: async () => ({ promptId: 'p', status: 'steered' as const }),
       rewind: async () => ({ promptId: 'p' }),
       resume: async () => thread('a'),
+      retry: async () => ({ promptId: 'p' }),
     },
     history: { write: () => undefined },
     ...(observe === undefined ? {} : { observe }),
