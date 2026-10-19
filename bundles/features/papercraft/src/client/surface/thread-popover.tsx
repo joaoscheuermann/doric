@@ -189,8 +189,6 @@ export interface ThreadPopoverProps {
   readonly onCancel: () => void;
   /** Closes the thread, keeping what was written (the header's ×). */
   readonly onClose: () => void;
-  /** Confirms what the field holds and sends the stack. */
-  readonly onSend: () => void;
   readonly onEdit: (id: string) => void;
   readonly onRemove: (id: string) => void;
   readonly onCopy: (text: string) => void;
@@ -282,7 +280,6 @@ export function ThreadPopover({
   onConfirm,
   onCancel,
   onClose,
-  onSend,
   onEdit,
   onRemove,
   onCopy,
@@ -422,7 +419,6 @@ export function ThreadPopover({
           onChange={onChange}
           onConfirm={onConfirm}
           onCancel={onCancel}
-          onSend={onSend}
         />
       </PortalContainerProvider>
     </div>

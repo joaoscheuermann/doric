@@ -15,7 +15,7 @@ import { promptEnvelope } from '../../../../domain/prompt-envelope.js';
 import { composerStackStore } from '../../../../stores/composer-stack.js';
 import { queueEditStore } from '../../../../stores/queue-edit.js';
 import type { PromptSignal } from '../../../../utility/prompt-signal.js';
-import { SAVE_QUEUE_EDIT_COMMAND, SEND_PROMPT_COMMAND } from '../commands.js';
+import { SAVE_QUEUE_EDIT_COMMAND } from '../commands.js';
 import { $appendPromptText } from '../nodes/attachment-image-node.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
@@ -77,8 +77,8 @@ const $hasSelection = (): boolean => {
  * The composer's own plugin: what a reader sends with, and what they stop with.
  *
  * Sending reads the words from the document, because the prompt block is what
- * holds them — Cmd/Ctrl+Enter wherever the caret is, and the `sendRequest` the
- * shell changes when its own control is clicked. While a prompt runs the keys
+ * holds them — on each new `sendRequest`, which the shell's control and the
+ * window's Cmd/Ctrl+Enter (`chat.send-prompt/v1`) both count. While a prompt runs the keys
  * control it: Cmd/Ctrl+Enter steers it at its next safe point, Tab queues the
  * words for after it, Escape with words aborts its current step and steers it,
  * and Escape without words or Ctrl+C with nothing selected stops it. The prompt is emptied as the
@@ -227,30 +227,15 @@ export function SendPrompt({
         (event) => {
           if (event === null || !(event.metaKey || event.ctrlKey)) return false;
 
-          // A modified Enter is a command, never a line: it is answered here
-          // whether or not the prompt holds words to send.
+          // A modified Enter is the window's send chord (`chat.send-prompt/v1`),
+          // which sends through `sendRequest`; here it is only kept from
+          // writing a line.
           event.preventDefault();
-          if (!event.repeat) sendNow();
           return true;
         },
         COMMAND_PRIORITY_HIGH,
       ),
-    [editor, sendNow],
-  );
-
-  // A stack note's own Cmd/Ctrl+Enter: the note is an editing host of its own,
-  // so its keys never reach the editor's, and it asks for the send instead.
-  useEffect(
-    () =>
-      editor.registerCommand(
-        SEND_PROMPT_COMMAND,
-        () => {
-          sendNow();
-          return true;
-        },
-        COMMAND_PRIORITY_HIGH,
-      ),
-    [editor, sendNow],
+    [editor],
   );
 
   // Tab queues the words for after the running prompt; with nothing to send,

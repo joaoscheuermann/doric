@@ -345,6 +345,12 @@ const press = async (
   return event;
 };
 
+/**
+ * The window's send chord, `CmdOrCtrl+Enter`: Ctrl here, because happy-dom
+ * does not report a macOS platform.
+ */
+const sendChord = { ctrlKey: true } as const;
+
 /** Where the editor's caret stands: its block's type, and its offset there. */
 const caretIn = (editor: LexicalEditor) =>
   editor.getEditorState().read(() => {
@@ -551,7 +557,7 @@ test('Cmd+Enter in a note sends the stack with the note as written', async () =>
   note.focus();
   note.textContent = 'depois';
   note.dispatchEvent(new Event('input', { bubbles: true }));
-  await press(note, 'Enter', { metaKey: true });
+  await press(note, 'Enter', sendChord);
   await settle(150);
 
   const sent = window
@@ -559,6 +565,62 @@ test('Cmd+Enter in a note sends the stack with the note as written', async () =>
     .map((call) => (call.input as { prompt: string }).prompt);
   assert.equal(sent.length, 1);
   assert.match(sent[0] ?? '', /<comment id="item-1"[^>]*>depois<\/comment>/);
+});
+
+test("Cmd+Enter is the window's: away from the prompt, a comment alone goes out once", async () => {
+  const { window, composer: fake } = await boot();
+  fake.streams.push(composerWatch(window));
+  fake.add(messageComment('essa resposta está desatualizada'));
+  await settle(50);
+
+  await press(window.document.body, 'Enter', sendChord);
+  await settle(150);
+
+  const sent = window
+    .received('runtime.threads/v1.prompt')
+    .map((call) => call.input as { id: string; prompt: string });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.id, threadId);
+  assert.match(
+    sent[0]?.prompt ?? '',
+    /<comment id="item-1"[^>]*>essa resposta está desatualizada<\/comment>/,
+  );
+  assert.doesNotMatch(sent[0]?.prompt ?? '', /<message>/);
+});
+
+test('a note a surface confirms when the send asks goes out with it', async () => {
+  const { window, composer: fake } = await boot();
+  const asked: string[] = [];
+  // A surface holding an unconfirmed note (a Papercraft input): it confirms
+  // the note when the send asks, and the service's echo has not arrived yet.
+  window.document.addEventListener('doric:prompt-send', (event) => {
+    const detail = (event as CustomEvent).detail as {
+      threadId: string;
+      waitUntil(pending: Promise<unknown>): void;
+    };
+    asked.push(detail.threadId);
+    detail.waitUntil(
+      new Promise<void>((done) => {
+        setTimeout(() => {
+          fake.items.push(messageComment('confirmada agora'));
+          done();
+        }, 30);
+      }),
+    );
+  });
+
+  await press(window.document.body, 'Enter', sendChord);
+  await settle(150);
+
+  assert.deepEqual(asked, [threadId]);
+  const sent = window
+    .received('runtime.threads/v1.prompt')
+    .map((call) => (call.input as { prompt: string }).prompt);
+  assert.equal(sent.length, 1);
+  assert.match(
+    sent[0] ?? '',
+    /<comment id="item-1"[^>]*>confirmada agora<\/comment>/,
+  );
 });
 
 test('a comment alone is something to send: the send carries the stack', async () => {
@@ -838,7 +900,7 @@ test('while a prompt runs, Cmd+Enter steers it with the words at its next safe p
   const { window, root } = await running();
 
   await type('Use the cache instead');
-  await press(root, 'Enter', { metaKey: true });
+  await press(root, 'Enter', sendChord);
   await settle(100);
 
   const steers = window

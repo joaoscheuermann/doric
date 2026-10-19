@@ -66,7 +66,6 @@ export function CommentOverlay({
           onChange: flow.setText,
           onConfirm: () => void flow.confirmInput(),
           onCancel: flow.closeInput,
-          onSend: () => void flow.sendNow(),
           onBlurOutside: flow.resolveInput,
         };
 
@@ -108,7 +107,6 @@ export function CommentOverlay({
           onConfirm={() => void flow.confirmInput(false)}
           onCancel={flow.closeInput}
           onClose={flow.resolveInput}
-          onSend={() => void flow.sendNow()}
           onEdit={flow.editDraft}
           onRemove={flow.removeDraft}
           onCopy={copyText}

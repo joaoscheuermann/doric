@@ -905,13 +905,24 @@ provides `chat.send/v1` in every window: `send({ projectId, threadId })` sends
 the Thread's stack, with the draft text the host holds, as one prompt through
 the same send path and clears that draft once the prompt is accepted (the
 composer itself runs in desktopMain, which does not call host contracts).
+`Cmd/Ctrl+Enter` has one owner per window, bound through `menus/v1`: on the
+conversation's route it is chat's client command `chat.send-prompt/v1`, the
+composer's own send (the footer control's) for the Thread whose conversation
+holds the focus, else the route's Thread, wherever the focus is in the window;
+no surface inside the window (the editor, a stack note, a block) answers the
+chord itself. Before reading the stack the command dispatches the DOM event
+`doric:prompt-send` on the document with `detail: { threadId, waitUntil }`; a
+surface holding an unconfirmed note confirms it and hands the promise to
+`waitUntil`, and the send waits for it and reads the stack back from
+`chat.composer/v1`.
 
 The stack lines are chat's `chat-comment-line` for every target kind, edited in
 place without a popover or buttons: avatar, `↩` for a reply, author, a
 contenteditable note, anchor and `[pin]`. Arrow keys move between the notes and
 the prompt, Enter goes to the next one, Escape to the prompt,
 Cmd/Ctrl+Backspace deletes a line, as do Backspace and Delete on an empty note,
-and Cmd/Ctrl+Enter sends; stack events are isolated from Lexical. The chat's
+and Cmd/Ctrl+Enter, the window's send, takes the note as written; stack events
+are isolated from Lexical. The chat's
 built-in projection folds `comments.added/v1` and `comments.resolved/v1` into
 comment threads with the states `done`, `await` (the agent replied last) and
 `open`. Agent replies draw where they happened in the agent turn as collapsible
@@ -942,9 +953,12 @@ button outside the field, inside the popover; the hover label hides while it
 or a thread is open), and joins
 the composer stack only when confirmed; the stack item carries
 `{ target, pin, point, refs: { title, source }, inReplyTo? }` and draws as
-chat's `chat-comment-line`. It stays a draft until a prompt is sent, and
-`Cmd/Ctrl+Enter` (or the window's send button) sends the stack through
-`chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
+chat's `chat-comment-line`. It stays a draft until a prompt is sent. In the
+conversation `Cmd/Ctrl+Enter` is chat's send, before which the open note joins
+the stack (`doric:prompt-send`); neither the canvas nor its fields answer the
+chord. In the canvas window `Cmd/Ctrl+Enter` is `papercraft.send/v1` (the
+approval is `Cmd/Ctrl+Shift+Enter`), which, like the window's send button,
+confirms the open note and sends the stack through `chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
 old-format drafts. Comments are grouped into threads from the Thread log (one
 shared `watchThread` per Thread per window, `comments/v1.list` as fallback).
 Threads and drafts carry over revisions: every revision on screen shows every

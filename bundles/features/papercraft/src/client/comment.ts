@@ -17,7 +17,8 @@
 // place the real `chat.composer/v1.registerFlush` serves — it carries a
 // function, so a window never reaches it. This client module only writes the
 // stack's items, and sends the stack now through chat's own send
-// (`chat.send/v1`) when the reader asks (`Cmd/Ctrl+Enter`).
+// (`chat.send/v1`) when the reader asks (the canvas window's
+// `Cmd/Ctrl+Enter`, or its send button).
 //
 // The composer is chat's, consulted with `services.whenAvailable` like
 // `ChatViewsV1`: while it is not active the gesture is unavailable, and a frame
@@ -243,7 +244,8 @@ export const removeComment = async (
 };
 
 /**
- * Sends the Thread's stack now (`Cmd+Enter`, or the window's send button):
+ * Sends the Thread's stack now (the canvas window's `Cmd+Enter`, or its send
+ * button):
  * the composer's own send, through `chat.send/v1` — the drafts become the
  * prompt and, once the host accepts it, the durable comments. Without chat's
  * send there is nothing to send with, and the drafts stay where they are.

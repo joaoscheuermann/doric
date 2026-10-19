@@ -244,6 +244,7 @@ export function PreviewContainer({
     fitContent,
     selectRevision,
     reload,
+    sendNow: flow.sendNow,
   });
   const { execute, openCanvas } = useCommandDispatch(
     services,
@@ -312,7 +313,6 @@ export function PreviewContainer({
     setSpaceHeld,
     setCommentMode,
     closeInput: flow.closeInput,
-    sendNow: flow.sendNow,
   });
 
   useCommentRequest(commentRequest, {

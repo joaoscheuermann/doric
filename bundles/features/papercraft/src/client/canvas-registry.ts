@@ -30,6 +30,8 @@ export interface PreviewController {
   currentRevision(): number | undefined;
   /** Rereads the record after its approval changed it. */
   reload(): void;
+  /** Confirms the open note and sends the Thread's stack. */
+  sendNow(): Promise<void>;
 }
 
 const canvases = new Map<string, PreviewController>();

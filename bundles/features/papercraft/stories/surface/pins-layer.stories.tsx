@@ -53,7 +53,6 @@ function NewComment({
         onChange: setValue,
         onConfirm: () => setValue(''),
         onCancel: () => setValue(''),
-        onSend: () => setValue(''),
         onBlurOutside: () => undefined,
       }}
     />
@@ -140,7 +139,6 @@ export const WithThread = {
           onConfirm={() => undefined}
           onCancel={() => undefined}
           onClose={() => undefined}
-          onSend={() => undefined}
           onEdit={() => undefined}
           onRemove={() => undefined}
           onCopy={() => undefined}

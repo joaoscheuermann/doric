@@ -663,6 +663,31 @@ export const COMMENTS_RESOLVED_EVENT = 'comments.resolved/v1';
  */
 export const COMMENT_THREAD_OPEN_EVENT = 'doric:comment-thread-open';
 
+/**
+ * The client command the window's `CmdOrCtrl+Enter` dispatches on the
+ * conversation's route, the chord's one owner there: the composer's send —
+ * the one its control makes — for the Thread whose conversation holds the
+ * focus, else the Thread the route names. It sends the words, the stack or
+ * both, and steers a running prompt, wherever the focus is in the window.
+ */
+export const SEND_PROMPT_COMMAND = 'chat.send-prompt/v1';
+
+/**
+ * The DOM event `SEND_PROMPT_COMMAND` dispatches on the document before it
+ * reads the stack: a surface holding a note the reader has not confirmed yet
+ * (Papercraft's open comment input) confirms it and hands the confirmation to
+ * `waitUntil`, and the send waits for it, so the note goes with the prompt.
+ */
+export const PROMPT_SEND_EVENT = 'doric:prompt-send';
+
+/** The detail of `PROMPT_SEND_EVENT`. */
+export interface PromptSendDetail {
+  /** The Thread about to send. */
+  readonly threadId: string;
+  /** Holds the send until `pending` settles. */
+  waitUntil(pending: Promise<unknown>): void;
+}
+
 /** The detail of `COMMENT_THREAD_OPEN_EVENT`. */
 export interface CommentThreadOpenDetail {
   /** The thread's root comment id. */
