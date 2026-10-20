@@ -23,7 +23,7 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   `{ kind: 'bundle', bundleId, reason, retain? }`, with the calling bundle's
   own id; it reaches agent Threads too. `retain` marks a standing
   instruction, which the executor keeps through compaction. Its prompt-scoped members `spawn`,
-  `list`, `get`, `events`, `send`, `interrupt` and `terminate` act on the
+  `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
   bundle exposes them as tools.

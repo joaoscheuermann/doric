@@ -12,7 +12,7 @@ See the [main README](../../../README.md) for Doric as a whole and
 
 ## What it provides
 
-- **Tools:** seven always-available delegation tools.
+- **Tools:** eight always-available delegation tools.
 - **Skills:** delegating, inspecting and steering child threads.
 - **UI:** `<threads-delegated-turn>`, the chat renderer for another Thread's
   instruction or result.
@@ -22,7 +22,7 @@ The bundle provides no contract of its own.
 ## Tools
 
 The tools act only on the calling prompt's direct child threads in the same
-project, and take global model-visible positions 1000 to 1600 in this order:
+project, and take global model-visible positions 1000 to 1650 in this order:
 
 - `thread-spawn` — create a child chat, optionally titled (up to 80
   characters; without a title it is named after the start of its prompt), and
@@ -33,6 +33,9 @@ project, and take global model-visible positions 1000 to 1600 in this order:
 - `thread-events` — read a bounded, digested page of a child's persisted
   events;
 - `thread-send` — queue a follow-up instruction in a child;
+- `thread-restart` (position 1650) — reopen a direct child whose thread itself
+  failed, in place, and queue a prompt in it: the one it is given, or the last
+  prompt the child accepted;
 - `thread-interrupt`, `thread-terminate` — cancel one active prompt or close a
   child subtree.
 

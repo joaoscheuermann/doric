@@ -53,6 +53,11 @@ export const threadsService = ({
       execute: ([threadId, prompt], call) =>
         bindings.bound(call).host.threads.send(threadId, prompt),
     }),
+    restart: defineMethod({
+      ...methods.restart,
+      execute: ([threadId, prompt], call) =>
+        bindings.bound(call).host.threads.restart(threadId, prompt),
+    }),
     interrupt: defineMethod({
       ...methods.interrupt,
       execute: ([threadId, promptId], call) =>

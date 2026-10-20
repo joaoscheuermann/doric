@@ -859,7 +859,8 @@ rebasing, remote synchronization, and linked worktrees. The Git tool executes
 structured argv directly without shell interpretation, forces non-interactive
 Git behavior, bounds stdout and stderr, and exposes no dedicated credential
 input. `/bundles/features/threads` owns the delegation tools `thread-spawn`,
-`thread-list`, `thread-get`, `thread-events`, `thread-send`,
+`thread-list`, `thread-get`, `thread-events`, `thread-send`, `thread-restart`
+(which reopens a direct child whose thread itself failed),
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
 inspection, and steering skills. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.

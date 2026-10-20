@@ -756,6 +756,22 @@ export const createThreadStore = (
         return { value, done: () => toThread(value) };
       }),
 
+    reopen: (id) =>
+      threads.mutate(id, (current) => {
+        if (current === undefined) return { done: () => undefined };
+        if (current.value.state !== 'failed')
+          return { done: () => toThread(current.value) };
+        const at = now();
+        const value = touched(current.value, {
+          state: 'ready',
+          activePromptId: null,
+          errorCode: null,
+          finishedAt: null,
+          ...(current.value.startedAt === null ? { startedAt: at } : {}),
+        });
+        return { value, done: () => toThread(value) };
+      }),
+
     history: (id) => historyReader(storage, id),
 
     saveHistory: (id, patch) =>

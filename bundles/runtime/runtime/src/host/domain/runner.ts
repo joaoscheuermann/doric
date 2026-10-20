@@ -1477,6 +1477,50 @@ export const createThreadRunner = (context: RunnerContext) => {
             ? { status: 'inactive' as const }
             : enqueue(project, target, prompt, source);
         }),
+      restart: (id, prompt) => {
+        const settled = async () => {
+          const live = project.threads.get(id);
+          // Outside the lock: `ending`'s last step takes the project lock itself,
+          // so awaiting it under the lock would deadlock (mutation queue is not
+          // re-entrant).
+          if (live?.ending !== undefined) await live.ending;
+        };
+        return (async () => {
+          // A closed Project makes every control inactive, before the prompt's
+          // own liveness: termination ends the calling prompt too.
+          if (project.closing) return { status: 'inactive' as const };
+          allowed();
+          if (prompt !== undefined && prompt.trim().length === 0)
+            throw new TypeError('A non-empty prompt is required.');
+          await settled();
+          return exclusive(project.project.id, async () => {
+            allowed();
+            const record = await child(id); // direct-child guard, unchanged
+            if (record.state === 'cancelled')
+              return { status: 'terminated' as const };
+            if (record.state === 'cancelling')
+              return { status: 'inactive' as const };
+            if (record.state !== 'failed')
+              return { status: 'not_failed' as const };
+            if (project.closing) return { status: 'inactive' as const };
+            const text = prompt ?? (await store.lastPrompt(id))?.text;
+            if (text === undefined || text.trim().length === 0)
+              return { status: 'no_prompt' as const };
+            const reopened = await store.reopen(id);
+            if (reopened === undefined) return { status: 'missing' as const };
+            if (reopened.state !== 'ready')
+              return { status: 'not_failed' as const };
+            const target = project.threads.get(id);
+            if (target === undefined) return { status: 'inactive' as const };
+            target.closing = false;
+            target.ending = undefined;
+            target.leaving = undefined;
+            target.thread = reopened;
+            publisher.threadUpdated(reopened);
+            return enqueue(project, target, text, source);
+          });
+        })();
+      },
       interrupt: (id, promptId) =>
         exclusive(project.project.id, async () => {
           await child(id);

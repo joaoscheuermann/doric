@@ -177,7 +177,7 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${RuntimeV1.id}@1.3.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
-    // retry; 1.5.0: a bundle's instruction.
+    // retry; 1.5.0: a bundle's instruction and restarting a failed child.
     `${RuntimeThreadsV1.id}@1.5.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     `${RuntimeWorkspaceV1.id}@1.1.0`,
