@@ -1743,8 +1743,10 @@ into every Docker sandbox, at `/var/run/docker.sock`, so its Docker CLI can
 build and run the images a Project describes. That socket carries the daemon's
 authority on the host, so the setting is for a local, trusted deployment rather
 than the default. Doric provisions Docker sandboxes
-with one CPU, 2048 MiB of memory, and a 4096 MiB writable layer; Firecracker
-keeps its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
+with four CPUs, 2048 MiB of memory, and a 4096 MiB writable layer;
+`DORIC_SANDBOX_CPUS` and `DORIC_SANDBOX_MEMORY_MIB` override the CPU and
+memory ceilings with whole positive numbers, and any other non-empty value
+fails activation. Firecracker keeps one CPU and its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
 Docker from the daemon's own container statistics, Firecracker from its guest's
 `/proc` — each normalized to the sandbox's own cores and memory limit, so an
 observer sees what a sandbox is consuming without acquiring, restarting or

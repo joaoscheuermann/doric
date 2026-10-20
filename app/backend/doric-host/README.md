@@ -102,6 +102,8 @@ HTTP and Socket.IO share one listener, `0.0.0.0:3000` by default.
 | `DORIC_SANDBOX_IMAGE`         | `node:22-bookworm`                               | Image every Project sandbox runs. Compose's `docker` profile defaults it to `doric-sandbox:local`.             |
 | `DORIC_SANDBOX_SSH`           | off                                              | `true` adds loopback-bound user SSH access to the active sandbox. Compose profiles default it to `true`.       |
 | `DORIC_SANDBOX_DOCKER_SOCKET` | off                                              | `true` mounts the host's Docker socket into every Docker sandbox. See [the sandbox image](#the-sandbox-image). |
+| `DORIC_SANDBOX_CPUS`          | `4`                                              | CPUs each Docker sandbox may use.                                                                              |
+| `DORIC_SANDBOX_MEMORY_MIB`    | `2048`                                           | Memory each Docker sandbox may use, in MiB.                                                                    |
 | `DORIC_BUNDLES_PATH`          | the staged `app/backend/doric-host/dist/bundles` | Root of the installed bundles.                                                                                 |
 | `DORIC_COMPOSITION`           | [`composition.json`](composition.json)           | Composition to boot. A custom one is booted as written.                                                        |
 | `DORIC_LOG_FILE`              | `doric.log`                                      | File that receives the debug-level log; the console shows info and above.                                      |

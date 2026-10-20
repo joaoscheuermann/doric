@@ -20,10 +20,18 @@ The host part reads these variables at activation:
 | `DORIC_SANDBOX_IMAGE`         | `node:22-bookworm` | The image each sandbox runs.                   |
 | `DORIC_SANDBOX_SSH`           | off                | `true` enables SSH into the sandbox.           |
 | `DORIC_SANDBOX_DOCKER_SOCKET` | off                | `true` shares the host's Docker daemon socket. |
+| `DORIC_SANDBOX_CPUS`          | `4`                | The CPUs each sandbox may use.                 |
+| `DORIC_SANDBOX_MEMORY_MIB`    | `2048`             | The memory each sandbox may use, in MiB.       |
 
 Sharing the daemon socket is what lets a sandbox build and run the images its
 Project describes; it is off by default, because a sandbox that holds the
 socket has the daemon's authority on the host.
+
+The CPU and memory settings are ceilings the daemon enforces, not
+reservations, so an idle sandbox holds neither. Each takes a whole positive
+number; an empty value keeps the default, and any other value fails
+activation. Changing either rebuilds a Project's existing container on its
+next acquisition; the workspace volume is kept.
 
 The shipped composition selects this bundle through
 `DORIC_SANDBOX_PROVIDER` (default `docker`; the alternative is
@@ -35,8 +43,9 @@ From those settings the host part builds the Docker client (`docker-sandbox`),
 the registry of running VMs and the sandbox pool, and provides `sandbox/v1`
 over them. Nothing is contacted until the first acquisition.
 
-- The pool provisions a named sandbox for each Project, with 1 CPU, 2048 MiB
-  of memory and 4096 MiB of disk, pulling the image if it is not present. It
+- The pool provisions a named sandbox for each Project, with the configured
+  CPUs and memory and 4096 MiB of disk, pulling the image if it is not
+  present. It
   keeps no warm idle sandboxes, holds at most 10, and retries a failed create
   up to 3 times.
 - Sandboxes get outbound network access, with SSH when enabled.
