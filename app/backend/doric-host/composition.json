@@ -15,7 +15,7 @@
     "screen",
     "screen-relay",
     "runtime",
-    "direct",
+    "default",
     "openai",
     "openrouter",
     "codex",

@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-18
+Last reviewed: 2026-10-19
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -109,7 +109,7 @@ platform/bundle boundary described under Platform Boundary, which replaces the
 provisional host adapters stage 1 introduced: the platform knows no bundle
 concept, and the bundles own their own.
 
-`app/backend/doric-host` is the Direct agent host. It exposes long-lived sandbox-backed
+`app/backend/doric-host` is the default agent host. It exposes long-lived sandbox-backed
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
@@ -641,11 +641,41 @@ reached through the per-prompt host facade; each child has its own history, not
 an automatic copy of its parent's history. A spawned child is named after the
 optional title its parent gives it, or the start of its prompt without one.
 
-The Direct executor and its system prompt live in `/bundles/runtime/direct`; the
+The default agent — the executor formerly named Direct — and its system prompt
+live in `/bundles/runtime/default` (bundle `default`, renamed from `direct` on
+2026-10-19); the
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
 system prompt file exports only one constant literal template string; dynamic
 bundle skills are appended by the executor, not encoded as arrays of prompt
-lines. Project and Thread lifecycle, queues, the prompt runner and the
+lines. The `default` bundle owns `default.hooks/v1`, an extension point with no
+handler of its own: its `onBeforeModelRequestHook` (`transform`, input
+`{ system }`) runs before every model request of a prompt, under the prompt's
+call, and `packages/agent` accepts a `system` function that it calls before
+each provider request for this. The coding workflow reaches the agent as an
+standing instruction, not as system prompt text, once per Thread: the
+`default` bundle gives the Thread the workflow (`prompts/repository.ts`: Search,
+Plan, Development with contracts and red-green tests and implementation,
+Cleanup, each subagent type with its goal, tools, the files it may change and
+what it returns; Contracts generates the contracts as its result and changes no
+file) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
+`retain: true`, when a task — a `user` or `parent` input — starts with a
+`cwdRepo` hint (the executor checks before the run's first model request) and
+when a running prompt moves into a repository root (its
+`onThreadCwdChangedHook` handler), in both cases only while the history the
+model reads does not hold it yet. The executor records each retained steer it
+stores in `meta.retained` (`<bundleId>:<reason>` to the message's index),
+compaction keeps those messages verbatim after the summary and out of the
+summarizer's input and re-bases their indexes like the turn boundaries, and a
+rewind forgets those past its boundary, so the workflow is given again only
+after a rewind removed it. The main Thread delegates each step to a child
+Thread whose title and instruction name its type, except for trivial changes,
+and a delegated `<parent-instruction>` step is done by the child itself. It
+reaches both runtime contracts through `optional`, because the runtime requires
+`executor/v1`. The
+base prompt tells the agent to work at a repository's root, to initialize a
+repository for a complex deliverable that has none, to ask the user before
+initializing one for an experiment, and to follow a `<bundle-instruction>` from
+its next step. Project and Thread lifecycle, queues, the prompt runner and the
 prompt-scoped host facade live in `/bundles/runtime/runtime`; REST routes, Socket.IO
 namespaces, HTTP errors and safe event serialization live in
 `/bundles/foundation/transport`, which registers them on the native listeners through
@@ -1136,7 +1166,7 @@ JSON at `DORIC_COMPOSITION` (default: `app/backend/doric-host/composition.json`,
 names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `git`, `threads`, `terminal`, `usage`, `resources`, `screen`, `screen-relay`,
 `runtime`,
-`direct`,
+`default`,
 `openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
 `settings`, `chat`, `history`, `artifacts`, `comments` and `papercraft`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
@@ -1186,7 +1216,7 @@ multi-process scope of HC-003 for the host. The Doric process is the kernel: it
 runs the foundation, the core, every embedded bundle, the bundles the composition
 lists as `resident`, and the platform (catalog,
 diagnostics, dispatcher, generation manager). The installed other bundles
-(`files`, `git`, `threads`, from stage 5 `runtime` and `direct`, and from
+(`files`, `git`, `threads`, from stage 5 `runtime` and `direct` (now `default`), and from
 stage 10 the feature, provider and sandbox bundles) activate in one Node `child_process.fork` per bundle
 generation, through `startKernel` and the runner of `packages/bundle`, and the
 two processes call each other's services through one RPC envelope; the tools
@@ -1220,7 +1250,12 @@ queues, leases, recovery and the prompt runner through `runtime/v1`,
 the images of a Project. Stage 10 adds the local
 `runtime.lease/v1.withLease` and `runtime.workspace/v1.withThread`, the
 terminal result delivery on `runtime.threads/v1`, `onThreadsClosingHook` and
-the unfilled `runtime.usage/v1.read`; the core adds
+the unfilled `runtime.usage/v1.read`; on 2026-10-19 `runtime.hooks/v1` 1.2.0
+adds `onPromptStartedHook` (after `prompt.started`, with the prompt's source,
+the Thread's `cwd` and `cwdRepo`) and `onThreadCwdChangedHook` (after any change
+of a Thread's `cwd` or `cwdRepo`, with both values before and after and the
+running `promptId`), both awaited by the runner outside the Project lock, and
+`runtime.threads/v1` 1.5.0 adds `instruct`, a bundle's instruction to a Thread; the core adds
 `models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
 `secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and
@@ -1228,13 +1263,16 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.attachment/v1` records over `storage/v1` blobs, and each Thread's events in the
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
 `pending` queue projection and the usage aggregate into the same commit as
-the event. `/bundles/runtime/direct` provides the local `executor/v1`, whose `run`
+the event. `/bundles/runtime/default` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession`, and keeps its history as the opaque
-`direct.history/v1` state (`messages` and `meta`). The executor frames every
+`default.history/v1` state (`messages` and `meta`); it still reads the same parts
+written as `direct.history/v1` before the rename, and its next write stores them
+as `default.history/v1`. The executor frames every
 input in an XML envelope instead of Markdown headers: `<user-request>`,
 `<parent-instruction thread="" prompt="">`, `<terminal-output terminal=""
-prompt="">` or `<child-result thread="" prompt="">`. Attribute values escape
-`&`, `"` and `<`, and a closing tag of the four envelope names inside the body
+prompt="">`, `<child-result thread="" prompt="">` or `<bundle-instruction
+bundle="" reason="">`. Attribute values escape
+`&`, `"` and `<`, and a closing tag of the five envelope names inside the body
 is neutralized to `<\/…`; older history keeps its `# User request` text. The
 system prompt describes the envelope, the chat's `<comments>`, `<target>`,
 `<comment>` and `<message>` parts and the `comment_reply` tool. Its `compact` condenses an
@@ -1282,7 +1320,7 @@ line from its start hook through `doric.startup/v1`.
 The `GET /resources` CPU sample runs in the transport (the kernel process) and
 the `web` tool's `fetch` runs in the generation process, both on the host
 machine as before. Stage 4's asynchronous `RemoteTool` check no longer runs
-during prompts, since `direct` binds the local tools. Stage 7 is the first
+during prompts, since `default` binds the local tools. Stage 7 is the first
 lossless data migration of Projects, Threads, histories and events into the
 runtime's documents and streams: it runs in one transaction under `prisma
 migrate deploy`, verifies the copy, records the `runtime.migration/v1` marker
@@ -1379,7 +1417,7 @@ imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is
 bound on every prompt, and Doric includes every canonical skill body in its
-Direct system prompt in bundle order. `bundle/contracts` publicly owns the
+default agent's system prompt in bundle order. `bundle/contracts` publicly owns the
 JSON-Schema-compatible `SkillSchema`, whose input is normalized into a
 canonical `SkillRecord` with trimmed fields, stable unique `allowedTools`, and
 a recalculated `indexText`. `packages/tool` publicly owns `defineTool`, whose
@@ -1868,7 +1906,7 @@ configuration as the `settings/v1` space `host-config.configuration/v1` (one
 `core.settings/v1` document of the generic storage tables), the credential
 store and, as `runtime` documents and streams of the generic storage tables,
 Project names, colors and configuration snapshots, Thread names, parentage,
-the Direct executor's provider-ready message history, and ordered Thread
+the default executor's provider-ready message history, and ordered Thread
 events.
 The generic-storage migration converts the former `doric_configuration`,
 `provider_configuration` and `model_configuration` rows losslessly into that
@@ -2129,9 +2167,9 @@ tools and provider turns from starting. Interrupted, failed, or closed runs
 append incomplete results for unresolved assistant tool calls, without
 duplicating completed results or creating synthetic tool-call records.
 Callback exceptions retain their identity and do not misreport a completed
-tool as failed. Direct checks cancellation again after awaited event writes.
+tool as failed. The default executor checks cancellation again after awaited event writes.
 Agent runs may set `resume: true` to continue their supplied history without
-appending the input again, in both complete and stream modes. Direct uses this
+appending the input again, in both complete and stream modes. The default executor uses this
 when a persisted checkpoint shows that the input is already stored, preserving
 the original message order across repeated resumptions. It supplies incomplete
 results only for unanswered calls in an interrupted tool batch.
@@ -2242,7 +2280,7 @@ only whether one exists over the API, redacts it from events and logs, and
 keeps it out of tool payloads. Prefer dependency injection and
 explicit configuration objects for sensitive runtime inputs.
 
-Doric Direct Thread replay is durable in PostgreSQL. Projects transition from
+Doric's default-agent Thread replay is durable in PostgreSQL. Projects transition from
 `queued` to `ready` after sandbox acquisition; Threads wait for their Project
 and each FIFO input transitions `ready -> running -> ready`. Project and Thread
 termination use `cancelling -> cancelled`; acquisition or reconciliation
@@ -2267,7 +2305,8 @@ Thread without prompting it first. A fresh Agent per prompt
 receives a fresh tool-call store, every registered bundle tool bound to a
 prompt `Call` scoped to that prompt (its sandbox and per-prompt host facade
 attached to that scope for the run), the deterministic
-all-skills system prompt, and
+all-skills system prompt, passed through `default.hooks/v1` before each model
+request, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials and replacing the
@@ -2351,16 +2390,25 @@ Agent-facing targeted interruption
 keeps its separate child-prompt contract.
 
 Steering sends input into the running prompt without ending it: the reader's,
-and the correlated results of child Threads and background terminals, which
-always steer the active prompt when one runs. The reader steers the prompt the
+a bundle's instruction, and the correlated results of child Threads and
+background terminals, which always steer the active prompt when one runs. A
+bundle instructs a Thread with `runtime.threads/v1.instruct` (1.5.0: `id`,
+`prompt`, `reason`, an optional `promptId` and `interrupt`, local to bundles
+and never exposed to a window): its source is `{ kind: 'bundle', bundleId,
+reason, retain? }`, where the runtime takes `bundleId` from the calling bundle
+and never from the input and `retain` marks a standing instruction the executor
+keeps through compaction, it reaches agent Threads that the reader's `steer`
+may not, and
+the chat names the bundle and reason on it instead of the reader. The reader steers the prompt the
 reader saw running (`runtime.threads/v1` 1.3.0 `steer`, `POST /threads/:id/steer`
 with `prompt`, the running `promptId` and an optional `interrupt`). The steer is
 accepted as an input of its own — `prompt.accepted` with `queued: true` and
-`steer` naming the running prompt — and waits on that run. Direct takes it in
+`steer` naming the running prompt — and waits on that run. The default executor takes it in
 through `PromptSession.steers()` (`executor/v1` 1.1.0) at the agent loop's
-safe points: after the tool batch in flight, or before a final answer would end
-the turn, so it never interrupts a tool. It reaches the model in its source's
-envelope (`<user-request>`, `<child-result>` or `<terminal-output>`), its
+safe points: before the run's first turn, after the tool batch in flight, or
+before a final answer would end the turn, so it never interrupts a tool. It
+reaches the model in its source's envelope (`<user-request>`, `<child-result>`,
+`<terminal-output>` or `<bundle-instruction>`), its
 history is saved first, and the runtime then closes the
 steer with `prompt.steered` under its own id, naming the prompt it steered. With
 `interrupt`, the runtime also aborts only the current step — the provider call
@@ -2451,8 +2499,8 @@ attach and that collection per blob in its one process; a collection that fails
 after the commit leaves the unnamed blob behind without failing the delete. Text
 names an attachment with a Markdown line of its own,
 `![name](doric-attachment:sha256-<hex>)`, so prompts, queued inputs, edits,
-steers, events, tool results and the persisted history stay text. Direct
-resolves the lines the Thread's Project holds only in the request a model
+steers, events, tool results and the persisted history stay text. The default
+executor resolves the lines the Thread's Project holds only in the request a model
 reads (`PromptSession.attachment`, `executor/v1` 1.2.0): each becomes
 `[Image: name]` followed by the image as a `data:` URL, in its place among the
 words of a user or tool message; any other line stays text, and compaction
@@ -2596,9 +2644,9 @@ Newly written or materially revised user-message inputs passed to model
 arrays as their outer prompt envelope.
 
 Enforcement: write the outer prompt as simple, direct, unambiguous,
-evidence-grounded Markdown. Approved exception: the Direct runtime's input
+evidence-grounded Markdown. Approved exception: the default agent's input
 envelope (`<user-request>`, `<parent-instruction>`, `<child-result>`,
-`<terminal-output>`) and the chat's prompt structure (`<comments>`, `<target>`,
+`<terminal-output>`, `<bundle-instruction>`) and the chat's prompt structure (`<comments>`, `<target>`,
 `<comment>`, `<message>`) use those XML tags, with readable text or Markdown
 inside; system prompts and every other model input stay Markdown. Literal JSON
 source material is allowed only in a

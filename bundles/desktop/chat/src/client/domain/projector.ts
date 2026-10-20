@@ -54,6 +54,12 @@ type TurnBase = {
  * The human's prompt, another Thread's input or a background terminal's answer,
  * opening a job.
  */
+/** Who gave an instruction and why: the bundle and the reason it named. */
+export type Instruction = {
+  readonly bundleId: string;
+  readonly reason: string;
+};
+
 export type UserTurn = TurnBase & {
   readonly type: 'user';
   /**
@@ -70,6 +76,8 @@ export type UserTurn = TurnBase & {
   readonly comments: readonly TurnComment[];
   /** Set when another Thread wrote this input rather than the human. */
   readonly delegated?: DelegatedInput;
+  /** Set when a bundle gave this instruction (`runtime.threads/v1.instruct`). */
+  readonly instruction?: Instruction;
   /**
    * Set when a background terminal wrote this input: the settled command, read
    * from the prompt the host enqueued, which the transcript draws as its own
@@ -287,6 +295,7 @@ export type Draft =
       accepted: boolean;
       comments: TurnComment[];
       delegated?: DelegatedInput;
+      instruction?: Instruction;
       awaiting: boolean;
     }
   | {

@@ -285,7 +285,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         screen: ['active', 'others'],
         'screen-relay': ['active', 'others'],
         runtime: ['active', 'others'],
-        direct: ['active', 'others'],
+        default: ['active', 'others'],
         openai: ['active', 'others'],
         openrouter: ['active', 'others'],
         codex: ['active', 'others'],
@@ -312,7 +312,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     );
     // A provider activates before what requires it.
     for (const [provider, consumer] of [
-      ['direct', 'runtime'],
+      ['default', 'runtime'],
       ['docker', 'runtime'],
       ['runtime', 'files'],
       ['runtime', 'threads'],
@@ -607,7 +607,7 @@ void test('after boot, an activation that leaves no structural provider takes th
     current = {
       ...catalog,
       bundles: catalog.bundles.map((bundle) =>
-        ['runtime', 'direct', 'docker'].includes(bundle.id)
+        ['runtime', 'default', 'docker'].includes(bundle.id)
           ? { ...bundle, state: 'quarantined' as const }
           : bundle,
       ),

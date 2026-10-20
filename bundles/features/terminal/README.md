@@ -59,7 +59,7 @@ npx nx typecheck bundle-terminal
 npx nx test bundle-terminal
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

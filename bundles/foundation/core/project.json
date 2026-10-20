@@ -44,7 +44,7 @@
             "bundle-usage",
             "bundle-resources",
             "bundle-runtime",
-            "bundle-direct",
+            "bundle-default",
             "bundle-openai",
             "bundle-openrouter",
             "bundle-codex",

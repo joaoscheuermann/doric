@@ -6,7 +6,7 @@ GitHub repository, providers, models, and tasks, and it reports the exact path
 of the first invalid value. Use it on a message-based surface where the first
 message carries the configuration and later messages may update it.
 
-Part of [Doric](../../README.md). The Direct host's persisted REST
+Part of [Doric](../../README.md). The Doric host's persisted REST
 configuration is documented in `app/backend/doric-host` instead.
 
 ## Highlights

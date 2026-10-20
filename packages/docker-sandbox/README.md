@@ -95,8 +95,8 @@ connection that is not a Unix socket has no socket to share.
 ### Networking
 
 Networking is disabled unless the caller requests egress. Linux egress needs
-the host nftables firewall (with network-admin access) described by the Direct
-runtime; Docker Desktop on macOS and Windows uses its native bridge/NAT path.
+the host nftables firewall (with network-admin access) described by the Doric
+host; Docker Desktop on macOS and Windows uses its native bridge/NAT path.
 SSH needs the pinned Dropbear binary at `dropbearPath` and `ssh-keygen` on
 the host.
 

@@ -113,7 +113,7 @@ npx nx test bundle-core
 The build writes `bundles/foundation/core/dist`, which
 `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/core`. To rebuild and stage every bundle
-used by the Direct host:
+used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

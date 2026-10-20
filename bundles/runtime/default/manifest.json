@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "id": "default",
+  "version": "2.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "The default agent: system prompt, skills, tools, model resolution and provider history.",
+  "provides": ["executor/v1@1.2.0", "default.hooks/v1@1.0.0"],
+  "requires": [
+    "tools/v1@^1.0.0",
+    "skills/v1@^1.0.0",
+    "models/v1@^1.0.0",
+    "host-config/v1@^1.0.0",
+    "hooks/v1@^1.0.0",
+    "log/v1@^1.0.0"
+  ],
+  "optional": ["runtime.threads/v1", "runtime.hooks/v1"]
+}

@@ -87,7 +87,7 @@ with the built core and settings parts. Stories under `stories/` are CSF3, and
 `.storybook/preview.tsx` is the harness that wraps them. The build writes
 `bundles/desktop/settings/dist`, which `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/settings`. To rebuild and stage every
-bundle used by the Direct host:
+bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

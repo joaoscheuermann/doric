@@ -137,7 +137,7 @@ palavras do usuário
 </message>
 ```
 
-Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt inteiro; um prompt só de palavras continua sendo texto simples). Um comentário leva `id`, `in-reply-to` (nas respostas), `pin` e a âncora em atributos — `anchor` com `arquivo:linha`, seletor ou posição, mais `element`, `near` (o elemento mais próximo de um ponto) ou `quote` (o trecho de um intervalo) —, e a nota como corpo. Os valores de atributo são escapados e, nos corpos, as tags de fechamento dos elementos do envelope são neutralizadas (`<\/message>`), para que o texto do usuário não encerre a estrutura. O `runtime` (`bundles/runtime/direct`) embrulha o prompt inteiro em `<user-request>`, então o `chat` nunca escreve esse elemento; o prompt de sistema explica o envelope e manda o agente responder cada comentário com `comment_reply`.
+Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt inteiro; um prompt só de palavras continua sendo texto simples). Um comentário leva `id`, `in-reply-to` (nas respostas), `pin` e a âncora em atributos — `anchor` com `arquivo:linha`, seletor ou posição, mais `element`, `near` (o elemento mais próximo de um ponto) ou `quote` (o trecho de um intervalo) —, e a nota como corpo. Os valores de atributo são escapados e, nos corpos, as tags de fechamento dos elementos do envelope são neutralizadas (`<\/message>`), para que o texto do usuário não encerre a estrutura. O `runtime` (`bundles/runtime/default`) embrulha o prompt inteiro em `<user-request>`, então o `chat` nunca escreve esse elemento; o prompt de sistema explica o envelope e manda o agente responder cada comentário com `comment_reply`.
 
 **A leitura de volta é uma regra só.** O log guarda esse texto, então todo lugar do `chat` que mostra um prompt guardado como "as palavras do usuário" lê o corpo de `<message>`: o turno do usuário, as linhas e a edição da fila, o turno pendente e os marcadores do trilho. Editar um prompt da fila preserva o bloco de comentários (`withPromptMessage` troca só o corpo de `<message>`), e um prompt em texto simples, como o das conversas antigas, é lido como está.
 
@@ -191,6 +191,6 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 - [Papercraft](./papercraft/README.md): o primeiro consumidor — a âncora carimbada, o pino e a pilha.
 - [Eventos e nodes](./events-and-nodes.md): o log durável, os projetores e os nodes de conversa.
 - [O bundle chat](./chat.md): `chat.views/v1`, os renderizadores e o serviço de compositor.
-- [Direct](../../../bundles/runtime/direct/README.md): o envelope de entrada (`<user-request>` e os demais) em que o prompt chega ao modelo.
+- [Default](../../../bundles/runtime/default/README.md): o envelope de entrada (`<user-request>` e os demais) em que o prompt chega ao modelo.
 - [Armazenamento genérico e histórico](./storage.md): o cache local por bundle, o precedente do `history`.
 - [Contextos e capacidades](./contexts.md): o `call` com `scope`, que é o que amarra o comentário ao Project, à Thread e ao prompt.

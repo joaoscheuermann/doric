@@ -151,9 +151,10 @@ What each bundle owns:
   `settings/v1`, `secrets/v1`, `storage/v1` and `events/v1`. Every other bundle
   registers its tools with `tools/v1`, and the loader registers each bundle's
   `skills/*/SKILL.md` with `skills/v1`, in lexical folder order.
-- **`direct`** (`bundles/runtime/direct`) holds the Direct executor and its
-  prompt. It binds every registered tool and appends every registered skill on
-  each prompt.
+- **`default`** (`bundles/runtime/default`) holds the default agent's executor
+  and its prompt. It binds every registered tool and appends every registered
+  skill on each prompt, and passes the system prompt through its
+  `default.hooks/v1` before every model request.
 - **`threads`** (`bundles/features/threads`) ships the delegation tools
   `thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
   `thread-interrupt` and `thread-terminate`, which reach the host only through

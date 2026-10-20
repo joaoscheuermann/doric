@@ -169,7 +169,7 @@ export const SwitchBranchCommandV1 = ref<typeof switchBranchCommand>(
 
 `ref` guarda só o ID; os dois `import type` somem no build, então importar `git/contracts` no client não traz o código do host, e importá-lo no host não traz o código do client. O consumidor:
 
-1. importa só esse entrypoint, por exemplo `git/contracts` ou `direct/contracts`;
+1. importa só esse entrypoint, por exemplo `git/contracts` ou `default/contracts`;
 2. declara o ID do contrato em `requires` no manifesto, ou o consulta com `whenAvailable` quando a dependência é opcional.
 
 Em runtime, o loader resolve o contrato pelo ID, então o consumidor nunca importa código interno do dono. O import de `contracts/` traz referências, tipos e as definições sem lógica. A validação de um serviço ou comando acontece no provedor, com o zod da definição, e entre processos com o JSON Schema gerado dela e publicado no catálogo. O próprio dono não importa `git/contracts`: o código de `git` importa seus contratos por caminho relativo (`../contracts/index.js`).

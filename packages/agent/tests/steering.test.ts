@@ -208,6 +208,27 @@ for (const mode of ['complete', 'stream'] as const) {
     assert.deepEqual(steer.pending, ['After the result.']);
   });
 
+  void test(`${mode}: a new run reads waiting steering after its input, before its first turn`, async () => {
+    const steer = createSteering();
+    steer.send('Follow these rules.');
+    const harness = createHarness(() => completeFinish('Followed.'));
+
+    const result = await run(harness.agent, mode, {
+      steering: steer.steering,
+    });
+
+    assert.equal(result.text, 'Followed.');
+    assert.equal(harness.provider.requests.length, 1);
+    assert.deepEqual(
+      harness.provider.requests[0]?.messages
+        .filter((message) => message.role === 'user')
+        .map((message) => message.content),
+      ['Start.', 'Follow these rules.'],
+    );
+    if (mode === 'stream')
+      assert.deepEqual(result.steered, ['Follow these rules.']);
+  });
+
   void test(`${mode}: a resumed run reads waiting steering before its first turn`, async () => {
     const steer = createSteering();
     steer.send('Change course.');

@@ -100,7 +100,7 @@ npx nx test bundle-files
 The build writes `bundles/features/files/dist`, which
 `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/files`. To rebuild and stage every bundle
-used by the Direct host:
+used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

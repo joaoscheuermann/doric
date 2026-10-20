@@ -22,7 +22,11 @@ export type PromptInput = {
 const sourceOf = (value: unknown): QueueItem['source'] => {
   if (typeof value !== 'object' || value === null || !('kind' in value))
     return { kind: 'user' };
-  if (!['user', 'terminal', 'parent', 'result'].includes(String(value.kind)))
+  if (
+    !['user', 'terminal', 'parent', 'result', 'bundle'].includes(
+      String(value.kind),
+    )
+  )
     return { kind: 'user' };
   return value as QueueItem['source'];
 };
@@ -102,6 +106,13 @@ export const readInput = (
     terminal === undefined
       ? delegatedInput(input.source, input.text)
       : undefined;
+  const instruction =
+    input.source.kind === 'bundle'
+      ? {
+          bundleId: input.source.bundleId ?? 'bundle',
+          reason: input.source.reason ?? 'instruction',
+        }
+      : undefined;
   return {
     type: 'user',
     promptId: item.promptId,
@@ -116,6 +127,7 @@ export const readInput = (
     awaiting: false,
     ...(delegated === undefined ? {} : { delegated }),
     ...(terminal === undefined ? {} : { terminal }),
+    ...(instruction === undefined ? {} : { instruction }),
   };
 };
 
