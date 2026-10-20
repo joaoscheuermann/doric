@@ -1895,6 +1895,11 @@ createdAt }`.
 PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.
+A Thread watch that loses its stream (`disconnected` or `unavailable`)
+resubscribes from its cursor when the connection reports `connected` again,
+or after one second when it already reads `connected` — the connection status
+follows a socket of its own that can return before the bridge does, as after
+the machine sleeps — and again for as long as each attempt ends the same way.
 
 The `postgres` bundle owns the Prisma ORM 7 schema, generated client
 configuration, and versioned PostgreSQL migrations;

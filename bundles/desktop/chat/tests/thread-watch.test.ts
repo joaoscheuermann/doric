@@ -32,6 +32,8 @@ const fakeHost = () => {
   const subscriptions: Subscription[] = [];
   let status: ConnectionStatus = 'connected';
   const listeners = new Set<(status: ConnectionStatus) => void>();
+  /** Timers the watch scheduled and that have not run or been cancelled. */
+  const timers = new Set<() => void>();
   const connection: ConnectionSource = {
     status: () => status,
     subscribe: (listener) => {
@@ -56,7 +58,17 @@ const fakeHost = () => {
       },
     }),
     connection: () => connection,
+    schedule: (run) => {
+      timers.add(run);
+      return () => timers.delete(run);
+    },
   });
+  /** Runs every timer the watch has scheduled so far, as the delay elapsed. */
+  const fireTimers = () => {
+    const due = [...timers];
+    timers.clear();
+    for (const run of due) run();
+  };
   const setStatus = (next: ConnectionStatus) => {
     status = next;
     for (const listener of [...listeners]) listener(next);
@@ -66,7 +78,7 @@ const fakeHost = () => {
     assert.ok(last !== undefined, 'no subscription was opened');
     return last;
   };
-  return { watch, subscriptions, latest, setStatus };
+  return { watch, subscriptions, latest, setStatus, fireTimers, timers };
 };
 
 const event = (sequence: number, threadId = 'thread-id') => ({
@@ -147,6 +159,76 @@ describe('Thread watch', () => {
       afterSequence: 10,
     });
     assert.deepEqual(kinds(seen.updates), ['snapshot', 10]);
+  });
+
+  test('resubscribes from the cursor after a delay when the bridge drops while the connection still reads connected', () => {
+    const host = fakeHost();
+    const seen = recorder();
+    host.watch.watch('thread-id', 0, seen.listener);
+    host.latest().observer.next({ kind: 'event', event: event(3) });
+
+    host
+      .latest()
+      .observer.end?.(new ContractError('disconnected', 'The bridge closed.'));
+    assert.equal(host.subscriptions.length, 1);
+    host.fireTimers();
+
+    assert.equal(host.subscriptions.length, 2);
+    assert.deepEqual(host.latest().input, {
+      threadId: 'thread-id',
+      afterSequence: 3,
+    });
+    assert.deepEqual(kinds(seen.updates), [3]);
+  });
+
+  test('keeps resubscribing when the connection reports connected before the bridge is back', () => {
+    const host = fakeHost();
+    const seen = recorder();
+    host.watch.watch('thread-id', 0, seen.listener);
+    host.latest().observer.next({ kind: 'event', event: event(4) });
+
+    // Sleep: the bridge drops, and the status monitor comes back first.
+    host.setStatus('disconnected');
+    host.latest().observer.end?.(new ContractError('disconnected', 'gone'));
+    host.setStatus('connected');
+    // That resubscription reaches a bridge that is still down.
+    host.latest().observer.end?.(new ContractError('disconnected', 'gone'));
+    host.fireTimers();
+    host.latest().observer.next({ kind: 'event', event: event(5) });
+
+    assert.equal(host.subscriptions.length, 3);
+    assert.equal(host.latest().input.afterSequence, 4);
+    assert.deepEqual(kinds(seen.updates), [4, 5]);
+  });
+
+  test('treats an unavailable stream like a lost bridge, silently', () => {
+    const host = fakeHost();
+    const seen = recorder();
+    host.watch.watch('thread-id', 2, seen.listener);
+
+    host
+      .latest()
+      .observer.end?.(
+        new ContractError('unavailable', 'Doric is unavailable.'),
+      );
+    host.fireTimers();
+
+    assert.equal(host.subscriptions.length, 2);
+    assert.deepEqual(seen.updates, []);
+  });
+
+  test('a released watch cancels the resubscription it was waiting on', () => {
+    const host = fakeHost();
+    const release = host.watch.watch('thread-id', 0, recorder().listener);
+    host.latest().observer.end?.(new ContractError('disconnected', 'gone'));
+
+    release();
+    host.fireTimers();
+    host.setStatus('disconnected');
+    host.setStatus('connected');
+
+    assert.equal(host.subscriptions.length, 1);
+    assert.equal(host.timers.size, 0);
   });
 
   test("drops a foreign event carried inside this Thread's snapshot", () => {
