@@ -291,3 +291,62 @@ void test('a disabled executor refuses the on-demand compact before planning', a
   });
   assert.deepEqual(refused, { status: 'refused', reason: 'disabled' });
 });
+
+void test('the on-demand compact keeps a standing instruction verbatim and out of the summary', async () => {
+  const state = fakeThreadState();
+  const transcripts: string[] = [];
+  const services = bundleServices({
+    configuration: compactionConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: async function* (request: ProviderRequest) {
+        transcripts.push(String(request.messages.at(-1)?.content));
+        yield {
+          type: 'response.finished' as const,
+          finish: {
+            text: 'The conversation built a feature.',
+            finishReason: 'stop' as const,
+            toolCalls: [],
+          },
+        };
+      },
+    },
+  });
+  await services.activate();
+  const instruction = {
+    role: 'user' as const,
+    content:
+      '<bundle-instruction bundle="default" reason="coding-workflow">\nRules.\n</bundle-instruction>',
+  };
+  const history = [
+    ...longHistory(12),
+    { role: 'user' as const, content: 'recent' },
+  ];
+  history.splice(3, 0, instruction);
+  state.apply({
+    format: 'default.history/v1',
+    parts: {
+      messages: history,
+      meta: {
+        checkpoints: {},
+        messageCount: history.length,
+        retained: { 'default:coding-workflow': 3 },
+      },
+    },
+  });
+
+  const result = await services.executor(scope).compact({
+    thread: thread(),
+    session: state.session('compaction-retained'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.equal(result.status, 'compacted');
+  const messages = (await state.reader().read('messages')) as ProviderMessage[];
+  assert.deepEqual(messages[1], instruction);
+  assert.deepEqual(
+    (state.parts().meta as { retained?: Record<string, number> }).retained,
+    { 'default:coding-workflow': 1 },
+  );
+  assert.ok(transcripts.every((text) => !text.includes('Rules.')));
+});

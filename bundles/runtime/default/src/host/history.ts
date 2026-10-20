@@ -10,7 +10,9 @@ import type { HistoryPatch, HistoryReader } from 'runtime/contracts';
  *   sanitizes them on write), formerly `thread.messages`.
  * - `meta`: the turn boundaries by prompt ID and the length of the stored
  *   `messages`, formerly `thread.checkpoints` and
- *   `jsonb_array_length(messages)`.
+ *   `jsonb_array_length(messages)`, and the retained messages: the index of
+ *   each standing instruction by its key (`<bundleId>:<reason>`), which every
+ *   compaction keeps verbatim and every rewrite re-bases like a boundary.
  */
 
 export const historyFormat = 'default.history/v1';
@@ -21,7 +23,18 @@ export const legacyHistoryFormat = 'direct.history/v1';
 export interface HistoryMeta {
   readonly checkpoints: Readonly<Record<string, number>>;
   readonly messageCount: number;
+  readonly retained: Readonly<Record<string, number>>;
 }
+
+/** The entries of a stored index map whose values are whole indexes. */
+const indexes = (value: unknown): Readonly<Record<string, number>> =>
+  isRecord(value)
+    ? Object.fromEntries(
+        Object.entries(value).filter((entry): entry is [string, number] =>
+          Number.isInteger(entry[1]),
+        ),
+      )
+    : {};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,9 +49,10 @@ export const readMessages = async (
 };
 
 /**
- * The stored turn boundaries and message count. A Thread with no `meta` part
- * has no boundary yet, and its message count is the length of whatever
- * `messages` it holds, as the database's `jsonb_array_length` was.
+ * The stored turn boundaries, message count and retained messages. A Thread
+ * with no `meta` part has no boundary or retained message yet, and its
+ * message count is the length of whatever `messages` it holds, as the
+ * database's `jsonb_array_length` was.
  */
 export const readMeta = async (
   history: HistoryReader,
@@ -54,12 +68,13 @@ export const readMeta = async (
         ? value.messageCount
         : (await readMessages(history)).length;
 
-    return { checkpoints, messageCount };
+    return { checkpoints, messageCount, retained: indexes(value.retained) };
   }
 
   return {
     checkpoints: {},
     messageCount: (await readMessages(history)).length,
+    retained: {},
   };
 };
 
@@ -83,6 +98,7 @@ export const checkpoint = async ({
       meta: {
         checkpoints: { [promptId]: meta.messageCount, ...meta.checkpoints },
         messageCount: meta.messageCount,
+        retained: meta.retained,
       },
     },
   };
@@ -90,8 +106,9 @@ export const checkpoint = async ({
 
 /**
  * The history a rewind to `promptId` leaves: the messages before its
- * boundary, and every boundary of a removed prompt dropped. A prompt with no
- * boundary cannot be rewound, and gives undefined.
+ * boundary, every boundary of a removed prompt dropped, and every retained
+ * message past the boundary forgotten, so its instruction can be given
+ * again. A prompt with no boundary cannot be rewound, and gives undefined.
  */
 export const rewind = async ({
   history,
@@ -119,19 +136,26 @@ export const rewind = async ({
           Object.entries(meta.checkpoints).filter(([id]) => !removed.has(id)),
         ),
         messageCount: messages.length,
+        retained: Object.fromEntries(
+          Object.entries(meta.retained).filter(([, index]) => index < boundary),
+        ),
       },
     },
   };
 };
 
-/** The history a run writes: its messages, keeping the boundaries it loaded. */
+/**
+ * The history a run writes: its messages, with the boundaries and retained
+ * messages that match them.
+ */
 export const saved = (
   messages: readonly ProviderMessage[],
   checkpoints: Readonly<Record<string, number>>,
+  retained: Readonly<Record<string, number>>,
 ): HistoryPatch => ({
   format: historyFormat,
   parts: {
     messages,
-    meta: { checkpoints, messageCount: messages.length },
+    meta: { checkpoints, messageCount: messages.length, retained },
   },
 });

@@ -22,12 +22,24 @@ generation process next to `runtime`, which calls it. See the
   `direct.history/v1` written before the rename);
 - `compact` — condense an idle Thread's history on demand.
 
-`default.hooks/v1@1.0.0`, with:
+`default.hooks/v1@1.0.0`, an extension point for other bundles (the
+`default` bundle registers no handler of its own), with:
 
 - `onBeforeModelRequestHook` (`transform`, input `{ system }`) — runs before
-  every model request of a prompt, under the prompt's call, so a handler can
-  adjust the system prompt to the Thread's state at that turn. A bundle
-  registers through `hooks/v1` with `default.hooks/v1` in its `requires`.
+  every model request of a prompt, under the prompt's call (`call.scope` names
+  the prompt and `call.signal` aborts with it), so a handler can adjust the
+  system prompt to the Thread's state at that turn. Each handler receives the
+  previous one's output; a failing handler is skipped. A bundle registers
+  through `hooks/v1` with `default.hooks/v1` in its `requires`:
+
+  ```ts
+  services
+    .use(HooksV1)
+    .use(DefaultHooksV1)
+    .onBeforeModelRequestHook(({ system }) => ({
+      system: `${system}\n\n# Project rules\n\nUse tabs.`,
+    }));
+  ```
 
 ## Behavior
 
@@ -38,20 +50,35 @@ generation process next to `runtime`, which calls it. See the
 - **Working in code:** the instruction tells the agent to work at a
   repository's root, to initialize a repository for a complex deliverable that
   has none, and to ask the user first when the code is an experiment.
-- **Coding in a repository:** the bundle's own `onBeforeModelRequestHook`
-  handler appends the coding workflow (`src/host/prompts/repository.ts`) while
-  the Thread's record carries a `cwdRepo` hint, which the runtime sets when its
-  working directory is a repository root. The workflow runs Search, Plan,
-  Development (contracts, red tests, green implementation) and Cleanup; the
-  main Thread delegates each step to a child Thread with a self-contained
-  prompt, except for trivial changes, and a child does its delegated step
-  itself. The hint is read through `runtime.threads/v1`, an `optional`
-  contract because the runtime requires `executor/v1`.
+- **Coding in a repository:** the coding workflow
+  (`src/host/prompts/repository.ts`) reaches the agent as a standing
+  instruction, not as system prompt text, once per Thread. The bundle calls
+  `runtime.threads/v1.instruct` (reason `coding-workflow`, `retain: true`):
+  - when a task — the reader's request or a parent's delegated step — starts
+    while the Thread's `cwdRepo` hint is set: the executor checks before the
+    run's first model request;
+  - when a running prompt moves into a repository root, after the tool batch
+    that moved it: the `onThreadCwdChangedHook` handler checks the run;
+
+  and in both cases only while the history the model reads does not hold it
+  (`meta.retained`), so a later task, or a move between repositories, gives
+  nothing again, and a rewind that removed it gives it once more.
+
+  The workflow runs Search, Plan, Development (Contracts, then red Tests, then
+  green Implementation) and Cleanup, each subagent type with its goal, tools,
+  the files it may change and what it returns; Contracts generates the
+  contracts as its result and changes no file. The main Thread delegates each
+  step to a child Thread whose title and first instruction line name its type
+  (`Search: …`, `Type: Search`), except for trivial changes; a child does its
+  delegated step itself. Both runtime contracts are `optional`, because the
+  runtime requires `executor/v1`.
+
 - **Input envelope:** every input is framed in XML, not Markdown headers:
   `<user-request>`, `<parent-instruction thread="" prompt="">`,
-  `<terminal-output terminal="" prompt="">` or
-  `<child-result thread="" prompt="">`. Attribute values escape `&`, `"` and
-  `<`; a closing tag of those four names inside the body becomes `<\/…`. Older
+  `<terminal-output terminal="" prompt="">`,
+  `<child-result thread="" prompt="">` or
+  `<bundle-instruction bundle="" reason="">`. Attribute values escape `&`, `"`
+  and `<`; a closing tag of those five names inside the body becomes `<\/…`. Older
   history keeps its `# User request` text. The system prompt describes the
   envelope, the chat's `<comments>`, `<target>`, `<comment>` and `<message>`
   parts, and the `comment_reply` tool.
@@ -60,7 +87,9 @@ generation process next to `runtime`, which calls it. See the
 - **Model:** the configured execution provider, model and effort, read from
   `host-config/v1` and resolved through `models/v1`.
 - **History:** stored as `default.history/v1` in two parts, `messages` and
-  `meta` (turn boundaries and message count). A Thread written as
+  `meta` (turn boundaries, message count, and `retained`: the index of each
+  standing instruction by `<bundleId>:<reason>`, recorded when the run stores a
+  retained bundle steer). A Thread written as
   `direct.history/v1` holds the same parts; it is read as is and rewritten in
   the new format on its next save. The executor saves it on
   `response.finished`, on `tool.finished` and when the run ends.
@@ -70,7 +99,10 @@ generation process next to `runtime`, which calls it. See the
   enabled, a run measures context pressure before its first provider call
   and between turns, and condenses older history into one summary when it
   passes the configured line; `compact` does the same on demand. The rewrite
-  keeps an assistant tool call with its result.
+  keeps an assistant tool call with its result, and keeps every retained
+  message of the condensed span verbatim right after the summary, out of the
+  summarizer's input, with its index re-based like the turn boundaries; a
+  rewind forgets the retained messages past its boundary.
 - **Writes:** every history and event write goes through the runtime's
   `PromptSession`, which redacts, persists, publishes and keeps the retry.
 
@@ -78,7 +110,8 @@ generation process next to `runtime`, which calls it. See the
 
 `npx nx test bundle-default` runs the ported executor scenarios against fake
 `host-config/v1`, `models/v1`, `tools/v1`, `skills/v1`, `hooks/v1` and
-`runtime.threads/v1` providers and a fake prompt session. It also runs the exact request-body checks: the real `llms`
+`runtime.threads/v1` providers and a fake prompt session, and the coding
+workflow's instruction policy through the runtime hooks it observes. It also runs the exact request-body checks: the real `llms`
 OpenRouter and OpenAI Responses providers, with a faked HTTP transport, must
 send the bodies the stage-1 host recorded (`tests/fixtures/request-body`).
 

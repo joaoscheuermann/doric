@@ -165,7 +165,8 @@ loading durable history and supplying results for any interrupted tool calls.
 ### Steering
 
 Pass `steering` to let a caller correct a run in flight. The loop calls it
-before the first turn of a resumed run, after every executed tool batch, and
+before the first turn of every run (after the input of a new one), after every
+executed tool batch, and
 once more before an ordinary run would finish, and stores each returned message
 as a user message before its next provider turn; streaming emits one
 `agent.steered` event per message. A message that arrives while the model

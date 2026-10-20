@@ -5,11 +5,13 @@ import { isCompactionCheckpoint } from './markers.js';
 
 /*
  * The surface rewrite (the contract's one surface mutation): the condensed
- * span [start, end) is replaced by one summary message, the retained tail
- * keeps its order, and the turn boundaries (`meta.checkpoints`) move with
- * the history — re-based across the removed span, dropped when their prompt
- * was condensed away, which is what makes a rewind to those prompts refuse
- * (`unknown_prompt`) instead of resurfacing content the summary replaced.
+ * span [start, end) is replaced by one summary message, followed by the
+ * span's retained messages verbatim (`meta.retained`, the standing
+ * instructions), and the tail keeps its order. The turn boundaries
+ * (`meta.checkpoints`) move with the history — re-based across the removed
+ * span, dropped when their prompt was condensed away, which is what makes a
+ * rewind to those prompts refuse (`unknown_prompt`) instead of resurfacing
+ * content the summary replaced — and so do the retained indexes.
  */
 
 /** Estimate of a text's tokens: ~4 characters per token, explicit estimate. */
@@ -33,7 +35,30 @@ export interface Condensation {
 export interface HistoryMeta {
   readonly checkpoints: Readonly<Record<string, number>>;
   readonly messageCount: number;
+  /** The retained messages' indexes by key; absent, nothing is retained. */
+  readonly retained?: Readonly<Record<string, number>>;
 }
+
+/** The span's retained message indexes, in history order. */
+export const keptIndexes = (
+  meta: Pick<HistoryMeta, 'retained'>,
+  start: number,
+  end: number,
+): readonly number[] =>
+  Object.values(meta.retained ?? {})
+    .filter((index) => index >= start && index < end)
+    .sort((left, right) => left - right);
+
+/** The span's messages the summarizer condenses: all but the retained ones. */
+export const condensedSpan = (
+  messages: readonly ProviderMessage[],
+  meta: Pick<HistoryMeta, 'retained'>,
+  start: number,
+  end: number,
+): readonly ProviderMessage[] => {
+  const kept = new Set(keptIndexes(meta, start, end));
+  return messages.slice(start, end).filter((_, at) => !kept.has(start + at));
+};
 
 /**
  * The largest safe end of a condensed span that keeps at least `tailMin`
@@ -64,14 +89,39 @@ export const rebasedCheckpoints = (
   end: number,
 ): Readonly<Record<string, number>> => {
   const removed = end - start;
+  // The summary and the retained messages now sit before the tail.
+  const inserted = 1 + keptIndexes(meta, start, end).length;
   const checkpoints: Record<string, number> = {};
   for (const [id, boundary] of Object.entries(meta.checkpoints)) {
     if (boundary >= start && boundary < end) continue;
-    // A surviving boundary past the span re-bases by the removed count, and
-    // gains one back for the summary message that now sits before the tail.
-    checkpoints[id] = boundary >= end ? boundary - removed + 1 : boundary;
+    checkpoints[id] =
+      boundary >= end ? boundary - removed + inserted : boundary;
   }
   return checkpoints;
+};
+
+/**
+ * The retained indexes a rewrite leaves: a retained message of the span moves
+ * to its place after the summary, one past the span re-bases like a
+ * boundary, one before it stays.
+ */
+export const rebasedRetained = (
+  meta: HistoryMeta,
+  start: number,
+  end: number,
+): Readonly<Record<string, number>> => {
+  const kept = keptIndexes(meta, start, end);
+  const removed = end - start;
+  return Object.fromEntries(
+    Object.entries(meta.retained ?? {}).map(([key, index]) => [
+      key,
+      index < start
+        ? index
+        : index < end
+          ? start + 1 + kept.indexOf(index)
+          : index - removed + 1 + kept.length,
+    ]),
+  );
 };
 
 /** The character count of a message the estimate reads. */
@@ -86,17 +136,23 @@ const messageChars = (message: ProviderMessage): number => {
   );
 };
 
-/** The span's size against the summary's, as an estimated token gain. */
+/**
+ * The span's size against the summary's, as an estimated token gain. The
+ * span's retained messages stay, so they free nothing and count as retained.
+ */
 export const condensation = (
   messages: readonly ProviderMessage[],
   start: number,
   end: number,
   summaryChars: number,
+  meta: Pick<HistoryMeta, 'retained'> = {},
 ): Condensation => {
-  let chars = 0;
-  for (let index = start; index < end; index += 1) {
-    chars += messageChars(messages[index] as ProviderMessage);
-  }
+  const condensed = condensedSpan(messages, meta, start, end);
+  const kept = end - start - condensed.length;
+  const chars = condensed.reduce(
+    (total, message) => total + messageChars(message),
+    0,
+  );
   const freed = Math.max(
     0,
     estimatedTokens(chars) - estimatedTokens(summaryChars),
@@ -104,8 +160,8 @@ export const condensation = (
   return {
     start,
     end,
-    condensedMessages: end - start,
-    retainedMessages: messages.length - end + 1,
+    condensedMessages: condensed.length,
+    retainedMessages: messages.length - end + 1 + kept,
     summaryChars,
     tokensFreed: freed,
   };
@@ -118,9 +174,27 @@ export interface Rewritten {
 }
 
 /**
- * The rewritten history: the summary message in the span's place, the tail
- * unchanged, checkpoints re-based. The caller passes the summary already
- * built (marker line included), so this stays a pure shape transform.
+ * The messages that take the span's place: the summary, then the span's
+ * retained messages verbatim, in history order.
+ */
+export const replacement = (
+  messages: readonly ProviderMessage[],
+  meta: Pick<HistoryMeta, 'retained'>,
+  summaryMessage: ProviderMessage,
+  start: number,
+  end: number,
+): readonly ProviderMessage[] => [
+  summaryMessage,
+  ...keptIndexes(meta, start, end).map(
+    (index) => messages[index] as ProviderMessage,
+  ),
+];
+
+/**
+ * The rewritten history: the summary and the span's retained messages in the
+ * span's place, the tail unchanged, checkpoints and retained indexes
+ * re-based. The caller passes the summary already built (marker line
+ * included), so this stays a pure shape transform.
  */
 export const rewritten = (
   messages: readonly ProviderMessage[],
@@ -128,17 +202,21 @@ export const rewritten = (
   summaryMessage: ProviderMessage,
   start: number,
   end: number,
-): Rewritten => ({
-  messages: [
-    ...messages.slice(0, start),
-    summaryMessage,
-    ...messages.slice(end),
-  ],
-  meta: {
-    checkpoints: rebasedCheckpoints(meta, start, end),
-    messageCount: messages.length - (end - start) + 1,
-  },
-});
+): Rewritten => {
+  const inserted = replacement(messages, meta, summaryMessage, start, end);
+  return {
+    messages: [
+      ...messages.slice(0, start),
+      ...inserted,
+      ...messages.slice(end),
+    ],
+    meta: {
+      checkpoints: rebasedCheckpoints(meta, start, end),
+      messageCount: messages.length - (end - start) + inserted.length,
+      retained: rebasedRetained(meta, start, end),
+    },
+  };
+};
 
 /** Whether a history still holds a summary from an earlier condensation. */
 export const hasCheckpoint = (messages: readonly ProviderMessage[]): boolean =>

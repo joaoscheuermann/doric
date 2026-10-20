@@ -8,6 +8,7 @@ import {
 import {
   ExecutorV1,
   executorMethods,
+  RuntimeHooksV1,
   type RuntimeThreads,
   RuntimeThreadsV1,
 } from 'runtime/contracts';
@@ -21,7 +22,7 @@ import {
   legacyHistoryFormat,
   rewind,
 } from './history.js';
-import { repositoryTopic } from './repository.js';
+import { createWorkflow, type Workflow } from './repository.js';
 
 /**
  * The default `executor/v1`: one prompt run, its turn boundary and rewind.
@@ -29,13 +30,16 @@ import { repositoryTopic } from './repository.js';
  * overload's exact result type. Every model request of a run first passes its
  * system prompt through `hooks.onBeforeModelRequestHook`.
  */
-export const createExecutor = (hooks: HookHandle<typeof DefaultHooksV1>) =>
+export const createExecutor = (
+  hooks: HookHandle<typeof DefaultHooksV1>,
+  workflow: Workflow,
+) =>
   defineService(ExecutorV1.id, {
     run: defineMethod({
       input: executorMethods.run.input,
       output: executorMethods.run.output,
       execute: (input, call, services) =>
-        runPrompt(input, call, services, hooks),
+        runPrompt(input, call, services, hooks, workflow),
     }),
     checkpoint: defineMethod({
       input: executorMethods.checkpoint.input,
@@ -60,9 +64,11 @@ export const createExecutor = (hooks: HookHandle<typeof DefaultHooksV1>) =>
   });
 
 /**
- * Defines `default.hooks/v1`, adds the coding workflow to it for a Thread at
- * a repository root, and provides the default executor. The runtime requires
- * `executor/v1`, so its Thread reads arrive after activation, when it does.
+ * Defines `default.hooks/v1`, provides the default executor, and gives a
+ * Thread the coding workflow once, as a standing instruction: when a task
+ * starts at a repository root or a running prompt moves into one, while its
+ * history does not hold it. The runtime requires `executor/v1`, so its hooks
+ * and Thread controls arrive after activation, when it does.
  */
 export const activate = ({ services }: HostContext): void => {
   let threads: RuntimeThreads | undefined;
@@ -74,10 +80,10 @@ export const activate = ({ services }: HostContext): void => {
       threads = undefined;
     };
   });
+  const workflow = createWorkflow(() => threads);
+  hooks.whenAvailable(RuntimeHooksV1, (runtime) => {
+    runtime.onThreadCwdChangedHook(workflow.onCwdChanged);
+  });
 
-  const handle = hooks.define(DefaultHooksV1);
-  hooks
-    .use(DefaultHooksV1)
-    .onBeforeModelRequestHook(repositoryTopic(() => threads));
-  services.provide(createExecutor(handle));
+  services.provide(createExecutor(hooks.define(DefaultHooksV1), workflow));
 };

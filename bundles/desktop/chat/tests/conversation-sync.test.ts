@@ -141,6 +141,24 @@ const fill = (turns: readonly Turn[], creates: number): string[] => {
 };
 
 describe('bringing the blocks in step with the turns', () => {
+  test('names the bundle on its instruction, beside the agent mark, not the reader', () => {
+    const instruction: UserTurn = {
+      ...user('instruction', 3),
+      instruction: { bundleId: 'default', reason: 'coding-workflow' },
+    };
+    const plan = syncPlan(
+      [],
+      [user('one', 1), agent('one', 2), instruction],
+      10,
+    );
+
+    assert.deepEqual(plan.steps[2]?.author, {
+      role: 'agent',
+      name: 'default · coding-workflow',
+      at: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
   for (const kind of ['parent', 'result'] as const) {
     test(`keeps ${kind} input in order without attributing it to the reader`, () => {
       const input: UserTurn = {

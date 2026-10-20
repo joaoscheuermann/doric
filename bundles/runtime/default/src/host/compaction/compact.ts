@@ -13,8 +13,10 @@ import type { HistoryMeta } from './rewrite.js';
 import {
   type Condensation,
   condensation,
+  condensedSpan,
   condensibleEnd,
   type Rewritten,
+  replacement,
   rewritten,
 } from './rewrite.js';
 
@@ -48,20 +50,29 @@ export type CompactionPlan =
  * The cut a condensation would use: the largest safe boundary that keeps at
  * least `tailMin` messages behind it. `missing_history` when there is no
  * history yet; `nothing_to_compact` when no safe cut fits — the tail the
- * policy protects is the whole conversation, or the span would be empty.
+ * policy protects is the whole conversation, or the span holds only earlier
+ * summaries and retained messages, which a condensation would not shrink.
  */
 export const planCompaction = (
   messages: readonly ProviderMessage[],
   policy: CompactionPolicy,
+  meta: Pick<HistoryMeta, 'retained'> = {},
 ): CompactionPlan => {
   if (messages.length === 0)
     return { status: 'refused', reason: 'missing_history' };
   const end = condensibleEnd(messages, policy.tailMinMessages);
   return end === undefined ||
-    messages.slice(0, end).every(isCompactionCheckpoint)
+    condensedSpan(messages, meta, 0, end).every(isCompactionCheckpoint)
     ? { status: 'refused', reason: 'nothing_to_compact' }
     : { status: 'planned', end };
 };
+
+/** What the summarizer reads for a planned cut: the span without its retained messages. */
+export const summarizedSpan = (
+  messages: readonly ProviderMessage[],
+  meta: Pick<HistoryMeta, 'retained'>,
+  end: number,
+): readonly ProviderMessage[] => condensedSpan(messages, meta, 0, end);
 
 /** The planned rewrite's inputs, once the summary exists. */
 export interface ApplyInput {
@@ -78,6 +89,8 @@ export interface ApplyInput {
 export interface Applied {
   readonly summaryId: string;
   readonly summaryMessage: ProviderMessage;
+  /** What takes the span's place in live storage: the summary, then the kept. */
+  readonly replacement: readonly ProviderMessage[];
   readonly rewritten: Rewritten;
   readonly condensation: Condensation;
 }
@@ -103,8 +116,9 @@ export const applyCompaction = (input: ApplyInput): Applied => {
   return {
     summaryId,
     summaryMessage,
+    replacement: replacement(messages, meta, summaryMessage, 0, end),
     rewritten: rewritten(messages, meta, summaryMessage, 0, end),
-    condensation: condensation(messages, 0, end, content.length),
+    condensation: condensation(messages, 0, end, content.length, meta),
   };
 };
 

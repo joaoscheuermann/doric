@@ -16,6 +16,7 @@ import {
   applyCompaction,
   newSummaryId,
   planCompaction,
+  summarizedSpan,
 } from './compaction/compact.js';
 import { CompactionError } from './compaction/errors.js';
 import { projection } from './compaction/project.js';
@@ -129,8 +130,8 @@ export const compactThread = async (
     return { status: 'refused', reason: 'disabled' };
   }
   const stored = await readMessages(session.history);
-  const { checkpoints } = await readMeta(session.history);
-  const plan = planCompaction(stored, policy);
+  const { checkpoints, retained } = await readMeta(session.history);
+  const plan = planCompaction(stored, policy, { retained });
   if (plan.status === 'refused') {
     return { status: 'refused', reason: plan.reason };
   }
@@ -144,11 +145,14 @@ export const compactThread = async (
       services,
       policy.summaryMaxChars,
     ).then((summarizer) =>
-      summarizer.summarize(stored.slice(0, plan.end), call.signal),
+      summarizer.summarize(
+        summarizedSpan(stored, { retained }, plan.end),
+        call.signal,
+      ),
     );
     const applied = applyCompaction({
       messages: stored,
-      meta: { checkpoints, messageCount: stored.length },
+      meta: { checkpoints, messageCount: stored.length, retained },
       end: plan.end,
       trigger: 'manual',
       summaryId,
@@ -158,6 +162,7 @@ export const compactThread = async (
       history: saved(
         applied.rewritten.messages,
         applied.rewritten.meta.checkpoints,
+        applied.rewritten.meta.retained ?? {},
       ),
       event: {
         type: 'compaction.finished',
@@ -192,6 +197,7 @@ export type AutomaticCompaction =
   | {
       readonly status: 'compacted';
       readonly checkpoints: Readonly<Record<string, number>>;
+      readonly retained: Readonly<Record<string, number>>;
     };
 
 /**
@@ -206,6 +212,8 @@ export const maybeCompactRun = async (options: {
   readonly messages: MessageStorage;
   /** The run's checkpoint map, replaced when the rewrite re-bases it. */
   readonly checkpoints: Readonly<Record<string, number>>;
+  /** The run's retained messages, kept and re-based by the rewrite. */
+  readonly retained: Readonly<Record<string, number>>;
   readonly config: CompactionConfig;
   readonly provider: LlmProvider;
   readonly model: string;
@@ -238,7 +246,7 @@ export const maybeCompactRun = async (options: {
   });
   if (!options.force && !measure.underPressure) return { status: 'skipped' };
   const stored = current;
-  const plan = planCompaction(stored, config);
+  const plan = planCompaction(stored, config, { retained: options.retained });
   if (plan.status === 'refused')
     return { status: 'refused', reason: plan.reason };
   const summarizer = executionSummarizer({
@@ -252,12 +260,16 @@ export const maybeCompactRun = async (options: {
   });
   try {
     const summary = await summarizer.summarize(
-      stored.slice(0, plan.end),
+      summarizedSpan(stored, { retained: options.retained }, plan.end),
       options.signal,
     );
     const applied = applyCompaction({
       messages: stored,
-      meta: { checkpoints: options.checkpoints, messageCount: stored.length },
+      meta: {
+        checkpoints: options.checkpoints,
+        messageCount: stored.length,
+        retained: options.retained,
+      },
       end: plan.end,
       trigger: 'automatic',
       summaryId,
@@ -267,6 +279,7 @@ export const maybeCompactRun = async (options: {
       history: saved(
         applied.rewritten.messages,
         applied.rewritten.meta.checkpoints,
+        applied.rewritten.meta.retained ?? {},
       ),
       event: {
         type: 'compaction.finished',
@@ -278,10 +291,11 @@ export const maybeCompactRun = async (options: {
         summaryChars: applied.condensation.summaryChars,
       },
     });
-    options.messages.replaceRange(0, plan.end, [applied.summaryMessage]);
+    options.messages.replaceRange(0, plan.end, applied.replacement);
     return {
       status: 'compacted',
       checkpoints: applied.rewritten.meta.checkpoints,
+      retained: applied.rewritten.meta.retained ?? {},
     };
   } catch (error) {
     const code =

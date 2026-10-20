@@ -17,7 +17,11 @@ import type {
   DoricConfiguration,
 } from '../contracts/configuration.js';
 import { type Executor, ExecutorV1 } from '../contracts/executor.js';
-import { RuntimeHooksV1 } from '../contracts/hooks.js';
+import {
+  type CwdChanged,
+  type PromptStarted,
+  RuntimeHooksV1,
+} from '../contracts/hooks.js';
 import type { RuntimeOwner } from '../contracts/runtime.js';
 import { SandboxV1 } from '../contracts/sandbox.js';
 import type { CredentialPort } from './domain/git-credentials.js';
@@ -67,6 +71,10 @@ export interface RuntimePorts {
       readonly projectId: string;
       readonly threadIds: readonly string[];
     }): Promise<void>;
+    /** onPromptStartedHook (1.2.0), awaited; a failing handler is ignored. */
+    promptStarted?(input: PromptStarted): Promise<void>;
+    /** onThreadCwdChangedHook (1.2.0), awaited; a failing handler is ignored. */
+    cwdChanged?(input: CwdChanged): Promise<void>;
   };
   /**
    * This runtime process, the owner it records on the Projects it holds
@@ -139,6 +147,14 @@ export const createPorts = (services: Services): RuntimePorts => {
       threadsClosing: async ({ projectId, threadIds }) => {
         await hooks.onThreadsClosingHook
           .execute({ projectId, threadIds: [...threadIds] })
+          .catch(() => undefined);
+      },
+      promptStarted: async (input) => {
+        await hooks.onPromptStartedHook.execute(input).catch(() => undefined);
+      },
+      cwdChanged: async (input) => {
+        await hooks.onThreadCwdChangedHook
+          .execute(input)
           .catch(() => undefined);
       },
     },

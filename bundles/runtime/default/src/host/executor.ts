@@ -33,6 +33,7 @@ import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflow } from './compaction/project.js';
 import { readMessages, readMeta, saved } from './history.js';
 import { systemPrompt } from './prompts/system.js';
+import { retainedKey, type Workflow } from './repository.js';
 import { resolveToolConfigs } from './tool-config.js';
 
 // Moved from agents/doric/src/lib/agents/direct/executor.ts (design 57 §5.3).
@@ -59,6 +60,7 @@ const envelopeTags = [
   'parent-instruction',
   'terminal-output',
   'child-result',
+  'bundle-instruction',
 ] as const;
 
 const closingTags = new RegExp(`</(${envelopeTags.join('|')})`, 'gi');
@@ -91,10 +93,15 @@ const input = (job: PromptJob): string => {
               'terminal-output',
               ` terminal="${attribute(source.terminalId)}" prompt="${attribute(source.promptId)}"`,
             ] as const)
-          : ([
-              'child-result',
-              ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
-            ] as const);
+          : source.kind === 'bundle'
+            ? ([
+                'bundle-instruction',
+                ` bundle="${attribute(source.bundleId)}" reason="${attribute(source.reason)}"`,
+              ] as const)
+            : ([
+                'child-result',
+                ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
+              ] as const);
   const body = job.prompt.replace(closingTags, '<\\/$1');
   return `<${tag}${attributes}>
 ${body}
@@ -201,13 +208,16 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * through the runtime's session. Every tool and skill the bundles registered
  * is offered, in bundle order, and each tool runs under the prompt's call.
  * Before every model request the system prompt passes through
- * `onBeforeModelRequestHook`, under the prompt's call.
+ * `onBeforeModelRequestHook`, under the prompt's call. A standing
+ * instruction (a retained bundle steer) is recorded in `meta.retained` when
+ * the run stores it, so compaction keeps it and the workflow gives it once.
  */
 export const runPrompt = async (
-  { job, session }: ExecutorRunInput,
+  { thread, job, session }: ExecutorRunInput,
   call: Call,
   services: Services,
   hooks: HookHandle<typeof DefaultHooksV1>,
+  workflow: Workflow,
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
   const signal = call.signal;
   signal.throwIfAborted();
@@ -215,7 +225,7 @@ export const runPrompt = async (
   // The map the compaction rewrite re-bases when it condenses this run's
   // history: `history()` reads the current value, so every later save
   // carries the re-based boundaries.
-  let { checkpoints } = await readMeta(session.history);
+  let { checkpoints, retained } = await readMeta(session.history);
   const boundary = checkpoints[job.id];
   const resume = boundary !== undefined && stored.length > boundary;
   const { configuration } = await services.use(ConfigurationV1).current(call);
@@ -249,7 +259,29 @@ export const runPrompt = async (
    * than only when the run ends; a run that ends also writes what it left, so a
    * paused prompt is durable before its pause is recorded.
    */
-  const history = () => saved(messages.list(), checkpoints);
+  /**
+   * The retained steers the run took and has not found in its storage yet,
+   * by the exact text the agent stores for each.
+   */
+  const retaining = new Map<string, string>();
+  /** Records where each retained steer the agent stored now sits. */
+  const settle = () => {
+    if (retaining.size === 0) return;
+    const list = messages.list();
+    for (let at = list.length - 1; at >= 0 && retaining.size > 0; at -= 1) {
+      const message = list[at];
+      const content = message?.role === 'user' ? message.content : undefined;
+      const key =
+        typeof content === 'string' ? retaining.get(content) : undefined;
+      if (key === undefined || typeof content !== 'string') continue;
+      retained = { ...retained, [key]: at };
+      retaining.delete(content);
+    }
+  };
+  const history = () => {
+    settle();
+    return saved(messages.list(), checkpoints, retained);
+  };
   const base = systemPromptWith(skills);
   const agent = createAgent({
     provider,
@@ -284,10 +316,12 @@ export const runPrompt = async (
    * resumed history; the between-turn calls project with real usage.
    */
   const compactIfUnderPressure = async (promptChars: number, force = false) => {
+    settle();
     const result = await maybeCompactRun({
       session,
       messages,
       checkpoints,
+      retained,
       config: compaction,
       provider: textProvider,
       model: execution.model,
@@ -298,12 +332,32 @@ export const runPrompt = async (
       force,
       signal,
     });
-    if (result.status === 'compacted') checkpoints = result.checkpoints;
+    if (result.status === 'compacted') {
+      checkpoints = result.checkpoints;
+      retained = result.retained;
+    }
   };
   // A long resumed history plus this run's input is the classic overflow:
   // measure it before the first provider call of the run.
   await compactIfUnderPressure(input(job).length);
   try {
+    // Before the first model request: an instruction the workflow gives here
+    // is read with the run's first steering.
+    await workflow.start(
+      {
+        threadId: thread.id,
+        promptId: job.id,
+        retains: (key) => {
+          settle();
+          return key in retained || [...retaining.values()].includes(key);
+        },
+      },
+      {
+        ...(thread.cwdRepo === undefined ? {} : { cwdRepo: thread.cwdRepo }),
+        source: job.source,
+      },
+      call,
+    );
     for await (const value of agent.stream(input(job), {
       resume,
       signal,
@@ -315,9 +369,15 @@ export const runPrompt = async (
             // Each steer reaches the model in its source's envelope: the
             // reader's request, a child's result or a terminal's output.
             steering: async () =>
-              ((await session.steers?.()) ?? []).map(({ prompt, source }) =>
-                input({ id: job.id, prompt, source }),
-              ),
+              ((await session.steers?.()) ?? []).map(({ prompt, source }) => {
+                const text = input({ id: job.id, prompt, source });
+                if (source.kind === 'bundle' && source.retain === true)
+                  retaining.set(
+                    text,
+                    retainedKey(source.bundleId, source.reason),
+                  );
+                return text;
+              }),
           }),
     })) {
       if (
@@ -373,6 +433,7 @@ export const runPrompt = async (
     }
     throw error;
   } finally {
+    workflow.end(job.id);
     // The run ended, so whatever it left — complete or partial — is the history
     // its Thread carries on with.
     if (!lost) await session.record({ history: history() });

@@ -32,6 +32,7 @@ import {
   type SteerInput,
   type Thread,
 } from 'runtime/contracts';
+import type { z } from 'zod';
 
 import { activate } from '../../src/host/index.js';
 
@@ -186,15 +187,18 @@ export interface HarnessOptions {
   readonly tools?: readonly RegisteredTool[];
   readonly skills?: readonly RegisteredSkill['skill'][];
   /**
-   * The repository hint `runtime.threads/v1` reads on the Thread's record at
-   * each call; absent, the Thread works outside any repository.
+   * What the runtime does with an instruction the bundle gives: the steer the
+   * run reads at its next safe point, as `fakeThreadState().steer` queues it.
    */
-  readonly cwdRepo?: () => CwdRepo | undefined;
+  readonly onInstruct?: (
+    input: z.output<typeof runtimeThreadsMethods.instruct.input>,
+  ) => void;
 }
 
 /**
- * A `hooks/v1` that runs every handler of a transform hook in registration
- * order, each on the previous one's output, as the core's provider does.
+ * A `hooks/v1` that runs every handler of a hook in registration order: a
+ * transform hook's handler takes the previous one's output, as the core's
+ * provider does, and an observe hook's handlers all take the input.
  */
 const transformHooks = () => {
   const handlers = new Map<string, AnyHookHandler[]>();
@@ -220,10 +224,13 @@ const transformHooks = () => {
     execute: defineMethod({
       ...hooksMethods.execute,
       execute: async ([contract, hook, input], call) => {
+        const transform = contract.hooks[hook]?.kind === 'transform';
         let value = input;
-        for (const handler of handlers.get(`${contract.id}#${hook}`) ?? [])
-          value = await handler(value, call);
-        return value;
+        for (const handler of handlers.get(`${contract.id}#${hook}`) ?? []) {
+          const result = await handler(value, call);
+          if (transform) value = result;
+        }
+        return transform ? value : undefined;
       },
     }),
   });
@@ -237,19 +244,21 @@ const transformHooks = () => {
 export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
+  /** What the bundle asked `runtime.threads/v1.instruct` to give a Thread. */
+  const instructions: z.output<typeof runtimeThreadsMethods.instruct.input>[] =
+    [];
   const languageModel = toLanguageModel(options.provider);
   const harness = createTestServices({
     bundle: { id: 'default' },
     provide: [
       transformHooks(),
       defineService(RuntimeThreadsV1.id, {
-        thread: defineMethod({
-          ...runtimeThreadsMethods.thread,
-          execute: (id) => {
-            const cwdRepo = options.cwdRepo?.();
-            return id === threadId
-              ? { ...thread(), ...(cwdRepo === undefined ? {} : { cwdRepo }) }
-              : undefined;
+        instruct: defineMethod({
+          ...runtimeThreadsMethods.instruct,
+          execute: (input) => {
+            instructions.push(input);
+            options.onInstruct?.(input);
+            return { status: 'steered' as const, promptId: 'instruction' };
           },
         }),
       }),
@@ -351,6 +360,7 @@ export const bundleServices = (options: HarnessOptions) => {
   return {
     harness,
     resolved,
+    instructions,
     activate: () => activate({ services: harness.services }),
     executor: (scope: CallScope) => harness.services.use(ExecutorV1, scope),
   };
@@ -376,17 +386,20 @@ export const runPrompt = async (
     signal = new AbortController().signal,
     source = { kind: 'user' },
     id = promptId,
+    cwdRepo,
   }: {
     readonly signal?: AbortSignal;
     readonly source?: InputSource;
     readonly id?: string;
+    /** The repository hint of the Thread snapshot the run receives. */
+    readonly cwdRepo?: CwdRepo;
   } = {},
 ): Promise<string> => {
   const result = await services
     .executor({ projectId, threadId, promptId: id })
     .run(
       {
-        thread: thread(),
+        thread: { ...thread(), ...(cwdRepo === undefined ? {} : { cwdRepo }) },
         job: { id, prompt, source },
         session: state.session(id),
       },

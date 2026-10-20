@@ -294,6 +294,25 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     },
     call?: CallArg,
   ): Promise<SteerResult>;
+  /**
+   * 1.5.0: gives the Thread an instruction from the calling bundle, as a steer
+   * of `promptId` (or of the prompt running now, without one), queued when
+   * nothing runs. Its source is `{ kind: 'bundle' }` with the caller's own
+   * bundle id, so the model and the reader see who spoke and why; unlike the
+   * reader's `steer`, it reaches agent Threads too. `retain` asks the
+   * executor to keep it as a standing instruction (see `InputSource`).
+   */
+  instruct(
+    input: {
+      readonly id: string;
+      readonly prompt: string;
+      readonly reason: string;
+      readonly promptId?: string;
+      readonly interrupt?: boolean;
+      readonly retain?: boolean;
+    },
+    call?: CallArg,
+  ): Promise<SteerResult>;
   resume(
     input: { readonly id: string; readonly promptId: string },
     call?: CallArg,
@@ -485,6 +504,19 @@ export const runtimeThreadsMethods = {
         prompt: z.string(),
         promptId: z.string(),
         interrupt: z.boolean().optional(),
+      })
+      .strict(),
+    output: steerResultSchema,
+  },
+  instruct: {
+    input: z
+      .object({
+        id: z.string(),
+        prompt: z.string().min(1),
+        reason: z.string().min(1).max(64),
+        promptId: z.string().optional(),
+        interrupt: z.boolean().optional(),
+        retain: z.boolean().optional(),
       })
       .strict(),
     output: steerResultSchema,

@@ -223,8 +223,8 @@ export const createAgent = (options: AgentOptions): Agent => {
         /** The caller input starts the run-local conversation. */
         if (!runOptions.resume)
           options.messages.push({ role: 'user', content: input });
-        /** A resumed run reads steering that waited for it before its first turn. */ else
-          await takeSteering(runOptions, turns);
+        /** Steering that waited for the run is read before its first turn. */
+        await takeSteering(runOptions, turns);
 
         /** This value remains stable across every provider turn in the run. */
         const terminal = outputTool(runOptions);
@@ -385,11 +385,9 @@ export const createAgent = (options: AgentOptions): Agent => {
           model: options.model,
           input,
         } as const;
-        /** A resumed run reads steering that waited for it before its first turn. */
-        if (runOptions.resume) {
-          for (const steered of await takeSteering(runOptions, turns)) {
-            yield { type: 'agent.steered', input: steered } as const;
-          }
+        /** Steering that waited for the run is read before its first turn. */
+        for (const steered of await takeSteering(runOptions, turns)) {
+          yield { type: 'agent.steered', input: steered } as const;
         }
 
         while (true) {

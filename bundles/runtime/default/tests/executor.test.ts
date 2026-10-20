@@ -226,6 +226,7 @@ void test('writes the history in the default.history/v1 format with its message 
   assert.deepEqual(harness.state.parts().meta, {
     checkpoints: { [promptId]: 0 },
     messageCount: 2,
+    retained: {},
   });
   assert.equal((harness.state.parts().messages as unknown[]).length, 2);
 });

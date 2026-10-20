@@ -13,5 +13,5 @@
     "hooks/v1@^1.0.0",
     "log/v1@^1.0.0"
   ],
-  "optional": ["runtime.threads/v1"]
+  "optional": ["runtime.threads/v1", "runtime.hooks/v1"]
 }

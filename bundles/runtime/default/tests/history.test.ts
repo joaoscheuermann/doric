@@ -82,7 +82,11 @@ void test('records a prompt boundary at the stored message count', async () => {
     {
       format: 'default.history/v1',
       parts: {
-        meta: { checkpoints: { [promptId]: 3, other: 1 }, messageCount: 3 },
+        meta: {
+          checkpoints: { [promptId]: 3, other: 1 },
+          messageCount: 3,
+          retained: {},
+        },
       },
     },
   );
@@ -103,6 +107,7 @@ void test('keeps the boundary a resumed prompt already has', async () => {
   assert.deepEqual(patch.parts.meta, {
     checkpoints: { [promptId]: 2 },
     messageCount: 5,
+    retained: {},
   });
 });
 
@@ -116,7 +121,9 @@ void test('records a boundary of zero on a Thread with no history yet', async ()
 
   assert.deepEqual(patch, {
     format: 'default.history/v1',
-    parts: { meta: { checkpoints: { [promptId]: 0 }, messageCount: 0 } },
+    parts: {
+      meta: { checkpoints: { [promptId]: 0 }, messageCount: 0, retained: {} },
+    },
   });
 });
 
@@ -139,7 +146,7 @@ void test('rewinds to the boundary and drops every removed prompt boundary', asy
       format: 'default.history/v1',
       parts: {
         messages: stored.slice(0, 2),
-        meta: { checkpoints: { kept: 0 }, messageCount: 2 },
+        meta: { checkpoints: { kept: 0 }, messageCount: 2, retained: {} },
       },
     },
   );
@@ -291,5 +298,33 @@ Fix it.
       `<user-request>\n${structured}\n</user-request>`,
       `<user-request>\n${plain}\n</user-request>`,
     ],
+  );
+});
+
+void test('a rewind forgets every retained message past its boundary and keeps the earlier ones', async () => {
+  const services = await activated();
+  const state = fakeThreadState();
+  state.apply({
+    format: 'default.history/v1',
+    parts: {
+      messages: messages(4),
+      meta: {
+        checkpoints: { [promptId]: 2 },
+        messageCount: 4,
+        retained: { 'a:earlier': 1, 'b:later': 2 },
+      },
+    },
+  });
+
+  const patch = await services.executor(scope).rewind({
+    history: state.reader(),
+    promptId,
+    removedPromptIds: [promptId],
+  });
+
+  assert.ok(patch !== undefined);
+  assert.deepEqual(
+    (patch.parts.meta as { retained?: Record<string, number> }).retained,
+    { 'a:earlier': 1 },
   );
 });

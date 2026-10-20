@@ -176,8 +176,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.3.0: Project activity summaries for the desktop dashboard.
     `${RuntimeV1.id}@1.3.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
-    // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt.
-    `${RuntimeThreadsV1.id}@1.3.0`,
+    // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
+    // retry; 1.5.0: a bundle's instruction.
+    `${RuntimeThreadsV1.id}@1.5.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     `${RuntimeWorkspaceV1.id}@1.1.0`,
     // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.
@@ -187,7 +188,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.1.0: watchProject (stage 9 R-STREAM).
     `${RuntimeTerminalsV1.id}@1.1.0`,
     // 1.1.0: onThreadsClosingHook (stage 10 R-5.4).
-    `${RuntimeHooksV1.id}@1.1.0`,
+    // 1.2.0: onPromptStartedHook and onThreadCwdChangedHook.
+    `${RuntimeHooksV1.id}@1.2.0`,
     // Stage 10 R-5.5: the unfilled usage projection.
     `${RuntimeUsageV1.id}@1.0.0`,
     `${promptFinishedEvent.type}@1.0.0`,

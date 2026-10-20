@@ -64,12 +64,19 @@ const authorFor = (
     // A prompt the host has not accepted yet is drawn dimmed and nameless; the
     // name arrives with the accepted turn the log holds. Another Thread's input
     // and a background terminal's answer name themselves in their own header,
-    // so neither wears the reader's name.
-    return turn.accepted &&
-      turn.delegated === undefined &&
-      turn.terminal === undefined
-      ? { role: 'user', name: READER_NAME, at }
-      : null;
+    // so neither wears the reader's name. A bundle's instruction wears the
+    // bundle's, beside the agent's mark.
+    return !turn.accepted ||
+      turn.delegated !== undefined ||
+      turn.terminal !== undefined
+      ? null
+      : turn.instruction === undefined
+        ? { role: 'user', name: READER_NAME, at }
+        : {
+            role: 'agent',
+            name: `${turn.instruction.bundleId} · ${turn.instruction.reason}`,
+            at,
+          };
   if (isChrome(turn)) return null;
   let next = index + 1;
   while (next < turns.length && isChrome(turns[next])) next += 1;

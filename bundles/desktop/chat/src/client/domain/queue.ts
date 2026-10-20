@@ -11,9 +11,11 @@ import type { ThreadEvent, ThreadUpdate } from './workspace.js';
 export interface QueueItem {
   readonly promptId: string;
   readonly source: {
-    readonly kind: 'user' | 'terminal' | 'parent' | 'result';
+    readonly kind: 'user' | 'terminal' | 'parent' | 'result' | 'bundle';
     readonly threadId?: string;
     readonly terminalId?: string;
+    readonly bundleId?: string;
+    readonly reason?: string;
   };
   readonly label: string;
   readonly preview: string;
@@ -75,7 +77,9 @@ export const queueAuthor = (
     : (label ??
       (source.kind === 'terminal'
         ? 'Terminal'
-        : `${source.kind === 'parent' ? 'Parent' : 'Subthread'} · ${source.threadId?.slice(0, 8) ?? 'unknown'}`));
+        : source.kind === 'bundle'
+          ? `${source.bundleId ?? 'bundle'} · ${source.reason ?? 'instruction'}`
+          : `${source.kind === 'parent' ? 'Parent' : 'Subthread'} · ${source.threadId?.slice(0, 8) ?? 'unknown'}`));
 
 const changes = new Set([
   'prompt.accepted',

@@ -177,6 +177,8 @@ export interface HarnessOptions {
    * host without generations by default, which records no Project owner.
    */
   readonly generation?: () => Promise<RuntimeOwner | undefined>;
+  /** A bundle's handler of every runtime hook the runtime executes. */
+  readonly onHook?: (hook: string, input: unknown) => Promise<void> | void;
 }
 
 export interface LogEntry {
@@ -324,6 +326,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
         ...hooksMethods.execute,
         execute: async ([, hook, input]) => {
           hooks.push({ hook, input });
+          await options.onHook?.(hook, input);
           // The terminal bundle's handler, as its activation registers it.
           if (hook === 'onThreadsClosingHook')
             await terminalHost?.threadsClosing(
@@ -489,6 +492,15 @@ export const createHarness = (options: HarnessOptions = {}) => {
       retry: (id) => threadsApi.retry({ id }),
       steer: (id, prompt, options) =>
         threadsApi.steer({ id, prompt, ...options }),
+      // The provider names the calling bundle (`consumer` here) itself.
+      instruct: (id, prompt, { reason, retain }, options) =>
+        threadsApi.instruct({
+          id,
+          prompt,
+          reason,
+          ...(retain === undefined ? {} : { retain }),
+          ...options,
+        }),
       resume: (id, promptId) => threadsApi.resume({ id, promptId }),
       rewind: (id, promptId, prompt) =>
         threadsApi.rewind({ id, promptId, prompt }),

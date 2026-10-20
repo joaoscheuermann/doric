@@ -647,21 +647,35 @@ live in `/bundles/runtime/default` (bundle `default`, renamed from `direct` on
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
 system prompt file exports only one constant literal template string; dynamic
 bundle skills are appended by the executor, not encoded as arrays of prompt
-lines. The `default` bundle owns `default.hooks/v1`, whose
-`onBeforeModelRequestHook` (`transform`, input `{ system }`) runs before every
-model request of a prompt, under the prompt's call; `packages/agent` accepts a
-`system` function that it calls before each provider request for this. The
-`default` bundle registers its own handler there: while the prompt's Thread has
-a `cwdRepo` hint — its working directory is a repository root, which the runtime
-records on every `cwd` move and after each job — it appends the coding workflow
-(`prompts/repository.ts`: Search, Plan, Development with contracts and red-green
-tests and implementation, Cleanup), which the main Thread delegates step by step
-to child Threads, except for trivial changes, while a delegated
-`<parent-instruction>` step is done by the child itself. It reads the hint through
-`runtime.threads/v1`, listed as `optional` because the runtime requires
-`executor/v1`. The base prompt tells the agent to work at a repository's root,
-to initialize a repository for a complex deliverable that has none, and to ask
-the user before initializing one for an experiment. Project and Thread lifecycle, queues, the prompt runner and the
+lines. The `default` bundle owns `default.hooks/v1`, an extension point with no
+handler of its own: its `onBeforeModelRequestHook` (`transform`, input
+`{ system }`) runs before every model request of a prompt, under the prompt's
+call, and `packages/agent` accepts a `system` function that it calls before
+each provider request for this. The coding workflow reaches the agent as an
+standing instruction, not as system prompt text, once per Thread: the
+`default` bundle gives the Thread the workflow (`prompts/repository.ts`: Search,
+Plan, Development with contracts and red-green tests and implementation,
+Cleanup, each subagent type with its goal, tools, the files it may change and
+what it returns; Contracts generates the contracts as its result and changes no
+file) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
+`retain: true`, when a task — a `user` or `parent` input — starts with a
+`cwdRepo` hint (the executor checks before the run's first model request) and
+when a running prompt moves into a repository root (its
+`onThreadCwdChangedHook` handler), in both cases only while the history the
+model reads does not hold it yet. The executor records each retained steer it
+stores in `meta.retained` (`<bundleId>:<reason>` to the message's index),
+compaction keeps those messages verbatim after the summary and out of the
+summarizer's input and re-bases their indexes like the turn boundaries, and a
+rewind forgets those past its boundary, so the workflow is given again only
+after a rewind removed it. The main Thread delegates each step to a child
+Thread whose title and instruction name its type, except for trivial changes,
+and a delegated `<parent-instruction>` step is done by the child itself. It
+reaches both runtime contracts through `optional`, because the runtime requires
+`executor/v1`. The
+base prompt tells the agent to work at a repository's root, to initialize a
+repository for a complex deliverable that has none, to ask the user before
+initializing one for an experiment, and to follow a `<bundle-instruction>` from
+its next step. Project and Thread lifecycle, queues, the prompt runner and the
 prompt-scoped host facade live in `/bundles/runtime/runtime`; REST routes, Socket.IO
 namespaces, HTTP errors and safe event serialization live in
 `/bundles/foundation/transport`, which registers them on the native listeners through
@@ -1236,7 +1250,12 @@ queues, leases, recovery and the prompt runner through `runtime/v1`,
 the images of a Project. Stage 10 adds the local
 `runtime.lease/v1.withLease` and `runtime.workspace/v1.withThread`, the
 terminal result delivery on `runtime.threads/v1`, `onThreadsClosingHook` and
-the unfilled `runtime.usage/v1.read`; the core adds
+the unfilled `runtime.usage/v1.read`; on 2026-10-19 `runtime.hooks/v1` 1.2.0
+adds `onPromptStartedHook` (after `prompt.started`, with the prompt's source,
+the Thread's `cwd` and `cwdRepo`) and `onThreadCwdChangedHook` (after any change
+of a Thread's `cwd` or `cwdRepo`, with both values before and after and the
+running `promptId`), both awaited by the runner outside the Project lock, and
+`runtime.threads/v1` 1.5.0 adds `instruct`, a bundle's instruction to a Thread; the core adds
 `models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
 `secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and
@@ -1251,8 +1270,9 @@ written as `direct.history/v1` before the rename, and its next write stores them
 as `default.history/v1`. The executor frames every
 input in an XML envelope instead of Markdown headers: `<user-request>`,
 `<parent-instruction thread="" prompt="">`, `<terminal-output terminal=""
-prompt="">` or `<child-result thread="" prompt="">`. Attribute values escape
-`&`, `"` and `<`, and a closing tag of the four envelope names inside the body
+prompt="">`, `<child-result thread="" prompt="">` or `<bundle-instruction
+bundle="" reason="">`. Attribute values escape
+`&`, `"` and `<`, and a closing tag of the five envelope names inside the body
 is neutralized to `<\/…`; older history keeps its `# User request` text. The
 system prompt describes the envelope, the chat's `<comments>`, `<target>`,
 `<comment>` and `<message>` parts and the `comment_reply` tool. Its `compact` condenses an
@@ -2370,16 +2390,25 @@ Agent-facing targeted interruption
 keeps its separate child-prompt contract.
 
 Steering sends input into the running prompt without ending it: the reader's,
-and the correlated results of child Threads and background terminals, which
-always steer the active prompt when one runs. The reader steers the prompt the
+a bundle's instruction, and the correlated results of child Threads and
+background terminals, which always steer the active prompt when one runs. A
+bundle instructs a Thread with `runtime.threads/v1.instruct` (1.5.0: `id`,
+`prompt`, `reason`, an optional `promptId` and `interrupt`, local to bundles
+and never exposed to a window): its source is `{ kind: 'bundle', bundleId,
+reason, retain? }`, where the runtime takes `bundleId` from the calling bundle
+and never from the input and `retain` marks a standing instruction the executor
+keeps through compaction, it reaches agent Threads that the reader's `steer`
+may not, and
+the chat names the bundle and reason on it instead of the reader. The reader steers the prompt the
 reader saw running (`runtime.threads/v1` 1.3.0 `steer`, `POST /threads/:id/steer`
 with `prompt`, the running `promptId` and an optional `interrupt`). The steer is
 accepted as an input of its own — `prompt.accepted` with `queued: true` and
 `steer` naming the running prompt — and waits on that run. The default executor takes it in
 through `PromptSession.steers()` (`executor/v1` 1.1.0) at the agent loop's
-safe points: after the tool batch in flight, or before a final answer would end
-the turn, so it never interrupts a tool. It reaches the model in its source's
-envelope (`<user-request>`, `<child-result>` or `<terminal-output>`), its
+safe points: before the run's first turn, after the tool batch in flight, or
+before a final answer would end the turn, so it never interrupts a tool. It
+reaches the model in its source's envelope (`<user-request>`, `<child-result>`,
+`<terminal-output>` or `<bundle-instruction>`), its
 history is saved first, and the runtime then closes the
 steer with `prompt.steered` under its own id, naming the prompt it steered. With
 `interrupt`, the runtime also aborts only the current step — the provider call
@@ -2617,7 +2646,7 @@ arrays as their outer prompt envelope.
 Enforcement: write the outer prompt as simple, direct, unambiguous,
 evidence-grounded Markdown. Approved exception: the default agent's input
 envelope (`<user-request>`, `<parent-instruction>`, `<child-result>`,
-`<terminal-output>`) and the chat's prompt structure (`<comments>`, `<target>`,
+`<terminal-output>`, `<bundle-instruction>`) and the chat's prompt structure (`<comments>`, `<target>`,
 `<comment>`, `<message>`) use those XML tags, with readable text or Markdown
 inside; system prompts and every other model input stay Markdown. Literal JSON
 source material is allowed only in a

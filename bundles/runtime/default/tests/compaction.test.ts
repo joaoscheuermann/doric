@@ -12,6 +12,7 @@ import {
   applyCompaction,
   newSummaryId,
   planCompaction,
+  summarizedSpan,
 } from '../src/host/compaction/compact.js';
 import { CompactionError } from '../src/host/compaction/errors.js';
 import {
@@ -305,4 +306,88 @@ void test('an empty summary fails the summarizer', async () => {
     summaryMaxChars: 6000,
   });
   await assert.rejects(summarizer.summarize([user('x')]));
+});
+
+/** A standing instruction, as the run stores a retained bundle steer. */
+const instruction = user(
+  '<bundle-instruction bundle="default" reason="coding-workflow">\nRules.\n</bundle-instruction>',
+);
+
+void test('a retained message of the span stays verbatim after the summary, and every index re-bases', () => {
+  const messages = [user('a'), instruction, user('b'), user('c'), user('d')];
+  const applied = applyCompaction({
+    messages,
+    meta: {
+      checkpoints: { late: 3 },
+      messageCount: 5,
+      retained: { 'default:coding-workflow': 1 },
+    },
+    end: 3,
+    trigger: 'automatic',
+    summaryId: 'compaction-test',
+    summary: 'facts',
+  });
+
+  assert.deepEqual(applied.rewritten.messages, [
+    applied.summaryMessage,
+    instruction,
+    user('c'),
+    user('d'),
+  ]);
+  assert.deepEqual(applied.replacement, [applied.summaryMessage, instruction]);
+  assert.deepEqual(applied.rewritten.meta, {
+    checkpoints: { late: 2 },
+    messageCount: 4,
+    retained: { 'default:coding-workflow': 1 },
+  });
+  assert.equal(applied.condensation.condensedMessages, 2);
+  assert.equal(applied.condensation.retainedMessages, 4);
+});
+
+void test('a retained message past the span re-bases like a boundary', () => {
+  const messages = [user('a'), user('b'), user('c'), instruction];
+  const result = rewritten(
+    messages,
+    {
+      checkpoints: {},
+      messageCount: 4,
+      retained: { 'default:coding-workflow': 3 },
+    },
+    user('summary'),
+    0,
+    2,
+  );
+
+  assert.equal(
+    result.messages[result.meta.retained?.['default:coding-workflow'] ?? -1],
+    instruction,
+  );
+});
+
+void test('the summarizer never reads a retained message', () => {
+  const messages = [user('a'), instruction, user('b'), user('c')];
+
+  assert.deepEqual(
+    summarizedSpan(messages, { retained: { 'default:coding-workflow': 1 } }, 3),
+    [user('a'), user('b')],
+  );
+});
+
+void test('a span of only earlier summaries and retained messages has nothing to compact', () => {
+  const summary = user(
+    checkpointMessage('Saved decisions', {
+      start: 0,
+      end: 4,
+      trigger: 'manual',
+    }),
+  );
+
+  assert.deepEqual(
+    planCompaction(
+      [summary, instruction, user('recent one'), user('recent two')],
+      policy,
+      { retained: { 'default:coding-workflow': 1 } },
+    ),
+    { status: 'refused', reason: 'nothing_to_compact' },
+  );
 });

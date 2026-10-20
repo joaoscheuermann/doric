@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { HooksV1 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
-import type { ProviderRequest } from 'llms';
-import type { CwdRepo } from 'runtime/contracts';
-import { defineTool } from 'tool';
-import { z } from 'zod';
+import type { ProviderMessage, ProviderRequest } from 'llms';
+import {
+  type CwdChanged,
+  type CwdRepo,
+  type InputSource,
+  RuntimeHooksV1,
+} from 'runtime/contracts';
 
 import { DefaultHooksV1 } from '../src/contracts/index.js';
 import { systemPromptWith } from '../src/host/executor.js';
@@ -14,109 +16,210 @@ import { repositoryPrompt } from '../src/host/prompts/repository.js';
 import {
   bundleServices,
   fakeThreadState,
+  projectId,
+  promptId,
   runPrompt,
   skill,
+  threadId,
 } from './support/harness.js';
 
-const skills = [skill('sandbox', 'Inspect before reporting.')];
-
-/**
- * A run whose model first calls `enter`, a tool that moves the Thread into a
- * repository the way the `cwd` tool does, when the prompt asks for it, and
- * answers otherwise. The Thread's repository hint is what `cwdRepo` holds.
+/*
+ * The coding workflow is a standing instruction: the default bundle gives it
+ * once per Thread — when a task starts at a repository root or a running
+ * prompt moves into one, while the history the model reads does not hold it —
+ * and the run records it as retained, so compaction keeps it.
  */
-const harnessOf = (initial: CwdRepo | undefined) => {
-  let cwdRepo = initial;
-  const requests: ProviderRequest[] = [];
-  const owner = createTestServices({ bundle: { id: 'tools-owner' } });
-  const enter = defineTool({
-    name: 'enter',
-    description: 'Move into the repository.',
-    input: z.object({}),
-    output: z.object({}),
-    execute: async () => {
-      cwdRepo = 'git';
-      return {};
-    },
-  }).bind(owner.services);
-  const provider = {
-    metadata: { id: 'provider', name: 'provider' },
-    stream: async function* (request: ProviderRequest) {
-      requests.push(request);
-      const entering =
-        requests.length === 1 &&
-        String(request.messages.at(-1)?.content).includes('enter');
-      yield {
-        type: 'response.finished' as const,
-        finish: entering
-          ? {
-              text: 'Entering.',
-              finishReason: 'tool_calls' as const,
-              toolCalls: [{ id: 'call-1', name: 'enter', arguments: '{}' }],
-            }
-          : { text: 'done', finishReason: 'stop' as const, toolCalls: [] },
-      };
-    },
-  };
-  const services = bundleServices({
-    provider,
-    skills,
-    tools: [{ bundleId: 'tools-owner', alwaysAvailable: false, tool: enter }],
-    cwdRepo: () => cwdRepo,
-  });
 
-  return {
-    services,
-    /** The system prompt each model request carried. */
-    systems: () => requests.map((request) => request.messages[0]?.content),
-    run: async (prompt: string) => {
-      await services.activate();
-      return runPrompt(services, fakeThreadState(), prompt);
+const skills = [skill('sandbox', 'Inspect before reporting.')];
+const key = 'default:coding-workflow';
+const envelope =
+  '<bundle-instruction bundle="default" reason="coding-workflow">';
+
+/** The default bundle over a Thread whose runtime queues every instruction. */
+const activated = async (
+  options: {
+    /** Runs while the model answers its first request, as a tool would. */
+    readonly onFirstRequest?: () => Promise<void>;
+  } = {},
+) => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  const services = bundleServices({
+    skills,
+    onInstruct: ({ prompt, reason, retain }) =>
+      state.steer(prompt, {
+        kind: 'bundle',
+        bundleId: 'default',
+        reason,
+        ...(retain === true ? { retain: true as const } : {}),
+      }),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: async function* (request: ProviderRequest) {
+        requests.push(request);
+        if (requests.length === 1) await options.onFirstRequest?.();
+        yield {
+          type: 'response.finished' as const,
+          finish: {
+            text: 'done',
+            finishReason: 'stop' as const,
+            toolCalls: [],
+          },
+        };
+      },
     },
-  };
+  });
+  await services.activate();
+  const hooks = services.harness.services.use(HooksV1);
+  return { services, requests, state, hooks };
 };
 
-void test('adds the coding workflow to the system prompt of a Thread at a repository root', async () => {
-  const harness = harnessOf('github');
+type Harness = Awaited<ReturnType<typeof activated>>;
 
-  await harness.run('fix the bug');
+const run = (
+  { services, state }: Harness,
+  prompt: string,
+  options: {
+    readonly id?: string;
+    readonly source?: InputSource;
+    readonly cwdRepo?: CwdRepo;
+  } = {},
+) => runPrompt(services, state, prompt, options);
 
-  const [system] = harness.systems();
-  assert.ok(String(system).startsWith(systemPromptWith(skills)));
-  assert.ok(String(system).includes(repositoryPrompt));
-});
+const stored = ({ state }: Harness) =>
+  (state.parts().messages ?? []) as readonly ProviderMessage[];
 
-void test('sends the plain system prompt for a Thread outside any repository', async () => {
-  const harness = harnessOf(undefined);
+const retained = ({ state }: Harness) =>
+  (state.parts().meta as { retained?: Record<string, number> } | undefined)
+    ?.retained;
 
-  await harness.run('fix the bug');
+const instructionsIn = (messages: readonly ProviderMessage[]) =>
+  messages.filter(({ content }) => String(content).startsWith(envelope));
 
-  assert.deepEqual(harness.systems(), [systemPromptWith(skills)]);
-});
+void test('gives a task the reader starts at a repository root the workflow before its first model request', async () => {
+  const harness = await activated();
 
-void test('adds the coding workflow from the next model request once the Thread enters a repository', async () => {
-  const harness = harnessOf(undefined);
+  await run(harness, 'fix the bug', { cwdRepo: 'github' });
 
-  await harness.run('enter the repository');
-
-  const [before, after] = harness.systems();
-  assert.equal(before, systemPromptWith(skills));
-  assert.ok(String(after).includes(repositoryPrompt));
-});
-
-void test('sends the system prompt another onBeforeModelRequestHook handler returns', async () => {
-  const harness = harnessOf(undefined);
-  await harness.services.activate();
-  harness.services.harness.services
-    .use(HooksV1)
-    .use(DefaultHooksV1)
-    .onBeforeModelRequestHook(({ system }) => ({
-      system: `${system}\n\n# Project rules\n\nUse tabs.`,
-    }));
-
-  await runPrompt(harness.services, fakeThreadState(), 'fix the bug');
-
-  assert.deepEqual(harness.systems(), [
-    `${systemPromptWith(skills)}\n\n# Project rules\n\nUse tabs.`,
+  assert.deepEqual(harness.services.instructions, [
+    {
+      id: threadId,
+      promptId,
+      prompt: repositoryPrompt,
+      reason: 'coding-workflow',
+      retain: true,
+    },
   ]);
+  assert.equal(instructionsIn(harness.requests[0]?.messages ?? []).length, 1);
+});
+
+void test('records the workflow it stored as retained, at the index it sits', async () => {
+  const harness = await activated();
+
+  await run(harness, 'fix the bug', { cwdRepo: 'git' });
+
+  const at = retained(harness)?.[key];
+  assert.ok(at !== undefined);
+  assert.ok(String(stored(harness)[at]?.content).startsWith(envelope));
+});
+
+void test('gives a later task in the same Thread nothing again', async () => {
+  const harness = await activated();
+
+  await run(harness, 'fix the bug', { cwdRepo: 'git', id: 'first' });
+  await run(harness, 'and the next one', { cwdRepo: 'git', id: 'second' });
+
+  assert.equal(harness.services.instructions.length, 1);
+  assert.equal(instructionsIn(stored(harness)).length, 1);
+});
+
+void test('gives a delegated step at a repository root the workflow', async () => {
+  const harness = await activated();
+
+  await run(harness, 'Type: Search', {
+    cwdRepo: 'git',
+    source: { kind: 'parent', threadId: 'parent', promptId: 'p' },
+  });
+
+  assert.equal(harness.services.instructions.length, 1);
+});
+
+void test('gives nothing outside a repository, nor to the results and outputs that continue running work', async () => {
+  const harness = await activated();
+
+  await run(harness, 'plan a trip', { id: 'outside' });
+  for (const [index, source] of (
+    [
+      {
+        kind: 'result',
+        threadId: 'child',
+        promptId: 'c',
+        requestPromptId: promptId,
+      },
+      { kind: 'terminal', terminalId: 't', promptId: 'p' },
+    ] as const
+  ).entries())
+    await run(harness, 'continue', {
+      id: `continue-${index}`,
+      cwdRepo: 'git',
+      source,
+    });
+
+  assert.deepEqual(harness.services.instructions, []);
+});
+
+void test('gives a running prompt the workflow once when it moves into a repository root', async () => {
+  const move = (cwd: string, cwdRepo: CwdRepo): CwdChanged => ({
+    projectId,
+    threadId,
+    promptId,
+    cwd,
+    cwdRepo,
+    previous: { cwd: '/workspace' },
+  });
+  let harness: Harness | undefined;
+  harness = await activated({
+    onFirstRequest: async () => {
+      const runtime = harness?.hooks.define(RuntimeHooksV1);
+      await runtime?.onThreadCwdChangedHook.execute(
+        move('/workspace/a', 'git'),
+      );
+      await runtime?.onThreadCwdChangedHook.execute(
+        move('/workspace/b', 'github'),
+      );
+    },
+  });
+
+  await run(harness, 'fix the bug');
+
+  assert.equal(harness.services.instructions.length, 1);
+  assert.equal(instructionsIn(stored(harness)).length, 1);
+  assert.ok(retained(harness)?.[key] !== undefined);
+});
+
+void test('frames a bundle instruction in a bundle-instruction envelope naming the bundle and reason', async () => {
+  const harness = await activated();
+
+  await run(harness, 'Follow the workflow.', {
+    source: { kind: 'bundle', bundleId: 'default', reason: 'coding-workflow' },
+  });
+
+  assert.equal(
+    harness.requests[0]?.messages.at(-1)?.content,
+    `${envelope}\nFollow the workflow.\n</bundle-instruction>`,
+  );
+});
+
+void test('sends the system prompt an onBeforeModelRequestHook handler returns', async () => {
+  const harness = await activated();
+  harness.hooks.use(DefaultHooksV1).onBeforeModelRequestHook(({ system }) => ({
+    system: `${system}\n\n# Project rules\n\nUse tabs.`,
+  }));
+
+  await run(harness, 'fix the bug');
+
+  assert.deepEqual(
+    harness.requests.map((request) => request.messages[0]?.content),
+    [`${systemPromptWith(skills)}\n\n# Project rules\n\nUse tabs.`],
+  );
 });

@@ -5,6 +5,7 @@ import type { Log } from 'bundle/contracts';
 import { type Sandbox, workspacePathKind } from 'sandbox';
 
 import type { Executor, HistoryReader } from '../../contracts/executor.js';
+import type { CwdChanged, PromptStarted } from '../../contracts/hooks.js';
 import {
   type CompactResult,
   type CwdRefusal,
@@ -86,6 +87,16 @@ export interface RunnerContext {
     readonly projectId: string;
     readonly threadIds: readonly string[];
   }) => Promise<void>;
+  /**
+   * runtime.hooks/v1 onPromptStartedHook, awaited after `prompt.started` and
+   * outside the project lock, before the executor runs the prompt.
+   */
+  readonly promptStarted?: (input: PromptStarted) => Promise<void>;
+  /**
+   * runtime.hooks/v1 onThreadCwdChangedHook, awaited outside the project lock
+   * once a Thread's working directory or repository hint changed.
+   */
+  readonly cwdChanged?: (input: CwdChanged) => Promise<void>;
   readonly exclusive: <Value>(
     id: string,
     operation: () => Promise<Value>,
@@ -465,6 +476,18 @@ export const createThreadRunner = (context: RunnerContext) => {
         return active;
       });
       if (active === undefined) return;
+      // Outside the lock: a handler may instruct this very prompt, and its
+      // instruction is waiting when the executor reads its steering first.
+      await context.promptStarted?.({
+        projectId: project.project.id,
+        threadId: thread.thread.id,
+        promptId: active.job.id,
+        source: active.job.source,
+        cwd: thread.thread.cwd,
+        ...(thread.thread.cwdRepo === undefined
+          ? {}
+          : { cwdRepo: thread.thread.cwdRepo }),
+      });
       let status = 'completed';
       let text = '';
       let paused = false;
@@ -945,6 +968,16 @@ export const createThreadRunner = (context: RunnerContext) => {
    * Thread: into the prompt it is running, which reads it at its next safe
    * point, or into the queue when nothing runs.
    */
+  /** A bundle's instruction to its Thread (`runtime.threads/v1.instruct`). */
+  // Caller holds the project's mutation lock.
+  const instruct = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    prompt: string,
+    source: Extract<InputSource, { readonly kind: 'bundle' }>,
+    options: { readonly promptId?: string; readonly interrupt?: boolean },
+  ): Promise<SteerResult> =>
+    steerInto(project, thread, prompt, source, options);
   // Caller holds the project's mutation lock.
   const deliver = (
     project: ProjectRuntime,
@@ -1217,23 +1250,57 @@ export const createThreadRunner = (context: RunnerContext) => {
     change: { status: change },
   });
   /**
+   * The `onThreadCwdChangedHook` input for a Thread whose record moved from
+   * `previous`, or undefined when neither its directory nor its hint changed.
+   * It names the prompt the Thread runs now, if any.
+   */
+  const cwdChange = (
+    project: ProjectRuntime,
+    thread: ThreadRuntime,
+    previous: Pick<Thread, 'cwd' | 'cwdRepo'>,
+  ): CwdChanged | undefined => {
+    const { cwd, cwdRepo } = thread.thread;
+    if (cwd === previous.cwd && cwdRepo === previous.cwdRepo) return undefined;
+    const active = thread.active;
+    return {
+      projectId: project.project.id,
+      threadId: thread.thread.id,
+      ...(active === undefined || active.finished
+        ? {}
+        : { promptId: active.job.id }),
+      cwd,
+      ...(cwdRepo === undefined ? {} : { cwdRepo }),
+      previous: {
+        cwd: previous.cwd,
+        ...(previous.cwdRepo === undefined
+          ? {}
+          : { cwdRepo: previous.cwdRepo }),
+      },
+    };
+  };
+  /** Fires `onThreadCwdChangedHook` once the record moved; never inside the lock. */
+  const cwdChanged = async (change: CwdChanged | undefined) => {
+    if (change !== undefined) await context.cwdChanged?.(change);
+  };
+  /**
    * Moves one Thread's working directory: the single rule the agent's `cwd` tool
    * and the HTTP route both call. It refuses anything outside the sandbox or that
    * is no directory, then writes the directory and its repository hint together,
    * under the project lock, so nothing observes the record between the probe and
    * the write.
    */
-  const setCwd = (
+  const setCwd = async (
     project: ProjectRuntime,
     thread: ThreadRuntime,
     path: string,
   ): Promise<CwdResult> => {
     const lease = project.lease;
     if (project.closing || lease === undefined)
-      return Promise.resolve({ status: 'inactive' as const });
+      return { status: 'inactive' as const };
     const sandbox = lease.sandbox;
+    const previous = { cwd: thread.thread.cwd, cwdRepo: thread.thread.cwdRepo };
 
-    return exclusive(project.project.id, async () => {
+    const result = await exclusive(project.project.id, async () => {
       if (project.closing || thread.closing || project.lease !== lease)
         return { status: 'inactive' as const };
       const target = resolveCwd(sandbox.root, thread.thread.cwd, path);
@@ -1255,6 +1322,11 @@ export const createThreadRunner = (context: RunnerContext) => {
       publisher.threadUpdated(updated);
       return { status: 'updated' as const, thread: updated };
     });
+    // Awaited before the move answers the `cwd` tool, so an instruction a
+    // handler gives the running prompt is read after this tool batch.
+    if (result.status === 'updated')
+      await cwdChanged(cwdChange(project, thread, previous));
+    return result;
   };
   /**
    * Re-reads the working directory's repository hint after a job settles, when
@@ -1278,14 +1350,17 @@ export const createThreadRunner = (context: RunnerContext) => {
       });
       return;
     }
-    await exclusive(project.project.id, async () => {
-      if (thread.closing || thread.thread.cwd !== cwd) return;
-      if (thread.thread.cwdRepo === cwdRepo) return;
+    const change = await exclusive(project.project.id, async () => {
+      if (thread.closing || thread.thread.cwd !== cwd) return undefined;
+      if (thread.thread.cwdRepo === cwdRepo) return undefined;
+      const previous = { cwd, cwdRepo: thread.thread.cwdRepo };
       const updated = await store.setCwd(thread.thread.id, cwd, cwdRepo);
-      if (updated === undefined) return;
+      if (updated === undefined) return undefined;
       thread.thread = updated;
       publisher.threadUpdated(updated);
+      return cwdChange(project, thread, previous);
     });
+    await cwdChanged(change);
   };
   /**
    * The Git summary of one Thread's working directory. The read probes the
@@ -1427,10 +1502,14 @@ export const createThreadRunner = (context: RunnerContext) => {
   const resetCwd = async (project: ProjectRuntime, thread: ThreadRuntime) => {
     const root = project.lease?.sandbox.root;
     if (root === undefined) return;
+    const previous = { cwd: thread.thread.cwd, cwdRepo: thread.thread.cwdRepo };
     const updated = await store.setCwd(thread.thread.id, root, undefined);
     if (updated === undefined) return;
     thread.thread = updated;
     publisher.threadUpdated(updated);
+    // The caller holds the project lock, which a handler's own calls need:
+    // the hook is fired here without waiting for it.
+    void cwdChanged(cwdChange(project, thread, previous));
   };
   return {
     start,
@@ -1443,6 +1522,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     removeQueued,
     editQueued,
     steer,
+    instruct,
     rewind,
     compact,
     descendants,
