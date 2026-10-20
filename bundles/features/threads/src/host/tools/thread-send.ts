@@ -6,7 +6,7 @@ import { threadsOf } from '../threads.js';
 export const tool = defineTool({
   name: 'thread-send',
   description:
-    'Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically.',
+    'Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically. A child whose prompt failed is already healthy — this continues it; a child whose thread itself failed needs thread-restart.',
   input: z
     .object({
       threadId: z.uuid(),

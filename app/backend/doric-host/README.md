@@ -156,7 +156,8 @@ What each bundle owns:
   each prompt.
 - **`threads`** (`bundles/features/threads`) ships the delegation tools
   `thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
-  `thread-interrupt` and `thread-terminate`, which reach the host only through
+  `thread-restart`, `thread-interrupt` and `thread-terminate`, which reach the
+  host only through
   `runtime.threads/v1`.
 - **`files`** and **`git`** tools reach the Thread's working directory and the
   Project sandbox through `runtime.workspace/v1` and `runtime.lease/v1`; the

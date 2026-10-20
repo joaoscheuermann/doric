@@ -32,6 +32,7 @@ void test('registers thread tools in the established model-visible order', async
     'thread-send',
     'thread-interrupt',
     'thread-terminate',
+    'thread-restart',
   ];
   assert.deepEqual(
     tools.map((tool) => tool.name),
@@ -75,6 +76,13 @@ void test('preserves thread control arguments, defaults, and serialized results'
       assert.equal(id, threadId);
       return { ...view, id, state: 'cancelled' };
     },
+    restart: async (id, prompt) => {
+      assert.equal(id, threadId);
+      // The optional prompt reaches the host as written: the tool neither trims
+      // it nor substitutes the child's own last prompt.
+      assert.ok(prompt === undefined || prompt === ' again ');
+      return { status: 'accepted', promptId };
+    },
   };
   const storage = createToolStorage(await activatedTools(control));
   const execute = (name: string, payload: ToolCall['payload']) =>
@@ -105,6 +113,14 @@ void test('preserves thread control arguments, defaults, and serialized results'
     await execute('thread-terminate', { threadId }),
     JSON.stringify({ ...view, state: 'cancelled' }),
   );
+  assert.equal(
+    await execute('thread-restart', { threadId }),
+    JSON.stringify({ status: 'accepted', promptId }),
+  );
+  assert.equal(
+    await execute('thread-restart', { threadId, prompt: ' again ' }),
+    JSON.stringify({ status: 'accepted', promptId }),
+  );
 });
 
 void test('rejects invalid thread control inputs at the tool boundary', async () => {
@@ -121,6 +137,10 @@ void test('rejects invalid thread control inputs at the tool boundary', async ()
     ['thread-events', { threadId, limit: 51 }],
     ['thread-interrupt', { threadId, promptId: 'invalid' }],
     ['thread-terminate', { threadId, extra: true }],
+    ['thread-restart', { threadId: 'invalid' }],
+    ['thread-restart', { threadId, prompt: '' }],
+    ['thread-restart', { threadId, prompt: '   ' }],
+    ['thread-restart', { threadId, extra: true }],
   ] as const) {
     const call: ToolCall = { id: 'call', name, payload };
 

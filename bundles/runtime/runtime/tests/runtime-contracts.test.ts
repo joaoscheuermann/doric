@@ -176,8 +176,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.3.0: Project activity summaries for the desktop dashboard.
     `${RuntimeV1.id}@1.3.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
-    // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt.
-    `${RuntimeThreadsV1.id}@1.3.0`,
+    // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0: retry
+    // and restart.
+    `${RuntimeThreadsV1.id}@1.4.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     `${RuntimeWorkspaceV1.id}@1.1.0`,
     // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.

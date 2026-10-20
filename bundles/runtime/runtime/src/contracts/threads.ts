@@ -196,6 +196,34 @@ export const promptResultSchema: z.ZodType<PromptResult, PromptResult> =
     z.looseObject({ status: z.enum(['missing', 'inactive', 'forbidden']) }),
   ]);
 
+/** A restarted child: reopened in place, then enqueued. */
+export type RestartResult =
+  | { readonly status: 'accepted'; readonly promptId: string }
+  /** `terminated`: a cancelled Thread is irreversible. `not_failed`: healthy —
+   * use thread-send. `no_prompt`: nothing in the log to resend. */
+  | {
+      readonly status:
+        | 'missing'
+        | 'inactive'
+        | 'not_failed'
+        | 'terminated'
+        | 'no_prompt';
+    };
+
+export const restartResultSchema: z.ZodType<RestartResult, RestartResult> =
+  z.union([
+    z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
+    z.looseObject({
+      status: z.enum([
+        'missing',
+        'inactive',
+        'not_failed',
+        'terminated',
+        'no_prompt',
+      ]),
+    }),
+  ]);
+
 export const interruptResultSchema = z.enum([
   'interrupted',
   'missing',
@@ -224,6 +252,15 @@ export interface RuntimeThreadControls {
     call?: CallArg,
   ): Promise<ThreadEventsPage>;
   send(threadId: string, prompt: string, call?: CallArg): Promise<PromptResult>;
+  /** Reopens a direct child whose record is `failed` and queues a prompt:
+   * the one given, or the child's own last accepted prompt. Never revives
+   * `cancelled`, and refuses a healthy child (`not_failed`) or one with no
+   * prompt to resend (`no_prompt`). */
+  restart(
+    threadId: string,
+    prompt?: string,
+    call?: CallArg,
+  ): Promise<RestartResult>;
   interrupt(
     threadId: string,
     promptId: string,
@@ -432,6 +469,10 @@ export const runtimeThreadsMethods = {
   send: {
     input: z.tuple([z.string(), z.string()]),
     output: promptResultSchema,
+  },
+  restart: {
+    input: z.tuple([z.string(), z.string().optional()]),
+    output: restartResultSchema,
   },
   interrupt: {
     input: z.tuple([z.string(), z.string()]),

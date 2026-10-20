@@ -1,5 +1,4 @@
 {
-  "path": "/responses",
   "fields": {
     "model": "fake-responses",
     "reasoning": {
@@ -17,6 +16,7 @@
     ],
     "role": "user"
   },
+  "path": "/responses",
   "tools": [
     {
       "description": "Report this thread's working directory, or move it to a given path. A relative path resolves against the current directory, the way cd does. A move takes effect only when the path is a directory inside the workspace root, and every other tool resolves its relative paths against this directory. Move here as soon as the work moves into a repository or a subdirectory - after a clone, for instance - so the other tools run in it.",
@@ -299,7 +299,7 @@
       "type": "function"
     },
     {
-      "description": "Create a child chat and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat.",
+      "description": "Create an agent thread and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. The reader can watch it, pause it, continue it and retry it, but never prompt or delete it, so the task must stand on its own. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the thread is named after the start of the prompt.",
       "name": "thread-spawn",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -308,6 +308,9 @@
           "prompt": {
             "minLength": 1,
             "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         },
         "required": [
@@ -315,7 +318,7 @@
         ],
         "type": "object"
       },
-      "strict": true,
+      "strict": false,
       "type": "function"
     },
     {
@@ -394,7 +397,7 @@
       "type": "function"
     },
     {
-      "description": "Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically.",
+      "description": "Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically. A child whose prompt failed is already healthy — this continues it; a child whose thread itself failed needs thread-restart.",
       "name": "thread-send",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -465,6 +468,31 @@
         "type": "object"
       },
       "strict": true,
+      "type": "function"
+    },
+    {
+      "description": "Reopen a direct child chat whose thread itself failed and queue a prompt in it: the one you give, or the last prompt the child accepted. Same chat, same history, same parent. A child whose prompt failed but whose thread is healthy is already continuable — use thread-send for that. A cancelled child cannot be reopened, and only a live parent can restart its child.",
+      "name": "thread-restart",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "threadId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "type": "object"
+      },
+      "strict": false,
       "type": "function"
     }
   ]

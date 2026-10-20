@@ -48,6 +48,11 @@ const providers = (control: ThreadControl, registered: ContractTool[]) => [
       output: runtimeThreadsMethods.send.output,
       execute: ([threadId, prompt]) => control.send(threadId, prompt),
     }),
+    restart: defineMethod({
+      input: runtimeThreadsMethods.restart.input,
+      output: runtimeThreadsMethods.restart.output,
+      execute: ([threadId, prompt]) => control.restart(threadId, prompt),
+    }),
     interrupt: defineMethod({
       input: runtimeThreadsMethods.interrupt.input,
       output: runtimeThreadsMethods.interrupt.output,

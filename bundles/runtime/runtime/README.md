@@ -19,7 +19,7 @@ use to reach a prompt's Thread, working directory and sandbox. See the
 - `runtime.threads/v1` — the Thread model: create, read, rename, prompt,
   steer, resume, retry, rewind, compact, pause, terminate and delete Threads,
   manage their prompt queues, and watch a Thread. Its prompt-scoped members `spawn`,
-  `list`, `get`, `events`, `send`, `interrupt` and `terminate` act on the
+  `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
   bundle exposes them as tools.

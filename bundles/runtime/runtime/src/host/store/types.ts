@@ -168,6 +168,13 @@ export interface ThreadStore {
     activePromptId?: string,
     errorCode?: string,
   ): Promise<Thread | undefined>;
+  /**
+   * Reopens a Thread whose record is `failed` as `ready`, in place: same id,
+   * same history, same parent. Clears the failure's `errorCode`,
+   * `activePromptId` and `finishedAt`, and recomputes `open`. A record in any
+   * other state — `cancelled` above all — is returned unchanged, never written.
+   */
+  reopen(id: string): Promise<Thread | undefined>;
   /** The Thread's executor history; replaces reading `messages`/`checkpoints`. */
   history(id: string): Promise<HistoryReader>;
   /** `session.record({ history })`: puts the parts and bumps `updatedAt` (saveMessages). */
@@ -207,9 +214,10 @@ export interface ThreadStore {
    * The most recent prompt the log accepted, with the source it arrived from:
    * what `retry` sends again without the reader writing anything.
    */
-  lastPrompt(id: string): Promise<
-    | { readonly text: string; readonly source: InputSource }
-    | undefined
+  lastPrompt(
+    id: string,
+  ): Promise<
+    { readonly text: string; readonly source: InputSource } | undefined
   >;
   /** Closes one unfinished prompt as a failure, in the shape a run leaves. */
   failPrompt(prompt: PromptProgress, failure: PromptFailure): Promise<void>;

@@ -1,6 +1,7 @@
 import type {
   InterruptResult,
   PromptResult,
+  RestartResult,
   SpawnedThread,
   ThreadEventsPage,
   ThreadPage,
@@ -28,6 +29,8 @@ export interface ThreadControl {
     limit: number,
   ): Promise<ThreadEventsPage>;
   send(threadId: string, prompt: string): Promise<PromptResult>;
+  /** Reopens a failed direct child and queues a prompt in it. */
+  restart(threadId: string, prompt?: string): Promise<RestartResult>;
   interrupt(threadId: string, promptId: string): Promise<InterruptResult>;
   terminate(threadId: string): Promise<ThreadView>;
 }

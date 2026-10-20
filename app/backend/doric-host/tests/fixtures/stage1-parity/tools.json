@@ -926,7 +926,7 @@
   {
     "definition": {
       "name": "thread-spawn",
-      "description": "Create a child chat and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the chat is named after the start of the prompt.",
+      "description": "Create an agent thread and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. The reader can watch it, pause it, continue it and retry it, but never prompt or delete it, so the task must stand on its own. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the thread is named after the start of the prompt.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1048,7 +1048,7 @@
   {
     "definition": {
       "name": "thread-send",
-      "description": "Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically.",
+      "description": "Queue a follow-up task or instruction in a direct child chat without interrupting its current execution. Its result returns automatically. A child whose prompt failed is already healthy — this continues it; a child whose thread itself failed needs thread-restart.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1122,6 +1122,37 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "thread-restart",
+      "description": "Reopen a direct child chat whose thread itself failed and queue a prompt in it: the one you give, or the last prompt the child accepted. Same chat, same history, same parent. A child whose prompt failed but whose thread is healthy is already continuable — use thread-send for that. A cancelled child cannot be reopened, and only a live parent can restart its child.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
