@@ -239,7 +239,10 @@ export interface ComposerItem {
    * and leaves every other field to the owner.
    */
   readonly data: unknown;
-  /** Who wrote the comment; the line's avatar is the jdenticon of this name. */
+  /**
+   * Who wrote the comment; the line's avatar is the initials of this name over
+   * a colour derived from it.
+   */
   readonly author?: string;
   /** The note as written; the line shows it truncated and the details show it whole. */
   readonly note: string;

@@ -38,7 +38,10 @@ import {
   queueEditStore,
 } from '../../src/client/stores/queue-edit.js';
 import { threadChatsStore } from '../../src/client/stores/thread-chats.js';
-import type { ComposerItem } from '../../src/contracts/index.js';
+import type {
+  ComposerAddInput,
+  ComposerItem,
+} from '../../src/contracts/index.js';
 import {
   checkoutTarget,
   editArgs,
@@ -577,6 +580,8 @@ export const installStoryHost = (host: StoryHost = {}): void => {
   const terminals = host.terminals ?? [];
   const draftOf = (threadId: string) =>
     drafts[threadId] ?? { text: '', items: [] };
+  /** The ids the composer's stack hands the items a story adds. */
+  let added = 0;
   const apis: Readonly<Record<string, object>> = {
     // A link to another Thread goes nowhere: the story has no router.
     'navigation/v1': fake({ navigate: () => Promise.resolve() }),
@@ -614,6 +619,21 @@ export const installStoryHost = (host: StoryHost = {}): void => {
         return disposable;
       },
       setText: () => Promise.resolve(),
+      // A note written in place (a stack line, the inline comment entry) adds
+      // its item on the first character: the composer answers with the item it
+      // assigned an id to, and leaves the fixtures alone, so a story's draft
+      // never outlives the story.
+      addItem: (input: ComposerAddInput) => {
+        added += 1;
+        return Promise.resolve<ComposerItem>({
+          id: input.id ?? `comment-story-${added}`,
+          kind: input.kind,
+          elementTag: input.elementTag,
+          data: input.data,
+          ...(input.author === undefined ? {} : { author: input.author }),
+          note: input.note ?? '',
+        });
+      },
       updateNote: () => Promise.resolve(),
       removeItem: () => Promise.resolve(),
     }),

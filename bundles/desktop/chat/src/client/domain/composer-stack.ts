@@ -82,6 +82,15 @@ export const itemTarget = (item: ComposerItem): unknown =>
   asRecord(item.data)?.target;
 
 /**
+ * Where in the conversation a comment about it sits: the turn's own key and
+ * the 0-based index of the block the selection started in.
+ */
+export interface SeatRef {
+  readonly turn: string;
+  readonly block: number;
+}
+
+/**
  * The fields of a stack item's data the chat reads (`ComposerItemData`), each
  * kept only when it has the declared type; anything else the owner stored is
  * left alone. The target stays unknown: its anchor is read through
@@ -92,10 +101,26 @@ export interface ItemData {
   readonly pin?: number;
   readonly inReplyTo?: string;
   readonly refs?: { readonly title?: string; readonly source?: string };
+  /** The turn and block the item's comment was written at, when it names one. */
+  readonly seat?: SeatRef;
 }
 
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
+
+/** A seat, when it names a turn and a 0-based block; never a half one. */
+const seatOfRecord = (value: unknown): SeatRef | undefined => {
+  const seat = asRecord(value);
+  const turn = text(seat?.turn);
+  const block = seat?.block;
+
+  return turn === undefined ||
+    typeof block !== 'number' ||
+    !Number.isInteger(block) ||
+    block < 0
+    ? undefined
+    : { turn, block };
+};
 
 /** Reads a stack item's data by the stack's convention. */
 export const itemData = (item: ComposerItem): ItemData => {
@@ -106,6 +131,7 @@ export const itemData = (item: ComposerItem): ItemData => {
   const refs = asRecord(data.refs);
   const title = text(refs?.title);
   const source = text(refs?.source);
+  const seat = seatOfRecord(data.seat);
 
   return {
     ...(data.target === undefined ? {} : { target: data.target }),
@@ -119,8 +145,13 @@ export const itemData = (item: ComposerItem): ItemData => {
             ...(source === undefined ? {} : { source }),
           },
         }),
+    ...(seat === undefined ? {} : { seat }),
   };
 };
+
+/** The seat a stack item carries, else `undefined`: the turn and its block. */
+export const seatOf = (item: ComposerItem): SeatRef | undefined =>
+  itemData(item).seat;
 
 /** The identity of a comment target — kind, id and revision — else `undefined`. */
 export const targetKey = (

@@ -28,6 +28,7 @@ import {
 } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
 import type { TerminalResult } from './terminal-result.js';
+import { THREAD_SPAWN_TOOL } from './thread-spawn.js';
 import type { ThreadEvent } from './workspace.js';
 
 export type PromptStatus =
@@ -396,11 +397,15 @@ type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
  * Whether a draft belongs to the burst an `ActivityTurn` folds together:
  * reasoning and tool calls other than `edit` and `write`, which stay out of the
  * summary as their own turn blocks so every file modification remains visible in
- * the flow.
+ * the flow, and other than `thread-spawn`, whose delegation has a block of its
+ * own.
  */
 const isBurstDraft = (turn: Draft): turn is BurstDraft =>
   turn.type === 'thinking' ||
-  (turn.type === 'tool_call' && turn.name !== 'edit' && turn.name !== 'write');
+  (turn.type === 'tool_call' &&
+    turn.name !== 'edit' &&
+    turn.name !== 'write' &&
+    turn.name !== THREAD_SPAWN_TOOL);
 
 /** One grouped step, in the shape a surface renders it. */
 const activityItem = (item: BurstDraft): ActivityItem =>

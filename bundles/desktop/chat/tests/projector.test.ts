@@ -372,6 +372,133 @@ describe('thread event projection', () => {
     assert.equal(activityOf(projection.turns[2])?.tools, 1);
   });
 
+  test('a thread-spawn call stands on its own between the bursts on either side of it', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
+      event(2, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'terminal', { command: 'ls' }),
+      }),
+      event(3, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'terminal', { command: 'ls' }),
+        record: { output: 'src' },
+      }),
+      event(4, 'one', {
+        type: 'tool.started',
+        call: call('c2', 'thread-spawn', { prompt: 'Audit the contrast' }),
+      }),
+      event(5, 'one', {
+        type: 'tool.finished',
+        call: call('c2', 'thread-spawn', { prompt: 'Audit the contrast' }),
+        record: { output: '{"threadId":"thread-2","promptId":"prompt-2"}' },
+      }),
+      event(6, 'one', { type: 'reasoning.delta', delta: 'wait' }),
+      event(7, 'one', {
+        type: 'tool.started',
+        call: call('c3', 'terminal', { command: 'npm test' }),
+      }),
+      event(8, 'one', {
+        type: 'tool.finished',
+        call: call('c3', 'terminal', { command: 'npm test' }),
+        record: { output: 'pass' },
+      }),
+      event(9, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: '',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    // The spawn reads as a block of its own, so the bursts around it are the
+    // summaries that stand either side of it, as an `edit` call's are.
+    assert.deepEqual(types(projection.turns), [
+      'activity',
+      'tool_call',
+      'activity',
+    ]);
+    assert.equal(toolOf(projection.turns[1])?.name, 'thread-spawn');
+    assert.equal(activityOf(projection.turns[0])?.tools, 1);
+    assert.equal(activityOf(projection.turns[2])?.tools, 1);
+  });
+
+  test('a burst that spawned a Thread does not list the spawn among its steps', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: 'Delegate the audit and run the suite',
+        source: { kind: 'user' },
+      }),
+      event(2, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'terminal', { command: 'ls' }),
+      }),
+      event(3, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'terminal', { command: 'ls' }),
+        record: { output: 'src' },
+      }),
+      event(4, 'one', {
+        type: 'tool.started',
+        call: call('c2', 'terminal', { command: 'cat package.json' }),
+      }),
+      event(5, 'one', {
+        type: 'tool.finished',
+        call: call('c2', 'terminal', { command: 'cat package.json' }),
+        record: { output: '{}' },
+      }),
+      event(6, 'one', {
+        type: 'tool.started',
+        call: call('c3', 'thread-spawn', { prompt: 'Audit the contrast' }),
+      }),
+      event(7, 'one', {
+        type: 'tool.finished',
+        call: call('c3', 'thread-spawn', { prompt: 'Audit the contrast' }),
+        record: { output: '{"threadId":"thread-2","promptId":"prompt-2"}' },
+      }),
+      event(8, 'one', {
+        type: 'tool.started',
+        call: call('c4', 'terminal', { command: 'npm test' }),
+      }),
+      event(9, 'one', {
+        type: 'tool.finished',
+        call: call('c4', 'terminal', { command: 'npm test' }),
+        record: { output: 'pass' },
+      }),
+      event(10, 'one', {
+        type: 'tool.started',
+        call: call('c5', 'terminal', { command: 'npm run check' }),
+      }),
+      event(11, 'one', {
+        type: 'tool.finished',
+        call: call('c5', 'terminal', { command: 'npm run check' }),
+        record: { output: 'clean' },
+      }),
+      event(12, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: '',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    const activities = projection.turns.filter(
+      (turn): turn is ActivityTurn => turn.type === 'activity',
+    );
+    const named = activities
+      .flatMap((turn) => turn.items)
+      .flatMap((item) => (item.kind === 'tool' ? [item.name] : []));
+
+    // The spawn has its own block, so no summary offers it as one of its steps.
+    assert.deepEqual(named, ['terminal', 'terminal', 'terminal', 'terminal']);
+    // And the calls that did fold into a summary still count as its tools.
+    assert.deepEqual(
+      activities.map((turn) => turn.tools),
+      [2, 2],
+    );
+  });
+
   test('keeps a lone thought when a new prompt closes it', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),

@@ -25,6 +25,8 @@ export interface CommentLineItem {
   readonly pin?: number;
   /** Whether the comment answers another one (`inReplyTo`). */
   readonly reply?: boolean;
+  /** The words the comment is about, when the line quotes a selection. */
+  readonly quote?: ReactNode;
 }
 
 /** Whether the element tag names the line this component draws. */
@@ -67,6 +69,11 @@ export function CommentLine({
   return (
     // A span, so the line can stand inside a button (a reply's source row).
     <span className={cn(COMMENT_LINE_CLASS, className)}>
+      {item.quote === undefined ? null : (
+        <span className="min-w-0 shrink truncate text-muted-foreground italic">
+          {item.quote}
+        </span>
+      )}
       <ReaderAvatar name={author} />
       <span className="max-w-40 shrink-0 truncate">
         {item.reply === true && <span aria-hidden="true">↩ </span>}

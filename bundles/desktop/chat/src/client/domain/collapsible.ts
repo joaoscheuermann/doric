@@ -98,3 +98,15 @@ export const terminalResultOpenness = (failed: boolean): Openness => ({
   hasContent: true,
   defaultOpen: failed,
 });
+
+/**
+ * A thread-spawn block's answer: open while the call spawns, so the prompt the
+ * agent handed down is readable, folded away once the child exists and its
+ * header names it, and open again when the call failed — the error the reader
+ * must not scroll past, named in the header as well.
+ */
+export const spawnOpenness = (status: ToolStatus): Openness => ({
+  active: status === 'running',
+  hasContent: true,
+  defaultOpen: status !== 'finished',
+});

@@ -3,7 +3,6 @@ import { $isElementNode, $isTextNode, type LexicalNode } from 'lexical';
 import { CommentSelection } from '../../../../../src/client/components/organisms/conversation/plugins/comment-selection.js';
 import {
   answer,
-  nodesThread,
   promptIdOf,
   turnsOfLog,
 } from '../../../../support/conversation.js';
@@ -44,7 +43,7 @@ export const MessageSelected = {
         firstText(blocks.at(-1))?.select(4, 47);
       }}
     >
-      <CommentSelection thread={nodesThread} />
+      <CommentSelection />
     </ConversationEditor>
   ),
 };
@@ -58,7 +57,7 @@ export const PromptSelected = {
         firstText(blocks[0])?.select(0, 12);
       }}
     >
-      <CommentSelection thread={nodesThread} />
+      <CommentSelection />
     </ConversationEditor>
   ),
 };

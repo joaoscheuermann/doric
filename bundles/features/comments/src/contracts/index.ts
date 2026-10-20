@@ -43,6 +43,15 @@ export interface CommentAnchor {
   readonly label?: string;
   /** The selected text of a `range` anchor. */
   readonly text?: string;
+  /**
+   * Where in the target the range sits, for a kind that draws its target as
+   * turns of blocks: the turn's own key and the 0-based index of the block the
+   * selection starts in. The owner of `kind` writes and reads them; the
+   * registry stores them and never interprets them, and an anchor without them
+   * keeps the placement it has today.
+   */
+  readonly turn?: string;
+  readonly block?: number;
 }
 
 /** What a comment is about; the registry never looks inside it. */
@@ -156,6 +165,11 @@ const anchorFields = {
   y: z.number().optional(),
   label: z.string().optional(),
   text: z.string().optional(),
+  // A seat's own shape is `add`'s to refuse: the schema runs before the call,
+  // so a malformed seat is turned away there, as a rejection of the write,
+  // while the fields stay declared here for every form they may ride on.
+  turn: z.string().optional(),
+  block: z.number().optional(),
 };
 
 export const commentAnchorSchema: z.ZodType<CommentAnchor, CommentAnchor> =

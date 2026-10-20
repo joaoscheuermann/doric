@@ -1,13 +1,18 @@
 import { cn } from 'desktop/ui/utils';
 
-import { identiconSvg } from '../../utility/identicon.js';
+import {
+  identityRing,
+  identityTone,
+  initials,
+} from '../../utility/identity-mark.js';
 
 /**
- * The frame the reader's identicon is drawn in: a compact circle the name beside
- * it labels.
+ * The frame the reader's initials are drawn in: a compact circle the name beside
+ * it labels. The rim is the avatar's own tone, so it reads as the mark's edge and
+ * not as a grey outline.
  */
 const READER_AVATAR_CLASS =
-  'flex size-4.5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 [&>svg]:size-full';
+  'flex size-5 shrink-0 items-center justify-center rounded-full border font-medium text-[0.6em] leading-none text-foreground';
 
 type ReaderAvatarProps = {
   readonly className?: string;
@@ -15,17 +20,21 @@ type ReaderAvatarProps = {
 };
 
 /**
- * The mark the reader carries: a jdenticon of their name. It says nothing to a
+ * The mark the reader carries: the initials of their name over a tone derived
+ * from it, so the same name reads the same everywhere. It says nothing to a
  * screen reader, because the name beside it does.
  */
 export function ReaderAvatar({ className, name }: ReaderAvatarProps) {
-  // The identicon is an SVG string and nothing else, so it is carried as an
-  // image the policy already allows (`img-src 'self' data:`) rather than as raw
-  // HTML injected into the frame.
-  const src = `data:image/svg+xml,${encodeURIComponent(identiconSvg(name))}`;
   return (
-    <span aria-hidden="true" className={cn(READER_AVATAR_CLASS, className)}>
-      <img src={src} alt="" className="size-full" />
+    <span
+      aria-hidden="true"
+      className={cn(READER_AVATAR_CLASS, className)}
+      style={{
+        backgroundColor: identityTone(name),
+        borderColor: identityRing(name),
+      }}
+    >
+      {initials(name)}
     </span>
   );
 }

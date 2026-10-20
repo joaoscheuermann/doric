@@ -387,16 +387,19 @@ test('the stack draws one line per comment, with the avatar, the author, the not
     note?.getAttribute('aria-label'),
     'Comment 1 on “essa resposta”',
   );
-  // The avatar comes before the author's name, and the note truncates with
-  // an ellipsis (the `truncate` utility) while it is not being written.
+  // The avatar comes before the author's name and reads as the initials of it,
+  // and the note truncates with an ellipsis (the `truncate` utility) while it is
+  // not being written.
   const line = note?.parentElement;
   assert.match(line?.textContent ?? '', /jao\.scheuermann/);
   assert.match(line?.textContent ?? '', /\[1\]/);
-  const avatar = line?.querySelector('img');
+  const avatar = line?.firstElementChild;
   const name = [...(line?.children ?? [])].find((child) =>
     child.textContent?.includes('jao.scheuermann'),
   );
   assert.ok(avatar && name);
+  assert.equal(avatar.tagName, 'SPAN', 'the avatar is a span, not an image');
+  assert.equal(avatar.textContent, 'JS', 'and reads as the initials');
   assert.equal(
     avatar.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
     Node.DOCUMENT_POSITION_FOLLOWING,

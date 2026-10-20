@@ -14,6 +14,7 @@ import {
   itemTarget,
   type NoteCaretState,
   noteKeyAction,
+  seatOf,
   stackHasWords,
 } from '../src/client/domain/composer-stack.js';
 import { builtInClaims } from '../src/client/domain/external-blocks.js';
@@ -161,6 +162,30 @@ describe('itemData', () => {
       {},
     );
     assert.deepEqual(itemData(item(null)), {});
+  });
+});
+
+describe('seatOf', () => {
+  test('reads the seat an item carries: the turn and the 0-based block', () => {
+    const seat = { turn: 'agent:p:3', block: 2 };
+
+    assert.deepEqual(seatOf(item({ seat })), seat);
+  });
+
+  test('refuses a seat that is not a turn and a 0-based block', () => {
+    assert.equal(
+      seatOf(item({ seat: { turn: 'agent:p:3', block: -1 } })),
+      undefined,
+    );
+    assert.equal(seatOf(item({ seat: { turn: '', block: 2 } })), undefined);
+    assert.equal(
+      seatOf(item({ seat: { turn: 'agent:p:3', block: '2' } })),
+      undefined,
+    );
+  });
+
+  test('answers nothing for an item without a seat', () => {
+    assert.equal(seatOf(item({})), undefined);
   });
 });
 

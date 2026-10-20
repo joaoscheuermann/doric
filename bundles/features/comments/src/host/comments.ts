@@ -28,6 +28,7 @@ import {
   COMMENT_ID_PATTERN,
   type Comment,
   type CommentAddInput,
+  type CommentAnchor,
   type CommentListInput,
   type CommentResolveInput,
   CommentsV1,
@@ -188,6 +189,24 @@ const scopeComments = async (
 };
 
 /**
+ * Whether the range anchor's seat — the turn and 0-based block it names — is
+ * malformed: a turn without words of its own, or a block that is not a
+ * non-negative whole number. An anchor that names no seat is not malformed; it
+ * keeps the placement it had before the fields existed.
+ */
+const malformedSeat = (anchor: CommentAnchor): boolean => {
+  if (anchor.turn === undefined && anchor.block === undefined) return false;
+
+  return (
+    anchor.turn === undefined ||
+    anchor.turn.length === 0 ||
+    anchor.block === undefined ||
+    !Number.isInteger(anchor.block) ||
+    anchor.block < 0
+  );
+};
+
+/**
  * Writes one comment under the call's Thread. The caller may choose the id and
  * the root it answers; without an id one is generated. A comment of the log
  * with the chosen id is returned as it stands and nothing is appended, which
@@ -199,6 +218,14 @@ export const addComment = async (
   input: CommentAddInput,
 ): Promise<Comment> => {
   const text = input.text.trim();
+
+  if (malformedSeat(input.target.anchor)) {
+    throw new ContractError(
+      'invalid_input',
+      'A comment seat needs a turn and a 0-based block.',
+      { target: input.target },
+    );
+  }
 
   if (text.length === 0) {
     throw new ContractError('invalid_input', 'A comment needs text.', {

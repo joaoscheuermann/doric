@@ -1,5 +1,11 @@
 import { ReaderAvatar } from '../../../src/client/components/molecules/reader-avatar.js';
 
+/**
+ * The reader's mark: the initials of a name over a tone derived from it. The
+ * stories show the initials a few names read as, and the tones they are drawn
+ * in — the same name always reads the same way.
+ */
+
 export default {
   title: 'Chat/Molecules/Reader avatar',
   component: ReaderAvatar,

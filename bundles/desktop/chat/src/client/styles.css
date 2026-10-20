@@ -46,6 +46,24 @@
   }
 
   /*
+   * The words the reader selects in the transcript wear the conversation's own
+   * accent instead of the platform's highlight: the primary ink over a
+   * `color-mix` of it, underlined in the same primary.
+   */
+  [data-lexical-editor] ::selection {
+    color: var(--primary);
+    background: color-mix(in oklch, var(--primary) 18%, transparent);
+    text-decoration: underline;
+    text-decoration-color: var(--primary);
+  }
+
+  /* The inline comment seat stands right after its paragraph, with the air a
+     comment about the words above it should have. */
+  [data-comment-seat] {
+    margin: 0.4rem 0 0.9rem;
+  }
+
+  /*
    * The conversation column is the scroll viewport's own child, and the
    * viewport is a plain block, so the column's `flex-1` stretches nothing: it
    * takes the pane's full height here so the conversation editor fills its
@@ -142,6 +160,89 @@
    moment it scrolls into view, shifting the transcript under the reader. */
 .conversation-scroll [data-lexical-editor] > :not([data-prompt-input]) {
   contain: layout style;
+}
+
+/* The mark a turn wears in the column's left gutter, drawn by the block itself
+   as its own `::before`: nothing outside the block positions it, so the blocks'
+   `contain: layout style` still holds. It hangs outside the column's `px-4`,
+   where a wide pane leaves room, so the text column never moves for it. */
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar] {
+  position: relative;
+}
+
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 100%;
+  margin-inline-end: 1rem;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 1px solid var(--turn-avatar-ring);
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.6875rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::before {
+  content: attr(data-avatar-initials);
+  background: var(--turn-avatar-tone);
+  color: var(--foreground);
+}
+
+/* The agent wears a face, a rim and its glyph: the circle the reader's initials
+   would fill, with the bot drawn on top of it. */
+.conversation-scroll
+  [data-lexical-editor]
+  > [data-turn-avatar='agent']::before {
+  content: '';
+  background: var(--turn-avatar-face);
+}
+
+/* The glyph is a mask, not a picture: it takes the surface's own colour, so the
+   bot reads as a cut-out of the face and never as a second palette. */
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 100%;
+  margin-inline-end: 1rem;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  background-color: var(--background);
+  mask: var(--turn-avatar-mark) center / 55% no-repeat;
+  -webkit-mask: var(--turn-avatar-mark) center / 55% no-repeat;
+  pointer-events: none;
+}
+
+/* The pane is the measure the mark is drawn against, not the column: the mark
+   hangs outside the column's own padding. It states the transcript's weight
+   too: the column is set in light, and the few places that need the plain
+   weight say `font-normal` on their own element. */
+.conversation-scroll {
+  container-type: inline-size;
+  font-weight: 300;
+}
+
+/* A narrow pane has no room outside the column (the column's 48rem plus the mark
+   and its gap on each side), so the mark still stands outside the text in the
+   column's padding — where it belongs — and only shrinks, keeping a gap of its
+   own between it and the first character. */
+@container (max-width: 54rem) {
+  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before,
+  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::after {
+    inset-inline-end: auto;
+    inset-inline-start: -1.875rem;
+    margin: 0;
+    inline-size: 1.375rem;
+    block-size: 1.375rem;
+  }
+
+  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before {
+    font-size: 0.5625rem;
+  }
 }
 
 /* The edit header, composer and author are Lexical siblings. Their adjoining

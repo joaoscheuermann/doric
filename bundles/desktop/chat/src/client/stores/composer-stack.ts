@@ -147,13 +147,12 @@ export const createComposerStackStore = (feed: ComposerFeed = composerFeed) => {
       add: (thread, input) => feed.add(thread, input),
       note: (thread, id, note) => {
         const held = get().stacks.get(thread.id) ?? [];
-        if (held.some((item) => item.id === id && item.note !== note)) {
-          const stacks = new Map(get().stacks);
-          stacks.set(
-            thread.id,
-            held.map((item) => (item.id === id ? { ...item, note } : item)),
-          );
-          set({ stacks });
+        const item = held.find((candidate) => candidate.id === id);
+        if (item !== undefined && item.note !== note) {
+          // The item is the stack's own: the surface drawing it, and the send a
+          // keystroke later, read the note as written before the echo states it.
+          Object.assign(item, { note });
+          set({ stacks: new Map(get().stacks).set(thread.id, [...held]) });
         }
         void feed.note(thread, id, note);
       },

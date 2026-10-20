@@ -11,6 +11,11 @@ import type { DelegatedInput } from '../../../../domain/delegated.js';
 import type { UserTurn } from '../../../../domain/projector.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 import { $appendMarkdown } from './markdown-blocks.js';
+import {
+  applyTurnAvatar,
+  sameTurnAvatar,
+  type TurnAvatar,
+} from './turn-avatar.js';
 
 /**
  * How a prompt the host has not accepted yet is drawn: the reader's own words,
@@ -24,6 +29,7 @@ export type SerializedUserTurnNode = Spread<
     promptId: string;
     accepted: boolean;
     delegated?: DelegatedInput;
+    avatar?: TurnAvatar;
   },
   SerializedElementNode
 >;
@@ -52,6 +58,8 @@ export class UserTurnNode extends ElementNode {
   __synced: string;
   /** The text the children were last built into, for the same guard. */
   __written: string;
+  /** The mark the block draws in the gutter, or `null` for none. */
+  __avatar: TurnAvatar;
 
   constructor(
     turnKey: string,
@@ -60,6 +68,7 @@ export class UserTurnNode extends ElementNode {
     text: string,
     written: string,
     accepted: boolean,
+    avatar: TurnAvatar = null,
     key?: NodeKey,
   ) {
     super(key);
@@ -69,6 +78,7 @@ export class UserTurnNode extends ElementNode {
     this.__accepted = accepted;
     this.__synced = text.trim();
     this.__written = written;
+    this.__avatar = avatar;
   }
 
   static override getType(): string {
@@ -83,6 +93,7 @@ export class UserTurnNode extends ElementNode {
       node.__synced,
       node.__written,
       node.__accepted,
+      node.__avatar,
       node.__key,
     );
   }
@@ -93,11 +104,24 @@ export class UserTurnNode extends ElementNode {
     dom.className = this.__accepted
       ? CONVERSATION_FONT_CLASS
       : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;
+    applyTurnAvatar(dom, this.__avatar);
     return dom;
   }
 
-  override updateDOM(): boolean {
+  /**
+   * The mark is attributes and custom properties on the element the block
+   * already drew, so it is written again in place and the element is kept: the
+   * markdown children are never rebuilt to repaint a gutter.
+   */
+  override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
+    applyTurnAvatar(dom, this.__avatar);
     return false;
+  }
+
+  /** The mark the block wears in the gutter; the sync sets it, the block draws it. */
+  setAvatar(avatar: TurnAvatar): void {
+    if (sameTurnAvatar(this.__avatar, avatar)) return;
+    this.getWritable().__avatar = avatar;
   }
 
   override isInline(): boolean {
@@ -133,6 +157,7 @@ export class UserTurnNode extends ElementNode {
       ...(this.__delegated === undefined
         ? {}
         : { delegated: this.__delegated }),
+      ...(this.__avatar === null ? {} : { avatar: this.__avatar }),
     };
   }
 
@@ -143,6 +168,7 @@ export class UserTurnNode extends ElementNode {
       serialized.delegated,
       '',
       serialized.accepted,
+      serialized.avatar ?? null,
     );
   }
 }
@@ -153,6 +179,7 @@ export function $createUserTurnNode(
   delegated: DelegatedInput | undefined,
   text: string,
   accepted: boolean,
+  avatar: TurnAvatar = null,
 ): UserTurnNode {
   const value = text.trim();
   const node = new UserTurnNode(
@@ -162,6 +189,7 @@ export function $createUserTurnNode(
     value,
     '',
     accepted,
+    avatar,
   );
   if (value.length > 0) $appendMarkdown(node, value);
   node.__written = node.getTextContent();

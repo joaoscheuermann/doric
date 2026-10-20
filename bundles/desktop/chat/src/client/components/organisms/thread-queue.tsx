@@ -205,7 +205,12 @@ export function ThreadQueue({
       aria-label="Prompt queue"
       className="mb-5 flex flex-col gap-2 font-conversation text-sm font-light"
     >
-      <h2 className="text-sm font-light text-foreground">Queue</h2>
+      {/* The queue's name is a label, not a headline: it says what the rows
+          below it are, and a reader scanning the transcript must not stop at
+          it before the turns. */}
+      <h2 className="text-xs font-light tracking-wide text-muted-foreground">
+        Queue
+      </h2>
       {queue.error && (
         <Alert variant="destructive">
           <AlertTitle>Execution paused</AlertTitle>

@@ -39,7 +39,9 @@ for how bundles work.
 - **One editable document.** The whole transcript is a single Lexical editor.
   The caret moves through your turns, the agent's answers and the prompt as
   text; a reasoning run, a tool call or an activity summary is one stop you
-  open or close with Enter, and author lines are skipped.
+  open or close with Enter, and the footer under a turn — the time it was last
+  written, with its author kept for a screen reader — is skipped, while the
+  turn's avatar is drawn in the column's left gutter.
 - **What the agent did, in place.** Answers render as Markdown with their
   markers kept. Reasoning and tool calls open while they run and fold once
   they settle. `edit` and `write` calls render as a unified diff with

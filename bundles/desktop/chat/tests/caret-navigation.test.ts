@@ -13,6 +13,7 @@ import {
   AGENT_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
   THINKING_TURN_BLOCK,
+  THREAD_SPAWN_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
   USER_PROMPT_BLOCK,
@@ -50,6 +51,18 @@ describe('how the caret treats a block', () => {
     assert.equal(enterAction([result], true), 'default');
     assert.equal(
       nextStop([result, TURN_AUTHOR_BLOCK, USER_PROMPT_BLOCK], 0, 'next'),
+      2,
+    );
+  });
+  test('focuses a thread-spawn block as a widget and toggles it with Enter', () => {
+    assert.equal(caretKind(THREAD_SPAWN_TURN_BLOCK), 'widget');
+    assert.equal(enterAction([THREAD_SPAWN_TURN_BLOCK], false), 'toggle');
+    assert.equal(
+      nextStop(
+        [THREAD_SPAWN_TURN_BLOCK, TURN_AUTHOR_BLOCK, USER_PROMPT_BLOCK],
+        0,
+        'next',
+      ),
       2,
     );
   });

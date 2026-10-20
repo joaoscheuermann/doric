@@ -64,6 +64,7 @@ import {
   ChatBlocksContext,
 } from './nodes/chat-block-node.js';
 import { CommentLinesNode } from './nodes/comment-lines-node.js';
+import { CommentSeatNode } from './nodes/comment-seat-node.js';
 import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
 import { ComposerStackNode } from './nodes/composer-stack-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
@@ -75,6 +76,7 @@ import { QueuedTurnNode } from './nodes/queued-turn-node.js';
 import { RepliesTurnNode } from './nodes/replies-turn-node.js';
 import { TerminalResultNode } from './nodes/terminal-result-node.js';
 import { ThinkingTurnNode } from './nodes/thinking-turn-node.js';
+import { ThreadSpawnNode } from './nodes/thread-spawn-node.js';
 import { ToolTurnNode } from './nodes/tool-turn-node.js';
 import { TurnAuthorNode } from './nodes/turn-author-node.js';
 import {
@@ -235,6 +237,7 @@ const defineConversationExtension = (
       AgentTurnNode,
       ThinkingTurnNode,
       ToolTurnNode,
+      ThreadSpawnNode,
       TurnAuthorNode,
       ActivityTurnNode,
       LifecycleTurnNode,
@@ -242,6 +245,7 @@ const defineConversationExtension = (
       QueueNode,
       ComposerStackNode,
       CommentLinesNode,
+      CommentSeatNode,
       PromptEditNode,
       QueuedTurnNode,
       FailureTurnNode,
@@ -448,7 +452,7 @@ export const Conversation = memo(function Conversation({
                     }
                   />
                   <EditQueuePrompt threadId={thread.id} />
-                  <CommentSelection thread={threadScope} />
+                  <CommentSelection />
                   <StackCaret />
                 </LexicalExtensionComposer>
               </ChatBlocksContext.Provider>

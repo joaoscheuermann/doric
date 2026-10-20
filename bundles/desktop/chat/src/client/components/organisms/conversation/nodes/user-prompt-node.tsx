@@ -12,11 +12,16 @@ import {
   USER_PROMPT_BLOCK,
 } from '../../../../domain/conversation-nodes.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
+import {
+  applyTurnAvatar,
+  sameTurnAvatar,
+  type TurnAvatar,
+} from './turn-avatar.js';
 
 const placeholder = 'Ask the agent to search, edit or build in this project…';
 
 export type SerializedUserPromptNode = Spread<
-  Record<never, never>,
+  { avatar?: TurnAvatar },
   SerializedElementNode
 >;
 
@@ -32,20 +37,25 @@ export type SerializedUserPromptNode = Spread<
  *
  * The reader's own author line trails it, below it, added by the sync that owns
  * the conversation's blocks — the prompt is the reader's next turn, so it wears
- * the same line a turn does. The block is only as tall as its text, so that
- * line hugs the input rather than the bottom of an empty box.
+ * the same footer a turn does, and the same mark in the gutter. The block is
+ * only as tall as its text, so that line hugs the input rather than the bottom
+ * of an empty box.
  */
 export class UserPromptNode extends ElementNode {
+  /** The mark the block draws in the gutter, or `null` for none. */
+  __avatar: TurnAvatar;
+
   static override getType(): string {
     return USER_PROMPT_BLOCK;
   }
 
   static override clone(node: UserPromptNode): UserPromptNode {
-    return new UserPromptNode(node.__key);
+    return new UserPromptNode(node.__avatar, node.__key);
   }
 
-  constructor(key?: NodeKey) {
+  constructor(avatar: TurnAvatar = null, key?: NodeKey) {
     super(key);
+    this.__avatar = avatar;
   }
 
   override createDOM(): HTMLElement {
@@ -55,17 +65,27 @@ export class UserPromptNode extends ElementNode {
     // is found by the `data-prompt-id` its turn carries.
     dom.setAttribute(PROMPT_INPUT_ATTRIBUTE, '');
     this.$applyPlaceholder(dom);
+    applyTurnAvatar(dom, this.__avatar);
     return dom;
   }
 
   /**
    * The placeholder is a property of the block, not of one of its children, so
    * it is re-derived whenever the block is reconciled — which typing marks it
-   * dirty, because the text is inserted into it.
+   * dirty, because the text is inserted into it. The mark is written again in
+   * place the same way, so a sync that only changes who the prompt belongs to
+   * keeps the element it already drew.
    */
   override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
     this.$applyPlaceholder(dom);
+    applyTurnAvatar(dom, this.__avatar);
     return false;
+  }
+
+  /** The mark the block wears in the gutter; the sync sets it, the block draws it. */
+  setAvatar(avatar: TurnAvatar): void {
+    if (sameTurnAvatar(this.__avatar, avatar)) return;
+    this.getWritable().__avatar = avatar;
   }
 
   override isInline(): boolean {
@@ -79,16 +99,23 @@ export class UserPromptNode extends ElementNode {
   }
 
   override exportJSON(): SerializedUserPromptNode {
-    return super.exportJSON();
+    return {
+      ...super.exportJSON(),
+      ...(this.__avatar === null ? {} : { avatar: this.__avatar }),
+    };
   }
 
-  static override importJSON(): UserPromptNode {
-    return $createUserPromptNode();
+  static override importJSON(
+    serialized: SerializedUserPromptNode,
+  ): UserPromptNode {
+    return $createUserPromptNode(serialized.avatar ?? null);
   }
 }
 
-export function $createUserPromptNode(): UserPromptNode {
-  return new UserPromptNode();
+export function $createUserPromptNode(
+  avatar: TurnAvatar = null,
+): UserPromptNode {
+  return new UserPromptNode(avatar);
 }
 
 export function $isUserPromptNode(

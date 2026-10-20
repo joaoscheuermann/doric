@@ -30,6 +30,7 @@ import {
   itemData,
   type NoteCaret,
   noteKeyAction,
+  seatOf,
 } from '../../domain/composer-stack.js';
 import {
   type StackThread,
@@ -169,7 +170,9 @@ const tagIsDefined = (tag: string): boolean => {
  * Makes every event that starts in the stack the stack's own, never the
  * editor's (see the file's head), for as long as the stack stands.
  */
-const isolate = (element: HTMLElement | null): (() => void) | undefined => {
+export const isolate = (
+  element: HTMLElement | null,
+): (() => void) | undefined => {
   if (element === null) return undefined;
   for (const name of NOTE_EVENTS)
     element.addEventListener(name, stopLexicalPropagation);
@@ -308,6 +311,10 @@ export function ComposerStack({ thread }: { readonly thread: StackThread }) {
 
   if (stack.items.length === 0) return null;
 
+  // A seated comment is drawn where it was written, by its seat inside the
+  // transcript, so the stack never draws it a second time.
+  const items = stack.items.filter((item) => seatOf(item) === undefined);
+
   const line = (item: ComposerItem, index: number) => {
     const pin = itemData(item).pin ?? index + 1;
     const onNote = (note: string): void => stack.note(item.id, note);
@@ -358,7 +365,7 @@ export function ComposerStack({ thread }: { readonly thread: StackThread }) {
       className="mb-3 font-conversation text-sm font-light"
     >
       <ol data-composer-stack-list="" className="-mx-2.5 flex flex-col gap-px">
-        {stack.items.map((item, index) => line(item, index))}
+        {items.map((item, index) => line(item, index))}
       </ol>
     </section>
   );

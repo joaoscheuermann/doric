@@ -12,6 +12,11 @@
 export const AGENT_TURN_BLOCK = 'agent-turn-node';
 export const THINKING_TURN_BLOCK = 'thinking-turn-node';
 export const TOOL_TURN_BLOCK = 'tool-turn-node';
+/**
+ * A `thread-spawn` call, drawn as the delegation it is rather than as the
+ * generic row every other tool call draws.
+ */
+export const THREAD_SPAWN_TURN_BLOCK = 'thread-spawn-node';
 export const USER_TURN_BLOCK = 'user-turn-node';
 export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
 
@@ -21,7 +26,10 @@ export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
  */
 export const TERMINAL_RESULT_TURN_BLOCK = 'terminal-result-node';
 
-/** The author line that trails the agent's and the reader's turns. */
+/**
+ * The time a turn was last written, drawn under its block. It is the footer's
+ * text alone; the block order it is placed by is unchanged.
+ */
 export const TURN_AUTHOR_BLOCK = 'turn-author-node';
 
 /**
@@ -54,6 +62,11 @@ export const QUEUED_TURN_BLOCK = 'queued-turn-node';
 export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';
 /** The comments one user turn wears, above the reader's own words. */
 export const TURN_COMMENTS_BLOCK = 'chat-turn-comments-node';
+/**
+ * The inline comment entry: the seat a selection opens after the paragraph it
+ * starts in, where the note about the selected words is written.
+ */
+export const COMMENT_SEAT_BLOCK = 'chat-comment-seat-node';
 /** The draft stack above the prompt block: one line per comment to send. */
 export const COMPOSER_STACK_BLOCK = 'chat-composer-stack-node';
 
@@ -69,11 +82,13 @@ const UNDELETABLE = new Set([
   QUEUE_BLOCK,
   QUEUED_TURN_BLOCK,
   TURN_COMMENTS_BLOCK,
+  COMMENT_SEAT_BLOCK,
   COMPOSER_STACK_BLOCK,
   TURN_AUTHOR_BLOCK,
   AGENT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
+  THREAD_SPAWN_TURN_BLOCK,
   USER_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
   TERMINAL_RESULT_TURN_BLOCK,
