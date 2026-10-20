@@ -4,9 +4,13 @@
 // a snapshot are filtered; an invalid snapshot or event becomes an `error`
 // update with the fixed message; the cursor is the highest delivered
 // sequence. A host failure shows its message when it has a code and a
-// message, else the generic sentence. Losing the bridge (`disconnected`)
-// reports nothing and resubscribes from the cursor when
+// message, else the generic sentence. Losing the bridge (`disconnected`, or
+// `unavailable`) reports nothing and resubscribes from the cursor when
 // `doric.connection/v1` reports `connected` again, as the socket reconnected.
+// The connection status follows a socket of its own, so it can read
+// `connected` while the bridge is still down: then the watch resubscribes
+// after `resubscribeDelayMs` instead, and again for as long as each
+// resubscription ends the same way.
 
 import {
   type CallArg,
@@ -61,6 +65,8 @@ export interface ConnectionSource {
 export interface ThreadWatchSources {
   readonly stream: () => ThreadStream;
   readonly connection: () => ConnectionSource | undefined;
+  /** Runs `run` after `ms`, answering its cancel; `setTimeout` by default. */
+  readonly schedule?: (run: () => void, ms: number) => () => void;
 }
 
 export interface ThreadWatch {
@@ -80,6 +86,14 @@ export const invalidSnapshotMessage =
 export const invalidEventMessage =
   'The Thread event stream returned an invalid event.';
 export const streamFailedMessage = 'The Thread event stream failed.';
+
+/** The delay before subscribing again while the connection reads connected. */
+export const resubscribeDelayMs = 1000;
+
+const timeout = (run: () => void, ms: number): (() => void) => {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
+};
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null
@@ -111,11 +125,22 @@ interface Watch {
   cursor: number;
   subscription: Disposable | undefined;
   reconnect: Disposable | undefined;
+  /** Cancels the delayed resubscription, while one is scheduled. */
+  retry: (() => void) | undefined;
   released: boolean;
 }
 
 export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
   const watches = new Map<string, Watch>();
+  const schedule = sources.schedule ?? timeout;
+
+  /** Stops waiting for the connection: its listener and its delayed retry. */
+  const stopWaiting = (watch: Watch): void => {
+    watch.reconnect?.dispose();
+    watch.reconnect = undefined;
+    watch.retry?.();
+    watch.retry = undefined;
+  };
 
   const send = (watch: Watch, update: ThreadUpdate): void => {
     if (watch.released || watches.get(watch.threadId) !== watch) return;
@@ -126,8 +151,7 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
     if (watch.released) return;
     watch.released = true;
     if (watches.get(watch.threadId) === watch) watches.delete(watch.threadId);
-    watch.reconnect?.dispose();
-    watch.reconnect = undefined;
+    stopWaiting(watch);
     const subscription = watch.subscription;
     watch.subscription = undefined;
     try {
@@ -204,16 +228,25 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
     }
   };
 
-  /** Resubscribes from the cursor on the next `connected` report. */
+  /**
+   * Resubscribes from the cursor on the next `connected` report, or after a
+   * delay when the connection already reads `connected`: its status follows a
+   * socket of its own, which can be back before the bridge is.
+   */
   const awaitConnection = (watch: Watch): void => {
     const connection = sources.connection();
-    if (connection === undefined || watch.reconnect !== undefined) return;
-    watch.reconnect = connection.subscribe((status) => {
-      if (status !== 'connected' || watch.released) return;
-      watch.reconnect?.dispose();
-      watch.reconnect = undefined;
+    if (connection === undefined) return;
+    stopWaiting(watch);
+    const resume = (): void => {
+      if (watch.released) return;
+      stopWaiting(watch);
       subscribe(watch);
+    };
+    watch.reconnect = connection.subscribe((status) => {
+      if (status === 'connected') resume();
     });
+    if (connection.status() === 'connected')
+      watch.retry = schedule(resume, resubscribeDelayMs);
   };
 
   /** A stream that ended: quietly on a lost bridge, else as an error. */
@@ -221,7 +254,8 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
     if (watch.released) return;
     watch.subscription = undefined;
     if (error === undefined) return;
-    if (record(error)?.code === 'disconnected') {
+    const code = record(error)?.code;
+    if (code === 'disconnected' || code === 'unavailable') {
       awaitConnection(watch);
       return;
     }
@@ -279,6 +313,7 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
         cursor: afterSequence,
         subscription: undefined,
         reconnect: undefined,
+        retry: undefined,
         released: false,
       };
       watches.set(threadId, watch);

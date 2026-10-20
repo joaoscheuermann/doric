@@ -71,7 +71,9 @@ const item = (
       ? 'You'
       : source.kind === 'terminal'
         ? 'Terminal'
-        : `${source.kind === 'result' ? 'Subthread' : 'Parent'} · ${names.get(source.threadId) ?? source.threadId.slice(0, 8)}`;
+        : source.kind === 'bundle'
+          ? `${source.bundleId} · ${source.reason}`
+          : `${source.kind === 'result' ? 'Subthread' : 'Parent'} · ${names.get(source.threadId) ?? source.threadId.slice(0, 8)}`;
   return {
     promptId: prompt.promptId,
     source,

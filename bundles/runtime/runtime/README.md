@@ -18,7 +18,11 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   adopt and drain.
 - `runtime.threads/v1` — the Thread model: create, read, rename, prompt,
   steer, resume, retry, rewind, compact, pause, terminate and delete Threads,
-  manage their prompt queues, and watch a Thread. Its prompt-scoped members `spawn`,
+  manage their prompt queues, and watch a Thread. `instruct` (bundles only, never
+  a window) gives a Thread a bundle's instruction: a steer whose source is
+  `{ kind: 'bundle', bundleId, reason, retain? }`, with the calling bundle's
+  own id; it reaches agent Threads too. `retain` marks a standing
+  instruction, which the executor keeps through compaction. Its prompt-scoped members `spawn`,
   `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
@@ -34,7 +38,13 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   [`terminal`](../../features/terminal/README.md) bundle while it is active.
 - `runtime.hooks/v1` — `onProjectReadyHook`, `onProjectClosingHook` and
   `onThreadsClosingHook`, which the runner awaits where it closes a Thread's
-  terminals.
+  terminals; `onPromptStartedHook` (the prompt, its source, the Thread's `cwd`
+  and `cwdRepo`), awaited after `prompt.started` and before the executor runs;
+  and `onThreadCwdChangedHook` (both `cwd` and `cwdRepo` values before and
+  after, and the running `promptId`), awaited after any change and before a move
+  answers its caller. Both run outside the Project lock, so a handler may call
+  `runtime.threads/v1`; an instruction it gives is read at the run's next safe
+  point.
 - `runtime.usage/v1` — a Thread's stored usage projection.
 - Storage and event types: `runtime.project/v1`, `runtime.thread/v1`,
   `runtime.history/v1`, `runtime.migration/v1` and the
@@ -64,7 +74,7 @@ sub-thread is a branch already, so no surface offers a branch under it either.
 ## How it works
 
 - **Prompts:** the runner executes each prompt through `executor/v1` (the
-  [`direct`](../direct/README.md) bundle in the shipped host) with the
+  [`default`](../default/README.md) bundle in the shipped host) with the
   runtime's `PromptSession`, and the executor's checkpoint patch marks the turn
   boundary. Only queue and state mutations take the Project lock.
 - **Host facade:** each prompt gets a `Host`, whose types live in
@@ -94,7 +104,7 @@ npx nx typecheck bundle-runtime
 npx nx test bundle-runtime
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

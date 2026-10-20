@@ -88,8 +88,8 @@ npx nx test bundle-threads
 
 The build writes `bundles/features/threads/dist`, which
 `doric-host:build-bundles` stages into
-`app/backend/doric-host/dist/bundles/threads`; the Direct host loads it through
-the `bundle` loader. To rebuild and stage every bundle used by the Direct host:
+`app/backend/doric-host/dist/bundles/threads`; the Doric host loads it through
+the `bundle` loader. To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

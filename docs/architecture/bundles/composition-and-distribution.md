@@ -24,7 +24,7 @@ Os antigos papéis exclusivos (armazenamento durável, segredos, runtime padrão
   "enabled": [
     "core",
     "runtime",
-    "direct",
+    "default",
     "postgres",
     "myhooks",
     "layout",
@@ -38,7 +38,7 @@ Os antigos papéis exclusivos (armazenamento durável, segredos, runtime padrão
     "storage.backend/v1": "postgres",
     "secrets.backend/v1": "postgres",
     "runtime/v1": "runtime",
-    "executor/v1": "direct"
+    "executor/v1": "default"
   }
 }
 ```

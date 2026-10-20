@@ -114,6 +114,27 @@ describe('thread event projection', () => {
     assert.equal(textOf(turn), '');
   });
 
+  test('attributes a bundle instruction to its bundle, not the human', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: '# Coding in a repository',
+        source: {
+          kind: 'bundle',
+          bundleId: 'default',
+          reason: 'coding-workflow',
+        },
+      }),
+    ]);
+
+    const turn = projection.turns[0];
+    assert.deepEqual(turn?.type === 'user' ? turn.instruction : undefined, {
+      bundleId: 'default',
+      reason: 'coding-workflow',
+    });
+    assert.equal(textOf(turn), '# Coding in a repository');
+  });
+
   test('carries a child result without the host envelope', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {

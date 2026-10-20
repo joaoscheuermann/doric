@@ -46,6 +46,47 @@ for (const mode of ['complete', 'stream'] as const) {
   });
 }
 
+for (const mode of ['complete', 'stream'] as const) {
+  void test(`${mode} sends the system prompt a function gives at each provider turn`, async () => {
+    const lookup = call('lookup', { query: 'doric' });
+    const fake = createProvider({
+      complete: (_request, index) =>
+        index === 0
+          ? completeFinish('Checking.', [lookup])
+          : completeFinish('Done.'),
+      stream: (_request, index) =>
+        streamEvents(
+          index === 0
+            ? completeFinish('Checking.', [lookup])
+            : completeFinish('Done.'),
+        ),
+    });
+    const tools = createTools({ results: { lookup: { found: true } } });
+    let turn = 0;
+    const agent = createAgent({
+      provider: fake.provider,
+      tools: tools.storage,
+      messages: createMessageStorage(),
+      system: async () => {
+        turn += 1;
+        return `Instructions for turn ${turn}.`;
+      },
+      model: 'fake-model',
+    });
+
+    if (mode === 'complete') await agent.complete('Find context.');
+    else await collect(agent.stream('Find context.'));
+
+    assert.deepEqual(
+      fake.requests.map((request) => request.messages[0]),
+      [
+        { role: 'system', content: 'Instructions for turn 1.' },
+        { role: 'system', content: 'Instructions for turn 2.' },
+      ],
+    );
+  });
+}
+
 void test('complete executes requested tools and calls the provider again with tool results', async () => {
   const lookup = call('lookup', { query: 'doric' });
   const fake = createProvider({

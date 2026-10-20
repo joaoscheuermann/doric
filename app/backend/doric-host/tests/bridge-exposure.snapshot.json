@@ -70,6 +70,7 @@
       "renameThread",
       "resume",
       "resumeQueue",
+      "retry",
       "rewind",
       "setThreadCwd",
       "steer",

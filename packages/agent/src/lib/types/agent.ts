@@ -21,7 +21,12 @@ export interface AgentOptions {
   readonly tools: ToolStorage;
   readonly messages: MessageStorage;
   readonly toolCalls: ToolCallStorage;
-  readonly system: string;
+  /**
+   * The system prompt, or a function that gives it. A function runs before
+   * every provider request, so the prompt can follow state that changes
+   * during a run.
+   */
+  readonly system: string | (() => string | Promise<string>);
   readonly model: string;
   readonly effort?: ReasoningEffort;
   readonly flags?: ProviderCallFlags;

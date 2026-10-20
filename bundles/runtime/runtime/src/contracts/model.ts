@@ -169,6 +169,19 @@ export type InputSource =
       readonly threadId: string;
       readonly promptId: string;
       readonly requestPromptId: string;
+    }
+  /**
+   * An instruction a bundle gave the Thread (`runtime.threads/v1.instruct`):
+   * `bundleId` is the calling bundle, never a value the caller supplied, and
+   * `reason` names why it spoke. `retain` marks a standing instruction: the
+   * executor keeps it in the history the model reads, one per bundle and
+   * reason, through every compaction.
+   */
+  | {
+      readonly kind: 'bundle';
+      readonly bundleId: string;
+      readonly reason: string;
+      readonly retain?: true;
     };
 
 export interface ThreadEvent {
@@ -571,6 +584,12 @@ export const inputSourceSchema: z.ZodType<InputSource, InputSource> = z.union([
     threadId: z.string(),
     promptId: z.string(),
     requestPromptId: z.string(),
+  }),
+  z.looseObject({
+    kind: z.literal('bundle'),
+    bundleId: z.string(),
+    reason: z.string(),
+    retain: z.literal(true).optional(),
   }),
 ]);
 

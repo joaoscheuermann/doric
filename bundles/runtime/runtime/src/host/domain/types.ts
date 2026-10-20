@@ -156,6 +156,17 @@ export interface WorkspaceService {
       prompt: string,
       options: { readonly promptId: string; readonly interrupt?: boolean },
     ): Promise<SteerResult>;
+    /** A bundle's instruction: a steer whose source names the calling bundle. */
+    instruct(
+      id: string,
+      prompt: string,
+      source: {
+        readonly bundleId: string;
+        readonly reason: string;
+        readonly retain?: boolean;
+      },
+      options: { readonly promptId?: string; readonly interrupt?: boolean },
+    ): Promise<SteerResult>;
     /**
      * Takes up one prompt an interruption left unfinished, bringing the
      * Project's sandbox back when the host holds none, and answers the Thread.

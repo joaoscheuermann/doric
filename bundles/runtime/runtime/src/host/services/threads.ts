@@ -122,6 +122,23 @@ export const threadsService = ({
           ...(interrupt === undefined ? {} : { interrupt }),
         }),
     }),
+    instruct: defineMethod({
+      ...methods.instruct,
+      execute: ({ id, prompt, reason, promptId, interrupt, retain }, call) =>
+        service.threads.instruct(
+          id,
+          prompt,
+          {
+            bundleId: call.caller.bundleId,
+            reason,
+            ...(retain === undefined ? {} : { retain }),
+          },
+          {
+            ...(promptId === undefined ? {} : { promptId }),
+            ...(interrupt === undefined ? {} : { interrupt }),
+          },
+        ),
+    }),
     resume: defineMethod({
       expose: 'desktop',
       ...methods.resume,

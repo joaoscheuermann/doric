@@ -179,7 +179,7 @@ void test('a composition without a structural provider fails the boot at bundle_
       path,
       JSON.stringify({
         ...composition,
-        enabled: composition.enabled.filter((id) => id !== 'direct'),
+        enabled: composition.enabled.filter((id) => id !== 'default'),
       }),
     );
     const host = await startHostProcess({

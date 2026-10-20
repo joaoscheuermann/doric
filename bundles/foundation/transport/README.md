@@ -117,7 +117,7 @@ npx nx test bundle-transport
 The build writes `bundles/foundation/transport/dist`, which
 `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/transport`. To rebuild and stage every
-bundle used by the Direct host:
+bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

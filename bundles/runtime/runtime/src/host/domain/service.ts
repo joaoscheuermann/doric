@@ -203,6 +203,12 @@ export const createWorkspaceService = ({
     ...(ports.hooks.threadsClosing === undefined
       ? {}
       : { threadsClosing: ports.hooks.threadsClosing }),
+    ...(ports.hooks.promptStarted === undefined
+      ? {}
+      : { promptStarted: ports.hooks.promptStarted }),
+    ...(ports.hooks.cwdChanged === undefined
+      ? {}
+      : { cwdChanged: ports.hooks.cwdChanged }),
     exclusive,
   });
   let disposed = false;
@@ -1225,6 +1231,30 @@ export const createWorkspaceService = ({
           if (current === undefined || thread === undefined)
             return Promise.resolve({ status: 'inactive' as const });
           return runner.steer(current, thread, prompt, options);
+        });
+      },
+      instruct: async (id, prompt, { bundleId, reason, retain }, options) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        const project = await projectFor(record.projectId);
+        if (project === undefined) return { status: 'inactive' };
+        return exclusive<SteerResult>(record.projectId, () => {
+          const current = runtimes.get(record.projectId);
+          const thread = current?.threads.get(id);
+          if (current === undefined || thread === undefined)
+            return Promise.resolve({ status: 'inactive' as const });
+          return runner.instruct(
+            current,
+            thread,
+            prompt,
+            {
+              kind: 'bundle',
+              bundleId,
+              reason,
+              ...(retain === true ? { retain: true as const } : {}),
+            },
+            options,
+          );
         });
       },
       resume: async (id, promptId) => {

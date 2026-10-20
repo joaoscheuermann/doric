@@ -15,7 +15,7 @@ Além dos hooks padrão, o app fornece as funcionalidades de plataforma: splash,
 | Dono                  | Exemplos de hooks                                            | Quem registra handlers                            |
 | --------------------- | ------------------------------------------------------------ | ------------------------------------------------- |
 | App (plataforma)      | Ciclo de vida do app, das gerações e das janelas             | Qualquer bundle, por `hooks/v1`, inclusive o core |
-| Bundles estruturais   | `runtime`: Projects; `direct`: request ao modelo e tools     | Bundles que precisam modificar a execução         |
+| Bundles estruturais   | `runtime`: Projects; `default`: request ao modelo e tools    | Bundles que precisam modificar a execução         |
 | Qualquer outro bundle | `git`: antes de trocar de branch; `chat`: montagem de blocos | Qualquer bundle que declare o contrato            |
 
 Hooks são um dos quatro canais de mensagens entre bundles: o runtime pede decisão ou transformação em um ponto nomeado, com ordem, espera e saída validada pelo dono da operação. Eventos duráveis, sinais efêmeros e `CustomEvent` são canais distintos, descritos em [serviços e canais](./services-and-channels.md).
@@ -109,8 +109,8 @@ Quem usa esses hooks decide o que a troca significa. O `runtime`, por exemplo, r
 | Dono                 | Hook                                          | Tipo                | Regra que continua com o dono                                                              |
 | -------------------- | --------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------ |
 | `runtime`            | `onProjectReadyHook` / `onProjectClosingHook` | observe             | Coordena lease, retomada e liberação única; handlers repetíveis são idempotentes           |
-| `direct`             | `onBeforeModelRequestHook`                    | transform           | Cancelamento e admissão do histórico seguem no executor                                    |
-| `direct`             | `onBeforeToolHook` / `onAfterToolHook`        | decide / observe    | O Agent valida o lote completo antes de qualquer handler                                   |
+| `default`            | `onBeforeModelRequestHook`                    | transform           | Cancelamento e admissão do histórico seguem no executor                                    |
+| `default`            | `onBeforeToolHook` / `onAfterToolHook`        | decide / observe    | O Agent valida o lote completo antes de qualquer handler                                   |
 | Executor de workflow | `onBeforeNodeHook` / `onAfterNodeHook`        | transform / observe | Controla checkpoint e transição                                                            |
 | `chat`               | `onMountHook` / `onUnmountHook`               | observe             | Replay não executa efeitos de runtime                                                      |
 | `chat`               | `onBeforeRenderBlockHook`                     | transform           | A projeção e o tipo do bloco continuam do projetor; handlers só acrescentam ações e marcas |
@@ -157,7 +157,7 @@ O consumidor registra handlers com `hooks.use(Contrato).<hook>(handler)` quando 
 
 ### Onde ficam os contratos de hook
 
-O dono publica seus contratos de hook no entrypoint `contracts/` do bundle e os importa no próprio código por caminho relativo (`../contracts/index.js`), como em [manifesto v1](./manifest.md); o consumidor de outro bundle importa só esse entrypoint, por exemplo `direct/contracts`; os detalhes estão em [contratos](./contracts.md). `HooksV1`, `SettingsV1` e as demais referências dos contratos básicos, com seus tipos, vêm de `bundle/contracts`, junto com `AppHooksV1`, `WindowHooksV1` e os tipos de contexto; `core/contracts` exporta só o que é do core, como `CoreHooksV1`. Nenhum código importa o entrypoint `bundle` (loader Node).
+O dono publica seus contratos de hook no entrypoint `contracts/` do bundle e os importa no próprio código por caminho relativo (`../contracts/index.js`), como em [manifesto v1](./manifest.md); o consumidor de outro bundle importa só esse entrypoint, por exemplo `default/contracts`; os detalhes estão em [contratos](./contracts.md). `HooksV1`, `SettingsV1` e as demais referências dos contratos básicos, com seus tipos, vêm de `bundle/contracts`, junto com `AppHooksV1`, `WindowHooksV1` e os tipos de contexto; `core/contracts` exporta só o que é do core, como `CoreHooksV1`. Nenhum código importa o entrypoint `bundle` (loader Node).
 
 ## Exemplo: o Git define um hook
 
@@ -244,7 +244,7 @@ Os exemplos cobrem os três tipos de hook, os três ambientes e os dois jeitos d
 
 ### 1. Recusar uma operação com um hook de bundle estrutural (`decide`, host)
 
-Um bundle `allowlist` impede a tool `web` de acessar domínios fora de uma lista configurada. Ele usa o hook que o `direct` define antes de cada tool.
+Um bundle `allowlist` impede a tool `web` de acessar domínios fora de uma lista configurada. Ele usa o hook que o `default` define antes de cada tool.
 
 ```json
 {
@@ -256,7 +256,7 @@ Um bundle `allowlist` impede a tool `web` de acessar domínios fora de uma lista
   "requires": [
     "hooks/v1@^1.0.0",
     "settings/v1@^1.0.0",
-    "direct.hooks/v1@^1.0.0"
+    "default.hooks/v1@^1.0.0"
   ]
 }
 ```
@@ -268,7 +268,7 @@ import {
   HooksV1,
   SettingsV1,
 } from 'bundle/contracts';
-import { DirectHooksV1 } from 'direct/contracts';
+import { DefaultHooksV1 } from 'default/contracts';
 import { z } from 'zod';
 
 export const allowlistSettings = defineSettings({
@@ -282,7 +282,7 @@ export const activate = ({ services }: HostContext) => {
 
   services
     .use(HooksV1)
-    .use(DirectHooksV1)
+    .use(DefaultHooksV1)
     .onBeforeToolHook(async ({ tool, input }) => {
       if (tool !== 'web') return { allow: true };
 
@@ -295,7 +295,7 @@ export const activate = ({ services }: HostContext) => {
 };
 ```
 
-Quando o handler recusa, o `direct` não executa a tool e devolve ao modelo o motivo como resultado de erro. O Agent continua validando o lote completo de tool calls antes de qualquer handler.
+Quando o handler recusa, o `default` não executa a tool e devolve ao modelo o motivo como resultado de erro. O Agent continua validando o lote completo de tool calls antes de qualquer handler.
 
 ### 2. Transformar o contexto do modelo (`transform`, host)
 
@@ -307,19 +307,19 @@ Um bundle `rules` acrescenta ao prompt de sistema as regras do arquivo `AGENTS.m
   "id": "rules",
   "version": "1.0.0",
   "engines": { "doric": "^1.0.0" },
-  "requires": ["hooks/v1@^1.0.0", "direct.hooks/v1@^1.0.0", "files/v1@^1.0.0"]
+  "requires": ["hooks/v1@^1.0.0", "default.hooks/v1@^1.0.0", "files/v1@^1.0.0"]
 }
 ```
 
 ```ts
 import { type HostContext, HooksV1 } from 'bundle/contracts';
-import { DirectHooksV1 } from 'direct/contracts';
+import { DefaultHooksV1 } from 'default/contracts';
 import { FilesV1 } from 'files/contracts';
 
 export const activate = ({ services }: HostContext) => {
   services
     .use(HooksV1)
-    .use(DirectHooksV1)
+    .use(DefaultHooksV1)
     .onBeforeModelRequestHook(async (request, call) => {
       const files = services.use(FilesV1, call.scope);
       const rules = await files.readIfExists('AGENTS.md', call);
@@ -333,7 +333,7 @@ export const activate = ({ services }: HostContext) => {
 };
 ```
 
-Cada handler de `transform` recebe a saída validada do anterior, e o `direct` valida o resultado final contra o schema do request antes de chamar o modelo; como o `kind` é `transform`, esse schema é o mesmo da entrada do hook. `call.scope` traz o Project e a Thread da execução, `services.use(FilesV1, call.scope)` devolve o serviço `files/v1` nesse escopo, e `call.signal` é cancelado junto com o prompt.
+Cada handler de `transform` recebe a saída validada do anterior, e o `default` valida o resultado final contra o schema do request antes de chamar o modelo; como o `kind` é `transform`, esse schema é o mesmo da entrada do hook. `call.scope` traz o Project e a Thread da execução, `services.use(FilesV1, call.scope)` devolve o serviço `files/v1` nesse escopo, e `call.signal` é cancelado junto com o prompt.
 
 ### 3. Consumir um hook e definir outro no mesmo bundle (`observe` e `decide`, host)
 

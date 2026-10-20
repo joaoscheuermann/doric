@@ -54,7 +54,7 @@ npx nx typecheck bundle-docker
 npx nx test bundle-docker
 ```
 
-To rebuild and stage every bundle used by the Direct host:
+To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

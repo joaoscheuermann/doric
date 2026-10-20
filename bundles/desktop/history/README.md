@@ -65,7 +65,7 @@ The tests cover the merge rules, eviction, corrupt files, the per-identity
 directories and the before-quit flush. The build writes
 `bundles/desktop/history/dist`, which `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/history`. To rebuild and stage every
-bundle used by the Direct host:
+bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles
