@@ -655,9 +655,11 @@ each provider request for this. The coding workflow reaches the agent as an
 standing instruction, not as system prompt text, once per Thread: the
 `default` bundle gives the Thread the workflow (`prompts/repository.ts`: Search,
 Plan, Development with contracts and red-green tests and implementation,
-Cleanup, each subagent type with its goal, tools, the files it may change and
-what it returns; Contracts generates the contracts as its result and changes no
-file) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
+Cleanup, each subagent type with its goal, tools, the files it may change,
+ordered steps, explicit rules and what it returns; Contracts generates the
+contracts as its result and changes no file, Tests derive expected values from
+the requirements, and Implementation never edits, weakens or special-cases a
+test and stops to report a test that contradicts the plan) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
 `retain: true`, when a task — a `user` or `parent` input — starts with a
 `cwdRepo` hint (the executor checks before the run's first model request) and
 when a running prompt moves into a repository root (its
