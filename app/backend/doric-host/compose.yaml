@@ -82,6 +82,9 @@ services:
       # gives a sandbox the daemon's authority on the host, so it is off unless
       # a local, trusted deployment opts in through the environment file.
       DORIC_SANDBOX_DOCKER_SOCKET: '${DORIC_SANDBOX_DOCKER_SOCKET:-false}'
+      # Per-sandbox CPU and memory ceilings; empty keeps the bundle's defaults.
+      DORIC_SANDBOX_CPUS: '${DORIC_SANDBOX_CPUS:-}'
+      DORIC_SANDBOX_MEMORY_MIB: '${DORIC_SANDBOX_MEMORY_MIB:-}'
       # Encrypts stored credential secrets; required once a credential holds one.
       DORIC_CREDENTIAL_KEY: ${DORIC_CREDENTIAL_KEY}
     depends_on:
