@@ -66,8 +66,12 @@ generation process next to `runtime`, which calls it. See the
 
   The workflow runs Search, Plan, Development (Contracts, then red Tests, then
   green Implementation) and Cleanup, each subagent type with its goal, tools,
-  the files it may change and what it returns; Contracts generates the
-  contracts as its result and changes no file. The main Thread delegates each
+  the files it may change, ordered steps, explicit rules and what it returns.
+  Contracts generates the contracts as its result and changes no file; Tests
+  derive expected values from the requirements, never from running code;
+  Implementation never edits, weakens or special-cases a test and stops to
+  report one that contradicts the plan; Cleanup deletes before it
+  restructures and adds no abstraction. The main Thread delegates each
   step to a child Thread whose title and first instruction line name its type
   (`Search: …`, `Type: Search`), except for trivial changes; a child does its
   delegated step itself. Both runtime contracts are `optional`, because the

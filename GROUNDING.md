@@ -659,9 +659,11 @@ each provider request for this. The coding workflow reaches the agent as an
 standing instruction, not as system prompt text, once per Thread: the
 `default` bundle gives the Thread the workflow (`prompts/repository.ts`: Search,
 Plan, Development with contracts and red-green tests and implementation,
-Cleanup, each subagent type with its goal, tools, the files it may change and
-what it returns; Contracts generates the contracts as its result and changes no
-file) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
+Cleanup, each subagent type with its goal, tools, the files it may change,
+ordered steps, explicit rules and what it returns; Contracts generates the
+contracts as its result and changes no file, Tests derive expected values from
+the requirements, and Implementation never edits, weakens or special-cases a
+test and stops to report a test that contradicts the plan) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
 `retain: true`, when a task — a `user` or `parent` input — starts with a
 `cwdRepo` hint (the executor checks before the run's first model request) and
 when a running prompt moves into a repository root (its
@@ -1860,8 +1862,10 @@ into every Docker sandbox, at `/var/run/docker.sock`, so its Docker CLI can
 build and run the images a Project describes. That socket carries the daemon's
 authority on the host, so the setting is for a local, trusted deployment rather
 than the default. Doric provisions Docker sandboxes
-with one CPU, 2048 MiB of memory, and a 4096 MiB writable layer; Firecracker
-keeps its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
+with four CPUs, 2048 MiB of memory, and a 4096 MiB writable layer;
+`DORIC_SANDBOX_CPUS` and `DORIC_SANDBOX_MEMORY_MIB` override the CPU and
+memory ceilings with whole positive numbers, and any other non-empty value
+fails activation. Firecracker keeps one CPU and its 512 MiB memory limit. Both providers answer `Sandbox.stats()` —
 Docker from the daemon's own container statistics, Firecracker from its guest's
 `/proc` — each normalized to the sandbox's own cores and memory limit, so an
 observer sees what a sandbox is consuming without acquiring, restarting or

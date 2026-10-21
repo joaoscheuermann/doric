@@ -154,7 +154,7 @@ void test('acquires a named Docker sandbox with the deployment settings', async 
         name: undefined,
         workspace: projectId,
         root: '/workspace',
-        resources: { cpuCount: 1, memoryMiB: 2048, diskMiB: 4096 },
+        resources: { cpuCount: 4, memoryMiB: 2048, diskMiB: 4096 },
         network: { mode: 'egress', ssh: false, dnsServers: ['1.1.1.1'] },
         timeoutMs: undefined,
       },
@@ -220,6 +220,41 @@ void test('only an exact "true" shares the Docker socket', () => {
     dockerSandboxSettings({ DORIC_SANDBOX_DOCKER_SOCKET: 'true' }).dockerSocket,
     true,
   );
+});
+
+void test('sizes sandboxes from the deployment CPUs and memory', () => {
+  assert.deepEqual(
+    dockerSandboxSettings({
+      DORIC_SANDBOX_CPUS: '6',
+      DORIC_SANDBOX_MEMORY_MIB: '8192',
+    }).resources,
+    { cpuCount: 6, memoryMiB: 8192, diskMiB: 4096 },
+  );
+});
+
+void test('an empty CPU or memory setting keeps the default', () => {
+  const { resources } = dockerSandboxSettings({
+    DORIC_SANDBOX_CPUS: '',
+    DORIC_SANDBOX_MEMORY_MIB: '',
+  });
+
+  assert.equal(resources.cpuCount, 4);
+  assert.equal(resources.memoryMiB, 2048);
+});
+
+void test('rejects a CPU or memory setting that is not a whole positive number', () => {
+  for (const value of ['0', '-2', '1.5', 'four', '4 ']) {
+    assert.throws(
+      () => dockerSandboxSettings({ DORIC_SANDBOX_CPUS: value }),
+      /DORIC_SANDBOX_CPUS/,
+      value,
+    );
+    assert.throws(
+      () => dockerSandboxSettings({ DORIC_SANDBOX_MEMORY_MIB: value }),
+      /DORIC_SANDBOX_MEMORY_MIB/,
+      value,
+    );
+  }
 });
 
 void test('hands the deployment socket sharing to the Docker client', async () => {

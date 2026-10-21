@@ -21,8 +21,9 @@ export type Environment = Readonly<Record<string, string | undefined>>;
 
 export interface DockerSandboxOptions {
   /**
-   * Where `DORIC_SANDBOX_IMAGE`, `DORIC_SANDBOX_SSH` and
-   * `DORIC_SANDBOX_DOCKER_SOCKET` are read. Defaults to `process.env`, which the
+   * Where `DORIC_SANDBOX_IMAGE`, `DORIC_SANDBOX_SSH`,
+   * `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_CPUS` and
+   * `DORIC_SANDBOX_MEMORY_MIB` are read. Defaults to `process.env`, which the
    * generation process inherits from the kernel.
    */
   readonly environment?: Environment;
@@ -32,6 +33,29 @@ export interface DockerSandboxOptions {
    */
   readonly client?: (options: CreateDockerClientOptions) => DockerClient;
 }
+
+/**
+ * A whole positive number read from the environment, or `fallback` when the
+ * variable is unset or empty, as Compose passes an unset one. Any other value
+ * fails activation instead of silently provisioning with the fallback.
+ */
+const positiveInteger = (
+  environment: Environment,
+  name: string,
+  fallback: number,
+): number => {
+  const value = environment[name];
+
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${name} must be a whole positive number, got "${value}"`);
+  }
+
+  return Number(value);
+};
 
 /** The deployment settings of the Docker sandboxes, read at activation. */
 export const dockerSandboxSettings = (environment: Environment) =>
@@ -47,7 +71,13 @@ export const dockerSandboxSettings = (environment: Environment) =>
     // sandbox the daemon's authority on the host, so only an exact `true` asks
     // for it.
     dockerSocket: environment.DORIC_SANDBOX_DOCKER_SOCKET === 'true',
-    resources: { cpuCount: 1, memoryMiB: 2048, diskMiB: 4096 },
+    // CPU and memory are daemon ceilings rather than reservations, so an idle
+    // sandbox holds neither; the deployment sizes them to its machine.
+    resources: {
+      cpuCount: positiveInteger(environment, 'DORIC_SANDBOX_CPUS', 4),
+      memoryMiB: positiveInteger(environment, 'DORIC_SANDBOX_MEMORY_MIB', 2048),
+      diskMiB: 4096,
+    },
     limits: {
       // Every acquisition Doric makes names the Project it serves, and the
       // pool provisions a new session for an identified acquisition instead
