@@ -23,9 +23,10 @@
 //
 // Both: one listener per Project or terminal, the newest replacing the older
 // (the preload kept one listener per id). A dropped connection
-// (`disconnected`, `unavailable`) reports nothing and subscribes again when
-// the connection reports `connected`, or after one second when it never went
-// down, as Socket.IO reconnected. Any other end of the stream reports
+// (`disconnected`, `unavailable`) or a lost host generation (`generation_lost`)
+// reports nothing and subscribes again when the connection reports
+// `connected`, or after one second when it never went down, as Socket.IO
+// reconnected. Any other end of the stream reports
 // 'The terminal connection failed.' (the socket's `connect_error`) and stays
 // ended.
 
@@ -97,9 +98,8 @@ export interface TerminalWatches extends TerminalWatchApi {
 }
 
 const silent = (error: ContractError | undefined): boolean =>
-  error !== undefined &&
   isContractError(error) &&
-  (error.code === 'disconnected' || error.code === 'unavailable');
+  ['disconnected', 'unavailable', 'generation_lost'].includes(error.code);
 
 const defaultSchedule = (run: () => void, ms: number): (() => void) => {
   const timer = setTimeout(run, ms);

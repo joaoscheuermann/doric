@@ -38,9 +38,15 @@ import {
   queueEditStore,
 } from '../../src/client/stores/queue-edit.js';
 import { threadChatsStore } from '../../src/client/stores/thread-chats.js';
-import type {
-  ComposerAddInput,
-  ComposerItem,
+import {
+  COMPOSER_ITEM_ID_PREFIX,
+  type ComposerAddInput,
+  type ComposerItem,
+  type ComposerNoteInput,
+  type ComposerReadInput,
+  type ComposerRemoveInput,
+  type ComposerTextInput,
+  type ComposerWatchItem,
 } from '../../src/contracts/index.js';
 import {
   checkoutTarget,
@@ -571,15 +577,41 @@ export interface StoryHost {
 
 /**
  * Hands the chat the activation services a story runs on: the connection is
- * up, the queue and the composer answer from the fixtures, and every other
- * call is refused. The sidebar tree and the live terminals are set too.
+ * up, the queue answers from the fixtures, the composer keeps a draft seeded
+ * from them, and every other call is refused. The sidebar tree and the live
+ * terminals are set too.
  */
 export const installStoryHost = (host: StoryHost = {}): void => {
   const queues = host.queues ?? {};
   const drafts = host.drafts ?? {};
   const terminals = host.terminals ?? [];
-  const draftOf = (threadId: string) =>
-    drafts[threadId] ?? { text: '', items: [] };
+  /**
+   * The story's own copy of each Thread's draft, taken from the fixtures the
+   * first time it is read, so a story's writes never reach the fixtures nor
+   * outlive the story.
+   */
+  const held = new Map<string, { text: string; items: ComposerItem[] }>();
+  /**
+   * What crosses the bridge is a copy: the client store writes a note into
+   * its own item at once, which must reach neither this draft nor a fixture.
+   */
+  const copy = <T>(value: T): T => structuredClone(value);
+  const draftOf = (threadId: string) => {
+    const kept = held.get(threadId);
+    if (kept !== undefined) return kept;
+    const fixture = drafts[threadId];
+    const draft = {
+      text: fixture?.text ?? '',
+      items: copy([...(fixture?.items ?? [])]),
+    };
+    held.set(threadId, draft);
+    return draft;
+  };
+  /** The watches open on each Thread's draft. */
+  const watchers = new Map<string, Set<(item: ComposerWatchItem) => void>>();
+  const emit = (threadId: string, item: ComposerWatchItem): void => {
+    for (const listener of watchers.get(threadId) ?? []) listener(copy(item));
+  };
   /** The ids the composer's stack hands the items a story adds. */
   let added = 0;
   const apis: Readonly<Record<string, object>> = {
@@ -597,45 +629,84 @@ export const installStoryHost = (host: StoryHost = {}): void => {
           : Promise.resolve(queue);
       },
     }),
+    // The composer as `chat.composer/v1` keeps it (`src/desktop/composer-state.ts`):
+    // the portrait first, then a delta for every write, so a note written in
+    // place (a stack line, the inline comment entry) reaches the stack and
+    // stands again when the conversation mounts once more.
     'chat.composer/v1': fake({
-      read: ({ threadId }: { readonly threadId: string }) =>
-        Promise.resolve({ threadId, ...draftOf(threadId) }),
+      read: ({ threadId }: ComposerReadInput) => {
+        const draft = draftOf(threadId);
+        return Promise.resolve({
+          threadId,
+          text: draft.text,
+          items: copy(draft.items),
+        });
+      },
       watch: (
         threadId: string,
-        listener: (item: {
-          readonly kind: 'snapshot';
-          readonly threadId: string;
-          readonly text: string;
-          readonly items: ComposerItem[];
-        }) => void,
+        listener: (item: ComposerWatchItem) => void,
       ) => {
         const draft = draftOf(threadId);
+        const listeners = watchers.get(threadId) ?? new Set();
+        watchers.set(threadId, listeners);
+        listeners.add(listener);
         listener({
           kind: 'snapshot',
           threadId,
           text: draft.text,
-          items: [...draft.items],
+          items: copy(draft.items),
         });
-        return disposable;
+        return {
+          dispose: () => {
+            listeners.delete(listener);
+          },
+        };
       },
-      setText: () => Promise.resolve(),
-      // A note written in place (a stack line, the inline comment entry) adds
-      // its item on the first character: the composer answers with the item it
-      // assigned an id to, and leaves the fixtures alone, so a story's draft
-      // never outlives the story.
+      setText: ({ threadId, text }: ComposerTextInput) => {
+        draftOf(threadId).text = text;
+        emit(threadId, { kind: 'text', threadId, text });
+        return Promise.resolve();
+      },
       addItem: (input: ComposerAddInput) => {
+        const draft = draftOf(input.threadId);
+        const wanted = input.id ?? '';
+        const kept =
+          wanted.startsWith(COMPOSER_ITEM_ID_PREFIX) &&
+          wanted.length > COMPOSER_ITEM_ID_PREFIX.length &&
+          !draft.items.some((item) => item.id === wanted);
         added += 1;
-        return Promise.resolve<ComposerItem>({
-          id: input.id ?? `comment-story-${added}`,
+        const item: ComposerItem = {
+          id: kept ? wanted : `${COMPOSER_ITEM_ID_PREFIX}story-${added}`,
           kind: input.kind,
           elementTag: input.elementTag,
           data: input.data,
-          ...(input.author === undefined ? {} : { author: input.author }),
+          author: input.author ?? READER_NAME,
           note: input.note ?? '',
-        });
+        };
+        draft.items.push(item);
+        emit(input.threadId, { kind: 'added', threadId: input.threadId, item });
+        return Promise.resolve(copy(item));
       },
-      updateNote: () => Promise.resolve(),
-      removeItem: () => Promise.resolve(),
+      updateNote: ({ threadId, id, note }: ComposerNoteInput) => {
+        const draft = draftOf(threadId);
+        const index = draft.items.findIndex((item) => item.id === id);
+        const current = draft.items[index];
+        if (current !== undefined) {
+          const next: ComposerItem = { ...current, note };
+          draft.items[index] = next;
+          emit(threadId, { kind: 'updated', threadId, item: next });
+        }
+        return Promise.resolve();
+      },
+      removeItem: ({ threadId, id }: ComposerRemoveInput) => {
+        const draft = draftOf(threadId);
+        const index = draft.items.findIndex((item) => item.id === id);
+        if (index >= 0) {
+          draft.items.splice(index, 1);
+          emit(threadId, { kind: 'removed', threadId, id });
+        }
+        return Promise.resolve();
+      },
     }),
   };
   const services: StoryServices = {

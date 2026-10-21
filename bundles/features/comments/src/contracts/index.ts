@@ -52,6 +52,19 @@ export interface CommentAnchor {
    */
   readonly turn?: string;
   readonly block?: number;
+  /**
+   * How far into that block the selected text starts, counted in characters
+   * that are not whitespace, so a reader of the anchor finds the occurrence
+   * selected among repeated words. Optional, and valid only with `turn` and
+   * `block`.
+   */
+  readonly at?: number;
+  /**
+   * The item of that block the selected text starts in, when the block is a
+   * list, so a reader of the anchor reveals the item rather than the whole
+   * list. Optional, and valid only with `turn` and `block`.
+   */
+  readonly item?: number;
 }
 
 /** What a comment is about; the registry never looks inside it. */
@@ -170,6 +183,8 @@ const anchorFields = {
   // while the fields stay declared here for every form they may ride on.
   turn: z.string().optional(),
   block: z.number().optional(),
+  at: z.number().optional(),
+  item: z.number().optional(),
 };
 
 export const commentAnchorSchema: z.ZodType<CommentAnchor, CommentAnchor> =

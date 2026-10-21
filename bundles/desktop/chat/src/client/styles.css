@@ -48,17 +48,46 @@
   /*
    * The words the reader selects in the transcript wear the conversation's own
    * accent instead of the platform's highlight: the primary ink over a
-   * `color-mix` of it, underlined in the same primary.
+   * `color-mix` of it, underlined 2px thick in the same primary.
    */
   [data-lexical-editor] ::selection {
     color: var(--primary);
     background: color-mix(in oklch, var(--primary) 18%, transparent);
     text-decoration: underline;
     text-decoration-color: var(--primary);
+    text-decoration-thickness: 2px;
   }
 
-  /* The inline comment seat stands right after its paragraph, with the air a
-     comment about the words above it should have. */
+  /* The words a comment is about keep the selection's own colours for as long
+     as the comment stands (`plugins/comment-highlights.tsx`), so the passage
+     still reads as selected while the comment is written and after. */
+  ::highlight(chat-comment) {
+    color: var(--primary);
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+    text-decoration: underline;
+    text-decoration-color: var(--primary);
+    text-decoration-thickness: 2px;
+  }
+
+  /* The commented passage under the pointer is a way to its comment, and the
+     passage of the comment being written is the one it answers: either wears a
+     stronger ground over the highlight. Only the pointer's takes the pointer
+     cursor, on the element under the pointer alone: `cursor` is inherited, so
+     the editor root wearing it would restyle the whole transcript per hover. */
+  ::highlight(chat-comment-hover) {
+    background-color: color-mix(in oklch, var(--primary) 32%, transparent);
+    text-decoration: underline;
+    text-decoration-color: var(--primary);
+    text-decoration-thickness: 2px;
+  }
+
+  [data-lexical-editor] [data-comment-hover] {
+    cursor: pointer;
+  }
+
+  /* The inline comment seat stands at the end of the block (or list item) its
+     words end in, with the air a comment about the words above it should
+     have. */
   [data-comment-seat] {
     margin: 0.4rem 0 0.9rem;
   }
@@ -137,8 +166,8 @@
     }
   }
 
-  /* A comment's reply card, or the block that draws its target, flashed when
-     a marker or a reply asks for it. */
+  /* The block that draws a comment's target, or the answer's paragraph its
+     words were selected in, flashed when a card or a pin goes to it. */
   .conversation-scroll [data-comment-flash] {
     border-radius: var(--radius-lg);
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 12%, transparent);
@@ -163,30 +192,45 @@
 }
 
 /* The mark a turn wears in the column's left gutter, drawn by the block itself
-   as its own `::before`: nothing outside the block positions it, so the blocks'
-   `contain: layout style` still holds. It hangs outside the column's `px-4`,
-   where a wide pane leaves room, so the text column never moves for it. */
+   as its own pseudo-element: nothing outside the block positions it, so the
+   blocks' `contain: layout style` still holds. It hangs outside the column's
+   `px-4`, where a wide pane leaves room, so the text column never moves for it.
+   The reader's mark is the block's `::after`, never its `::before`: the prompt
+   wears the reader's mark too, and its `::before` is the placeholder's.
+
+   The mark is 1.375rem in every pane, its right edge 0.5rem before the first
+   character (so it starts 1.875rem left of the text), and its centre stands on
+   the centre of the block's first line: the column sets its text in `text-sm`,
+   whose line is 1.25rem tall, so the mark starts (1.25rem - 1.375rem) / 2 =
+   -0.0625rem from the block's top. */
 .conversation-scroll [data-lexical-editor] > [data-turn-avatar] {
   position: relative;
 }
 
-.conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before {
+/* The block's first line stands at its top, where the mark centres: a block
+   that opens with a heading drops the heading's top margin, which the block's
+   `contain` keeps from collapsing into the gap before the turn. */
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar] > :first-child {
+  margin-block-start: 0;
+}
+
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::before,
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::after {
   position: absolute;
-  inset-block-start: 0;
-  inset-inline-end: 100%;
-  margin-inline-end: 1rem;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
+  inset-block-start: -0.0625rem;
+  inset-inline-start: -1.875rem;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
   border: 1px solid var(--turn-avatar-ring);
   border-radius: 9999px;
   display: grid;
   place-items: center;
-  font-size: 0.6875rem;
+  font-size: 0.5625rem;
   line-height: 1;
   user-select: none;
 }
 
-.conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::before {
+.conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::after {
   content: attr(data-avatar-initials);
   background: var(--turn-avatar-tone);
   color: var(--foreground);
@@ -206,15 +250,38 @@
 .conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::after {
   content: '';
   position: absolute;
-  inset-block-start: 0;
-  inset-inline-end: 100%;
-  margin-inline-end: 1rem;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
+  inset-block-start: -0.0625rem;
+  inset-inline-start: -1.875rem;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
   background-color: var(--background);
   mask: var(--turn-avatar-mark) center / 55% no-repeat;
   -webkit-mask: var(--turn-avatar-mark) center / 55% no-repeat;
   pointer-events: none;
+}
+
+/* A prompt's comments open its block: the comment group (the stack inside the
+   prompt, a sent turn's comments) wears the block's mark beside its header,
+   and the block's words below it wear none, so the comments and the words
+   read as one block under one mark. An empty stack draws nothing, its mark
+   neither, and the prompt keeps its own.
+
+   A sent turn says so itself (`data-turn-avatar-moved`, written by the sync
+   that seats its comments) rather than through a sibling combinator: the
+   transcript fills in by inserting blocks above the ones it drew, and a `+`
+   rule over every turn would restyle each turn below at every insertion. */
+.conversation-scroll [data-lexical-editor] > [data-composer-stack]:empty::after,
+.conversation-scroll
+  [data-lexical-editor]
+  > [data-composer-stack]:not(:empty)
+  ~ [data-prompt-input]::after,
+.conversation-scroll
+  [data-lexical-editor]
+  > [data-turn-avatar-moved][data-turn-avatar='agent']::before,
+.conversation-scroll
+  [data-lexical-editor]
+  > [data-turn-avatar-moved][data-turn-avatar]::after {
+  content: none;
 }
 
 /* The pane is the measure the mark is drawn against, not the column: the mark
@@ -226,22 +293,13 @@
   font-weight: 300;
 }
 
-/* A narrow pane has no room outside the column (the column's 48rem plus the mark
-   and its gap on each side), so the mark still stands outside the text in the
-   column's padding — where it belongs — and only shrinks, keeping a gap of its
-   own between it and the first character. */
+/* A narrow pane has no room outside the column (the column's 48rem plus the
+   mark and its gap on each side), so the mark stands in the column's own left
+   padding, which widens to hold it whole — never cut by the pane's edge — with
+   the same gap to the text as in a wide pane. */
 @container (max-width: 54rem) {
-  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before,
-  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::after {
-    inset-inline-end: auto;
-    inset-inline-start: -1.875rem;
-    margin: 0;
-    inline-size: 1.375rem;
-    block-size: 1.375rem;
-  }
-
-  .conversation-scroll [data-lexical-editor] > [data-turn-avatar]::before {
-    font-size: 0.5625rem;
+  .conversation-scroll > [data-slot='scroll-area-viewport'] > div {
+    padding-inline-start: 2.5rem;
   }
 }
 

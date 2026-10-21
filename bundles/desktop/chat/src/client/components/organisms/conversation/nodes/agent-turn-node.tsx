@@ -1,4 +1,7 @@
+import { $isListNode } from '@lexical/list';
 import {
+  $getRoot,
+  $isElementNode,
   ElementNode,
   type LexicalNode,
   type NodeKey,
@@ -6,6 +9,8 @@ import {
   type Spread,
 } from 'lexical';
 
+import type { AnchorBlock } from '../../../../domain/comment-excerpt.js';
+import { bySeatPlace } from '../../../../domain/comment-seats.js';
 import { AGENT_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { AgentTurn, PromptStatus } from '../../../../domain/projector.js';
 import {
@@ -21,28 +26,95 @@ import {
   type TurnAvatar,
 } from './turn-avatar.js';
 
-/** The seats a turn holds, in the order they stand. */
+/**
+ * The seats a turn holds, in the order they stand: after its blocks, or at the
+ * end of one of its lists' items.
+ */
 const $seatsOf = (turn: AgentTurnNode): CommentSeatNode[] =>
-  turn.getChildren().filter($isCommentSeatNode);
+  turn.getChildren().flatMap((child) => {
+    if ($isCommentSeatNode(child)) return [child];
+    if (!$isListNode(child)) return [];
+    return child
+      .getChildren()
+      .flatMap((item) =>
+        $isElementNode(item)
+          ? item.getChildren().filter($isCommentSeatNode)
+          : [],
+      );
+  });
 
 /**
- * Puts each seat back after the block it belongs to: the blocks are the turn's
- * markdown children, so the seat after block `n` follows the `n`-th of them.
+ * Puts the seats where they stand, none of them in the turn yet. A seat stands
+ * in the innermost block that holds the end of its words: the `after`-th of
+ * the turn's markdown children, or — when that block is a list — the end of its
+ * `item`-th item, so a comment on a list item closes that item, before the
+ * next one. The seats of one place stand in the order of the passages they are
+ * about (`bySeatPlace`). An item that is gone puts the seat after its list, and
+ * a block that is gone puts it at the turn's end.
  */
 const $placeSeats = (
   turn: AgentTurnNode,
   seats: readonly CommentSeatNode[],
 ): void => {
-  const blocks = turn
-    .getChildren()
-    .filter((child) => !$isCommentSeatNode(child));
+  const blocks = turn.blocks();
+  const last = new Map<number, LexicalNode>();
 
-  for (const seat of seats) {
-    seat.setOwner(turn);
-    const after = blocks[seat.block];
-    if (after === undefined) turn.append(seat);
-    else after.insertAfter(seat);
+  for (const seat of [...seats].sort(bySeatPlace)) {
+    const block = blocks[seat.after];
+    const item =
+      seat.item === undefined || !$isListNode(block)
+        ? undefined
+        : block.getChildren()[seat.item];
+    if ($isElementNode(item)) {
+      item.append(seat);
+      continue;
+    }
+    const previous = last.get(seat.after) ?? block;
+    if (previous === undefined) turn.append(seat);
+    else previous.insertAfter(seat);
+    last.set(seat.after, seat);
   }
+};
+
+/**
+ * Puts one new seat where `$placeSeats` would put it among the seats the turn
+ * already holds, which stay where they stand, untouched: at the end of its
+ * list item, among that item's seats, or among the seats that follow its
+ * block, in passage order. A seat after a block that is gone takes the whole
+ * placement again.
+ */
+const $placeSeat = (turn: AgentTurnNode, seat: CommentSeatNode): void => {
+  const block = turn.blocks()[seat.after];
+  if (block === undefined) {
+    const seats = $seatsOf(turn);
+    for (const standing of seats) standing.remove();
+    $placeSeats(turn, [...seats, seat]);
+    return;
+  }
+  const item =
+    seat.item === undefined || !$isListNode(block)
+      ? undefined
+      : block.getChildren()[seat.item];
+  if ($isElementNode(item)) {
+    const next = item
+      .getChildren()
+      .find(
+        (child) => $isCommentSeatNode(child) && bySeatPlace(seat, child) < 0,
+      );
+    if (next === undefined) item.append(seat);
+    else next.insertBefore(seat);
+    return;
+  }
+  let previous: LexicalNode = block;
+  for (
+    let next = block.getNextSibling();
+    $isCommentSeatNode(next) &&
+    next.after === seat.after &&
+    bySeatPlace(next, seat) < 0;
+    next = next.getNextSibling()
+  )
+    previous = next;
+  previous.insertAfter(seat);
 };
 
 export type SerializedAgentTurnNode = Spread<
@@ -77,8 +149,6 @@ export class AgentTurnNode extends ElementNode {
   __synced: string;
   /** The mark the block draws in the gutter, or `null` for none. */
   __avatar: TurnAvatar;
-  /** The children the block last read while an editor state answered. */
-  __held: LexicalNode[] = [];
 
   constructor(
     turnKey: string,
@@ -113,11 +183,11 @@ export class AgentTurnNode extends ElementNode {
 
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
-    // `mt-10`: the gap a turn stands from the one before it. The author line's
-    // bottom margin gives every other case, but a reader's prompt and an answer
-    // are the pair the transcript reads as an exchange, so the answer stands
-    // further from the prompt than one step stands from the next.
-    dom.className = `mt-10 ${CONVERSATION_FONT_CLASS}`;
+    // `mt-6`: the gap a turn stands from the one before it, the same as the
+    // author line's bottom margin gives a reader's turn, so every turn's mark
+    // stands as far from the block above it. A summary before this answer
+    // carries no bottom margin of its own, so the gap has to be stated here.
+    dom.className = `mt-6 ${CONVERSATION_FONT_CLASS}`;
     applyTurnAvatar(dom, this.__avatar);
     return dom;
   }
@@ -125,10 +195,13 @@ export class AgentTurnNode extends ElementNode {
   /**
    * The mark is attributes and custom properties on the element the block
    * already drew, so it is written again in place and the element is kept: the
-   * markdown children are never rebuilt to repaint a gutter.
+   * markdown children are never rebuilt to repaint a gutter. A block made dirty
+   * by anything else — a streamed delta, a keystroke — keeps the mark it wears
+   * untouched, so its subtree is not restyled for nothing.
    */
-  override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
-    applyTurnAvatar(dom, this.__avatar);
+  override updateDOM(prevNode: this, dom: HTMLElement): boolean {
+    if (!sameTurnAvatar(prevNode.__avatar, this.__avatar))
+      applyTurnAvatar(dom, this.__avatar);
     return false;
   }
 
@@ -143,45 +216,50 @@ export class AgentTurnNode extends ElementNode {
   }
 
   /**
-   * The answer's blocks and seats. The editor's own walk reads the node map,
-   * which only answers inside a read; outside one — a replay's check of what
-   * the block holds — the children it last read while the state answered.
+   * Opens a new comment's seat quoting `quote`, which starts `at` characters
+   * (whitespace aside) into block `block`. It stands after block `after`
+   * (`block` when not given) or, when `item` names one of that list's items,
+   * at the end of the item. The other seats stay where they stand, untouched,
+   * and the new one stands among those of its place in passage order.
    */
-  override getChildren<T extends LexicalNode>(): T[] {
-    try {
-      const children = super.getChildren<T>();
-      this.__held = children;
-      return children;
-    } catch {
-      return this.__held as T[];
-    }
-  }
+  openSeat(seat: {
+    readonly id: string;
+    readonly block: number;
+    readonly quote: string;
+    readonly at: number;
+    readonly after?: number;
+    readonly item?: number;
+    readonly startItem?: number;
+  }): CommentSeatNode {
+    const opened = $createCommentSeatNode({
+      ...seat,
+      promptId: this.__promptId,
+      turn: this.__turnKey,
+    });
+    $placeSeat(this, opened);
 
-  /** The seat standing after one of the answer's blocks, when one does. */
-  seat(block: number): CommentSeatNode | undefined {
-    return $seatsOf(this).find((seat) => seat.block === block);
+    return opened;
   }
 
   /**
-   * Opens the seat after `block`, quoting `quote`: the one already standing
-   * there is reopened with the new words, else a seat is created right after
-   * that block.
+   * Draws the chat's markdown again, whatever the DOM made of the block's text,
+   * keeping its comments where they stand. An input method's composition is
+   * the one change no command refuses: the browser writes it into the DOM and
+   * the editor reads it back.
    */
-  openSeat(block: number, quote: string): CommentSeatNode {
-    const existing = this.seat(block);
-    if (existing !== undefined) {
-      existing.setQuote(quote);
-      existing.setTurn(this.__turnKey);
-      existing.setOpen(true);
+  restore(): void {
+    const writable = this.getWritable();
+    const seats = $seatsOf(writable);
+    for (const seat of seats) seat.remove();
+    writable.clear();
+    if (writable.__synced.length > 0)
+      $appendMarkdown(writable, writable.__synced);
+    $placeSeats(writable, seats);
+  }
 
-      return existing;
-    }
-
-    const seat = $createCommentSeatNode(this.__promptId, block, quote);
-    seat.setTurn(this.__turnKey);
-    $placeSeats(this, [seat]);
-
-    return seat;
+  /** The answer's markdown blocks, in order: its children, its seats aside. */
+  blocks(): LexicalNode[] {
+    return this.getChildren().filter((child) => !$isCommentSeatNode(child));
   }
 
   /** The seats this turn holds, in the order they stand. */
@@ -265,3 +343,33 @@ export function $isAgentTurnNode(
 ): node is AgentTurnNode {
   return node instanceof AgentTurnNode;
 }
+
+/** The agent turn a node stands in, itself included, else `undefined`. */
+export const $turnOf = (node: LexicalNode): AgentTurnNode | undefined => {
+  for (let at: LexicalNode | null = node; at !== null; at = at.getParent()) {
+    if ($isAgentTurnNode(at)) return at;
+  }
+  return undefined;
+};
+
+/** The agent turns the transcript shows, in order. */
+export const $agentTurns = (): AgentTurnNode[] =>
+  $getRoot().getChildren().filter($isAgentTurnNode);
+
+/** The agent turn keyed `key`, else `undefined`. */
+export const $agentTurn = (key: string): AgentTurnNode | undefined =>
+  $agentTurns().find((turn) => turn.__turnKey === key);
+
+/**
+ * Block `block` of the agent turn keyed `turn` — or, when the anchor names one
+ * of that list's items, the item — else `undefined`.
+ */
+export const $anchorBlockNode = ({
+  turn,
+  block,
+  item,
+}: AnchorBlock): LexicalNode | undefined => {
+  const node = $agentTurn(turn)?.blocks()[block];
+  if (item === undefined || !$isListNode(node)) return node;
+  return node.getChildren()[item] ?? node;
+};

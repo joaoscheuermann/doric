@@ -54,11 +54,14 @@ for how bundles work.
   without words, or `Ctrl+C` with nothing selected, stops it.
 - **A queue you can edit.** Queued prompts sit above the input; you can edit
   or remove one before it runs, and resume a paused queue from the footer.
-- **Comments before the prompt.** Select text in an agent message to comment
-  on it. Comments from chat and from other bundles (Papercraft previews) stack
-  above the prompt and go out with the next send as a `<comments>` block before
-  your `<message>`. The agent's `comment_reply` answers show as rows of its
-  turn, with a pin coloured by the thread's state.
+- **Comments before the prompt.** Select text in an agent message and start
+  typing: the comment opens right after the paragraph or list item your
+  selection ends in, its words stay highlighted, and one paragraph can hold
+  several. Comments from chat and from other bundles (Papercraft previews)
+  stack inside the prompt, above your words, as cards showing the passage in
+  its paragraph with an arrow that goes to it, and go out with the next send
+  as a `<comments>` block before your `<message>`. The agent's `comment_reply`
+  answers show as rows of its turn, with a pin coloured by the thread's state.
 - **Find your place.** A rail on the right edge has one handle per prompt,
   queued receipt and subthread result; hovering one previews its words.
 
@@ -100,6 +103,11 @@ shows the same draft. A send through `chat.send/v1` or the composer:
    comments through `comments/v1` and clears the draft in every window;
 4. puts an item whose write failed back on the stack. A refused send leaves the
    draft where it was.
+
+A window writes the prompt's text to the draft 300 ms after the last keystroke,
+and a note's edits 150 ms after the last one. A note edit still waiting goes at
+once when the note loses the focus, before a send reads the stack, and when the
+window stops showing the Thread. Removing the comment drops the waiting edit.
 
 Chat owns the `message` kind (a comment on agent text) and registers its flush
 from its own desktop part; any other kind's owner does the same from its

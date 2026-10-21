@@ -79,4 +79,48 @@ describe('the turns a surface waits for', () => {
     const turns = [prompt('hi'), answer()];
     assert.equal(withPendingTurns(turns, { text: 'hi', before: 0 }), turns);
   });
+
+  test("draws the words when a bundle's instruction is among the log's prompts", () => {
+    // The coding workflow's instruction is not a prompt the reader sent, so
+    // it is not among the reader's prompts counted when the words left.
+    const instruction: UserTurn = {
+      ...prompt(''),
+      promptId: 'workflow',
+      instruction: { bundleId: 'default', reason: 'coding-workflow' },
+    };
+    const drawn = withPendingTurns(
+      [instruction, { ...prompt('hi'), promptId: 'two' }, answer()],
+      { text: 'next', before: 1 },
+    );
+
+    assert.deepEqual(types(drawn), ['user', 'user', 'agent', 'user']);
+    const sent = drawn.at(-1);
+    assert.equal(sent?.type === 'user' && sent.text, 'next');
+    assert.equal(sent?.type === 'user' && sent.accepted, false);
+  });
+
+  test("draws the words when a background terminal's result is among the log's prompts", () => {
+    const result: UserTurn = {
+      ...prompt(''),
+      promptId: 'terminal',
+      terminal: {
+        terminalId: 't1',
+        promptId: 'one',
+        command: 'npm test',
+        exitCode: 0,
+        reason: 'exited',
+        durationMs: 10,
+        stdout: '',
+        stderr: '',
+      },
+    };
+    const drawn = withPendingTurns([prompt('hi'), answer(), result], {
+      text: 'next',
+      before: 1,
+    });
+
+    const sent = drawn.at(-1);
+    assert.equal(sent?.type === 'user' && sent.text, 'next');
+    assert.equal(sent?.type === 'user' && sent.accepted, false);
+  });
 });

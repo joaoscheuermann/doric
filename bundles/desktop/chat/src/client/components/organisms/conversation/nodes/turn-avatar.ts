@@ -1,15 +1,19 @@
 /**
  * The mark a turn wears in the conversation's left gutter: the reader's
  * initials over a tone of their name, or the agent's glyph. The mark is drawn
- * by the turn block's own `::before` — the CSS in `styles.css` — from the
- * attributes and custom properties this module writes into the block's
- * element, so the text column and the footer's place never move.
+ * by the turn block's own pseudo-elements — the CSS in `styles.css`; the
+ * reader's by `::after`, leaving the prompt's `::before` to its placeholder —
+ * from the attributes and custom properties this module writes into the
+ * block's element, so the text column and the footer's place never move.
  *
  * The initials and the tone are stated once, in `utility/identity-mark`, and
  * shared with the composer's stack.
  */
 
-import type { AuthorRole } from '../../../../domain/conversation-authors.js';
+import {
+  type AuthorRole,
+  READER_NAME,
+} from '../../../../domain/conversation-authors.js';
 import {
   identityRing,
   identityTone,
@@ -43,6 +47,12 @@ export type TurnAvatar = {
 } | null;
 
 /**
+ * The reader's own mark: the one the prompt and the stack that opens it wear,
+ * the way the turn the reader sent wears it.
+ */
+export const READER_AVATAR: TurnAvatar = { role: 'user', name: READER_NAME };
+
+/**
  * Whether two marks are the same, so a block that already wears one is not
  * repainted by a sync that says nothing new.
  */
@@ -55,9 +65,10 @@ export const sameTurnAvatar = (left: TurnAvatar, right: TurnAvatar): boolean =>
 
 /**
  * Writes the mark a turn wears into the turn block's own element: the
- * attributes and custom properties its `::before` reads. The element is never
- * rebuilt, so a transcript update that only changes the time keeps the block it
- * already drew. Idempotent, and it cleans whatever a previous call left behind.
+ * attributes and custom properties its pseudo-elements read. The element is
+ * never rebuilt, so a transcript update that only changes the time keeps the
+ * block it already drew. Idempotent, and it cleans whatever a previous call
+ * left behind.
  */
 export const applyTurnAvatar = (dom: HTMLElement, avatar: TurnAvatar): void => {
   const { style } = dom;

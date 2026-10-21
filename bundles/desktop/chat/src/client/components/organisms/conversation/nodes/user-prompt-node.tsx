@@ -73,12 +73,14 @@ export class UserPromptNode extends ElementNode {
    * The placeholder is a property of the block, not of one of its children, so
    * it is re-derived whenever the block is reconciled — which typing marks it
    * dirty, because the text is inserted into it. The mark is written again in
-   * place the same way, so a sync that only changes who the prompt belongs to
-   * keeps the element it already drew.
+   * place, and only when it changed: a sync that only changes who the prompt
+   * belongs to keeps the element it already drew, and a keystroke leaves the
+   * mark, and the styles that hang on it, alone.
    */
-  override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
+  override updateDOM(prevNode: this, dom: HTMLElement): boolean {
     this.$applyPlaceholder(dom);
-    applyTurnAvatar(dom, this.__avatar);
+    if (!sameTurnAvatar(prevNode.__avatar, this.__avatar))
+      applyTurnAvatar(dom, this.__avatar);
     return false;
   }
 

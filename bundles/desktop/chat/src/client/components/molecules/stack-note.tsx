@@ -1,7 +1,13 @@
 // The note of one stack line, edited where it stands: a plain-text editing
 // host inside the line, with no popover and no buttons. It shows the note
-// whole (wrapping) while it holds the caret, and truncated with an ellipsis
-// otherwise; an empty note shows a muted placeholder.
+// whole, wrapping, with the line breaks it was written with — while it holds
+// the caret and after — and an empty note shows a muted placeholder.
+//
+// A line break reaches the note as the browser writes it: a `\n` where the
+// host keeps white space (it always does), a `<br>` or a new block elsewhere
+// (a paste, an older engine). The note's text reads every one of them as a
+// `\n` (`noteText`), and writes them back as `\n`, which the host draws as
+// line breaks.
 //
 // The placeholder follows the DOM's own text, not the store's note: the host
 // carries `data-placeholder` only while it holds no text, so the placeholder
@@ -20,9 +26,41 @@ import { insertPlainText } from '../../utility/note-caret.js';
 /** The attribute every stack note carries: its item's id. */
 export const STACK_NOTE_ATTRIBUTE = 'data-stack-note';
 
-/** The note's text as the DOM holds it. */
-export const noteText = (element: HTMLElement): string =>
-  element.textContent ?? '';
+/** Elements that stand on lines of their own inside an editing host. */
+const BLOCKS = new Set(['DIV', 'P', 'LI']);
+
+/** The text of a node, its `<br>`s and blocks read as line breaks. */
+const linesOf = (node: Node): string => {
+  if (node.nodeType === 3) return (node as Text).data;
+  if (node.nodeName === 'BR') return '\n';
+  let text = '';
+  for (const child of node.childNodes) {
+    const part = linesOf(child);
+    if (BLOCKS.has(child.nodeName)) {
+      // A block starts a line of its own, and its last `<br>` only holds an
+      // empty line open: it is not a line break of its own.
+      if (text.length > 0 && !text.endsWith('\n')) text += '\n';
+      text += child.lastChild?.nodeName === 'BR' ? part.slice(0, -1) : part;
+      text += '\n';
+    } else {
+      text += part;
+    }
+  }
+  return text;
+};
+
+/**
+ * The note's text as the DOM holds it, with every line break the reader wrote:
+ * a `\n`, a `<br>` or a new block. The host's last `<br>` is the browser's
+ * placeholder for an empty last line, not a break of its own.
+ */
+export const noteText = (element: HTMLElement): string => {
+  const text = linesOf(element);
+  const last = element.lastChild;
+  if (last !== null && (last.nodeName === 'BR' || BLOCKS.has(last.nodeName)))
+    return text.endsWith('\n') ? text.slice(0, -1) : text;
+  return text;
+};
 
 const PLACEHOLDER = 'Write a note…';
 
@@ -52,7 +90,7 @@ export function StackNote({
   readonly ref?: Ref<HTMLSpanElement>;
   /** Reports the note as the reader writes it. */
   readonly onText: (text: string) => void;
-  readonly onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => void;
+  readonly onKeyDown?: (event: KeyboardEvent<HTMLSpanElement>) => void;
 }) {
   const own = useRef<HTMLSpanElement | null>(null);
 
@@ -74,7 +112,7 @@ export function StackNote({
   };
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: the note truncates with an ellipsis inside its line and wraps only while edited, which a text field cannot do
+    // biome-ignore lint/a11y/useSemanticElements: the note is an editing host inside its line, drawn with the line breaks it holds, which a text field inside a span cannot be
     <span
       ref={setRef}
       data-stack-note={id}
@@ -86,7 +124,7 @@ export function StackNote({
       role="textbox"
       aria-label={label}
       spellCheck={false}
-      className="min-w-0 flex-1 truncate py-0.5 leading-normal text-muted-foreground caret-primary outline-none focus:overflow-visible focus:whitespace-pre-wrap focus:text-clip focus:text-foreground focus:wrap-anywhere"
+      className="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere py-0.5 leading-normal text-muted-foreground caret-primary outline-none focus:text-foreground"
       onInput={(event) => {
         const element = event.currentTarget;
         // An emptied host may keep a stray `<br>`; the placeholder needs it

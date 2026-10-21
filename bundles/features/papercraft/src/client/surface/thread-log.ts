@@ -8,15 +8,30 @@
 // the first frame to subscribe opens it, the last to leave closes it, and only
 // the `comments.*` events are kept. A window without the watch never answers,
 // and the frames keep reading `comments/v1.list`.
+//
+// A stream lost with the bridge (`disconnected`, `unavailable`) or with the
+// host generation serving it (`generation_lost`) subscribes again from the
+// last sequence it delivered when `doric.connection/v1` reports `connected`,
+// or after `resubscribeDelayMs` when it already reads `connected`, and its
+// replay extends the events held. Any other end leaves the log as it stands.
 
-import type { Services } from 'bundle/contracts';
+import {
+  type ContractError,
+  type Disposable,
+  DoricConnectionV1,
+  type Services,
+} from 'bundle/contracts';
 
 import {
   RuntimeThreadsV1,
   type ThreadLogEvent,
+  type ThreadWatchItem,
 } from '../../contracts/index.js';
 
 const COMMENT_EVENT = /^comments\./;
+
+/** The delay before subscribing again while the connection reads connected. */
+export const resubscribeDelayMs = 1000;
 
 type Listener = (events: readonly ThreadLogEvent[]) => void;
 
@@ -27,11 +42,121 @@ interface SharedLog {
   dispose?: () => void;
 }
 
+/** Whether a stream ended because its way to the host was lost, not refused. */
+const lost = (error: ContractError | undefined): boolean =>
+  error !== undefined &&
+  ['disconnected', 'unavailable', 'generation_lost'].includes(error.code);
+
 /** The shared logs of each window's services, by Project and Thread. */
 const logsOf = new WeakMap<Services, Map<string, SharedLog>>();
 
 const notify = (log: SharedLog): void => {
   for (const listener of [...log.listeners]) listener(log.events);
+};
+
+/**
+ * Follows a Thread's log into the shared log, subscribing again from its
+ * cursor whenever the stream is lost. Returns the release.
+ */
+const follow = (
+  services: Services,
+  scope: { readonly projectId: string; readonly threadId: string },
+  shared: SharedLog,
+): (() => void) => {
+  let cursor = 0;
+  let active = true;
+  let stream: Disposable | undefined;
+  let waiting: Disposable | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const stopWaiting = (): void => {
+    waiting?.dispose();
+    waiting = undefined;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+
+  const advance = (events: readonly ThreadLogEvent[]): void => {
+    for (const event of events)
+      if (event.sequence !== undefined)
+        cursor = Math.max(cursor, event.sequence);
+  };
+
+  const subscribe = (): void => {
+    stopWaiting();
+    if (!active) return;
+    const from = cursor;
+    let ended = false;
+    const receive = (item: ThreadWatchItem): void => {
+      if (!active || ended) return;
+      if (item.kind === 'snapshot') {
+        // The replay holds what came after the cursor it was asked from.
+        const replayed = item.events.filter(
+          (event) => event.sequence === undefined || event.sequence > from,
+        );
+        advance(item.events);
+        shared.events = [
+          ...shared.events,
+          ...replayed.filter((event) => COMMENT_EVENT.test(event.type)),
+        ];
+        shared.ready = true;
+        notify(shared);
+
+        return;
+      }
+
+      if (item.kind !== 'event') return;
+      advance([item.event]);
+      if (!COMMENT_EVENT.test(item.event.type)) return;
+
+      shared.events = [...shared.events, item.event];
+      if (shared.ready) notify(shared);
+    };
+    const end = (error?: ContractError): void => {
+      if (!active || ended) return;
+      ended = true;
+      stream = undefined;
+      if (lost(error)) awaitConnection();
+    };
+
+    try {
+      const opened = services
+        .use(RuntimeThreadsV1, scope)
+        .watchThread(
+          { threadId: scope.threadId, afterSequence: from },
+          { next: receive, end },
+        );
+
+      if (ended || !active) opened.dispose();
+      else stream = opened;
+    } catch {
+      // A composition without the Thread's watch: nothing to share.
+    }
+  };
+
+  const awaitConnection = (): void => {
+    stopWaiting();
+    try {
+      const connection = services.use(DoricConnectionV1);
+
+      waiting = connection.subscribe((status) => {
+        if (status === 'connected') subscribe();
+      });
+      if (connection.status() === 'connected')
+        timer = setTimeout(subscribe, resubscribeDelayMs);
+    } catch {
+      // A window without the connection status cannot tell when to retry.
+    }
+  };
+
+  subscribe();
+
+  return () => {
+    active = false;
+    stopWaiting();
+    stream?.dispose();
+    stream = undefined;
+  };
 };
 
 /**
@@ -58,32 +183,7 @@ export const watchThreadComments = (
 
     log = shared;
     logs.set(key, shared);
-
-    try {
-      const subscription = services
-        .use(RuntimeThreadsV1, scope)
-        .watchThread({ threadId: scope.threadId, afterSequence: 0 }, (item) => {
-          if (item.kind === 'snapshot') {
-            shared.events = item.events.filter((event) =>
-              COMMENT_EVENT.test(event.type),
-            );
-            shared.ready = true;
-            notify(shared);
-
-            return;
-          }
-
-          if (item.kind !== 'event' || !COMMENT_EVENT.test(item.event.type))
-            return;
-
-          shared.events = [...shared.events, item.event];
-          if (shared.ready) notify(shared);
-        });
-
-      shared.dispose = () => subscription.dispose();
-    } catch {
-      // A composition without the Thread's watch: nothing to share.
-    }
+    shared.dispose = follow(services, scope, shared);
   }
 
   const shared = log;

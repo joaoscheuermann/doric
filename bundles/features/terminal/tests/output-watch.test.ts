@@ -255,6 +255,20 @@ describe('terminal output watch', () => {
     watches.close();
   });
 
+  test('subscribes again, reporting nothing, when the host generation serving the stream is lost', async () => {
+    const { terminals, watches, fireTimers } = setup();
+    const updates: TerminalOutputUpdate[] = [];
+    watches.watch('terminal', 0, (update) => void updates.push(update));
+    await tick();
+
+    terminals.end(new ContractError('generation_lost', 'Generation 1 exited.'));
+    fireTimers();
+
+    assert.equal(terminals.openStreams.length, 1);
+    assert.ok(updates.every((update) => update.kind !== 'error'));
+    watches.close();
+  });
+
   test('output after a gap reads the snapshot again', async () => {
     let current = snapshotOf('abc');
     const { terminals, watches } = setup(async () => current);

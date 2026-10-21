@@ -63,11 +63,11 @@ export const PROMPT_EDIT_BLOCK = 'prompt-edit-node';
 /** The comments one user turn wears, above the reader's own words. */
 export const TURN_COMMENTS_BLOCK = 'chat-turn-comments-node';
 /**
- * The inline comment entry: the seat a selection opens after the paragraph it
- * starts in, where the note about the selected words is written.
+ * The inline comment entry: the seat typing over a selection opens at the end
+ * of the block (or list item) the words end in, where the note is written.
  */
 export const COMMENT_SEAT_BLOCK = 'chat-comment-seat-node';
-/** The draft stack above the prompt block: one line per comment to send. */
+/** The draft stack opening the prompt block: one card per comment to send. */
 export const COMPOSER_STACK_BLOCK = 'chat-composer-stack-node';
 
 /**

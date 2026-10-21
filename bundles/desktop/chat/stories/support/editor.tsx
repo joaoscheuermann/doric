@@ -1,5 +1,5 @@
 // The conversation editor a node story draws in: the same Lexical node set,
-// theme and read-only rules the conversation registers
+// theme, read-only rules and comment plugins the conversation registers
 // (`src/client/components/organisms/conversation/index.tsx`), seeded with an
 // initial editor state that holds only the blocks a story needs, inside the
 // window state those blocks read (`stories/support/conversation.ts`).
@@ -12,6 +12,11 @@
 // turn that carries them, and the footer the sync plan names after the block.
 // The editor sits in the conversation's own column, because the gutter mark
 // hangs outside that column and a story without it would not show the mark.
+//
+// A comment in an answer is seated as the conversation seats it: by typing
+// over a selection in an agent message (`CommentSelection`), or by a stack
+// item the story host's composer draft holds (`CommentSeats`). A seat a seed
+// opens by hand, which neither claims, is taken away again.
 
 import { CodeNode } from '@lexical/code';
 import { HistoryExtension } from '@lexical/history';
@@ -121,6 +126,9 @@ import {
   UserTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/user-turn-node.js';
 import { CaretNavigation } from '../../src/client/components/organisms/conversation/plugins/caret-navigation.js';
+import { CommentHighlights } from '../../src/client/components/organisms/conversation/plugins/comment-highlights.js';
+import { CommentSeats } from '../../src/client/components/organisms/conversation/plugins/comment-seats.js';
+import { CommentSelection } from '../../src/client/components/organisms/conversation/plugins/comment-selection.js';
 import { MarkdownPromptPlugin } from '../../src/client/components/organisms/conversation/plugins/markdown-prompt.js';
 import { PasteIntoPrompt } from '../../src/client/components/organisms/conversation/plugins/paste-into-prompt.js';
 import { PromptLineBreaks } from '../../src/client/components/organisms/conversation/plugins/prompt-line-breaks.js';
@@ -387,7 +395,7 @@ export function ConversationEditor({
 }: Omit<StoryWindowProps, 'children'> & {
   /** Builds the root's blocks; runs once, as the editor's initial state. */
   readonly seed: () => void;
-  /** Plugins beside the conversation's read-only and prompt rules. */
+  /** Plugins beside the conversation's read-only, prompt and comment rules. */
   readonly children?: ReactNode;
 }) {
   const [extension] = useState(() => storyExtension(seed));
@@ -414,6 +422,9 @@ export function ConversationEditor({
             <PromptLineBreaks />
             <PasteIntoPrompt />
             {children}
+            <CommentSelection />
+            <CommentSeats />
+            <CommentHighlights />
           </LexicalExtensionComposer>
         </div>
       </div>

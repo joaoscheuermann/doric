@@ -114,8 +114,9 @@ export interface UnsubscribeMessage {
 }
 
 /**
- * The stream ended [S8-20]: by the provider (no error), by a failure, or by
- * the loss of the bridge (`disconnected`).
+ * The stream ended [S8-20]: by the provider (no error), by a failure, by the
+ * loss of the bridge (`disconnected`) or by the loss of the generation that
+ * served it (`generation_lost`).
  */
 export interface EndMessage {
   readonly kind: 'end';

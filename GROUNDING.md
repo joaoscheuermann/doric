@@ -175,7 +175,9 @@ gone. Desktop pushes skip detached or destroyed renderer frames, including
 disposal during a native send. Platform console logging tolerates closed output
 pipes so logging cannot crash the main process after its launcher exits.
 The Thread history snapshot is the `history` bundle's
-`history.snapshots/v1` cache in desktopMain. The renderer keeps the
+`history.snapshots/v1` cache in desktopMain, namespaced by the host's
+`hostId` and `storageGeneration`, so a migration that rewrites stored logs
+and increments the generation discards every snapshot. The renderer keeps the
 Threads it has read for each Project; the sidebar renders the selected Project's
 tree while live updates follow that Project alone. A
 prompt that finishes is announced to the operating system: the `notifications`
@@ -233,7 +235,9 @@ deleting the Thread removes its tab after the Project tree confirms removal.
 The app keeps a best-effort
 local snapshot of each Thread's durable event log in the Electron main process:
 a Thread's conversation renders instantly from that snapshot when it opens, then
-reconciles through the subscription cursor and rewind markers. The conversation surface is, for now, deliberately bare: the rendering of it is
+reconciles through the subscription cursor and rewind markers. A snapshot is
+valid for one storage generation only: after the delta-coalescing migration
+increments it, each conversation replays its log from the host again. The conversation surface is, for now, deliberately bare: the rendering of it is
 being rebuilt by hand. The renderer's Thread chat store is the only reader of the durable event
 stream: it keeps every Thread the reader has opened subscribed on a connection of
 its own, accumulates each Thread's events into that Thread's one ordered log,
@@ -906,14 +910,16 @@ is the only record, and `list`/`resolve` rebuild comments from it through
 need `projectId`, `threadId` and `promptId`; `list` needs `projectId` and reads
 one Thread when `threadId` is given; `resolve` only sees the caller's own
 Thread. Anchors are validated per form (`source`, `selector`, `point`,
-`range`) and otherwise left uninterpreted. `add` accepts a caller-chosen
-`commentId` (`/^[A-Za-z0-9_-]{1,128}$/`, idempotent per Thread) and
-`inReplyTo`, which is normalized to the thread's root and must exist in the
-Thread; `comments.added/v1` and `Comment` carry `inReplyTo?`, so threads are
-flat. `comment_reply({ comment_id, text, resolve? })` writes the agent's
-answer as a comment with `author: "agent"`, the root's target and `inReplyTo`
-the root, and `resolve` also resolves the root; it returns
-`{ commentId, inReplyTo, resolved }`. The bundle requires `tools/v1`.
+`range`) and otherwise left uninterpreted, except for an optional seat that
+`add` refuses when half or malformed: `turn` (non-empty) and `block` (a 0-based
+whole number) only together, and `at` and `item` (non-negative whole numbers)
+only with them. `add` accepts a caller-chosen `commentId` (`/^[A-Za-z0-9_-]{1,128}$/`,
+idempotent per Thread) and `inReplyTo`, which is normalized to the thread's
+root and must exist in the Thread; `comments.added/v1` and `Comment` carry
+`inReplyTo?`, so threads are flat. `comment_reply({ comment_id, text,
+resolve? })` writes the agent's answer as a comment with `author: "agent"`, the
+root's target and `inReplyTo` the root, and `resolve` also resolves the root;
+it returns `{ commentId, inReplyTo, resolved }`. The bundle requires `tools/v1`.
 `add`, `list` and `resolve` stay desktop-exposed with `desktopScope`
 `projectId`, `threadId` and `promptId`.
 
@@ -922,9 +928,10 @@ the log only through the flushes registered there after a prompt is accepted;
 an item whose write fails returns to the stack. A stack item's id is
 `comment-<uuid>` and becomes the comment id (`addItem` takes an optional `id`,
 which a put-back keeps); its data is `{ target, pin?, inReplyTo?, refs?:
-{ title?, source? } }`. Flushes write `commentId` and `inReplyTo` in stack
-order, and a reply waits while its root is still a draft. The chat builds the
-user prompt of every send (the editor's and `chat.send/v1`'s) as
+{ title?, source? }, seat? }` (`seat` is the `message` kind's, below).
+Flushes write `commentId` and `inReplyTo` in stack order, and a reply waits
+while its root is still a draft. The chat builds the user prompt of every
+send (the editor's and `chat.send/v1`'s) as
 `<comments><target kind id revision title source><comment id in-reply-to pin
 anchor element|near|quote>note</comment></target></comments><message>words</message>`,
 leaving out the part that is empty, escaping attribute values and neutralizing
@@ -945,29 +952,127 @@ chord itself. Before reading the stack the command dispatches the DOM event
 `doric:prompt-send` on the document with `detail: { threadId, waitUntil }`; a
 surface holding an unconfirmed note confirms it and hands the promise to
 `waitUntil`, and the send waits for it and reads the stack back from
-`chat.composer/v1`.
+`chat.composer/v1`. A window hands `chat.composer/v1` a note's edits 150 ms
+after the last one; an edit still waiting goes at once when its note loses the
+focus, on `doric:prompt-send`, before the stack is read back (`chat.send/v1`'s
+read included) and when the window stops showing the Thread. Removing the
+comment drops it, and an echo of an older write never overwrites a note written
+since.
 
-The stack lines are chat's `chat-comment-line` for every target kind, edited in
-place without a popover or buttons: avatar, `↩` for a reply, author, a
-contenteditable note, anchor and `[pin]`. Arrow keys move between the notes and
-the prompt, Enter goes to the next one, Escape to the prompt,
-Cmd/Ctrl+Backspace deletes a line, as do Backspace and Delete on an empty note,
-and Cmd/Ctrl+Enter, the window's send, takes the note as written; stack events
-are isolated from Lexical. The chat's
-built-in projection folds `comments.added/v1` and `comments.resolved/v1` into
-comment threads with the states `done`, `await` (the agent replied last) and
-`open`. Agent replies draw where they happened in the agent turn as collapsible
-`Replied to [pin]` rows (folded when the thread is `done`, open otherwise, the
-reader's toggle winning), and successful `comment_reply` tool rows are hidden;
-the comment lines of a user turn draw no state (it is read out to screen
-readers only). A reply row wears the comment's **pin** — the teardrop, numbered,
-coloured by the thread's state — which opens a popover with the thread and, in
-its header, the button that takes the reader to the comment on the canvas. That
-button, and a click on a user-turn comment line, dispatch the bubbling, composed
-DOM event `doric:comment-thread-open` with `detail: { commentId, target }` (the
-root's id, the target without `revision`, which means the artifact's latest
-revision) and reveal the latest block of that target; external blocks carry
+A turn's mark (the reader's initials, the agent's bot) is 1.375rem in every
+pane and hangs in the column's left gutter 0.5rem before the text, its centre
+on the centre of the block's first line (a heading that opens the block drops
+its top margin, though a heading's taller line still sits a little off it); a narrow pane (54rem or less) widens
+the column's left padding to hold it whole, without horizontal scroll. The
+stack is drawn inside the prompt's block, above its words (which keep their
+placeholder), as the same comment group a sent user turn opens with: the
+block's mark moves to the group, beside an `N comment(s)` header with a
+chevron — the group's one control, which a press or Enter/Space folds and
+unfolds — and the words below wear none; an empty stack draws nothing and
+leaves the mark to the prompt. Each comment is chat's `chat-comment-line` card
+for every target kind, without a popover: a context line — the anchor's quote
+read in the paragraph the transcript draws for the anchor's `turn` and `block`
+(no host call; the occurrence nearest the seat's or the anchor's `at`, else
+the first), one line truncated with an ellipsis, the quoted words highlighted;
+the quote alone when that paragraph is not drawn; else the anchor's label —
+closed, while the card is hovered or holds the keyboard's focus, by a small
+ghost arrow button ("Go to the commented passage"; no pin number is drawn);
+nested in it the comment, framed in the theme's primary colour (1px, 3px on
+the left, square): avatar, `↩` for a reply, and the note, drawn whole with its
+line breaks and contenteditable on the stack. "Go to" puts the caret in a
+`message` comment's inline note while it stands in the answer, else scrolls to
+and flashes the answer's paragraph its anchor names, and for any other target,
+or a paragraph no longer drawn, opens the comment's thread (below); a press on
+a sent card does the same. An item whose tag another bundle defines draws its
+own element in the group instead. Arrow keys move between the header, the
+notes and the prompt (ArrowUp on the prompt's first line goes to the last note,
+or to the header of a folded stack), Enter goes to the next note (from the
+last, to the prompt's end), Escape to the prompt, Cmd/Ctrl+Backspace deletes a
+line, as do Backspace and Delete on an empty note (whitespace alone is empty),
+and Cmd/Ctrl+Enter, the window's send, takes the note as written. Every comment
+group (the stack's and a sent turn's) and every inline comment is isolated from
+Lexical, so its keys — Enter or Space on the header or an arrow included — are
+its own and never write into the prompt. The chat's built-in projection folds
+`comments.added/v1` and `comments.resolved/v1` into comment threads with the
+states `done`, `await` (the agent replied last) and `open`. Agent replies draw
+where they happened in the agent turn as collapsible `Replied to [pin]` rows
+(folded when the thread is `done`, open otherwise, the reader's toggle
+winning), and successful `comment_reply` tool rows are hidden; a user turn's
+comments (the `comments.added/v1` of its prompt, joined to it wherever the
+compaction or the agent turns of that prompt already stand) open its block as
+the stack's group does (its mark, the header, the
+same cards, the passage read from the target its `comments.added/v1` carries,
+which the `<comments>` envelope also names), and its cards draw no state (the
+state is read out to screen readers only, from visually hidden text). A reply
+row wears the comment's **pin** — the teardrop, numbered, coloured by the
+thread's state — which opens a popover with the thread and, in its header, the
+button that takes the reader to the comment on the canvas. That button, and a
+card's "go to" that opens the thread, dispatch the bubbling, composed DOM event
+`doric:comment-thread-open` with `detail: { commentId, target }` (the root's
+id, the target without `revision`, which means the artifact's latest revision)
+and reveal the latest block of that target; external blocks carry
 `data-chat-block-id`.
+
+The chat owns the `message` comment kind. Selecting words of an agent's answer
+draws nothing new; typing over a selection whose two ends lie in the same
+answer — the first printable key without Cmd, Ctrl or Alt, a paste or a text
+input — opens a new comment holding what was typed and never edits the answer
+(navigation keys, Escape, Tab and chords keep their meaning, and a selection
+that runs into the prompt or over several turns is the prompt's). An input
+method's composition (a dead key, an IME) is moved instead of prevented: the
+`Dead` or `Process` key that starts it opens the comment and puts the caret in
+its note first, so the composition happens there; a composition no key
+announced is refused by the read-only blocks, its committed text opens the
+comment, and the answer's block is drawn again from the chat's markdown. A
+comment closes the innermost block that holds the end of its words: it stands
+right after that block or, when the block is a list (its items stay one list across blank lines
+between them, as the editor draws it), at the end of the item
+that holds it, before the next item. The comment is one element from its first
+character to the send: the reader's avatar and the note, written and edited in
+place inside the card's primary frame, with no author name, quote or buttons.
+The first words of a note (whitespace alone is empty) add its stack item under
+the comment's own id, `comment-<uuid>`, chosen when it opens, with the target
+`{ kind: 'message', id: promptId, anchor: { form: 'range', text, turn, block,
+at, item? } }` — the answer's turn key, the 0-based block the words start in,
+`at`, how far into that block they start in characters that are not
+whitespace, which picks the occurrence selected among repeated words, and
+`item`, the item they start in when that block is a list, which "go to"
+reveals instead of the whole list — and
+data carrying its `seat` (`turn`, `block` and `at` for the words, `after` and
+`item` for where the comment stands, `block` when absent). Enter commits and
+hands the caret to the prompt, Shift+Enter writes a newline, and Escape, or
+Backspace and Delete on an empty note, remove the item, the highlight and the
+seat; leaving the note keeps one with words and removes an empty one. These are
+the only gestures that take a comment off the stack: once its item leaves the
+stack (the send's flush) the seat leaves the transcript too, and a stack the
+window no longer holds — the view unmounting, the part deactivating — removes
+nothing. Each comment is a seat (a decorator inside the agent turn or its list
+item) named by the comment's id, so a block or item holds any number of
+comments, in the order of their passages (`at`), and a rebuilt turn puts them
+back there: a streamed delta keeps the blocks and, in a list still growing, the
+items it does not change, so a comment being written is never moved, and a
+redraw that does move a focused note gives it back its caret. The seats are a
+view of the stack: every item whose data names a `seat` stands at it while its
+turn is in the transcript, beside the comments the reader opened and still
+holds, so a remounted conversation or an undo gets its comments back, and an
+undo never revives a removed or sent one; the seat edits stay out of the undo
+history. The stack inside the prompt lists every item, seated or not, and an
+edit made on its card shows in the inline comment. Every comment's words stay
+highlighted while it stands, through the CSS Custom Highlight API
+(`::highlight(chat-comment)`) with one range per text run of the answer, so
+neither a quote over several blocks nor one in a list item paints a comment; a
+seat's ranges are found again from its turn, block, quote and `at` only when
+the seat changed, its turn was redrawn or its text left the document, so the
+answer's text is never touched and other updates repaint nothing. The passage
+under the pointer, found once per frame from the caret position under it,
+wears `::highlight(chat-comment-hover)` and gives the element under the pointer
+(never the editor root, whose inherited `cursor` would restyle the whole
+transcript per hover) `data-comment-hover`, the pointer cursor; the passage of
+the comment whose note holds the focus wears the same highlight, without the
+cursor. A click strictly inside a highlight,
+outside any comment, puts the caret at the end of its comment, the newest
+comment's where passages overlap. On `doric:prompt-send` a note whose item is
+still being added hands that add to `waitUntil`.
 
 `/bundles/features/papercraft` owns the `preview` artifact kind, the
 `papercraft.previews/v1` service, the `papercraft_preview` tool (order 1700)
@@ -1232,7 +1337,11 @@ bundle's own holds) and `onPeerSignalHook`, so the kernel never calls a runtime
 method; a change to the kernel partition is refused with
 `kernel_restart_required`. The child ignores SIGINT and SIGTERM and exits when
 the kernel disconnects. When a generation process crashes, its pending calls
-fail with `generation_lost` and record no `tool.failed`; the holds it lost reach the
+fail with `generation_lost` and record no `tool.failed`, and every stream it
+served across the link (an optimistic stream registration whose listener is an
+observer) ends once with `generation_lost` unless it was disposed or had ended,
+so the host bridge ends that desktop stream with the code (a stream subscription
+the other process refuses ends with the refusal); the holds it lost reach the
 owning bundle through `onGenerationChangedHook` (`lost`), the runtime pauses
 those prompts with `host_restarted`, its Threads hold their queues, and they
 resume with the boot's attempt budget and order once the respawned process
@@ -1265,7 +1374,17 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
 `pending` queue projection and the usage aggregate into the same commit as
 the event. `/bundles/runtime/default` provides the local `executor/v1`, whose `run`
-receives the runtime's `PromptSession`, and keeps its history as the opaque
+receives the runtime's `PromptSession` and writes its streamed deltas to that
+stream coalesced: consecutive `text.delta`, `reasoning.delta` or
+`refusal.delta` events of one kind, or `tool_call.delta` events of one call
+(`index` and `id`), become one event holding their concatenation, written
+250 ms after its first delta at the latest, once it holds 64 KiB of text,
+before any other event or history save, and when the run ends, aborts or
+throws. Empty deltas are dropped, and answer text that is still blank is never
+merged with the first words after it, since the chat does not open an answer on
+blank text. Both sides share the rule as `runtime/contracts` `mergeDeltas`; a
+crash loses at most the one held window, which was never published. The
+executor keeps its history as the opaque
 `default.history/v1` state (`messages` and `meta`); it still reads the same parts
 written as `direct.history/v1` before the rename, and its next write stores them
 as `default.history/v1`. The executor frames every
@@ -1890,17 +2009,25 @@ the Thread's subscription, so a Thread the renderer has stopped watching can
 never keep publishing into a window. A subscription forwards only updates that
 name its own Project or Thread. Project subscriptions expose environment and
 tree updates; Thread subscriptions use `threadId` and optional `afterSequence`
-for durable playback followed by live events without a replay/live gap. Each
+for durable playback followed by live events without a replay/live gap. Live
+events have the log's own granularity: a streamed answer arrives as the
+coalesced deltas its executor wrote (with the default executor, at most one
+event per kind every 250 ms), never token by token, and a watcher sees each
+only after its commit. Each
 Thread event is `{ projectId, threadId, promptId, sequence, type, event,
 createdAt }`.
 PostgreSQL is the event source of truth: an event and the Thread's contiguous
 last sequence are committed before live emission. There is no global event
 ordering between Threads; Project reconnection refreshes its snapshot and tree.
-A Thread watch that loses its stream (`disconnected` or `unavailable`)
+A Thread watch that loses its stream (`disconnected` or `unavailable`, or
+`generation_lost` when the host generation serving it is lost)
 resubscribes from its cursor when the connection reports `connected` again,
 or after one second when it already reads `connected` — the connection status
 follows a socket of its own that can return before the bridge does, as after
 the machine sleeps — and again for as long as each attempt ends the same way.
+The selected-Project tree watch, the terminal watches and the canvas window's
+shared Thread log (which then extends its events from the replay) recover the
+same way from the same three codes; any other end stays ended.
 
 The `postgres` bundle owns the Prisma ORM 7 schema, generated client
 configuration, and versioned PostgreSQL migrations;
@@ -1924,7 +2051,30 @@ discarded or converted. It cannot be reversed, so operators back up the
 database before applying it. The configuration has no foreign keys any more and
 the `credential` table stands alone. The incremental registered-kind migration
 converts its kind enum to text without changing IDs or encrypted secret bytes,
-so bundle-defined kinds need no backend schema release. The `host-config` bundle refuses
+so bundle-defined kinds need no backend schema release.
+The delta-coalescing migration (`20261021000000_coalesce_thread_deltas`) is a
+data-only rewrite of the existing runtime Thread event streams in one
+transaction: each run of consecutive `reasoning.delta`, `text.delta`,
+`refusal.delta` or `tool_call.delta` entries that differ only in their delta
+(one prompt and, for a tool call, one index, id and name) becomes its first
+entry, carrying the run's concatenated delta and its last entry's creation
+time; a text run is split at its first non-blank delta, because the chat opens
+an answer there; a delta that says nothing (no text, or a tool call's piece
+with no arguments, id or name) is dropped; and a stream's last entry is never
+deleted: the group that holds it (its run, or the part of a split text run it
+is in) is not coalesced and it is kept even when empty, while the rest of that
+run is treated as any other, its other empty deltas dropped and a blank part
+before it coalesced. Sequences are never renumbered, so the removed
+entries leave gaps while each stream's counter and last sequence stay, and no
+other entry or stream is touched. It verifies the concatenated deltas of each
+run segment in place, every other entry and every counter before committing
+and aborts on any mismatch,
+increments `storageGeneration` once when it changed anything, and records the
+postgres-owned `coalesced-thread-deltas` row of `storage_meta`, so applying it
+again does nothing. It cannot be reversed: operators take a `pg_dump`, quit the
+desktop and stop the host before `prisma migrate deploy`, may reclaim space
+afterwards with `VACUUM (FULL, ANALYZE) storage_stream_entry` while the host is
+still stopped, and roll back only by restoring that dump. The `host-config` bundle refuses
 a configuration that names a credential that is not stored and registers the
 provider tokens, Git identity and GitHub token the stored configuration names as
 references, so the core's `secrets/v1` refuses to delete them, exactly as the
@@ -2359,7 +2509,9 @@ the block's identity and open state; execution still renders each full prompt
 separately at dispatch.
 Resuming never duplicates that full prompt. Legacy acceptance events without
 `queued` retain their existing display position. Acceptance acknowledges an
-optimistic send even before the input is dispatched. Live replay and reload
+optimistic send even before the input is dispatched; only an input of the
+reader's own (`source.kind: 'user'`) acknowledges it, never a delegated input,
+a background terminal's result or a bundle's instruction. Live replay and reload
 produce the same chronological view.
 `prompt.paused` carries the reason an interruption left the prompt unfinished —
 `host_stopped` when the host stopped, `host_restarted` when a restart was only
@@ -2379,7 +2531,12 @@ inner `agent.finished`, to acknowledge prompt completion. `history.truncated`
 carries `{ type, afterSequence }`, where `afterSequence` is the sequence of the
 last surviving event or `0` when none survives; it is appended before the
 replacement input is accepted, and sequence numbers are never reused, so the
-discarded range leaves a gap rather than a reused number.
+discarded range leaves a gap rather than a reused number. The delta-coalescing
+migration leaves gaps too, where it removed the deltas it folded into a run's
+first entry, so readers follow sequences in order and never assume they are
+contiguous. A rewind relies on the stream's counter, the last sequence the
+stream ever assigned, not on the last entry that survives: its marker goes
+right after the counter even when the log's tail is missing.
 Delegation results are redacted before entering the parent's input queue.
 
 The reader's Stop button, Escape with an empty prompt, and Ctrl+C with nothing

@@ -31,6 +31,7 @@ import type { DefaultHooksV1 } from '../contracts/index.js';
 import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflow } from './compaction/project.js';
+import { coalesced } from './deltas.js';
 import { readMessages, readMeta, saved } from './history.js';
 import { systemPrompt } from './prompts/system.js';
 import { retainedKey, type Workflow } from './repository.js';
@@ -39,6 +40,7 @@ import { resolveToolConfigs } from './tool-config.js';
 // Moved from agents/doric/src/lib/agents/direct/executor.ts (design 57 §5.3).
 // Every history and event write goes through the runtime's PromptSession, which
 // redacts, sanitizes, persists and publishes, and keeps the persistence retry.
+// The run writes through `coalesced`, so streamed deltas reach the log merged.
 
 /** Common default-agent policy for human chats and delegated child chats. */
 export const systemPromptWith = (
@@ -221,6 +223,9 @@ export const runPrompt = async (
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
   const signal = call.signal;
   signal.throwIfAborted();
+  // Every write of the run, the compaction's included, so a held run of
+  // deltas is written before anything that follows it.
+  const log = coalesced(session);
   const stored = await readMessages(session.history);
   // The map the compaction rewrite re-bases when it condenses this run's
   // history: `history()` reads the current value, so every later save
@@ -318,7 +323,7 @@ export const runPrompt = async (
   const compactIfUnderPressure = async (promptChars: number, force = false) => {
     settle();
     const result = await maybeCompactRun({
-      session,
+      session: log,
       messages,
       checkpoints,
       retained,
@@ -391,7 +396,7 @@ export const runPrompt = async (
         // it is saved now, before the agent answers the call itself, and the
         // failure is not recorded: the run pauses instead.
         lost = true;
-        await session.record({ history: history() });
+        await log.record({ history: history() });
         throw signal.reason;
       }
       if (value.type === 'response.started') {
@@ -405,7 +410,7 @@ export const runPrompt = async (
         value.type === 'response.started'
           ? { ...value, providerId: execution.providerId }
           : value;
-      await session.record(
+      await log.record(
         addedMessages(value) ? { history: history(), event } : { event },
       );
       // The pressure only moves where usage lands: the provider window grew
@@ -435,7 +440,7 @@ export const runPrompt = async (
   } finally {
     workflow.end(job.id);
     // The run ended, so whatever it left — complete or partial — is the history
-    // its Thread carries on with.
-    if (!lost) await session.record({ history: history() });
+    // its Thread carries on with, after the deltas it still held.
+    if (!lost) await log.record({ history: history() });
   }
 };

@@ -238,6 +238,19 @@ describe('Project watch', () => {
     assert.deepEqual(kinds(updates), ['snapshot']);
   });
 
+  test('a stream whose host generation was lost resubscribes silently for a fresh snapshot', () => {
+    const { runtime, watch, updates, onUpdate, fireTimers } = setup();
+    watch.watch('project-id', onUpdate);
+
+    runtime.open.observer.end?.(
+      new ContractError('generation_lost', 'Generation 1 exited.'),
+    );
+    fireTimers();
+    runtime.emit(snapshot([thread]));
+
+    assert.deepEqual(kinds(updates), ['snapshot']);
+  });
+
   test('a failed stream reports only the fixed message and stays ended', () => {
     const { runtime, connection, watch, updates, onUpdate, fireTimers } =
       setup();

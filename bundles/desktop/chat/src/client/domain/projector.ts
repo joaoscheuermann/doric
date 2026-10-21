@@ -390,6 +390,27 @@ const openReplies = (
   return undefined;
 };
 
+type UserDraft = Extract<Draft, { type: 'user' }>;
+
+/**
+ * The user turn of each prompt by prompt id, wherever it is drawn: a compaction
+ * or the agent's first turns can come after it before the flushed comments do.
+ * A read keeps it beside the turns it builds — the turn `readInput` pushes is
+ * the one it names — so a comment finds its prompt's turn without walking the
+ * transcript, which made a log of many commented prompts cost their count
+ * times its length. It is the read's own index, derived from the drafts: a
+ * batch that follows the log rebuilds it from the copies it reads into.
+ */
+type UserDrafts = Map<string, UserDraft>;
+
+/** The user turns of drafts by prompt id: the last one, as the log wrote it. */
+const userDraftsOf = (drafts: readonly Draft[]): UserDrafts => {
+  const users: UserDrafts = new Map();
+  for (const draft of drafts)
+    if (draft.type === 'user') users.set(draft.promptId, draft);
+  return users;
+};
+
 /** The draft a compaction bracket holds while the log has not closed it. */
 type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
@@ -619,6 +640,7 @@ const readEvent = (
   inputs: Map<string, PromptInput>,
   comments: Map<string, TurnComment[]>,
   threads: Map<string, CommentThread>,
+  users: UserDrafts,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -632,6 +654,7 @@ const readEvent = (
   // turn: the turn is the reader's words, and the comments their margin.
   const input = readInput(inputs, comments, item, event);
   if (input !== undefined) {
+    if (input.type === 'user') users.set(input.promptId, input);
     turns.push(input);
     return;
   }
@@ -673,10 +696,10 @@ const readEvent = (
       return;
     }
 
-    // The turn is shown: the comment joins it there. It is not: it waits
-    // where the flush wrote it, below the words the reader is still writing.
-    const turn =
-      open?.type === 'user' && open.promptId === promptId ? open : undefined;
+    // The turn is shown: the comment joins it there, even when other turns
+    // of the prompt came first. It is not: it waits where the flush wrote it,
+    // below the words the reader is still writing.
+    const turn = users.get(promptId);
     const held = comments.get(promptId) ?? [];
     const pin = (turn === undefined ? held.length : turn.comments.length) + 1;
     foldComment(threads, { ...comment, pin });
@@ -947,8 +970,18 @@ const project = (events: readonly ThreadEvent[]): Projection => {
   const inputs = new Map<string, PromptInput>();
   const comments = new Map<string, TurnComment[]>();
   const threads = new Map<string, CommentThread>();
+  const users: UserDrafts = new Map();
   for (const item of events)
-    readEvent(drafts, status, executions, inputs, comments, threads, item);
+    readEvent(
+      drafts,
+      status,
+      executions,
+      inputs,
+      comments,
+      threads,
+      users,
+      item,
+    );
   settle(drafts, status, executions, inputs);
   return {
     events,
@@ -998,8 +1031,20 @@ const readInto = (
   const threads = touchesComments
     ? new Map(current.threads)
     : (current.threads as Map<string, CommentThread>);
+  // The user turns the batch's comments join are the copies it reads into;
+  // only a comment reads them, so a batch without one needs no index of them.
+  const users: UserDrafts = touchesComments ? userDraftsOf(drafts) : new Map();
   for (const item of incoming)
-    readEvent(drafts, status, executions, inputs, comments, threads, item);
+    readEvent(
+      drafts,
+      status,
+      executions,
+      inputs,
+      comments,
+      threads,
+      users,
+      item,
+    );
   settle(drafts, status, executions, inputs);
   return {
     events: [...current.events, ...incoming],

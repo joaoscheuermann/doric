@@ -1,64 +1,55 @@
 // The inline comment entry's own vocabulary, stated in terms of its arguments:
-// what a key does while the entry is written, and where in the conversation the
-// anchor it was opened for sits. The entry stands after the paragraph the
-// reader selected, so the seat it writes is the turn and the block of that
-// paragraph — the two the stack item carries until the send.
+// what a key does while the comment is written or edited, and whether its note
+// holds words — which decides whether it reaches the stack and whether it
+// outlives the focus leaving it.
 
-import type { NoteKey, SeatRef } from './composer-stack.js';
+import type { NoteKey } from './composer-stack.js';
 
 /** What one key pressed in the comment entry does. */
 export type CommentKeyAction =
-  /** Commits the note and closes the entry. */
-  | 'send'
+  /** Commits the note and hands the caret to the prompt; the comment stays. */
+  | 'commit'
   /** Writes a newline, the way the browser's own Shift+Enter does. */
   | 'newline'
-  /** The browser's own editing of the field. */
+  /** Removes the comment: its stack item, its highlight and its seat. */
+  | 'remove'
+  /** The browser's own editing of the note. */
   | 'default';
 
 /** Where the entry stands when the key is pressed. */
 export interface CommentEntryState {
-  /** Whether the entry holds no text. */
+  /** Whether the note holds no words (`hasWords`). */
   readonly empty: boolean;
   /** Whether an input method is composing the words being written. */
   readonly composing: boolean;
 }
 
 /**
- * What a key does in the comment entry. Enter commits the note once the entry
- * holds words and no composition is in progress; Shift+Enter writes a newline
- * and keeps the entry open; every other key, and Enter while the entry is
- * empty or an input method is composing, is the field's own.
+ * What a key does in the comment entry, while it is written or edited. Escape
+ * removes the comment whatever it holds, and so do Backspace and Delete once
+ * the note is empty; Enter commits a note that holds words, Shift+Enter writes
+ * a newline. Cmd/Ctrl+Enter is the window's send, never the entry's, and every
+ * key belongs to the input method while it composes.
  */
 export const commentKeyAction = (
-  key: Pick<NoteKey, 'key' | 'shift'>,
+  key: NoteKey,
   at: CommentEntryState,
 ): CommentKeyAction => {
-  if (key.key !== 'Enter') return 'default';
+  if (at.composing) return 'default';
+  if (key.key === 'Escape') return 'remove';
+  if ((key.key === 'Backspace' || key.key === 'Delete') && at.empty) {
+    return key.mod || key.shift ? 'default' : 'remove';
+  }
+  if (key.key !== 'Enter' || key.mod) return 'default';
   if (key.shift) return 'newline';
-  if (at.empty || at.composing) return 'default';
 
-  return 'send';
+  return at.empty ? 'default' : 'commit';
 };
-
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : undefined;
 
 /**
- * The turn and block an anchor names, else `undefined`: a seat needs a turn
- * with words of its own and a 0-based block, and an anchor that names neither
- * — every comment written before the field existed — has no seat to open.
+ * Whether a note holds words: the one rule for a comment's emptiness. A note of
+ * nothing but whitespace is empty — it adds nothing to the stack, Backspace in
+ * it removes the comment, and leaving it lets the comment go; a note with words
+ * is kept as written when the focus leaves it.
  */
-export const seatOfAnchor = (anchor: unknown): SeatRef | undefined => {
-  const record = asRecord(anchor);
-  const turn = record?.turn;
-  const block = record?.block;
-
-  if (typeof turn !== 'string' || turn.length === 0) return undefined;
-  if (typeof block !== 'number' || !Number.isInteger(block) || block < 0) {
-    return undefined;
-  }
-
-  return { turn, block };
-};
+export const hasWords = (note: string): boolean => note.trim().length > 0;

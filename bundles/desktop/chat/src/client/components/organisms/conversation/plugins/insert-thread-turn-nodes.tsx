@@ -104,7 +104,7 @@ import {
   $isTurnAuthorNode,
   type TurnAuthorNode,
 } from '../nodes/turn-author-node.js';
-import type { TurnAvatar } from '../nodes/turn-avatar.js';
+import { READER_AVATAR, type TurnAvatar } from '../nodes/turn-avatar.js';
 import {
   $createUserPromptNode,
   $getUserPromptNode,
@@ -441,9 +441,11 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
 /**
  * Seats the comments a user turn wears — the `comments.added/v1` events the
  * send flushed just below its words — directly above the turn block, where
- * they read as the same lines the stack drew before the reader sent. A turn
- * without comments keeps none, and a block that is not a user turn wears
- * nothing.
+ * they open the turn as the same group the stack drew inside the prompt
+ * before the reader sent, wearing the turn's mark (set by `$syncAuthor` just
+ * before) in its place, so the block's words wear none. A turn without
+ * comments keeps none, and its mark, and a block that is not a user turn
+ * wears nothing.
  */
 const $syncTurnComments = (block: LexicalNode, turn: Turn): void => {
   if (!$isUserTurnNode(block)) return;
@@ -454,21 +456,18 @@ const $syncTurnComments = (block: LexicalNode, turn: Turn): void => {
 
   if (comments.length === 0) {
     if ($isCommentLinesNode(previous)) previous.remove();
+    block.setAvatarMoved(false);
     return;
   }
 
   const node = $isCommentLinesNode(previous)
     ? previous
     : $createCommentLinesNode(turn.promptId);
-  if (node.getPreviousSibling() !== block) block.insertBefore(node);
+  if (node.getNextSibling() !== block) block.insertBefore(node);
   node.setComments(comments);
+  node.setAvatar(block.getLatest().__avatar);
+  block.setAvatarMoved(true);
 };
-
-/**
- * The mark the reader's prompt wears in its gutter: the reader's own, the way
- * the turn the reader sent wears it.
- */
-const READER_AVATAR: TurnAvatar = { role: 'user', name: READER_NAME };
 
 /**
  * The prompt and the reader's author line that trails it, kept as the

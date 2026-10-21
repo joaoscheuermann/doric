@@ -217,6 +217,25 @@ describe('Thread watch', () => {
     assert.deepEqual(seen.updates, []);
   });
 
+  test('resubscribes from the cursor, silently, when the host generation serving the stream is lost', () => {
+    const host = fakeHost();
+    const seen = recorder();
+    host.watch.watch('thread-id', 0, seen.listener);
+    host.latest().observer.next({ kind: 'event', event: event(7) });
+
+    host
+      .latest()
+      .observer.end?.(
+        new ContractError('generation_lost', 'Generation 1 exited.'),
+      );
+    host.fireTimers();
+    host.latest().observer.next({ kind: 'event', event: event(8) });
+
+    assert.equal(host.subscriptions.length, 2);
+    assert.equal(host.latest().input.afterSequence, 7);
+    assert.deepEqual(kinds(seen.updates), [7, 8]);
+  });
+
   test('a released watch cancels the resubscription it was waiting on', () => {
     const host = fakeHost();
     const release = host.watch.watch('thread-id', 0, recorder().listener);

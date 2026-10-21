@@ -188,21 +188,27 @@ const scopeComments = async (
   return perThread.flat();
 };
 
+/** Whether a value is a non-negative whole number. */
+const isIndex = (value: number | undefined): value is number =>
+  value !== undefined && Number.isInteger(value) && value >= 0;
+
 /**
- * Whether the range anchor's seat — the turn and 0-based block it names — is
- * malformed: a turn without words of its own, or a block that is not a
- * non-negative whole number. An anchor that names no seat is not malformed; it
- * keeps the placement it had before the fields existed.
+ * Whether the range anchor's seat — the turn and 0-based block it names, how
+ * far into the block the text starts and the list item it starts in — is
+ * malformed: a turn without words of its own, a block, an offset or an item
+ * that is not a non-negative whole number, or an offset or item without the
+ * turn and block they count in. An anchor that names no seat is not
+ * malformed; it keeps the placement it had before the fields existed.
  */
-const malformedSeat = (anchor: CommentAnchor): boolean => {
-  if (anchor.turn === undefined && anchor.block === undefined) return false;
+const malformedSeat = ({ turn, block, at, item }: CommentAnchor): boolean => {
+  if ([turn, block, at, item].every((field) => field === undefined))
+    return false;
 
   return (
-    anchor.turn === undefined ||
-    anchor.turn.length === 0 ||
-    anchor.block === undefined ||
-    !Number.isInteger(anchor.block) ||
-    anchor.block < 0
+    !turn ||
+    !isIndex(block) ||
+    (at !== undefined && !isIndex(at)) ||
+    (item !== undefined && !isIndex(item))
   );
 };
 

@@ -105,6 +105,10 @@ generation process next to `runtime`, which calls it. See the
   rewind forgets the retained messages past its boundary.
 - **Writes:** every history and event write goes through the runtime's
   `PromptSession`, which redacts, persists, publishes and keeps the retry.
+  Streamed deltas are coalesced first (`src/host/deltas.ts`, with the
+  `runtime/contracts` `mergeDeltas` rule): one event per run of same-kind
+  deltas, written after 250 ms, at 64 KiB, before any other write and when
+  the run ends; empty deltas are dropped.
 
 ## Tests
 

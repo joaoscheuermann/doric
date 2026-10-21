@@ -23,6 +23,12 @@ import {
  */
 const PENDING_CLASS = 'opacity-50';
 
+/**
+ * Says the block's mark moved to the comments that open it: the sheet then
+ * draws the block without one (`styles.css`).
+ */
+const AVATAR_MOVED_ATTRIBUTE = 'data-turn-avatar-moved';
+
 export type SerializedUserTurnNode = Spread<
   {
     turnKey: string;
@@ -30,6 +36,7 @@ export type SerializedUserTurnNode = Spread<
     accepted: boolean;
     delegated?: DelegatedInput;
     avatar?: TurnAvatar;
+    avatarMoved?: true;
   },
   SerializedElementNode
 >;
@@ -60,6 +67,11 @@ export class UserTurnNode extends ElementNode {
   __written: string;
   /** The mark the block draws in the gutter, or `null` for none. */
   __avatar: TurnAvatar;
+  /**
+   * Whether the comments that open the block wear its mark in its place, so
+   * the block's own words wear none.
+   */
+  __avatarMoved = false;
 
   constructor(
     turnKey: string,
@@ -98,6 +110,11 @@ export class UserTurnNode extends ElementNode {
     );
   }
 
+  override afterCloneFrom(previous: this): void {
+    super.afterCloneFrom(previous);
+    this.__avatarMoved = previous.__avatarMoved;
+  }
+
   override createDOM(): HTMLElement {
     const dom = document.createElement('div');
     dom.dataset.promptId = this.__promptId;
@@ -105,16 +122,22 @@ export class UserTurnNode extends ElementNode {
       ? CONVERSATION_FONT_CLASS
       : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;
     applyTurnAvatar(dom, this.__avatar);
+    if (this.__avatarMoved) dom.setAttribute(AVATAR_MOVED_ATTRIBUTE, '');
     return dom;
   }
 
   /**
    * The mark is attributes and custom properties on the element the block
    * already drew, so it is written again in place and the element is kept: the
-   * markdown children are never rebuilt to repaint a gutter.
+   * markdown children are never rebuilt to repaint a gutter. A block made dirty
+   * by anything else — a streamed delta, a keystroke — keeps the mark it wears
+   * untouched, so its subtree is not restyled for nothing.
    */
-  override updateDOM(_prevNode: this, dom: HTMLElement): boolean {
-    applyTurnAvatar(dom, this.__avatar);
+  override updateDOM(prevNode: this, dom: HTMLElement): boolean {
+    if (!sameTurnAvatar(prevNode.__avatar, this.__avatar))
+      applyTurnAvatar(dom, this.__avatar);
+    if (prevNode.__avatarMoved !== this.__avatarMoved)
+      dom.toggleAttribute(AVATAR_MOVED_ATTRIBUTE, this.__avatarMoved);
     return false;
   }
 
@@ -122,6 +145,15 @@ export class UserTurnNode extends ElementNode {
   setAvatar(avatar: TurnAvatar): void {
     if (sameTurnAvatar(this.__avatar, avatar)) return;
     this.getWritable().__avatar = avatar;
+  }
+
+  /**
+   * Whether the comments that open the block wear its mark: the sync that
+   * seats them says so, and the block's words then wear none.
+   */
+  setAvatarMoved(moved: boolean): void {
+    if (this.getLatest().__avatarMoved === moved) return;
+    this.getWritable().__avatarMoved = moved;
   }
 
   override isInline(): boolean {
@@ -158,11 +190,12 @@ export class UserTurnNode extends ElementNode {
         ? {}
         : { delegated: this.__delegated }),
       ...(this.__avatar === null ? {} : { avatar: this.__avatar }),
+      ...(this.__avatarMoved ? { avatarMoved: true as const } : {}),
     };
   }
 
   static override importJSON(serialized: SerializedUserTurnNode): UserTurnNode {
-    return $createUserTurnNode(
+    const node = $createUserTurnNode(
       serialized.turnKey,
       serialized.promptId,
       serialized.delegated,
@@ -170,6 +203,8 @@ export class UserTurnNode extends ElementNode {
       serialized.accepted,
       serialized.avatar ?? null,
     );
+    node.__avatarMoved = serialized.avatarMoved === true;
+    return node;
   }
 }
 

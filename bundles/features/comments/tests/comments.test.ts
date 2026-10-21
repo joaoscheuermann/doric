@@ -177,7 +177,7 @@ describe('comments/v1.add', () => {
     }
   });
 
-  test('keeps the turn and block of a range anchor that names where it sits', async () => {
+  test('keeps the turn, block, offset and list item of a range anchor that names where it sits', async () => {
     const harness = await commentsHarness();
     const seated: CommentTarget = {
       kind: 'message',
@@ -187,6 +187,8 @@ describe('comments/v1.add', () => {
         text: 'essa resposta',
         turn: 'agent:p:3',
         block: 2,
+        at: 14,
+        item: 1,
       },
     };
 
@@ -204,7 +206,7 @@ describe('comments/v1.add', () => {
     }
   });
 
-  test('refuses a seat that is not a 0-based block', async () => {
+  test('refuses a seat whose block, offset or item is not a 0-based index, or an offset or item without its seat', async () => {
     const harness = await commentsHarness();
 
     try {
@@ -212,6 +214,29 @@ describe('comments/v1.add', () => {
         { form: 'range', text: 'essa resposta', turn: 'agent:p:3', block: -1 },
         { form: 'range', text: 'essa resposta', turn: '', block: 2 },
         { form: 'range', text: 'essa resposta', turn: 'agent:p:3', block: 1.5 },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          at: -1,
+        },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          at: 0.5,
+        },
+        { form: 'range', text: 'essa resposta', at: 3 },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          item: -1,
+        },
+        { form: 'range', text: 'essa resposta', item: 0 },
       ]) {
         await assert.rejects(
           () =>

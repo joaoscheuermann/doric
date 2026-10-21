@@ -1,16 +1,22 @@
-// One line of a comment, drawn by the composer's stack, by the user turn that
-// the send flushed it into and by the top row of an agent's reply block: the
-// author's avatar, `↩` before the name when the comment answers another, the
-// note truncated with an ellipsis, and the anchor with the pin's number at the
-// end (`docs/architecture/bundles/papercraft/README.md`, the stack's ASCII). The line
-// itself never edits: the stack hands it the note's own editing host in place
-// of the read-only text, and a sent comment is immutable until a new event
-// says otherwise.
+// One comment, drawn by the composer's stack inside the prompt and by the user
+// turn the send flushed it into: a card whose first line is the comment's
+// context — the paragraph its words were selected from, on one line truncated
+// with an ellipsis, the selected words highlighted (`domain/comment-excerpt`)
+// — and, nested in it, the comment itself: the author's avatar, `↩` when it
+// answers another comment, and the note, framed in the theme's primary colour
+// (1px around, 3px on the left, square, as the inline comment in the answer).
+// While the card is hovered, or holds the keyboard's focus, a small arrow
+// closes the context line: "go to" the passage the comment is about, which the
+// card's owner decides (`useGoToComment`). The card itself never edits: the
+// stack hands it the note's own editing host in place of the read-only text,
+// and a sent comment is immutable until a new event says otherwise.
 
-import { cn } from 'desktop/ui/utils';
+import { Button } from 'desktop/ui/button';
+import { ArrowUpLeftIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { CHAT_COMMENT_LINE_TAG } from '../../../contracts/index.js';
+import type { Excerpt } from '../../domain/comment-excerpt.js';
 import { anchorLabel } from '../../domain/composer-stack.js';
 import { READER_NAME } from '../../domain/conversation-authors.js';
 import { ReaderAvatar } from './reader-avatar.js';
@@ -19,23 +25,17 @@ import { ReaderAvatar } from './reader-avatar.js';
 export interface CommentLineItem {
   readonly author?: string;
   readonly note: string;
-  /** The comment's target, for the anchor the line ends with. */
+  /** The comment's target, for the label a screen reader hears. */
   readonly target?: unknown;
-  /** The pin's number, from the owner's data or the line's order. */
+  /** The pin's number, from the owner's data or the line's order: spoken, not drawn. */
   readonly pin?: number;
   /** Whether the comment answers another one (`inReplyTo`). */
   readonly reply?: boolean;
-  /** The words the comment is about, when the line quotes a selection. */
-  readonly quote?: ReactNode;
 }
 
 /** Whether the element tag names the line this component draws. */
 export const isChatCommentLineTag = (tag: string): boolean =>
   tag === CHAT_COMMENT_LINE_TAG;
-
-/** The class every comment line shares: one row, the conversation's face. */
-export const COMMENT_LINE_CLASS =
-  'flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 py-0.75 text-left font-conversation text-sm font-light';
 
 /** The words a line reads out to a screen reader. */
 export const commentLineLabel = (item: CommentLineItem): string => {
@@ -44,57 +44,106 @@ export const commentLineLabel = (item: CommentLineItem): string => {
   return `Comment${item.pin === undefined ? '' : ` ${item.pin}`}${anchor === undefined ? '' : ` on ${anchor}`}`;
 };
 
+/** What the card's "go to" button is named by. */
+export const GO_TO_LABEL = 'Go to the commented passage';
+
 /**
- * One comment line: single, the note truncated with an ellipsis when it runs
- * long. `note` replaces the read-only text with the note's own editor (the
- * stack's); `end` follows the pin (a user turn's state marker).
+ * The context line: the paragraph, its quoted words highlighted, and the
+ * "go to" arrow, shown on the card's hover or keyboard focus.
+ */
+function Context({
+  excerpt,
+  onGo,
+}: {
+  readonly excerpt: Excerpt | undefined;
+  readonly onGo: ((from: HTMLElement) => void) | undefined;
+}) {
+  if (excerpt === undefined && onGo === undefined) return null;
+  return (
+    <span className="flex min-w-0 items-center gap-2 px-1 leading-5 text-muted-foreground">
+      <span
+        data-comment-excerpt=""
+        className="min-w-0 flex-1 truncate"
+        title={
+          excerpt === undefined
+            ? undefined
+            : `${excerpt.before}${excerpt.quote}${excerpt.after}`
+        }
+      >
+        {excerpt?.before}
+        {excerpt !== undefined && excerpt.quote.length > 0 && (
+          <mark
+            data-comment-quote=""
+            className="bg-primary/18 text-primary underline decoration-primary"
+          >
+            {excerpt.quote}
+          </mark>
+        )}
+        {excerpt?.after}
+      </span>
+      {onGo !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          data-comment-go=""
+          aria-label={GO_TO_LABEL}
+          title={GO_TO_LABEL}
+          className="-my-0.5 size-5 text-muted-foreground opacity-0 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 focus-visible:opacity-100"
+          onClick={(event) => {
+            // The card's own press (a sent comment's) does the same: once.
+            event.stopPropagation();
+            onGo(event.currentTarget);
+          }}
+        >
+          <ArrowUpLeftIcon aria-hidden="true" />
+        </Button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * One comment: its context above, the comment framed below it. `note`
+ * replaces the read-only note with the note's own editor (the stack's);
+ * `excerpt` is the context the owner read for it, when there is one; `onGo`
+ * takes the reader to the passage, from the card's arrow.
  */
 export function CommentLine({
   item,
+  excerpt,
   note,
-  end,
-  className,
+  onGo,
 }: {
   readonly item: CommentLineItem;
+  readonly excerpt?: Excerpt;
+  readonly onGo?: (from: HTMLElement) => void;
   /** The note's editor, in place of its read-only text. */
   readonly note?: ReactNode;
-  /** What follows the pin at the line's end. */
-  readonly end?: ReactNode;
-  readonly className?: string;
 }) {
   const author = item.author ?? READER_NAME;
-  const anchor =
-    item.target === undefined ? undefined : anchorLabel(item.target);
 
   return (
-    // A span, so the line can stand inside a button (a reply's source row).
-    <span className={cn(COMMENT_LINE_CLASS, className)}>
-      {item.quote === undefined ? null : (
-        <span className="min-w-0 shrink truncate text-muted-foreground italic">
-          {item.quote}
-        </span>
-      )}
-      <ReaderAvatar name={author} />
-      <span className="max-w-40 shrink-0 truncate">
-        {item.reply === true && <span aria-hidden="true">↩ </span>}
-        {author}
-      </span>
-      {note ?? (
-        <span
-          className="min-w-0 flex-1 truncate text-muted-foreground"
-          title={item.note.length === 0 ? undefined : item.note}
-        >
-          {item.note.length === 0 ? '…' : item.note}
-        </span>
-      )}
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-xs text-muted-foreground">
-        {anchor !== undefined && (
-          <span className="max-w-40 truncate">{anchor}</span>
+    <span
+      data-comment-line=""
+      className="group/comment flex w-full min-w-0 flex-col gap-1.5 rounded-md border border-border bg-muted/40 p-1.5 text-left font-conversation text-sm font-light"
+    >
+      <Context excerpt={excerpt} onGo={onGo} />
+      <span
+        data-comment-frame=""
+        className="flex min-w-0 items-start gap-2 rounded-none border border-l-3 border-primary px-2 py-1 focus-within:bg-primary/10"
+      >
+        <ReaderAvatar name={author} className="mt-0.75" />
+        {item.reply === true && (
+          <span aria-hidden="true" className="mt-0.5 shrink-0">
+            ↩
+          </span>
         )}
-        {item.pin !== undefined && (
-          <span className="tabular-nums">[{item.pin}]</span>
+        {note ?? (
+          <span className="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere py-0.5 leading-normal text-muted-foreground">
+            {item.note.length === 0 ? '…' : item.note}
+          </span>
         )}
-        {end}
       </span>
     </span>
   );

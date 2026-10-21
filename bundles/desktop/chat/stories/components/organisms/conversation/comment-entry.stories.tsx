@@ -1,34 +1,35 @@
-// The inline comment entry a selection inside one of the agent's messages
-// opens: the seat `CommentSeatNode` puts right after the paragraph the
-// selection starts in, and the two states `CommentEntry` draws there — a lone
-// placeholder field, then the comment line the first typed character
-// materialises. Both states stand on the same answer, so the page reads as one
-// gesture in two moments; the last section is the colour the transcript paints
-// the selection itself in, shown as a specimen so it can be judged without
-// dragging.
+// The inline comments typing over a selection inside one of the agent's
+// messages opens: each a seat `CommentSeatNode` puts at the end of the block
+// the selection ends in, drawn by `CommentEntry` — the reader's avatar and
+// the note, one element from the first character on — with its words kept
+// highlighted for as long as it stands (`CommentHighlights`).
 //
-// The waiting entry is opened the way a selection opens it (`openSeat` on the
-// answer's turn, after the block that holds the words) and the paragraph keeps
-// a real selection (`TextNode.select`, as `plugins/comment-selection.stories`
-// does). The written entry is the same seat typed into through its own editing
-// host: the story sets the note's text and fires the `input` event a keystroke
-// fires (`StackNote` reports what its host holds on that event), which is the
-// path `CommentEntry` takes its text state from. The stack item the first
-// character also adds is answered by the story window's fake composer, so the
-// draft lands the way it does in the window instead of failing.
+// The first section is a selection alone: nothing opens until the reader types
+// (`CommentSelection`), so the page shows the platform's selection and nothing
+// else. The second holds two comments on one paragraph, as the composer's
+// stack holds them after their first characters: `CommentSeats` seats each,
+// in the order of the passages they are about, and both passages stay
+// highlighted.
 
-import { Marker, MarkerContent } from 'desktop/ui/marker';
 import {
   $getRoot,
   $isElementNode,
   $isTextNode,
   type LexicalNode,
 } from 'lexical';
-import { type RefObject, useEffect, useRef } from 'react';
 
 import { $isAgentTurnNode } from '../../../../src/client/components/organisms/conversation/nodes/agent-turn-node.js';
+import { solidLength } from '../../../../src/client/domain/comment-highlight.js';
+import { READER_NAME } from '../../../../src/client/domain/conversation-authors.js';
+import { syncPlan } from '../../../../src/client/domain/conversation-sync.js';
+import {
+  CHAT_COMMENT_LINE_TAG,
+  type ComposerItem,
+  MESSAGE_KIND,
+} from '../../../../src/contracts/index.js';
 import {
   answer,
+  nodesThread,
   promptIdOf,
   turnsOfLog,
 } from '../../../support/conversation.js';
@@ -41,6 +42,13 @@ import {
 const waitingPrompt = promptIdOf(4701);
 const writtenPrompt = promptIdOf(4702);
 
+/** The paragraph the reader selects in: the answer's second block. */
+const paragraph =
+  'The card now follows the new layout: the summary sits above the payment form, and the Pay button uses the primary token.';
+
+/** The index of that paragraph among the answer's blocks. */
+const paragraphBlock = 1;
+
 /**
  * The answer both sections show: a heading, the paragraph the reader selects
  * in, and the one below it — so the entry stands between two paragraphs, as it
@@ -49,16 +57,16 @@ const writtenPrompt = promptIdOf(4702);
 const answerText = [
   '## Checkout card',
   '',
-  'The card now follows the new layout: the summary sits above the payment form, and the Pay button uses the primary token.',
+  paragraph,
   '',
   'Dark mode broke because the old stylesheet set its own background; that file is gone now.',
 ].join('\n');
 
-/** The words the reader selected, and the entry quotes. */
+/** The words the reader selected, which stay highlighted. */
 const quote = 'the summary sits above the payment form';
 
-/** The note the written section's entry holds, typed in a character after it opened. */
-const note = 'Name the form component here, so the layout is easy to find.';
+/** A later passage of the same paragraph, the second comment's. */
+const laterQuote = 'the Pay button uses the primary token';
 
 const waitingTurns = turnsOfLog((log) => {
   log.prompt(waitingPrompt, 'Review the checkout card.');
@@ -69,6 +77,59 @@ const writtenTurns = turnsOfLog((log) => {
   log.prompt(writtenPrompt, 'Review the checkout card.');
   answer(log, writtenPrompt, answerText);
 });
+
+/** The key the written answer's block carries, as the sync gives it. */
+const writtenTurn =
+  syncPlan([], writtenTurns, writtenTurns.length).steps.find(
+    (step) => step.kind === 'create' && step.turn.type === 'agent',
+  )?.key ?? '';
+
+/** A comment on `words` of the paragraph, as the composer's stack holds it. */
+const writtenItem = (
+  id: string,
+  words: string,
+  note: string,
+): ComposerItem => ({
+  id,
+  kind: MESSAGE_KIND,
+  elementTag: CHAT_COMMENT_LINE_TAG,
+  data: {
+    target: {
+      kind: MESSAGE_KIND,
+      id: writtenPrompt,
+      anchor: {
+        form: 'range',
+        text: words,
+        turn: writtenTurn,
+        block: paragraphBlock,
+      },
+    },
+    seat: {
+      turn: writtenTurn,
+      block: paragraphBlock,
+      at: solidLength(paragraph.slice(0, paragraph.indexOf(words))),
+    },
+  },
+  author: READER_NAME,
+  note,
+});
+
+/**
+ * The paragraph's two comments, the later passage's first on the stack: the
+ * transcript seats them in passage order all the same.
+ */
+const writtenItems = [
+  writtenItem(
+    'comment-story-later',
+    laterQuote,
+    'Which token, exactly? Link it.',
+  ),
+  writtenItem(
+    'comment-story-earlier',
+    quote,
+    'Name the form component here, so the layout is easy to find.',
+  ),
+];
 
 /** The first text of a block, where a selection can start. */
 const firstText = (node: LexicalNode | undefined) => {
@@ -87,152 +148,33 @@ const $selectQuote = (block: LexicalNode | undefined, words: string): void => {
 };
 
 /**
- * The note host the written section shows, as a box: the seed fills its id once
- * the seat is opened (`<turn>:<block>`, the id `StackNote` carries), and the
- * typing plugin below reads it a frame later, when the entry is in the DOM.
- */
-interface WrittenEntry {
-  id: string;
-}
-
-/**
- * Types the note into the entry the seed opened for the written section: the
- * note's own editing host reports what it holds on `input`, the event a typed
- * character fires, so the entry reaches its written state by the product's own
- * path. The host is asked for again every frame until the seat has drawn — the
- * editor builds its state before its decorators reach the document.
- */
-function TypeIntoEntry({
-  target,
-  text,
-}: {
-  readonly target: RefObject<WrittenEntry>;
-  readonly text: string;
-}) {
-  useEffect(() => {
-    let done = false;
-    let frame = 0;
-    let tries = 0;
-
-    const write = (): void => {
-      if (done) return;
-      const host = document.querySelector<HTMLElement>(
-        `[data-stack-note="${target.current.id}"]`,
-      );
-      if (host === null) {
-        // Bounded: a seat that never draws must not keep the story spinning.
-        if (tries >= 240) return;
-        tries += 1;
-        frame = requestAnimationFrame(write);
-        return;
-      }
-      done = true;
-      host.textContent = text;
-      host.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    };
-
-    frame = requestAnimationFrame(write);
-    return () => {
-      done = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [target, text]);
-
-  return null;
-}
-
-/**
- * The transcript's selection rule, as the chat's own sheet states it
- * (`src/client/styles.css`, `[data-lexical-editor] ::selection`): the primary
- * ink for the words and their underline, over a mix of it for the ground.
- */
-const SELECTION_STYLE = {
-  color: 'var(--primary)',
-  background: 'color-mix(in oklch, var(--primary) 18%, transparent)',
-  textDecoration: 'underline',
-  textDecorationColor: 'var(--primary)',
-} as const;
-
-/** Those declarations as the sheet writes them, so the specimen states the rule. */
-const SELECTION_RULE = [
-  '[data-lexical-editor] ::selection {',
-  '  color: var(--primary);',
-  '  background: color-mix(in oklch, var(--primary) 18%, transparent);',
-  '  text-decoration: underline;',
-  '  text-decoration-color: var(--primary);',
-  '}',
-].join('\n');
-
-/**
- * The colours, as a specimen: a sentence of an answer with the quoted words
- * painted in the rule above — the visual of a selection, without a drag. It is
- * framed as a specimen and not as a block of the transcript, which is what the
- * caption and the rule it prints say.
- */
-function SelectionSpecimen() {
-  return (
-    <figure className="mt-4 flex flex-col gap-2 rounded-md border border-border border-dashed p-4">
-      <Marker variant="separator" className="gap-1.5 text-xs">
-        <MarkerContent className="uppercase tracking-wide">
-          The colours the selection wears
-        </MarkerContent>
-      </Marker>
-      <p className="font-conversation text-sm font-light leading-normal">
-        The card now follows the new layout:{' '}
-        <span style={SELECTION_STYLE}>{quote}</span>, and the Pay button uses
-        the primary token.
-      </p>
-      <pre className="overflow-x-auto rounded-sm bg-muted/50 p-2 text-xs text-muted-foreground">
-        <code>{SELECTION_RULE}</code>
-      </pre>
-      <figcaption className="text-xs text-muted-foreground">
-        A specimen, not the transcript: the transcript paints the words the
-        reader selects while dragging, which a still page cannot hold. The
-        declarations above are the ones it applies, painted here on a sentence
-        of the answer above.
-      </figcaption>
-    </figure>
-  );
-}
-
-/**
- * One page, three sections: the entry waiting after the paragraph the
- * selection starts in, the same entry written, and the colour the transcript
- * gives a selection.
+ * One page, two sections: a selection that opened nothing yet, and a paragraph
+ * holding two comments.
  */
 function CommentEntryPage() {
-  // Filled by the seed when it opens the written seat; the box is stable, so
-  // the typing plugin reads the id the seed wrote however late it arrives.
-  const written = useRef<WrittenEntry>({ id: '' });
-
   return (
     <ConversationEditor
+      host={{
+        drafts: { [nodesThread.id]: { text: '', items: writtenItems } },
+      }}
       seed={() => {
         $getRoot().append(
           $createSectionCaptionNode(
-            'The entry, waiting — a selection in the paragraph opened it, nothing is written yet',
+            'A selection alone — nothing opens until the reader types over it',
           ),
         );
         const waiting = $appendTurns(waitingTurns).at(-1);
-        if ($isAgentTurnNode(waiting)) {
-          waiting.openSeat(1, quote);
-          $selectQuote(waiting.getChildren()[1], quote);
-        }
+        if ($isAgentTurnNode(waiting))
+          $selectQuote(waiting.getChildren()[paragraphBlock], quote);
 
         $getRoot().append(
           $createSectionCaptionNode(
-            'The entry, written — the first character draws the comment line',
+            'Two comments on one paragraph — in passage order, both passages highlighted',
           ),
         );
-        const answered = $appendTurns(writtenTurns).at(-1);
-        if (!$isAgentTurnNode(answered)) return;
-        const seat = answered.openSeat(1, quote);
-        written.current.id = `${seat.turn}:${seat.block}`;
+        $appendTurns(writtenTurns);
       }}
-    >
-      <TypeIntoEntry target={written} text={note} />
-      <SelectionSpecimen />
-    </ConversationEditor>
+    />
   );
 }
 
@@ -242,8 +184,7 @@ export default {
 };
 
 /**
- * The entry in both of its states, and the selection colour between them: a
- * selection inside the agent's answer opens a lone field after the paragraph,
- * whose first typed character turns into the comment line quoting it.
+ * A selection that has opened nothing, and a paragraph whose two comments
+ * stand after it in the order of the passages they are about.
  */
 export const States = { render: () => <CommentEntryPage /> };

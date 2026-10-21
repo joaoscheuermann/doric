@@ -13,9 +13,17 @@ export type PendingSend = {
   readonly before: number;
 };
 
-/** Whether a turn is a prompt the reader wrote, rather than a Thread's input. */
+/**
+ * The prompts of a turn the reader wrote: not a Thread's input, a background
+ * terminal's result or a bundle's instruction, which the reader never sent.
+ */
 const ownPromptIds = (turn: Turn): readonly string[] => {
-  if (turn.type === 'user' && turn.delegated === undefined)
+  if (
+    turn.type === 'user' &&
+    turn.delegated === undefined &&
+    turn.terminal === undefined &&
+    turn.instruction === undefined
+  )
     return [turn.promptId];
   if (turn.type === 'queued')
     return turn.items

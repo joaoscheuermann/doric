@@ -1,16 +1,20 @@
-// The inline comment seat: the block a selection opens after the paragraph it
-// starts in, where the note about the selected words is written. It stands
-// inside the agent turn, after its own block, and holds the words the selection
-// quoted — the entry itself is drawn by `CommentEntry`, beside the composer's
-// stack.
+// The inline comment seat: the block typing over a selection opens where the
+// note about the selected words is written and edited. It stands inside the
+// agent turn — after a block, or at the end of a list item — and holds the
+// words the selection quoted — the passage the transcript keeps highlighted
+// (`plugins/comment-highlights.tsx`) — while the comment itself is drawn by
+// `CommentEntry`, the one element it is from the first character to the send.
 //
-// The seat names the turn it belongs to and the 0-based block it follows, so a
-// turn rebuilt from a delta can put it back after the same paragraph
-// (`$placeSeats` in `agent-turn-node.tsx`).
+// A seat is one comment, named by the comment's id (`comment-<uuid>`, the stack
+// item's own), so a paragraph can hold several. It names the turn it belongs
+// to, the 0-based block its words start in and how far into it (the highlight's
+// way to them), and where it stands: after the block that holds the end of its
+// words (`after`) or, when that block is a list, at the end of the item that
+// does (`item`). A turn rebuilt from a delta puts it back there, in passage
+// order among that place's seats (`$placeSeats` in `agent-turn-node.tsx`).
 
 import {
   DecoratorNode,
-  type ElementNode,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -23,57 +27,84 @@ import { CommentEntry } from '../../comment-entry.js';
 
 /**
  * What the seat hands the entry: the block it stands after, the words it
- * quotes, and the two gestures the entry reports back — the note committed, the
- * draft discarded.
+ * quotes, and the one gesture the entry reports back — the comment removed.
  */
 export interface CommentSeatBlock {
+  /** The comment's id: the stack item's, from the seat's first moment. */
+  readonly id: string;
   readonly promptId: string;
   readonly turn: string;
   readonly block: number;
   readonly quote: string;
-  /** Whether the entry is still open for writing; a commit closes it. */
-  readonly open: boolean;
-  onCommit(): void;
-  onDiscard(): void;
+  /** How far into its block the quoted words start, whitespace aside. */
+  readonly at: number;
+  /** The block the seat stands after, or in when it is a list. */
+  readonly after: number;
+  /** The item of that list the seat closes, when it stands in a list. */
+  readonly item: number | undefined;
+  /** The item of `block` the words start in, when that block is a list. */
+  readonly startItem: number | undefined;
+  /** Removes the seat, and the highlight of the words it quotes with it. */
+  discard(): void;
 }
 
 export type SerializedCommentSeatNode = Spread<
   {
+    id: string;
     promptId: string;
     turn: string;
     block: number;
     quote: string;
-    open: boolean;
+    at: number;
+    after?: number;
+    item?: number;
+    startItem?: number;
   },
   SerializedLexicalNode
 >;
 
-/** The comment entry of one paragraph of an agent's answer. */
+/**
+ * One comment on a passage of an agent's answer, at the end of the block (or
+ * list item) its words end in.
+ */
 export class CommentSeatNode
   extends DecoratorNode<JSX.Element>
   implements CommentSeatBlock
 {
+  __id: string;
   __promptId: string;
   __turn: string;
   __block: number;
   __quote: string;
-  /** Whether the entry is still open for writing; a commit closes it. */
-  __open: boolean;
   /**
-   * The turn the seat was opened in, kept so it can name its parent while no
-   * editor state is being read — a replay's check, a caller outside the editor.
-   * Inside an update the editor's own tree answers.
+   * How far into its block the quoted words start, in characters that are not
+   * whitespace, so the highlight finds the occurrence the reader selected.
    */
-  __owner: ElementNode | null;
+  __at: number;
+  /** The block the seat stands after (or in, for a list); `__block` by default. */
+  __after: number;
+  /** The list item the seat closes, when it stands in a list. */
+  __item: number | undefined;
+  /** The item of `__block` the words start in, when that block is a list. */
+  __startItem: number | undefined;
 
-  constructor(promptId: string, block: number, quote = '', key?: NodeKey) {
+  constructor(
+    id: string,
+    promptId: string,
+    block: number,
+    quote: string,
+    key?: NodeKey,
+  ) {
     super(key);
+    this.__id = id;
     this.__promptId = promptId;
     this.__turn = '';
     this.__block = block;
     this.__quote = quote;
-    this.__open = true;
-    this.__owner = null;
+    this.__at = 0;
+    this.__after = block;
+    this.__item = undefined;
+    this.__startItem = undefined;
   }
 
   static override getType(): string {
@@ -82,14 +113,17 @@ export class CommentSeatNode
 
   static override clone(node: CommentSeatNode): CommentSeatNode {
     const copy = new CommentSeatNode(
+      node.__id,
       node.__promptId,
       node.__block,
       node.__quote,
       node.__key,
     );
     copy.__turn = node.__turn;
-    copy.__open = node.__open;
-    copy.__owner = node.__owner;
+    copy.__at = node.__at;
+    copy.__after = node.__after;
+    copy.__item = node.__item;
+    copy.__startItem = node.__startItem;
 
     return copy;
   }
@@ -109,36 +143,14 @@ export class CommentSeatNode
     return false;
   }
 
-  /**
-   * A seat with a parent stands in the editor's tree. The base walk reads the
-   * editor's node map, which only answers inside a read.
-   */
-  override isAttached(): boolean {
-    return this.__parent !== null;
-  }
-
-  /** The turn the seat stands in; the editor's own tree answers inside a read. */
-  override getParent(): ElementNode | null {
-    try {
-      return super.getParent();
-    } catch {
-      return this.__owner;
-    }
-  }
-
-  /**
-   * Names the turn the seat stands in, so the seat can answer for its parent
-   * while no editor state is being read.
-   */
-  setOwner(turn: ElementNode): void {
-    if (this.__owner !== null) return;
-    this.__owner = turn;
-  }
-
   override isKeyboardSelectable(): boolean {
     // The entry is an editing host of its own, which the caret reaches by
     // focusing it, never as a stop of the editor.
     return false;
+  }
+
+  get id(): string {
+    return this.__id;
   }
 
   get promptId(): string {
@@ -157,35 +169,28 @@ export class CommentSeatNode
     return this.__quote;
   }
 
-  /** Whether the entry is still open for writing. */
-  get open(): boolean {
-    return this.__open;
+  /** How far into its block the quoted words start; see `__at`. */
+  get at(): number {
+    return this.__at;
   }
 
-  /** Names the turn the seat belongs to; the turn sets it when it opens one. */
-  setTurn(turn: string): void {
-    if (this.__turn === turn) return;
-    this.getWritable().__turn = turn;
+  /** The block the seat stands after, or in when it is a list. */
+  get after(): number {
+    return this.__after;
   }
 
-  /** Replaces the words the seat quotes, as a new selection asks. */
-  setQuote(quote: string): void {
-    if (this.__quote === quote) return;
-    this.getWritable().__quote = quote;
+  /** The list item the seat closes, when it stands in a list. */
+  get item(): number | undefined {
+    return this.__item;
   }
 
-  /** Opens or closes the entry; a commit closes it, a new selection reopens it. */
-  setOpen(open: boolean): void {
-    if (this.__open === open) return;
-    this.getWritable().__open = open;
+  /** The item of `block` the words start in, when that block is a list. */
+  get startItem(): number | undefined {
+    return this.__startItem;
   }
 
-  onCommit(): void {
-    this.setOpen(false);
-  }
-
-  /** The draft left the seat: the entry closes and the seat goes with it. */
-  onDiscard(): void {
+  /** The comment was removed: the seat leaves the transcript. */
+  discard(): void {
     this.remove();
   }
 
@@ -196,31 +201,63 @@ export class CommentSeatNode
   override exportJSON(): SerializedCommentSeatNode {
     return {
       ...super.exportJSON(),
+      id: this.__id,
       promptId: this.__promptId,
       turn: this.__turn,
       block: this.__block,
       quote: this.__quote,
-      open: this.__open,
+      at: this.__at,
+      after: this.__after,
+      ...(this.__item === undefined ? {} : { item: this.__item }),
+      ...(this.__startItem === undefined
+        ? {}
+        : { startItem: this.__startItem }),
     };
   }
 
   static override importJSON(
     value: SerializedCommentSeatNode,
   ): CommentSeatNode {
-    const node = new CommentSeatNode(value.promptId, value.block, value.quote);
+    const node = new CommentSeatNode(
+      value.id,
+      value.promptId,
+      value.block,
+      value.quote,
+    );
     node.__turn = value.turn;
-    node.__open = value.open;
+    node.__at = value.at;
+    node.__after = value.after ?? value.block;
+    node.__item = value.item;
+    node.__startItem = value.startItem;
 
     return node;
   }
 }
 
-export function $createCommentSeatNode(
-  promptId: string,
-  block: number,
-  quote?: string,
-): CommentSeatNode {
-  return new CommentSeatNode(promptId, block, quote);
+export function $createCommentSeatNode(seat: {
+  readonly id: string;
+  readonly promptId: string;
+  readonly turn: string;
+  readonly block: number;
+  readonly quote: string;
+  readonly at: number;
+  readonly after?: number;
+  readonly item?: number;
+  readonly startItem?: number;
+}): CommentSeatNode {
+  const node = new CommentSeatNode(
+    seat.id,
+    seat.promptId,
+    seat.block,
+    seat.quote,
+  );
+  node.__turn = seat.turn;
+  node.__at = seat.at;
+  node.__after = seat.after ?? seat.block;
+  node.__item = seat.item;
+  node.__startItem = seat.startItem;
+
+  return node;
 }
 
 export function $isCommentSeatNode(

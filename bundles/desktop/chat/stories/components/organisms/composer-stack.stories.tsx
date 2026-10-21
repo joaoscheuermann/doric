@@ -4,8 +4,10 @@ import {
   ComposerStack,
   type StackItemElement,
 } from '../../../src/client/components/organisms/composer-stack.js';
+import { $createAgentTurnNode } from '../../../src/client/components/organisms/conversation/nodes/agent-turn-node.js';
 import { $createComposerStackNode } from '../../../src/client/components/organisms/conversation/nodes/composer-stack-node.js';
 import { $createUserPromptNode } from '../../../src/client/components/organisms/conversation/nodes/user-prompt-node.js';
+import { READER_NAME } from '../../../src/client/domain/conversation-authors.js';
 import type { ComposerItem } from '../../../src/contracts/index.js';
 import {
   checkoutTarget,
@@ -14,20 +16,50 @@ import {
 } from '../../support/conversation.js';
 import { ConversationEditor } from '../../support/editor.js';
 
+/** The agent's answer the message comments below are about. */
+const ANSWER_TURN = 'agent:a0000000-0000-4000-8000-000000001001:1';
+const ANSWER =
+  'I see the placeholder text and a photo of an orange kitten. Are you testing messages and comments, or do you want me to change the checkout?';
+
 /**
- * The stack as the conversation draws it: the stack node's widget above the
- * prompt, its items read from the composer's watch.
+ * The stack as the conversation draws it: the stack node's widget opening the
+ * prompt's block, its items read from the composer's watch, below an answer
+ * of the agent's.
  */
 const stackOf = (items: readonly ComposerItem[], words = '') => (
   <ConversationEditor
     host={{ drafts: { [nodesThread.id]: { text: words, items } } }}
     seed={() => {
-      const prompt = $createUserPromptNode();
+      const answer = $createAgentTurnNode(
+        ANSWER_TURN,
+        'a0000000-0000-4000-8000-000000001001',
+        'completed',
+        ANSWER,
+        { role: 'agent', name: 'Agent' },
+      );
+      const prompt = $createUserPromptNode({ role: 'user', name: READER_NAME });
       if (words.length > 0) prompt.append($createTextNode(words));
-      $getRoot().append($createComposerStackNode(nodesThread), prompt);
+      $getRoot().append(answer, $createComposerStackNode(nodesThread), prompt);
     }}
   />
 );
+
+/** A comment on words of the answer above, as typing over them adds it. */
+const messageItem = (id: string, text: string, note: string) => ({
+  id,
+  kind: 'message',
+  elementTag: 'chat-comment-line',
+  data: {
+    target: {
+      kind: 'message',
+      id: 'a0000000-0000-4000-8000-000000001001',
+      anchor: { form: 'range', text, turn: ANSWER_TURN, block: 0 },
+    },
+    seat: { turn: ANSWER_TURN, block: 0, at: 0 },
+  },
+  author: READER_NAME,
+  note,
+});
 
 /** The tag of an element a comment's owner draws its own line with. */
 const OWNER_TAG = 'story-pin-line';
@@ -65,7 +97,7 @@ export default {
   component: ComposerStack,
 };
 
-/** One comment drafted above the prompt. */
+/** One comment drafted inside the prompt, above its words. */
 export const OneComment = {
   render: () =>
     stackOf([stackItem(1, 'The primary button disappears in dark mode', 42)]),
@@ -103,6 +135,23 @@ export const Reply = {
     ]),
 };
 
+/**
+ * Comments on words of the answer: each card reads the passage in its
+ * paragraph, the selected words highlighted, and the prompt's placeholder
+ * still shows below the group.
+ */
+export const MessageInContext = {
+  render: () =>
+    stackOf([
+      messageItem('comment-context-1', 'of an orange', 'asdasda'),
+      messageItem(
+        'comment-context-2',
+        'change the checkout',
+        'Only the summary, please',
+      ),
+    ]),
+};
+
 /** A comment on one of the agent's messages, its note not written yet. */
 export const MessageComment = {
   render: () =>
@@ -127,7 +176,7 @@ export const MessageComment = {
     ]),
 };
 
-/** A long note, truncated on its line. */
+/** A long note, drawn whole and wrapping inside its card. */
 export const LongNote = {
   render: () =>
     stackOf([

@@ -32,7 +32,8 @@
  * The rules are deliberately the shallow ones a transcript needs, stated here
  * rather than hidden in a component so they can be checked without a DOM: a fence
  * runs to its own closing fence or to the end, a blank line ends a paragraph,
- * consecutive list items of one kind are one list, and an emphasis runs from an
+ * consecutive list items of one kind are one list — blank lines between them
+ * included (a loose list) — and an emphasis runs from an
  * opening marker to the next marker of the same kind on the same line. Text the
  * rules do not recognize is a paragraph, which is the one answer that never loses
  * anything.
@@ -474,6 +475,13 @@ export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
           index += 1;
         }
         items.push(item);
+        // Blank lines between two items of one kind keep them in one list —
+        // a loose list, as CommonMark reads it, and the one list the editor
+        // draws (it merges adjacent lists of one kind) — so block `n` of the
+        // source is child `n` of the turn that draws it.
+        let next = index;
+        while (next < lines.length && blank(lines[next] ?? '')) next += 1;
+        if (next > index && opensItem(lines[next] ?? '')) index = next;
       }
 
       blocks.push({ kind: ordered ? 'ordered' : 'bullet', items });
@@ -618,6 +626,28 @@ export const commonBlocks = (
     const a = previous[index];
     const b = next[index];
     if (a === undefined || b === undefined || !blockEquals(a, b)) return index;
+  }
+  return most;
+};
+
+/**
+ * How many items two reads of one list share from the start, when both are the
+ * same kind of list — the items a list still growing at the answer's tail
+ * keeps while a delta lands in its last item or opens a new one — else
+ * `undefined`.
+ */
+export const commonItems = (
+  previous: MarkdownBlock,
+  next: MarkdownBlock,
+): number | undefined => {
+  if (previous.kind !== next.kind) return undefined;
+  if (previous.kind !== 'bullet' && previous.kind !== 'ordered')
+    return undefined;
+  const before = previous.items;
+  const after = (next as { readonly items: readonly MarkdownItem[] }).items;
+  const most = Math.min(before.length, after.length);
+  for (let index = 0; index < most; index += 1) {
+    if (!linesEqual(before[index] ?? [], after[index] ?? [])) return index;
   }
   return most;
 };

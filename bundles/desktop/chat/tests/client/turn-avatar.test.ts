@@ -1,6 +1,6 @@
 // The mark a turn wears in the conversation's gutter: `applyTurnAvatar` writes
 // it into the turn block's own element, as the attributes and custom properties
-// the block's `::before` reads. The mounted blocks are proven by
+// the block's pseudo-elements read. The mounted blocks are proven by
 // `chat-view.test.ts`; this file proves the marks themselves.
 //
 // The marks need no more than a document, so the test opens a happy-dom window

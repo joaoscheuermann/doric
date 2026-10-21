@@ -172,7 +172,8 @@ const block = (window: ChatWindow): HTMLElement | null =>
 
 /** The header's own toggle, which opens and closes the block. */
 const toggle = (spawn: HTMLElement | null): HTMLElement | null =>
-  spawn?.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]') ?? null;
+  spawn?.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]') ??
+  null;
 
 const viewText = (window: ChatWindow): string =>
   window.document.querySelector('chat-view')?.textContent ?? '';
@@ -217,7 +218,10 @@ test('a spawn that failed is open with its error and names no Thread', async () 
   const spawn = block(window);
   assert.notEqual(spawn, null);
   assert.match(spawn?.textContent ?? '', /failed/i);
-  assert.match(spawn?.textContent ?? '', /The child Thread could not be started\./);
+  assert.match(
+    spawn?.textContent ?? '',
+    /The child Thread could not be started\./,
+  );
   // Open: the prompt it was to hand down stays readable beside the error.
   assert.match(spawn?.textContent ?? '', /Audit the contrast/);
   assert.equal(spawn?.querySelector('button[title]'), null);

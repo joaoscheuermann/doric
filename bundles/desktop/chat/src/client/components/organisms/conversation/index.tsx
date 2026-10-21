@@ -86,6 +86,8 @@ import {
 import { UserTurnNode } from './nodes/user-turn-node.js';
 import { AttachImages } from './plugins/attach-images.js';
 import { CaretNavigation } from './plugins/caret-navigation.js';
+import { CommentHighlights } from './plugins/comment-highlights.js';
+import { CommentSeats } from './plugins/comment-seats.js';
 import { CommentSelection } from './plugins/comment-selection.js';
 import { ComposerDraft } from './plugins/composer-draft.js';
 import { EditQueuePrompt } from './plugins/edit-queue-prompt.js';
@@ -453,6 +455,8 @@ export const Conversation = memo(function Conversation({
                   />
                   <EditQueuePrompt threadId={thread.id} />
                   <CommentSelection />
+                  <CommentSeats />
+                  <CommentHighlights />
                   <StackCaret />
                 </LexicalExtensionComposer>
               </ChatBlocksContext.Provider>
