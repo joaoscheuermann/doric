@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
   blockEquals,
   commonBlocks,
+  commonItems,
   lineSource,
   type MarkdownBlock,
   type MarkdownLine,
@@ -386,6 +387,61 @@ describe('blocks shared between two reads of a growing source', () => {
     assert.deepEqual(
       markdownBlocks(line).map((block) => block.kind),
       ['paragraph'],
+    );
+  });
+});
+
+describe('commonItems', () => {
+  const first = (source: string) => {
+    const [block] = markdownBlocks(source);
+    assert.ok(block);
+    return block;
+  };
+
+  test('counts the items a growing list keeps while its last item grows', () => {
+    assert.equal(commonItems(first('- one\n- tw'), first('- one\n- two')), 1);
+  });
+
+  test('keeps every item when the delta opens a new one', () => {
+    assert.equal(
+      commonItems(first('1. one\n2. two'), first('1. one\n2. two\n3. three')),
+      2,
+    );
+  });
+
+  test('answers nothing for two blocks that are not the same kind of list', () => {
+    assert.equal(commonItems(first('- one'), first('1. one')), undefined);
+    assert.equal(commonItems(first('one'), first('one two')), undefined);
+  });
+});
+
+describe('markdownBlocks, loose lists', () => {
+  test('keeps items of one kind in one list across the blank lines between them', () => {
+    const blocks = markdownBlocks('1. a\n\n2. b\n\npara');
+
+    assert.deepEqual(
+      blocks.map((block) => block.kind),
+      ['ordered', 'paragraph'],
+    );
+    const [list] = blocks;
+    assert.equal(list?.kind === 'ordered' ? list.items.length : 0, 2);
+  });
+
+  test('reads a tight list as the same one list', () => {
+    assert.deepEqual(
+      markdownBlocks('- a\n- b').map((block) => block.kind),
+      ['bullet'],
+    );
+  });
+
+  test('ends a list at a blank line that leads to another block or another kind of list', () => {
+    assert.deepEqual(
+      markdownBlocks('- a\n\npara\n\n- b').map((block) => block.kind),
+      ['bullet', 'paragraph', 'bullet'],
+    );
+    assert.deepEqual(
+      markdownBlocks('- a\n\n1. b').map((block) => block.kind),
+      ['bullet', 'ordered'],
     );
   });
 });

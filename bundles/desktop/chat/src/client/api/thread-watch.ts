@@ -5,8 +5,9 @@
 // update with the fixed message; the cursor is the highest delivered
 // sequence. A host failure shows its message when it has a code and a
 // message, else the generic sentence. Losing the bridge (`disconnected`, or
-// `unavailable`) reports nothing and resubscribes from the cursor when
-// `doric.connection/v1` reports `connected` again, as the socket reconnected.
+// `unavailable`) or the host generation serving the stream (`generation_lost`)
+// reports nothing and resubscribes from the cursor when `doric.connection/v1`
+// reports `connected` again, as the socket reconnected.
 // The connection status follows a socket of its own, so it can read
 // `connected` while the bridge is still down: then the watch resubscribes
 // after `resubscribeDelayMs` instead, and again for as long as each
@@ -89,6 +90,13 @@ export const streamFailedMessage = 'The Thread event stream failed.';
 
 /** The delay before subscribing again while the connection reads connected. */
 export const resubscribeDelayMs = 1000;
+
+/** The end codes of a lost bridge or host generation. */
+const lostCodes: readonly unknown[] = [
+  'disconnected',
+  'unavailable',
+  'generation_lost',
+];
 
 const timeout = (run: () => void, ms: number): (() => void) => {
   const timer = setTimeout(run, ms);
@@ -249,13 +257,12 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
       watch.retry = schedule(resume, resubscribeDelayMs);
   };
 
-  /** A stream that ended: quietly on a lost bridge, else as an error. */
+  /** A stream that ended: quietly on a lost bridge or generation, else as an error. */
   const finish = (watch: Watch, error: unknown): void => {
     if (watch.released) return;
     watch.subscription = undefined;
     if (error === undefined) return;
-    const code = record(error)?.code;
-    if (code === 'disconnected' || code === 'unavailable') {
+    if (lostCodes.includes(record(error)?.code)) {
       awaitConnection(watch);
       return;
     }

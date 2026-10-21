@@ -11,6 +11,11 @@ import type { DelegatedInput } from '../../../../domain/delegated.js';
 import type { UserTurn } from '../../../../domain/projector.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 import { $appendMarkdown } from './markdown-blocks.js';
+import {
+  applyTurnAvatar,
+  sameTurnAvatar,
+  type TurnAvatar,
+} from './turn-avatar.js';
 
 /**
  * How a prompt the host has not accepted yet is drawn: the reader's own words,
@@ -18,12 +23,20 @@ import { $appendMarkdown } from './markdown-blocks.js';
  */
 const PENDING_CLASS = 'opacity-50';
 
+/**
+ * Says the block's mark moved to the comments that open it: the sheet then
+ * draws the block without one (`styles.css`).
+ */
+const AVATAR_MOVED_ATTRIBUTE = 'data-turn-avatar-moved';
+
 export type SerializedUserTurnNode = Spread<
   {
     turnKey: string;
     promptId: string;
     accepted: boolean;
     delegated?: DelegatedInput;
+    avatar?: TurnAvatar;
+    avatarMoved?: true;
   },
   SerializedElementNode
 >;
@@ -52,6 +65,13 @@ export class UserTurnNode extends ElementNode {
   __synced: string;
   /** The text the children were last built into, for the same guard. */
   __written: string;
+  /** The mark the block draws in the gutter, or `null` for none. */
+  __avatar: TurnAvatar;
+  /**
+   * Whether the comments that open the block wear its mark in its place, so
+   * the block's own words wear none.
+   */
+  __avatarMoved = false;
 
   constructor(
     turnKey: string,
@@ -60,6 +80,7 @@ export class UserTurnNode extends ElementNode {
     text: string,
     written: string,
     accepted: boolean,
+    avatar: TurnAvatar = null,
     key?: NodeKey,
   ) {
     super(key);
@@ -69,6 +90,7 @@ export class UserTurnNode extends ElementNode {
     this.__accepted = accepted;
     this.__synced = text.trim();
     this.__written = written;
+    this.__avatar = avatar;
   }
 
   static override getType(): string {
@@ -83,8 +105,14 @@ export class UserTurnNode extends ElementNode {
       node.__synced,
       node.__written,
       node.__accepted,
+      node.__avatar,
       node.__key,
     );
+  }
+
+  override afterCloneFrom(previous: this): void {
+    super.afterCloneFrom(previous);
+    this.__avatarMoved = previous.__avatarMoved;
   }
 
   override createDOM(): HTMLElement {
@@ -93,11 +121,39 @@ export class UserTurnNode extends ElementNode {
     dom.className = this.__accepted
       ? CONVERSATION_FONT_CLASS
       : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;
+    applyTurnAvatar(dom, this.__avatar);
+    if (this.__avatarMoved) dom.setAttribute(AVATAR_MOVED_ATTRIBUTE, '');
     return dom;
   }
 
-  override updateDOM(): boolean {
+  /**
+   * The mark is attributes and custom properties on the element the block
+   * already drew, so it is written again in place and the element is kept: the
+   * markdown children are never rebuilt to repaint a gutter. A block made dirty
+   * by anything else — a streamed delta, a keystroke — keeps the mark it wears
+   * untouched, so its subtree is not restyled for nothing.
+   */
+  override updateDOM(prevNode: this, dom: HTMLElement): boolean {
+    if (!sameTurnAvatar(prevNode.__avatar, this.__avatar))
+      applyTurnAvatar(dom, this.__avatar);
+    if (prevNode.__avatarMoved !== this.__avatarMoved)
+      dom.toggleAttribute(AVATAR_MOVED_ATTRIBUTE, this.__avatarMoved);
     return false;
+  }
+
+  /** The mark the block wears in the gutter; the sync sets it, the block draws it. */
+  setAvatar(avatar: TurnAvatar): void {
+    if (sameTurnAvatar(this.__avatar, avatar)) return;
+    this.getWritable().__avatar = avatar;
+  }
+
+  /**
+   * Whether the comments that open the block wear its mark: the sync that
+   * seats them says so, and the block's words then wear none.
+   */
+  setAvatarMoved(moved: boolean): void {
+    if (this.getLatest().__avatarMoved === moved) return;
+    this.getWritable().__avatarMoved = moved;
   }
 
   override isInline(): boolean {
@@ -133,17 +189,22 @@ export class UserTurnNode extends ElementNode {
       ...(this.__delegated === undefined
         ? {}
         : { delegated: this.__delegated }),
+      ...(this.__avatar === null ? {} : { avatar: this.__avatar }),
+      ...(this.__avatarMoved ? { avatarMoved: true as const } : {}),
     };
   }
 
   static override importJSON(serialized: SerializedUserTurnNode): UserTurnNode {
-    return $createUserTurnNode(
+    const node = $createUserTurnNode(
       serialized.turnKey,
       serialized.promptId,
       serialized.delegated,
       '',
       serialized.accepted,
+      serialized.avatar ?? null,
     );
+    node.__avatarMoved = serialized.avatarMoved === true;
+    return node;
   }
 }
 
@@ -153,6 +214,7 @@ export function $createUserTurnNode(
   delegated: DelegatedInput | undefined,
   text: string,
   accepted: boolean,
+  avatar: TurnAvatar = null,
 ): UserTurnNode {
   const value = text.trim();
   const node = new UserTurnNode(
@@ -162,6 +224,7 @@ export function $createUserTurnNode(
     value,
     '',
     accepted,
+    avatar,
   );
   if (value.length > 0) $appendMarkdown(node, value);
   node.__written = node.getTextContent();

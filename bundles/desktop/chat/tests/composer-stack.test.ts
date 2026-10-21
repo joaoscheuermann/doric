@@ -9,12 +9,9 @@ import { describe, test } from 'node:test';
 import {
   anchorLabel,
   caretAfterRemoval,
-  itemAnchorLabel,
   itemData,
-  itemTarget,
   type NoteCaretState,
   noteKeyAction,
-  stackHasWords,
 } from '../src/client/domain/composer-stack.js';
 import { builtInClaims } from '../src/client/domain/external-blocks.js';
 import {
@@ -113,18 +110,6 @@ describe('anchorLabel', () => {
       undefined,
     );
   });
-
-  test('reads the target a stack item carries', () => {
-    const target = {
-      kind: 'preview',
-      id: 'checkout-1',
-      anchor: { form: 'source', path: 'src/components/Checkout.tsx', line: 42 },
-    };
-
-    assert.deepEqual(itemTarget(item({ target })), target);
-    assert.equal(itemAnchorLabel(item({ target })), 'Checkout.tsx:42');
-    assert.equal(itemAnchorLabel(item({})), undefined);
-  });
 });
 
 describe('itemData', () => {
@@ -164,10 +149,38 @@ describe('itemData', () => {
   });
 });
 
-describe('stackHasWords', () => {
-  test('counts only the items with a note', () => {
-    assert.equal(stackHasWords([{ ...item({}), note: ' ' }]), false);
-    assert.equal(stackHasWords([item({})]), true);
+describe("itemData's seat", () => {
+  const seatOfData = (data: unknown) => itemData(item(data)).seat;
+
+  test('reads the turn and 0-based block the words start in, where in it they start, and where the comment stands', () => {
+    assert.deepEqual(seatOfData({ seat: { turn: 'agent:p:3', block: 2 } }), {
+      turn: 'agent:p:3',
+      block: 2,
+    });
+    const placed = { turn: 't', block: 1, at: 7, after: 2, item: 0 };
+    assert.deepEqual(seatOfData({ seat: placed }), placed);
+  });
+
+  test('answers no seat for an item without one, or without a turn and a 0-based block', () => {
+    assert.equal(seatOfData({}), undefined);
+    assert.equal(
+      seatOfData({ seat: { turn: 'agent:p:3', block: -1 } }),
+      undefined,
+    );
+    assert.equal(seatOfData({ seat: { turn: '', block: 2 } }), undefined);
+    assert.equal(
+      seatOfData({ seat: { turn: 'agent:p:3', block: '2' } }),
+      undefined,
+    );
+  });
+
+  test('keeps the seat but drops a place that is not an index', () => {
+    assert.deepEqual(
+      seatOfData({
+        seat: { turn: 't', block: 1, at: -2, after: -1, item: 'x' },
+      }),
+      { turn: 't', block: 1 },
+    );
   });
 });
 
@@ -210,15 +223,21 @@ describe('noteKeyAction', () => {
     );
   });
 
-  test('leaves the last note down into the start of the prompt, and stays in the first going up', () => {
+  test('leaves the last note down into the start of the prompt, and the first one up to the comments’ header', () => {
     assert.deepEqual(noteKeyAction(key('ArrowDown'), { ...middle, index: 2 }), {
       kind: 'move',
       to: 'prompt',
       atEnd: false,
     });
     assert.deepEqual(noteKeyAction(key('ArrowUp'), { ...middle, index: 0 }), {
-      kind: 'default',
+      kind: 'move',
+      to: 'header',
     });
+    // A wrapped first note keeps its own line move up.
+    assert.deepEqual(
+      noteKeyAction(key('ArrowUp'), { ...middle, index: 0, firstLine: false }),
+      { kind: 'default' },
+    );
   });
 
   test('moves on with Enter, to the next note or the end of the prompt, and back to the prompt with Escape', () => {

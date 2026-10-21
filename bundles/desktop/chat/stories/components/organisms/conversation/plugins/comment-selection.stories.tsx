@@ -3,7 +3,6 @@ import { $isElementNode, $isTextNode, type LexicalNode } from 'lexical';
 import { CommentSelection } from '../../../../../src/client/components/organisms/conversation/plugins/comment-selection.js';
 import {
   answer,
-  nodesThread,
   promptIdOf,
   turnsOfLog,
 } from '../../../../support/conversation.js';
@@ -35,7 +34,10 @@ export default {
   component: CommentSelection,
 };
 
-/** Text selected in one of the agent's messages: the Comment control shows. */
+/**
+ * Text selected in one of the agent's messages: nothing opens yet — the first
+ * character typed over it opens a comment closing the block the words end in.
+ */
 export const MessageSelected = {
   render: () => (
     <ConversationEditor
@@ -43,13 +45,11 @@ export const MessageSelected = {
         const blocks = $appendTurns(turns);
         firstText(blocks.at(-1))?.select(4, 47);
       }}
-    >
-      <CommentSelection thread={nodesThread} />
-    </ConversationEditor>
+    />
   ),
 };
 
-/** Text selected in the reader's own prompt: no control, it is not a message. */
+/** Text selected in the reader's own prompt: no comment, it is not a message. */
 export const PromptSelected = {
   render: () => (
     <ConversationEditor
@@ -57,8 +57,6 @@ export const PromptSelected = {
         const blocks = $appendTurns(turns);
         firstText(blocks[0])?.select(0, 12);
       }}
-    >
-      <CommentSelection thread={nodesThread} />
-    </ConversationEditor>
+    />
   ),
 };

@@ -177,6 +177,111 @@ describe('comments/v1.add', () => {
     }
   });
 
+  test('keeps the turn, block, offset and list item of a range anchor that names where it sits', async () => {
+    const harness = await commentsHarness();
+    const seated: CommentTarget = {
+      kind: 'message',
+      id: 'prompt-1',
+      anchor: {
+        form: 'range',
+        text: 'essa resposta',
+        turn: 'agent:p:3',
+        block: 2,
+        at: 14,
+        item: 1,
+      },
+    };
+
+    try {
+      const comment = await harness.comments.add(
+        { target: seated, text: 'nessa linha' },
+        harness.call(),
+      );
+
+      assert.deepEqual(comment.target, seated);
+      const listed = await harness.comments.list({}, harness.call());
+      assert.deepEqual(listed[0]?.target, seated);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('refuses a seat whose block, offset or item is not a 0-based index, or an offset or item without its seat', async () => {
+    const harness = await commentsHarness();
+
+    try {
+      for (const anchor of [
+        { form: 'range', text: 'essa resposta', turn: 'agent:p:3', block: -1 },
+        { form: 'range', text: 'essa resposta', turn: '', block: 2 },
+        { form: 'range', text: 'essa resposta', turn: 'agent:p:3', block: 1.5 },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          at: -1,
+        },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          at: 0.5,
+        },
+        { form: 'range', text: 'essa resposta', at: 3 },
+        {
+          form: 'range',
+          text: 'essa resposta',
+          turn: 'agent:p:3',
+          block: 2,
+          item: -1,
+        },
+        { form: 'range', text: 'essa resposta', item: 0 },
+      ]) {
+        await assert.rejects(
+          () =>
+            harness.comments.add(
+              {
+                target: { kind: 'message', id: 'prompt-1', anchor } as never,
+                text: 'nota',
+              },
+              harness.call(),
+            ),
+          codeOf('invalid_input'),
+          JSON.stringify(anchor),
+        );
+      }
+
+      assert.equal(harness.log.rows.length, 0);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('still accepts an anchor that names no seat, so older comments keep working', async () => {
+    const harness = await commentsHarness();
+    const unseated: CommentTarget = {
+      kind: 'message',
+      id: 'prompt-1',
+      anchor: { form: 'range', text: 'essa resposta' },
+    };
+
+    try {
+      const comment = await harness.comments.add(
+        { target: unseated, text: 'nota antiga' },
+        harness.call(),
+      );
+
+      assert.deepEqual(comment.target, unseated);
+      assert.deepEqual(
+        (await harness.comments.list({}, harness.call()))[0]?.target,
+        unseated,
+      );
+    } finally {
+      await harness.close();
+    }
+  });
+
   test('leaves an absent author absent, in the record and in the event', async () => {
     const harness = await commentsHarness();
 

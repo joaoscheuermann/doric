@@ -20,6 +20,7 @@ import {
 } from '../../../../domain/conversation-sync.js';
 import type { Turn } from '../../../../domain/projector.js';
 import { terminalResultEquals } from '../../../../domain/terminal-result.js';
+import { THREAD_SPAWN_TOOL } from '../../../../domain/thread-spawn.js';
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -89,6 +90,11 @@ import {
   type ThinkingTurnNode,
 } from '../nodes/thinking-turn-node.js';
 import {
+  $createThreadSpawnNode,
+  $isThreadSpawnNode,
+  type ThreadSpawnNode,
+} from '../nodes/thread-spawn-node.js';
+import {
   $createToolTurnNode,
   $isToolTurnNode,
   type ToolTurnNode,
@@ -98,6 +104,7 @@ import {
   $isTurnAuthorNode,
   type TurnAuthorNode,
 } from '../nodes/turn-author-node.js';
+import { READER_AVATAR, type TurnAvatar } from '../nodes/turn-avatar.js';
 import {
   $createUserPromptNode,
   $getUserPromptNode,
@@ -120,6 +127,7 @@ type TurnBlock =
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
+  | ThreadSpawnNode
   | ActivityTurnNode
   | LifecycleTurnNode
   | CompactionTurnNode
@@ -146,6 +154,7 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
+  $isThreadSpawnNode(node) ||
   $isActivityTurnNode(node) ||
   $isLifecycleTurnNode(node) ||
   $isCompactionTurnNode(node) ||
@@ -199,6 +208,8 @@ const $createBlock = (
         turn.items,
       );
     case 'tool_call':
+      if (turn.name === THREAD_SPAWN_TOOL)
+        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,
@@ -238,14 +249,21 @@ const $createBlock = (
  * Whether the turn trails the author line it should: a turn gains one it lacks
  * and loses one it should not wear. Its block stays where it is, so the line is
  * inserted after the block rather than regenerated with the root, and a line
- * that is only out of date keeps its element and takes the new time. Returns the
- * line the turn now trails, so the sync can place the next block after it.
+ * that is only out of date keeps its element and takes the new time. The same
+ * draft names the mark the block draws in its gutter, so the line and the mark
+ * are set together and a turn that wears no line wears no mark. Returns the line
+ * the turn now trails, so the sync can place the next block after it.
  */
 const $syncAuthor = (
   unit: TurnUnit,
   draft: AuthorDraft | null,
 ): TurnAuthorNode | null => {
   const current = unit.author;
+  const avatar: TurnAvatar =
+    draft === null ? null : { role: draft.role, name: draft.name };
+  if ($isUserTurnNode(unit.block) || $isAgentTurnNode(unit.block))
+    unit.block.setAvatar(avatar);
+
   if (draft === null) {
     current?.remove();
     return null;
@@ -403,7 +421,10 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     block.setTurn(turn);
   else if (turn.type === 'thinking' && $isThinkingTurnNode(block))
     block.setTurn(turn);
-  else if (turn.type === 'tool_call' && $isToolTurnNode(block))
+  else if (
+    turn.type === 'tool_call' &&
+    ($isToolTurnNode(block) || $isThreadSpawnNode(block))
+  )
     block.setTurn(turn);
   else if (turn.type === 'activity' && $isActivityTurnNode(block))
     block.setTurn(turn);
@@ -420,9 +441,11 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
 /**
  * Seats the comments a user turn wears — the `comments.added/v1` events the
  * send flushed just below its words — directly above the turn block, where
- * they read as the same lines the stack drew before the reader sent. A turn
- * without comments keeps none, and a block that is not a user turn wears
- * nothing.
+ * they open the turn as the same group the stack drew inside the prompt
+ * before the reader sent, wearing the turn's mark (set by `$syncAuthor` just
+ * before) in its place, so the block's words wear none. A turn without
+ * comments keeps none, and its mark, and a block that is not a user turn
+ * wears nothing.
  */
 const $syncTurnComments = (block: LexicalNode, turn: Turn): void => {
   if (!$isUserTurnNode(block)) return;
@@ -433,14 +456,17 @@ const $syncTurnComments = (block: LexicalNode, turn: Turn): void => {
 
   if (comments.length === 0) {
     if ($isCommentLinesNode(previous)) previous.remove();
+    block.setAvatarMoved(false);
     return;
   }
 
   const node = $isCommentLinesNode(previous)
     ? previous
     : $createCommentLinesNode(turn.promptId);
-  if (node.getPreviousSibling() !== block) block.insertBefore(node);
+  if (node.getNextSibling() !== block) block.insertBefore(node);
   node.setComments(comments);
+  node.setAvatar(block.getLatest().__avatar);
+  block.setAvatarMoved(true);
 };
 
 /**
@@ -493,6 +519,7 @@ const $settlePrompt = (thread: {
       }
     }
     if (!hasDuplicateTailNodes) {
+      tailPrompt.setAvatar(READER_AVATAR);
       return tailPrompt;
     }
   }
@@ -516,6 +543,9 @@ const $settlePrompt = (thread: {
     author = $createTurnAuthorNode('user', READER_NAME, undefined);
     prompt.insertAfter(author);
   }
+  // The prompt is the reader's next turn, so it wears the reader's mark in its
+  // gutter, as the turn the reader sent does.
+  prompt.setAvatar(READER_AVATAR);
 
   // The pair stays the conversation's tail, so nothing follows the author line.
   if (root.getLastChild() !== author) {

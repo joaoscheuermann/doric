@@ -8,9 +8,10 @@
 // - A stream that ends with a failure reports
 //   'The Project event stream failed.' and stays ended, as the socket the
 //   host disconnected after `workspace:error` did.
-// - A dropped connection (`disconnected`, `unavailable`) reports nothing and
-//   subscribes again, the way Socket.IO reconnected: when the connection
-//   reports `connected`, or after one second when it never went down.
+// - A dropped connection (`disconnected`, `unavailable`) or a lost host
+//   generation (`generation_lost`) reports nothing and subscribes again, the
+//   way Socket.IO reconnected: when the connection reports `connected`, or
+//   after one second when it never went down.
 
 import {
   type ConnectionStatus,
@@ -58,9 +59,8 @@ export interface ProjectWatch {
 }
 
 const silent = (error: ContractError | undefined): boolean =>
-  error !== undefined &&
   isContractError(error) &&
-  (error.code === 'disconnected' || error.code === 'unavailable');
+  ['disconnected', 'unavailable', 'generation_lost'].includes(error.code);
 
 /** The update an item is for `projectId`, or undefined when it is another's. */
 export const projectUpdateOf = (

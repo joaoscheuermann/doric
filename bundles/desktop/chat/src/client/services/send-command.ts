@@ -9,8 +9,9 @@
 // The Thread is the one whose conversation holds the focus (a side panel shows
 // another Thread than the route), else the one the route names. Before the
 // send reads the stack, `doric:prompt-send` lets a surface confirm a note the
-// reader has not confirmed yet, and the stack is read back from the service so
-// the note just added goes with the prompt.
+// reader has not confirmed yet, the note edits the stack still holds reach the
+// service, and the stack is read back from the service so the note just added
+// goes with the prompt.
 
 import { defineCommand, type Navigation, NavigationV1 } from 'bundle/contracts';
 import { z } from 'zod';
@@ -69,8 +70,12 @@ const settleBeforeSend = async (
     },
   };
   document.dispatchEvent(new CustomEvent(PROMPT_SEND_EVENT, { detail }));
+  // A note edit the stack still holds reaches the service before the send,
+  // whose flush writes the comments the service holds.
+  composerStackStore.getState().flushNotes(threadId);
   if (pending.length === 0) return;
   await Promise.allSettled(pending);
+  // The read-back hands the service what was written meanwhile first.
   await composerStackStore.getState().sync(threadId);
 };
 

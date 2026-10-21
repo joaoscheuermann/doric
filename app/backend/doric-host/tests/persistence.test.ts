@@ -888,6 +888,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20261009000000_generic_storage',
     '20261010000000_runtime_documents',
     '20261012000000_registered_credential_kinds',
+    '20261021000000_coalesce_thread_deltas',
     'migration_lock.toml',
   ]);
   assert.deepEqual(

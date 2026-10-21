@@ -28,6 +28,7 @@ import {
   COMMENT_ID_PATTERN,
   type Comment,
   type CommentAddInput,
+  type CommentAnchor,
   type CommentListInput,
   type CommentResolveInput,
   CommentsV1,
@@ -187,6 +188,30 @@ const scopeComments = async (
   return perThread.flat();
 };
 
+/** Whether a value is a non-negative whole number. */
+const isIndex = (value: number | undefined): value is number =>
+  value !== undefined && Number.isInteger(value) && value >= 0;
+
+/**
+ * Whether the range anchor's seat — the turn and 0-based block it names, how
+ * far into the block the text starts and the list item it starts in — is
+ * malformed: a turn without words of its own, a block, an offset or an item
+ * that is not a non-negative whole number, or an offset or item without the
+ * turn and block they count in. An anchor that names no seat is not
+ * malformed; it keeps the placement it had before the fields existed.
+ */
+const malformedSeat = ({ turn, block, at, item }: CommentAnchor): boolean => {
+  if ([turn, block, at, item].every((field) => field === undefined))
+    return false;
+
+  return (
+    !turn ||
+    !isIndex(block) ||
+    (at !== undefined && !isIndex(at)) ||
+    (item !== undefined && !isIndex(item))
+  );
+};
+
 /**
  * Writes one comment under the call's Thread. The caller may choose the id and
  * the root it answers; without an id one is generated. A comment of the log
@@ -199,6 +224,14 @@ export const addComment = async (
   input: CommentAddInput,
 ): Promise<Comment> => {
   const text = input.text.trim();
+
+  if (malformedSeat(input.target.anchor)) {
+    throw new ContractError(
+      'invalid_input',
+      'A comment seat needs a turn and a 0-based block.',
+      { target: input.target },
+    );
+  }
 
   if (text.length === 0) {
     throw new ContractError('invalid_input', 'A comment needs text.', {

@@ -1,10 +1,13 @@
 // The composer's stack as one stable, non-editable furniture of the
-// conversation's tail: it stands between the last turn and the block the
-// reader writes in, right below the queue (`$settlePrompt` keeps the tail as
-// `[..., QueueNode, ComposerStackNode, PromptEditNode, UserPromptNode,
-// TurnAuthorNode]`). The node holds only the Thread it draws; what it draws
-// comes from the stack store, which watches the same service the stack state
-// lives in.
+// conversation's tail: the top of the block the reader writes in, right below
+// the queue (`$settlePrompt` keeps the tail as `[..., QueueNode,
+// ComposerStackNode, PromptEditNode, UserPromptNode, TurnAuthorNode]`). While
+// it holds a comment it opens the prompt's block: it wears the reader's mark in
+// the gutter beside its header, and the prompt below it wears none
+// (`styles.css`), so the comments and the words read as one block. Empty, it
+// draws nothing, and its mark with it. The node holds only the Thread it draws;
+// what it draws comes from the stack store, which watches the same service the
+// stack state lives in.
 
 import {
   DecoratorNode,
@@ -18,13 +21,14 @@ import type { JSX } from 'react';
 import { COMPOSER_STACK_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { StackThread } from '../../../../hooks/use-composer-stack.js';
 import { ComposerStack } from '../../composer-stack.js';
+import { applyTurnAvatar, READER_AVATAR } from './turn-avatar.js';
 
 type SerializedComposerStackNode = Spread<
   { threadId: string; projectId: string },
   SerializedLexicalNode
 >;
 
-/** The draft stack above the prompt, one per conversation. */
+/** The draft stack that opens the prompt's block, one per conversation. */
 export class ComposerStackNode extends DecoratorNode<JSX.Element> {
   __thread: StackThread;
 
@@ -45,6 +49,8 @@ export class ComposerStackNode extends DecoratorNode<JSX.Element> {
     const dom = document.createElement('div');
     dom.dataset.composerStack = '';
     dom.contentEditable = 'false';
+    // The prompt is the reader's, and so is the stack that opens it.
+    applyTurnAvatar(dom, READER_AVATAR);
     return dom;
   }
 

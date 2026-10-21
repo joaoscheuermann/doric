@@ -808,6 +808,127 @@ storeTest(
   },
 );
 
+/**
+ * Two turns, the second with three more events: sequences 1 (first turn),
+ * 2 to 5 (second turn), and the history the turns left.
+ */
+const twoTurns = async ({ projects, threads }: Context) => {
+  const { project } = await projects.create('Project', snapshot(), 'blue');
+  const { thread } = await threads.create(project.id, 'Thread');
+  const ids = [randomUUID(), randomUUID()] as const;
+  const messages = [
+    { role: 'user' as const, content: 'first' },
+    { role: 'assistant' as const, content: 'first answer' },
+    { role: 'user' as const, content: 'second' },
+    { role: 'assistant' as const, content: 'second answer' },
+  ];
+  for (const [index, id] of ids.entries()) {
+    await saveCheckpoint(threads, thread.id, id);
+    await threads.appendEvent(thread.id, id, { type: 'prompt.accepted' });
+    await saveMessages(threads, thread.id, messages.slice(0, (index + 1) * 2));
+  }
+  for (const delta of ['a', 'b', 'c'])
+    await threads.appendEvent(thread.id, ids[1], {
+      type: 'text.delta',
+      delta,
+    });
+  return { thread, ids, messages };
+};
+
+storeTest(
+  'rewinds a log with a gap before its tail and continues after its last sequence',
+  async (context) => {
+    const { backend, threads, second } = context;
+    const { thread, ids, messages } = await twoTurns(context);
+    // Sequences 4 and 5 are gone and 6 follows the gap: 1, 2, 3, 6.
+    await backend.storage.commit({
+      truncate: { stream: threadEventsStream(thread.id), afterSequence: 3 },
+    });
+    await threads.appendEvent(thread.id, ids[1], { type: 'text.delta' });
+
+    const marker = await threads.rewind(thread.id, ids[1]);
+
+    assert.equal(marker?.sequence, 7);
+    assert.deepEqual(marker?.event, {
+      type: 'history.truncated',
+      afterSequence: 1,
+    });
+    assert.deepEqual(
+      (await second.threads.eventsAfter(thread.id, 0)).map(
+        ({ sequence }) => sequence,
+      ),
+      [1, 7],
+    );
+    assert.deepEqual(
+      await messagesOf(second.threads, thread.id),
+      messages.slice(0, 2),
+    );
+    assert.equal(
+      (await threads.appendEvent(thread.id, ids[0], { type: 'next' })).sequence,
+      8,
+    );
+  },
+);
+
+storeTest(
+  'rewinds a log whose last entries are gone after the stream counter, not after the last entry',
+  async (context) => {
+    const { backend, threads, second } = context;
+    const { thread, ids } = await twoTurns(context);
+    // The stream assigned 5, but only 1 to 3 survive.
+    await backend.storage.commit({
+      truncate: { stream: threadEventsStream(thread.id), afterSequence: 3 },
+    });
+
+    const marker = await threads.rewind(thread.id, ids[1]);
+
+    assert.equal(marker?.sequence, 6);
+    assert.deepEqual(marker?.event, {
+      type: 'history.truncated',
+      afterSequence: 1,
+    });
+    assert.deepEqual(
+      (await second.threads.eventsAfter(thread.id, 0)).map(
+        ({ sequence }) => sequence,
+      ),
+      [1, 6],
+    );
+    assert.equal((await second.threads.record(thread.id))?.lastSequence, 6);
+    assert.equal(
+      (await threads.appendEvent(thread.id, ids[0], { type: 'next' })).sequence,
+      7,
+    );
+  },
+);
+
+storeTest(
+  'rewinds a turn that follows an earlier rewind’s gap',
+  async (context) => {
+    const { threads, second } = context;
+    const { thread, ids } = await twoTurns(context);
+    // The first rewind leaves 1 and its marker 6; the gap is 2 to 5.
+    await threads.rewind(thread.id, ids[1]);
+    const third = randomUUID();
+    await saveCheckpoint(threads, thread.id, third);
+    await threads.appendEvent(thread.id, third, { type: 'prompt.accepted' });
+    await threads.appendEvent(thread.id, third, { type: 'text.delta' });
+
+    const marker = await threads.rewind(thread.id, third);
+
+    assert.equal(marker?.sequence, 9);
+    assert.deepEqual(marker?.event, {
+      type: 'history.truncated',
+      afterSequence: 6,
+    });
+    assert.deepEqual(
+      (await second.threads.eventsAfter(thread.id, 0)).map(
+        ({ sequence }) => sequence,
+      ),
+      [1, 6, 9],
+    );
+  },
+);
+
 storeTest(
   'refuses a rewind the executor has no turn boundary for',
   async ({ projects, threads }) => {

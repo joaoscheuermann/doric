@@ -741,6 +741,8 @@ export interface MethodPlan {
   readonly oneway?: boolean;
   /** A synchronous registration: a local Disposable now, an acknowledgement later. */
   readonly optimistic?: boolean;
+  /** A stream method: the index of its listener among the input's items. */
+  readonly listener?: number;
   /** Local kinds the input may carry; undefined = plain data. */
   readonly input?: ReadonlySet<LocalKind>;
   /** Local kinds the output may carry; undefined = plain data. */
@@ -1026,7 +1028,17 @@ export const documentPlan = (
     output !== null &&
     (output as Record<string, unknown>)[LOCAL_KEY] === 'disposable'
   ) {
-    return { input: inputKinds, optimistic: true, output: disposableOut };
+    const items = (input as { prefixItems?: unknown }).prefixItems;
+    const listener = Array.isArray(items)
+      ? items.findIndex((item) => streamItemSchema(item) !== undefined)
+      : -1;
+
+    return {
+      input: inputKinds,
+      optimistic: true,
+      output: disposableOut,
+      ...(listener < 0 ? {} : { listener }),
+    };
   }
 
   return {

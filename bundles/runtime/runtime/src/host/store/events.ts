@@ -71,23 +71,37 @@ const readPage = async (
 const cursorOf = (sequence: number): number =>
   Number.isFinite(sequence) ? Math.max(0, Math.floor(sequence)) : 0;
 
-/** Every entry after `sequence`, in order. */
-export const entriesAfter = async (
+/**
+ * Every entry after `sequence`, in order, with the stream's counter: the last
+ * sequence it ever assigned. Sequences are never reused, so the counter can
+ * be past the last entry that survives, and only it says where the next
+ * append goes.
+ */
+export const logAfter = async (
   storage: Storage,
   threadId: string,
   sequence: number,
-): Promise<StreamEntry[]> => {
-  if (sequence === Number.POSITIVE_INFINITY) return [];
+): Promise<{ readonly entries: StreamEntry[]; readonly last: number }> => {
+  if (sequence === Number.POSITIVE_INFINITY) return { entries: [], last: 0 };
   const entries: StreamEntry[] = [];
   let after = cursorOf(sequence);
   for (;;) {
     const page = await readPage(storage, threadId, after, pageSize);
     entries.push(...page.entries);
     const last = page.entries.at(-1);
-    if (last === undefined || last.sequence >= page.last) return entries;
+    if (last === undefined || last.sequence >= page.last)
+      return { entries, last: page.last };
     after = last.sequence;
   }
 };
+
+/** Every entry after `sequence`, in order. */
+export const entriesAfter = async (
+  storage: Storage,
+  threadId: string,
+  sequence: number,
+): Promise<StreamEntry[]> =>
+  (await logAfter(storage, threadId, sequence)).entries;
 
 export const eventsAfter = async (
   storage: Storage,

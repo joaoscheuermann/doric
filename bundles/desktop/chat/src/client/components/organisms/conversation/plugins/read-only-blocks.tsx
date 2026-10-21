@@ -15,7 +15,11 @@
  * reads it back — `CONTROLLED_TEXT_INSERTION_COMMAND` is never dispatched, so
  * only `beforeinput` can refuse it. The deletion commands are here too, for the
  * other half of that: a Backspace in a read-only block is prevented on keydown
- * and never becomes a `beforeinput`.
+ * and never becomes a `beforeinput`. An input method's composition is refused
+ * too — its start, which would replace the selection, its end, and the
+ * controlled insertion either of them dispatches — though the text the browser
+ * itself writes into the DOM while composing can only be undone by the block's
+ * owner (`AgentTurnNode.restore`).
  */
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -24,6 +28,9 @@ import {
   $isRangeSelection,
   BEFORE_INPUT_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
+  COMPOSITION_END_COMMAND,
+  COMPOSITION_START_COMMAND,
+  CONTROLLED_TEXT_INSERTION_COMMAND,
   DELETE_CHARACTER_COMMAND,
   DELETE_LINE_COMMAND,
   DELETE_WORD_COMMAND,
@@ -85,6 +92,21 @@ export function ReadOnlyBlocksPlugin({ isReadOnly }: ReadOnlyBlocksProps) {
           event.preventDefault();
           return true;
         },
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+      editor.registerCommand(
+        CONTROLLED_TEXT_INSERTION_COMMAND,
+        refuse,
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+      editor.registerCommand(
+        COMPOSITION_START_COMMAND,
+        refuse,
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+      editor.registerCommand(
+        COMPOSITION_END_COMMAND,
+        refuse,
         COMMAND_PRIORITY_CRITICAL,
       ),
       editor.registerCommand(

@@ -11,9 +11,12 @@ import { z } from 'zod';
 
 import {
   type CatalogChange,
+  ContractError,
   DoricCatalogV1,
   defineMethod,
   defineService,
+  disposableSchema,
+  ref,
   type StreamListener,
   streamListener,
   toStreamObserver,
@@ -178,6 +181,149 @@ void test('doric.catalog/v1 watch delivers items across the envelope until dispo
   second.dispose();
   await tick();
   assert.equal(listeners.size, 0);
+});
+
+interface Watch {
+  watch(
+    id: string,
+    listener: StreamListener<{ readonly id: string }>,
+  ): { dispose(): void };
+}
+
+const WatchV1 = ref<Watch>('demo.watch/v1');
+
+const watchService = (held: StreamListener<{ id: string }>[]) =>
+  defineService('demo.watch/v1', {
+    watch: defineMethod({
+      input: z.tuple([
+        z.string(),
+        streamListener(z.object({ id: z.string() }).strict()),
+      ]),
+      output: disposableSchema,
+      execute: ([, listener]) => {
+        held.push(listener);
+
+        return { dispose: () => undefined };
+      },
+    }),
+  });
+
+void test('a stream across the envelope ends once with generation_lost when the generation is lost', async () => {
+  const world = processes();
+  const held: StreamListener<{ id: string }>[] = [];
+
+  world.generation.principal('demo').services.provide(watchService(held));
+  world.generation.expose('demo.watch/v1', 'demo');
+  await tick();
+
+  const items: unknown[] = [];
+  const ends: (ContractError | undefined)[] = [];
+  const stream = world.kernel
+    .principal('transport')
+    .services.use(WatchV1)
+    .watch('a', {
+      next: (item) => items.push(item),
+      end: (error) => ends.push(error),
+    });
+
+  await tick();
+  assert.equal(held.length, 1);
+  toStreamObserver(held[0] as StreamListener<{ id: string }>).next({
+    id: 'x',
+  });
+  await tick();
+  assert.deepEqual(items, [{ id: 'x' }]);
+
+  world.transports.sever();
+  await tick();
+
+  assert.deepEqual(
+    ends.map((error) => error?.code),
+    ['generation_lost'],
+  );
+  stream.dispose();
+});
+
+void test('a stream the provider ended leaves the link and is not ended again when the generation is lost', async () => {
+  const world = processes();
+  const held: StreamListener<{ id: string }>[] = [];
+
+  world.generation.principal('demo').services.provide(watchService(held));
+  world.generation.expose('demo.watch/v1', 'demo');
+  await tick();
+
+  const ends: (ContractError | undefined)[] = [];
+
+  world.kernel
+    .principal('transport')
+    .services.use(WatchV1)
+    .watch('a', { next: () => undefined, end: (error) => ends.push(error) });
+
+  await tick();
+  assert.equal(world.kernel.link.openStreams, 1);
+  toStreamObserver(held[0] as StreamListener<{ id: string }>).end?.();
+  await tick();
+  // The link no longer holds the ended stream, though nothing disposed it.
+  assert.equal(world.kernel.link.openStreams, 0);
+  world.transports.sever();
+  await tick();
+
+  assert.deepEqual(ends, [undefined]);
+});
+
+void test('a disposed stream is not ended when the generation is lost', async () => {
+  const world = processes();
+  const held: StreamListener<{ id: string }>[] = [];
+
+  world.generation.principal('demo').services.provide(watchService(held));
+  world.generation.expose('demo.watch/v1', 'demo');
+  await tick();
+
+  const ends: (ContractError | undefined)[] = [];
+  const stream = world.kernel
+    .principal('transport')
+    .services.use(WatchV1)
+    .watch('a', { next: () => undefined, end: (error) => ends.push(error) });
+
+  await tick();
+  stream.dispose();
+  world.transports.sever();
+  await tick();
+
+  assert.deepEqual(ends, []);
+});
+
+void test('a stream the provider refuses across the envelope ends with the refusal', async () => {
+  const world = processes();
+  const refusing = defineService('demo.watch/v1', {
+    watch: defineMethod({
+      input: z.tuple([
+        z.string(),
+        streamListener(z.object({ id: z.string() }).strict()),
+      ]),
+      output: disposableSchema,
+      execute: () => {
+        throw new ContractError('not_found', 'No such watch.');
+      },
+    }),
+  });
+
+  world.generation.principal('demo').services.provide(refusing);
+  world.generation.expose('demo.watch/v1', 'demo');
+  await tick();
+
+  const ends: (ContractError | undefined)[] = [];
+
+  world.kernel
+    .principal('transport')
+    .services.use(WatchV1)
+    .watch('a', { next: () => undefined, end: (error) => ends.push(error) });
+  await tick();
+
+  assert.deepEqual(
+    ends.map((error) => error?.code),
+    ['not_found'],
+  );
 });
 
 void test('the envelope parses the end kind and the lifecycle control messages', () => {

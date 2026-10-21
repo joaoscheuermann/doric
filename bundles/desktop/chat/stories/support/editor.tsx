@@ -1,5 +1,5 @@
 // The conversation editor a node story draws in: the same Lexical node set,
-// theme and read-only rules the conversation registers
+// theme, read-only rules and comment plugins the conversation registers
 // (`src/client/components/organisms/conversation/index.tsx`), seeded with an
 // initial editor state that holds only the blocks a story needs, inside the
 // window state those blocks read (`stories/support/conversation.ts`).
@@ -8,8 +8,15 @@
 // freezes `chat.lexical/v1` when it is built, so the node list is repeated
 // here; stories register no `chat.lexical/v1` additions. Turns become blocks
 // the way `InsertThreadTurnNodes` builds them on a fresh editor: one block
-// per turn, the comment lines above a user turn that carries them, and the
-// author line the sync plan names after the block.
+// per turn, the mark it wears in its gutter, the comment lines above a user
+// turn that carries them, and the footer the sync plan names after the block.
+// The editor sits in the conversation's own column, because the gutter mark
+// hangs outside that column and a story without it would not show the mark.
+//
+// A comment in an answer is seated as the conversation seats it: by typing
+// over a selection in an agent message (`CommentSelection`), or by a stack
+// item the story host's composer draft holds (`CommentSeats`). A seat a seed
+// opens by hand, which neither claims, is taken away again.
 
 import { CodeNode } from '@lexical/code';
 import { HistoryExtension } from '@lexical/history';
@@ -20,6 +27,7 @@ import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionCompose
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { Marker, MarkerContent } from 'desktop/ui/marker';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
   $createNodeSelection,
@@ -27,10 +35,14 @@ import {
   $getRoot,
   $setSelection,
   configExtension,
+  DecoratorNode,
   defineExtension,
   type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
 } from 'lexical';
-import { type ReactNode, useState } from 'react';
+import { type JSX, type ReactNode, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 import { GenericBlock } from '../../src/client/components/molecules/generic-block.js';
@@ -41,8 +53,10 @@ import {
 } from '../../src/client/components/organisms/conversation/nodes/activity-turn-node.js';
 import {
   $createAgentTurnNode,
+  $isAgentTurnNode,
   AgentTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/agent-turn-node.js';
+import { AttachmentImageNode } from '../../src/client/components/organisms/conversation/nodes/attachment-image-node.js';
 import {
   CHAT_BLOCK_NODE,
   ChatBlockNode,
@@ -53,6 +67,7 @@ import {
   $createCommentLinesNode,
   CommentLinesNode,
 } from '../../src/client/components/organisms/conversation/nodes/comment-lines-node.js';
+import { CommentSeatNode } from '../../src/client/components/organisms/conversation/nodes/comment-seat-node.js';
 import {
   $createCompactionTurnNode,
   CompactionTurnNode,
@@ -90,6 +105,10 @@ import {
   ThinkingTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/thinking-turn-node.js';
 import {
+  $createThreadSpawnNode,
+  ThreadSpawnNode,
+} from '../../src/client/components/organisms/conversation/nodes/thread-spawn-node.js';
+import {
   $createToolTurnNode,
   ToolTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/tool-turn-node.js';
@@ -103,9 +122,13 @@ import {
 } from '../../src/client/components/organisms/conversation/nodes/user-prompt-node.js';
 import {
   $createUserTurnNode,
+  $isUserTurnNode,
   UserTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/user-turn-node.js';
 import { CaretNavigation } from '../../src/client/components/organisms/conversation/plugins/caret-navigation.js';
+import { CommentHighlights } from '../../src/client/components/organisms/conversation/plugins/comment-highlights.js';
+import { CommentSeats } from '../../src/client/components/organisms/conversation/plugins/comment-seats.js';
+import { CommentSelection } from '../../src/client/components/organisms/conversation/plugins/comment-selection.js';
 import { MarkdownPromptPlugin } from '../../src/client/components/organisms/conversation/plugins/markdown-prompt.js';
 import { PasteIntoPrompt } from '../../src/client/components/organisms/conversation/plugins/paste-into-prompt.js';
 import { PromptLineBreaks } from '../../src/client/components/organisms/conversation/plugins/prompt-line-breaks.js';
@@ -121,6 +144,7 @@ import {
 } from '../../src/client/domain/conversation-nodes.js';
 import { syncPlan } from '../../src/client/domain/conversation-sync.js';
 import type { Turn } from '../../src/client/domain/projector.js';
+import { THREAD_SPAWN_TOOL } from '../../src/client/domain/thread-spawn.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { CommentThreadsContext } from '../../src/client/hooks/use-comment-threads.js';
 import { ConversationThreadContext } from '../../src/client/hooks/use-live-terminal.js';
@@ -238,6 +262,76 @@ export function StoryWindow({
 
 // The editor ------------------------------------------------------------------
 
+/** The block that heads one section of a grouped transcript. */
+const SECTION_CAPTION_BLOCK = 'chat-story-section-caption';
+
+type SerializedSectionCaptionNode = Spread<
+  { text: string },
+  SerializedLexicalNode
+>;
+
+/**
+ * A section's caption in a grouped transcript: the quiet, labelled separator a
+ * story puts between the turns of one kind and the turns of the next, drawn with
+ * the conversation's own `Marker` furniture. The platform never writes one — a
+ * transcript is a single unbroken conversation — so the block lives with the
+ * story editor and not in `src`.
+ */
+export class SectionCaptionNode extends DecoratorNode<JSX.Element> {
+  __text: string;
+
+  constructor(text: string, key?: NodeKey) {
+    super(key);
+    this.__text = text;
+  }
+
+  static override getType(): string {
+    return SECTION_CAPTION_BLOCK;
+  }
+
+  static override clone(node: SectionCaptionNode): SectionCaptionNode {
+    return new SectionCaptionNode(node.__text, node.__key);
+  }
+
+  override createDOM(): HTMLElement {
+    const dom = document.createElement('div');
+    dom.contentEditable = 'false';
+    return dom;
+  }
+
+  override updateDOM(): boolean {
+    return false;
+  }
+
+  override isInline(): boolean {
+    return false;
+  }
+
+  override decorate(): JSX.Element {
+    return (
+      <Marker variant="separator" className="my-6 gap-1.5 text-xs">
+        <MarkerContent className="uppercase tracking-wide">
+          {this.__text}
+        </MarkerContent>
+      </Marker>
+    );
+  }
+
+  override exportJSON(): SerializedSectionCaptionNode {
+    return { ...super.exportJSON(), text: this.__text };
+  }
+
+  static override importJSON(
+    value: SerializedSectionCaptionNode,
+  ): SectionCaptionNode {
+    return $createSectionCaptionNode(value.text);
+  }
+}
+
+/** The caption row a grouped transcript puts above a section's turns. */
+export const $createSectionCaptionNode = (text: string): SectionCaptionNode =>
+  new SectionCaptionNode(text);
+
 /** The conversation's node list, in the order its extension declares it. */
 const conversationNodes = [
   UserTurnNode,
@@ -246,6 +340,7 @@ const conversationNodes = [
   AgentTurnNode,
   ThinkingTurnNode,
   ToolTurnNode,
+  ThreadSpawnNode,
   TurnAuthorNode,
   ActivityTurnNode,
   LifecycleTurnNode,
@@ -253,11 +348,13 @@ const conversationNodes = [
   QueueNode,
   ComposerStackNode,
   CommentLinesNode,
+  CommentSeatNode,
   PromptEditNode,
   QueuedTurnNode,
   FailureTurnNode,
   RepliesTurnNode,
   UserPromptNode,
+  AttachmentImageNode,
   HeadingNode,
   QuoteNode,
   ListNode,
@@ -268,6 +365,7 @@ const conversationNodes = [
   TableRowNode,
   TableCellNode,
   ChatBlockNode,
+  SectionCaptionNode,
 ];
 
 const storyExtension = (seed: () => void) =>
@@ -297,7 +395,7 @@ export function ConversationEditor({
 }: Omit<StoryWindowProps, 'children'> & {
   /** Builds the root's blocks; runs once, as the editor's initial state. */
   readonly seed: () => void;
-  /** Plugins beside the conversation's read-only and prompt rules. */
+  /** Plugins beside the conversation's read-only, prompt and comment rules. */
   readonly children?: ReactNode;
 }) {
   const [extension] = useState(() => storyExtension(seed));
@@ -307,23 +405,28 @@ export function ConversationEditor({
 
   return (
     <StoryWindow {...window}>
-      <div className="flex min-w-0 w-full flex-col text-sm font-light">
-        <LexicalExtensionComposer
-          extension={extension}
-          contentEditable={contentEditable}
-        >
-          <UndeletableBlocksPlugin
-            isReadOnly={isReadOnlyBlock}
-            isUndeletable={isUndeletableNode}
-          />
-          <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-          <CaretNavigation />
-          <TableBlocksPlugin />
-          <MarkdownPromptPlugin />
-          <PromptLineBreaks />
-          <PasteIntoPrompt />
-          {children}
-        </LexicalExtensionComposer>
+      <div className="conversation-scroll">
+        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
+          <LexicalExtensionComposer
+            extension={extension}
+            contentEditable={contentEditable}
+          >
+            <UndeletableBlocksPlugin
+              isReadOnly={isReadOnlyBlock}
+              isUndeletable={isUndeletableNode}
+            />
+            <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+            <CaretNavigation />
+            <TableBlocksPlugin />
+            <MarkdownPromptPlugin />
+            <PromptLineBreaks />
+            <PasteIntoPrompt />
+            {children}
+            <CommentSelection />
+            <CommentSeats />
+            <CommentHighlights />
+          </LexicalExtensionComposer>
+        </div>
       </div>
     </StoryWindow>
   );
@@ -401,6 +504,8 @@ const $createTurnBlock = (
         turn.items,
       );
     case 'tool_call':
+      if (turn.name === THREAD_SPAWN_TOOL)
+        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,
@@ -458,7 +563,11 @@ export const $appendTurns = (
       root.append($createCommentLinesNode(turn.promptId, turn.comments));
     const block = $createTurnBlock(turn, step.key, onResume);
     root.append(block);
-    if (step.author !== null)
+    if (step.author !== null) {
+      // The mark the block draws in its gutter is the author line's own author,
+      // so a story seeds both together, as the sync does.
+      if ($isUserTurnNode(block) || $isAgentTurnNode(block))
+        block.setAvatar({ role: step.author.role, name: step.author.name });
       root.append(
         $createTurnAuthorNode(
           step.author.role,
@@ -466,6 +575,7 @@ export const $appendTurns = (
           step.author.at,
         ),
       );
+    }
     blocks.push(block);
   }
   return blocks;
@@ -482,6 +592,9 @@ export const $appendPromptTail = (
   const root = $getRoot();
   const queue = new QueueNode(thread.id);
   const prompt = $createUserPromptNode();
+  // The prompt is the reader's next turn, so it wears the reader's mark in its
+  // gutter, as the turn the reader sent does.
+  prompt.setAvatar({ role: 'user', name: READER_NAME });
   if (words.length > 0) prompt.append($createTextNode(words));
   root.append(
     queue,

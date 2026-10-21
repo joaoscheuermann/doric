@@ -1,8 +1,9 @@
-// The caret between the prompt and the comment stack above it. The stack's
-// notes are editing hosts of their own inside the conversation's document, so
-// the editor cannot walk into them: ArrowUp on the prompt's first line puts the
-// caret at the end of the last note here, and a note hands the caret back to
-// the prompt through `focusPrompt`.
+// The caret between the prompt's words and the comment stack drawn above them,
+// inside the prompt's block. The stack's notes are editing hosts of their own
+// inside the conversation's document, so the editor cannot walk into them:
+// ArrowUp on the prompt's first line puts the caret at the end of the last
+// note here — or, while the stack is folded, on its header — and a note hands
+// the caret back to the prompt through `focusPrompt`.
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -26,12 +27,26 @@ import {
   type UserPromptNode,
 } from '../nodes/user-prompt-node.js';
 
+/** The notes of the stack's own list, never a comment written inline. */
+export const STACK_NOTES_SELECTOR = `[data-composer-stack-list] [${STACK_NOTE_ATTRIBUTE}]`;
+
+/** The header that folds the stack's comments. */
+export const STACK_HEADER_SELECTOR = '[data-comment-group-header]';
+
 /** The stack's notes the editor shows, in stack order. */
-export const stackNotes = (editor: LexicalEditor): HTMLElement[] => [
+const stackNotes = (editor: LexicalEditor): HTMLElement[] => [
   ...(editor
     .getRootElement()
-    ?.querySelectorAll<HTMLElement>(`[${STACK_NOTE_ATTRIBUTE}]`) ?? []),
+    ?.querySelectorAll<HTMLElement>(STACK_NOTES_SELECTOR) ?? []),
 ];
+
+/** The stack's header, while the stack holds a comment. */
+const stackHeader = (editor: LexicalEditor): HTMLElement | null =>
+  editor
+    .getRootElement()
+    ?.querySelector<HTMLElement>(
+      `[data-composer-stack] ${STACK_HEADER_SELECTOR}`,
+    ) ?? null;
 
 /** Puts the caret in the prompt, at its start or its end. */
 export const focusPrompt = (editor: LexicalEditor, atEnd: boolean): void => {
@@ -97,7 +112,10 @@ const $onFirstLine = (
   return rect.top - element.getBoundingClientRect().top < line * 0.8;
 };
 
-/** ArrowUp from the prompt's first line into the stack's last note. */
+/**
+ * ArrowUp from the prompt's first line into the stack's last note, or onto
+ * its header while the stack is folded.
+ */
 export function StackCaret() {
   const [editor] = useLexicalComposerContext();
 
@@ -116,10 +134,12 @@ export function StackCaret() {
           const anchor = selection.anchor.getNode();
           if (!anchor.is(prompt) && !$hasAncestor(anchor, prompt)) return false;
           const last = stackNotes(editor).at(-1);
-          if (last === undefined) return false;
+          const header = last === undefined ? stackHeader(editor) : null;
+          if (last === undefined && header === null) return false;
           if (!$onFirstLine(editor, prompt, selection)) return false;
           event.preventDefault();
-          placeCaret(last, true);
+          if (last !== undefined) placeCaret(last, true);
+          else header?.focus({ preventScroll: true });
           return true;
         },
         COMMAND_PRIORITY_CRITICAL,

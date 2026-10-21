@@ -1,6 +1,10 @@
-import type { MethodSpecs } from '../../contracts/basic/common.js';
+import type {
+  MethodSpecs,
+  StreamObserver,
+} from '../../contracts/basic/common.js';
 import { basicContractSpec } from '../../contracts/basic/index.js';
 import type { Call } from '../../contracts/call.js';
+import type { ContractError } from '../../contracts/error.js';
 import { platformContracts } from '../../contracts/platform.js';
 import type { JsonObject } from '../../contracts/types.js';
 import type { Directory, ProviderRecord } from '../directory.js';
@@ -22,6 +26,46 @@ export type { RemoteProviderDescriptor } from './messages.js';
 
 const isPlatformSpec = (id: string): id is keyof typeof platformContracts =>
   Object.hasOwn(platformContracts, id);
+
+/**
+ * A stream's input with an observer listener whose `end` runs at most once,
+ * and that `end`: the link calls it when the channel closes before the
+ * provider ended the stream. Whoever ends it first, `forget` lets the link
+ * drop it. A function listener has no end to call.
+ */
+const endingOnce = (
+  input: unknown,
+  index: number,
+  forget: (end: (error: ContractError) => void) => void,
+): {
+  readonly input: unknown;
+  readonly end?: (error: ContractError) => void;
+} => {
+  const listener: unknown = Array.isArray(input) ? input[index] : undefined;
+
+  if (
+    typeof listener !== 'object' ||
+    listener === null ||
+    typeof (listener as StreamObserver<unknown>).end !== 'function'
+  ) {
+    return { input };
+  }
+
+  const observer = listener as StreamObserver<unknown>;
+  let ended = false;
+  const end = (error?: ContractError) => {
+    if (!ended) {
+      ended = true;
+      forget(end);
+      observer.end?.(error);
+    }
+  };
+  const items = [...(input as unknown[])];
+
+  items[index] = { next: (item: unknown) => observer.next(item), end };
+
+  return { input: items, end };
+};
 
 const recordKeys = new WeakMap<ProviderRecord, string>();
 let nextRecordKey = 0;
@@ -174,7 +218,12 @@ export const remoteRecord = (
 
       const exports: string[] = [];
       const context: CodecContext = { host: link, call, exports };
-      const prepared = plan.prepare === undefined ? input : plan.prepare(input);
+      const stream =
+        plan.listener === undefined
+          ? { input }
+          : endingOnce(input, plan.listener, (end) => link.forgetStream(end));
+      const prepared =
+        plan.prepare === undefined ? stream.input : plan.prepare(stream.input);
       const target = {
         contract: descriptor.contractId,
         method,
@@ -193,7 +242,13 @@ export const remoteRecord = (
       }
 
       if (plan.optimistic === true) {
-        return link.optimistic(call.caller.bundleId, target, call, exports);
+        return link.optimistic(
+          call.caller.bundleId,
+          target,
+          call,
+          exports,
+          stream.end,
+        );
       }
 
       return link.request(target, call).then((output) => {

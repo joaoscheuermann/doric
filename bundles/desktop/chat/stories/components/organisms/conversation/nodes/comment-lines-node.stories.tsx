@@ -13,8 +13,8 @@ const first = promptIdOf(3001);
 const second = promptIdOf(3002);
 
 /**
- * The comment lines of the log's last user turn, drawn above its words, with
- * the state each thread is in across the whole log.
+ * The comment group of the log's last user turn, opening its block above its
+ * words, with the state each thread is in across the whole log.
  */
 const lines = (build: (log: StoryLog) => void) => {
   const projection = projectLog(build);
@@ -95,7 +95,7 @@ export const Open = {
   render: () => <TurnsEditor threads={open.threads} turns={open.turns} />,
 };
 
-/** The same lines once the agent resolved one thread and asked on the other. */
+/** The same comments once the agent resolved one thread and asked on another. */
 export const Answered = {
   render: () => (
     <TurnsEditor threads={answered.threads} turns={answered.turns} />
@@ -133,5 +133,38 @@ export const ManyComments = {
       });
     });
     return <TurnsEditor threads={many.threads} turns={many.turns} />;
+  },
+};
+
+const ANSWER =
+  'I see the placeholder text and a photo of an orange kitten. Are you testing messages and comments, or do you want me to change the checkout?';
+
+/**
+ * A comment on words of the agent's answer, sent with the next prompt: its
+ * card reads the passage in the answer's paragraph, the words highlighted.
+ */
+export const OnTheAnswer = {
+  render: () => {
+    const projection = projectLog((log) => {
+      log.prompt(first, 'Describe the image.');
+      log.text(first, ANSWER);
+      const turn = `agent:${first}:${log.events.at(-1)?.sequence ?? 0}`;
+      log.finish(first, ANSWER);
+      log.prompt(second, 'Esse é um prompt do usuário');
+      log.push(second, {
+        type: 'comments.added/v1',
+        commentId: 'comment-lines-6',
+        target: {
+          kind: 'message',
+          id: first,
+          anchor: { form: 'range', text: 'of an orange', turn, block: 0 },
+        },
+        text: 'asdasda',
+        author: 'jao.scheuermann',
+      });
+    });
+    return (
+      <TurnsEditor threads={projection.threads} turns={projection.turns} />
+    );
   },
 };

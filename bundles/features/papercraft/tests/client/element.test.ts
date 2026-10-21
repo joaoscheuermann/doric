@@ -13,7 +13,13 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import { type Call, CommandsV1, type Services } from 'bundle/contracts';
+import {
+  type Call,
+  CommandsV1,
+  type Services,
+  type StreamListener,
+  toStreamObserver,
+} from 'bundle/contracts';
 import { Window } from 'happy-dom';
 import { createElement } from 'react';
 
@@ -301,10 +307,13 @@ const harness = (): Harness => {
           return {
             watchThread: (
               _input: unknown,
-              listener: (item: unknown) => void,
+              listener: StreamListener<unknown>,
             ) => {
               if (thread.log !== undefined)
-                listener({ kind: 'snapshot', events: [...thread.log] });
+                toStreamObserver(listener).next({
+                  kind: 'snapshot',
+                  events: [...thread.log],
+                });
 
               return { dispose: () => undefined };
             },

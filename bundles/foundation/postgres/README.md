@@ -56,8 +56,11 @@ DORIC_TEST_DATABASE_URL=postgresql://... npx nx test bundle-postgres
 npx nx run bundle-postgres:migrate
 ```
 
-The PostgreSQL suites skip without `DORIC_TEST_DATABASE_URL`. `migrate` runs
-`prisma migrate deploy`. The build writes `bundles/foundation/postgres/dist`,
+The PostgreSQL suites skip without `DORIC_TEST_DATABASE_URL`; the size report
+of the delta-coalescing migration also needs `DORIC_TEST_COALESCE_SIZE=1`.
+`migrate` runs `prisma migrate deploy`; a migration that rewrites data, such as
+`20261021000000_coalesce_thread_deltas`, has its operator steps in the
+[host README](../../../app/backend/doric-host/README.md#coalescing-stored-thread-deltas). The build writes `bundles/foundation/postgres/dist`,
 which `doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/postgres`; to rebuild and stage every
 bundle used by the Doric host:

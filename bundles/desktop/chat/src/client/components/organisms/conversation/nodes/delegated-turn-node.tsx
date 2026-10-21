@@ -49,6 +49,11 @@ type DelegatedBlock = {
 };
 type SerializedDelegatedTurn = Spread<DelegatedBlock, SerializedLexicalNode>;
 
+/**
+ * Another Thread's input as one folded header and its text. The bot marks an
+ * instruction handed down by the parent; a result wears no glyph of its own, so
+ * a background agent's answer reads as where it came from and nothing more.
+ */
 function DelegatedTurn({
   input,
   chosen,
@@ -61,13 +66,16 @@ function DelegatedTurn({
   readonly onChosenChange: (chosen: boolean) => void;
 }) {
   const source = useDelegatedSource(input.threadId);
+  const instructed = input.kind === 'parent';
   return (
     <CollapsibleBlock
       label={
         <>
-          <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
+          {instructed ? (
+            <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
+          ) : null}
           <span className="font-normal">
-            {input.kind === 'parent' ? 'Instruction from:' : 'Result from:'}
+            {instructed ? 'Instruction from:' : 'Result from:'}
           </span>
         </>
       }

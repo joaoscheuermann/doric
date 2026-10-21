@@ -2,10 +2,12 @@
 // window: each answer a row of the agent's turn, drawn like a tool call —
 // `Replied to [n]`, the note it answers and the thread's state as its pin,
 // folded once the thread is resolved and open while the agent waits for the
-// reader; the user turn's lines, which draw no pin and read the thread's state
-// out, following later resolutions live; and the event a line, or a row's pin
-// header button, dispatches for the bundle that owns the comment's target to
-// open its thread on the target's latest drawing.
+// reader; the user turn's comment group, whose cards draw no pin, read the
+// thread's state out, following later resolutions live, and show the passage
+// each comment is about; and where a card's "go to" leads: the answer's
+// paragraph for words of it, else the event a card, or a row's pin header
+// button, dispatches for the bundle that owns the comment's target to open its
+// thread on the target's latest drawing.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -197,13 +199,20 @@ const jump = (window: ChatWindow): HTMLButtonElement | null =>
 const showsAnswer = (window: ChatWindow): boolean =>
   /Aumentei o padding do botão\./.test(row(window)?.textContent ?? '');
 
-/** The sent comment's line in the user turn: a button of its own. */
-const line = (window: ChatWindow): HTMLButtonElement | null =>
-  window.document.querySelector('[data-turn-comments] button');
+/** The sent comment's card in the user turn. */
+const line = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector('[data-turn-comments] [data-comment-line]');
 
-/** What the sent comment's line reads out: its note, then its thread's state. */
+/** The card's arrow, which goes to the comment's passage. */
+const goTo = (window: ChatWindow): HTMLButtonElement | null =>
+  line(window)?.querySelector(
+    'button[aria-label="Go to the commented passage"]',
+  ) ?? null;
+
+/** What the sent comment's card reads out: the comment, then its thread's state. */
 const spoken = (window: ChatWindow): string =>
-  line(window)?.getAttribute('aria-label') ?? '';
+  window.document.querySelector('[data-turn-comments] [data-comment-spoken]')
+    ?.textContent ?? '';
 
 /** Every thread the window asks to open. */
 const asked = (window: ChatWindow): CommentThreadOpenDetail[] => {
@@ -351,4 +360,299 @@ test("a row's pin opens the thread's popover, and its header button reaches the 
 
   assert.deepEqual(seen, [{ commentId: 'comment-a', target: latestTarget }]);
   assert.equal(showsAnswer(window), false);
+});
+
+/** The comment group that opens the sent turn. */
+const group = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector('[data-turn-comments] [data-comment-group]');
+
+/** The group's header, the toggle that folds its cards. */
+const groupHeader = (window: ChatWindow): HTMLButtonElement | null =>
+  group(window)?.querySelector('[data-comment-group-header]') ?? null;
+
+test("a sent turn's comments open its block under the turn's own mark, behind a header that folds them", async () => {
+  const window = await open(answered);
+
+  // The comments wear the reader's mark in the turn's place, right above the
+  // reader's words, which the sheet then draws without one.
+  const comments = window.document.querySelector('[data-turn-comments]');
+  const words = comments?.nextElementSibling;
+  assert.equal(comments?.getAttribute('data-turn-avatar'), 'user');
+  assert.equal(words?.getAttribute('data-turn-avatar'), 'user');
+  assert.match(words?.textContent ?? '', /Ajusta o checkout/);
+
+  const header = groupHeader(window);
+  assert.ok(header);
+  assert.equal(header.textContent, '1 comment');
+  assert.equal(header.getAttribute('aria-expanded'), 'true');
+  assert.ok(line(window), 'the card shows while the group is open');
+
+  header.click();
+  await settle(20);
+  assert.equal(groupHeader(window)?.getAttribute('aria-expanded'), 'false');
+  assert.equal(line(window), null, 'folded, the cards are gone');
+
+  groupHeader(window)?.click();
+  await settle(20);
+  assert.ok(line(window));
+});
+
+test("a sent comment's card frames its note under the anchor's label when the anchor quotes no words, and draws no pin number", async () => {
+  const window = await open(answered);
+
+  const card = line(window);
+  assert.ok(card);
+  assert.equal(
+    card.querySelector('[data-comment-excerpt]')?.textContent,
+    'Button (10, 20)',
+  );
+  assert.equal(card.querySelector('[data-comment-quote]'), null);
+  assert.equal(
+    card.querySelector('[data-comment-frame]')?.textContent,
+    'JSaumenta o botão',
+  );
+  assert.doesNotMatch(card.textContent ?? '', /\[1\]/, 'no pin number');
+});
+
+const answeredId = '44444444-4444-4444-8444-444444444444';
+
+/** One event of the answered prompt before the one the comment rides on. */
+const earlier = (
+  sequence: number,
+  value: Readonly<Record<string, unknown> & { readonly type: string }>,
+) => ({ ...event(sequence, value), promptId: answeredId });
+
+const ANSWER =
+  'I see the placeholder text and a photo of an orange kitten. Are you testing messages and comments, or do you want me to change the checkout?';
+
+/** An answer, then a prompt carrying one comment on words of it. */
+const commentedAnswer = (
+  anchor: Record<string, unknown>,
+  answer: string = ANSWER,
+) => [
+  earlier(1, {
+    type: 'prompt.accepted',
+    text: 'Descreve a imagem',
+    source: { kind: 'user' },
+  }),
+  earlier(2, { type: 'text.delta', delta: answer }),
+  earlier(3, { type: 'prompt.finished', status: 'completed', text: answer }),
+  event(4, {
+    type: 'prompt.accepted',
+    text: 'Esse é um prompt do usuário',
+    source: { kind: 'user' },
+  }),
+  event(5, {
+    type: 'comments.added/v1',
+    commentId: 'comment-m',
+    target: { kind: 'message', id: answeredId, anchor },
+    text: 'asdasda',
+    author: 'jao.scheuermann',
+  }),
+];
+
+test('a sent comment on words of the answer reads them in their paragraph, the words highlighted', async () => {
+  const window = await open(
+    commentedAnswer({
+      form: 'range',
+      text: 'of an orange',
+      turn: `agent:${answeredId}:2`,
+      block: 0,
+    }),
+  );
+
+  const card = line(window);
+  assert.ok(card);
+  assert.equal(
+    card.querySelector('[data-comment-excerpt]')?.textContent,
+    ANSWER,
+  );
+  assert.equal(
+    card.querySelector('[data-comment-quote]')?.textContent,
+    'of an orange',
+  );
+});
+
+test('a sent comment whose paragraph the transcript does not draw shows its quote alone', async () => {
+  const window = await open(
+    commentedAnswer({ form: 'range', text: 'of an orange' }),
+  );
+
+  const card = line(window);
+  assert.ok(card);
+  assert.equal(
+    card.querySelector('[data-comment-excerpt]')?.textContent,
+    'of an orange',
+  );
+  assert.equal(
+    card.querySelector('[data-comment-quote]')?.textContent,
+    'of an orange',
+  );
+});
+
+test("a sent comment's arrow opens its thread on the latest preview of its target, once", async () => {
+  const window = await open(
+    [...answered, preview(9, 1), preview(10, 2)],
+    previewProbe,
+  );
+  const seen = asked(window);
+
+  goTo(window)?.click();
+  await settle(20);
+
+  assert.deepEqual(seen, [{ commentId: 'comment-a', target: latestTarget }]);
+});
+
+test("a sent comment's arrow on words of the answer reveals their paragraph, and opens no thread", async () => {
+  const window = await open(
+    commentedAnswer({
+      form: 'range',
+      text: 'of an orange',
+      turn: `agent:${answeredId}:2`,
+      block: 0,
+    }),
+  );
+  const seen = asked(window);
+
+  goTo(window)?.click();
+  await settle(20);
+
+  const flashed = [
+    ...window.document.querySelectorAll('[data-comment-flash]'),
+  ].map((element) => element.textContent);
+  assert.deepEqual(flashed, [ANSWER]);
+  assert.deepEqual(seen, []);
+});
+
+test('a sent comment on repeated words marks the occurrence its anchor records', async () => {
+  const at = ANSWER.slice(0, ANSWER.lastIndexOf('the')).replace(
+    /\s/g,
+    '',
+  ).length;
+  const window = await open(
+    commentedAnswer({
+      form: 'range',
+      text: 'the',
+      turn: `agent:${answeredId}:2`,
+      block: 0,
+      at,
+    }),
+  );
+
+  const excerpt = line(window)?.querySelector('[data-comment-excerpt]');
+  const quote = excerpt?.querySelector('[data-comment-quote]');
+  assert.equal(quote?.textContent, 'the');
+  assert.equal(quote?.nextSibling?.textContent, ' checkout?');
+});
+
+test('Enter and Space on a sent turn’s header and on its arrow are the buttons’, never the prompt’s', async () => {
+  const window = await open(
+    commentedAnswer({
+      form: 'range',
+      text: 'of an orange',
+      turn: `agent:${answeredId}:2`,
+      block: 0,
+    }),
+  );
+  const prompt = window.document.querySelector('[data-prompt-input]');
+  assert.ok(prompt);
+  const before = prompt.innerHTML;
+  const header = groupHeader(window);
+  const arrow = goTo(window);
+  assert.ok(header && arrow);
+
+  for (const target of [header, arrow]) {
+    for (const key of ['Enter', ' ']) {
+      target.focus();
+      const pressed = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(pressed);
+      await settle(20);
+      // The editor never answered the key: the browser's own activation of
+      // the button (its click) runs, and the prompt stays as it was.
+      assert.equal(
+        pressed.defaultPrevented,
+        false,
+        `${key} on ${target.tagName}`,
+      );
+      assert.equal(prompt.innerHTML, before);
+    }
+  }
+});
+
+/** The flashed elements' text, after a go-to. */
+const flashedText = (window: ChatWindow): (string | null)[] =>
+  [...window.document.querySelectorAll('[data-comment-flash]')].map(
+    (element) => element.textContent,
+  );
+
+const LOOSE_LIST = '1. first item\n\n2. second item';
+
+test("a sent comment's arrow on words of a list item reveals that item, not the whole list", async () => {
+  const window = await open(
+    commentedAnswer(
+      {
+        form: 'range',
+        text: 'second',
+        turn: `agent:${answeredId}:2`,
+        block: 0,
+        item: 1,
+      },
+      LOOSE_LIST,
+    ),
+  );
+
+  goTo(window)?.click();
+  await settle(20);
+
+  assert.deepEqual(flashedText(window), ['second item']);
+});
+
+test('an older sent comment whose anchor names no item reveals its list, as before', async () => {
+  const window = await open(
+    commentedAnswer(
+      {
+        form: 'range',
+        text: 'second',
+        turn: `agent:${answeredId}:2`,
+        block: 0,
+      },
+      LOOSE_LIST,
+    ),
+  );
+
+  goTo(window)?.click();
+  await settle(20);
+
+  assert.equal(flashedText(window).length, 1);
+  assert.match(flashedText(window)[0] ?? '', /first item[\s\S]*second item/);
+});
+
+test('a sent card says where a press takes the reader: to the passage for words of the answer, to the thread otherwise', async () => {
+  const onWords = await open(
+    commentedAnswer({
+      form: 'range',
+      text: 'of an orange',
+      turn: `agent:${answeredId}:2`,
+      block: 0,
+    }),
+  );
+  assert.equal(
+    line(onWords)?.closest('[title]')?.getAttribute('title'),
+    'Go to the commented passage',
+  );
+  await onWords.close();
+  opened = undefined;
+
+  const onPreview = await open(
+    [...answered, preview(9, 1), preview(10, 2)],
+    previewProbe,
+  );
+  assert.equal(
+    line(onPreview)?.closest('[title]')?.getAttribute('title'),
+    'Open thread',
+  );
 });

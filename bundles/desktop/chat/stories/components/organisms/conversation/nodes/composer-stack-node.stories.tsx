@@ -5,7 +5,7 @@ import {
   ConversationEditor,
 } from '../../../../support/editor.js';
 
-/** The tail of the conversation, with the comment stack above the prompt. */
+/** The tail of the conversation: the comment stack opens the prompt's block. */
 const tail = (items: readonly ComposerItem[], words = '') => (
   <ConversationEditor
     host={{ drafts: { [nodesThread.id]: { text: words, items } } }}

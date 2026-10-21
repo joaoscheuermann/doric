@@ -2,7 +2,7 @@ import type { z } from 'zod';
 
 import type { Call } from '../../contracts/call.js';
 import type { Disposable } from '../../contracts/context.js';
-import { ContractError } from '../../contracts/error.js';
+import { ContractError, toContractError } from '../../contracts/error.js';
 import { PLATFORM_BUNDLE_ID } from '../../contracts/ids.js';
 import type { DiagnosticReport } from '../../contracts/platform.js';
 import { createHopCall } from '../call.js';
@@ -132,6 +132,8 @@ export class ProcessLink implements CodecHost {
     { readonly controller: AbortController; readonly deadline: number }
   >();
   readonly #exports = new Map<string, ExportTarget>();
+  /** The `end` of each open stream registration, called if the channel closes. */
+  readonly #streams = new Set<(error: ContractError) => void>();
   readonly #runs = new Map<string, Run>();
   readonly #operations = new Map<string, Operations>();
   readonly #activating = new Map<string, number>();
@@ -184,6 +186,16 @@ export class ProcessLink implements CodecHost {
   /** Outbound calls awaiting a result plus inbound calls not yet answered. */
   get inFlight(): number {
     return this.#pending.size + this.#inbound;
+  }
+
+  /** The stream registrations whose end the link would still call on close. */
+  get openStreams(): number {
+    return this.#streams.size;
+  }
+
+  /** Drops a stream's `end` once the stream ended, whoever ended it. */
+  forgetStream(end: (error: ContractError) => void): void {
+    this.#streams.delete(end);
   }
 
   /** Called each time `inFlight` drops to zero. */
@@ -352,7 +364,9 @@ export class ProcessLink implements CodecHost {
   /**
    * A synchronous registration across the envelope: returns a local
    * Disposable at once; the acknowledgement or the refusal arrives later and
-   * is collected by `settle`.
+   * is collected by `settle`. A stream registration passes its `end`: a
+   * refusal ends the stream with that error, and the close of the channel
+   * with `generation_lost`, unless it was disposed first.
    */
   optimistic(
     bundleId: string,
@@ -365,6 +379,7 @@ export class ProcessLink implements CodecHost {
     },
     call: Call,
     exported: readonly string[],
+    end?: (error: ContractError) => void,
   ): Disposable {
     let disposed = false;
     let remote: Disposable | undefined;
@@ -373,6 +388,11 @@ export class ProcessLink implements CodecHost {
         this.#exports.delete(handle);
       }
     };
+
+    if (end !== undefined) {
+      this.#streams.add(end);
+    }
+
     const operations = this.#operationsOf(bundleId);
     const operation = this.request(target, call).then(
       (output) => {
@@ -388,6 +408,11 @@ export class ProcessLink implements CodecHost {
       },
       (error: unknown) => {
         forget();
+
+        if (end !== undefined && this.#streams.delete(end)) {
+          end(toContractError(error));
+        }
+
         this.#fail(bundleId, error);
       },
     );
@@ -397,6 +422,11 @@ export class ProcessLink implements CodecHost {
 
     return toDisposable(() => {
       disposed = true;
+
+      if (end !== undefined) {
+        this.#streams.delete(end);
+      }
+
       remote?.dispose();
       forget();
     });
@@ -946,6 +976,18 @@ export class ProcessLink implements CodecHost {
     }
 
     this.#pending.clear();
+
+    // The streams the other side served end with it, so their subscribers
+    // (the desktop bridge) can subscribe again.
+    for (const end of [...this.#streams]) {
+      try {
+        end(lost);
+      } catch (error) {
+        this.report(PLATFORM_BUNDLE_ID, 'link_close_failed', error);
+      }
+    }
+
+    this.#streams.clear();
 
     // What the other side registered here ends with it.
     for (const handle of [...this.#runs.keys(), ...this.#exports.keys()]) {

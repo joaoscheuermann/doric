@@ -21,6 +21,7 @@ import {
 } from '../../contracts/index.js';
 import { composerFeed } from '../api/composer.js';
 import { promptEnvelope } from '../domain/prompt-envelope.js';
+import { composerStackStore } from '../stores/composer-stack.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
 
 /** One Thread, as the composer's draft is keyed. */
@@ -39,7 +40,11 @@ export interface ChatSendDependencies {
 }
 
 const windowDependencies: ChatSendDependencies = {
-  read: (thread) => composerFeed.read(thread),
+  // A note edit this window still holds reaches the service before the read.
+  read: (thread) => {
+    composerStackStore.getState().flushNotes(thread.id);
+    return composerFeed.read(thread);
+  },
   prompt: (id, text, options) =>
     threadChatsStore.getState().prompt(id, text, options),
   setText: (thread, text) => composerFeed.setText(thread, text),

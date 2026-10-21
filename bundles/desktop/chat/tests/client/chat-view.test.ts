@@ -36,6 +36,7 @@ import {
   ChatHooksV1,
   ChatLexicalV1,
   ChatViewsV1,
+  READER_NAME,
 } from '../../src/contracts/index.js';
 import {
   type ChatWindow,
@@ -286,6 +287,143 @@ test("a trail handle previews its prompt while hovered, keeps the preview throug
   await settle(300);
   assert.equal(preview(), undefined, 'leaving the handle closes its preview');
   assert.equal(document.activeElement, focused, 'closing it moves no focus');
+});
+
+test("a reader's turn wears its mark in the gutter and trails a time-only footer", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  // Dated now, so the footer's relative time is a word the test can name.
+  const justNow = new Date().toISOString();
+  await deliver(
+    opened,
+    exchange.map((item) => ({ ...item, createdAt: justNow })),
+  );
+
+  const block = opened.document.querySelector(`[data-prompt-id="${promptId}"]`);
+  assert.ok(block, "the reader's turn has its block");
+  assert.equal(
+    block.getAttribute('data-turn-avatar'),
+    'user',
+    "the block draws the reader's mark in its gutter",
+  );
+
+  const footer = block.nextElementSibling;
+  assert.ok(footer, 'the footer trails the block');
+  assert.match(footer.textContent ?? '', /now/);
+
+  const named = footer.querySelector('.sr-only');
+  assert.equal(
+    named?.textContent,
+    READER_NAME,
+    'the name is kept for a screen reader',
+  );
+  const shown = footer.cloneNode(true) as HTMLElement;
+  shown.querySelectorAll('.sr-only').forEach((element) => {
+    element.remove();
+  });
+  assert.doesNotMatch(
+    shown.textContent ?? '',
+    /jao\.scheuermann/,
+    'the visible line names no one',
+  );
+});
+
+test('the agent mark rides the turn that ends its run, and a chrome row wears none', async () => {
+  const call = { id: 'call-1', name: 'read_file', index: 0, payload: {} };
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Where is the parser?',
+      source: { kind: 'user' },
+    }),
+    event(2, { type: 'reasoning.delta', delta: 'Looking for the parser.' }),
+    event(3, { type: 'tool.started', call }),
+    event(4, { type: 'tool.finished', call, record: { output: 'found' } }),
+    event(5, {
+      type: 'prompt.finished',
+      status: 'completed',
+      text: 'It lives in src/parser.ts.',
+    }),
+  ]);
+
+  const editor = opened.document.querySelector('[data-lexical-editor]');
+  const rows = [...(editor?.children ?? [])];
+  const rowOf = (text: string): Element | undefined =>
+    rows.find((row) => row.textContent?.includes(text));
+
+  const answer = rowOf('It lives in src/parser.ts.');
+  assert.equal(
+    answer?.getAttribute('data-turn-avatar'),
+    'agent',
+    'the answer wears the agent mark',
+  );
+
+  // The reasoning and the tool call complete, so they read as one summary row
+  // of the chrome between the run's turns, and it wears no mark.
+  const activity = rowOf('Thought once');
+  assert.ok(
+    activity,
+    'the reasoning and the tool call draw a row of their own',
+  );
+  assert.equal(activity.hasAttribute('data-turn-avatar'), false);
+});
+
+test("the prompt wears the reader's mark", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const prompt = opened.document.querySelector('[data-prompt-input]');
+  assert.ok(prompt, 'the conversation has its prompt');
+  assert.equal(prompt.getAttribute('data-turn-avatar'), 'user');
+});
+
+test('a transcript update that changes only the time keeps the block it already drew', async () => {
+  const answer = 'It lives in src/parser.ts.';
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+  const now = new Date().toISOString();
+  const run = [
+    {
+      ...event(1, {
+        type: 'prompt.accepted',
+        text: 'Where is the parser?',
+        source: { kind: 'user' },
+      }),
+      createdAt: fiveMinutesAgo,
+    },
+    {
+      ...event(2, {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: answer,
+      }),
+      createdAt: fiveMinutesAgo,
+    },
+  ];
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, run);
+
+  const block = opened.document.querySelector('[data-turn-avatar="agent"]');
+  assert.ok(block, 'the answer wears the agent mark');
+  assert.match(block.nextElementSibling?.textContent ?? '', /5 min ago/);
+
+  // The same run said once more a moment later: the words are the same, and the
+  // only thing the block has to say differently is when.
+  await deliver(opened, [
+    ...run,
+    {
+      ...event(3, {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: answer,
+      }),
+      createdAt: now,
+    },
+  ]);
+
+  const redrawn = opened.document.querySelector('[data-turn-avatar="agent"]');
+  assert.equal(redrawn, block, 'the block is the element it already was');
+  assert.equal(block.isConnected, true);
+  assert.match(block.nextElementSibling?.textContent ?? '', /now/);
 });
 
 test('a Thread the host does not know draws no conversation', async () => {
@@ -895,6 +1033,11 @@ test('a delegated instruction is drawn by chat while no bundle renders it', asyn
 
   const turn = turnOf(opened);
   assert.match(turn?.textContent ?? '', /Instruction from:/);
+  // The bot marks an instruction; a background agent's result wears none.
+  assert.notEqual(
+    turn?.querySelector('[aria-label^="Toggle instruction from"] svg'),
+    null,
+  );
   assert.equal(
     turn?.querySelector('.editor-paragraph')?.textContent,
     'Fix the parser first.',

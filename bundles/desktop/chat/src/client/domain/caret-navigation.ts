@@ -11,6 +11,7 @@
  */
 import {
   ACTIVITY_TURN_BLOCK,
+  COMMENT_SEAT_BLOCK,
   COMPOSER_STACK_BLOCK,
   DELEGATED_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
@@ -21,6 +22,7 @@ import {
   REPLIES_TURN_BLOCK,
   TERMINAL_RESULT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
+  THREAD_SPAWN_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
   TURN_COMMENTS_BLOCK,
@@ -43,6 +45,7 @@ export const caretKind = (nodeType: string): CaretKind => {
     nodeType === LIFECYCLE_TURN_BLOCK ||
     nodeType === QUEUED_TURN_BLOCK ||
     nodeType === TURN_COMMENTS_BLOCK ||
+    nodeType === COMMENT_SEAT_BLOCK ||
     nodeType === COMPOSER_STACK_BLOCK
   )
     return 'furniture';
@@ -51,6 +54,7 @@ export const caretKind = (nodeType: string): CaretKind => {
     nodeType === QUEUE_BLOCK ||
     nodeType === DELEGATED_TURN_BLOCK ||
     nodeType === TOOL_TURN_BLOCK ||
+    nodeType === THREAD_SPAWN_TURN_BLOCK ||
     nodeType === ACTIVITY_TURN_BLOCK ||
     nodeType === FAILURE_TURN_BLOCK ||
     nodeType === REPLIES_TURN_BLOCK ||

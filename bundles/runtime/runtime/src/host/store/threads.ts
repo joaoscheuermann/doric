@@ -27,6 +27,7 @@ import {
   eventsAfter,
   eventsAfterPage,
   eventType,
+  logAfter,
   toThreadEvent,
 } from './events.js';
 import { historyParts, historyPuts, historyReader } from './history.js';
@@ -805,7 +806,13 @@ export const createThreadStore = (
       threads.mutate(id, async (current) => {
         if (current === undefined) return { done: () => undefined };
         const stored = current.value;
-        const entries = await all()(id);
+        // The counter, not the last entry: entries can be missing before the
+        // tail, so the marker goes after the last sequence ever assigned.
+        const { entries, last: lastStreamSequence } = await logAfter(
+          storage,
+          id,
+          0,
+        );
         const from = entries.find(
           (entry) => (entry.value as ThreadEventEnvelope).promptId === promptId,
         )?.sequence;
@@ -841,8 +848,6 @@ export const createThreadStore = (
               (value as ThreadEventEnvelope).type === 'prompt.started',
           );
         const marker = { type: 'history.truncated', afterSequence };
-        const lastStreamSequence =
-          entries.at(-1)?.sequence ?? stored.lastSequence;
         const sequence = lastStreamSequence + 1;
         const at = now();
         const pending = foldProgress(foldAll(survivors.map(progressEntry)), {

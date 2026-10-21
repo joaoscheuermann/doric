@@ -16,7 +16,13 @@
  */
 
 import { $createCodeNode } from '@lexical/code';
-import { $createListItemNode, $createListNode } from '@lexical/list';
+import {
+  $createListItemNode,
+  $createListNode,
+  $isListItemNode,
+  $isListNode,
+  type ListNode,
+} from '@lexical/list';
 import {
   $createHeadingNode,
   $createQuoteNode,
@@ -42,10 +48,12 @@ import {
 
 import {
   commonBlocks,
+  commonItems,
   lineSource,
   type MarkdownAlign,
   type MarkdownBlock,
   type MarkdownCell,
+  type MarkdownItem,
   type MarkdownLine,
   type MarkdownRun,
   markdownBlocks,
@@ -193,6 +201,36 @@ const $blockNode = (block: MarkdownBlock): LexicalNode => {
 };
 
 /**
+ * Brings a list built from one read of the source in line with the next read,
+ * whose first `shared` items read the same: those items stay as they stand,
+ * the next ones the list still holds are written again in place, and the rest
+ * are removed or added. The list and its items are the nodes a comment closing
+ * an item stands in, so a delta that grows the list's last item moves none of
+ * them.
+ */
+const $updateList = (
+  list: ListNode,
+  items: readonly MarkdownItem[],
+  shared: number,
+): void => {
+  const entries = list.getChildren();
+  for (let index = entries.length - 1; index >= items.length; index -= 1)
+    entries[index]?.remove();
+  for (let index = shared; index < items.length; index += 1) {
+    const entry = entries[index];
+    const item = items[index] ?? [];
+    if ($isListItemNode(entry)) {
+      entry.clear();
+      $appendLines(entry, item);
+    } else {
+      const added = $createListItemNode();
+      $appendLines(added, item);
+      list.append(added);
+    }
+  }
+};
+
+/**
  * Fills one block with the markdown its source carries, clearing whatever it
  * held. The source is read, never rewritten: what lands is the text the caller
  * passed, arranged as the markdown says it should be.
@@ -241,7 +279,26 @@ export const $setMarkdown = (
     return;
   }
 
-  const keep = commonBlocks(held, blocks);
+  let keep = commonBlocks(held, blocks);
+  // The first block that changed, when it is a list both reads hold, is
+  // brought up to date in place rather than built again.
+  const list = children[keep];
+  const before = held[keep];
+  const after = blocks[keep];
+  const shared =
+    before === undefined || after === undefined
+      ? undefined
+      : commonItems(before, after);
+  if (
+    shared !== undefined &&
+    $isListNode(list) &&
+    (before?.kind === 'bullet' || before?.kind === 'ordered') &&
+    list.getChildrenSize() === before.items.length &&
+    (after?.kind === 'bullet' || after?.kind === 'ordered')
+  ) {
+    $updateList(list, after.items, shared);
+    keep += 1;
+  }
   for (let index = children.length - 1; index >= keep; index -= 1)
     children[index]?.remove();
   for (let index = keep; index < blocks.length; index += 1) {

@@ -1,7 +1,8 @@
 /**
- * The author line that trails a turn: a small avatar, the name and, when the
- * turn has a time, how long ago it was. The reader wears a jdenticon of their
- * name; the agent wears the bot icon.
+ * The footer that trails a turn: how long ago it was written and, for a screen
+ * reader only, who wrote it. The turn's mark — the reader's initials or the
+ * agent's glyph — is drawn by the turn block itself, in the column's left
+ * gutter, so the line itself carries only the time.
  *
  * It is a widget of its own rather than a child of the turn, so the turn's text
  * stays the only thing the caret can cross, and the two are siblings in the
@@ -17,13 +18,11 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
-import { BotIcon } from 'lucide-react';
 import type { JSX } from 'react/jsx-runtime';
 
 import type { AuthorRole } from '../../../../domain/conversation-authors.js';
 import { TURN_AUTHOR_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { relativeTime } from '../../../../utility/relative-time.js';
-import { ReaderAvatar } from '../../../molecules/reader-avatar.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
 /** The side of the conversation a line names, fixed in the domain vocabulary. */
@@ -34,7 +33,7 @@ export type SerializedTurnAuthorNode = Spread<
   SerializedLexicalNode
 >;
 
-/** A read-only widget: who wrote the turn above it, and when. */
+/** A read-only widget: when the turn above it was last written, and who by. */
 export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
   __role: AuthorRole;
   __name: string;
@@ -59,7 +58,7 @@ export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
     const dom = document.createElement('div');
     // `select-none`: the line is the conversation's furniture, not its text, and
     // the editing host makes everything inside it selectable by default — so a
-    // reader dragging over a turn would otherwise carry "name · now" out with it.
+    // reader dragging over a turn would otherwise carry "now" out with it.
     dom.className = `${CONVERSATION_FONT_CLASS} mt-2 mb-6 select-none`;
     return dom;
   }
@@ -89,18 +88,10 @@ export class TurnAuthorNode extends DecoratorNode<JSX.Element> {
 
   override decorate(): JSX.Element {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {this.__role === 'agent' ? (
-          <BotIcon className="size-4.5 shrink-0" />
-        ) : (
-          <ReaderAvatar name={this.__name} />
-        )}
-        <span className="truncate">{this.__name}</span>
+      <div className="flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
+        <span className="sr-only">{this.__name}</span>
         {this.__at === undefined ? null : (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="shrink-0">{relativeTime(this.__at)}</span>
-          </>
+          <span className="shrink-0">{relativeTime(this.__at)}</span>
         )}
       </div>
     );

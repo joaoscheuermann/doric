@@ -77,9 +77,28 @@ export const anchorLabel = (target: unknown): string | undefined => {
   return undefined;
 };
 
-/** The comment target a stack item's owner gave it, else `undefined`. */
-export const itemTarget = (item: ComposerItem): unknown =>
-  asRecord(item.data)?.target;
+/**
+ * Where in the conversation a comment about it sits: the turn's own key and
+ * the 0-based index of the block the selection started in.
+ */
+export interface SeatRef {
+  readonly turn: string;
+  readonly block: number;
+}
+
+/**
+ * A stack item's seat, with how far into its block the quoted words start
+ * (whitespace aside), when the item recorded it.
+ */
+export interface ItemSeat extends SeatRef {
+  readonly at?: number;
+  /**
+   * Where the comment stands, when not right after `block`: the block that
+   * holds the end of its words, and the item of it when that block is a list.
+   */
+  readonly after?: number;
+  readonly item?: number;
+}
 
 /**
  * The fields of a stack item's data the chat reads (`ComposerItemData`), each
@@ -92,10 +111,32 @@ export interface ItemData {
   readonly pin?: number;
   readonly inReplyTo?: string;
   readonly refs?: { readonly title?: string; readonly source?: string };
+  /** The turn and block the item's comment was written at, when it names one. */
+  readonly seat?: ItemSeat;
 }
 
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
+
+/** Whether a value is a 0-based integer index. */
+export const isIndex = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+/** A seat, when it names a turn and a 0-based block; never a half one. */
+const seatOfRecord = (value: unknown): ItemSeat | undefined => {
+  const seat = asRecord(value);
+  const turn = text(seat?.turn);
+  const block = seat?.block;
+  if (turn === undefined || !isIndex(block)) return undefined;
+
+  return {
+    turn,
+    block,
+    ...(isIndex(seat?.at) ? { at: seat.at } : {}),
+    ...(isIndex(seat?.after) ? { after: seat.after } : {}),
+    ...(isIndex(seat?.item) ? { item: seat.item } : {}),
+  };
+};
 
 /** Reads a stack item's data by the stack's convention. */
 export const itemData = (item: ComposerItem): ItemData => {
@@ -106,6 +147,7 @@ export const itemData = (item: ComposerItem): ItemData => {
   const refs = asRecord(data.refs);
   const title = text(refs?.title);
   const source = text(refs?.source);
+  const seat = seatOfRecord(data.seat);
 
   return {
     ...(data.target === undefined ? {} : { target: data.target }),
@@ -119,6 +161,7 @@ export const itemData = (item: ComposerItem): ItemData => {
             ...(source === undefined ? {} : { source }),
           },
         }),
+    ...(seat === undefined ? {} : { seat }),
   };
 };
 
@@ -139,22 +182,14 @@ export const targetKey = (
     : { kind, id };
 };
 
-/** The anchor label of a stack item's target, else `undefined`. */
-export const itemAnchorLabel = (item: ComposerItem): string | undefined =>
-  anchorLabel(itemTarget(item));
-
-/** The line a stack item reads out: its author and its note. */
-export const itemSummary = (item: ComposerItem): string =>
-  `${item.author ?? 'reader'}: ${item.note}`;
-
-/** Whether a send with these items carries any words of its own. */
-export const stackHasWords = (items: readonly ComposerItem[]): boolean =>
-  items.some((item) => item.note.trim().length > 0);
-
-/** Where the caret goes from a stack note: another note, or the prompt. */
+/**
+ * Where the caret goes from a stack note: another note, the prompt, or the
+ * header of the comments (the one control that folds them).
+ */
 export type NoteCaret =
   | { readonly to: 'note'; readonly index: number; readonly atEnd: boolean }
-  | { readonly to: 'prompt'; readonly atEnd: boolean };
+  | { readonly to: 'prompt'; readonly atEnd: boolean }
+  | { readonly to: 'header' };
 
 /** What one key pressed in a stack note does. */
 export type NoteKeyAction =
@@ -189,9 +224,10 @@ export interface NoteCaretState {
 
 /**
  * What a key does in a stack note. The notes and the prompt read as the lines
- * of one document: the arrows walk the caret between them by visual line, and
- * down from the last note enters the prompt at its start; Enter moves on to
- * the next note or the prompt's end, and Escape returns to the prompt's end.
+ * of one document: the arrows walk the caret between them by visual line, up
+ * from the first note reaches the comments' header, and down from the last
+ * note enters the prompt at its start; Enter moves on to the next note or the
+ * prompt's end, and Escape returns to the prompt's end.
  * Cmd/Ctrl+Enter sends; Cmd/Ctrl+Backspace — or Backspace and Delete in an
  * empty note — removes the comment. Every other key edits the note.
  */
@@ -210,8 +246,10 @@ export const noteKeyAction = (
       : { kind: 'move', to: 'prompt', atEnd: true };
   if (key.key === 'Escape') return { kind: 'move', to: 'prompt', atEnd: true };
   if (key.shift || key.mod) return { kind: 'default' };
-  if (key.key === 'ArrowUp' && at.firstLine && at.index > 0)
-    return { kind: 'move', to: 'note', index: at.index - 1, atEnd: true };
+  if (key.key === 'ArrowUp' && at.firstLine)
+    return at.index > 0
+      ? { kind: 'move', to: 'note', index: at.index - 1, atEnd: true }
+      : { kind: 'move', to: 'header' };
   if (key.key === 'ArrowDown' && at.lastLine)
     return next
       ? { kind: 'move', to: 'note', index: at.index + 1, atEnd: false }

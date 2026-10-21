@@ -819,17 +819,85 @@ credential table.
   migrations add, among others, Project and Thread names, per-turn provider-history
   checkpoints that rewind truncates, Project colors, the credential store,
   provider kinds and models, Thread working directories, usage and queue
-  pauses, the provider consolidation, generic storage, runtime documents and
-  registered credential kinds. They do not convert Session data.
+  pauses, the provider consolidation, generic storage, runtime documents,
+  registered credential kinds and the coalescing of stored Thread deltas. They
+  do not convert Session data.
 - The generic-storage migration converts the configuration tables into the
   `host-config.configuration/v1` settings document, keeping its revision and
   update time, verifies the conversion, and then drops those tables. It
   cannot be reversed, so **back up the database first**.
+- The delta-coalescing migration (`20261021000000_coalesce_thread_deltas`)
+  rewrites the stored Thread event streams so each streamed response keeps
+  one entry per run of deltas instead of one per token. It cannot be
+  reversed and must run offline; follow
+  [Coalescing stored Thread deltas](#coalescing-stored-thread-deltas).
 
 Start from an empty database. A database with an older (pre-baseline) schema
 or migration history must be explicitly recreated by its operator before
 deployment. Neither the host nor the baseline deletes or resets an existing
 database automatically.
+
+### Coalescing stored Thread deltas
+
+`20261021000000_coalesce_thread_deltas` folds each run of consecutive
+`reasoning.delta`, `text.delta`, `refusal.delta` or `tool_call.delta` entries of
+a Thread's event stream into the run's first entry, which keeps its sequence
+and carries the whole delta, and drops deltas that say nothing. Conversations read the
+same; sequence numbers are never renumbered, so the removed entries leave
+gaps, and each stream still ends at its counter. On a database whose long
+Threads streamed token by token this removes most of the event rows (a
+646,307-entry database keeps 30,228).
+
+The migration verifies its result in the same transaction and aborts, changing
+nothing, on any mismatch. When it changes anything it increments the storage
+generation, so every desktop discards its local history snapshots and replays
+each conversation from the host. It records the `coalesced-thread-deltas` row
+of `storage_meta`, so applying it again does nothing. **It cannot be
+reversed**: the only rollback is restoring the backup taken in step 3.
+
+The examples use the Compose container `doric-postgres-1` and the role and
+database `doric`; substitute your own (`doric-sandbox-postgres-1` for the
+default Compose project name, your `DORIC_POSTGRES_USER` and
+`DORIC_POSTGRES_DB`).
+
+1. Quit the Doric desktop app on every machine that connects to this host.
+2. Stop the host (`Ctrl+C` on `nx serve doric-host`, or
+   `docker compose stop docker` / `firecracker`). Keep PostgreSQL running.
+   With Compose, do not run `up` with the new image before step 3: its
+   `migrate` service applies pending migrations.
+3. Back up the database:
+
+   ```sh
+   docker exec doric-postgres-1 pg_dump -U doric -d doric -Fc > doric-before-coalesce.dump
+   ```
+
+4. Apply the migration, natively with `DORIC_DATABASE_URL` pointing at the
+   database (`npx nx run doric-host:migrate`), or with Compose
+   (`docker compose run --rm --build migrate`). It holds its transaction for
+   the whole rewrite, about 15 seconds for 650k entries.
+5. Check the result; `storageGeneration` of `identity` is one higher than
+   before, and the marker holds the entry counts:
+
+   ```sh
+   docker exec doric-postgres-1 psql -U doric -d doric -c \
+     "SELECT key, value FROM storage_meta"
+   ```
+
+6. Still with the host stopped, return the freed space to the filesystem.
+   `VACUUM FULL` locks the table while it rewrites it:
+
+   ```sh
+   docker exec doric-postgres-1 psql -U doric -d doric -c \
+     "VACUUM (FULL, ANALYZE) storage_stream_entry"
+   ```
+
+7. Start the host, then the desktop. The snapshots of the previous generation
+   stay in the history bundle's cache directory, unused.
+
+To roll back, stop the host and restore the backup over the database, for
+example `docker exec -i doric-postgres-1 pg_restore -U doric -d doric --clean --if-exists --single-transaction < doric-before-coalesce.dump`.
+The restored database has not recorded the migration, so the next
+`prisma migrate deploy` of this version applies it again.
 
 ### Network exposure
 

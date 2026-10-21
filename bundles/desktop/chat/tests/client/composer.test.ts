@@ -1,9 +1,11 @@
-// The composer's stack above the prompt as the reader meets it in a window:
-// one line per comment, with the author's avatar, the note — written in place,
-// in the line — and the anchor with the pin's number; the keys that walk the
-// caret between the notes and the prompt and remove a comment; the send that
-// a comment alone enables, carrying the prompt envelope; and the flush that
-// empties the stack into the log only once the host accepted the prompt.
+// The composer's stack inside the prompt as the reader meets it in a window:
+// a comment group under the reader's mark, its header counting and folding the
+// comments, then one card per comment with the passage it is about and the
+// author's avatar and note, written in place in the card; the keys that walk
+// the caret between the header, the notes and the prompt and remove a comment;
+// the send that a comment alone enables, carrying the prompt envelope; and the
+// flush that empties the stack into the log only once the host accepted the
+// prompt.
 //
 // The composer service here is a fake in the test's `host` answers, standing
 // for the desktopMain part the chat bundle ships; the stack store in the
@@ -364,6 +366,37 @@ const caretIn = (editor: LexicalEditor) =>
     };
   });
 
+/**
+ * Boots a window with one comment on the stack, whose composer holds every
+ * note it is told, as main's does: a send's flush writes the note it holds.
+ */
+const noted = async (note: string) => {
+  let held: ComposerFake | undefined;
+  const booted = await boot({
+    'chat.composer/v1.updateNote': (input: unknown) => {
+      const edit = input as { id: string; note: string };
+      const item = held?.items.find((each) => each.id === edit.id);
+      if (item !== undefined) item.note = edit.note;
+      return undefined;
+    },
+  });
+  held = booted.composer;
+  const watch = composerWatch(booted.window);
+  booted.composer.streams.push(watch);
+  const item = { ...messageComment(note), id: 'item-1' };
+  booted.composer.items.push(item);
+  // The window holds a copy of main's item, as the bridge hands it over.
+  watch.push({ kind: 'added', threadId, item: structuredClone(item) });
+  await settle(50);
+  return booted;
+};
+
+/** The texts of the comments the sends wrote to the log, in order. */
+const commentsWritten = (window: ChatWindow): string[] =>
+  window
+    .received('comments/v1.add')
+    .map((call) => (call.input as { text: string }).text);
+
 /** Boots a window with these items on the stack. */
 const stacked = async (...notes: string[]) => {
   const booted = await boot();
@@ -375,33 +408,140 @@ const stacked = async (...notes: string[]) => {
   return booted;
 };
 
-test('the stack draws one line per comment, with the avatar, the author, the note and the anchored pin', async () => {
+test('the stack draws one card per comment inside the prompt: the quoted words, then the avatar and the note', async () => {
   const { window } = await stacked('essa resposta está desatualizada');
 
   const stack = window.document.querySelector('[data-composer-stack]');
-  assert.equal(stack !== null, true, 'the stack stands above the prompt');
+  assert.ok(stack, 'the stack opens the prompt block');
   const note = noteOf(window, 1);
-  assert.equal(note !== null, true, 'one line per comment');
+  assert.equal(note !== null, true, 'one card per comment');
   assert.equal(note?.textContent, 'essa resposta está desatualizada');
   assert.equal(
     note?.getAttribute('aria-label'),
     'Comment 1 on “essa resposta”',
   );
-  // The avatar comes before the author's name, and the note truncates with
-  // an ellipsis (the `truncate` utility) while it is not being written.
-  const line = note?.parentElement;
-  assert.match(line?.textContent ?? '', /jao\.scheuermann/);
-  assert.match(line?.textContent ?? '', /\[1\]/);
-  const avatar = line?.querySelector('img');
-  const name = [...(line?.children ?? [])].find((child) =>
-    child.textContent?.includes('jao.scheuermann'),
-  );
-  assert.ok(avatar && name);
+  // The card's context: the quoted words, highlighted (the transcript does
+  // not draw the paragraph here, so the quote stands alone), and the arrow
+  // that goes to them; no pin's number is drawn.
+  const card = note?.closest('[data-comment-line]');
+  assert.ok(card);
   assert.equal(
-    avatar.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    card.querySelector('[data-comment-quote]')?.textContent,
+    'essa resposta',
+  );
+  assert.ok(
+    card.querySelector('button[aria-label="Go to the commented passage"]'),
+  );
+  assert.doesNotMatch(card.textContent ?? '', /\[1\]/);
+  // The comment itself: the avatar, then the note, in the primary frame; no
+  // author name. The note is drawn whole, its line breaks kept.
+  const frame = card.querySelector('[data-comment-frame]');
+  assert.ok(frame?.contains(note));
+  const avatar = frame?.firstElementChild;
+  assert.equal(avatar?.tagName, 'SPAN', 'the avatar is a span, not an image');
+  assert.equal(avatar?.textContent, 'JS', 'and reads as the initials');
+  assert.doesNotMatch(card.textContent ?? '', /jao\.scheuermann/);
+  assert.equal(note?.classList.contains('whitespace-pre-wrap'), true);
+});
+
+test('the stack opens the prompt block under the reader’s mark, and the prompt keeps its placeholder', async () => {
+  const { window } = await stacked('uma nota');
+
+  const stack = window.document.querySelector('[data-composer-stack]');
+  assert.ok(stack);
+  assert.equal(stack.getAttribute('data-turn-avatar'), 'user');
+  assert.equal(stack.getAttribute('data-avatar-initials'), 'JS');
+  // The prompt's words follow the stack, still offering the placeholder.
+  const prompt = window.document.querySelector('[data-prompt-input]');
+  assert.ok(prompt);
+  assert.equal(
+    stack.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING,
     Node.DOCUMENT_POSITION_FOLLOWING,
   );
-  assert.equal(note?.classList.contains('truncate'), true);
+  assert.equal(
+    prompt.getAttribute('data-placeholder'),
+    'Ask the agent to search, edit or build in this project…',
+  );
+});
+
+test('an empty stack draws nothing inside the prompt', async () => {
+  const { window } = await stacked();
+
+  const stack = window.document.querySelector('[data-composer-stack]');
+  assert.ok(stack);
+  assert.equal(stack.childNodes.length, 0, 'empty, so its mark is not drawn');
+});
+
+/** The stack's header, which folds its cards. */
+const stackHeader = (window: ChatWindow): HTMLButtonElement | null =>
+  window.document.querySelector(
+    '[data-composer-stack] [data-comment-group-header]',
+  );
+
+test('the stack’s header counts its comments and folds them away', async () => {
+  const { window } = await stacked('primeira', 'segunda');
+
+  const header = stackHeader(window);
+  assert.ok(header);
+  assert.equal(header.textContent, '2 comments');
+  assert.equal(header.getAttribute('aria-expanded'), 'true');
+
+  header.click();
+  await settle(20);
+  assert.equal(stackHeader(window)?.getAttribute('aria-expanded'), 'false');
+  assert.equal(noteOf(window, 1), null, 'folded, the notes are gone');
+
+  stackHeader(window)?.click();
+  await settle(20);
+  assert.ok(noteOf(window, 1));
+});
+
+test('ArrowUp from the first note reaches the header, and ArrowDown from it the first note', async () => {
+  const { window } = await stacked('primeira', 'segunda');
+
+  const first = noteOf(window, 1);
+  assert.ok(first);
+  first.focus();
+  const up = await press(first, 'ArrowUp');
+  assert.equal(up.defaultPrevented, true);
+  assert.equal(window.document.activeElement, stackHeader(window));
+
+  const header = stackHeader(window);
+  assert.ok(header);
+  await press(header, 'ArrowDown');
+  assert.equal(window.document.activeElement, noteOf(window, 1));
+});
+
+test('Escape on the header hands the caret back to the prompt', async () => {
+  const { window } = await stacked('primeira');
+
+  const header = stackHeader(window);
+  assert.ok(header);
+  header.focus();
+  await press(header, 'Escape');
+  await settle(20);
+
+  const editor = shownEditor();
+  assert.equal(window.document.activeElement, editor.getRootElement());
+  assert.equal(caretIn(editor)?.block, 'user-prompt-node');
+});
+
+test('Enter and Space on the stack’s header are the button’s, never the prompt’s', async () => {
+  const { window } = await stacked('primeira');
+  const header = stackHeader(window);
+  const prompt = window.document.querySelector('[data-prompt-input]');
+  assert.ok(header && prompt);
+  const before = prompt.innerHTML;
+
+  for (const key of ['Enter', ' ']) {
+    header.focus();
+    const event = await press(header, key);
+    // The editor never answered the key: the browser activates the button,
+    // and the prompt holds what it held (no new line, no space).
+    assert.equal(event.defaultPrevented, false, key);
+    assert.equal(prompt.innerHTML, before, key);
+  }
+  assert.equal(window.document.activeElement, stackHeader(window));
 });
 
 test('a note is written in place, and every edit goes to the composer', async () => {
@@ -414,7 +554,8 @@ test('a note is written in place, and every edit goes to the composer', async ()
   note.focus();
   note.textContent = 'uma nota menor';
   note.dispatchEvent(new Event('input', { bubbles: true }));
-  await settle(50);
+  // The edits of a burst reach the composer together, a moment later.
+  await settle(200);
 
   const written = window
     .received('chat.composer/v1.updateNote')
@@ -451,7 +592,7 @@ test("a note's placeholder shows only while the note holds no text, following wh
   assert.equal(written.hasAttribute('data-placeholder'), false);
 });
 
-test('the stack is a list named for screen readers, with no heading above it', async () => {
+test('the stack is a list named for screen readers, with no heading element above it', async () => {
   const { window } = await stacked('uma nota');
 
   const stack = window.document.querySelector('section[aria-label]');
@@ -499,6 +640,22 @@ test('Backspace in an empty note removes it, and the last one hands the caret to
   });
 });
 
+test('Backspace in a note of whitespace alone removes it, as in the inline comment', async () => {
+  const { window } = await stacked('primeira', '   ');
+
+  const blank = noteOf(window, 2);
+  assert.ok(blank);
+  blank.focus();
+  const event = await press(blank, 'Backspace');
+  await settle(50);
+
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(
+    window.received('chat.composer/v1.removeItem').map((call) => call.input),
+    [{ threadId, id: 'item-2' }],
+  );
+});
+
 test("ArrowUp on the prompt's first line puts the caret at the end of the last note", async () => {
   const { window } = await stacked('primeira', 'segunda');
 
@@ -527,6 +684,38 @@ test("ArrowUp on the prompt's first line puts the caret at the end of the last n
     window.document.getSelection()?.anchorNode?.textContent,
     'segunda',
   );
+});
+
+test("ArrowUp on the prompt's first line stops on the header of a folded stack", async () => {
+  const { window } = await stacked('primeira');
+  stackHeader(window)?.click();
+  await settle(20);
+
+  await type('Ajusta isso');
+  const editor = shownEditor();
+  const root = editor.getRootElement();
+  assert.ok(root);
+  root.focus();
+  editor.update(
+    () => {
+      const prompt = $getRoot()
+        .getChildren()
+        .find((node) => node.getType() === 'user-prompt-node');
+      assert.ok($isElementNode(prompt));
+      prompt.selectEnd();
+    },
+    { discrete: true },
+  );
+  const event = await press(root, 'ArrowUp');
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(window.document.activeElement, stackHeader(window));
+  // Down from the folded header goes back to the prompt.
+  const header = stackHeader(window);
+  assert.ok(header);
+  await press(header, 'ArrowDown');
+  await settle(20);
+  assert.equal(window.document.activeElement, root);
 });
 
 test('Enter moves on to the next note, and from the last one to the end of the prompt', async () => {
@@ -565,6 +754,38 @@ test('Cmd+Enter in a note sends the stack with the note as written', async () =>
     .map((call) => (call.input as { prompt: string }).prompt);
   assert.equal(sent.length, 1);
   assert.match(sent[0] ?? '', /<comment id="item-1"[^>]*>depois<\/comment>/);
+});
+
+test('Cmd+Enter right after a note edit writes the comment with the note as written', async () => {
+  const { window } = await noted('antes');
+
+  const note = noteOf(window, 1);
+  assert.ok(note);
+  note.focus();
+  note.textContent = 'depois';
+  note.dispatchEvent(new Event('input', { bubbles: true }));
+  await press(note, 'Enter', sendChord);
+  await settle(150);
+
+  // The prompt and the comment the send's flush writes say the same.
+  assert.deepEqual(commentsWritten(window), ['depois']);
+});
+
+test('a note left for the footer’s send goes out as written', async () => {
+  const { window } = await noted('antes');
+  const region = await footer(window);
+
+  const note = noteOf(window, 1);
+  assert.ok(note);
+  note.focus();
+  note.textContent = 'depois';
+  note.dispatchEvent(new Event('input', { bubbles: true }));
+  // A press on the footer's control takes the focus from the note first.
+  note.blur();
+  button(region, 'Send (Cmd+Enter)')?.click();
+  await settle(150);
+
+  assert.deepEqual(commentsWritten(window), ['depois']);
 });
 
 test("Cmd+Enter is the window's: away from the prompt, a comment alone goes out once", async () => {

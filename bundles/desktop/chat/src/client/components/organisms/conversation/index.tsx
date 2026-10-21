@@ -64,6 +64,7 @@ import {
   ChatBlocksContext,
 } from './nodes/chat-block-node.js';
 import { CommentLinesNode } from './nodes/comment-lines-node.js';
+import { CommentSeatNode } from './nodes/comment-seat-node.js';
 import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
 import { ComposerStackNode } from './nodes/composer-stack-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
@@ -75,6 +76,7 @@ import { QueuedTurnNode } from './nodes/queued-turn-node.js';
 import { RepliesTurnNode } from './nodes/replies-turn-node.js';
 import { TerminalResultNode } from './nodes/terminal-result-node.js';
 import { ThinkingTurnNode } from './nodes/thinking-turn-node.js';
+import { ThreadSpawnNode } from './nodes/thread-spawn-node.js';
 import { ToolTurnNode } from './nodes/tool-turn-node.js';
 import { TurnAuthorNode } from './nodes/turn-author-node.js';
 import {
@@ -84,6 +86,8 @@ import {
 import { UserTurnNode } from './nodes/user-turn-node.js';
 import { AttachImages } from './plugins/attach-images.js';
 import { CaretNavigation } from './plugins/caret-navigation.js';
+import { CommentHighlights } from './plugins/comment-highlights.js';
+import { CommentSeats } from './plugins/comment-seats.js';
 import { CommentSelection } from './plugins/comment-selection.js';
 import { ComposerDraft } from './plugins/composer-draft.js';
 import { EditQueuePrompt } from './plugins/edit-queue-prompt.js';
@@ -235,6 +239,7 @@ const defineConversationExtension = (
       AgentTurnNode,
       ThinkingTurnNode,
       ToolTurnNode,
+      ThreadSpawnNode,
       TurnAuthorNode,
       ActivityTurnNode,
       LifecycleTurnNode,
@@ -242,6 +247,7 @@ const defineConversationExtension = (
       QueueNode,
       ComposerStackNode,
       CommentLinesNode,
+      CommentSeatNode,
       PromptEditNode,
       QueuedTurnNode,
       FailureTurnNode,
@@ -448,7 +454,9 @@ export const Conversation = memo(function Conversation({
                     }
                   />
                   <EditQueuePrompt threadId={thread.id} />
-                  <CommentSelection thread={threadScope} />
+                  <CommentSelection />
+                  <CommentSeats />
+                  <CommentHighlights />
                   <StackCaret />
                 </LexicalExtensionComposer>
               </ChatBlocksContext.Provider>
