@@ -127,6 +127,28 @@ const cases: readonly Case[] = [
       'X-OpenAI-Fedramp': 'true',
     },
   },
+  {
+    kind: 'claude',
+    defaultBaseUrl: 'https://api.anthropic.com',
+    path: '/v1/messages?beta=true',
+    transport: () =>
+      fakeTransport({
+        responses: [
+          response({
+            content: [{ type: 'text', text: 'ok' }],
+            stop_reason: 'end_turn',
+          }),
+        ],
+      }),
+    metadata: { id: 'claude', name: 'Claude' },
+    // Claude sends the stored authorization value verbatim, like Codex.
+    requiredAuth: tokenValue,
+    extraHeaders: {
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
+      'x-app': 'cli',
+    },
+  },
 ];
 
 const kindOf = (id: ProviderKindId): ProviderKind => {
@@ -147,7 +169,9 @@ const completionRequest = (transport: FakeTransport, entry: Case) => {
 
 /** The one value a completion carries when only the required fields are set. */
 const completionAuth = (entry: Case): string | undefined =>
-  entry.kind === 'codex' ? tokenValue : `Bearer ${tokenValue}`;
+  entry.kind === 'codex' || entry.kind === 'claude'
+    ? tokenValue
+    : `Bearer ${tokenValue}`;
 
 const complete = async (
   kind: ProviderKind,
@@ -168,10 +192,10 @@ const complete = async (
   return provider;
 };
 
-void test('advertises only OpenAI and OpenRouter while keeping Codex internal', () => {
+void test('advertises OpenAI, OpenRouter and Claude while keeping Codex internal', () => {
   assert.deepEqual(
     providerKinds.map(({ id }) => id),
-    ['openai', 'openrouter'],
+    ['openai', 'openrouter', 'claude'],
   );
   assert.ok(providerKind('codex'));
   for (const removed of [

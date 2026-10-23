@@ -13,6 +13,7 @@
 //   'Doric returned an invalid response.' for a shape they refuse.
 
 import {
+  type CallArg,
   type CredentialDescription,
   credentialFieldsSatisfied,
   isContractError,
@@ -24,6 +25,7 @@ import {
   type Services,
   ToolsV1,
 } from 'bundle/contracts';
+import { ClaudeLoginV1 } from 'claude-login/contracts';
 import type {
   ConfigReplaceResult,
   Configuration as HostConfiguration,
@@ -511,6 +513,20 @@ const credentialWriteFailure = (error: unknown): never => {
   return unexpected(error);
 };
 
+/**
+ * The failures `claude.login` answers: its own busy text, the contract's
+ * message, or the generic one.
+ */
+const claudeLoginFailure = (error: unknown): never => {
+  if (isContractError(error)) {
+    if (error.code === 'claude_login_busy') {
+      return fail('A Claude sign-in is already in progress.');
+    }
+    return fail(error.message);
+  }
+  return unexpected(error);
+};
+
 /** Whether one declared value is one the field's kind accepts. */
 const fieldAccepts = (field: ModelField, value: string): boolean => {
   switch (field.kind) {
@@ -934,6 +950,9 @@ export interface SettingsApi {
     update(id: string, input: CredentialUpdate): Promise<Credential>;
     remove(id: string): Promise<void>;
   };
+  readonly claude: {
+    login(options?: CallArg): Promise<Credential>;
+  };
 }
 
 const replaced = (result: ConfigReplaceResult): DoricConfiguration => {
@@ -1027,6 +1046,23 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       );
       if (result === 'missing') return fail(credentialNotFound);
       if (result === 'referenced') return fail(credentialConflict);
+    },
+  },
+  claude: {
+    login: async (options) => {
+      let answered: CredentialDescription;
+      // A tuple method takes the call as its only argument, so an absent call
+      // is no argument at all: `undefined` would be read as an input item.
+      const login =
+        options === undefined
+          ? () => services.use(ClaudeLoginV1).login()
+          : () => services.use(ClaudeLoginV1).login(options);
+      try {
+        answered = await login();
+      } catch (error) {
+        return claudeLoginFailure(error);
+      }
+      return credentialFrom(answered);
     },
   },
 });

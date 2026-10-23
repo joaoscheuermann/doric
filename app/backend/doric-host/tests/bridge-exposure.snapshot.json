@@ -13,6 +13,7 @@
       "revisions",
       "setPolicy"
     ],
+    "claude.login/v1": ["login"],
     "comments/v1": ["add", "list", "resolve"],
     "doric.catalog/v1": [
       "artifact",

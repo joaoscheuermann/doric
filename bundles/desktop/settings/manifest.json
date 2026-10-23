@@ -15,6 +15,7 @@
     "host-config/v1@^1.0.0",
     "secrets/v1@^1.0.0",
     "models/v1@^1.0.0",
-    "tools/v1@^1.0.0"
+    "tools/v1@^1.0.0",
+    "claude.login/v1@^1.0.0"
   ]
 }

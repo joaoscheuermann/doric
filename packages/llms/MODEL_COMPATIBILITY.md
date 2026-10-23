@@ -52,6 +52,60 @@ types while using OpenRouter Chat Completions underneath.
 | MiniMax                   | Documented `tool_choice` supports only `auto`/`none`; structured output is model-specific.                                                            | Rejects forced choices and selects structured output per live model metadata.                                                                                                |
 | Unknown OpenRouter prefix | No curated behavioral evidence.                                                                                                                       | Plain chat works; tools require live `tools` support, forced choice requires live support, replay is limited to tool turns, and structured output falls back conservatively. |
 
+## The claude kind
+
+`createClaudeProvider` sends Anthropic Messages requests through a Claude Code
+subscription login, over the same `LlmProvider` types. The transport contract
+is the Messages API at `${baseUrl}/v1/messages?beta=true` with the OAuth beta
+headers (`anthropic-version: 2023-06-01`,
+`anthropic-beta: oauth-2025-04-20,claude-code-20250219`, `x-app: cli`) and the
+Claude Code CLI user agent; the authorization value the stored credential
+carries is sent verbatim, never re-rendered. A request without a system message
+sends Claude Code's own system line: "You are Claude Code, Anthropic's official
+CLI for Claude."
+
+Message and tool mapping follows Anthropic's Messages shapes, per the
+[tool-use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)
+and [structured-outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+documentation and the [Messages API](https://platform.claude.com/docs/en/api/messages)
+reference: system messages join into the `system` field; a user message is a
+content-block list whose images travel as `source` blocks (`base64` for
+`data:` URLs, `url` otherwise); an assistant turn is a text block beside its
+`tool_use` blocks, whose arguments are the parsed object of the call's
+arguments string; a run of tool messages collapses into one user message of
+`tool_result` blocks, and tool definitions map to `{ name, description,
+input_schema }`. Tool choice maps `required` to Anthropic's `any`, and a named
+tool to `{ type: 'tool', name }`.
+
+`max_tokens` is required and defaults to 32000. Thinking controls are never
+sent: a request `effort` is ignored, not forwarded. Structured output has no
+native mode on this transport (per the Messages API
+[structured-outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+guide): a schema request is parsed and validated locally, and the flag can put
+the JSON Schema into the system prompt.
+
+`stop_reason` maps back as:
+
+| Anthropic `stop_reason` | `finishReason`   |
+| ----------------------- | ---------------- |
+| `end_turn`              | `stop`           |
+| `stop_sequence`         | `stop`           |
+| `pause_turn`            | `stop`           |
+| `max_tokens`            | `length`         |
+| `tool_use`              | `tool_calls`     |
+| `refusal`               | `content_filter` |
+| anything else           | `unknown`        |
+
+Usage maps `input_tokens` to `inputTokens`, `output_tokens` to
+`outputTokens`, `cache_creation_input_tokens` to `cacheWriteTokens`, and
+`cache_read_input_tokens` to `cachedInputTokens`, with `totalTokens` their
+sum.
+
+In v1 the claude kind keeps no live model catalog: `models()` lists what
+Anthropic's models endpoint serves, but the kind advertises no `models` list a
+settings surface can edit — model names are typed by hand. `embedding` and
+`rerank` are rejected: Claude serves neither through this transport.
+
 ## Primary sources
 
 - OpenRouter: [model `supported_parameters`](https://openrouter.ai/docs/guides/overview/models), [tool calling](https://openrouter.ai/docs/guides/features/tool-calling), [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), [parameter-required routing](https://openrouter.ai/docs/guides/routing/provider-selection), and [reasoning details](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).

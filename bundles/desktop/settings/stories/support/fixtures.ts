@@ -19,6 +19,7 @@ export const credentialIds = {
   registry: '00000000-0000-4000-8000-000000000003',
   git: '00000000-0000-4000-8000-000000000004',
   github: '00000000-0000-4000-8000-000000000005',
+  claude: '00000000-0000-4000-8000-000000000006',
 } as const;
 
 /**
@@ -146,11 +147,50 @@ export const codexKind: ProviderKind = {
   lists: [],
 };
 
+/**
+ * Claude: the Claude Code subscription login, signed in from the provider
+ * page's own sign-in row.
+ */
+export const claudeKind: ProviderKind = {
+  id: 'claude',
+  label: 'Claude',
+  description: 'Anthropic Messages through a Claude Code subscription login.',
+  fields: [
+    {
+      key: 'endpoint',
+      label: 'Endpoint',
+      kind: 'url',
+      required: false,
+      advanced: true,
+      description: 'Overrides the base URL requests are sent to.',
+      placeholder: 'https://api.anthropic.com',
+    },
+    {
+      key: 'token',
+      label: 'Token',
+      kind: 'secret',
+      required: true,
+      description:
+        'Names the stored API_TOKEN credential that carries the Claude authorization value.',
+    },
+  ],
+  lists: [],
+};
+
 export const providerKinds: readonly ProviderKind[] = [
   openRouterKind,
   openAiKind,
   codexKind,
+  claudeKind,
 ];
+
+/** The credential a Claude sign-in answers: the stored Claude token. */
+export const claudeCredential: Credential = {
+  id: credentialIds.claude,
+  kind: 'API_TOKEN',
+  name: 'Claude',
+  hasSecret: true,
+};
 
 export const credentials: readonly Credential[] = [
   {
@@ -186,6 +226,7 @@ export const credentials: readonly Credential[] = [
     name: 'GitHub token',
     hasSecret: true,
   },
+  claudeCredential,
 ];
 
 /** Credentials with no `API_TOKEN`, so no provider can name one. */

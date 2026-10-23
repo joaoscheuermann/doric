@@ -1275,7 +1275,7 @@ names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `git`, `threads`, `terminal`, `usage`, `resources`, `screen`, `screen-relay`,
 `runtime`,
 `default`,
-`openai`, `openrouter`, `codex`, `docker`, `notifications`, `layout`,
+`openai`, `openrouter`, `codex`, `claude`, `claude-login`, `docker`, `notifications`, `layout`,
 `settings`, `chat`, `history`, `artifacts`, `comments` and `papercraft`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
@@ -1418,8 +1418,10 @@ usage reads and settings writes retain their ten-second deadlines. They rewrite
 `messages` (plus the re-based `meta.checkpoints`) in one history-and-event
 commit, so the log stays the full conversation and the summary never splits
 an assistant tool call from its result. The core provides
-`models/v1`; since stage 10 the `openai`, `openrouter` and `codex` bundles
-register their `models.provider/v1` kinds and `docker` (or `firecracker`,
+`models/v1`; since stage 10 the `openai`, `openrouter`, `codex` and `claude` bundles
+register their `models.provider/v1` kinds, the `claude-login` bundle provides
+`claude.login/v1` (the in-app Claude sign-in the `settings` bundle requires),
+and `docker` (or `firecracker`,
 selected with `DORIC_SANDBOX_PROVIDER`) provides `sandbox/v1`; the stage-5
 provisional `models-adapter` and `sandbox-adapter` bundles have been removed. The kernel
 refuses to boot, at `bundle_load`, when a contract or bundle that the
@@ -1560,13 +1562,14 @@ executable tools or arbitrary tool input schemas.
 
 Stage 10 ("Funcionalidades e sandbox", WP-10L host switch and WP-10N desktop
 switch) moves each feature into its own bundle. The composition enables
-`openai`, `openrouter` and `codex` (provider kinds come from their
+`openai`, `openrouter`, `codex` and `claude` (provider kinds come from their
 `models.provider/v1` registrations; codex is resolvable but not advertised by
-`GET /providers/kinds`), `docker` as the one `sandbox/v1` provider
+`GET /providers/kinds`, while claude is advertised alongside OpenAI and
+OpenRouter), `docker` as the one `sandbox/v1` provider
 (`firecracker` is staged; with no `DORIC_COMPOSITION`,
 `DORIC_SANDBOX_PROVIDER=firecracker` boots the shipped composition with
 `firecracker` in its place; the libraries are `docker-sandbox` and
-`firecracker-sandbox`), `terminal`, `usage`, `resources` and `notifications`.
+`firecracker-sandbox`), `terminal`, `usage`, `resources`, `claude-login` and `notifications`.
 `files` (`files/v1`), `git` (`git.commands/v1`), `terminal` (`terminal/v1`),
 `usage` (`usage/v1`) and `resources` (`resources/v1`) read the sandbox over
 `runtime.lease/v1.withLease` and never acquire a lease; `usage/v1` also
@@ -2152,8 +2155,14 @@ logging through the injected logger; there is no per-request privacy flag.
 They pass their existing logger to these dependencies; private OKF provider
 calls use a disabled Pino logger.
 
-Doric advertises only OpenAI and OpenRouter in its provider catalog. OpenAI is
+Doric advertises OpenAI, OpenRouter and Claude in its provider catalog. OpenAI is
 the Responses-compatible adapter with caller-configured identity and endpoint.
+Claude is Anthropic Messages through a Claude Code subscription login: it sends
+the Claude Code OAuth beta headers with a stored authorization value read
+verbatim, so there is no live credential flow behind a configured provider; it
+keeps no live model catalog (model names are typed by hand), sends no thinking
+controls (a request effort is ignored, not forwarded), and serves neither
+embeddings nor reranking in v1.
 Codex remains available internally, including existing configuration, but is
 excluded from the advertised catalog. LM Studio's native and Chat Completions
 adapters, the separate OpenAI-compatible kind, and the raw OpenRouter public
@@ -2211,7 +2220,7 @@ input, output, total, reasoning, cached-input, and cache-write token counts,
 rerank search units, and normalized cost metadata with amount, optional unit,
 and optional upstream amount. OpenRouter costs use the `credits` unit.
 Successful rerank results expose each original document index and finite
-relevance score. Codex supports neither embeddings nor
+relevance score. Codex and Claude support neither embeddings nor
 reranking.
 `packages/llms` exposes its OpenAI Responses-compatible factory with
 caller-configured provider identity and base URL. Its `/responses`, `/models`,
@@ -2349,12 +2358,14 @@ structured-output repair attempts identically in `complete` and `stream`.
 Tools from the last permitted turn execute and their results are stored before
 the next invocation is rejected with `turn_limit_exceeded`. Exhausted streams
 preserve emitted events and do not emit `agent.finished`.
-OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`.
-The Codex provider uses the existing provider token
+OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`. Claude
+sends no reasoning controls: a request effort is ignored, not sent. The Claude
+provider uses the existing provider token
+field for the Claude authorization value, sent verbatim, never re-rendered. The Codex provider uses the existing provider token
 field for the Codex authorization value and derives Codex-compatible account
 headers from that credential when available. OpenAI provider
 configs may omit or blank the token for compatible local endpoints; in that
-case the auth header is omitted. Codex and OpenRouter provider configs still
+case the auth header is omitted. Codex, Claude and OpenRouter provider configs still
 require configured tokens. Credential values must remain private runtime
 inputs: do not persist, log, or echo resolved tokens.
 
@@ -2369,6 +2380,41 @@ scope. The ChatGPT Codex backend requires streaming requests with
 `store: false` and non-empty instructions; non-streaming provider calls should
 be fulfilled by consuming the streaming backend response. Codex requests must
 not forward unsupported public Responses API controls such as `temperature`.
+
+The Claude OAuth profile is a package-owned default for the Claude Code
+browser authorization flow: authorize at `claude.com/cai/oauth/authorize`,
+exchange tokens at `platform.claude.com/v1/oauth/token`, Claude Code's public
+client id, a `localhost` callback on port 54545 falling back to 54546, the
+`user:inference` scope, `code=true` on the authorize request, JSON token
+request bodies instead of urlencoded forms, and a long-login `expires_in` request
+(31536000). Host scripts should require only `CLAUDE_AUTHORIZATION` for normal
+runtime use and let the OAuth package provide the rest. The credential resolver
+also reads Claude Code's own `~/.claude/.credentials.json` (or
+`CLAUDE_CONFIG_DIR`), refreshing an expiring login in place through the same
+JSON refresh grant and writing the rotated access and refresh tokens and expiry
+back before returning the credential.
+
+- **The bundle flow.** The `claude-login` bundle turns that profile into the
+  in-app sign-in behind the settings window's provider page.
+  `claude.login/v1.login()` reuses a working Claude Code login first
+  (`~/.claude`, `CLAUDE_CONFIG_DIR` or `CLAUDE_AUTHORIZATION`); any other
+  resolve failure falls through to the fresh browser flow, which binds the
+  same loopback callback (`localhost:54545/callback`, falling back to
+  `:54546` when the port is busy), keeps its token record in memory and closes
+  the callback server however the flow ends. The authorization value alone is
+  stored, through `secrets/v1`, as the `API_TOKEN` credential named `Claude`
+  (a taken name moves the secret of the same-name credential), never logged,
+  and `login()` answers the credential's public view. One sign-in runs at a
+  time (`claude_login_busy`), and a cancelled call answers
+  `claude_login_aborted` and stores nothing.
+- **The settings integration.** The `settings` bundle imports
+  `claude-login/contracts`, requires `claude.login/v1`, and offers the
+  `claude` provider kind a sign-in row: the `useClaudeLogin` hook settles the
+  answered credential into the `credentials` query cache _before_ it
+  publishes it, so the view's auto-select effect commits a `token` value the
+  configuration already accepts; a failure toasts, except the hook's own
+  cancel, which stays silent. A host without a reachable browser can run
+  `npm run claude:oauth` and set `CLAUDE_AUTHORIZATION` instead.
 
 `packages/state-machine` owns reusable, process-local typed transition
 execution. A definition stores only its exhaustive handler map and infers its
