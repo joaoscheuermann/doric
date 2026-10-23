@@ -96,6 +96,37 @@ Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
 See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
 matrix, fallback rules, primary sources, and paid live-conformance command.
 
+### Claude integration
+
+`createClaudeProvider` sends Anthropic Messages requests through a Claude
+Code subscription login: authorize once (for example with the
+`claude:oauth` script), store the resulting authorization value, and pass it
+as the `authorization` dependency. `llms` never reads the credential store;
+the host resolves the value.
+
+```ts
+import pino from 'pino';
+import { createClaudeProvider, createFetchTransport } from 'llms';
+import { resolveClaudeAuth } from 'oauth';
+
+const credential = await resolveClaudeAuth();
+const provider = createClaudeProvider({
+  transport: createFetchTransport(),
+  authorization: credential.authorization,
+  logger: pino(),
+});
+```
+
+Set `baseUrl` to point the provider at another Anthropic Messages endpoint
+(default: `https://api.anthropic.com`). The provider sends the Claude Code
+OAuth beta headers and the Claude Code CLI user agent, sends no thinking or
+effort controls (a request `effort` is ignored, not forwarded), and answers a
+stream's thinking deltas as `reasoning.delta` events. `embedding` and
+`rerank` are rejected: Claude serves neither in this integration. `models()`
+lists the model ids and display names Anthropic's models endpoint serves,
+which is a listing only — it says nothing about a model's capabilities, so
+model names are typed by hand.
+
 ### Internal Codex integration
 
 `createCodexProvider` sends a rendered authorization header to ChatGPT's Codex
@@ -130,8 +161,8 @@ passing both is an error.
 
 ### Configuring providers from settings
 
-`providerKinds` lists the advertised kinds (`openai` and `openrouter`), each
-with the fields a settings surface should show. `providerKind(id)` looks up a
+`providerKinds` lists the advertised kinds (`openai`, `openrouter` and
+`claude`), each with the fields a settings surface should show. `providerKind(id)` looks up a
 kind, and `createProviderForKind(id, values, deps)` builds a provider from
 field values, rejecting missing required fields. The former `unified`,
 `openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions API have

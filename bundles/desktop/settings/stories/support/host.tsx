@@ -20,6 +20,7 @@ import type {
 import { sectionPath } from '../../src/client/domain/section-route.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
 import {
+  claudeCredential,
   credentials as credentialFixtures,
   openRouterCatalog,
   providerKinds,
@@ -38,6 +39,7 @@ export type Answer<T> = T | { readonly pending: true } | Error;
 
 /** What the fake host stores and answers. Each read defaults to a fixture. */
 export type StoryHost = {
+  readonly claudeLogin?: Answer<Credential>;
   readonly config?: Answer<DoricConfiguration>;
   readonly kinds?: Answer<readonly ProviderKind[]>;
   readonly tools?: Answer<readonly ToolCatalogEntry[]>;
@@ -148,6 +150,9 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
   const list = (): readonly Credential[] => settled(stored) ?? [];
 
   const contracts: Record<string, unknown> = {
+    'claude.login/v1': {
+      login: () => answer(host.claudeLogin ?? claudeCredential),
+    },
     'host-config/v1': {
       current: () => answer(config),
       replace: (input: unknown) => {

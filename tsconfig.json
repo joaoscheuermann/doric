@@ -124,6 +124,9 @@
       "path": "./bundles/providers/codex"
     },
     {
+      "path": "./bundles/providers/claude"
+    },
+    {
       "path": "./bundles/features/web"
     },
     {
@@ -134,15 +137,6 @@
     },
     {
       "path": "./bundles/foundation/host-config"
-    },
-    {
-      "path": "./bundles/desktop/settings"
-    },
-    {
-      "path": "./app/backend/doric-host-e2e"
-    },
-    {
-      "path": "./app/desktop/doric-e2e"
     },
     {
       "path": "./bundles/features/screen"
@@ -158,6 +152,9 @@
     },
     {
       "path": "./bundles/features/comments"
+    },
+    {
+      "path": "./bundles/features/claude-login"
     }
   ]
 }

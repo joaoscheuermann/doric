@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { Button } from 'desktop/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -27,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from 'desktop/ui/select';
-import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
+import { AlertCircleIcon, ChevronRightIcon, LogInIcon } from 'lucide-react';
 
 import {
   type Credential,
@@ -41,6 +42,7 @@ import {
   type ProviderKind,
   providerIssue,
 } from '../../domain/config.js';
+import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
 import { ProviderModelsEditor } from '../molecules/provider-models-editor.js';
 import { ProviderModelPicker } from './provider-model-picker.js';
 
@@ -173,11 +175,14 @@ function ProviderFieldControl({
  * once the screen's caller has stored it.
  */
 export function SettingsProviderScreen({
+  claudeLogin,
   credentials,
   draft,
   kinds,
   onChange,
 }: {
+  /** The Claude sign-in the `claude` kind's row offers; absent outside the settings window. */
+  readonly claudeLogin?: ClaudeLogin;
   readonly credentials: readonly Credential[];
   readonly draft: ProviderDraft;
   readonly kinds: readonly ProviderKind[];
@@ -256,6 +261,40 @@ export function SettingsProviderScreen({
           onChange={(value) => setValue(field.key, value)}
         />
       ))}
+
+      {kind?.id === 'claude' && claudeLogin !== undefined && (
+        <Field>
+          <FieldLabel>Claude login</FieldLabel>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={claudeLogin.busy}
+              onClick={() => claudeLogin.start()}
+            >
+              <LogInIcon data-icon="inline-start" />
+              {claudeLogin.busy
+                ? 'Waiting for the browser…'
+                : 'Sign in with Claude'}
+            </Button>
+            {claudeLogin.busy && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => claudeLogin.cancel()}
+              >
+                Cancel
+              </Button>
+            )}
+          </div>
+          <FieldDescription>
+            Signs in with a Claude Code subscription. An existing Claude Code
+            login is reused when one is present; otherwise the browser opens to
+            sign in. The token is stored as the 'Claude' API token credential
+            and selected here.
+          </FieldDescription>
+        </Field>
+      )}
 
       {kind !== undefined &&
         (kind.lists.includes('models') ? (

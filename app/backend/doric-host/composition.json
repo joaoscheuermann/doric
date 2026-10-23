@@ -19,6 +19,8 @@
     "openai",
     "openrouter",
     "codex",
+    "claude",
+    "claude-login",
     "docker",
     "notifications",
     "layout",

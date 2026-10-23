@@ -341,7 +341,7 @@ void test('answers the provider-kind catalog models/v1 lists', async (t) => {
   assert.deepEqual(body.kinds, json(providerKinds));
   assert.deepEqual(
     body.kinds.map(({ id: kind }) => kind),
-    ['openai', 'openrouter'],
+    ['openai', 'openrouter', 'claude'],
   );
 });
 

@@ -2,6 +2,7 @@ import type { Logger } from 'pino';
 
 import type { HttpTransport } from '../types/http.js';
 import type { LlmProvider } from '../types/provider.js';
+import { claudeMetadata, createClaudeProvider } from './claude.js';
 import { codexMetadata, createCodexProvider } from './codex.js';
 import {
   createOpenAiProvider,
@@ -15,7 +16,7 @@ import {
 } from './openrouter.js';
 
 /** Every provider integration this package can configure. */
-export type ProviderKindId = 'openai' | 'openrouter' | 'codex';
+export type ProviderKindId = 'openai' | 'openrouter' | 'codex' | 'claude';
 
 export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
@@ -181,6 +182,21 @@ const supportedKinds: readonly ProviderKind[] = [
     ],
     lists: [],
   },
+  {
+    id: 'claude',
+    label: 'Claude',
+    description:
+      'Anthropic Messages through a Claude Code subscription login, authenticated with a Claude authorization value.',
+    fields: [
+      endpoint(claudeMetadata.baseUrl),
+      token({
+        required: true,
+        description:
+          'Names the stored API_TOKEN credential that carries the Claude authorization value.',
+      }),
+    ],
+    lists: [],
+  },
 ];
 
 /** The integrations advertised to users. Codex remains internal for now. */
@@ -324,6 +340,15 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
       ...baseUrl(values),
     });
   },
+
+  claude: (values, deps) =>
+    createClaudeProvider({
+      transport: deps.transport,
+      logger: deps.logger,
+      identity: deps.identity,
+      authorization: values.token ?? '',
+      ...baseUrl(values),
+    }),
 };
 
 /** A declared value the factory can use: a source, or a literal with something in it. */

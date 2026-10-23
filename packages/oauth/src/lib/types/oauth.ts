@@ -8,6 +8,10 @@ export interface OAuthProfile {
   readonly authorizationParams?: Readonly<Record<string, string>>;
   readonly defaultScope?: string;
   readonly defaultTokenScheme?: string;
+  /** How token requests encode their body; defaults to `form` (x-www-form-urlencoded). */
+  readonly tokenRequest?: 'form' | 'json';
+  /** Extra parameters the token exchange sends, e.g. `expires_in` to request a long login. */
+  readonly tokenExchangeParams?: Readonly<Record<string, string | number>>;
 }
 
 export interface OAuthTokenRecord {

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import type { Descriptor, EmbeddedBundle, ManifestV1 } from 'bundle';
 import { type Models, ModelsV1, SecretsV1 } from 'bundle/contracts';
+import { createActivate as createClaude } from 'claude/host';
 import { createActivate as createCodex } from 'codex/host';
 import {
   type HttpRequest,
@@ -19,8 +20,8 @@ import { createActivate as createOpenRouter } from 'openrouter/host';
 import { readModelProperties } from '../src/contracts/index.js';
 import { type Booted, boot, core } from './support/host.js';
 
-// D-M: models/v1 over the provider bundles `openai`, `openrouter` and `codex`
-// (design 57 §6, stage 10 §3.1-3.3), with the
+// D-M: models/v1 over the provider bundles `openai`, `openrouter`, `codex` and
+// `claude` (design 57 §6, stage 10 §3.1-3.3), with the
 // cases of the host's provider generation and model catalog tests.
 
 const readJson = async (path: string): Promise<unknown> =>
@@ -49,11 +50,12 @@ const fakeTransport = (
   return { requests, transport };
 };
 
-/** The three provider-kind bundles, over one transport. */
+/** The four provider-kind bundles, over one transport. */
 const providers = async (transport: HttpTransport): Promise<EmbeddedBundle[]> =>
   Promise.all(
     (
       [
+        ['claude', createClaude],
         ['codex', createCodex],
         ['openai', createOpenAi],
         ['openrouter', createOpenRouter],
@@ -84,7 +86,7 @@ const withModels = async (
 ) => {
   const { requests, transport } = fakeTransport(answer);
   const host = await boot([await core(), ...(await providers(transport))], {
-    enabled: ['codex', 'openai', 'openrouter'],
+    enabled: ['codex', 'openai', 'openrouter', 'claude'],
   });
   const secrets = host.platform.services.use(SecretsV1);
 
@@ -137,15 +139,28 @@ const initialized = (host: Booted) =>
 const authorizationOf = (request: HttpRequest | undefined) =>
   request?.headers?.authorization;
 
-void test('the advertised kinds are the llms provider kinds, in order, and codex is a kind but not advertised', async () => {
+/** The lexical order of two provider kinds by id, to compare them as a set. */
+const byId = (one: { id: string }, other: { id: string }) =>
+  one.id < other.id ? -1 : one.id > other.id ? 1 : 0;
+
+void test('the advertised kinds are the llms provider kinds, and codex is a kind but not advertised', async () => {
   await withModels(async ({ models }) => {
-    assert.deepEqual(await models.kinds(), providerKinds);
+    // A set, not an order: the kernel activates the provider bundles in its
+    // own alphabetical order, so the kinds register in a different order than
+    // the one llms lists them in.
+    assert.deepEqual(
+      [...(await models.kinds())].sort(byId),
+      [...providerKinds].sort(byId),
+    );
+    // The registration order follows the kernel activation order above:
+    // alphabetical by bundle id, with the unadvertised codex left out.
     assert.deepEqual(
       (await models.kinds()).map(({ id }) => id),
-      ['openai', 'openrouter'],
+      ['claude', 'openai', 'openrouter'],
     );
     assert.deepEqual(await models.kind('codex'), providerKind('codex'));
     assert.deepEqual(await models.kind('openai'), providerKind('openai'));
+    assert.deepEqual(await models.kind('claude'), providerKind('claude'));
     assert.equal(await models.kind('anthropic'), undefined);
   });
 });
