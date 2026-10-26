@@ -547,6 +547,11 @@ an editable table, the execution model with its reasoning effort, the execution
 turn limit, and a Credentials section over the host's credential store. A
 provider is configured on a page of its own, opened from the providers table,
 whose breadcrumb names the provider and whose back control returns to the table.
+The same provider page also opens in the workspace window's `/projects`
+dashboard: the settings bundle adds a Providers group to the dashboard sidebar
+(`layout.dashboard.nav`), whose rows and "Add provider" action open the page in
+the dashboard's main area (`layout.dashboard.page`, shown through
+`layout.dashboard/v1`), and it autosaves and flushes on close as the window does.
 The kind is chosen there with a searchable combobox and changing it starts the
 form over, so a provider is configured by choosing the kind of provider it is —
 one of the kinds `packages/llms` offers — and then filling the fields and the
@@ -1551,7 +1556,10 @@ new `layout.panel/v1` (the Project panel over `layout.panel` region items, with
 under each Thread), `chat.hooks/v1@1.1.0.onThreadUpdateHook`, a
 `chat.delegated-input/v1` renderer slot and `<chat-readonly-markdown>`, the
 `settings.config/v1` (the settings window's one autosave draft), and the new
-`layout.stack/v1@1.0.0` (the sidebar's groups as panes a bundle registers). The layout
+`layout.stack/v1@1.0.0` (the sidebar's groups as panes a bundle registers). The
+layout also provides `layout.dashboard/v1@1.0.0`: the `/projects` dashboard's
+shown page, one of the `layout.dashboard.page` region items drawn instead of the
+project list, beside the `layout.dashboard.nav` groups of its sidebar. The layout
 imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and never consulted: every registered tool is

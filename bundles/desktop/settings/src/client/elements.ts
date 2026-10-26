@@ -36,3 +36,13 @@ export const sectionHosts = {
   tools: portalHosts<Record<string, never>>([]),
   credentials: portalHosts<Record<string, never>>([]),
 } as const satisfies Record<SectionId, unknown>;
+
+/** The `layout.dashboard.page` item id of the dashboard's provider page. */
+export const PROVIDER_PAGE_ID = 'settings.provider';
+
+/**
+ * `<settings-dashboard-provider>`, the dashboard page the Providers group's
+ * root (`<settings-dashboard-providers>`) renders the open provider into, so
+ * the group's rows and the page share one draft and one save.
+ */
+export const providerPageHosts = portalHosts<Record<string, never>>([]);

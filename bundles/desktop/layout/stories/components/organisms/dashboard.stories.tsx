@@ -53,6 +53,7 @@ function Board({
             all={all}
             navigate={navigate}
             createRequest={createRequest}
+            onOpenSettings={() => undefined}
           />
         </Frame>
       </QueryClientProvider>

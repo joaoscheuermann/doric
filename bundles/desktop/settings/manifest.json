@@ -1,13 +1,13 @@
 {
   "manifestVersion": 1,
   "id": "settings",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "engines": {
     "doric": "^1.0.0"
   },
   "description": "The settings window and the footer execution picker.",
   "provides": ["settings.config/v1@1.0.0"],
-  "optional": ["claude.login/v1"],
+  "optional": ["claude.login/v1", "layout.dashboard/v1"],
   "requires": [
     "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",

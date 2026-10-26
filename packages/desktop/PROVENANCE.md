@@ -16,7 +16,7 @@ shadcn/ui files edited locally. Each comes from one of two origins, which
   CLI's `base-nova` style, the Base UI flavour of the `radix-nova` style the
   renderer used: `alert-dialog`, `badge`, `breadcrumb`, `button`, `checkbox`,
   `collapsible`, `combobox`, `command`, `context-menu`, `dialog`,
-  `dropdown-menu`, `input`, `input-group`, `label`, `marker`, `popover`,
+  `dropdown-menu`, `input`, `input-group`, `kbd`, `label`, `marker`, `popover`,
   `progress`, `scroll-area`, `select`, `separator`, `sheet`, `sidebar`, `tabs`,
   `toggle`, `toggle-group` and `tooltip`.
 
