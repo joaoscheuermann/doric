@@ -185,6 +185,7 @@ function Workspace() {
         {tabBar}
         <Dashboard
           workspace={workspace}
+          onOpenSettings={openSettings}
           all={!newTab || projectTabs.path !== '/'}
           navigate={(path) => {
             setNewTab(false);

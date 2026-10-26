@@ -5,7 +5,13 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
-import { FolderIcon, PlusIcon, SearchIcon } from 'lucide-react';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from 'desktop/ui/input-group';
+import { Kbd, KbdGroup } from 'desktop/ui/kbd';
+import { PlusIcon, SearchIcon } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -15,9 +21,15 @@ import {
 } from 'react';
 
 import { api } from '../../api/workspace-api.js';
+import { dashboardPage, searchShortcutKeys } from '../../domain/dashboard.js';
+import { useDashboardPage } from '../../hooks/use-dashboard-page.js';
+import { useRegionItems } from '../../hooks/use-region-items.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
+import { dashboardStore } from '../../stores/dashboard.js';
+import { ElementHost } from '../molecules/element-host.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 import { ProjectColorMenu } from '../molecules/project-color-menu.js';
+import { DashboardSidebar } from './dashboard-sidebar.js';
 
 type Entry = Awaited<ReturnType<typeof api.projects.activity>>[number];
 type ViewMode = 'grid' | 'list';
@@ -149,11 +161,13 @@ export function Dashboard({
   all,
   navigate,
   createRequest = 0,
+  onOpenSettings,
 }: {
   readonly workspace: Workspace;
   readonly all: boolean;
   readonly navigate: (path: string) => void;
   readonly createRequest?: number;
+  readonly onOpenSettings: () => void;
 }) {
   const [search, setSearch] = useState('');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -163,7 +177,13 @@ export function Dashboard({
   const nameInput = useRef<HTMLInputElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const navItems = useRegionItems('layout.dashboard.nav');
+  const page = dashboardPage(
+    useRegionItems('layout.dashboard.page'),
+    useDashboardPage(),
+  );
   const beginCreation = useCallback(() => {
+    dashboardStore.getState().close();
     setCreating(true);
     requestAnimationFrame(() => nameInput.current?.focus());
   }, []);
@@ -251,10 +271,13 @@ export function Dashboard({
     item?.scrollIntoView({ block: 'nearest' });
   };
 
+  const changeSearch = (value: string) => {
+    if (value !== '') dashboardStore.getState().close();
+    setSearch(value);
+    setHighlightedId(null);
+  };
   const searchField = (
-    <label
-      className={`group relative flex min-w-0 items-center bg-[var(--paper-ghost-hover)] outline-2 -outline-offset-1 outline-transparent focus-within:outline-[var(--paper-focus)] ${all ? 'h-[32px] rounded-[6px]' : 'h-[36px] rounded-[8px]'}`}
-    >
+    <label className="group relative flex h-[36px] min-w-0 items-center rounded-[8px] bg-[var(--paper-ghost-hover)] outline-2 -outline-offset-1 outline-transparent focus-within:outline-[var(--paper-focus)]">
       <SearchIcon
         size={14}
         className="pointer-events-none absolute left-[10px] text-[var(--paper-gray-3)] group-focus-within:text-[var(--paper-gray-1)]"
@@ -265,10 +288,7 @@ export function Dashboard({
         type="text"
         placeholder="Search projects"
         value={search}
-        onChange={(event) => {
-          setSearch(event.target.value);
-          setHighlightedId(null);
-        }}
+        onChange={(event) => changeSearch(event.target.value)}
         onKeyDown={onSearchKeyDown}
         className="h-full w-full min-w-0 bg-transparent pl-[28px] pr-[72px] text-[13px] leading-[16px] text-[var(--paper-gray-1)] outline-none placeholder:text-[var(--paper-gray-4)]"
       />
@@ -278,6 +298,30 @@ export function Dashboard({
         </kbd>
       )}
     </label>
+  );
+  const dashboardSearch = (
+    <InputGroup className="h-8 bg-background shadow-none">
+      <InputGroupAddon>
+        <SearchIcon />
+      </InputGroupAddon>
+      <InputGroupInput
+        ref={searchInput}
+        aria-label="Search projects"
+        placeholder="Search projects"
+        value={search}
+        onChange={(event) => changeSearch(event.target.value)}
+        onKeyDown={onSearchKeyDown}
+      />
+      {!search && (
+        <InputGroupAddon align="inline-end">
+          <KbdGroup>
+            {searchShortcutKeys(navigator.platform).map((key) => (
+              <Kbd key={key}>{key}</Kbd>
+            ))}
+          </KbdGroup>
+        </InputGroupAddon>
+      )}
+    </InputGroup>
   );
   const createForm = creating && (
     <form
@@ -439,62 +483,65 @@ export function Dashboard({
 
   return (
     <div className="flex min-h-0 flex-1 bg-[var(--paper-panel)] text-[var(--paper-gray-1)]">
-      <aside
-        className="w-[240px] shrink-0 overflow-y-auto p-[12px]"
-        aria-label="Dashboard navigation"
-      >
-        <div className="flex min-h-full flex-col gap-[24px]">
-          <nav className="flex flex-col gap-[2px]">
-            <div className="mb-[12px] h-[32px] w-full">{searchField}</div>
-            <button
-              type="button"
-              aria-current="page"
-              className="flex h-[32px] items-center gap-[8px] rounded-[6px] bg-[var(--paper-ghost-hover)] px-[8px] text-left text-[13px] text-[var(--paper-gray-1)] outline-[var(--paper-focus)] focus-visible:outline-2"
-            >
-              <FolderIcon size={15} /> Projects
-            </button>
-          </nav>
-        </div>
+      <aside className="flex shrink-0" aria-label="Dashboard navigation">
+        <DashboardSidebar
+          search={dashboardSearch}
+          projects={workspace.projects}
+          listActive={page === undefined}
+          navItems={navItems}
+          onAllProjects={() => dashboardStore.getState().close()}
+          onNewProject={beginCreation}
+          onSelectProject={workspace.actions.selectProject}
+          onOpenSettings={onOpenSettings}
+        />
       </aside>
-      <main
-        className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-[var(--paper-root)] [scrollbar-gutter:stable]"
-        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
-      >
-        <div
-          className={`sticky top-0 z-10 border-b bg-[var(--paper-root)] px-[80px] pt-[32px] pb-[12px] max-[900px]:px-[24px] ${scrolled ? 'border-[var(--paper-separator)]' : 'border-transparent'}`}
+      {page !== undefined ? (
+        <main className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-background">
+          <ElementHost key={page.id} tag={page.tag} className="block h-full" />
+        </main>
+      ) : (
+        <main
+          className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-[var(--paper-root)] [scrollbar-gutter:stable]"
+          onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
         >
-          <div className="mx-auto flex h-[32px] w-full max-w-[1376px] items-center justify-between gap-[48px]">
-            <h1 className="min-w-0 truncate text-[24px] font-medium leading-[32px] tracking-[0.005em]">
-              Projects
-            </h1>
-            <div className="flex h-[28px] shrink-0 items-center gap-[12px]">
-              <button
-                type="button"
-                className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-medium text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
-                onClick={beginCreation}
-              >
-                <PlusIcon size={12} /> New project
-              </button>
+          <div
+            className={`sticky top-0 z-10 border-b bg-[var(--paper-root)] px-[80px] pt-[32px] pb-[12px] max-[900px]:px-[24px] ${scrolled ? 'border-[var(--paper-separator)]' : 'border-transparent'}`}
+          >
+            <div className="mx-auto flex h-[32px] w-full max-w-[1376px] items-center justify-between gap-[48px]">
+              <h1 className="min-w-0 truncate text-[24px] font-medium leading-[32px] tracking-[0.005em]">
+                Projects
+              </h1>
+              <div className="flex h-[28px] shrink-0 items-center gap-[12px]">
+                <button
+                  type="button"
+                  className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-medium text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
+                  onClick={beginCreation}
+                >
+                  <PlusIcon size={12} /> New project
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="px-[80px] pt-[48px] pb-[32px] max-[900px]:px-[24px]">
-          <div className="mx-auto w-full max-w-[1376px]">
-            {creating && (
-              <div className="mb-[24px] w-[520px] max-w-full">{createForm}</div>
-            )}
-            {listContent}
-            {workspace.error && (
-              <p
-                className="py-[12px] text-[12px] text-destructive"
-                role="alert"
-              >
-                {workspace.error}
-              </p>
-            )}
+          <div className="px-[80px] pt-[48px] pb-[32px] max-[900px]:px-[24px]">
+            <div className="mx-auto w-full max-w-[1376px]">
+              {creating && (
+                <div className="mb-[24px] w-[520px] max-w-full">
+                  {createForm}
+                </div>
+              )}
+              {listContent}
+              {workspace.error && (
+                <p
+                  className="py-[12px] text-[12px] text-destructive"
+                  role="alert"
+                >
+                  {workspace.error}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
     </div>
   );
 }

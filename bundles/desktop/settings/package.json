@@ -12,6 +12,7 @@
     "bundle": "0.0.1",
     "claude-login": "0.0.1",
     "desktop": "1.0.0",
+    "layout": "0.0.1",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

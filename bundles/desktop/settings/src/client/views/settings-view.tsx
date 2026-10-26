@@ -1,13 +1,7 @@
-import {
-  HooksV1,
-  NavigationV1,
-  type Services,
-  WindowHooksV1,
-} from 'bundle/contracts';
+import { NavigationV1, type Services } from 'bundle/contracts';
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import { SidebarMenuButton, SidebarMenuItem } from 'desktop/ui/sidebar';
 import { Skeleton } from 'desktop/ui/skeleton';
-import { toast } from 'desktop/ui/sonner';
 import { AlertCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -21,13 +15,8 @@ import { SettingsTools } from '../components/organisms/settings-tools.js';
 import type { SettingsCrumb } from '../components/templates/settings-surface.js';
 import { SettingsWindow } from '../components/templates/settings-window.js';
 import {
-  applyProviderDraft,
   type Configuration,
-  emptyProviderDraft,
-  kindOf,
-  type ProviderDraft,
   type ProviderKind,
-  providerDraftOf,
   providerLabel,
   updatedAtLabel,
 } from '../domain/config.js';
@@ -40,8 +29,10 @@ import {
   useClaudeLoginAvailable,
 } from '../hooks/use-claude-login.js';
 import { type Config, useConfig } from '../hooks/use-config.js';
+import { useConfigAutosave } from '../hooks/use-config-autosave.js';
 import { type Credentials, useCredentials } from '../hooks/use-credentials.js';
 import { useProviderKinds } from '../hooks/use-provider-kinds.js';
+import { useProviderPage } from '../hooks/use-provider-page.js';
 import { configBridge } from '../services/settings-config.js';
 
 /** The shape of a section while the host's configuration is still arriving. */
@@ -170,9 +161,14 @@ export function Settings({ services }: { readonly services: Services }) {
   // screen, and the nav then shows no active row for as long as the query lasts.
   const [query, setQuery] = useState('');
   // The provider whose page is open under the providers section, or `undefined`
-  // while that section shows its list. It carries the draft being configured, so
-  // the page and the list cannot disagree about which provider is open.
-  const [provider, setProvider] = useState<ProviderDraft>();
+  // while that section shows its list.
+  const page = useProviderPage({
+    config,
+    kinds: kinds.list,
+    credentials: credentials.list,
+    claudeLogin,
+  });
+  const provider = page.provider;
   const routeSection = sectionIdOf(route?.pattern);
   const current =
     sections.find((item) => item.id === routeSection) ?? sections[0];
@@ -202,7 +198,7 @@ export function Settings({ services }: { readonly services: Services }) {
   const shownSection = useRef(current.id);
   if (shownSection.current !== current.id) {
     shownSection.current = current.id;
-    if (provider !== undefined) setProvider(undefined);
+    if (provider !== undefined) page.close();
   }
   // What the heading names: the section's own while its list shows, and the
   // provider page's while one is open. The breadcrumb carries the provider's own
@@ -220,7 +216,7 @@ export function Settings({ services }: { readonly services: Services }) {
     { label: 'Settings' },
     provider === undefined
       ? { label: sectionLabel }
-      : { label: sectionLabel, onSelect: () => setProvider(undefined) },
+      : { label: sectionLabel, onSelect: page.close },
     ...(provider === undefined
       ? []
       : [
@@ -233,115 +229,13 @@ export function Settings({ services }: { readonly services: Services }) {
         ]),
   ];
   const status = saveState(config);
-  // The revision already accounted for, so a render never repeats a message. The
-  // load sets the same `saved` a write does, and the load is not a save, so the
-  // first revision the hook hands over is recorded before anything is announced.
-  const announced = useRef<number | undefined>(undefined);
-  const loaded = useRef(false);
-  if (!loaded.current && config.saved !== undefined) {
-    loaded.current = true;
-    announced.current = config.saved.revision;
-  }
-
-  // Closing the window is what settles a change still waiting on the debounce,
-  // so the window's close waits for this answer (the platform's flush phase,
-  // bounded by its deadline); a `beforeunload` listener would race the teardown
-  // instead. The handler is bound while the page is mounted, because the hook's
-  // `flush` reads the live draft.
-  useEffect(() => {
-    const registration = services
-      .use(HooksV1)
-      .use(WindowHooksV1)
-      .onFlushHook(() => flush());
-    return () => registration.dispose();
-  }, [services, flush]);
-
-  // A save the host refused is announced where the change was made, not only in
-  // the footer: the reason names a field the user is looking at. The error is the
-  // toast's id, so the same refusal replaces its own message instead of stacking
-  // on every attempt the debounce makes.
-  useEffect(() => {
-    if (config.error !== undefined) {
-      toast.error(config.error, { id: 'config-save' });
-    }
-  }, [config.error]);
-
-  // A save the host accepted is confirmed the same way. This surface has no Save
-  // button — a change sends itself once typing settles — so the confirmation is
-  // the only thing that says the host took it, and it is keyed on the revision so
-  // one accepted save is announced exactly once, however many renders follow.
-  useEffect(() => {
-    const revision = config.saved?.revision;
-    if (revision === undefined || announced.current === revision) return;
-    announced.current = revision;
-    toast.success('Settings saved.', { id: 'config-save' });
-  }, [config.saved]);
+  useConfigAutosave(services, config);
 
   const selectSection = (path: string): void => {
     // Selecting the section already showing still closes its provider page.
-    setProvider(undefined);
+    page.close();
     services.use(NavigationV1).navigate(path);
   };
-
-  /**
-   * Opens the providers section's page for the provider at one list position.
-   * The position is how a row addresses its provider, and the same one the page
-   * edits, so the order the table draws rows in never decides which is opened.
-   */
-  const editProvider = (index: number): void => {
-    if (draft === undefined) return;
-    const next = providerDraftOf(draft, index);
-    if (next !== undefined) setProvider(next);
-  };
-
-  /** Opens the same page for a provider that does not exist yet. */
-  const addProviderPage = (): void => {
-    const first = kinds.list[0];
-    if (first !== undefined) setProvider(emptyProviderDraft(first));
-  };
-
-  /**
-   * Writes the provider page's draft into the configuration as soon as it is one
-   * the host would accept, so the window's own save carries it and leaving the
-   * page needs no commit of its own. A draft that is not yet valid stays local:
-   * a half-typed id or a missing field never reaches the list, nor does it stop
-   * the rest of the window from saving.
-   */
-  const changeProvider = (next: ProviderDraft): void => {
-    const kind = kindOf(kinds.list, next.kind);
-    if (draft === undefined || kind === undefined) {
-      setProvider(next);
-      return;
-    }
-    const applied = applyProviderDraft(draft, next, kind, credentials.list);
-    if (applied === undefined) {
-      setProvider(next);
-      return;
-    }
-    setProvider(applied.draft);
-    config.setDraft(applied.configuration);
-  };
-
-  // A finished sign-in names its credential on the open `claude` provider
-  // page: the hook settled it into the credentials cache before it published
-  // it, so this render's `changeProvider` already sees it in
-  // `credentials.list` and the commit is one the host accepts. A `.then` on the login promise would close over
-  // the stale list the promise started with, which is why the answer travels
-  // as state through an effect instead.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the auto-select commits once, when a sign-in answers, never on the renders that recreate `changeProvider` and `provider`; the answer it commits is the live draft.
-  useEffect(() => {
-    const signed = claudeLogin.signedIn;
-    if (signed === undefined) return;
-    claudeLogin.acknowledge();
-    // Only a `claude` page takes the token: the sign-in may answer after the
-    // window moved to another provider, which would then send a Claude token.
-    if (provider?.kind === 'claude') {
-      changeProvider({
-        ...provider,
-        configuration: { ...provider.configuration, token: signed.id },
-      });
-    }
-  }, [claudeLogin.signedIn]);
 
   // The nav's footer states the save state alone: the revision line beside it
   // is wider than the nav column, so it stays in the content footer. Neither
@@ -383,7 +277,7 @@ export function Settings({ services }: { readonly services: Services }) {
         credentials={credentials.list}
         draft={provider}
         kinds={kinds.list}
-        onChange={changeProvider}
+        onChange={page.change}
       />
     ) : draft === undefined ? undefined : (
       <Section
@@ -391,16 +285,16 @@ export function Settings({ services }: { readonly services: Services }) {
         draft={draft}
         id={current.id}
         kinds={kinds.list}
-        onAdd={addProviderPage}
+        onAdd={page.openNew}
         onChange={config.setDraft}
-        onEdit={editProvider}
+        onEdit={page.open}
       />
     );
 
   return (
     <SettingsWindow
       trail={trail}
-      onBack={provider === undefined ? undefined : () => setProvider(undefined)}
+      onBack={provider === undefined ? undefined : page.close}
       nav={
         <>
           <core-region name="settings.sections" />

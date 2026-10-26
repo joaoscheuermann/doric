@@ -20,7 +20,10 @@
   ],
   "references": [
     {
-      "path": "../../../packages/desktop"
+      "path": "../layout"
+    },
+    {
+      "path": "../../features/claude-login"
     },
     {
       "path": "../../../packages/bundle"
@@ -35,7 +38,7 @@
       "path": "../../foundation/core"
     },
     {
-      "path": "../../features/claude-login"
+      "path": "../../../packages/desktop"
     }
   ]
 }

@@ -19,6 +19,7 @@ import { tabOwnerOf } from './domain/route-selection.js';
 import { threadsPane } from './domain/sidebar-stack.js';
 import { LayoutWorkspaceElement } from './elements/workspace-element.js';
 import { resetLayoutQueryClient } from './queries/client.js';
+import { createLayoutDashboard } from './services/layout-dashboard.js';
 import { createLayoutPanel } from './services/layout-panel.js';
 import { setLayoutServices } from './services/layout-services.js';
 import { createLayoutSidebar } from './services/layout-sidebar.js';
@@ -28,6 +29,7 @@ import { createLayoutWorkspace } from './services/layout-workspace.js';
 import { watchThreadTabs } from './services/thread-tabs.js';
 import { resetBottom } from './stores/bottom.js';
 import { disposeConnection, initConnection } from './stores/connection.js';
+import { resetDashboard } from './stores/dashboard.js';
 import { resetPanel } from './stores/panel.js';
 import { resetRouteSelection } from './stores/route-selection.js';
 import { registerPane, resetStack } from './stores/stack.js';
@@ -80,6 +82,7 @@ export function activate({ services }: ClientContext): Cleanup {
   // registers (the `screen` views today).
   services.provide(createLayoutWorkspace());
   services.provide(createLayoutPanel());
+  services.provide(createLayoutDashboard());
   services.provide(createLayoutSidebar());
   services.provide(createLayoutStack());
   const threadsRegistration = registerPane(threadsPane);
@@ -91,6 +94,7 @@ export function activate({ services }: ClientContext): Cleanup {
     disposeWorkspaceApi();
     resetRouteSelection();
     resetPanel();
+    resetDashboard();
     resetBottom();
     threadsRegistration.dispose();
     resetStack();

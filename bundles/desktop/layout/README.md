@@ -18,8 +18,8 @@ for how bundles work.
   conversation inside it as the child route
   `/projects/:projectId/threads/:threadId`.
 - **Contracts:** `layout.tabs/v1`, `layout.workspace/v1`, `layout.panel/v1`,
-  `layout.sidebar/v1` and `layout.stack/v1`, all client contracts in the
-  workspace window.
+  `layout.dashboard/v1`, `layout.sidebar/v1` and `layout.stack/v1`, all client
+  contracts in the workspace window.
 - **Regions:** named slots where other bundles add elements.
 
 The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
@@ -28,7 +28,9 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
 ## What you see
 
 - **Dashboard.** Every Project as a grid or a list, with search, activity,
-  creation time and state, and a "New project" action.
+  creation time and state, and a "New project" action. Its sidebar holds the
+  search, "All projects", a Projects group, the groups other bundles add, and
+  "All settings".
 - **Project tabs.** A "Dashboard" tab and one tab per open Project, which you
   can reorder, rename and close; each remembers its last path, saved in the
   window's local storage.
@@ -78,6 +80,7 @@ footer, where the composer would be.
 | `layout.tabs/v1`      | open, focus or close a tab drawn by its own element (with icon, aria label and tooltip) in the active Thread's or Project's tabs; read the current | `files`, `git`, `terminal`                                                    |
 | `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `layout.main.bottom` split                       | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
 | `layout.panel/v1`     | read, show or toggle the Project panel and its active view                                                                                         | `files`                                                                       |
+| `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                        | `settings`                                                                    |
 | `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`)                                                                                   | `terminal`                                                                    |
 | `layout.stack/v1`     | register a sidebar pane with title, order, header action and size limits                                                                           | `screen`                                                                      |
 
@@ -86,17 +89,21 @@ tab with no Thread or Project selected fails with `unavailable`.
 
 ## Regions
 
-| Region                 | Where                                  | Items today                                                     |
-| ---------------------- | -------------------------------------- | --------------------------------------------------------------- |
-| `layout.header`        | header actions, after the breadcrumb   | `terminal`'s "New terminal" button                              |
-| `layout.panel`         | the Project panel's views              | `files`, `git`                                                  |
-| `layout.footer`        | the conversation footer                | `settings`' execution picker, `chat`'s composer, `git`, `usage` |
-| `layout.global-footer` | the window-wide footer                 | `resources`                                                     |
-| `layout.main.bottom`   | a split under the conversation         | shown while an item asks through `layout.workspace/v1`          |
-| `layout.overlay`       | a floating layer over the conversation | items place themselves; the layer never intercepts a pointer    |
+| Region                  | Where                                                       | Items today                                                     |
+| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| `layout.header`         | header actions, after the breadcrumb                        | `terminal`'s "New terminal" button                              |
+| `layout.panel`          | the Project panel's views                                   | `files`, `git`                                                  |
+| `layout.footer`         | the conversation footer                                     | `settings`' execution picker, `chat`'s composer, `git`, `usage` |
+| `layout.global-footer`  | the window-wide footer                                      | `resources`                                                     |
+| `layout.main.bottom`    | a split under the conversation                              | shown while an item asks through `layout.workspace/v1`          |
+| `layout.overlay`        | a floating layer over the conversation                      | items place themselves; the layer never intercepts a pointer    |
+| `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects | `settings`' Providers group                                     |
+| `layout.dashboard.page` | a page the dashboard draws instead of its project list      | `settings`' provider page, shown through `layout.dashboard/v1`  |
 
 A `layout.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
-only while the panel is open and the item is selected.
+only while the panel is open and the item is selected. A `layout.dashboard.nav`
+item draws its own `SidebarGroup`; a `layout.dashboard.page` item mounts only
+while `layout.dashboard/v1` shows it.
 
 ## Development
 

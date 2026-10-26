@@ -10,14 +10,21 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
+import { LayoutDashboardV1 } from 'layout/contracts';
 
-import { initSettingsApi } from './api/settings-api.js';
+import { initSettingsApi, setDashboardAvailable } from './api/settings-api.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
-import { linkHosts, sectionHosts } from './elements.js';
+import {
+  linkHosts,
+  PROVIDER_PAGE_ID,
+  providerPageHosts,
+  sectionHosts,
+} from './elements.js';
 import { setClaudeLoginAvailable } from './hooks/use-claude-login.js';
 import { clearSettingsQueryClient } from './queries/client.js';
 import { createSettingsConfig } from './services/settings-config.js';
+import { DashboardProvidersElement } from './views/dashboard-providers.js';
 import {
   ExecutionPickerElement,
   SettingsPageElement,
@@ -38,6 +45,8 @@ export function activate({ services }: ClientContext): () => void {
       ui.define(`settings-${section.id}`, sectionHosts[section.id].Element),
     ),
     ui.define('settings-execution-picker', ExecutionPickerElement),
+    ui.define('settings-dashboard-providers', DashboardProvidersElement),
+    ui.define('settings-dashboard-provider', providerPageHosts.Element),
     navigation.register({
       path: '/settings',
       create: () => ui.create('settings-page'),
@@ -55,12 +64,28 @@ export function activate({ services }: ClientContext): () => void {
       tag: 'settings-execution-picker',
       order: 20,
     }),
+    // The /projects dashboard's Providers group and the page it opens.
+    regions.add('layout.dashboard.nav', {
+      id: 'providers',
+      tag: 'settings-dashboard-providers',
+      order: 100,
+    }),
+    regions.add('layout.dashboard.page', {
+      id: PROVIDER_PAGE_ID,
+      tag: 'settings-dashboard-provider',
+    }),
     createSectionRoute().follow(navigation),
     // `claude.login/v1` is optional: the provider page offers the sign-in
     // only while a provider answers it.
     services.whenAvailable(ClaudeLoginV1, () => {
       setClaudeLoginAvailable(true);
       return () => setClaudeLoginAvailable(false);
+    }),
+    // `layout.dashboard/v1` is optional too: without the layout's dashboard
+    // the Providers group has nowhere to open its page.
+    services.whenAvailable(LayoutDashboardV1, () => {
+      setDashboardAvailable(true);
+      return () => setDashboardAvailable(false);
     }),
   ];
 

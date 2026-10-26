@@ -218,6 +218,11 @@ export const settle = async (milliseconds = 0): Promise<void> => {
 /** Another bundle's client part in the window (a section it adds). */
 export interface ProbeBundle {
   readonly requires: readonly string[];
+  /**
+   * Client contracts the probe provides, as `<id>@<version>` manifest
+   * entries (a probe playing the bundle that owns them).
+   */
+  readonly provides?: readonly string[];
   readonly activate: Activate;
 }
 
@@ -315,13 +320,24 @@ export const openSettingsWindow = async (input: {
                   id: 'probe',
                   version: PROBE_VERSION,
                   engines: { doric: '^1.0.0' },
-                  provides: [],
+                  provides: [...(input.probe.provides ?? [])],
                   requires: [...input.probe.requires],
                 } as unknown as ManifestV1,
                 descriptor: {
                   descriptorVersion: 1 as const,
                   bundle: { id: 'probe', version: PROBE_VERSION },
-                  contracts: [],
+                  contracts: (input.probe.provides ?? []).map((entry) => {
+                    const [id = entry, version = '1.0.0'] = entry.split('@');
+                    return {
+                      id,
+                      version,
+                      kind: 'service' as const,
+                      environment: 'client' as const,
+                      cardinality: 'one' as const,
+                      local: true,
+                      schema: `schemas/${id}.json`,
+                    };
+                  }),
                 } as unknown as Descriptor,
                 errors: [],
               },

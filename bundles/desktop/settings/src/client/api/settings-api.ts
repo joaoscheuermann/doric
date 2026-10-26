@@ -16,6 +16,7 @@ import {
   type CallArg,
   type CredentialDescription,
   credentialFieldsSatisfied,
+  type Disposable,
   DoricBrowserV1,
   isContractError,
   type ModelField,
@@ -27,6 +28,7 @@ import {
   ToolsV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
+import { LayoutDashboardV1 } from 'layout/contracts';
 import type {
   ConfigReplaceResult,
   Configuration as HostConfiguration,
@@ -961,6 +963,16 @@ export interface SettingsApi {
     /** Waits for the browser's answer and answers the stored credential. */
     finish(options?: CallArg): Promise<Credential>;
   };
+  /**
+   * The /projects dashboard's shown page (`layout.dashboard/v1`, optional).
+   * Without a provider no page is shown: `active` is `undefined`, `show` does
+   * nothing, and a subscription never hears a change.
+   */
+  readonly dashboard: {
+    active(): string | undefined;
+    show(id: string): void;
+    subscribe(listener: () => void): Disposable;
+  };
   /** Opens an https page in the system browser, outside the app. */
   openBrowser(url: string): Promise<void>;
 }
@@ -1085,10 +1097,34 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       return credentialFrom(answered);
     },
   },
+  dashboard: {
+    active: () =>
+      dashboardAvailable ? services.use(LayoutDashboardV1).active() : undefined,
+    show: (id) => {
+      if (dashboardAvailable) services.use(LayoutDashboardV1).show(id);
+    },
+    subscribe: (listener) =>
+      dashboardAvailable
+        ? services.use(LayoutDashboardV1).subscribe(listener)
+        : { dispose: () => undefined },
+  },
   openBrowser: async (url) => {
     await services.use(DoricBrowserV1).open(url);
   },
 });
+
+/**
+ * Whether a `layout.dashboard/v1` provider answers: the contract is optional,
+ * so a composition without the layout keeps working settings and simply has
+ * no dashboard to draw into. The client part's activation sets it through
+ * `whenAvailable`.
+ */
+let dashboardAvailable = false;
+
+/** Records whether a `layout.dashboard/v1` provider is active. */
+export const setDashboardAvailable = (available: boolean): void => {
+  dashboardAvailable = available;
+};
 
 let active: SettingsApi | undefined;
 

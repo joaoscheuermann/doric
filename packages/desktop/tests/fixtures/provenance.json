@@ -71,6 +71,10 @@
       "origin": "registry",
       "sha256": "84133eccf3e1690c48fa0e2ed4fe843fcc8b2f48a4a7ec120dffddb9eb2f3cef"
     },
+    "components/kbd.tsx": {
+      "origin": "registry",
+      "sha256": "3728d1f8902e024a70a82b59c69b79e588f0d694b427d7bf1c21e9d407df5899"
+    },
     "components/label.tsx": {
       "origin": "registry",
       "sha256": "4fbffeb5f2dc0a59659ebf93251476dcb371c16b5be1f5a0f3cb34618d4ac78e"
