@@ -52,7 +52,8 @@ type SerializedDelegatedTurn = Spread<DelegatedBlock, SerializedLexicalNode>;
 /**
  * Another Thread's input as one folded header and its text. The bot marks an
  * instruction handed down by the parent; a result wears no glyph of its own, so
- * a background agent's answer reads as where it came from and nothing more.
+ * a background agent's answer reads as where it came from and nothing more. The
+ * sender's name follows the label bare, without quotes.
  */
 function DelegatedTurn({
   input,
@@ -88,7 +89,6 @@ function DelegatedTurn({
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <span className="shrink-0">&quot;</span>
             {source.open === undefined ? (
               <span
                 className={cn('truncate', source.label.mono && 'font-mono')}
@@ -107,7 +107,6 @@ function DelegatedTurn({
                 <span className="truncate">{source.label.value}</span>
               </Button>
             )}
-            <span className="shrink-0">&quot;</span>
           </span>
         ),
       }}
