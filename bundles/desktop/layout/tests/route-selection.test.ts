@@ -43,6 +43,12 @@ const thread = (id: string, projectId = 'p1'): Thread => ({
 
 const workspaceRoute: RouteMatch = { path: '/', pattern: '/', params: {} };
 
+const projectsRoute: RouteMatch = {
+  path: '/projects',
+  pattern: '/projects',
+  params: {},
+};
+
 const projectRoute: RouteMatch = {
   path: '/projects/p1',
   pattern: '/projects/:projectId',
@@ -410,6 +416,95 @@ describe('startup restore', () => {
 
     assert.deepEqual(looked, []);
     assert.equal(legacy.value, null);
+  });
+});
+
+describe('a view mounted after the restore settled', () => {
+  const lookup = async (id: string) => thread(id);
+
+  /** A window that restored at a Project without Threads, then went Home. */
+  const homeFromProject = () => {
+    const window = new FakeWindow('/projects/p1');
+    restore({ route: projectRoute, lookup });
+    routeSelectionStore.getState().changeSelection({ projectId: 'p1' });
+    window.current = '/projects';
+    window.writes.length = 0;
+    return window;
+  };
+
+  test('Home from a Project without Threads keeps /projects', () => {
+    const window = homeFromProject();
+
+    restore({ route: projectsRoute, lookup });
+
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/projects');
+    assert.deepEqual(
+      routeIntent(projectsRoute, withSelection(emptyTree, { projectId: 'p1' })),
+      { kind: 'home' },
+    );
+
+    routeSelectionStore.getState().changeSelection({});
+
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/projects');
+  });
+
+  test('Home from a selected Thread keeps /projects', async () => {
+    const window = new FakeWindow('/projects/p1/threads/t1');
+    restore({ route: threadRoute('p1', 't1'), lookup });
+    await settled();
+    window.current = '/projects';
+    window.writes.length = 0;
+
+    restore({ route: projectsRoute, lookup });
+    routeSelectionStore.getState().changeSelection({});
+
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/projects');
+  });
+
+  test('a Project opened after Home keeps its path', () => {
+    const window = homeFromProject();
+    restore({ route: projectsRoute, lookup });
+    routeSelectionStore.getState().changeSelection({});
+    window.current = '/projects/p2';
+    window.writes.length = 0;
+
+    restore({
+      route: {
+        path: '/projects/p2',
+        pattern: '/projects/:projectId',
+        params: { projectId: 'p2' },
+      },
+      lookup,
+    });
+
+    assert.deepEqual(window.writes, []);
+
+    routeSelectionStore.getState().changeSelection({ projectId: 'p2' });
+
+    assert.deepEqual(window.writes, []);
+    assert.equal(window.current, '/projects/p2');
+  });
+
+  test('a Thread route mounted later is still restored', async () => {
+    const window = new FakeWindow('/projects');
+    restore({ route: projectsRoute, lookup });
+    window.current = '/projects/p1/threads/t2';
+
+    const { restored, looked } = restore({
+      route: threadRoute('p1', 't2'),
+      lookup,
+    });
+    await settled();
+
+    assert.deepEqual(looked, ['t2']);
+    assert.deepEqual(
+      restored.map(({ id }) => id),
+      ['t2'],
+    );
+    assert.equal(window.current, '/projects/p1/threads/t2');
   });
 });
 

@@ -185,6 +185,8 @@ export type RestoreOptions = {
  * record is removed when that settle writes (`none`, `restored`). A `failed`
  * lookup leaves it alone, as it left the stored copy before stage 9, so the
  * next launch at `/` retries; it is removed once a later change is written.
+ * A route naming no Thread after the load has settled commits nothing, so a
+ * view mounted later leaves the load and the path to its own route.
  */
 export const startRestore = ({
   route,
@@ -216,7 +218,7 @@ export const startRestore = ({
     });
   };
   if (stored === undefined) {
-    settle('none');
+    if (store.load === undefined) settle('none');
     return;
   }
   void lookup(stored).then(
