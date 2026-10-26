@@ -45,7 +45,10 @@ export function DashboardProvidersGroup({
   return (
     <Collapsible defaultOpen className="group/collapsible">
       <SidebarGroup>
-        <SidebarGroupLabel render={<CollapsibleTrigger />}>
+        <SidebarGroupLabel
+          render={<CollapsibleTrigger />}
+          className="font-normal"
+        >
           Providers
           <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
         </SidebarGroupLabel>
@@ -70,6 +73,7 @@ export function DashboardProvidersGroup({
                     <SidebarMenuButton
                       isActive={index === activeIndex}
                       onClick={() => onOpen(index)}
+                      className="data-active:font-normal [&_svg]:size-3.5"
                     >
                       <ProviderIcon
                         kind={provider.kind}

@@ -316,7 +316,9 @@ export function Dashboard({
         <InputGroupAddon align="inline-end">
           <KbdGroup>
             {searchShortcutKeys(navigator.platform).map((key) => (
-              <Kbd key={key}>{key}</Kbd>
+              <Kbd key={key} className="font-normal">
+                {key}
+              </Kbd>
             ))}
           </KbdGroup>
         </InputGroupAddon>

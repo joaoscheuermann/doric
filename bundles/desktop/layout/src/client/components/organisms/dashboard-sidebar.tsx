@@ -58,7 +58,10 @@ export function DashboardSidebar({
 }): JSX.Element {
   return (
     <SidebarScope>
-      <Sidebar collapsible="none" className="h-full w-[240px] shrink-0">
+      <Sidebar
+        collapsible="none"
+        className="h-full w-[240px] shrink-0 font-normal"
+      >
         <SidebarHeader>{search}</SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -67,6 +70,7 @@ export function DashboardSidebar({
                 <SidebarMenuButton
                   isActive={listActive}
                   onClick={onAllProjects}
+                  className="data-active:font-normal"
                 >
                   <FolderIcon />
                   <span>All projects</span>
@@ -76,7 +80,10 @@ export function DashboardSidebar({
           </SidebarGroup>
           <Collapsible defaultOpen className="group/collapsible">
             <SidebarGroup>
-              <SidebarGroupLabel render={<CollapsibleTrigger />}>
+              <SidebarGroupLabel
+                render={<CollapsibleTrigger />}
+                className="font-normal"
+              >
                 Projects
                 <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
               </SidebarGroupLabel>
@@ -95,7 +102,10 @@ export function DashboardSidebar({
                         <SidebarMenuButton
                           onClick={() => onSelectProject(project)}
                         >
-                          <ProjectAvatar color={project.color} />
+                          <ProjectAvatar
+                            color={project.color}
+                            className="size-3"
+                          />
                           <span className="min-w-0 flex-1 truncate">
                             {project.name}
                           </span>
