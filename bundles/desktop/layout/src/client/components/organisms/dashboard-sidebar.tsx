@@ -82,10 +82,10 @@ export function DashboardSidebar({
             <SidebarGroup>
               <SidebarGroupLabel
                 render={<CollapsibleTrigger />}
-                className="font-normal"
+                className="gap-1 font-normal"
               >
-                Projects
                 <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
+                Projects
               </SidebarGroupLabel>
               <SidebarGroupAction
                 title="New project"
@@ -106,7 +106,7 @@ export function DashboardSidebar({
                             color={project.color}
                             className="size-3"
                           />
-                          <span className="min-w-0 flex-1 truncate">
+                          <span className="min-w-0 flex-1 truncate font-light">
                             {project.name}
                           </span>
                           <ArrowUpRightIcon className="text-sidebar-foreground/60 opacity-0 group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100" />

@@ -47,10 +47,10 @@ export function DashboardProvidersGroup({
       <SidebarGroup>
         <SidebarGroupLabel
           render={<CollapsibleTrigger />}
-          className="font-normal"
+          className="gap-1 font-normal"
         >
-          Providers
           <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
+          Providers
         </SidebarGroupLabel>
         <SidebarGroupAction
           title="Add provider"
@@ -79,7 +79,9 @@ export function DashboardProvidersGroup({
                         kind={provider.kind}
                         endpoint={provider.configuration.endpoint}
                       />
-                      <span>{providerLabel(provider, index)}</span>
+                      <span className="font-light">
+                        {providerLabel(provider, index)}
+                      </span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
