@@ -35,4 +35,8 @@ const decorators = [
   ),
 ];
 
-export default { decorators };
+// The pane fills the canvas: under a shrink-to-fit layout the chat column has
+// no width to centre in and its text wraps letter by letter.
+const parameters = { layout: 'fullscreen' };
+
+export default { decorators, parameters };

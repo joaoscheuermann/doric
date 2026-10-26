@@ -89,7 +89,9 @@ export function DelegatedTurn({
     <CollapsibleBlock
       label={
         <>
-          <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
+          {input.kind === 'parent' ? (
+            <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
+          ) : null}
           <span>
             {input.kind === 'parent' ? 'Instruction from:' : 'Result from:'}
           </span>
@@ -104,7 +106,6 @@ export function DelegatedTurn({
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <span className="shrink-0">&quot;</span>
             {source.open === undefined ? (
               <span
                 className={cn('truncate', source.label.mono && 'font-mono')}
@@ -123,7 +124,6 @@ export function DelegatedTurn({
                 <span className="truncate">{source.label.value}</span>
               </Button>
             )}
-            <span className="shrink-0">&quot;</span>
           </span>
         ),
       }}
